@@ -23,6 +23,7 @@ starknet-gateway-client = { workspace = true }
 log = { version = "0.4.14" }
 env_logger = "0.9.0"
 pathfinder-common = { workspace = true }
+pathfinder-compiler = { workspace = true }
 pathfinder = { workspace = true }
 tokio = { workspace = true, features = ["macros", "test-util"] }
 reqwest = { workspace = true }

@@ -193,7 +193,6 @@ async fn call_rpc(rpc_port: u16) -> Result<reqwest::StatusCode, reqwest::Error> 
 pub async fn fetch_block(queue: BlockQueue, rpc_port: u16) {
     let client: Client = Client::mainnet();
     let mut i = 0u64;
-
     loop {
         let result = client.block(BlockId::Number(BlockNumber::new_or_panic(i).into())).await;
         match result {

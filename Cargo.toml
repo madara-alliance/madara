@@ -185,6 +185,7 @@ pathfinder-common = { git = "https://github.com/KasarLabs/pathfinder", branch = 
 pathfinder = { git = "https://github.com/KasarLabs/pathfinder", branch = "main" }
 pathfinder-retry = { git = "https://github.com/KasarLabs/pathfinder", branch = "main"}
 pathfinder-serde = { git = "https://github.com/KasarLabs/pathfinder", branch = "main"}
+pathfinder-compiler = { git = "https://github.com/kasarlabs/pathfinder", branch = "main"}
 stark_hash = { git = "https://github.com/KasarLabs/pathfinder", branch = "main"}
 stark_poseidon = { git = "https://github.com/KasarLabs/pathfinder", branch = "main"}
 tokio = "1.24.2"
