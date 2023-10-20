@@ -422,7 +422,10 @@ where
             }
             v
         } else {
-            block.transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number)).map(FieldElement::from).collect()
+            block
+                .transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number))
+                .map(FieldElement::from)
+                .collect()
         };
 
         let parent_blockhash = block.header().parent_block_hash;
@@ -656,7 +659,9 @@ where
         let transaction_hash = self
             .get_cached_transaction_hashes(block.header().hash::<H>().into())
             .map(|tx_hashes| h256_to_felt(*tx_hashes.get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?))
-            .unwrap_or_else(|| Ok(transaction.compute_hash::<H>(chain_id.0.into(), false, Some(block.header().block_number)).0))?;
+            .unwrap_or_else(|| {
+                Ok(transaction.compute_hash::<H>(chain_id.0.into(), false, Some(block.header().block_number)).0)
+            })?;
 
         Ok(to_starknet_core_tx::<H>(transaction.clone(), transaction_hash))
     }
@@ -679,7 +684,9 @@ where
             let hash = transaction_hashes
                 .as_ref()
                 .map(|tx_hashes| h256_to_felt(*tx_hashes.get(index).ok_or(StarknetRpcApiError::InternalServerError)?))
-                .unwrap_or_else(|| Ok(tx.compute_hash::<H>(chain_id.0.into(), false, Some(block.header().block_number)).0))?;
+                .unwrap_or_else(|| {
+                    Ok(tx.compute_hash::<H>(chain_id.0.into(), false, Some(block.header().block_number)).0)
+                })?;
             transactions.push(to_starknet_core_tx::<H>(tx.clone(), hash));
         }
 
@@ -844,11 +851,21 @@ where
         let block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).unwrap_or_default();
         let chain_id = self.chain_id()?.0.into();
 
-        let find_tx = block
-            .transactions()
-            .iter()
-            .find(|tx| tx.compute_hash::<H>(chain_id, false, Some(block.header().block_number)).0 == transaction_hash)
-            .map(|tx| to_starknet_core_tx::<H>(tx.clone(), transaction_hash));
+        let find_tx =
+            if let Some(transaction_hashes) = self.get_cached_transaction_hashes(block.header().hash::<H>().into()) {
+                transaction_hashes
+                    .iter()
+                    .position(|tx_hash| *tx_hash == Felt252Wrapper(transaction_hash).into())
+                    .and_then(|index| block.transactions().get(index))
+                    .map(|tx| to_starknet_core_tx::<H>(tx.clone(), transaction_hash))
+            } else {
+                block
+                    .transactions()
+                    .iter()
+                    .map(|tx| (tx, tx.compute_hash::<H>(chain_id, false, Some(block.header().block_number)).0))
+                    .find(|(_, hash)| *hash == transaction_hash)
+                    .map(|(tx, _)| to_starknet_core_tx::<H>(tx.clone(), transaction_hash))
+            };
 
         find_tx.ok_or(StarknetRpcApiError::TxnHashNotFound.into())
     }
