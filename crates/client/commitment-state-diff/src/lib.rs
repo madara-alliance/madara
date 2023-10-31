@@ -205,6 +205,6 @@ where
 
 pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
     while let Some((block_hash, csd)) = rx.next().await {
-        // log::info!("received state diff for block {block_hash}: {csd:?}");
+        log::info!("Received state diff for block {block_hash}: {csd:?}");
     }
 }
