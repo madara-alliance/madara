@@ -1,11 +1,26 @@
 //! Contains the necessaries to perform an L1 verification of the state
 
+use std::{sync::Arc, time::Duration};
+use tokio::sync::Mutex;
+use tokio::time::sleep;
+
 use reqwest::Url;
 use serde_json::Value;
 use anyhow::Result;
 
+type StateCommitment = String;
+type BlockNumber = String;
+type BlockHash = String;
+
 const HTTP_OK: u16 = 200;
 
+pub struct EthereumStateUpdate {
+    pub state_root: StateCommitment,
+    pub block_number: BlockNumber,
+    pub block_hash: BlockHash,
+}
+
+#[derive(Clone)]
 pub struct EthereumClient {
     http: reqwest::Client,
     url: Url,
@@ -30,20 +45,6 @@ impl EthereumClient {
 
         let response: Value = res.json().await?;
         Ok(response["result"].clone())
-    }
-
-    pub async fn get_latest_block_number(&self) -> Result<u64> {
-        let payload = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "eth_blockNumber",
-            "params": [],
-            "id": 1
-        });
-
-        let response = self.call_ethereum(payload).await?;
-        let block_number_hex = response.as_str().ok_or(anyhow::anyhow!("Invalid response"))?;
-        let block_number = u64::from_str_radix(&block_number_hex[2..], 16)?;
-        Ok(block_number)
     }
 
     pub async fn eth_call(&self, to: &str, data: &str) -> Result<String, anyhow::Error> {
@@ -73,17 +74,47 @@ impl EthereumClient {
         let data = "0x9588eca2";
         self.eth_call(to_address, data).await
     }
+
+    pub async fn get_last_block_number(&self) -> Result<BlockNumber, anyhow::Error> {
+        let to_address = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
+        let data = "0x666bd0be";
+        self.eth_call(to_address, data).await
+    }
+
+    pub async fn get_last_block_hash(&self) -> Result<BlockHash, anyhow::Error> {
+        let to_address = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
+        let data = "0xe55d82f2";
+        self.eth_call(to_address, data).await
+    }
 }
 
-pub async fn verify() -> Result<()> {
-    let url = Url::parse("https://eth-mainnet.g.alchemy.com/v2/CDPivBjTjgi1b1Qov1IrL6bBPxGwnAgg")?;
+pub async fn sync(l1_client_url: Url) {
+    let url = l1_client_url;
     let client = EthereumClient::new(url)?;
+    let current_state = Arc::new(Mutex::new(EthereumStateUpdate {
+        state_root: String::new(),
+        block_number: BlockNumber::default(),
+        block_hash: BlockHash::default(),
+    }));
 
-    let block_number = client.get_latest_block_number().await?;
-    println!("Latest block number: {}", block_number);
+    loop {
+        let current_state = current_state.clone();
+        let client = client.clone();
 
-    let result = client.eth_call("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4", "0x9588eca2").await?;
-    println!("eth_call result: {}", result);
+        tokio::spawn(async move {
+            let mut state_guard = current_state.lock().await;
+            let last_block_number = client.get_last_block_number().await.unwrap_or_default(); 
 
-    Ok(())
+            if last_block_number != state_guard.block_number {
+                let state_root = client.get_state_root().await.unwrap_or_default(); 
+                let block_hash = client.get_last_block_hash().await.unwrap_or_default(); 
+
+                state_guard.block_number = last_block_number;
+                state_guard.state_root = state_root;
+                state_guard.block_hash = block_hash;
+            }
+        }).await.unwrap_or_default(); 
+
+        sleep(Duration::from_secs(1800)).await;
+    }
 }

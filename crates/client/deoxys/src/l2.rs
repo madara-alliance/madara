@@ -1,4 +1,4 @@
-//! Contains the code required to fetch data from the network efficiently.
+//! Contains the code required to fetch data from the feeder efficiently.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 
 use crate::CommandSink;
 
-/// The configuration of the worker responsible for fetching new blocks from the network.
+/// The configuration of the worker responsible for fetching new blocks from the feeder.
 pub struct BlockFetchConfig {
     /// The URL of the sequencer gateway.
     pub gateway: Url,
@@ -84,8 +84,8 @@ struct WorkerSharedState {
     sync_state: Mutex<SyncState>,
 }
 
-/// Fetches blocks from the network and sends them to the given sender.
-pub async fn fetch_blocks(
+/// Fetches blocks from the feeder and sends them to the given sender.
+pub async fn sync(
     command_sink: CommandSink,
     sender: Sender<mp_block::Block>,
     config: BlockFetchConfig,
