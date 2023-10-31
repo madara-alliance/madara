@@ -1,18 +1,18 @@
 //! Contains the necessaries to perform an L1 verification of the state
 
 use std::{sync::Arc, time::Duration};
+use starknet_api::block::{BlockNumber, BlockHash};
+use starknet_api::hash::StarkHash;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
-
 use reqwest::Url;
 use serde_json::Value;
 use anyhow::Result;
 
-type StateCommitment = String;
-type BlockNumber = String;
-type BlockHash = String;
-
 const HTTP_OK: u16 = 200;
+
+#[derive(Default)]
+pub struct StateCommitment(pub StarkHash);
 
 pub struct EthereumStateUpdate {
     pub state_root: StateCommitment,
@@ -47,7 +47,7 @@ impl EthereumClient {
         Ok(response["result"].clone())
     }
 
-    pub async fn eth_call(&self, to: &str, data: &str) -> Result<String, anyhow::Error> {
+    pub async fn eth_call(&self, to: &str, data: &str) -> Result<String> {
         let payload = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "eth_call",
@@ -69,19 +69,22 @@ impl EthereumClient {
         Ok(result)
     }
 
-    pub async fn get_state_root(&self) -> Result<String, anyhow::Error> {
+    pub async fn get_state_root(&self) -> Result<StateCommitment> {
         let to_address = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
         let data = "0x9588eca2";
-        self.eth_call(to_address, data).await
-    }
+        let result = self.eth_call(to_address, data).await?;
+    
+        let stark_hash = StarkHash::from(result);
+        Ok(StateCommitment(stark_hash))
+    }    
 
-    pub async fn get_last_block_number(&self) -> Result<BlockNumber, anyhow::Error> {
+    pub async fn get_last_block_number(&self) -> Result<BlockNumber> {
         let to_address = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
         let data = "0x666bd0be";
         self.eth_call(to_address, data).await
     }
 
-    pub async fn get_last_block_hash(&self) -> Result<BlockHash, anyhow::Error> {
+    pub async fn get_last_block_hash(&self) -> Result<BlockHash> {
         let to_address = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
         let data = "0xe55d82f2";
         self.eth_call(to_address, data).await
@@ -92,7 +95,7 @@ pub async fn sync(l1_client_url: Url) {
     let url = l1_client_url;
     let client = EthereumClient::new(url)?;
     let current_state = Arc::new(Mutex::new(EthereumStateUpdate {
-        state_root: String::new(),
+        state_root: StateCommitment::default(),
         block_number: BlockNumber::default(),
         block_hash: BlockHash::default(),
     }));

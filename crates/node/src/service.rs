@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use reqwest::Url;
 use futures::channel::mpsc;
 use futures::future;
 use futures::future::BoxFuture;
@@ -266,6 +267,7 @@ pub fn new_full(
     sealing: SealingMode,
     da_layer: Option<(DaLayer, PathBuf)>,
     rpc_port: u16,
+    l1_url: Url,
     cache_more_things: bool,
     fetch_config: mc_deoxys::BlockFetchConfig,
 ) -> Result<TaskManager, ServiceError> {

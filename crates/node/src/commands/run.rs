@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use reqwest::Url;
 
 use madara_runtime::SealingMode;
 use mc_data_availability::DaLayer;
@@ -84,6 +85,10 @@ pub struct ExtendedRunCmd {
     #[clap(long)]
     pub da_layer: Option<DaLayer>,
 
+    /// The L1 rpc endpoint url for state verification
+    #[clap(long, short, default_value = "integration")]
+    pub l1_url: reqwest::Url,
+
     /// The network type to connect to.
     #[clap(long, short, default_value = "integration")]
     pub network: NetworkType,
@@ -133,12 +138,31 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             None
         }
     };
+
+    let l1_url = match cli.run.l1_url {
+        Some(url) => {
+            log::info!("Subscribed correctly to L1 verification via the following RPC URL: {}", url);
+            Ok(url)
+        },
+        None => {
+            log::warn!("No L1 key provided, L1 verification will not be performed");
+            return Err("No L1 key provided, L1 verification will not be performed".into());
+        }
+    };
     runner.run_node_until_exit(|config| async move {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
         let fetch_block_config = cli.run.network.block_fetch_config();
-        service::new_full(config, sealing, da_config, cli.run.base.rpc_port.unwrap(), cache, fetch_block_config)
-            .map_err(sc_cli::Error::Service)
+        service::new_full(
+            config,
+            sealing,
+            da_config,
+            cli.run.base.rpc_port.unwrap(),
+            l1_url,
+            cache,
+            fetch_block_config,
+        )
+        .map_err(sc_cli::Error::Service)
     })
 }
 
