@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use reqwest::Url;
+use std::result::Result as StdResult;
 
 use madara_runtime::SealingMode;
 use mc_data_availability::DaLayer;
@@ -72,6 +73,29 @@ impl NetworkType {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct L1Endpoint {
+    url: Url,
+}
+
+impl L1Endpoint {
+     pub fn new(raw_url: &str) -> StdResult<Self, String> {
+        let parsed_url = Url::parse(raw_url).map_err(|_| "Invalid URL format")?;
+        
+        Ok(Self {
+            url: parsed_url,
+        })
+    }
+
+    pub fn get_url(&self) -> &Url {
+        &self.url
+    }
+
+    fn from_str(s: &str) -> StdResult<Self, String> {
+        L1Endpoint::new(s)
+    }
+}
+
 #[derive(Clone, Debug, clap::Args)]
 pub struct ExtendedRunCmd {
     #[clap(flatten)]
@@ -86,8 +110,8 @@ pub struct ExtendedRunCmd {
     pub da_layer: Option<DaLayer>,
 
     /// The L1 rpc endpoint url for state verification
-    #[clap(long, short, default_value = "integration")]
-    pub l1_url: reqwest::Url,
+    #[clap(long, default_value = "https://alpha-mainnet.starknet.io")]
+    pub l1: L1Endpoint,
 
     /// The network type to connect to.
     #[clap(long, short, default_value = "integration")]
@@ -139,26 +163,18 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         }
     };
 
-    let l1_url = match cli.run.l1_url {
-        Some(url) => {
-            log::info!("Subscribed correctly to L1 verification via the following RPC URL: {}", url);
-            Ok(url)
-        },
-        None => {
-            log::warn!("No L1 key provided, L1 verification will not be performed");
-            return Err("No L1 key provided, L1 verification will not be performed".into());
-        }
-    };
     runner.run_node_until_exit(|config| async move {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
         let fetch_block_config = cli.run.network.block_fetch_config();
+        let l1_endpoint = L1Endpoint::new(cli.run.l1.as_str()).unwrap().url;
+
         service::new_full(
             config,
             sealing,
             da_config,
             cli.run.base.rpc_port.unwrap(),
-            l1_url,
+            l1_endpoint,
             cache,
             fetch_block_config,
         )

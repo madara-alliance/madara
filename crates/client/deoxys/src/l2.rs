@@ -129,7 +129,7 @@ async fn get_and_dispatch_block(
     let block =
         state.client.get_block(BlockId::Number(block_id)).await.map_err(|e| format!("failed to get block: {e}"))?;
     let block = super::convert::block(&block);
-
+    
     let mut lock;
     loop {
         lock = state.sync_state.lock().await;

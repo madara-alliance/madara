@@ -464,7 +464,7 @@ pub fn new_full(
 
             let command_sink = command_sink.unwrap().clone();
             tokio::spawn(async move {
-                mc_deoxys::sync(command_sink, block_sender, fetch_config, rpc_port).await;
+                mc_deoxys::sync(command_sink, block_sender, fetch_config, rpc_port, l1_url).await;
             });
 
             log::info!("Manual Seal Ready");
