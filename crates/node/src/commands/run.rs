@@ -73,27 +73,8 @@ impl NetworkType {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct L1Endpoint {
-    url: Url,
-}
-
-impl L1Endpoint {
-     pub fn new(raw_url: &str) -> StdResult<Self, String> {
-        let parsed_url = Url::parse(raw_url).map_err(|_| "Invalid URL format")?;
-        
-        Ok(Self {
-            url: parsed_url,
-        })
-    }
-
-    pub fn get_url(&self) -> &Url {
-        &self.url
-    }
-
-    fn from_str(s: &str) -> StdResult<Self, String> {
-        L1Endpoint::new(s)
-    }
+fn parse_url(s: &str) -> StdResult<Url, url::ParseError> {
+    s.parse()
 }
 
 #[derive(Clone, Debug, clap::Args)]
@@ -110,8 +91,8 @@ pub struct ExtendedRunCmd {
     pub da_layer: Option<DaLayer>,
 
     /// The L1 rpc endpoint url for state verification
-    #[clap(long, default_value = "https://alpha-mainnet.starknet.io")]
-    pub l1: L1Endpoint,
+    #[clap(long, value_parser = parse_url)]
+    pub l1_endpoint: Option<Url>,
 
     /// The network type to connect to.
     #[clap(long, short, default_value = "integration")]
@@ -167,7 +148,11 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
         let fetch_block_config = cli.run.network.block_fetch_config();
-        let l1_endpoint = L1Endpoint::new(cli.run.l1.as_str()).unwrap().url;
+        let l1_endpoint = if let Some(url) = cli.run.l1_endpoint {
+            url
+        } else {
+            return Err(sc_cli::Error::Input("Missing required --l1-endpoint argument".to_string()));
+        };
 
         service::new_full(
             config,

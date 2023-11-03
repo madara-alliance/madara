@@ -1,6 +1,6 @@
 //! Utility functions.
 
-/// Returns the block number of the last block synced by the node.
+/// Returns the block number of the last block synced by Substrate.
 pub async fn get_last_synced_block(rpc_port: u16) -> u64 {
     let client = reqwest::Client::new();
 

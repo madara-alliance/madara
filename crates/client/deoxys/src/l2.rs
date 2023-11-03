@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use reqwest::Url;
 use sp_core::H256;
+use starknet_api::block::{BlockNumber, BlockHash};
+use starknet_api::hash::StarkHash;
 use starknet_gateway::sequencer::models::BlockId;
 use starknet_gateway::SequencerGatewayProvider;
 use tokio::sync::mpsc::Sender;
@@ -72,6 +74,14 @@ impl SyncState {
     }
 }
 
+// 
+#[derive(Debug, Clone)]
+pub struct StarknetStateUpdate {
+    pub state_root: StarkHash,
+    pub block_number: BlockNumber,
+    pub block_hash: BlockHash,
+}
+
 /// The state that is shared between fetch workers.
 struct WorkerSharedState {
     /// The ID server.
@@ -120,6 +130,11 @@ async fn start_worker(state: Arc<WorkerSharedState>, mut command_sink: CommandSi
     }
 }
 
+/// Check state root integrity
+pub fn check_state_root(block: mp_block::Block) {
+    
+}
+
 /// Gets a block from the network and sends it to the other half of the channel.
 async fn get_and_dispatch_block(
     state: &WorkerSharedState,
@@ -129,6 +144,8 @@ async fn get_and_dispatch_block(
     let block =
         state.client.get_block(BlockId::Number(block_id)).await.map_err(|e| format!("failed to get block: {e}"))?;
     let block = super::convert::block(&block);
+
+    check_state_root(block.clone());
     
     let mut lock;
     loop {

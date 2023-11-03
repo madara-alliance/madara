@@ -70,11 +70,21 @@ impl EthereumClient {
             ],
             "id": 2
         });
-    
-        let response = self.call_ethereum(payload).await.unwrap();
-        let hex_str = response
-            .as_str()
-            .ok_or(Felt252WrapperError::InvalidCharacter)?;
+        
+        let response = match self.call_ethereum(payload).await {
+            Ok(response) => response,
+            Err(e) => {
+                return Err(Felt252WrapperError::InvalidCharacter)
+            }  
+        };
+        
+        let hex_str = match response.as_str() {
+            Some(hex) => hex,
+            None => return Err(Felt252WrapperError::InvalidCharacter),
+        };
+
+        // If the Ethereum node response includes the '0x' prefix, remove it before parsing.
+        let hex_str = hex_str.trim_start_matches("0x");
 
         Felt252Wrapper::from_hex_be(hex_str)
     }
@@ -86,73 +96,136 @@ impl EthereumClient {
     }
 
     pub async fn get_last_block_number(&self) -> Result<BlockNumber> {
-        let data = "0x666bd0be";
-        let block_number = self.get_generic_call(data).await;
-        match u64::try_from(block_number.unwrap()) {
+        let data = "0x35befa5d";
+        let block_number_result = self.get_generic_call(data).await;
+        let block_number = block_number_result?;
+
+        // Now we have a block number and can try to convert it
+        match u64::try_from(block_number) {
             Ok(val) => Ok(BlockNumber(val)),
             Err(_) => Err(Felt252WrapperError::FromArrayError.into()),
         }
     }
-
+    
     pub async fn get_last_block_hash(&self) -> Result<BlockHash> {
-        let data = "0xe55d82f2";
-        let block_hash = self.get_generic_call(data).await;
-        match Felt252Wrapper::try_from(block_hash.unwrap()) {
+        let data = "0x382d83e3";
+        
+        // Use `?` to propagate the error if `get_generic_call` results in an Err
+        let block_hash_result = self.get_generic_call(data).await;
+        let block_hash = block_hash_result?;
+        
+        // Now we have a block hash and can try to convert it
+        match Felt252Wrapper::try_from(block_hash) {
             Ok(val) => Ok(BlockHash(val.into())),
             Err(_) => Err(Felt252WrapperError::FromArrayError.into()),
         }
     }
 }
 
-/// Suscribes for Ethereum state updates and applies new values
 pub async fn sync(l1_url: Url) {
     let on_state_update = Arc::new(|state_update: EthereumStateUpdate| {
         log::info!("State updated: {:?}", state_update);
     });
-
-    let client = EthereumClient::new(l1_url, Some(on_state_update)).unwrap();
-    let current_state = Arc::new(Mutex::new(EthereumStateUpdate {
-        state_root: client.get_last_state_root().await.unwrap(),
-        block_number: client.get_last_block_number().await.unwrap(),
-        block_hash: client.get_last_block_hash().await.unwrap(),
-    }));
-
-    log::info!("Started L1 verification on block: {:?}", client.get_last_block_number().await.unwrap());
     
-    loop {
-        let current_state = current_state.clone();
-        let client = client.clone();
-
-        tokio::spawn(async move {
-            let mut state_guard = current_state.lock().await;
-            let last_block_number = match client.get_last_block_number().await {
-                Ok(number) => number,
-                Err(e) => {
-                    log::error!("Error fetching last block number: {}", e);
-                    return;
-                }
-            };
-
-            if last_block_number != state_guard.block_number {
-                let state_root = client.get_last_state_root().await.unwrap_or_default();
-                let block_hash = client.get_last_block_hash().await.unwrap_or_default();
-
-                let new_state = EthereumStateUpdate {
-                    state_root,
-                    block_number: last_block_number,
-                    block_hash,
-                };
-
-                log::info!("New state root detected on L1: {:?}", new_state.state_root);
-
-                if let Some(callback) = &client.on_state_update {
-                    callback(new_state.clone());
-                }
-
-                *state_guard = new_state;
+    // Initialize the EthereumClient
+    let client = match EthereumClient::new(l1_url, Some(on_state_update)) {
+        Ok(client) => client,
+        Err(e) => {
+            log::error!("Failed to create EthereumClient: {}", e);
+            return;
+        }
+    };
+    
+    // Get the initial state
+    let initial_state = EthereumStateUpdate {
+        state_root: match client.get_last_state_root().await {
+            Ok(root) => root,
+            Err(e) => {
+                log::error!("Failed to get last state root: {}", e);
+                return;
             }
-        }).await.unwrap();
+        },
+        block_number: match client.get_last_block_number().await {
+            Ok(number) => number,
+            Err(e) => {
+                log::error!("Failed to get last block number: {}", e);
+                return;
+            }
+        },
+        block_hash: match client.get_last_block_hash().await {
+            Ok(hash) => hash,
+            Err(e) => {
+                log::error!("Failed to get last block hash: {}", e);
+                return;
+            }
+        },
+    };
+    
+    log::info!("🚀 Subscribed to L1 state verification on block {}", initial_state.block_number.0);
 
-        sleep(SLEEP_DURATION).await;
+    // Wrap the initial state in an Arc<Mutex<>> for thread-safe sharing and mutation
+    let shared_state = Arc::new(Mutex::new(initial_state));
+    
+    // Determine the number of worker tasks to spawn
+    let num_workers = 4; // Adjust this value as needed
+    
+    for _ in 0..num_workers {
+        // Clone the shared state and client for each worker
+        let state = shared_state.clone();
+        let client_cloned = client.clone();
+        
+        // Spawn a new worker task
+        tokio::spawn(async move {
+            loop {
+                let mut state_guard = state.lock().await;
+                
+                match client_cloned.get_last_block_number().await {
+                    Ok(last_block_number) if last_block_number != state_guard.block_number => {
+                        let state_root = match client_cloned.get_last_state_root().await {
+                            Ok(root) => root,
+                            Err(e) => {
+                                log::error!("Error fetching last state root: {}", e);
+                                continue; // Retry on error
+                            }
+                        };
+                        
+                        let block_hash = match client_cloned.get_last_block_hash().await {
+                            Ok(hash) => hash,
+                            Err(e) => {
+                                log::error!("Error fetching last block hash: {}", e);
+                                continue; // Retry on error
+                            }
+                        };
+                        
+                        let new_state = EthereumStateUpdate {
+                            state_root,
+                            block_number: last_block_number,
+                            block_hash,
+                        };
+                        
+                        log::info!("🚀 New state root detected on L1: {:?}. Update performed", new_state.state_root.0);
+                        
+                        if let Some(callback) = &client_cloned.on_state_update {
+                            callback(new_state.clone());
+                        }
+                        
+                        *state_guard = new_state;
+                    },
+                    Ok(_) => {} // No new block, do nothing
+                    Err(e) => {
+                        log::error!("Error fetching last block number: {}", e);
+                    }
+                };
+                
+                // Sleep for a while before checking again
+                sleep(SLEEP_DURATION).await;
+            }
+        });
+    }
+    
+    // Keep the main task alive indefinitely
+    // You might want to add some termination condition or signal handling here
+    loop {
+        sleep(Duration::from_secs(60)).await;
     }
 }

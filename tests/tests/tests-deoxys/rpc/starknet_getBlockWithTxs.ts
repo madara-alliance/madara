@@ -1,19 +1,18 @@
-import axios from "axios";
-import { performance } from "perf_hooks";
-import * as dotenv from "dotenv";
+import axios from 'axios';
+import * as dotenv from 'dotenv';
 dotenv.config();
 
 const REMOTE_RPC_URL = process.env.REMOTE_RPC;
 const LOCAL_RPC_URL = process.env.DEOXYS_RPC;
-const BLOCK_NUMBER = 50000;
-const START_BLOCK = 77000;
-const END_BLOCK = 78000;
+const START_BLOCK = 371839;
+const END_BLOCK = 372000;
+const MAX_CONCURRENT_REQUESTS = 10;
 
-const requestDataForMethod = (method: string, params: any[]) => ({
+const requestDataForMethod = (method, params) => ({
   id: 1,
-  jsonrpc: "2.0",
-  method: method,
-  params: params,
+  jsonrpc: '2.0',
+  method,
+  params,
 });
 
 const compareObjects = (obj1: any, obj2: any, path: string = ""): string => {
@@ -48,51 +47,49 @@ const compareObjects = (obj1: any, obj2: any, path: string = ""): string => {
   return differences;
 };
 
-async function benchmarkMethod(method: string, params: any[]): Promise<string> {
-  console.log(`\x1b[34mBenchmarking method: ${method}\x1b[0m for block_number: ${params[0].block_number}`);
+async function benchmarkMethod(method, blockNumber) {
+  console.log(`\x1b[34mBenchmarking method: ${method}\x1b[0m for block_number: ${blockNumber}`);
 
+  const params = [{ block_number: blockNumber }];
   const alchemyResponse = await axios.post(REMOTE_RPC_URL, requestDataForMethod(method, params));
   const localResponse = await axios.post(LOCAL_RPC_URL, requestDataForMethod(method, params));
 
   const differences = compareObjects(alchemyResponse.data, localResponse.data);
 
-  if (differences.includes("\x1b[31mDIFFERENCE")) {
-      console.log(`\x1b[31mBlock ${params[0].block_number} has differences.\x1b[0m`);
+  if (differences.includes('\x1b[31mDIFFERENCE')) {
+    console.log(`\x1b[31mBlock ${blockNumber} has differences.\x1b[0m`);
   } else {
-      console.log(`\x1b[32mBlock ${params[0].block_number} matches.\x1b[0m`);
+    console.log(`\x1b[32mBlock ${blockNumber} matches.\x1b[0m`);
   }
 
-  return differences;
+  return { blockNumber, differences };
 }
 
 async function checkDifferencesInBlocks() {
-  const blocksWithDifferences: number[] = [];
+  let blocksWithDifferences = [];
 
-  for (let blockNumber = START_BLOCK; blockNumber < END_BLOCK; blockNumber++) {
-    const differences = await benchmarkMethod("starknet_getBlockWithTxs", [
-      { block_number: blockNumber },
-    ]);
-
-    if (differences.includes("\x1b[31mDIFFERENCE")) {
-      blocksWithDifferences.push(blockNumber);
+  for (let blockNumber = START_BLOCK; blockNumber < END_BLOCK; blockNumber += MAX_CONCURRENT_REQUESTS) {
+    const promises = [];
+    for (let i = 0; i < MAX_CONCURRENT_REQUESTS && blockNumber + i < END_BLOCK; i++) {
+      promises.push(benchmarkMethod('starknet_getBlockWithTxs', blockNumber + i));
     }
+
+    const results = await Promise.all(promises);
+    results.forEach(result => {
+      if (result.differences.includes('\x1b[31mDIFFERENCE')) {
+        blocksWithDifferences.push(result.blockNumber);
+      }
+    });
   }
 
   if (blocksWithDifferences.length === 0) {
-    console.log("\x1b[32mAll blocks match!\x1b[0m");
+    console.log('\x1b[32mAll blocks match!\x1b[0m');
   } else {
-    console.log("\x1b[31mDifferences found in blocks:\x1b[0m", JSON.stringify(blocksWithDifferences));
+    console.log('\x1b[31mDifferences found in blocks:\x1b[0m', JSON.stringify(blocksWithDifferences));
   }
 }
 
 (async () => {
-  // Single block test
-  const singleBlockDifferences = await benchmarkMethod(
-    "starknet_getBlockWithTxs",
-    [{ block_number: BLOCK_NUMBER }],
-  );
-  console.log(singleBlockDifferences);
-
-  // Loop through 1k blocks
+  // Loop through the blocks in batches
   await checkDifferencesInBlocks();
 })();
