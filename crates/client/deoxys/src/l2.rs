@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use mp_commitments::{calculate_class_commitment_leaf_hash, calculate_class_commitment_tree_root_hash, calculate_commitments, calculate_state_commitment, calculate_contract_state_hash, StateCommitment};
 use reqwest::Url;
 use sp_core::H256;
 use starknet_api::block::{BlockNumber, BlockHash};
@@ -13,7 +14,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
 use crate::CommandSink;
-use crate::l1::StateCommitment;
 
 /// The configuration of the worker responsible for fetching new blocks from the feeder.
 pub struct BlockFetchConfig {
@@ -133,7 +133,10 @@ async fn start_worker(state: Arc<WorkerSharedState>, mut command_sink: CommandSi
 
 /// Check state integrity
 pub fn state_commitment(block: mp_block::Block) -> StateCommitment {
-    
+    let classes_tree_root = calculate_class_commitment_tree_root_hash(1);
+    let contracts_tree_root = calculate_contract_state_hash(1, 2, 3);
+
+    calculate_state_commitment(contracts_tree_root, classes_tree_root)
 }
 
 /// Gets a block from the network and sends it to the other half of the channel.
