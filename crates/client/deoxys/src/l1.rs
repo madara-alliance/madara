@@ -1,10 +1,9 @@
 //! Contains the necessaries to perform an L1 verification of the state
 
 use std::{sync::Arc, time::Duration};
+use mp_commitments::StateCommitment;
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use starknet_api::block::{BlockNumber, BlockHash};
-use starknet_api::hash::StarkHash;
-use starknet_ff::FieldElement;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use reqwest::Url;
@@ -14,9 +13,6 @@ use anyhow::Result;
 const HTTP_OK: u16 = 200;
 const SLEEP_DURATION: Duration = Duration::from_secs(1800);
 const TO_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
-
-#[derive(Default, Debug, Clone)]
-pub struct StateCommitment(pub Felt252Wrapper);
 
 #[derive(Debug, Clone)]
 pub struct EthereumStateUpdate {
@@ -92,7 +88,7 @@ impl EthereumClient {
     pub async fn get_last_state_root(&self) -> Result<StateCommitment> {
         let data = "0x9588eca2";
         let state_commitment = self.get_generic_call(data).await?;
-        Ok(StateCommitment(state_commitment))
+        Ok(state_commitment.into())
     }
 
     pub async fn get_last_block_number(&self) -> Result<BlockNumber> {

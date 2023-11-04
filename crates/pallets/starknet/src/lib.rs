@@ -188,6 +188,7 @@ pub mod pallet {
 
         /// The block is being initialized. Implement to have something happen.
         fn on_initialize(_: T::BlockNumber) -> Weight {
+            frame_support::log::info!("CA PASSE!");
             // log!(info, "{:?}", Decode::decode(&mut frame_system::Pallet::<T>::digest().logs()[0]));
             // if frame_system::Pallet::<T>::digest().logs().len() == 1 {
 

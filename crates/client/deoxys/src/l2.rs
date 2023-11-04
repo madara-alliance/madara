@@ -13,6 +13,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
 use crate::CommandSink;
+use crate::l1::StateCommitment;
 
 /// The configuration of the worker responsible for fetching new blocks from the feeder.
 pub struct BlockFetchConfig {
@@ -130,12 +131,13 @@ async fn start_worker(state: Arc<WorkerSharedState>, mut command_sink: CommandSi
     }
 }
 
-/// Check state root integrity
-pub fn check_state_root(block: mp_block::Block) {
+/// Check state integrity
+pub fn state_commitment(block: mp_block::Block) -> StateCommitment {
     
 }
 
 /// Gets a block from the network and sends it to the other half of the channel.
+/// Stops if state commitment doesn't match.
 async fn get_and_dispatch_block(
     state: &WorkerSharedState,
     block_id: u64,
@@ -145,8 +147,15 @@ async fn get_and_dispatch_block(
         state.client.get_block(BlockId::Number(block_id)).await.map_err(|e| format!("failed to get block: {e}"))?;
     let block = super::convert::block(&block);
 
-    check_state_root(block.clone());
+    let state_commitment = state_commitment(block.clone());
     
+    if state_commitment != block.header().global_state_root {
+        return Err("State commitment doesn't match".to_string());
+    } else {
+        // TODO: update StarknetStateUpdate
+        log::info!("State commitment matches");
+    }
+
     let mut lock;
     loop {
         lock = state.sync_state.lock().await;
