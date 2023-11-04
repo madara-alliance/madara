@@ -22,6 +22,8 @@ pub struct BlockFetchConfig {
     pub chain_id: starknet_ff::FieldElement,
     /// The number of tasks spawned to fetch blocks.
     pub workers: u32,
+    /// Whether to play a sound when a new block is fetched.
+    pub sound: bool,
 }
 
 /// Used to determine which Ids are required to be fetched.
@@ -166,5 +168,11 @@ async fn create_block(command_sink: &mut CommandSink, _parent_hash: Option<H256>
         .await
         .map_err(|err| format!("failed to seal block: {err}"))?
         .map_err(|err| format!("failed to seal block: {err}"))?;
+
+    #[cfg(feature = "m")]
+    {
+        super::m::play_note(create_block_info.hash.to_low_u64_ne());
+    }
+
     Ok(create_block_info.hash)
 }
