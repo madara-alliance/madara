@@ -118,13 +118,36 @@ impl EthereumClient {
     }
 }
 
+async fn get_initial_state(client: &EthereumClient) -> Result<EthereumStateUpdate, ()> {
+    let state_root = client.get_last_state_root().await.map_err(|e| {
+        log::error!("Failed to get last state root: {}", e);
+        ()
+    })?;
+    
+    let block_number = client.get_last_block_number().await.map_err(|e| {
+        log::error!("Failed to get last block number: {}", e);
+        ()
+    })?;
+    
+    let block_hash = client.get_last_block_hash().await.map_err(|e| {
+        log::error!("Failed to get last block hash: {}", e);
+        ()
+    })?;
+    
+    Ok(EthereumStateUpdate {
+        state_root,
+        block_number,
+        block_hash,
+    })
+}
+
 pub async fn sync(l1_url: Url) {
     let on_state_update = Arc::new(|state_update: EthereumStateUpdate| {
         log::info!("State updated: {:?}", state_update);
     });
     
     // Initialize the EthereumClient
-    let client = match EthereumClient::new(l1_url, Some(on_state_update)) {
+    let client = match EthereumClient::new(l1_url, Some(on_state_update.clone())) {
         Ok(client) => client,
         Err(e) => {
             log::error!("Failed to create EthereumClient: {}", e);
@@ -133,94 +156,58 @@ pub async fn sync(l1_url: Url) {
     };
     
     // Get the initial state
-    let initial_state = EthereumStateUpdate {
-        state_root: match client.get_last_state_root().await {
-            Ok(root) => root,
-            Err(e) => {
-                log::error!("Failed to get last state root: {}", e);
-                return;
-            }
-        },
-        block_number: match client.get_last_block_number().await {
-            Ok(number) => number,
-            Err(e) => {
-                log::error!("Failed to get last block number: {}", e);
-                return;
-            }
-        },
-        block_hash: match client.get_last_block_hash().await {
-            Ok(hash) => hash,
-            Err(e) => {
-                log::error!("Failed to get last block hash: {}", e);
-                return;
-            }
-        },
+    let initial_state = match get_initial_state(&client).await {
+        Ok(state) => state,
+        Err(_) => return,
     };
     
-    log::info!("🚀 Subscribed to L1 state verification on block {}", initial_state.block_number.0);
+    log::info!("🚀 Subscribed to L1 state verification on block {}", initial_state.block_number);
 
-    // Wrap the initial state in an Arc<Mutex<>> for thread-safe sharing and mutation
-    let shared_state = Arc::new(Mutex::new(initial_state));
-    
-    // Determine the number of worker tasks to spawn
-    let num_workers = 4; // Adjust this value as needed
-    
-    for _ in 0..num_workers {
-        // Clone the shared state and client for each worker
-        let state = shared_state.clone();
-        let client_cloned = client.clone();
-        
-        // Spawn a new worker task
-        tokio::spawn(async move {
-            loop {
-                let mut state_guard = state.lock().await;
-                
-                match client_cloned.get_last_block_number().await {
-                    Ok(last_block_number) if last_block_number != state_guard.block_number => {
-                        let state_root = match client_cloned.get_last_state_root().await {
-                            Ok(root) => root,
-                            Err(e) => {
-                                log::error!("Error fetching last state root: {}", e);
-                                continue; // Retry on error
-                            }
-                        };
-                        
-                        let block_hash = match client_cloned.get_last_block_hash().await {
-                            Ok(hash) => hash,
-                            Err(e) => {
-                                log::error!("Error fetching last block hash: {}", e);
-                                continue; // Retry on error
-                            }
-                        };
-                        
-                        let new_state = EthereumStateUpdate {
-                            state_root,
-                            block_number: last_block_number,
-                            block_hash,
-                        };
-                        
-                        log::info!("🚀 New state root detected on L1: {:?}. Update performed", new_state.state_root.0);
-                        
-                        if let Some(callback) = &client_cloned.on_state_update {
-                            callback(new_state.clone());
+    // Single worker to poll for updates
+    tokio::spawn(async move {
+        let mut state = initial_state;
+        loop {
+            match client.get_last_block_number().await {
+                Ok(last_block_number) if last_block_number != state.block_number => {
+                    let state_root = match client.get_last_state_root().await {
+                        Ok(root) => root,
+                        Err(e) => {
+                            log::error!("Error fetching last state root: {}", e);
+                            continue; // Retry on error
                         }
-                        
-                        *state_guard = new_state;
-                    },
-                    Ok(_) => {} // No new block, do nothing
-                    Err(e) => {
-                        log::error!("Error fetching last block number: {}", e);
-                    }
-                };
-                
-                // Sleep for a while before checking again
-                sleep(SLEEP_DURATION).await;
-            }
-        });
-    }
-    
-    // Keep the main task alive indefinitely
-    // You might want to add some termination condition or signal handling here
+                    };
+
+                    let block_hash = match client.get_last_block_hash().await {
+                        Ok(hash) => hash,
+                        Err(e) => {
+                            log::error!("Error fetching last block hash: {}", e);
+                            continue; // Retry on error
+                        }
+                    };
+
+                    let new_state = EthereumStateUpdate {
+                        state_root,
+                        block_number: last_block_number,
+                        block_hash,
+                    };
+
+                    log::info!("🚀 New state root detected on L1: {:?}. Update performed", new_state.state_root);
+
+                    on_state_update(new_state.clone());
+                    
+                    state = new_state;
+                },
+                Ok(_) => {} // No new block, do nothing
+                Err(e) => {
+                    log::error!("Error fetching last block number: {}", e);
+                }
+            };
+
+            // Sleep for a while before checking again
+            sleep(SLEEP_DURATION).await;
+        }
+    });
+
     loop {
         sleep(Duration::from_secs(60)).await;
     }

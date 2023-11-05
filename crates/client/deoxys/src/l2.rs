@@ -140,18 +140,6 @@ async fn get_and_dispatch_block(
         state.client.get_block(BlockId::Number(block_id)).await.map_err(|e| format!("failed to get block: {e}"))?;
     let block = super::convert::block(&block);
 
-    // let state_commitment = state_commitment(block.clone());
-    
-    // // Check state commitment integrity
-    // if state_commitment != Felt252Wrapper::try_from(block.header().global_state_root).unwrap() {
-    //     // TODO: exit sync process
-    //     return Err("State commitment doesn't match".to_string());
-    // } else {
-    //     // TODO: update StarknetStateUpdate
-    //     // then verify if block matches the one in ethereum state
-    //     log::info!("State commitment matches");
-    // }
-
     let mut lock;
     loop {
         lock = state.sync_state.lock().await;

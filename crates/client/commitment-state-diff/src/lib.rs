@@ -211,7 +211,7 @@ pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, Commit
     }
 }
 
-/// Get state commitment from a CommitmentStateDiff
+/// Get L2 state commitment of a Block from a CommitmentStateDiff
 pub async fn state_commitment<H: HasherT>(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
     while let Some((block_hash, csd)) = rx.next().await {
         let contracts_tree_root = {
