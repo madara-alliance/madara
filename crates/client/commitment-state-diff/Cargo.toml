@@ -16,6 +16,8 @@ sp-runtime = { workspace = true, default-features = true }
 mp-digest-log = { workspace = true, default-features = true }
 mp-hashers = { workspace = true, default-features = true }
 mp-storage = { workspace = true, default-features = true }
+mp-felt = { workspace = true, default-features = true }
+mp-commitments = { workspace = true, default-features = true }
 pallet-starknet = { workspace = true }
 
 # Starknet

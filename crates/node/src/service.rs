@@ -13,7 +13,7 @@ use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_block_proposer::ProposerFactory;
-use mc_commitment_state_diff::{log_commitment_state_diff, CommitmentStateDiffWorker};
+use mc_commitment_state_diff::{log_commitment_state_diff, CommitmentStateDiffWorker, state_commitment};
 use mc_data_availability::avail::config::AvailConfig;
 use mc_data_availability::avail::AvailClient;
 use mc_data_availability::celestia::config::CelestiaConfig;
@@ -27,6 +27,7 @@ use mc_transaction_pool::FullPool;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
 };
+use mp_hashers::pedersen::PedersenHasher;
 use parity_scale_codec::Encode;
 use prometheus_endpoint::Registry;
 use sc_client_api::{Backend, BlockBackend, BlockchainEvents, HeaderBackend};
@@ -408,7 +409,7 @@ pub fn new_full(
     task_manager.spawn_essential_handle().spawn(
         "commitment-state-logger",
         Some("madara"),
-        log_commitment_state_diff(commitment_state_diff_rx),
+        state_commitment::<PedersenHasher>(commitment_state_diff_rx),
     );
 
     // initialize data availability worker

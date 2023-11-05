@@ -98,6 +98,7 @@ starknet_api = "0.4.1"
 mp-block = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-felt = { workspace = true }
+mp-hashers = { workspace = true }
 mp-sequencer-address = { workspace = true, features = ["client"] }
 
 # CLI-specific dependencies

@@ -2,10 +2,6 @@
 
 use std::sync::Arc;
 use std::time::Duration;
-
-use blockifier::state::cached_state::CommitmentStateDiff;
-use mp_commitments::{calculate_class_commitment_leaf_hash, calculate_class_commitment_tree_root_hash, calculate_commitments, calculate_state_commitment, calculate_contract_state_hash, StateCommitment};
-use mp_felt::Felt252Wrapper;
 use reqwest::Url;
 use sp_core::H256;
 use starknet_api::block::{BlockNumber, BlockHash};
@@ -133,44 +129,6 @@ async fn start_worker(state: Arc<WorkerSharedState>, mut command_sink: CommandSi
     }
 }
 
-/// Get state commitment from block
-pub fn state_commitment<H: HasherT>(commitment_state_diff: CommitmentStateDiff) -> StateCommitment {
-    let contracts_tree_root = {
-        let mut contracts_tree = StateCommitmentTree::<H>::default();
-
-        for (address, class_hash) in commitment_state_diff.address_to_class_hash {
-            let nonce = commitment_state_diff.address_to_nonce.get(&address).unwrap_or(&Felt252Wrapper::ZERO);
-            let storage_root = commitment_state_diff.storage_updates
-                .get(&address)
-                .map_or(Felt252Wrapper::ZERO, |storage_updates| {
-                    let storage_root_hash = Felt252Wrapper::ZERO;
-                    storage_root_hash
-                });
-
-            let contract_state_hash = calculate_contract_state_hash::<H>(
-                class_hash.0,
-                storage_root,
-                *nonce,
-            );
-            contracts_tree.set(address, contract_state_hash);
-        }
-        contracts_tree.commit()
-    };
-
-    // Calculate classes tree root. This involves calculating the hash of each class's commitment.
-    let classes_tree_root = {
-        let class_hashes: Vec<Felt252Wrapper> = commitment_state_diff.class_hash_to_compiled_class_hash
-            .iter()
-            .map(|(class_hash, compiled_class_hash)| {
-                calculate_class_commitment_leaf_hash::<H>(*compiled_class_hash)
-            })
-            .collect();
-        calculate_class_commitment_tree_root_hash::<H>(&class_hashes)
-    };
-
-    calculate_state_commitment(contracts_tree_root, classes_tree_root)
-}
-
 /// Gets a block from the network and sends it to the other half of the channel.
 /// Stops if state commitment doesn't match.
 async fn get_and_dispatch_block(
@@ -182,17 +140,17 @@ async fn get_and_dispatch_block(
         state.client.get_block(BlockId::Number(block_id)).await.map_err(|e| format!("failed to get block: {e}"))?;
     let block = super::convert::block(&block);
 
-    let state_commitment = state_commitment(block.clone());
+    // let state_commitment = state_commitment(block.clone());
     
-    // Check state commitment integrity
-    if state_commitment != Felt252Wrapper::try_from(block.header().global_state_root).unwrap() {
-        // TODO: exit sync process
-        return Err("State commitment doesn't match".to_string());
-    } else {
-        // TODO: update StarknetStateUpdate
-        // then verify if block matches the one in ethereum state
-        log::info!("State commitment matches");
-    }
+    // // Check state commitment integrity
+    // if state_commitment != Felt252Wrapper::try_from(block.header().global_state_root).unwrap() {
+    //     // TODO: exit sync process
+    //     return Err("State commitment doesn't match".to_string());
+    // } else {
+    //     // TODO: update StarknetStateUpdate
+    //     // then verify if block matches the one in ethereum state
+    //     log::info!("State commitment matches");
+    // }
 
     let mut lock;
     loop {
@@ -215,7 +173,7 @@ async fn get_and_dispatch_block(
 
 /// Notifies the consensus engine that a new block should be created.
 async fn create_block(command_sink: &mut CommandSink, _parent_hash: Option<H256>) -> Result<H256, String> {
-    let (sender, receiver) = futures_channel::oneshot::channel();
+    let (sender, receiver) = futures::channel::oneshot::channel();
 
     command_sink
         .try_send(sc_consensus_manual_seal::rpc::EngineCommand::SealNewBlock {

@@ -5,6 +5,8 @@ use std::task::Poll;
 
 use blockifier::state::cached_state::CommitmentStateDiff;
 use futures::channel::mpsc;
+use mp_commitments::{calculate_class_commitment_leaf_hash, calculate_class_commitment_tree_root_hash, calculate_commitments, calculate_state_commitment, calculate_contract_state_hash, StateCommitment, StateCommitmentTree};
+use mp_felt::Felt252Wrapper;
 use futures::{Stream, StreamExt};
 use indexmap::IndexMap;
 use mp_hashers::HasherT;
@@ -206,5 +208,45 @@ where
 pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
     while let Some((block_hash, csd)) = rx.next().await {
         log::info!("Received state diff for block {block_hash}: {csd:?}");
+    }
+}
+
+/// Get state commitment from a CommitmentStateDiff
+pub async fn state_commitment<H: HasherT>(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
+    while let Some((block_hash, csd)) = rx.next().await {
+        let contracts_tree_root = {
+            let mut contracts_tree = StateCommitmentTree::<H>::default();
+
+            for (address, class_hash) in csd.address_to_class_hash {
+                let nonce = csd.address_to_nonce.get(&address).unwrap();
+                let storage_root = csd.storage_updates
+                    .get(&address)
+                    .map_or(Felt252Wrapper::ZERO, |storage_updates| {
+                        let storage_root_hash = Felt252Wrapper::ZERO;
+                        storage_root_hash
+                    });
+
+                let contract_state_hash = calculate_contract_state_hash::<H>(
+                    class_hash.into(),
+                    storage_root.into(),
+                    (*nonce).into(),
+                );
+                contracts_tree.set(address.into(), contract_state_hash);
+            }
+            contracts_tree.commit()
+        };
+
+        let classes_tree_root = {
+            let class_hashes: Vec<Felt252Wrapper> = csd.class_hash_to_compiled_class_hash
+                .iter()
+                .map(|(class_hash, compiled_class_hash)| {
+                    calculate_class_commitment_leaf_hash::<H>((*compiled_class_hash).into())
+                })
+                .collect();
+            calculate_class_commitment_tree_root_hash::<H>(&class_hashes)
+        };
+
+        let state_root = calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root);
+        println!("Starknet state_root {:?} for block hash {:?}", state_root, block_hash);
     }
 }
