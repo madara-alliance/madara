@@ -66,6 +66,9 @@ lto = true           # Enables Link Time Optimization, enabling more aggressive 
 opt-level = 3        # Optimize for speed regardless of binary size or compile time
 rpath = false        # Disables adding rpath to the binary
 
+[profile.dev]
+incremental = true
+
 [workspace.package]
 authors = ["Abdelhamid Bakhta <@abdelhamidbakhta>"]
 edition = "2021"
@@ -223,7 +226,7 @@ futures-timer = { version = "3.0.2", default-features = false }
 md5 = { version = "0.7.0", default-features = false }
 reqwest = { version = "0.11.22", default-features = false }
 serde = { version = "1.0.190", default-features = false }
-serde_json = { version = "1.0.107", default-features = false }
+serde_json = { version = "1.0.108", default-features = false }
 serde_with = { version = "2.3.3", default-features = false }
 bitvec = { version = "1", default-features = false }
 thiserror = "1.0.50"
