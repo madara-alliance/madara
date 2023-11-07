@@ -3,7 +3,6 @@ name = "mc-deoxys"
 version = "0.1.0"
 description = "Deoxys crate for Madara"
 authors = [
-    "Amine Mrad <https://github.com/sparqet>",
     "Antiyro <https://github.com/antiyro>",
 ]
 homepage = "https://github.com/KasarLabs/deoxys"
@@ -26,6 +25,7 @@ serde_json = "1"
 futures-channel.workspace = true
 
 rodio = { version = "0.17", optional = true }
+rand = { version = "0.8.5" }
 
 blockifier = { workspace = true, default-features = false, features = [
     "testing",

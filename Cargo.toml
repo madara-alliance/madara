@@ -55,6 +55,7 @@ default-members = [
 
 [profile.dev]
 panic = "abort"
+incremental = true
 
 [profile.release]
 panic = "unwind"
@@ -65,9 +66,6 @@ codegen-units = 1    # Setting this to 1 allows for more optimizations at the co
 lto = true           # Enables Link Time Optimization, enabling more aggressive optimizations across the entire codebase
 opt-level = 3        # Optimize for speed regardless of binary size or compile time
 rpath = false        # Disables adding rpath to the binary
-
-[profile.dev]
-incremental = true
 
 [workspace.package]
 authors = ["Abdelhamid Bakhta <@abdelhamidbakhta>"]

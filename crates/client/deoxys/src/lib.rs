@@ -2,7 +2,7 @@
 
 mod convert;
 mod fetch;
-mod utility;
+pub mod utility;
 #[cfg(feature = "m")]
 mod m;
 
@@ -17,7 +17,7 @@ pub async fn fetch_block(command_sink: CommandSink, sender: tokio::sync::mpsc::S
             m::init();
         }
     }
-    
+
     let first_block = utility::get_last_synced_block(rpc_port).await + 1;
     fetch::fetch_blocks(command_sink, sender, fetch_config, first_block).await;
 }

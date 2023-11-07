@@ -68,8 +68,6 @@ pub fn development_config(sealing: SealingMode, base_path: BasePath) -> Result<D
         move || {
             let genesis_loader = load_genesis(base_path.config_dir(chain_id));
 
-            // Logging the development account
-            print_development_accounts(&genesis_loader);
 
             DevGenesisExt {
                 genesis_config: testnet_genesis(

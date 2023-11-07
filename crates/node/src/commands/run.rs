@@ -177,7 +177,10 @@ fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
     cmd.base.rpc_external = true;
     cmd.base.rpc_methods = RpcMethods::Unsafe;
 
-    cmd.base.name = Some("deoxys".to_string());
+    cmd.base.name = Some(tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(mc_deoxys::utility::get_random_pokemon_name())
+        .unwrap());
     cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://deoxys.kasar.io/submit/".to_string(), 0)];
     cmd.sealing = Some(Sealing::Manual);
     cmd.cache = true;

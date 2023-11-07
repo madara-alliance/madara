@@ -6988,6 +6988,7 @@ dependencies = [
  "mp-hashers",
  "mp-transactions",
  "pallet-starknet",
+ "rand 0.8.5",
  "reqwest",
  "rodio",
  "sc-consensus-manual-seal",
