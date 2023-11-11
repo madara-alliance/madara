@@ -11,6 +11,9 @@ sc-client-api = { workspace = true }
 sp-api = { workspace = true, default-features = true }
 sp-blockchain = { workspace = true }
 sp-runtime = { workspace = true, default-features = true }
+parity-scale-codec = { workspace = true, features = [
+  "derive",
+] }
 
 # Madara
 mp-digest-log = { workspace = true, default-features = true }
@@ -26,6 +29,7 @@ starknet_api = { workspace = true, default-features = true }
 
 # Async
 futures = { workspace = true, default-features = true }
+tokio = { workspace = true, default-features = true }
 
 # Others
 indexmap = { workspace = true }

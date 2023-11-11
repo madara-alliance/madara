@@ -12,22 +12,30 @@ use indexmap::IndexMap;
 use mp_hashers::HasherT;
 use mp_storage::{SN_COMPILED_CLASS_HASH_PREFIX, SN_CONTRACT_CLASS_HASH_PREFIX, SN_NONCE_PREFIX, SN_STORAGE_PREFIX};
 use pallet_starknet::runtime_api::StarknetRuntimeApi;
+use parity_scale_codec::Encode;
 use sc_client_api::client::BlockchainEvents;
 use sc_client_api::{StorageEventStream, StorageNotification};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::{Block as BlockT, Header};
 use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
-use starknet_api::block::BlockHash;
+use starknet_api::block::BlockNumber;
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey as StarknetStorageKey;
 use thiserror::Error;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+pub struct CommitmentStateDiffWrapper {
+    pub block_number: BlockNumber,
+    pub csd: CommitmentStateDiff,
+}
+
 pub struct CommitmentStateDiffWorker<B: BlockT, C, H> {
     client: Arc<C>,
     storage_event_stream: StorageEventStream<B::Hash>,
-    tx: mpsc::Sender<(BlockHash, CommitmentStateDiff)>,
-    msg: Option<(BlockHash, CommitmentStateDiff)>,
+    tx: mpsc::Sender<CommitmentStateDiffWrapper>,
+    msg: Option<CommitmentStateDiffWrapper>,
     phantom: PhantomData<H>,
 }
 
@@ -35,7 +43,7 @@ impl<B: BlockT, C, H> CommitmentStateDiffWorker<B, C, H>
 where
     C: BlockchainEvents<B>,
 {
-    pub fn new(client: Arc<C>, tx: mpsc::Sender<(BlockHash, CommitmentStateDiff)>) -> Self {
+    pub fn new(client: Arc<C>, tx: mpsc::Sender<CommitmentStateDiffWrapper>) -> Self {
         let storage_event_stream = client
             .storage_changes_notification_stream(None, None)
             .expect("the node storage changes notification stream should be up and running");
@@ -126,18 +134,18 @@ enum BuildCommitmentStateDiffError {
 fn build_commitment_state_diff<B: BlockT, C, H>(
     client: Arc<C>,
     storage_notification: StorageNotification<B::Hash>,
-) -> Result<(BlockHash, CommitmentStateDiff), BuildCommitmentStateDiffError>
+) -> Result<CommitmentStateDiffWrapper, BuildCommitmentStateDiffError>
 where
     C: ProvideRuntimeApi<B>,
     C::Api: StarknetRuntimeApi<B>,
     C: HeaderBackend<B>,
     H: HasherT,
 {
-    let starknet_block_hash = {
+    let starknet_block_number: BlockNumber = {
         let header = client.header(storage_notification.block)?.ok_or(BuildCommitmentStateDiffError::BlockNotFound)?;
         let digest = header.digest();
         let block = mp_digest_log::find_starknet_block(digest)?;
-        block.header().hash::<H>().into()
+        BlockNumber(block.header().block_number)
     };
 
     let mut commitment_state_diff = CommitmentStateDiff {
@@ -202,24 +210,34 @@ where
         }
     }
 
-    Ok((starknet_block_hash, commitment_state_diff))
+    Ok(CommitmentStateDiffWrapper{block_number: starknet_block_number, csd: commitment_state_diff})
 }
 
-pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
+pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockNumber, CommitmentStateDiff)>) {
     while let Some((block_hash, csd)) = rx.next().await {
-        log::info!("Received state diff for block {block_hash}: {csd:?}");
+        log::info!("received state diff for block {block_hash}: {csd:?}");
+    }
+}
+
+pub async fn send_commitment_state_diff(
+    csd_sender: tokio::sync::Mutex<tokio::sync::mpsc::Sender<CommitmentStateDiffWrapper>>,
+    mut rx: mpsc::Receiver<CommitmentStateDiffWrapper>
+) {
+    while let Some(csd) = rx.next().await {
+        let sender_lock = csd_sender.lock().await;
+        sender_lock.send(csd).await.expect("Failed to send commitment state diff to the queue");
     }
 }
 
 /// Get L2 state commitment of a Block from a CommitmentStateDiff
-pub async fn state_commitment<H: HasherT>(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
-    while let Some((block_hash, csd)) = rx.next().await {
+pub async fn state_commitment<H: HasherT>(mut rx: mpsc::Receiver<CommitmentStateDiffWrapper>) {
+    while let Some(csdw) = rx.next().await {
         let contracts_tree_root = {
             let mut contracts_tree = StateCommitmentTree::<H>::default();
 
-            for (address, class_hash) in csd.address_to_class_hash {
-                let nonce = csd.address_to_nonce.get(&address).unwrap();
-                let storage_root = csd.storage_updates
+            for (address, class_hash) in csdw.csd.address_to_class_hash {
+                let nonce = csdw.csd.address_to_nonce.get(&address).unwrap();
+                let storage_root = csdw.csd.storage_updates
                     .get(&address)
                     .map_or(Felt252Wrapper::ZERO, |storage_updates| {
                         let storage_root_hash = Felt252Wrapper::ZERO;
@@ -237,7 +255,7 @@ pub async fn state_commitment<H: HasherT>(mut rx: mpsc::Receiver<(BlockHash, Com
         };
 
         let classes_tree_root = {
-            let class_hashes: Vec<Felt252Wrapper> = csd.class_hash_to_compiled_class_hash
+            let class_hashes: Vec<Felt252Wrapper> = csdw.csd.class_hash_to_compiled_class_hash
                 .iter()
                 .map(|(class_hash, compiled_class_hash)| {
                     calculate_class_commitment_leaf_hash::<H>((*compiled_class_hash).into())
@@ -247,6 +265,6 @@ pub async fn state_commitment<H: HasherT>(mut rx: mpsc::Receiver<(BlockHash, Com
         };
 
         let state_root = calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root);
-        println!("Starknet state_root {:?} for block hash {:?}", state_root, block_hash);
+        println!("Starknet state_root {:?} for block hash {:?}", state_root, csdw.block_number);
     }
 }

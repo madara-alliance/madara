@@ -1,3 +1,5 @@
+//! Contains the code required to deal with the feeder transactions.
+
 use mp_transactions::{DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2};
 use starknet_client::reader::objects::transaction::{IntermediateDeclareTransaction, IntermediateInvokeTransaction};
 use starknet_client::reader::ReaderClientError;

@@ -1,5 +1,5 @@
 //! Transaction validation logic.
-use frame_support::traits::EnsureOrigin;
+use frame_support::{traits::EnsureOrigin, weights::Weight};
 
 /// Representation of the origin of a Starknet transaction.
 /// For now, we still don't know how to represent the origin of a Starknet transaction,

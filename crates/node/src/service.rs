@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use blockifier::state::cached_state::CommitmentStateDiff;
+use starknet_api::block::BlockHash;
 use reqwest::Url;
 use futures::channel::mpsc;
 use futures::future;
@@ -13,7 +15,7 @@ use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_block_proposer::ProposerFactory;
-use mc_commitment_state_diff::{log_commitment_state_diff, CommitmentStateDiffWorker, state_commitment};
+use mc_commitment_state_diff::{log_commitment_state_diff, CommitmentStateDiffWorker, state_commitment, CommitmentStateDiffWrapper, send_commitment_state_diff};
 use mc_data_availability::avail::config::AvailConfig;
 use mc_data_availability::avail::AvailClient;
 use mc_data_availability::celestia::config::CelestiaConfig;
@@ -396,9 +398,12 @@ pub fn new_full(
         )
         .for_each(|()| future::ready(())),
     );
-
+    
     let (commitment_state_diff_tx, commitment_state_diff_rx) = mpsc::channel(5);
-
+    let (csd_sender, csd_receiver) = tokio::sync::mpsc::channel::<CommitmentStateDiffWrapper>(100);
+    let csd_sender = tokio::sync::Mutex::new(csd_sender);
+    let csd_receiver = csd_receiver;
+    
     task_manager.spawn_essential_handle().spawn(
         "commitment-state-diff",
         Some("madara"),
@@ -409,7 +414,7 @@ pub fn new_full(
     task_manager.spawn_essential_handle().spawn(
         "commitment-state-logger",
         Some("madara"),
-        state_commitment::<PedersenHasher>(commitment_state_diff_rx),
+        send_commitment_state_diff(csd_sender, commitment_state_diff_rx),
     );
 
     // initialize data availability worker
@@ -451,6 +456,7 @@ pub fn new_full(
 
             run_manual_seal_authorship(
                 block_receiver,
+                csd_receiver,
                 sealing,
                 client,
                 transaction_pool,
@@ -580,6 +586,7 @@ pub fn new_full(
 #[allow(clippy::too_many_arguments)]
 fn run_manual_seal_authorship(
     block_receiver: tokio::sync::mpsc::Receiver<mp_block::Block>,
+    csd_receiver: tokio::sync::mpsc::Receiver<CommitmentStateDiffWrapper>,
     sealing: SealingMode,
     client: Arc<FullClient>,
     transaction_pool: Arc<FullPool<Block, FullClient>>,
@@ -638,6 +645,10 @@ where
 
         /// The receiver that we're using to receive blocks.
         block_receiver: tokio::sync::Mutex< tokio::sync::mpsc::Receiver<mp_block::Block>>,
+
+        /// The receiver that we're using to receive commitment state diffs.
+        csd_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<CommitmentStateDiffWrapper>>,
+
     }
 
     impl<B, C> ConsensusDataProvider<B> for QueryBlockConsensusDataProvider<C>
@@ -649,11 +660,22 @@ where
         type Proof = ();
 
         fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) -> Result<Digest, Error> {
-            let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
-            let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            let block_digest_item: DigestItem =
-                sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
-            Ok(Digest { logs: vec![block_digest_item] })
+            let mut block_lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+            let mut csd_lock = self.csd_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+            let block = block_lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
+            let csdw = csd_lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
+
+            if block.header().block_number != csdw.block_number.0 {
+                let block_digest_item: DigestItem =
+                    sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
+                let csd_digest_item: DigestItem =
+                    sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&csdw.csd));
+                Ok(Digest { logs: vec![block_digest_item, csd_digest_item] })
+            } else {
+                let block_digest_item: DigestItem =
+                    sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
+                Ok(Digest { logs: vec![block_digest_item] })
+            }
         }
 
         fn append_block_import(
@@ -680,6 +702,7 @@ where
                 consensus_data_provider: Some(Box::new(QueryBlockConsensusDataProvider {
                     _client: client,
                     block_receiver: tokio::sync::Mutex::new(block_receiver),
+                    csd_receiver: tokio::sync::Mutex::new(csd_receiver),
                 })),
                 create_inherent_data_providers,
             }))
