@@ -62,14 +62,14 @@ impl NetworkType {
         }
     }
 
-    pub fn block_fetch_config(&self) -> mc_deoxys::BlockFetchConfig {
+    pub fn block_fetch_config(&self) -> mc_deoxys::FetchConfig {
         let uri = self.uri();
         let chain_id = self.chain_id();
 
         let gateway = format!("{uri}/gateway").parse().unwrap();
         let feeder_gateway = format!("{uri}/feeder_gateway").parse().unwrap();
 
-        mc_deoxys::BlockFetchConfig { gateway, feeder_gateway, chain_id, workers: 5 }
+        mc_deoxys::FetchConfig { gateway, feeder_gateway, chain_id, workers: 5 }
     }
 }
 

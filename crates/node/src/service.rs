@@ -272,7 +272,7 @@ pub fn new_full(
     rpc_port: u16,
     l1_url: Url,
     cache_more_things: bool,
-    fetch_config: mc_deoxys::BlockFetchConfig,
+    fetch_config: mc_deoxys::FetchConfig,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
@@ -403,19 +403,6 @@ pub fn new_full(
     let (csd_sender, csd_receiver) = tokio::sync::mpsc::channel::<CommitmentStateDiffWrapper>(100);
     let csd_sender = tokio::sync::Mutex::new(csd_sender);
     let csd_receiver = csd_receiver;
-    
-    task_manager.spawn_essential_handle().spawn(
-        "commitment-state-diff",
-        Some("madara"),
-        CommitmentStateDiffWorker::<_, _, StarknetHasher>::new(client.clone(), commitment_state_diff_tx)
-            .for_each(|()| future::ready(())),
-    );
-
-    task_manager.spawn_essential_handle().spawn(
-        "commitment-state-logger",
-        Some("madara"),
-        send_commitment_state_diff(csd_sender, commitment_state_diff_rx),
-    );
 
     // initialize data availability worker
     if let Some((da_layer, da_path)) = da_layer {
@@ -660,11 +647,16 @@ where
         type Proof = ();
 
         fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) -> Result<Digest, Error> {
+            // let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+            // let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
+            // let block_digest_item: DigestItem =
+            //     sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
+            // Ok(Digest { logs: vec![block_digest_item] })
             let mut block_lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
-            let mut csd_lock = self.csd_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let block = block_lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
+            print!("block number: {}", block.header().block_number);
+            let mut csd_lock = self.csd_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let csdw = csd_lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            println!("AYAAAH {:?}, {:?}", block.header().block_number, csdw.block_number.0);
 
             if block.header().block_number == csdw.block_number.0 {
                 println!("AYAAAH");

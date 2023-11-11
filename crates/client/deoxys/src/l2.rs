@@ -4,25 +4,32 @@ use std::sync::Arc;
 use std::time::Duration;
 use reqwest::Url;
 use sp_core::H256;
+use blockifier::state::cached_state::CommitmentStateDiff;
 use starknet_api::block::{BlockNumber, BlockHash};
 use starknet_api::hash::StarkHash;
-use starknet_gateway::sequencer::models::BlockId;
+use starknet_gateway::sequencer::models::{BlockId, state_update};
 use starknet_gateway::SequencerGatewayProvider;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
 use crate::CommandSink;
 
-/// The configuration of the worker responsible for fetching new blocks from the feeder.
-pub struct BlockFetchConfig {
+pub struct StarknetStateUpdate(starknet_gateway::sequencer::models::StateUpdate);
+
+/// The configuration of the worker responsible for fetching new blocks and state updates from the feeder.
+pub struct FetchConfig {
     /// The URL of the sequencer gateway.
     pub gateway: Url,
     /// The URL of the feeder gateway.
     pub feeder_gateway: Url,
     /// The ID of the chain served by the sequencer gateway.
     pub chain_id: starknet_ff::FieldElement,
-    /// The number of tasks spawned to fetch blocks.
+    /// The number of tasks spawned to fetch blocks and state updates.
     pub workers: u32,
+    /// Sender for dispatching fetched blocks.
+    pub block_sender: Sender<mp_block::Block>,
+    /// Sender for dispatching fetched state updates.
+    pub state_update_sender: Sender<StarknetStateUpdate>,
 }
 
 /// Used to determine which Ids are required to be fetched.
@@ -73,14 +80,6 @@ impl SyncState {
     }
 }
 
-// 
-#[derive(Debug, Clone)]
-pub struct StarknetStateUpdate {
-    pub state_root: StarkHash,
-    pub block_number: BlockNumber,
-    pub block_hash: BlockHash,
-}
-
 /// The state that is shared between fetch workers.
 struct WorkerSharedState {
     /// The ID server.
@@ -88,49 +87,83 @@ struct WorkerSharedState {
     /// The client used to perform requests.
     client: SequencerGatewayProvider,
     /// The block sender.
-    sender: Sender<mp_block::Block>,
+    block_sender: Sender<mp_block::Block>,
+    /// The state sender.
+    state_update_sender: Sender<StarknetStateUpdate>,
     /// The state of the last block.
     sync_state: Mutex<SyncState>,
 }
 
-/// Fetches blocks from the feeder and sends them to the given sender.
+impl WorkerSharedState {
+    async fn acquire_id(&self) -> u64 {
+        let mut ids = self.ids.lock().await;
+        ids.acquire()
+    }
+
+    async fn release_id(&self, id: u64) {
+        let mut ids = self.ids.lock().await;
+        ids.release(id);
+    }
+}
+
+/// Spawns workers to fetch blocks and state updates from the feeder.
 pub async fn sync(
     command_sink: CommandSink,
-    sender: Sender<mp_block::Block>,
-    config: BlockFetchConfig,
+    config: FetchConfig,
     start_at: u64,
 ) {
     let shared_state = Arc::new(WorkerSharedState {
         client: SequencerGatewayProvider::new(config.gateway, config.feeder_gateway, config.chain_id),
-        sender,
+        block_sender: config.block_sender,
+        state_update_sender: config.state_update_sender,
         ids: Mutex::new(IdServer::new(start_at)),
         sync_state: Mutex::new(SyncState::new(start_at)),
     });
 
     for _ in 0..config.workers {
         let state = shared_state.clone();
-        tokio::spawn(start_worker(state, command_sink.clone()));
+        let command_sink_clone = command_sink.clone();
+        tokio::spawn(async move {
+            start_worker(state, command_sink_clone, WorkerType::Block).await;
+        });
+        let state = shared_state.clone();
+        let command_sink_clone = command_sink.clone();
+        tokio::spawn(async move {
+            start_worker(state, command_sink_clone, WorkerType::StateUpdate).await;
+        });
     }
 }
 
-/// Starts a worker task.
-async fn start_worker(state: Arc<WorkerSharedState>, mut command_sink: CommandSink) {
-    // Retry with the same block id.
+enum WorkerType {
+    Block,
+    StateUpdate,
+}
+
+/// Starts a generic worker task.
+async fn start_worker(
+    state: Arc<WorkerSharedState>,
+    mut command_sink: CommandSink,
+    worker_type: WorkerType,
+) {
     loop {
-        let block_id = state.ids.lock().await.acquire();
-        match get_and_dispatch_block(&state, block_id, &mut command_sink).await {
-            Ok(()) => (),
-            Err(err) => {
-                state.ids.lock().await.release(block_id);
-                eprintln!("Error sending block #{}: {:?}", block_id, err);
-                tokio::time::sleep(Duration::from_secs(10)).await;
-            }
+        let id = state.acquire_id().await;
+        let result = match worker_type {
+            WorkerType::Block => get_and_dispatch_block(&state, id, &mut command_sink).await,
+            WorkerType::StateUpdate => get_and_dispatch_state_update(&state, id).await,
+        };
+
+        if let Err(err) = result {
+            state.release_id(id).await;
+            eprintln!("Error sending {}: {:?}", match worker_type {
+                WorkerType::Block => "block",
+                WorkerType::StateUpdate => "state update",
+            }, err);
+            tokio::time::sleep(Duration::from_secs(10)).await;
         }
     }
 }
 
 /// Gets a block from the network and sends it to the other half of the channel.
-/// Stops if state commitment doesn't match.
 async fn get_and_dispatch_block(
     state: &WorkerSharedState,
     block_id: u64,
@@ -150,10 +183,46 @@ async fn get_and_dispatch_block(
         tokio::task::yield_now().await;
     }
 
-    state.sender.send(block).await.map_err(|e| format!("failed to dispatch block: {e}"))?;
+    state.block_sender.send(block).await.map_err(|e| format!("failed to dispatch block: {e}"))?;
     let hash = create_block(command_sink, lock.last_hash).await?;
 
     lock.last_hash = Some(hash);
+    lock.next_number += 1;
+
+    Ok(())
+}
+
+/// Gets a state update from the network and sends it to the other half of the channel.
+async fn get_and_dispatch_state_update(
+    state: &WorkerSharedState,
+    state_id: u64,
+) -> Result<(), String> {
+    // Replace `get_state_update` with the actual function call to fetch the state update.
+    let state_update_result = state.client.get_state_update(BlockId::Number(state_id)).await;
+
+    // Check if the state update was fetched successfully.
+    let state_update = match state_update_result {
+        Ok(update) => update,
+        Err(e) => {
+            let error_message = format!("failed to get state update for id {}: {}", state_id, e);
+            eprintln!("{}", &error_message);
+            return Err(error_message);
+        }
+    };
+
+    // Lock the sync state to check if it's the correct turn to dispatch this state update.
+    let mut lock = state.sync_state.lock().await;
+    if lock.next_number != state_id {
+        // If not, release the lock and yield control to the scheduler.
+        drop(lock);
+        tokio::task::yield_now().await;
+        return Err(format!("State update id {} came out of order", state_id));
+    }
+
+    // Send the state update.
+    state.state_update_sender.send(StarknetStateUpdate(state_update)).await.map_err(|e| format!("failed to dispatch state update: {e}"))?;
+
+    // Increment the next number to process the next state update.
     lock.next_number += 1;
 
     Ok(())
