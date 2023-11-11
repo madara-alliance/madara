@@ -664,8 +664,10 @@ where
             let mut csd_lock = self.csd_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let block = block_lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
             let csdw = csd_lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
+            println!("AYAAAH {:?}, {:?}", block.header().block_number, csdw.block_number.0);
 
-            if block.header().block_number != csdw.block_number.0 {
+            if block.header().block_number == csdw.block_number.0 {
+                println!("AYAAAH");
                 let block_digest_item: DigestItem =
                     sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
                 let csd_digest_item: DigestItem =
