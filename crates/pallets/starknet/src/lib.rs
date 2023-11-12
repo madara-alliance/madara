@@ -188,6 +188,16 @@ pub mod pallet {
 
         /// The block is being initialized. Implement to have something happen.
         fn on_initialize(block_number: T::BlockNumber) -> Weight {
+            // let digest_logs = frame_system::Pallet::<T>::digest().logs();
+        
+            // if digest_logs.len() > 1 {
+            //     if let DigestItem::Other(encoded_data) = &digest_logs[1] {
+            //         if let Ok(state_diff) = Decode::decode(&mut &encoded_data[..]) {
+            //             log!(info, "State diff: {:?}", state_diff);
+            //         }
+            //     }
+            // }
+        
             Weight::zero()
         }
 

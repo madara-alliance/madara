@@ -233,6 +233,7 @@ async fn get_and_dispatch_state_update(
 
     // Check if the state update was fetched successfully.
     let state_update = match state_update_result {
+        // TODO: verify merkle tree
         Ok(update) => update,
         Err(e) => {
             let error_message = format!("failed to get state update for id {}: {}", state_id, e);
