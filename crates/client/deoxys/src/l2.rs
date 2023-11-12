@@ -1,5 +1,6 @@
 //! Contains the code required to fetch data from the feeder efficiently.
 
+use std::default;
 use std::sync::Arc;
 use std::time::Duration;
 use reqwest::Url;
@@ -7,6 +8,8 @@ use sp_core::H256;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use starknet_api::block::{BlockNumber, BlockHash};
 use starknet_api::hash::StarkHash;
+use starknet_ff::FieldElement;
+use starknet_gateway::sequencer::models::state_update::StateDiff;
 use starknet_gateway::sequencer::models::{BlockId, state_update};
 use starknet_gateway::SequencerGatewayProvider;
 use tokio::sync::mpsc::Sender;
@@ -14,7 +17,30 @@ use tokio::sync::Mutex;
 
 use crate::CommandSink;
 
+#[derive(Debug)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct StarknetStateUpdate(starknet_gateway::sequencer::models::StateUpdate);
+
+impl StarknetStateUpdate {
+    // Assuming `starknet_gateway::sequencer::models::StateUpdate` has these fields
+    // and they are public or have getter methods that return the necessary types.
+
+    pub fn get_block_hash(&self) -> Option<&FieldElement> {
+        self.0.block_hash.as_ref()
+    }
+
+    pub fn get_new_root(&self) -> Option<&FieldElement> {
+        self.0.new_root.as_ref()
+    }
+
+    pub fn get_old_root(&self) -> &FieldElement {
+        &self.0.old_root
+    }
+
+    pub fn get_state_diff(&self) -> &StateDiff {
+        &self.0.state_diff
+    }
+}
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the feeder.
 pub struct FetchConfig {
@@ -26,6 +52,10 @@ pub struct FetchConfig {
     pub chain_id: starknet_ff::FieldElement,
     /// The number of tasks spawned to fetch blocks and state updates.
     pub workers: u32,
+}
+
+/// The configuration of the senders responsible for sending blocks and state updates from the feeder.
+pub struct SenderConfig {
     /// Sender for dispatching fetched blocks.
     pub block_sender: Sender<mp_block::Block>,
     /// Sender for dispatching fetched state updates.
@@ -109,13 +139,14 @@ impl WorkerSharedState {
 /// Spawns workers to fetch blocks and state updates from the feeder.
 pub async fn sync(
     command_sink: CommandSink,
+    sender_config: SenderConfig,
     config: FetchConfig,
     start_at: u64,
 ) {
     let shared_state = Arc::new(WorkerSharedState {
         client: SequencerGatewayProvider::new(config.gateway, config.feeder_gateway, config.chain_id),
-        block_sender: config.block_sender,
-        state_update_sender: config.state_update_sender,
+        block_sender: sender_config.block_sender,
+        state_update_sender: sender_config.state_update_sender,
         ids: Mutex::new(IdServer::new(start_at)),
         sync_state: Mutex::new(SyncState::new(start_at)),
     });

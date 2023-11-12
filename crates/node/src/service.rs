@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use blockifier::state::cached_state::CommitmentStateDiff;
+use mc_deoxys::StarknetStateUpdate;
 use starknet_api::block::BlockHash;
 use reqwest::Url;
 use futures::channel::mpsc;
@@ -26,6 +27,7 @@ use mc_data_availability::{DaClient, DaLayer, DataAvailabilityWorker};
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
 use mc_transaction_pool::FullPool;
+use mc_deoxys::state_updates::StateUpdateWrapper;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
 };
@@ -399,11 +401,6 @@ pub fn new_full(
         .for_each(|()| future::ready(())),
     );
     
-    let (commitment_state_diff_tx, commitment_state_diff_rx) = mpsc::channel(5);
-    let (csd_sender, csd_receiver) = tokio::sync::mpsc::channel::<CommitmentStateDiffWrapper>(100);
-    let csd_sender = tokio::sync::Mutex::new(csd_sender);
-    let csd_receiver = csd_receiver;
-
     // initialize data availability worker
     if let Some((da_layer, da_path)) = da_layer {
         let da_client: Box<dyn DaClient + Send + Sync> = match da_layer {
@@ -420,7 +417,7 @@ pub fn new_full(
                 Box::new(AvailClient::try_from(avail_conf).map_err(|e| ServiceError::Other(e.to_string()))?)
             }
         };
-
+        
         task_manager.spawn_essential_handle().spawn(
             "da-worker-prove",
             Some("madara"),
@@ -432,7 +429,7 @@ pub fn new_full(
             DataAvailabilityWorker::update_state(da_client, client.clone(), madara_backend),
         );
     };
-
+    
     if role.is_authority() {
         // manual-seal authorship
         if !sealing.is_default() {
@@ -440,10 +437,11 @@ pub fn new_full(
             //   For now I used a channel of size 100, this should be plently enough. That might
             //   become a config option in the future.
             let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<mp_block::Block>(100);
-
+            let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StarknetStateUpdate>(100);
+            
             run_manual_seal_authorship(
                 block_receiver,
-                csd_receiver,
+                state_update_receiver,
                 sealing,
                 client,
                 transaction_pool,
@@ -457,8 +455,12 @@ pub fn new_full(
             network_starter.start_network();
 
             let command_sink = command_sink.unwrap().clone();
+            let sender_config = mc_deoxys::SenderConfig {
+                block_sender,
+                state_update_sender,
+            };
             tokio::spawn(async move {
-                mc_deoxys::sync(command_sink, block_sender, fetch_config, rpc_port, l1_url).await;
+                mc_deoxys::sync(command_sink, sender_config, fetch_config, rpc_port, l1_url).await;
             });
 
             log::info!("Manual Seal Ready");
@@ -573,7 +575,7 @@ pub fn new_full(
 #[allow(clippy::too_many_arguments)]
 fn run_manual_seal_authorship(
     block_receiver: tokio::sync::mpsc::Receiver<mp_block::Block>,
-    csd_receiver: tokio::sync::mpsc::Receiver<CommitmentStateDiffWrapper>,
+    state_update_receiver: tokio::sync::mpsc::Receiver<StarknetStateUpdate>,
     sealing: SealingMode,
     client: Arc<FullClient>,
     transaction_pool: Arc<FullPool<Block, FullClient>>,
@@ -634,7 +636,7 @@ where
         block_receiver: tokio::sync::Mutex< tokio::sync::mpsc::Receiver<mp_block::Block>>,
 
         /// The receiver that we're using to receive commitment state diffs.
-        csd_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<CommitmentStateDiffWrapper>>,
+        state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StarknetStateUpdate>>,
 
     }
 
@@ -647,29 +649,16 @@ where
         type Proof = ();
 
         fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) -> Result<Digest, Error> {
-            // let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
-            // let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            // let block_digest_item: DigestItem =
-            //     sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
-            // Ok(Digest { logs: vec![block_digest_item] })
-            let mut block_lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
-            let block = block_lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            print!("block number: {}", block.header().block_number);
-            let mut csd_lock = self.csd_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
-            let csdw = csd_lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-
-            if block.header().block_number == csdw.block_number.0 {
-                println!("AYAAAH");
-                let block_digest_item: DigestItem =
-                    sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
-                let csd_digest_item: DigestItem =
-                    sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&csdw.csd));
-                Ok(Digest { logs: vec![block_digest_item, csd_digest_item] })
-            } else {
-                let block_digest_item: DigestItem =
-                    sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
-                Ok(Digest { logs: vec![block_digest_item] })
-            }
+            let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+            let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
+            let block_digest_item: DigestItem =
+                sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
+            let mut lock = self.state_update_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+            let state_update = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
+            let state_update_wrapper = StateUpdateWrapper::try_from(state_update).unwrap();
+            let state_update_digest_item: DigestItem =
+                sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&state_update_wrapper));
+            Ok(Digest { logs: vec![block_digest_item, state_update_digest_item] })
         }
 
         fn append_block_import(
@@ -696,7 +685,7 @@ where
                 consensus_data_provider: Some(Box::new(QueryBlockConsensusDataProvider {
                     _client: client,
                     block_receiver: tokio::sync::Mutex::new(block_receiver),
-                    csd_receiver: tokio::sync::Mutex::new(csd_receiver),
+                    state_update_receiver: tokio::sync::Mutex::new(state_update_receiver),
                 })),
                 create_inherent_data_providers,
             }))

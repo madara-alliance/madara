@@ -47,7 +47,7 @@ sc-consensus-manual-seal.workspace = true
 futures = { workspace = true, default-features = true }
 parity-scale-codec = { workspace = true, features = [
   "derive",
-], optional = true }
+] }
 
 [dev-dependencies]
 # test_utils = { path = "./test_utils" }
