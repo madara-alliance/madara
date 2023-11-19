@@ -1,6 +1,5 @@
 use mp_felt::Felt252Wrapper;
-use starknet_gateway::sequencer::models::state_update::{StateUpdate, StateDiff, StorageDiff, DeployedContract, DeclaredContract};
-use std::collections::HashMap;
+use starknet_gateway::sequencer::models::state_update::{StateDiff, StorageDiff, DeployedContract, DeclaredContract};
 use parity_scale_codec::{Encode, Decode, Input, Output, Error};
 
 use crate::StarknetStateUpdate;
@@ -38,13 +37,11 @@ pub struct DeclaredContractWrapper {
 
 impl From<StarknetStateUpdate> for StateUpdateWrapper {
     fn from(update: StarknetStateUpdate) -> Self {
-        let state_diff_cloned = update.get_state_diff().clone();
-        
         StateUpdateWrapper {
             block_hash: update.get_block_hash().cloned().map(Felt252Wrapper::from),
             new_root: update.get_new_root().cloned().map(Felt252Wrapper::from),
-            old_root: Felt252Wrapper::from(update.get_old_root().clone()),
-            state_diff: StateDiffWrapper::from(state_diff_cloned),
+            old_root: Felt252Wrapper::from(*update.get_old_root()),
+            state_diff: StateDiffWrapper::from(update.get_state_diff()),
         }
     }
 }
@@ -53,15 +50,15 @@ impl From<&StateDiff> for StateDiffWrapper {
     fn from(diff: &StateDiff) -> Self {
         StateDiffWrapper {
             storage_diffs: diff.storage_diffs.iter()
-                .map(|(key, diffs)| (Felt252Wrapper(*key), diffs.iter().map(|d| StorageDiffWrapper::from(d)).collect()))
+                .map(|(key, diffs)| (Felt252Wrapper(*key), diffs.iter().map(StorageDiffWrapper::from).collect()))
                 .collect(),
-            deployed_contracts: diff.deployed_contracts.iter().map(|contract| DeployedContractWrapper::from(contract)).collect(),
+            deployed_contracts: diff.deployed_contracts.iter().map(DeployedContractWrapper::from).collect(),
             old_declared_contracts: diff.old_declared_contracts.iter().map(|&hash| Felt252Wrapper(hash)).collect(),
-            declared_classes: diff.declared_classes.iter().map(|class| DeclaredContractWrapper::from(class)).collect(),
+            declared_classes: diff.declared_classes.iter().map(DeclaredContractWrapper::from).collect(),
             nonces: diff.nonces.iter()
                 .map(|(&key, &value)| (Felt252Wrapper(key), Felt252Wrapper(value)))
                 .collect(),
-            replaced_classes: diff.replaced_classes.iter().map(|contract| DeployedContractWrapper::from(contract)).collect(),
+            replaced_classes: diff.replaced_classes.iter().map(DeployedContractWrapper::from).collect(),
         }
     }
 }
