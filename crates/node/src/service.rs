@@ -454,13 +454,13 @@ pub fn new_full(
 
             network_starter.start_network();
 
-            let command_sink = command_sink.unwrap().clone();
             let sender_config = mc_deoxys::SenderConfig {
                 block_sender,
                 state_update_sender,
+                command_sink: command_sink.unwrap().clone(),
             };
             tokio::spawn(async move {
-                mc_deoxys::sync(command_sink, sender_config, fetch_config, rpc_port, l1_url).await;
+                mc_deoxys::sync(sender_config, fetch_config, rpc_port, l1_url).await;
             });
 
             log::info!("Manual Seal Ready");
