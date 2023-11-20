@@ -5,6 +5,7 @@
 pub extern crate alloc;
 
 mod header;
+pub mod state_update;
 
 use alloc::vec::Vec;
 

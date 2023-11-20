@@ -79,7 +79,7 @@ use blockifier_state_adapter::BlockifierStateAdapter;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
-use mp_block::{Block as StarknetBlock, BlockStatus, Header as StarknetHeader};
+use mp_block::{Block as StarknetBlock, BlockStatus, Header as StarknetHeader, state_update::StateUpdateWrapper};
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_fee::INITIAL_GAS;
 use mp_felt::Felt252Wrapper;
@@ -187,17 +187,23 @@ pub mod pallet {
         }
 
         /// The block is being initialized. Implement to have something happen.
-        fn on_initialize(block_number: T::BlockNumber) -> Weight {
-            // let digest_logs = frame_system::Pallet::<T>::digest().logs();
-        
-            // if digest_logs.len() > 1 {
-            //     if let DigestItem::Other(encoded_data) = &digest_logs[1] {
-            //         if let Ok(state_diff) = Decode::decode(&mut &encoded_data[..]) {
-            //             log!(info, "State diff: {:?}", state_diff);
-            //         }
-            //     }
-            // }
-        
+        fn on_initialize(_: T::BlockNumber) -> Weight {
+            frame_support::log::info!("CA PASSE");
+            let digest = frame_system::Pallet::<T>::digest();
+            let logs = digest.logs();
+            if logs.len() == 1 {
+                if let DigestItem::PreRuntime(engine_id, encoded_data) = &logs[0] {
+                    if *engine_id == mp_digest_log::MADARA_ENGINE_ID {
+                        // Decode the block data from the digest
+                        if let Ok(block) = StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
+                            frame_support::log::info!("data {:?}", block);
+                        } else {
+                            frame_support::log::info!("error akhi");
+                        }
+                    }
+                }
+            }
+
             Weight::zero()
         }
 

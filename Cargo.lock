@@ -6822,7 +6822,6 @@ dependencies = [
  "mp-felt",
  "mp-hashers",
  "mp-transactions",
- "pallet-starknet",
  "parity-scale-codec",
  "reqwest",
  "sc-consensus-manual-seal",
