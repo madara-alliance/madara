@@ -8,7 +8,6 @@ pub mod l2;
 pub mod l1;
 pub use l2::SenderConfig;
 pub use l2::FetchConfig;
-pub use l2::StarknetStateUpdate;
 
 type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc::EngineCommand<sp_core::H256>>;
 

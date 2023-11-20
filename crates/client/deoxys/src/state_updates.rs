@@ -1,8 +1,32 @@
 use mp_felt::Felt252Wrapper;
 use starknet_gateway::sequencer::models::state_update::{StateDiff, StorageDiff, DeployedContract, DeclaredContract};
 use parity_scale_codec::{Encode, Decode, Input, Output, Error};
+use starknet_ff::FieldElement;
 
-use crate::StarknetStateUpdate;
+#[derive(Debug)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+pub struct StarknetStateUpdate(pub starknet_gateway::sequencer::models::StateUpdate);
+
+impl StarknetStateUpdate {
+    // Assuming `starknet_gateway::sequencer::models::StateUpdate` has these fields
+    // and they are public or have getter methods that return the necessary types.
+
+    pub fn get_block_hash(&self) -> Option<&FieldElement> {
+        self.0.block_hash.as_ref()
+    }
+
+    pub fn get_new_root(&self) -> Option<&FieldElement> {
+        self.0.new_root.as_ref()
+    }
+
+    pub fn get_old_root(&self) -> &FieldElement {
+        &self.0.old_root
+    }
+
+    pub fn get_state_diff(&self) -> &StateDiff {
+        &self.0.state_diff
+    }
+}
 
 pub struct StateUpdateWrapper {
     pub block_hash: Option<Felt252Wrapper>,

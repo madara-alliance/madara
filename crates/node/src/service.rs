@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use blockifier::state::cached_state::CommitmentStateDiff;
-use mc_deoxys::StarknetStateUpdate;
+use mc_deoxys::state_updates::StarknetStateUpdate;
 use starknet_api::block::BlockHash;
 use reqwest::Url;
 use futures::channel::mpsc;
