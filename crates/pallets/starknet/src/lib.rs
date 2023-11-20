@@ -57,7 +57,6 @@ mod offchain_worker;
 
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
 use blockifier::state::cached_state::ContractStorageKey;
-use blockifier::state::state_api::State;
 use blockifier::transaction::objects::{TransactionExecutionInfo, TransactionExecutionResult};
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Calldata, Event as StarknetEvent, Fee};
@@ -85,7 +84,6 @@ use mp_fee::INITIAL_GAS;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRESS, INHERENT_IDENTIFIER};
-use mp_state::{FeeConfig, StateChanges};
 use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use mp_transactions::execution::{Execute, Validate};
 use mp_transactions::{
@@ -177,9 +175,8 @@ pub mod pallet {
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         /// The block is being finalized.
-        fn on_finalize(_n: T::BlockNumber) {
+        fn on_finalize(_n: BlockNumberFor<T>) {
             assert!(SeqAddrUpdate::<T>::take(), "Sequencer address must be set for the block");
-
             // Create a new Starknet block and store it.
             <Pallet<T>>::store_block(UniqueSaturatedInto::<u64>::unique_saturated_into(
                 frame_system::Pallet::<T>::block_number(),
@@ -187,18 +184,18 @@ pub mod pallet {
         }
 
         /// The block is being initialized. Implement to have something happen.
-        fn on_initialize(_: T::BlockNumber) -> Weight {
-            frame_support::log::info!("CA PASSE");
+        fn on_initialize(_: BlockNumberFor<T>) -> Weight {
             let digest = frame_system::Pallet::<T>::digest();
             let logs = digest.logs();
-            if logs.len() == 1 {
-                if let DigestItem::PreRuntime(engine_id, encoded_data) = &logs[0] {
-                    if *engine_id == mp_digest_log::MADARA_ENGINE_ID {
-                        // Decode the block data from the digest
-                        if let Ok(block) = StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
-                            frame_support::log::info!("data {:?}", block);
-                        } else {
-                            frame_support::log::info!("error akhi");
+        
+            if !logs.is_empty() {
+                for log_entry in logs {
+                    if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
+                        if *engine_id == mp_digest_log::MADARA_ENGINE_ID {
+                            match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
+                                Ok(state_update) => log!(info, "State diff: {:?}", state_update),
+                                Err(e) => log!(info, "Decoding error: {:?}", e),
+                            }
                         }
                     }
                 }
@@ -216,8 +213,8 @@ pub mod pallet {
         /// See: `<https://docs.substrate.io/reference/how-to-guides/offchain-workers/>`
         /// # Arguments
         /// * `n` - The block number.
-        fn offchain_worker(n: T::BlockNumber) {
-            // log!(info, "Running offchain worker at block {:?}.", n);
+        fn offchain_worker(n: BlockNumberFor<T>) {
+            log!(info, "Running offchain worker at block {:?}.", n);
 
             // match Self::process_l1_messages() {
             //     Ok(_) => log!(info, "Successfully executed L1 messages"),
@@ -381,7 +378,7 @@ pub mod pallet {
     }
 
     #[pallet::genesis_build]
-    impl<T: Config> GenesisBuild<T> for GenesisConfig<T> {
+    impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
             <Pallet<T>>::store_block(0);
             frame_support::storage::unhashed::put::<StarknetStorageSchemaVersion>(
@@ -1133,64 +1130,82 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Estimate the fee associated with transaction
-    pub fn estimate_fee(transaction: UserTransaction, is_query: bool) -> Result<(u64, u64), DispatchError> {
+    pub fn estimate_fee(transactions: Vec<UserTransaction>) -> Result<Vec<(u64, u64)>, DispatchError> {
         let chain_id = Self::chain_id();
 
-        fn execute_tx_and_rollback<S: State + StateChanges + FeeConfig>(
-            tx: impl Execute,
-            state: &mut S,
+        fn execute_txs_and_rollback<T: pallet::Config>(
+            txs: Vec<UserTransaction>,
             block_context: &BlockContext,
             disable_nonce_validation: bool,
-        ) -> TransactionExecutionResult<TransactionExecutionInfo> {
-            // TODO: initialization can probably be skiped by using mem::MaybeUninit
-            let mut execution_result = Ok(Default::default());
+            chain_id: Felt252Wrapper,
+        ) -> Vec<TransactionExecutionResult<TransactionExecutionInfo>> {
+            let mut execution_results = vec![];
             let _: Result<_, DispatchError> = storage::transactional::with_transaction(|| {
-                execution_result = tx.execute(state, block_context, true, disable_nonce_validation);
+                for tx in txs {
+                    let result = match tx {
+                        UserTransaction::Declare(tx, contract_class) => {
+                            let executable = tx
+                                .try_into_executable::<T::SystemHash>(chain_id, contract_class, true)
+                                .map_err(|_| Error::<T>::InvalidContractClass)
+                                .expect("Contract class should be valid");
+                            executable.execute(
+                                &mut BlockifierStateAdapter::<T>::default(),
+                                block_context,
+                                true,
+                                disable_nonce_validation,
+                            )
+                        }
+                        UserTransaction::DeployAccount(tx) => {
+                            let executable = tx.into_executable::<T::SystemHash>(chain_id, true);
+                            executable.execute(
+                                &mut BlockifierStateAdapter::<T>::default(),
+                                block_context,
+                                true,
+                                disable_nonce_validation,
+                            )
+                        }
+                        UserTransaction::Invoke(tx) => {
+                            let executable = tx.into_executable::<T::SystemHash>(chain_id, true);
+                            executable.execute(
+                                &mut BlockifierStateAdapter::<T>::default(),
+                                block_context,
+                                true,
+                                disable_nonce_validation,
+                            )
+                        }
+                    };
+                    execution_results.push(result);
+                }
                 storage::TransactionOutcome::Rollback(Ok(()))
             });
-            execution_result
+            execution_results
         }
 
-        let mut blockifier_state_adapter = BlockifierStateAdapter::<T>::default();
-        let block_context = Self::get_block_context();
-        let disable_nonce_validation = T::DisableNonceValidation::get();
+        let execution_results = execute_txs_and_rollback::<T>(
+            transactions,
+            &Self::get_block_context(),
+            T::DisableNonceValidation::get(),
+            chain_id,
+        );
 
-        let execution_result = match transaction {
-            UserTransaction::Declare(tx, contract_class) => execute_tx_and_rollback(
-                tx.try_into_executable::<T::SystemHash>(chain_id, contract_class, is_query)
-                    .map_err(|_| Error::<T>::InvalidContractClass)?,
-                &mut blockifier_state_adapter,
-                &block_context,
-                disable_nonce_validation,
-            ),
-            UserTransaction::DeployAccount(tx) => execute_tx_and_rollback(
-                tx.into_executable::<T::SystemHash>(chain_id, is_query),
-                &mut blockifier_state_adapter,
-                &block_context,
-                disable_nonce_validation,
-            ),
-            UserTransaction::Invoke(tx) => execute_tx_and_rollback(
-                tx.into_executable::<T::SystemHash>(chain_id, is_query),
-                &mut blockifier_state_adapter,
-                &block_context,
-                disable_nonce_validation,
-            ),
-        };
-
-        match execution_result {
-            Ok(tx_exec_info) => {
-                log!(debug, "Successfully estimated fee: {:?}", tx_exec_info);
-                if let Some(gas_usage) = tx_exec_info.actual_resources.0.get("l1_gas_usage") {
-                    Ok((tx_exec_info.actual_fee.0 as u64, *gas_usage as u64))
-                } else {
-                    Err(Error::<T>::TransactionExecutionFailed.into())
+        let mut results = vec![];
+        for res in execution_results {
+            match res {
+                Ok(tx_exec_info) => {
+                    log!(info, "Successfully estimated fee: {:?}", tx_exec_info);
+                    if let Some(l1_gas_usage) = tx_exec_info.actual_resources.0.get("l1_gas_usage") {
+                        results.push((tx_exec_info.actual_fee.0 as u64, *l1_gas_usage as u64));
+                    } else {
+                        return Err(Error::<T>::TransactionExecutionFailed.into());
+                    }
+                }
+                Err(e) => {
+                    log!(info, "Failed to estimate fee: {:?}", e);
+                    return Err(Error::<T>::TransactionExecutionFailed.into());
                 }
             }
-            Err(e) => {
-                log!(error, "Failed to estimate fee: {:?}", e);
-                Err(Error::<T>::TransactionExecutionFailed.into())
-            }
         }
+        Ok(results)
     }
 
     pub fn emit_and_store_tx_and_fees_events(
@@ -1214,5 +1229,8 @@ impl<T: Config> Pallet<T> {
 
     pub fn chain_id() -> Felt252Wrapper {
         T::ChainId::get()
+    }
+    pub fn is_transaction_fee_disabled() -> bool {
+        T::DisableTransactionFee::get()
     }
 }

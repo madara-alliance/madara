@@ -69,7 +69,7 @@ impl NetworkType {
         let gateway = format!("{uri}/gateway").parse().unwrap();
         let feeder_gateway = format!("{uri}/feeder_gateway").parse().unwrap();
 
-        mc_deoxys::FetchConfig { gateway, feeder_gateway, chain_id, workers: 5 }
+        mc_deoxys::FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false }
     }
 }
 
@@ -105,6 +105,11 @@ pub struct ExtendedRunCmd {
     #[clap(long)]
     pub cache: bool,
 
+    /// This will invoke sound interpreted from the block hashes.
+    #[clap(long)]
+    pub sound: bool,
+
+    /// This wrap a specific deoxys environment for a node quick start.
     #[clap(long)]
     pub deoxys: bool,
 }
@@ -147,7 +152,8 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
     runner.run_node_until_exit(|config| async move {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
-        let fetch_block_config = cli.run.network.block_fetch_config();
+        let mut fetch_block_config = cli.run.network.block_fetch_config();
+        fetch_block_config.sound = cli.run.sound;
         let l1_endpoint = if let Some(url) = cli.run.l1_endpoint {
             url
         } else {
