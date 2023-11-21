@@ -115,6 +115,8 @@ async fn fetch_state_update(
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
+    // Eytan TODO: get state commitment based on state update.
+
     state_update_sender
         .send(StarknetStateUpdate(state_update))
         .await

@@ -56,8 +56,8 @@ pub mod types;
 mod offchain_worker;
 
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
-use blockifier::state::cached_state::ContractStorageKey;
 use blockifier::transaction::objects::{TransactionExecutionInfo, TransactionExecutionResult};
+use blockifier::state::cached_state::ContractStorageKey;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Calldata, Event as StarknetEvent, Fee};
 
@@ -123,6 +123,9 @@ macro_rules! log {
 #[frame_support::pallet]
 pub mod pallet {
 
+    use mp_block::state_update::DeployedContractWrapper;
+    use starknet_core::types::DeployedContractItem;
+
     use super::*;
 
     #[pallet::pallet]
@@ -185,63 +188,61 @@ pub mod pallet {
 
         /// The block is being initialized. Implement to have something happen.
         fn on_initialize(_: BlockNumberFor<T>) -> Weight {
-            let digest = frame_system::Pallet::<T>::digest();
-            let logs = digest.logs();
+            // let digest = frame_system::Pallet::<T>::digest();
+            // let logs = digest.logs();
         
-            if !logs.is_empty() {
-                for log_entry in logs {
-                    if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
-                        if *engine_id == mp_digest_log::MADARA_ENGINE_ID {
-                            match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
-                                Ok(state_update) => {
-                                    log!(info, "State diff: {:?}", state_update);
-                                    // TODO: Export this in a separate function
-                                    for (address, storage_diffs) in state_update.state_diff.storage_diffs {
-                                        for storage_diff in storage_diffs {
-                                            // Insert or update storage with the key-value pair
-                                            // Example: <YourStorageMap<T>>::insert(storage_diff.key, storage_diff.value);
-                                        }
-                                    }
-                                
-                                    // Process deployed contracts
-                                    for deployed_contract in state_update.state_diff.deployed_contracts {
-                                        // Handle each deployed contract
-                                        // Example: <DeployedContracts<T>>::insert(deployed_contract.address, deployed_contract.class_hash);
-                                    }
-                                
-                                    // Process old declared contracts
-                                    for contract in state_update.state_diff.old_declared_contracts {
-                                        // Handle each old declared contract
-                                        // Example: <OldDeclaredContracts<T>>::insert(contract, ...);
-                                    }
-                                
-                                    // Process declared classes
-                                    for declared_class in state_update.state_diff.declared_classes {
-                                        // Handle each declared class
-                                        // Example: <DeclaredClasses<T>>::insert(declared_class.class_hash, declared_class.compiled_class_hash);
-                                    }
-                                
-                                    // Process nonces
-                                    for (address, nonce) in state_update.state_diff.nonces {
-                                        // Handle each nonce
-                                        // Example: <Nonces<T>>::insert(address, nonce);
-                                    }
-                                
-                                    // Process replaced classes
-                                    for replaced_class in state_update.state_diff.replaced_classes {
-                                        // Handle each replaced class
-                                        // Example: <ReplacedClasses<T>>::insert(replaced_class.address, replaced_class.class_hash);
-                                    }
-                                },
-                                Err(e) => log!(info, "Decoding error: {:?}", e),
-                            }
-                        }
-                    }
-                }
-            }
+            // if !logs.is_empty() {
+            //     for log_entry in logs {
+            //         if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
+            //             if *engine_id == mp_digest_log::MADARA_ENGINE_ID {
+            //                 match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
+            //                     Ok(state_update) => {
+            //                         log!(info, "State diff: {:?}", state_update);
+        
+            //                         for (address, storage_diffs) in state_update.state_diff.storage_diffs {
+            //                             for storage_diff in storage_diffs {
+            //                                 let storage_key = StorageKey(storage_diff.key.try_into().unwrap());
+            //                                 let value = StarkFelt(storage_diff.value.try_into().unwrap());
+            //                                 <StorageView<T>>::insert(storage_key, value);
+            //                             }
+            //                         }
+        
+            //                         for deployed_contract in state_update.state_diff.deployed_contracts {
+            //                             let contract_address = ContractAddress(deployed_contract.address.try_into().unwrap());
+            //                             let class_hash = ClassHash(deployed_contract.class_hash.try_into().unwrap());
+            //                             <ContractClassHashes<T>>::insert(contract_address, class_hash);
+            //                         }
+        
+            //                         // Handle old declared contracts
+            //                         // Example code depends on how you want to store this information
+        
+            //                         for declared_class in state_update.state_diff.declared_classes {
+            //                             let class_hash = ClassHash(declared_class.class_hash.try_into().unwrap());
+            //                             let compiled_class_hash = CompiledClassHash(declared_class.compiled_class_hash.try_into().unwrap());
+            //                             <ContractClasses<T>>::insert(class_hash, compiled_class_hash);
+            //                         }
+        
+            //                         for (address, nonce) in state_update.state_diff.nonces {
+            //                             let contract_address = ContractAddress(address.try_into().unwrap());
+            //                             let nonce = Nonce(nonce.try_into().unwrap());
+            //                             <Nonces<T>>::insert(contract_address, nonce);
+            //                         }
+        
+            //                         for replaced_class in state_update.state_diff.replaced_classes {
+            //                             let contract_address = ContractAddress(replaced_class.address.try_into().unwrap());
+            //                             let class_hash = ClassHash(replaced_class.class_hash.try_into().unwrap());
+            //                             <ContractClassHashes<T>>::insert(contract_address, class_hash);
+            //                         }
+            //                     },
+            //                     Err(e) => log!(info, "Decoding error: {:?}", e),
+            //                 }
+            //             }
+            //         }
+            //     }
+            // }
         
             Weight::zero()
-        }
+        }        
 
         /// Perform a module upgrade.
         fn on_runtime_upgrade() -> Weight {
