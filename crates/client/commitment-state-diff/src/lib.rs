@@ -5,39 +5,28 @@ use std::task::Poll;
 
 use blockifier::state::cached_state::CommitmentStateDiff;
 use futures::channel::mpsc;
-use mp_commitments::{calculate_class_commitment_leaf_hash, calculate_class_commitment_tree_root_hash, calculate_commitments, calculate_state_commitment, calculate_contract_state_hash, StateCommitment, StateCommitmentTree};
-use mp_felt::Felt252Wrapper;
 use futures::{Stream, StreamExt};
 use indexmap::IndexMap;
 use mp_hashers::HasherT;
 use mp_storage::{SN_COMPILED_CLASS_HASH_PREFIX, SN_CONTRACT_CLASS_HASH_PREFIX, SN_NONCE_PREFIX, SN_STORAGE_PREFIX};
 use pallet_starknet::runtime_api::StarknetRuntimeApi;
-use parity_scale_codec::Encode;
 use sc_client_api::client::BlockchainEvents;
 use sc_client_api::{StorageEventStream, StorageNotification};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::{Block as BlockT, Header};
 use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
-use starknet_api::block::BlockNumber;
+use starknet_api::block::BlockHash;
 use starknet_api::hash::{StarkFelt, StarkHash};
-use starknet_api::state::{StorageKey as StarknetStorageKey};
+use starknet_api::state::StorageKey as StarknetStorageKey;
 use starknet_gateway::sequencer::models::StateUpdate;
 use thiserror::Error;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-pub struct CommitmentStateDiffWrapper {
-    pub block_number: BlockNumber,
-    pub csd: CommitmentStateDiff,
-}
-
 
 pub struct CommitmentStateDiffWorker<B: BlockT, C, H> {
     client: Arc<C>,
     storage_event_stream: StorageEventStream<B::Hash>,
-    tx: mpsc::Sender<CommitmentStateDiffWrapper>,
-    msg: Option<CommitmentStateDiffWrapper>,
+    tx: mpsc::Sender<(BlockHash, CommitmentStateDiff)>,
+    msg: Option<(BlockHash, CommitmentStateDiff)>,
     phantom: PhantomData<H>,
 }
 
@@ -45,7 +34,7 @@ impl<B: BlockT, C, H> CommitmentStateDiffWorker<B, C, H>
 where
     C: BlockchainEvents<B>,
 {
-    pub fn new(client: Arc<C>, tx: mpsc::Sender<CommitmentStateDiffWrapper>) -> Self {
+    pub fn new(client: Arc<C>, tx: mpsc::Sender<(BlockHash, CommitmentStateDiff)>) -> Self {
         let storage_event_stream = client
             .storage_changes_notification_stream(None, None)
             .expect("the node storage changes notification stream should be up and running");
@@ -136,18 +125,18 @@ enum BuildCommitmentStateDiffError {
 fn build_commitment_state_diff<B: BlockT, C, H>(
     client: Arc<C>,
     storage_notification: StorageNotification<B::Hash>,
-) -> Result<CommitmentStateDiffWrapper, BuildCommitmentStateDiffError>
+) -> Result<(BlockHash, CommitmentStateDiff), BuildCommitmentStateDiffError>
 where
     C: ProvideRuntimeApi<B>,
     C::Api: StarknetRuntimeApi<B>,
     C: HeaderBackend<B>,
     H: HasherT,
 {
-    let starknet_block_number: BlockNumber = {
+    let starknet_block_hash = {
         let header = client.header(storage_notification.block)?.ok_or(BuildCommitmentStateDiffError::BlockNotFound)?;
         let digest = header.digest();
         let block = mp_digest_log::find_starknet_block(digest)?;
-        BlockNumber(block.header().block_number)
+        block.header().hash::<H>().into()
     };
 
     let mut commitment_state_diff = CommitmentStateDiff {
@@ -212,22 +201,12 @@ where
         }
     }
 
-    Ok(CommitmentStateDiffWrapper{block_number: starknet_block_number, csd: commitment_state_diff})
+    Ok((starknet_block_hash, commitment_state_diff))
 }
 
-pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockNumber, CommitmentStateDiff)>) {
+pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
     while let Some((block_hash, csd)) = rx.next().await {
         log::info!("received state diff for block {block_hash}: {csd:?}");
-    }
-}
-
-pub async fn send_commitment_state_diff(
-    csd_sender: tokio::sync::Mutex<tokio::sync::mpsc::Sender<CommitmentStateDiffWrapper>>,
-    mut rx: mpsc::Receiver<CommitmentStateDiffWrapper>
-) {
-    while let Some(csd) = rx.next().await {
-        let sender_lock = csd_sender.lock().await;
-        sender_lock.send(csd).await.expect("Failed to send commitment state diff to the queue");
     }
 }
 
