@@ -7,6 +7,7 @@ use blockifier::state::cached_state::CommitmentStateDiff;
 use futures::channel::mpsc;
 use futures::{Stream, StreamExt};
 use indexmap::IndexMap;
+use mp_commitments::StateCommitmentTree;
 use mp_hashers::HasherT;
 use mp_storage::{SN_COMPILED_CLASS_HASH_PREFIX, SN_CONTRACT_CLASS_HASH_PREFIX, SN_NONCE_PREFIX, SN_STORAGE_PREFIX};
 use pallet_starknet::runtime_api::StarknetRuntimeApi;
@@ -19,7 +20,7 @@ use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonc
 use starknet_api::block::BlockHash;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey as StarknetStorageKey;
-use starknet_gateway::sequencer::models::StateUpdate;
+use mc_deoxys::state_updates::StarknetStateUpdate;
 use thiserror::Error;
 
 pub struct CommitmentStateDiffWorker<B: BlockT, C, H> {
@@ -211,40 +212,39 @@ pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, Commit
 }
 
 /// Get L2 state commitment of a Block from a CommitmentStateDiff
-pub async fn state_commitment<H: HasherT>(state_update: StateUpdate) -> StarkHash {
-    // Eytan TODO: compute and return state commitment aka global state root based on the state diff of the block.
-    // let contracts_tree_root = {
-    //     let mut contracts_tree = StateCommitmentTree::<H>::default();
+pub async fn state_commitment<H: HasherT>(state_update: StarknetStateUpdate) -> StarkHash {
+    let contracts_tree_root = {
+        let mut contracts_tree = StateCommitmentTree::<H>::default();
 
-    //     for (address, class_hash) in csdw.csd.address_to_class_hash {
-    //         let nonce = csdw.csd.address_to_nonce.get(&address).unwrap();
-    //         let storage_root = csdw.csd.storage_updates
-    //             .get(&address)
-    //             .map_or(Felt252Wrapper::ZERO, |storage_updates| {
-    //                 let storage_root_hash = Felt252Wrapper::ZERO;
-    //                 storage_root_hash
-    //             });
+        for (address, class_hash) in state_update {
+            let nonce = csdw.csd.address_to_nonce.get(&address).unwrap();
+            let storage_root = csdw.csd.storage_updates
+                .get(&address)
+                .map_or(Felt252Wrapper::ZERO, |storage_updates| {
+                    let storage_root_hash = Felt252Wrapper::ZERO;
+                    storage_root_hash
+                });
 
-    //         let contract_state_hash = calculate_contract_state_hash::<H>(
-    //             class_hash.into(),
-    //             storage_root.into(),
-    //             (*nonce).into(),
-    //         );
-    //         contracts_tree.set(address.into(), contract_state_hash);
-    //     }
-    //     contracts_tree.commit()
-    // };
+            let contract_state_hash = calculate_contract_state_hash::<H>(
+                class_hash.into(),
+                storage_root.into(),
+                (*nonce).into(),
+            );
+            contracts_tree.set(address.into(), contract_state_hash);
+        }
+        contracts_tree.commit()
+    };
 
-    // let classes_tree_root = {
-    //     let class_hashes: Vec<Felt252Wrapper> = csdw.csd.class_hash_to_compiled_class_hash
-    //         .iter()
-    //         .map(|(class_hash, compiled_class_hash)| {
-    //             calculate_class_commitment_leaf_hash::<H>((*compiled_class_hash).into())
-    //         })
-    //         .collect();
-    //     calculate_class_commitment_tree_root_hash::<H>(&class_hashes)
-    // };
+    let classes_tree_root = {
+        let class_hashes: Vec<Felt252Wrapper> = csdw.csd.class_hash_to_compiled_class_hash
+            .iter()
+            .map(|(class_hash, compiled_class_hash)| {
+                calculate_class_commitment_leaf_hash::<H>((*compiled_class_hash).into())
+            })
+            .collect();
+        calculate_class_commitment_tree_root_hash::<H>(&class_hashes)
+    };
 
-    // let state_root = calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root);
+    let state_root = calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root);
     StarkHash::default()
 }

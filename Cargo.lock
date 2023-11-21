@@ -7179,6 +7179,7 @@ dependencies = [
  "futures",
  "indexmap 2.0.0-pre",
  "log",
+ "mc-deoxys",
  "mp-commitments",
  "mp-digest-log",
  "mp-felt",

@@ -1,6 +1,7 @@
 //! Contains the code required to fetch data from the feeder efficiently.
 
 use std::time::Duration;
+use mp_commitments::StateCommitment;
 use reqwest::Url;
 use sp_core::H256;
 use starknet_ff::FieldElement;
@@ -115,7 +116,7 @@ async fn fetch_state_update(
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    // Eytan TODO: get state commitment based on state update.
+    
 
     state_update_sender
         .send(StarknetStateUpdate(state_update))
