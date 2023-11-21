@@ -7190,6 +7190,7 @@ dependencies = [
  "sp-api",
  "sp-blockchain",
  "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=release-polkadot-v1.3.0)",
+ "starknet-gateway",
  "starknet_api 0.4.1 (git+https://github.com/keep-starknet-strange/starknet-api?branch=no_std-support-dc83f05)",
  "thiserror",
  "tokio",

@@ -26,6 +26,7 @@ pallet-starknet = { workspace = true }
 # Starknet
 blockifier = { workspace = true, default-features = true }
 starknet_api = { workspace = true, default-features = true }
+starknet-gateway = { workspace = true, default-features = true }
 
 # Async
 futures = { workspace = true, default-features = true }

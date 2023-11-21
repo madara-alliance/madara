@@ -21,7 +21,8 @@ use sp_runtime::traits::{Block as BlockT, Header};
 use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::block::BlockNumber;
 use starknet_api::hash::{StarkFelt, StarkHash};
-use starknet_api::state::{StorageKey as StarknetStorageKey, StateUpdate};
+use starknet_api::state::{StorageKey as StarknetStorageKey};
+use starknet_gateway::sequencer::models::StateUpdate;
 use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -231,40 +232,40 @@ pub async fn send_commitment_state_diff(
 }
 
 /// Get L2 state commitment of a Block from a CommitmentStateDiff
-pub async fn state_commitment<H: HasherT>(state_update: starknet_gateway::sequencer::models::StateUpdate) -> StarkHash {
+pub async fn state_commitment<H: HasherT>(state_update: StateUpdate) -> StarkHash {
     // Eytan TODO: compute and return state commitment aka global state root based on the state diff of the block.
-    let contracts_tree_root = {
-        let mut contracts_tree = StateCommitmentTree::<H>::default();
+    // let contracts_tree_root = {
+    //     let mut contracts_tree = StateCommitmentTree::<H>::default();
 
-        for (address, class_hash) in csdw.csd.address_to_class_hash {
-            let nonce = csdw.csd.address_to_nonce.get(&address).unwrap();
-            let storage_root = csdw.csd.storage_updates
-                .get(&address)
-                .map_or(Felt252Wrapper::ZERO, |storage_updates| {
-                    let storage_root_hash = Felt252Wrapper::ZERO;
-                    storage_root_hash
-                });
+    //     for (address, class_hash) in csdw.csd.address_to_class_hash {
+    //         let nonce = csdw.csd.address_to_nonce.get(&address).unwrap();
+    //         let storage_root = csdw.csd.storage_updates
+    //             .get(&address)
+    //             .map_or(Felt252Wrapper::ZERO, |storage_updates| {
+    //                 let storage_root_hash = Felt252Wrapper::ZERO;
+    //                 storage_root_hash
+    //             });
 
-            let contract_state_hash = calculate_contract_state_hash::<H>(
-                class_hash.into(),
-                storage_root.into(),
-                (*nonce).into(),
-            );
-            contracts_tree.set(address.into(), contract_state_hash);
-        }
-        contracts_tree.commit()
-    };
+    //         let contract_state_hash = calculate_contract_state_hash::<H>(
+    //             class_hash.into(),
+    //             storage_root.into(),
+    //             (*nonce).into(),
+    //         );
+    //         contracts_tree.set(address.into(), contract_state_hash);
+    //     }
+    //     contracts_tree.commit()
+    // };
 
-    let classes_tree_root = {
-        let class_hashes: Vec<Felt252Wrapper> = csdw.csd.class_hash_to_compiled_class_hash
-            .iter()
-            .map(|(class_hash, compiled_class_hash)| {
-                calculate_class_commitment_leaf_hash::<H>((*compiled_class_hash).into())
-            })
-            .collect();
-        calculate_class_commitment_tree_root_hash::<H>(&class_hashes)
-    };
+    // let classes_tree_root = {
+    //     let class_hashes: Vec<Felt252Wrapper> = csdw.csd.class_hash_to_compiled_class_hash
+    //         .iter()
+    //         .map(|(class_hash, compiled_class_hash)| {
+    //             calculate_class_commitment_leaf_hash::<H>((*compiled_class_hash).into())
+    //         })
+    //         .collect();
+    //     calculate_class_commitment_tree_root_hash::<H>(&class_hashes)
+    // };
 
-    let state_root = calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root);
+    // let state_root = calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root);
     StarkHash::default()
 }
