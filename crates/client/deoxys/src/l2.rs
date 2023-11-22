@@ -2,10 +2,12 @@
 
 use std::time::Duration;
 use mp_commitments::StateCommitment;
+use mp_hashers::pedersen::PedersenHasher;
 use reqwest::Url;
 use sp_core::H256;
 use starknet_ff::FieldElement;
 use starknet_gateway::sequencer::models::state_update::StateDiff;
+use mc_commitment_state_diff::{state_commitment, build_csd};
 use starknet_gateway::sequencer::models::BlockId;
 use starknet_gateway::SequencerGatewayProvider;
 use tokio::sync::mpsc::Sender;
@@ -116,8 +118,11 @@ async fn fetch_state_update(
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    
+    // Assuming build_csd and state_commitment can work with a reference to state_update
+    let csd = build_csd::<PedersenHasher>(&state_update).unwrap().1;
+    state_commitment::<PedersenHasher>(csd);
 
+    // Now send state_update, which moves it
     state_update_sender
         .send(StarknetStateUpdate(state_update))
         .await
@@ -125,6 +130,7 @@ async fn fetch_state_update(
 
     Ok(())
 }
+
 
 /// Notifies the consensus engine that a new block should be created.
 async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) -> Result<(), String> {

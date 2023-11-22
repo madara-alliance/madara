@@ -47,6 +47,7 @@ mp-commitments = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
+mc-commitment-state-diff = { workspace = true }
 validator = { workspace = true, features = ["derive"] }
 sc-consensus-manual-seal.workspace = true
 futures = { workspace = true, default-features = true }

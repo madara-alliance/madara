@@ -7,7 +7,9 @@ use blockifier::state::cached_state::CommitmentStateDiff;
 use futures::channel::mpsc;
 use futures::{Stream, StreamExt};
 use indexmap::IndexMap;
-use mp_commitments::StateCommitmentTree;
+use indexmap::map::Entry;
+use mp_commitments::{StateCommitmentTree, calculate_contract_state_hash, calculate_class_commitment_leaf_hash, calculate_class_commitment_tree_root_hash, calculate_state_commitment};
+use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_storage::{SN_COMPILED_CLASS_HASH_PREFIX, SN_CONTRACT_CLASS_HASH_PREFIX, SN_NONCE_PREFIX, SN_STORAGE_PREFIX};
 use pallet_starknet::runtime_api::StarknetRuntimeApi;
@@ -20,7 +22,7 @@ use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonc
 use starknet_api::block::BlockHash;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey as StarknetStorageKey;
-use mc_deoxys::state_updates::StarknetStateUpdate;
+use starknet_gateway::sequencer::models::StateUpdate;
 use thiserror::Error;
 
 pub struct CommitmentStateDiffWorker<B: BlockT, C, H> {
@@ -114,13 +116,15 @@ where
 }
 
 #[derive(Debug, Error)]
-enum BuildCommitmentStateDiffError {
+pub enum BuildCommitmentStateDiffError {
     #[error("failed to interact with substrate header backend")]
     SubstrateHeaderBackend(#[from] sp_blockchain::Error),
     #[error("block not found")]
     BlockNotFound,
     #[error("digest log not found")]
     DigestLogNotFound(#[from] mp_digest_log::FindLogError),
+    #[error("conversion error")]
+    ConversionError
 }
 
 fn build_commitment_state_diff<B: BlockT, C, H>(
@@ -205,6 +209,60 @@ where
     Ok((starknet_block_hash, commitment_state_diff))
 }
 
+pub fn build_csd<H>(
+    state_update: &StateUpdate,
+) -> Result<(Felt252Wrapper, CommitmentStateDiff), BuildCommitmentStateDiffError>
+where
+    H: HasherT,
+{
+    let starknet_block_hash = match state_update.block_hash {
+        Some(hash) => hash.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+        None => return Err(BuildCommitmentStateDiffError::BlockNotFound),
+    };
+
+    let mut commitment_state_diff = CommitmentStateDiff {
+        address_to_class_hash: Default::default(),
+        address_to_nonce: Default::default(),
+        storage_updates: Default::default(),
+        class_hash_to_compiled_class_hash: Default::default(),
+    };
+
+    for (address, diffs) in &state_update.state_diff.storage_diffs {
+        let contract_address = ContractAddress(PatriciaKey((*address).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
+        for storage_diff in diffs {
+            let storage_key = StarknetStorageKey(PatriciaKey(storage_diff.key.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
+            let value = storage_diff.value;
+
+            match commitment_state_diff.storage_updates.entry(contract_address) {
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().insert(storage_key, value.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
+                }
+                Entry::Vacant(entry) => {
+                    let mut contract_storage = IndexMap::default();
+                    contract_storage.insert(storage_key, value.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
+                    entry.insert(contract_storage);
+                }
+            }
+        }
+    }
+
+    for contract in &state_update.state_diff.deployed_contracts {
+        let contract_address = ContractAddress(PatriciaKey(contract.address.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
+        let class_hash = ClassHash(contract.class_hash.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
+        commitment_state_diff.address_to_class_hash.insert(contract_address, class_hash);
+    }
+
+    for nonce in &state_update.state_diff.nonces {
+        let contract_address = ContractAddress(PatriciaKey((*nonce.0).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
+        let nonce_value = Nonce((*nonce.1).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
+        commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
+    }
+
+    Ok((starknet_block_hash, commitment_state_diff))
+}
+
+
+
 pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
     while let Some((block_hash, csd)) = rx.next().await {
         log::info!("received state diff for block {block_hash}: {csd:?}");
@@ -212,13 +270,14 @@ pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, Commit
 }
 
 /// Get L2 state commitment of a Block from a CommitmentStateDiff
-pub async fn state_commitment<H: HasherT>(state_update: StarknetStateUpdate) -> StarkHash {
+pub async fn state_commitment<H: HasherT>(csd: CommitmentStateDiff) -> StarkHash {
     let contracts_tree_root = {
         let mut contracts_tree = StateCommitmentTree::<H>::default();
 
-        for (address, class_hash) in state_update {
-            let nonce = csdw.csd.address_to_nonce.get(&address).unwrap();
-            let storage_root = csdw.csd.storage_updates
+        for (address, class_hash) in csd.address_to_class_hash {
+            let nonce = csd.address_to_nonce.get(&address).unwrap();
+            // Implement merkle tree on storage
+            let storage_root = csd.storage_updates
                 .get(&address)
                 .map_or(Felt252Wrapper::ZERO, |storage_updates| {
                     let storage_root_hash = Felt252Wrapper::ZERO;
@@ -236,7 +295,7 @@ pub async fn state_commitment<H: HasherT>(state_update: StarknetStateUpdate) -> 
     };
 
     let classes_tree_root = {
-        let class_hashes: Vec<Felt252Wrapper> = csdw.csd.class_hash_to_compiled_class_hash
+        let class_hashes: Vec<Felt252Wrapper> = csd.class_hash_to_compiled_class_hash
             .iter()
             .map(|(class_hash, compiled_class_hash)| {
                 calculate_class_commitment_leaf_hash::<H>((*compiled_class_hash).into())
@@ -246,5 +305,6 @@ pub async fn state_commitment<H: HasherT>(state_update: StarknetStateUpdate) -> 
     };
 
     let state_root = calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root);
+    println!("state_root: {:?}", state_root);
     StarkHash::default()
 }

@@ -1,5 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-
+// TODO: Find a better place than the block primitive crate to store this.
 use mp_felt::Felt252Wrapper;
 #[cfg(feature = "parity-scale-codec")]
 use parity_scale_codec::{Decode, Encode, Error, Input, Output};
