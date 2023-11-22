@@ -1,18 +1,14 @@
 //! Contains the code required to fetch data from the feeder efficiently.
 
 use std::time::Duration;
-use mp_commitments::StateCommitment;
 use mp_hashers::pedersen::PedersenHasher;
 use reqwest::Url;
 use sp_core::H256;
-use starknet_ff::FieldElement;
-use starknet_gateway::sequencer::models::state_update::StateDiff;
-use mc_commitment_state_diff::{state_commitment, build_csd};
 use starknet_gateway::sequencer::models::BlockId;
 use starknet_gateway::SequencerGatewayProvider;
 use tokio::sync::mpsc::Sender;
 
-use crate::state_updates::StarknetStateUpdate;
+use crate::state_updates::{StarknetStateUpdate, state_commitment, commitment_state_diff};
 use crate::CommandSink;
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
@@ -118,9 +114,7 @@ async fn fetch_state_update(
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    // Assuming build_csd and state_commitment can work with a reference to state_update
-    let csd = build_csd::<PedersenHasher>(&state_update).unwrap().1;
-    state_commitment::<PedersenHasher>(csd);
+    // TODO: 
 
     // Now send state_update, which moves it
     state_update_sender

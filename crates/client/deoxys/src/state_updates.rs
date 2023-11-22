@@ -1,7 +1,22 @@
+use mc_commitment_state_diff::BuildCommitmentStateDiffError;
 use mp_felt::Felt252Wrapper;
 use starknet_gateway::sequencer::models::state_update::{StateDiff, StorageDiff, DeployedContract, DeclaredContract};
 use parity_scale_codec::{Encode, Decode, Input, Output, Error};
 use starknet_ff::FieldElement;
+use starknet_gateway::sequencer::models::StateUpdate;
+use indexmap::map::Entry;
+use mp_commitments::{StateCommitmentTree, calculate_contract_state_hash, calculate_class_commitment_leaf_hash, calculate_class_commitment_tree_root_hash, calculate_state_commitment};
+use futures::{Stream, StreamExt};
+
+use blockifier::state::cached_state::CommitmentStateDiff;
+use blockifier::state::cached_state::CachedState;
+use futures::channel::mpsc;
+use indexmap::IndexMap;
+use mp_hashers::HasherT;
+use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
+use starknet_api::block::BlockHash;
+use starknet_api::hash::{StarkFelt, StarkHash};
+use starknet_api::state::StorageKey as StarknetStorageKey;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
@@ -232,4 +247,135 @@ impl Decode for StateUpdateWrapper {
             state_diff: StateDiffWrapper::decode(input)?,
         })
     }
+}
+
+pub fn commitment_state_diff<H>(
+    state_update: &StateUpdate,
+) -> Result<(Felt252Wrapper, CommitmentStateDiff), BuildCommitmentStateDiffError>
+where
+    H: HasherT,
+{
+    let starknet_block_hash = match state_update.block_hash {
+        Some(hash) => hash.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+        None => return Err(BuildCommitmentStateDiffError::BlockNotFound),
+    };
+
+    let mut commitment_state_diff = CommitmentStateDiff {
+        address_to_class_hash: Default::default(),
+        address_to_nonce: Default::default(),
+        storage_updates: Default::default(),
+        class_hash_to_compiled_class_hash: Default::default(),
+    };
+
+    for (address, diffs) in &state_update.state_diff.storage_diffs {
+        let contract_address = ContractAddress(PatriciaKey((*address).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
+        for storage_diff in diffs {
+            let storage_key = StarknetStorageKey(PatriciaKey(storage_diff.key.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
+            let value = storage_diff.value;
+
+            match commitment_state_diff.storage_updates.entry(contract_address) {
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().insert(storage_key, value.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
+                }
+                Entry::Vacant(entry) => {
+                    let mut contract_storage = IndexMap::default();
+                    contract_storage.insert(storage_key, value.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
+                    entry.insert(contract_storage);
+                }
+            }
+        }
+    }
+
+    // for contract in &state_update.state_diff.deployed_contracts {
+    //     let contract_address = ContractAddress(PatriciaKey(contract.address.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
+    //     let class_hash = ClassHash(contract.class_hash.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
+    //     let compiled_class_hash: CompiledClassHash = calculate_compiled_class_hash(&class_hash);
+    
+    //     commitment_state_diff.address_to_class_hash.insert(contract_address, class_hash);
+    //     commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
+    // }
+
+    for nonce in &state_update.state_diff.nonces {
+        let contract_address = ContractAddress(PatriciaKey((*nonce.0).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
+        let nonce_value = Nonce((*nonce.1).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
+        commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
+    }
+
+    Ok((starknet_block_hash, commitment_state_diff))
+}
+
+/// Get L2 state commitment of a Block from a CommitmentStateDiff
+pub async fn state_commitment<H: HasherT>(csd: CommitmentStateDiff) -> Felt252Wrapper {
+    println!("Entering state_commitment function");
+
+    let contracts_tree_root = {
+        println!("Initializing contracts_tree");
+        let mut contracts_tree = StateCommitmentTree::<H>::default();
+
+        for (address, class_hash) in csd.address_to_class_hash {
+            println!("Processing address: {:?}, class_hash: {:?}", address, class_hash);
+
+            let nonce = match csd.address_to_nonce.get(&address) {
+                Some(nonce) => nonce,
+                None => {
+                    println!("No nonce found for address: {:?}", address);
+                    continue;
+                }
+            };
+
+            println!("Nonce for address {:?}: {:?}", address, nonce);
+            let mut storage_tree = StateCommitmentTree::<H>::default();
+
+            if let Some(storage_updates) = csd.storage_updates.get(&address) {
+                println!("Processing storage_updates for address: {:?}", address);
+                for (key, value) in storage_updates {
+                    println!("Setting key: {:?}, value: {:?}", key, value);
+                    storage_tree.set((*key).into(), (*value).into());
+                }
+            }
+
+            // Compute the root of the storage tree
+            println!("Committing storage tree for address: {:?}", address);
+            let storage_root = storage_tree.commit();
+            println!("Storage tree root for address {:?}: {:?}", address, storage_root);
+
+            // Calculate the contract state hash
+            println!("Calculating contract state hash for address: {:?}", address);
+            let contract_state_hash = calculate_contract_state_hash::<H>(
+                class_hash.into(),
+                storage_root.into(),
+                (*nonce).into(),
+            );
+            println!("Contract state hash for address {:?}: {:?}", address, contract_state_hash);
+
+            println!("Setting contract state hash in contracts_tree for address: {:?}", address);
+            contracts_tree.set(address.into(), contract_state_hash);
+        }
+
+        println!("Committing contracts_tree");
+        contracts_tree.commit()
+    };
+
+    println!("Contracts tree root: {:?}", contracts_tree_root);
+
+    let classes_tree_root = {
+        println!("Calculating classes_tree_root");
+        let class_hashes: Vec<Felt252Wrapper> = csd.class_hash_to_compiled_class_hash
+            .iter()
+            .map(|(class_hash, compiled_class_hash)| {
+                println!("Calculating leaf hash for class_hash: {:?}", class_hash);
+                calculate_class_commitment_leaf_hash::<H>((*compiled_class_hash).into())
+            })
+            .collect();
+        calculate_class_commitment_tree_root_hash::<H>(&class_hashes)
+    };
+
+    println!("Classes tree root: {:?}", classes_tree_root);
+    println!("Calculating final state commitment");
+
+    let final_state_commitment = calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root);
+
+    println!("Final state commitment: {:?}", final_state_commitment);
+
+    final_state_commitment
 }

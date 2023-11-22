@@ -7255,6 +7255,7 @@ dependencies = [
  "env_logger",
  "futures",
  "hex",
+ "indexmap 2.0.0-pre",
  "log",
  "mc-commitment-state-diff",
  "mockito",
