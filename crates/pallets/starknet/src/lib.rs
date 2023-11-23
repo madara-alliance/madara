@@ -194,7 +194,7 @@ pub mod pallet {
             if !logs.is_empty() {
                 for log_entry in logs {
                     if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
-                        if *engine_id == mp_digest_log::MADARA_ENGINE_ID {
+                        if *engine_id == mp_digest_log::STATE_ENGINE_ID {
                             match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
                                 Ok(state_update) => {
         

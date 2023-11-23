@@ -119,6 +119,12 @@ impl<H: HasherT> StateCommitmentTree<H> {
     pub fn nodes(&self) -> NodesMapping {
         NodesMapping(self.tree.nodes())
     }
+
+    /// Loads tree from root
+    pub fn load(root: Felt252Wrapper) -> Self {
+        let merkle_tree = MerkleTree::new(root);
+        Self { tree: merkle_tree }
+    }
 }
 
 /// Calculate state commitment hash value.
@@ -283,14 +289,15 @@ pub fn calculate_contract_state_hash<H: HasherT>(
     root: Felt252Wrapper,
     nonce: Felt252Wrapper,
 ) -> Felt252Wrapper {
+    // Define the constant for the contract state hash version, ensure this aligns with StarkNet specifications.
     const CONTRACT_STATE_HASH_VERSION: Felt252Wrapper = Felt252Wrapper::ZERO;
 
-    // The contract state hash is defined as H(H(H(hash, root), nonce), CONTRACT_STATE_HASH_VERSION)
-    let hash = H::compute_hash_on_elements(&[hash.0, root.0, nonce.0, CONTRACT_STATE_HASH_VERSION.0]);
+    // First hash: Combine class_hash and storage_root.
+    let class_storage_hash = H::compute_hash_on_elements(&[hash.0, root.0]);
+    let nonce_hash = H::compute_hash_on_elements(&[class_storage_hash, nonce.0]);
+    let contract_state_hash = H::compute_hash_on_elements(&[nonce_hash, CONTRACT_STATE_HASH_VERSION.0]);
 
-    // Compare this with the HashChain construction used in the contract_hash: the number of
-    // elements is not hashed to this hash, and this is supposed to be different.
-    hash.into()
+    contract_state_hash.into()
 }
 
 /// Compute the combined hash of the transaction hash and the signature.

@@ -7630,6 +7630,7 @@ dependencies = [
 name = "mp-commitments"
 version = "0.5.0"
 dependencies = [
+ "anyhow",
  "bitvec",
  "derive_more",
  "frame-support",

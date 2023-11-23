@@ -1,6 +1,7 @@
 //! Contains the code required to fetch data from the feeder efficiently.
 
 use std::time::Duration;
+use mc_commitment_state_diff::state_commitment;
 use mp_hashers::pedersen::PedersenHasher;
 use reqwest::Url;
 use sp_core::H256;
@@ -8,7 +9,7 @@ use starknet_gateway::sequencer::models::BlockId;
 use starknet_gateway::SequencerGatewayProvider;
 use tokio::sync::mpsc::Sender;
 
-use crate::state_updates::{StarknetStateUpdate, state_commitment, commitment_state_diff};
+use crate::state_updates::{StarknetStateUpdate, commitment_state_diff};
 use crate::CommandSink;
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the

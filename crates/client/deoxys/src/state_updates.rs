@@ -304,78 +304,24 @@ where
     Ok((starknet_block_hash, commitment_state_diff))
 }
 
-/// Get L2 state commitment of a Block from a CommitmentStateDiff
-pub async fn state_commitment<H: HasherT>(csd: CommitmentStateDiff) -> Felt252Wrapper {
-    println!("Entering state_commitment function");
+// Get L2 state commitment of a Block from a CommitmentStateDiff
+// pub async fn state_commitment<H: HasherT>(state_update: &StateUpdate) -> Felt252Wrapper {
+//     println!("Entering state_commitment function");
 
-    let contracts_tree_root = {
-        println!("Initializing contracts_tree");
-        let mut contracts_tree = StateCommitmentTree::<H>::default();
+//     let contracts_tree_root = {
+//         println!("Initializing or loading storage commitment tree");
+//         let mut contracts_tree = StateCommitmentTree::<H>::default();
+        
 
-        for (address, class_hash) in csd.address_to_class_hash {
-            println!("Processing address: {:?}, class_hash: {:?}", address, class_hash);
+//         contracts_tree.commit()
+//     };
 
-            let nonce = match csd.address_to_nonce.get(&address) {
-                Some(nonce) => nonce,
-                None => {
-                    println!("No nonce found for address: {:?}", address);
-                    continue;
-                }
-            };
+//     let classes_tree_root = {
+//         let mut class_tree = StateCommitmentTree::<H>::default();
 
-            println!("Nonce for address {:?}: {:?}", address, nonce);
-            let mut storage_tree = StateCommitmentTree::<H>::default();
+//         class_tree.commit()
+//     };
 
-            if let Some(storage_updates) = csd.storage_updates.get(&address) {
-                println!("Processing storage_updates for address: {:?}", address);
-                for (key, value) in storage_updates {
-                    println!("Setting key: {:?}, value: {:?}", key, value);
-                    storage_tree.set((*key).into(), (*value).into());
-                }
-            }
-
-            // Compute the root of the storage tree
-            println!("Committing storage tree for address: {:?}", address);
-            let storage_root = storage_tree.commit();
-            println!("Storage tree root for address {:?}: {:?}", address, storage_root);
-
-            // Calculate the contract state hash
-            println!("Calculating contract state hash for address: {:?}", address);
-            let contract_state_hash = calculate_contract_state_hash::<H>(
-                class_hash.into(),
-                storage_root.into(),
-                (*nonce).into(),
-            );
-            println!("Contract state hash for address {:?}: {:?}", address, contract_state_hash);
-
-            println!("Setting contract state hash in contracts_tree for address: {:?}", address);
-            contracts_tree.set(address.into(), contract_state_hash);
-        }
-
-        println!("Committing contracts_tree");
-        contracts_tree.commit()
-    };
-
-    println!("Contracts tree root: {:?}", contracts_tree_root);
-
-    let classes_tree_root = {
-        println!("Calculating classes_tree_root");
-        let class_hashes: Vec<Felt252Wrapper> = csd.class_hash_to_compiled_class_hash
-            .iter()
-            .map(|(class_hash, compiled_class_hash)| {
-                println!("Calculating leaf hash for class_hash: {:?}", class_hash);
-                calculate_class_commitment_leaf_hash::<H>((*compiled_class_hash).into())
-            })
-            .collect();
-        calculate_class_commitment_tree_root_hash::<H>(&class_hashes)
-    };
-
-    println!("Classes tree root: {:?}", classes_tree_root);
-    println!("Calculating final state commitment");
-
-    let final_state_commitment = calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root);
-
-    println!("Final state commitment: {:?}", final_state_commitment);
-
-    final_state_commitment
-}
+//     let state_commitment = calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root);
+//     state_commitment
+// }

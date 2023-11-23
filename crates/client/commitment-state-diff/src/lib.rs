@@ -1,3 +1,4 @@
+use std::default;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use futures::{Stream, StreamExt};
 use indexmap::IndexMap;
 use mp_hashers::HasherT;
 use mp_hashers::pedersen::PedersenHasher;
+use mp_hashers::poseidon::PoseidonHasher;
 use mp_storage::{SN_COMPILED_CLASS_HASH_PREFIX, SN_CONTRACT_CLASS_HASH_PREFIX, SN_NONCE_PREFIX, SN_STORAGE_PREFIX};
 use pallet_starknet::runtime_api::StarknetRuntimeApi;
 use sc_client_api::client::BlockchainEvents;
@@ -211,34 +213,36 @@ where
 
 pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
     while let Some((block_hash, csd)) = rx.next().await {
-        state_commitment::<PedersenHasher>(csd).await;
+        println!("csd: {:?}", csd);
+        println!("➡️ block_hash {:?} with {:?}", block_hash, state_commitment(csd).0);
     }
 }
 
 /// Get L2 state commitment of a Block from a CommitmentStateDiff
-pub async fn state_commitment<H: HasherT>(csd: CommitmentStateDiff) -> Felt252Wrapper {
+pub fn state_commitment(csd: CommitmentStateDiff) -> Felt252Wrapper {
     let contracts_tree_root = {
-        let mut contracts_tree = StateCommitmentTree::<H>::default();
+        let mut contracts_tree = StateCommitmentTree::<PedersenHasher>::default();
 
         for (address, class_hash) in csd.address_to_class_hash {
-            if let Some(nonce) = csd.address_to_nonce.get(&address) {
-                let mut storage_tree = StateCommitmentTree::<H>::default();
+            let default_nonce = Nonce::default();
+            let nonce = csd.address_to_nonce.get(&address).unwrap_or(&default_nonce);
 
-                if let Some(storage_updates) = csd.storage_updates.get(&address) {
-                    for (key, value) in storage_updates {
-                        storage_tree.set((*key).into(), (*value).into());
-                    }
-                }
+            let mut storage_tree = StateCommitmentTree::<PedersenHasher>::default();
 
-                let storage_root = storage_tree.commit();
-                let contract_state_hash = calculate_contract_state_hash::<H>(
-                    class_hash.into(),
-                    storage_root.into(),
-                    (*nonce).into(),
-                );
-
-                contracts_tree.set(address.into(), contract_state_hash);
+            let default_storage_updates = IndexMap::<StarknetStorageKey, StarkFelt>::default();
+            let storage_updates = csd.storage_updates.get(&address).unwrap_or(&default_storage_updates);
+            for (key, value) in storage_updates {
+                storage_tree.set((*key).into(), (*value).into());
             }
+
+            let storage_root = storage_tree.commit();
+            let contract_state_hash = calculate_contract_state_hash::<PedersenHasher>(
+                class_hash.into(),
+                storage_root.into(),
+                (*nonce).into(),
+            );
+
+            contracts_tree.set(address.into(), contract_state_hash);
         }
 
         contracts_tree.commit()
@@ -247,11 +251,15 @@ pub async fn state_commitment<H: HasherT>(csd: CommitmentStateDiff) -> Felt252Wr
     let classes_tree_root = {
         let class_hashes: Vec<Felt252Wrapper> = csd.class_hash_to_compiled_class_hash
             .iter()
-            .map(|(_, compiled_class_hash)| calculate_class_commitment_leaf_hash::<H>((*compiled_class_hash).into()))
+            .map(|(_, compiled_class_hash)| calculate_class_commitment_leaf_hash::<PoseidonHasher>((*compiled_class_hash).into()))
             .collect();
-        calculate_class_commitment_tree_root_hash::<H>(&class_hashes)
+        calculate_class_commitment_tree_root_hash::<PoseidonHasher>(&class_hashes)
     };
 
-    calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root)
+    if classes_tree_root == Felt252Wrapper::ZERO {
+        contracts_tree_root
+    } else {
+        calculate_state_commitment::<PoseidonHasher>(contracts_tree_root, classes_tree_root)
+    }  
 }
 

@@ -163,7 +163,7 @@ impl<H: HasherT> MerkleTree<H> {
     /// Less visible initialization for `MerkleTree<T>` as the main entry points should be
     /// [`MerkleTree::<RcNodeStorage>::load`] for persistent trees and [`MerkleTree::empty`] for
     /// transient ones.
-    fn new(root: Felt252Wrapper) -> Self {
+    pub fn new(root: Felt252Wrapper) -> Self {
         let root_node = Node::Unresolved(root);
         let mut nodes_mapping: HashMap<NodeId, Node> = HashMap::new();
         let root_id = NodeId(0); // Assign the appropriate initial node ID here
