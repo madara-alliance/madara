@@ -27,16 +27,16 @@ type StateUpdateCallback = Arc<dyn Fn(EthereumStateUpdate) + Send + Sync>;
 pub struct EthereumClient {
     http: reqwest::Client,
     url: Url,
-    on_state_update: Option<StateUpdateCallback>,
+    _on_state_update: Option<StateUpdateCallback>,
 }
 
 /// Implementation of the Ethereum client to interact with L1
 impl EthereumClient {
-    pub fn new(url: Url, on_state_update: Option<StateUpdateCallback>) -> Result<Self> {
+    pub fn new(url: Url, _on_state_update: Option<StateUpdateCallback>) -> Result<Self> {
         Ok(Self {
             http: reqwest::Client::new(),
             url,
-            on_state_update,
+            _on_state_update,
         })
     }
 

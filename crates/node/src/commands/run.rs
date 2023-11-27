@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use mc_deoxys::l2::fetch_genesis_block;
 use reqwest::Url;
 use std::result::Result as StdResult;
 
@@ -8,7 +9,7 @@ use sc_service::BasePath;
 use serde::{Deserialize, Serialize};
 
 use crate::cli::Cli;
-use crate::service;
+use crate::{service, genesis_block};
 
 /// Available Sealing methods.
 #[derive(Debug, Copy, Clone, clap::ValueEnum, Default, Serialize, Deserialize)]
@@ -126,18 +127,20 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         deoxys_environment(&mut cli.run);
     }
     let runner = cli.create_runner(&cli.run.base)?;
-    let data_path = &runner.config().data_path;
+
+    //TODO: verify that the l1_endpoint is valid
+    let l1_endpoint = if let Some(url) = cli.run.l1_endpoint {
+        url
+    } else {
+        return Err(sc_cli::Error::Input("Missing required --l1-endpoint argument please reffer to https://deoxys-docs.kasar.io".to_string()));
+    };
 
     runner.run_node_until_exit(|config| async move {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
         let mut fetch_block_config = cli.run.network.block_fetch_config();
+        let genesis_block = fetch_genesis_block(fetch_block_config.clone()).await.unwrap();
         fetch_block_config.sound = cli.run.sound;
-        let l1_endpoint = if let Some(url) = cli.run.l1_endpoint {
-            url
-        } else {
-            return Err(sc_cli::Error::Input("Missing required --l1-endpoint argument".to_string()));
-        };
 
         service::new_full(
             config,
@@ -146,6 +149,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             l1_endpoint,
             cache,
             fetch_block_config,
+            genesis_block
         )
         .map_err(sc_cli::Error::Service)
     })

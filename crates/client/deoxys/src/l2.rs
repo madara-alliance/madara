@@ -2,15 +2,13 @@
 
 use std::fs;
 use std::time::Duration;
-use mc_commitment_state_diff::state_commitment;
-use mp_hashers::pedersen::PedersenHasher;
 use reqwest::Url;
 use sp_core::H256;
-use starknet_gateway::sequencer::models::{BlockId, Block};
+use starknet_gateway::sequencer::models::BlockId;
 use starknet_gateway::SequencerGatewayProvider;
 use tokio::sync::mpsc::Sender;
 
-use crate::state_updates::{StarknetStateUpdate, commitment_state_diff};
+use crate::state_updates::StarknetStateUpdate;
 use crate::CommandSink;
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
@@ -131,15 +129,14 @@ async fn fetch_block(
     Ok(())
 }
 
-pub fn fetch_genesis_block() -> mp_block::Block {
-    // let data = fs::read_to_string("./crates/client/deoxys/src/genesis_block/BLOCK_0_SN_MAIN.json")
-    //     .expect("Unable to read file");
+pub async fn fetch_genesis_block(
+    config: FetchConfig
+) -> Result<mp_block::Block, String> {
+    let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
+    let block =
+        client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    // let block: Block = serde_json::from_str(&data)
-    //     .expect("Unable to parse JSON");
-
-    // crate::convert::block(&block)
-    mp_block::Block::default()
+    Ok(crate::convert::block(&block))
 }
 
 async fn fetch_state_update(

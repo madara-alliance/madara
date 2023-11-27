@@ -5,17 +5,11 @@ use parity_scale_codec::{Encode, Decode, Input, Output, Error};
 use starknet_ff::FieldElement;
 use starknet_gateway::sequencer::models::StateUpdate;
 use indexmap::map::Entry;
-use mp_commitments::{StateCommitmentTree, calculate_contract_state_hash, calculate_class_commitment_leaf_hash, calculate_class_commitment_tree_root_hash, calculate_state_commitment};
-use futures::{Stream, StreamExt};
 
 use blockifier::state::cached_state::CommitmentStateDiff;
-use blockifier::state::cached_state::CachedState;
-use futures::channel::mpsc;
 use indexmap::IndexMap;
 use mp_hashers::HasherT;
-use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
-use starknet_api::block::BlockHash;
-use starknet_api::hash::{StarkFelt, StarkHash};
+use starknet_api::api_core::{ContractAddress, Nonce, PatriciaKey};
 use starknet_api::state::StorageKey as StarknetStorageKey;
 
 #[derive(Debug)]

@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
 use madara_runtime::{AuraConfig, GrandpaConfig, RuntimeGenesisConfig, SealingMode, SystemConfig, WASM_BINARY};
-use mp_felt::Felt252Wrapper;
-use pallet_starknet::genesis_loader::{GenesisData, GenesisLoader, HexFelt};
+use pallet_starknet::genesis_loader::{GenesisData, GenesisLoader};
 use sc_service::{BasePath, ChainType};
 use serde::{Deserialize, Serialize};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;

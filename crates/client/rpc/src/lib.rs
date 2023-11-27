@@ -11,7 +11,6 @@ mod types;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use blockifier::execution::contract_address;
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
@@ -47,7 +46,7 @@ use starknet_core::types::{
     DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResult, FeeEstimate, FieldElement,
     FunctionCall, InvokeTransactionReceipt, InvokeTransactionResult, L1HandlerTransactionReceipt,
     MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingTransactionReceipt, StateDiff, StateUpdate,
-    SyncStatus, SyncStatusType, Transaction, TransactionFinalityStatus, TransactionReceipt, contract,
+    SyncStatus, SyncStatusType, Transaction, TransactionFinalityStatus, TransactionReceipt,
 };
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};

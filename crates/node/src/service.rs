@@ -1,13 +1,10 @@
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
 use std::cell::RefCell;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use blockifier::state::cached_state::CommitmentStateDiff;
 use mc_deoxys::state_updates::StarknetStateUpdate;
-use starknet_api::block::BlockHash;
 use reqwest::Url;
 use futures::channel::mpsc;
 use futures::future;
@@ -22,7 +19,6 @@ use mc_deoxys::state_updates::StateUpdateWrapper;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
 };
-use mp_hashers::pedersen::PedersenHasher;
 use parity_scale_codec::Encode;
 use prometheus_endpoint::Registry;
 use sc_basic_authorship::ProposerFactory;
@@ -43,8 +39,7 @@ use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_inherents::InherentData;
 use sp_offchain::STORAGE_PREFIX;
 use sp_runtime::testing::{Digest, DigestItem};
-use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
-use sp_trie::PrefixedMemoryDB;
+use sp_runtime::traits::{Block as BlockT};
 
 use crate::genesis_block::MadaraGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
@@ -85,6 +80,7 @@ pub fn new_partial<BIQ>(
     config: &Configuration,
     build_import_queue: BIQ,
     cache_more_things: bool,
+    genesis_block: mp_block::Block,
 ) -> Result<
     sc_service::PartialComponents<
         FullClient,
@@ -133,6 +129,7 @@ where
         true,
         backend.clone(),
         executor.clone(),
+        genesis_block,
     )
     .unwrap();
 
@@ -273,6 +270,7 @@ pub fn new_full(
     l1_url: Url,
     cache_more_things: bool,
     fetch_config: mc_deoxys::FetchConfig,
+    genesis_block: mp_block::Block,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
@@ -286,7 +284,7 @@ pub fn new_full(
         select_chain,
         transaction_pool,
         other: (block_import, grandpa_link, mut telemetry, madara_backend),
-    } = new_partial(&config, build_import_queue, cache_more_things)?;
+    } = new_partial(&config, build_import_queue, cache_more_things, genesis_block)?;
 
     let mut net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
@@ -732,6 +730,6 @@ type ChainOpsResult =
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things)?;
+        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things, mp_block::Block::default())?;
     Ok((client, backend, import_queue, task_manager, other.3))
 }
