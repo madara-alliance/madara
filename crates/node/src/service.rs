@@ -693,7 +693,7 @@ where
             let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
             let block_digest_item: DigestItem =
-                sp_runtime::DigestItem::PreRuntime(mp_digest_log::BLOCK_ENGINE_ID, Encode::encode(&block));
+                sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
             let mut lock = self.state_update_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let state_update = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
             let state_update_wrapper = StateUpdateWrapper::try_from(state_update).unwrap();
@@ -701,6 +701,14 @@ where
                 sp_runtime::DigestItem::PreRuntime(mp_digest_log::STATE_ENGINE_ID, Encode::encode(&state_update_wrapper));
             Ok(Digest { logs: vec![block_digest_item, state_update_digest_item] })
         }
+
+        // fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) -> Result<Digest, Error> {
+        //     let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+        //     let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
+        //     let block_digest_item: DigestItem =
+        //         sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
+        //     Ok(Digest { logs: vec![block_digest_item] })
+        // }
 
         fn append_block_import(
             &self,

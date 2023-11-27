@@ -1,11 +1,12 @@
 //! Contains the code required to fetch data from the feeder efficiently.
 
+use std::fs;
 use std::time::Duration;
 use mc_commitment_state_diff::state_commitment;
 use mp_hashers::pedersen::PedersenHasher;
 use reqwest::Url;
 use sp_core::H256;
-use starknet_gateway::sequencer::models::BlockId;
+use starknet_gateway::sequencer::models::{BlockId, Block};
 use starknet_gateway::SequencerGatewayProvider;
 use tokio::sync::mpsc::Sender;
 
@@ -25,6 +26,31 @@ pub struct FetchConfig {
     pub workers: u32,
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
+}
+
+impl Default for FetchConfig {
+    fn default() -> Self {
+        FetchConfig {
+            // Provide default values for each field of FetchConfig
+            gateway: Url::parse("http://default-gateway-url.com").unwrap(),
+            feeder_gateway: Url::parse("http://default-feeder-gateway-url.com").unwrap(),
+            chain_id: starknet_ff::FieldElement::default(), // Adjust as necessary
+            workers: 4,
+            sound: false,
+        }
+    }
+}
+
+impl Clone for FetchConfig {
+    fn clone(&self) -> Self {
+        FetchConfig {
+            gateway: self.gateway.clone(),
+            feeder_gateway: self.feeder_gateway.clone(),
+            chain_id: self.chain_id.clone(),
+            workers: self.workers,
+            sound: self.sound,
+        }
+    }
 }
 
 /// The configuration of the senders responsible for sending blocks and state updates from the
@@ -103,6 +129,16 @@ async fn fetch_block(
     block_sender.send(crate::convert::block(&block)).await.map_err(|e| format!("failed to dispatch block: {e}"))?;
 
     Ok(())
+}
+
+pub fn fetch_genesis_block() -> mp_block::Block {
+    let data = fs::read_to_string("./crates/client/deoxys/src/genesis_block/BLOCK_0_SN_MAIN.json")
+        .expect("Unable to read file");
+
+    let block: Block = serde_json::from_str(&data)
+        .expect("Unable to parse JSON");
+
+    crate::convert::block(&block)
 }
 
 async fn fetch_state_update(

@@ -3,9 +3,9 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 const REMOTE_RPC_URL = process.env.REMOTE_RPC;
-const LOCAL_RPC_URL = process.env.DEOXYS_RPC;
-const START_BLOCK = 371839;
-const END_BLOCK = 372000;
+const LOCAL_RPC_URL = process.env.LOCAL_RPC;
+const START_BLOCK = 0;
+const END_BLOCK = 100;
 const MAX_CONCURRENT_REQUESTS = 10;
 
 const requestDataForMethod = (method, params) => ({

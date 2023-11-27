@@ -19,6 +19,7 @@ log = { workspace = true, default-features = true }
 mc-db = { workspace = true }
 mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
+mc-deoxys = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
@@ -29,3 +30,4 @@ sp-api = { workspace = true }
 sp-blockchain = { workspace = true }
 sp-core = { workspace = true }
 sp-runtime = { workspace = true }
+tokio = { workspace = true }

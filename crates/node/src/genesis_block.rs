@@ -11,6 +11,7 @@ use sp_api::Encode;
 use sp_core::storage::{StateVersion, Storage};
 use sp_runtime::traits::{Block as BlockT, Hash as HashT, Header as HeaderT, Zero};
 use sp_runtime::{BuildStorage, Digest, DigestItem};
+use starknet_gateway::SequencerGatewayProvider;
 
 /// Custom genesis block builder for Madara.
 pub struct MadaraGenesisBlockBuilder<Block: BlockT, B, E> {
@@ -57,8 +58,10 @@ fn construct_genesis_block<Block: BlockT>(state_root: Block::Hash, state_version
         <<<Block as BlockT>::Header as HeaderT>::Hashing as HashT>::trie_root(Vec::new(), state_version);
 
     let mut digest = vec![];
-    let block = StarknetBlock::default();
 
+    // Load first block from genesis folders
+    //TODO remove unecessary code from madara
+    let block = mc_deoxys::l2::fetch_genesis_block();
     digest.push(DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(block).encode()));
 
     Block::new(

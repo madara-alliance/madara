@@ -19,7 +19,6 @@ mp-hashers = { workspace = true }
 mp-transactions = { workspace = true }
 starknet-crypto = { workspace = true }
 starknet_api = { workspace = true }
-anyhow = { workspace = true }
 
 # Optional
 parity-scale-codec = { workspace = true, features = [

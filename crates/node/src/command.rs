@@ -28,7 +28,7 @@ impl SubstrateCli for Cli {
     }
 
     fn support_url() -> String {
-        "madara.zone".into()
+        "https://kasar.io".into()
     }
 
     fn copyright_start_year() -> i32 {

@@ -213,7 +213,7 @@ where
 
 pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
     while let Some((block_hash, csd)) = rx.next().await {
-        println!("csd: {:?}", csd);
+        //TODO: retrieve and deal with state commitment accross L1
         println!("➡️ block_hash {:?} with {:?}", block_hash, state_commitment(csd).0);
     }
 }
