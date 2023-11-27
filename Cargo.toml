@@ -22,9 +22,8 @@ members = [
   "crates/client/storage",
   "crates/client/deoxys",
   "crates/client/commitment-state-diff",
-  "starknet-rpc-test",
 ]
-# All previous except for `starknet-rpc-test`
+
 # We don't want `cargo test` to trigger its tests
 default-members = [
   "crates/node",
@@ -169,7 +168,6 @@ mc-db = { path = "crates/client/db" }
 mc-storage = { path = "crates/client/storage" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-rpc-core = { path = "crates/client/rpc-core" }
-mc-data-availability = { path = "crates/client/data-availability" }
 mc-commitment-state-diff = { path = "crates/client/commitment-state-diff" }
 
 # Madara runtime

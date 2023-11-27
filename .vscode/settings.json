@@ -5,5 +5,10 @@
   "editor.formatOnSave": false,
   "[rust]": {
     "editor.formatOnSave": false
+  },
+  "workbench.colorCustomizations": {
+    "activityBar.background": "#093338",
+    "titleBar.activeBackground": "#0D474E",
+    "titleBar.activeForeground": "#F2FCFD"
   }
 }

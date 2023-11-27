@@ -68,9 +68,6 @@ pub fn development_config(sealing: SealingMode, base_path: BasePath) -> Result<D
         move || {
             let genesis_loader = load_genesis(base_path.config_dir(chain_id));
 
-            // Logging the development account
-            print_development_accounts(&genesis_loader);
-
             DevGenesisExt {
                 genesis_config: testnet_genesis(
                     genesis_loader,
@@ -94,27 +91,6 @@ pub fn development_config(sealing: SealingMode, base_path: BasePath) -> Result<D
         // Extensions
         None,
     ))
-}
-
-// helper to print development accounts info
-// accounts with addresses 0x1 and 0x4 are NO VALIDATE accounts (don't require PK)
-// accounts with addresses 0x2 and 0x3 have the same PK
-pub fn print_development_accounts(genesis_loader: &GenesisLoader) {
-    // TODO: this is only true by luck. It's not enforced by anything
-    let no_validate_account_address = genesis_loader.data().contracts[0].0.0;
-    let argent_account_address = genesis_loader.data().contracts[1].0.0;
-    let oz_account_address = genesis_loader.data().contracts[2].0.0;
-    let cairo_1_no_validate_account_address = genesis_loader.data().contracts[3].0.0;
-
-    let argent_pk: HexFelt =
-        Felt252Wrapper::from_hex_be("0x00c1cf1490de1352865301bb8705143f3ef938f97fdf892f1090dcb5ac7bcd1d")
-            .unwrap()
-            .into();
-    log::info!("🧪 Using the following development accounts:");
-    log::info!("🧪 NO VALIDATE with address: {no_validate_account_address:#x} and no pk");
-    log::info!("🧪 ARGENT with address: {argent_account_address:#x} and pk: {argent_pk:#x}");
-    log::info!("🧪 OZ with address: {oz_account_address:#x} and pk: {argent_pk:#x}");
-    log::info!("🧪 CAIRO 1 with address: {cairo_1_no_validate_account_address:#x} and no pk");
 }
 
 pub fn local_testnet_config(base_path: BasePath, chain_id: &str) -> Result<ChainSpec, String> {

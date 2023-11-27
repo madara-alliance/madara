@@ -43,17 +43,12 @@ pub use pallet::*;
 pub mod blockifier_state_adapter;
 #[cfg(feature = "std")]
 pub mod genesis_loader;
-/// The implementation of the message type.
-pub mod message;
 /// The Starknet pallet's runtime API
 pub mod runtime_api;
 /// Transaction validation logic.
 pub mod transaction_validation;
 /// The Starknet pallet's runtime custom types.
 pub mod types;
-
-/// Everything needed to run the pallet offchain workers
-mod offchain_worker;
 
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
 use blockifier::transaction::objects::{TransactionExecutionInfo, TransactionExecutionResult};
@@ -179,7 +174,6 @@ pub mod pallet {
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         /// The block is being finalized.
         fn on_finalize(_n: BlockNumberFor<T>) {
-            log!(info, "Finalizing block");
             assert!(SeqAddrUpdate::<T>::take(), "Sequencer address must be set for the block");
             // Create a new Starknet block and store it.
             <Pallet<T>>::store_block(UniqueSaturatedInto::<u64>::unique_saturated_into(
@@ -253,17 +247,7 @@ pub mod pallet {
         /// # Arguments
         /// * `n` - The block number.
         fn offchain_worker(n: BlockNumberFor<T>) {
-            log!(info, "Running offchain worker at block {:?}.", n);
-
-            // match Self::process_l1_messages() {
-            //     Ok(_) => log!(info, "Successfully executed L1 messages"),
-            //     Err(err) => match err {
-            //         offchain_worker::OffchainWorkerError::NoLastKnownEthBlock => {
-            //             log!(info, "No last known Ethereum block number found. Skipping execution of L1 messages.")
-            //         }
-            //         _ => log!(error, "Failed to execute L1 messages: {:?}", err),
-            //     },
-            // }
+            
         }
     }
 
@@ -900,7 +884,6 @@ impl<T: Config> Pallet<T> {
     fn store_block(block_number: u64) {
         let block: StarknetBlock;
         if frame_system::Pallet::<T>::digest().logs().len() >= 1 {
-            log!(info, "Block found in store_block");
             match &frame_system::Pallet::<T>::digest().logs()[0] {
                 DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, encoded_data) => {
                     block = match StarknetBlock::decode(&mut encoded_data.as_slice()) {
@@ -922,7 +905,6 @@ impl<T: Config> Pallet<T> {
                 }
             }
         } else {
-            log!(info, "else Block found in store_block");
             let transactions = Self::pending();
             let transaction_hashes = Self::pending_hashes();
             assert_eq!(

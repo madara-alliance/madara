@@ -3,7 +3,6 @@ use reqwest::Url;
 use std::result::Result as StdResult;
 
 use madara_runtime::SealingMode;
-use mc_data_availability::DaLayer;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use sc_service::BasePath;
 use serde::{Deserialize, Serialize};
@@ -86,10 +85,6 @@ pub struct ExtendedRunCmd {
     #[clap(long, value_enum, ignore_case = true)]
     pub sealing: Option<Sealing>,
 
-    /// Choose a supported DA Layer
-    #[clap(long)]
-    pub da_layer: Option<DaLayer>,
-
     /// The L1 rpc endpoint url for state verification
     #[clap(long, value_parser = parse_url)]
     pub l1_endpoint: Option<Url>,
@@ -133,22 +128,6 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
     let runner = cli.create_runner(&cli.run.base)?;
     let data_path = &runner.config().data_path;
 
-    let da_config: Option<(DaLayer, PathBuf)> = match cli.run.da_layer {
-        Some(da_layer) => {
-            let da_path = data_path.join("da-config.json");
-            if !da_path.exists() {
-                log::info!("{} does not contain DA config", da_path.display());
-                return Err("DA config not available".into());
-            }
-
-            Some((da_layer, da_path))
-        }
-        None => {
-            log::info!("Madara initialized w/o DA layer");
-            None
-        }
-    };
-
     runner.run_node_until_exit(|config| async move {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
@@ -163,7 +142,6 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         service::new_full(
             config,
             sealing,
-            da_config,
             cli.run.base.rpc_port.unwrap(),
             l1_endpoint,
             cache,

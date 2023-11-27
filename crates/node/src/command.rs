@@ -12,7 +12,7 @@ use crate::{chain_spec, service};
 
 impl SubstrateCli for Cli {
     fn impl_name() -> String {
-        "Deoxys Node".into()
+        "👽 Deoxys Node".into()
     }
 
     fn impl_version() -> String {

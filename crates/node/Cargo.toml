@@ -4,9 +4,9 @@ version.workspace = true
 edition.workspace = true
 description = "Madara node."
 authors = [
-    "Antiyro <@kasarLabs>",
-    "Abdelhamid Bakhta <@keep-starknet-strange>",
-    "Substrate DevHub <https://github.com/substrate-developer-hub>",
+    "Kasar <@kasarLabs>",
+    "KSS <@keep-starknet-strange>",
+    "Substrate @substrate-developer-hub",
 ]
 homepage = "https://github.com/keep-starknet-strange/madara"
 license = "MIT"
@@ -83,7 +83,6 @@ blockifier = { workspace = true }
 hex = { workspace = true }
 madara-runtime = { workspace = true }
 mc-commitment-state-diff = { workspace = true }
-mc-data-availability = { workspace = true }
 mc-db = { workspace = true }
 mc-mapping-sync = { workspace = true }
 mc-rpc = { workspace = true }

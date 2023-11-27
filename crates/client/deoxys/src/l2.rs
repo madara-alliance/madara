@@ -132,13 +132,14 @@ async fn fetch_block(
 }
 
 pub fn fetch_genesis_block() -> mp_block::Block {
-    let data = fs::read_to_string("./crates/client/deoxys/src/genesis_block/BLOCK_0_SN_MAIN.json")
-        .expect("Unable to read file");
+    // let data = fs::read_to_string("./crates/client/deoxys/src/genesis_block/BLOCK_0_SN_MAIN.json")
+    //     .expect("Unable to read file");
 
-    let block: Block = serde_json::from_str(&data)
-        .expect("Unable to parse JSON");
+    // let block: Block = serde_json::from_str(&data)
+    //     .expect("Unable to parse JSON");
 
-    crate::convert::block(&block)
+    // crate::convert::block(&block)
+    mp_block::Block::default()
 }
 
 async fn fetch_state_update(
