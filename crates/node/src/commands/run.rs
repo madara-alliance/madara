@@ -168,21 +168,21 @@ fn override_dev_environment(cmd: &mut ExtendedRunCmd) {
 }
 
 fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
-    // create a reproducible dev environment
-    // by disabling the default substrate `dev` behaviour
-    cmd.base.shared_params.dev = false;
-    cmd.base.shared_params.chain = Some("dev".to_string());
+    // Set the blockchain network to 'starknet'
+    cmd.base.shared_params.chain = Some("starknet".to_string());
+    cmd.base.shared_params.base_path = Some(PathBuf::from("/tmp/deoxys"));
 
+    // Assign a random pokemon name at each startup
+    cmd.base.name = Some(tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(mc_deoxys::utility::get_random_pokemon_name())
+        .unwrap());
+
+    // Define telemetry endpoints at deoxys.kasar.io
+    cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://deoxys.kasar.io/submit/".to_string(), 0)];
+
+    // Enables authoring and manual sealing for custom block production
     cmd.base.force_authoring = true;
     cmd.base.alice = true;
-
-    // we can't set `--rpc-cors=all`, so it needs to be set manually if we want to connect with external
-    // hosts
-    cmd.base.rpc_external = true;
-    cmd.base.rpc_methods = RpcMethods::Unsafe;
-
-    cmd.base.name = Some("deoxys".to_string());
-    cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://deoxys.kasar.io/submit/".to_string(), 0)];
     cmd.sealing = Some(Sealing::Manual);
-    cmd.cache = true;
 }

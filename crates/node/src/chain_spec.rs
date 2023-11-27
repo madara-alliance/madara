@@ -128,6 +128,44 @@ pub fn local_testnet_config(base_path: BasePath, chain_id: &str) -> Result<Chain
     ))
 }
 
+pub fn deoxys_config(sealing: SealingMode, base_path: BasePath, chain_id: &str) -> Result<DevChainSpec, String> {
+    let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
+    let owned_chain_id = chain_id.to_owned();
+
+    Ok(DevChainSpec::from_genesis(
+        // Name
+        "Starknet",
+        // ID
+        chain_id,
+        ChainType::Development,
+        move || {
+            let genesis_loader = load_genesis(base_path.config_dir(&owned_chain_id));
+
+            DevGenesisExt {
+                genesis_config: testnet_genesis(
+                    genesis_loader,
+                    wasm_binary,
+                    // Initial PoA authorities
+                    vec![authority_keys_from_seed("Alice")],
+                    true,
+                ),
+                sealing: sealing.clone(),
+            }
+        },
+        // Bootnodes
+        vec![],
+        // Telemetry
+        None,
+        // Protocol ID
+        None,
+        None,
+        // Properties
+        None,
+        // Extensions
+        None,
+    ))
+}
+
 fn load_genesis(data_path: PathBuf) -> GenesisLoader {
     let genesis_path = data_path.join(GENESIS_ASSETS_DIR).join(GENESIS_ASSETS_FILE);
     let genesis_file_content = std::fs::read_to_string(genesis_path)

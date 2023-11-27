@@ -26,6 +26,7 @@ anyhow = "1.0.75"
 
 
 rodio = { version = "0.17", optional = true }
+rand = { version = "0.8.5" }
 indexmap = { workspace = true }
 blockifier = { workspace = true, default-features = false, features = [
     "testing",

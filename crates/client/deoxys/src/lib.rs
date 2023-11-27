@@ -1,8 +1,8 @@
 #![allow(deprecated)]
 
 use reqwest::Url;
-mod utility;
-mod convert;
+pub mod utility;
+pub mod convert;
 pub mod state_updates;
 pub mod l2;
 pub mod l1;

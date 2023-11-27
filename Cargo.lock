@@ -6745,6 +6745,7 @@ dependencies = [
  "mp-hashers",
  "mp-transactions",
  "parity-scale-codec",
+ "rand 0.8.5",
  "reqwest",
  "rodio",
  "sc-consensus-manual-seal",
