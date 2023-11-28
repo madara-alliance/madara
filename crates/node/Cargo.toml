@@ -1,24 +1,24 @@
 [package]
-name = "madara"
+name = "deoxys"
 version.workspace = true
 edition.workspace = true
-description = "Madara node."
+description = "Deoxys node."
 authors = [
     "Kasar <@kasarLabs>",
     "KSS <@keep-starknet-strange>",
     "Substrate @substrate-developer-hub",
 ]
-homepage = "https://github.com/keep-starknet-strange/madara"
+homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
 publish = false
-repository = "https://github.com/keep-starknet-strange/madara"
+repository = "https://github.com/kasarlabs/deoxys"
 build = "build.rs"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
 [[bin]]
-name = "madara"
+name = "deoxys"
 
 [dependencies]
 async-trait = "0.1"
@@ -88,6 +88,7 @@ mc-mapping-sync = { workspace = true }
 mc-rpc = { workspace = true }
 mc-storage = { workspace = true }
 pallet-starknet = { workspace = true }
+pallet-starknet-runtime-api = { workspace = true }
 starknet-core = { workspace = true }
 starknet-gateway = { workspace = true }
 

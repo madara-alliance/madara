@@ -14,7 +14,6 @@ pub fn block(block: &p::Block) -> mp_block::Block {
     let header = mp_block::Header {
         parent_block_hash: felt(block.parent_block_hash),
         block_number,
-        status: block_status(&block.status),
         block_timestamp: block.timestamp,
         global_state_root: felt(block.state_root.expect("no state root provided")),
         sequencer_address,
@@ -27,16 +26,6 @@ pub fn block(block: &p::Block) -> mp_block::Block {
     };
 
     mp_block::Block::new(header, transactions)
-}
-
-fn block_status(status: &p::BlockStatus) -> mp_block::BlockStatus {
-    match status {
-        p::BlockStatus::Aborted => mp_block::BlockStatus::Rejected,
-        p::BlockStatus::AcceptedOnL1 => mp_block::BlockStatus::AcceptedOnL1,
-        p::BlockStatus::AcceptedOnL2 => mp_block::BlockStatus::AcceptedOnL2,
-        p::BlockStatus::Pending => mp_block::BlockStatus::Pending,
-        p::BlockStatus::Reverted => panic!("reverted block found"),
-    }
 }
 
 fn transactions(txs: &[p::TransactionType]) -> Vec<mp_transactions::Transaction> {

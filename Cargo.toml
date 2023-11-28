@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/node",
   "crates/runtime",
+  "crates/pallets/starknet/runtime_api/",
   "crates/pallets/starknet",
   "crates/primitives/digest-log",
   "crates/primitives/transactions",
@@ -28,6 +29,7 @@ members = [
 default-members = [
   "crates/node",
   "crates/runtime",
+  "crates/pallets/starknet/runtime_api/",
   "crates/pallets/starknet",
   "crates/primitives/digest-log",
   "crates/primitives/transactions",
@@ -63,10 +65,10 @@ opt-level = 3        # Optimize for speed regardless of binary size or compile t
 rpath = false        # Disables adding rpath to the binary
 
 [workspace.package]
-authors = ["Abdelhamid Bakhta <@abdelhamidbakhta>"]
+authors = ["Antiyro <@antiyro>"]
 edition = "2021"
-repository = "https://github.com/keep-starknet-strange/madara/"
-version = "0.5.0"
+repository = "https://github.com/kasarlabs/deoxys/"
+version = "0.1.0"
 
 [workspace.dependencies]
 # Substrate frame dependencies
@@ -148,7 +150,7 @@ pallet-timestamp = { default-features = false, git = "https://github.com/parityt
 
 # Madara pallets
 pallet-starknet = { path = "crates/pallets/starknet", default-features = false }
-
+pallet-starknet-runtime-api = { path = "crates/pallets/starknet/runtime_api", default-features = false }
 # Madara primtitives
 mp-digest-log = { path = "crates/primitives/digest-log", default-features = false }
 mp-block = { path = "crates/primitives/block", default-features = false }

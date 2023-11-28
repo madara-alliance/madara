@@ -12,7 +12,7 @@ use mp_hashers::HasherT;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::poseidon::PoseidonHasher;
 use mp_storage::{SN_COMPILED_CLASS_HASH_PREFIX, SN_CONTRACT_CLASS_HASH_PREFIX, SN_NONCE_PREFIX, SN_STORAGE_PREFIX};
-use pallet_starknet::runtime_api::StarknetRuntimeApi;
+use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::client::BlockchainEvents;
 use sc_client_api::{StorageEventStream, StorageNotification};
 use sp_api::ProvideRuntimeApi;

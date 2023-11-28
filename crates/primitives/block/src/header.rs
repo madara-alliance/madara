@@ -54,8 +54,6 @@ pub struct Header {
     pub parent_block_hash: StarkHash,
     /// The number (height) of this block.
     pub block_number: u64,
-    /// The status of this block.
-    pub status: BlockStatus,
     /// The state commitment after this block.
     pub global_state_root: StarkHash,
     /// The Starknet address of the sequencer who created this block.
@@ -83,7 +81,6 @@ impl Header {
     pub fn new(
         parent_block_hash: StarkHash,
         block_number: u64,
-        status: BlockStatus,
         global_state_root: StarkHash,
         sequencer_address: ContractAddress,
         block_timestamp: u64,
@@ -97,7 +94,6 @@ impl Header {
         Self {
             parent_block_hash,
             block_number,
-            status,
             global_state_root,
             sequencer_address,
             block_timestamp,

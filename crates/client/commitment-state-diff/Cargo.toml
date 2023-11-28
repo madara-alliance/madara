@@ -22,6 +22,7 @@ mp-storage = { workspace = true, default-features = true }
 mp-felt = { workspace = true, default-features = true }
 mp-commitments = { workspace = true, default-features = true }
 pallet-starknet = { workspace = true }
+pallet-starknet-runtime-api = { workspace = true, default-features = true }
 
 # Starknet
 blockifier = { workspace = true, default-features = true }

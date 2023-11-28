@@ -43,8 +43,6 @@ pub use pallet::*;
 pub mod blockifier_state_adapter;
 #[cfg(feature = "std")]
 pub mod genesis_loader;
-/// The Starknet pallet's runtime API
-pub mod runtime_api;
 /// Transaction validation logic.
 pub mod transaction_validation;
 /// The Starknet pallet's runtime custom types.
@@ -1073,7 +1071,6 @@ impl<T: Config> Pallet<T> {
                 StarknetHeader::new(
                     parent_block_hash.into(),
                     block_number.into(),
-                    BlockStatus::default(),
                     global_state_root.into(),
                     sequencer_address,
                     block_timestamp,
