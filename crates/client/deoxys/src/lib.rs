@@ -21,6 +21,6 @@ pub async fn sync(
 ) {
     let first_block = utility::get_last_synced_block(rpc_port).await + 1;   
  
-    l2::sync(sender_config, fetch_config, first_block).await;
     l1::sync(l1_url).await;
+    l2::sync(sender_config, fetch_config, first_block).await;
 }

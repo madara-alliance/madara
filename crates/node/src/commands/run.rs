@@ -9,7 +9,7 @@ use sc_service::BasePath;
 use serde::{Deserialize, Serialize};
 
 use crate::cli::Cli;
-use crate::{service, genesis_block};
+use crate::service;
 
 /// Available Sealing methods.
 #[derive(Debug, Copy, Clone, clap::ValueEnum, Default, Serialize, Deserialize)]

@@ -24,6 +24,7 @@ use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_transactions::UserTransaction;
+use mp_block::BlockStatus;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -539,6 +540,14 @@ where
         let chain_id = self.chain_id()?;
         let block_hash = block.header().hash::<H>();
 
+        println!("AKHIIII: {:?}", mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0);
+
+        let actual_status = if (block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0) {
+            BlockStatus::AcceptedOnL1.into()
+        } else {
+            BlockStatus::AcceptedOnL2.into()
+        };
+
         let transaction_hashes = if let Some(tx_hashes) = self.get_cached_transaction_hashes(block_hash.into()) {
             let mut v = Vec::with_capacity(tx_hashes.len());
             for tx_hash in tx_hashes {
@@ -557,7 +566,7 @@ where
         let parent_blockhash = block.header().parent_block_hash;
         let block_with_tx_hashes = BlockWithTxHashes {
             transactions: transaction_hashes,
-            // status: starknet_core::types::BlockStatus::from(block.header().status),
+            status: actual_status,
             block_hash: block_hash.into(),
             parent_hash: parent_blockhash.into(),
             block_number: block.header().block_number,
@@ -711,6 +720,12 @@ where
         let block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).unwrap_or_default();
         let block_hash = block.header().hash::<H>();
 
+        let actual_status = if block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
+            BlockStatus::AcceptedOnL1.into()
+        } else {
+            BlockStatus::AcceptedOnL2.into()
+        };
+
         let chain_id = self.chain_id()?;
         let chain_id = Felt252Wrapper(chain_id.0);
 
@@ -739,7 +754,7 @@ where
         }
 
         let block_with_txs = BlockWithTxs {
-            // status: starknet_core::types::BlockStatus::from(block.header().status),
+            status: actual_status,
             block_hash: block.header().hash::<H>().into(),
             parent_hash: block.header().parent_block_hash.into(),
             block_number: block.header().block_number,
@@ -1073,11 +1088,17 @@ where
             events_converted.last().unwrap().data[2]
         };
 
+        let actual_status = if block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
+            TransactionFinalityStatus::AcceptedOnL1.into()
+        } else {
+            TransactionFinalityStatus::AcceptedOnL2.into()
+        };
+
         let receipt = match transaction {
             mp_transactions::Transaction::Declare(_) => TransactionReceipt::Declare(DeclareTransactionReceipt {
                 transaction_hash,
                 actual_fee,
-                finality_status: TransactionFinalityStatus::AcceptedOnL2,
+                finality_status: actual_status,
                 block_hash,
                 block_number,
                 messages_sent: Default::default(),
@@ -1088,7 +1109,7 @@ where
                 TransactionReceipt::DeployAccount(DeployAccountTransactionReceipt {
                     transaction_hash,
                     actual_fee,
-                    finality_status: TransactionFinalityStatus::AcceptedOnL2,
+                    finality_status: actual_status,
                     block_hash,
                     block_number,
                     messages_sent: Default::default(),
@@ -1101,7 +1122,7 @@ where
                 TransactionReceipt::Deploy(DeployTransactionReceipt {
                     transaction_hash,
                     actual_fee,
-                    finality_status: TransactionFinalityStatus::AcceptedOnL2,
+                    finality_status: actual_status,
                     block_hash,
                     block_number,
                     messages_sent: Default::default(),
@@ -1113,7 +1134,7 @@ where
             mp_transactions::Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {
                 transaction_hash,
                 actual_fee,
-                finality_status: TransactionFinalityStatus::AcceptedOnL2,
+                finality_status: actual_status,
                 block_hash,
                 block_number,
                 messages_sent: Default::default(),
@@ -1123,7 +1144,7 @@ where
             mp_transactions::Transaction::L1Handler(_) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
                 transaction_hash,
                 actual_fee,
-                finality_status: TransactionFinalityStatus::AcceptedOnL2,
+                finality_status: actual_status,
                 block_hash,
                 block_number,
                 messages_sent: Default::default(),

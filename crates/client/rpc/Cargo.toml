@@ -23,6 +23,7 @@ pallet-starknet-runtime-api = { workspace = true, default-features = true }
 mc-db = { workspace = true }
 mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
+mc-deoxys = { workspace = true }
 # Substate primitives
 frame-support = { workspace = true }
 frame-system = { workspace = true }
