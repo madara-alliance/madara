@@ -20,7 +20,7 @@ pub async fn sync(
     rpc_port: u16, 
     l1_url: Url
 ) {
-    let first_block = utility::get_last_synced_block(rpc_port).await + 447770;   
+    let first_block = utility::get_last_synced_block(rpc_port).await + 1;   
  
     let _ = join!(
         l1::sync(l1_url, rpc_port),
