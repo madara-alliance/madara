@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use starknet_api::block;
 use starknet_core::crypto::compute_hash_on_elements;
 use starknet_core::utils::starknet_keccak;
 use starknet_crypto::FieldElement;
@@ -117,8 +116,8 @@ impl ComputeTransactionHash for DeclareTransactionV0 {
     fn compute_hash<H: HasherT>(
         &self,
         chain_id: Felt252Wrapper,
-        is_query: bool,
-        block_number: Option<u64>,
+        _is_query: bool,
+        _block_number: Option<u64>,
     ) -> Felt252Wrapper {
         let prefix = FieldElement::from_byte_slice_be(DECLARE_PREFIX).unwrap();
         let version = FieldElement::ZERO;
@@ -147,8 +146,8 @@ impl ComputeTransactionHash for DeclareTransactionV1 {
     fn compute_hash<H: HasherT>(
         &self,
         chain_id: Felt252Wrapper,
-        is_query: bool,
-        block_number: Option<u64>,
+        _is_query: bool,
+        _block_number: Option<u64>,
     ) -> Felt252Wrapper {
         let prefix = FieldElement::from_byte_slice_be(DECLARE_PREFIX).unwrap();
         let version = FieldElement::ONE;
@@ -178,7 +177,7 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
         &self,
         chain_id: Felt252Wrapper,
         is_query: bool,
-        block_number: Option<u64>,
+        _block_number: Option<u64>,
     ) -> Felt252Wrapper {
         let prefix = FieldElement::from_byte_slice_be(DECLARE_PREFIX).unwrap();
         let version = if is_query { SIMULATE_TX_VERSION_OFFSET + FieldElement::TWO } else { FieldElement::TWO };
@@ -210,7 +209,7 @@ impl ComputeTransactionHash for DeclareTransaction {
         &self,
         chain_id: Felt252Wrapper,
         is_query: bool,
-        block_number: Option<u64>,
+        _block_number: Option<u64>,
     ) -> Felt252Wrapper {
         match self {
             DeclareTransaction::V0(tx) => tx.compute_hash::<H>(chain_id, is_query, None),
@@ -225,7 +224,7 @@ impl ComputeTransactionHash for DeployAccountTransaction {
         &self,
         chain_id: Felt252Wrapper,
         is_query: bool,
-        block_number: Option<u64>,
+        _block_number: Option<u64>,
     ) -> Felt252Wrapper {
         let chain_id = chain_id.into();
         let contract_address = self.get_account_address();
@@ -372,7 +371,7 @@ impl ComputeTransactionHash for HandleL1MessageTransaction {
     fn compute_hash<H: HasherT>(
         &self,
         chain_id: Felt252Wrapper,
-        is_query: bool,
+        _is_query: bool,
         block_number: Option<u64>,
     ) -> Felt252Wrapper {
         let prefix = FieldElement::from_byte_slice_be(L1_HANDLER_PREFIX).unwrap();

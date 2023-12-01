@@ -1,3 +1,4 @@
+use std::default;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -8,24 +9,29 @@ use futures::channel::mpsc;
 use futures::{Stream, StreamExt};
 use indexmap::IndexMap;
 use mp_hashers::HasherT;
+use mp_hashers::pedersen::PedersenHasher;
+use mp_hashers::poseidon::PoseidonHasher;
 use mp_storage::{SN_COMPILED_CLASS_HASH_PREFIX, SN_CONTRACT_CLASS_HASH_PREFIX, SN_NONCE_PREFIX, SN_STORAGE_PREFIX};
-use pallet_starknet::runtime_api::StarknetRuntimeApi;
+use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::client::BlockchainEvents;
 use sc_client_api::{StorageEventStream, StorageNotification};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::{Block as BlockT, Header};
 use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
-use starknet_api::block::BlockHash;
-use starknet_api::hash::StarkFelt;
+use starknet_api::block::{BlockHash, BlockNumber};
+use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey as StarknetStorageKey;
 use thiserror::Error;
+
+use mp_commitments::{StateCommitmentTree, calculate_contract_state_hash, calculate_class_commitment_leaf_hash, calculate_class_commitment_tree_root_hash, calculate_state_commitment};
+use mp_felt::Felt252Wrapper;
 
 pub struct CommitmentStateDiffWorker<B: BlockT, C, H> {
     client: Arc<C>,
     storage_event_stream: StorageEventStream<B::Hash>,
-    tx: mpsc::Sender<(BlockHash, CommitmentStateDiff)>,
-    msg: Option<(BlockHash, CommitmentStateDiff)>,
+    tx: mpsc::Sender<(BlockNumber, BlockHash, CommitmentStateDiff)>,
+    msg: Option<(BlockNumber, BlockHash, CommitmentStateDiff)>,
     phantom: PhantomData<H>,
 }
 
@@ -33,7 +39,7 @@ impl<B: BlockT, C, H> CommitmentStateDiffWorker<B, C, H>
 where
     C: BlockchainEvents<B>,
 {
-    pub fn new(client: Arc<C>, tx: mpsc::Sender<(BlockHash, CommitmentStateDiff)>) -> Self {
+    pub fn new(client: Arc<C>, tx: mpsc::Sender<(BlockNumber, BlockHash, CommitmentStateDiff)>) -> Self {
         let storage_event_stream = client
             .storage_changes_notification_stream(None, None)
             .expect("the node storage changes notification stream should be up and running");
@@ -112,25 +118,34 @@ where
 }
 
 #[derive(Debug, Error)]
-enum BuildCommitmentStateDiffError {
+pub enum BuildCommitmentStateDiffError {
     #[error("failed to interact with substrate header backend")]
     SubstrateHeaderBackend(#[from] sp_blockchain::Error),
     #[error("block not found")]
     BlockNotFound,
     #[error("digest log not found")]
     DigestLogNotFound(#[from] mp_digest_log::FindLogError),
+    #[error("conversion error")]
+    ConversionError
 }
 
 fn build_commitment_state_diff<B: BlockT, C, H>(
     client: Arc<C>,
     storage_notification: StorageNotification<B::Hash>,
-) -> Result<(BlockHash, CommitmentStateDiff), BuildCommitmentStateDiffError>
+) -> Result<(BlockNumber, BlockHash, CommitmentStateDiff), BuildCommitmentStateDiffError>
 where
     C: ProvideRuntimeApi<B>,
     C::Api: StarknetRuntimeApi<B>,
     C: HeaderBackend<B>,
     H: HasherT,
 {
+    let starknet_block_number: BlockNumber = {
+        let header = client.header(storage_notification.block)?.ok_or(BuildCommitmentStateDiffError::BlockNotFound)?;
+        let digest = header.digest();
+        let block = mp_digest_log::find_starknet_block(digest)?;
+        BlockNumber(block.header().block_number)
+    };
+
     let starknet_block_hash = {
         let header = client.header(storage_notification.block)?.ok_or(BuildCommitmentStateDiffError::BlockNotFound)?;
         let digest = header.digest();
@@ -200,11 +215,59 @@ where
         }
     }
 
-    Ok((starknet_block_hash, commitment_state_diff))
+    Ok((starknet_block_number, starknet_block_hash, commitment_state_diff))
 }
 
-pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
-    while let Some((block_hash, csd)) = rx.next().await {
-        // log::info!("received state diff for block {block_hash}: {csd:?}");
+pub async fn verify_l2(mut rx: mpsc::Receiver<(BlockNumber, BlockHash, CommitmentStateDiff)>) {
+    while let Some((block_number, block_hash, csd)) = rx.next().await {
+        //TODO: retrieve and deal with state commitment accross L1
+        // println!("➡️ block_hash {:?} with {:?}", block_hash, state_commitment(csd).0);
+        // update_l2({block_number, block_hash, state_commitment})
     }
 }
+
+/// Get L2 state commitment of a Block from a CommitmentStateDiff
+pub fn state_commitment(csd: CommitmentStateDiff) -> Felt252Wrapper {
+    let contracts_tree_root = {
+        let mut contracts_tree = StateCommitmentTree::<PedersenHasher>::default();
+
+        for (address, class_hash) in csd.address_to_class_hash {
+            let default_nonce = Nonce::default();
+            let nonce = csd.address_to_nonce.get(&address).unwrap_or(&default_nonce);
+
+            let mut storage_tree = StateCommitmentTree::<PedersenHasher>::default();
+
+            let default_storage_updates = IndexMap::<StarknetStorageKey, StarkFelt>::default();
+            let storage_updates = csd.storage_updates.get(&address).unwrap_or(&default_storage_updates);
+            for (key, value) in storage_updates {
+                storage_tree.set((*key).into(), (*value).into());
+            }
+
+            let storage_root = storage_tree.commit();
+            let contract_state_hash = calculate_contract_state_hash::<PedersenHasher>(
+                class_hash.into(),
+                storage_root.into(),
+                (*nonce).into(),
+            );
+
+            contracts_tree.set(address.into(), contract_state_hash);
+        }
+
+        contracts_tree.commit()
+    };
+
+    let classes_tree_root = {
+        let class_hashes: Vec<Felt252Wrapper> = csd.class_hash_to_compiled_class_hash
+            .iter()
+            .map(|(_, compiled_class_hash)| calculate_class_commitment_leaf_hash::<PoseidonHasher>((*compiled_class_hash).into()))
+            .collect();
+        calculate_class_commitment_tree_root_hash::<PoseidonHasher>(&class_hashes)
+    };
+
+    if classes_tree_root == Felt252Wrapper::ZERO {
+        contracts_tree_root
+    } else {
+        calculate_state_commitment::<PoseidonHasher>(contracts_tree_root, classes_tree_root)
+    }  
+}
+

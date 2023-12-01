@@ -1,24 +1,24 @@
 [package]
-name = "madara"
+name = "deoxys"
 version.workspace = true
 edition.workspace = true
-description = "Madara node."
+description = "Deoxys node."
 authors = [
-    "Antiyro <@kasarLabs>",
-    "Abdelhamid Bakhta <@keep-starknet-strange>",
-    "Substrate DevHub <https://github.com/substrate-developer-hub>",
+    "Kasar <@kasarLabs>",
+    "KSS <@keep-starknet-strange>",
+    "Substrate @substrate-developer-hub",
 ]
-homepage = "https://github.com/keep-starknet-strange/madara"
+homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
 publish = false
-repository = "https://github.com/keep-starknet-strange/madara"
+repository = "https://github.com/kasarlabs/deoxys"
 build = "build.rs"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
 [[bin]]
-name = "madara"
+name = "deoxys"
 
 [dependencies]
 async-trait = "0.1"
@@ -83,13 +83,14 @@ blockifier = { workspace = true }
 hex = { workspace = true }
 madara-runtime = { workspace = true }
 mc-commitment-state-diff = { workspace = true }
-mc-data-availability = { workspace = true }
 mc-db = { workspace = true }
 mc-mapping-sync = { workspace = true }
 mc-rpc = { workspace = true }
 mc-storage = { workspace = true }
 pallet-starknet = { workspace = true }
+pallet-starknet-runtime-api = { workspace = true }
 starknet-core = { workspace = true }
+starknet-gateway = { workspace = true }
 
 bincode = "1.3"
 mockito = { workspace = true }
@@ -100,6 +101,7 @@ starknet_api = "0.4.1"
 mp-block = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-felt = { workspace = true }
+mp-hashers = { workspace = true }
 mp-sequencer-address = { workspace = true, features = ["client"] }
 
 # CLI-specific dependencies

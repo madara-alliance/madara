@@ -1,26 +1,21 @@
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
 use std::cell::RefCell;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use mc_deoxys::state_updates::StarknetStateUpdate;
+use reqwest::Url;
 use futures::channel::mpsc;
 use futures::future;
 use futures::future::BoxFuture;
 use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
-use mc_commitment_state_diff::{log_commitment_state_diff, CommitmentStateDiffWorker};
-use mc_data_availability::avail::config::AvailConfig;
-use mc_data_availability::avail::AvailClient;
-use mc_data_availability::celestia::config::CelestiaConfig;
-use mc_data_availability::celestia::CelestiaClient;
-use mc_data_availability::ethereum::config::EthereumConfig;
-use mc_data_availability::ethereum::EthereumClient;
-use mc_data_availability::{DaClient, DaLayer, DataAvailabilityWorker};
+use mc_commitment_state_diff::{verify_l2, CommitmentStateDiffWorker};
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
+use mc_deoxys::state_updates::StateUpdateWrapper;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
 };
@@ -44,8 +39,7 @@ use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_inherents::InherentData;
 use sp_offchain::STORAGE_PREFIX;
 use sp_runtime::testing::{Digest, DigestItem};
-use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
-use sp_trie::PrefixedMemoryDB;
+use sp_runtime::traits::{Block as BlockT};
 
 use crate::genesis_block::MadaraGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
@@ -86,6 +80,7 @@ pub fn new_partial<BIQ>(
     config: &Configuration,
     build_import_queue: BIQ,
     cache_more_things: bool,
+    genesis_block: mp_block::Block,
 ) -> Result<
     sc_service::PartialComponents<
         FullClient,
@@ -134,6 +129,7 @@ where
         true,
         backend.clone(),
         executor.clone(),
+        genesis_block,
     )
     .unwrap();
 
@@ -270,10 +266,11 @@ where
 pub fn new_full(
     config: Configuration,
     sealing: SealingMode,
-    da_layer: Option<(DaLayer, PathBuf)>,
     rpc_port: u16,
+    l1_url: Url,
     cache_more_things: bool,
-    fetch_config: mc_deoxys::BlockFetchConfig,
+    fetch_config: mc_deoxys::FetchConfig,
+    genesis_block: mp_block::Block,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
@@ -287,7 +284,7 @@ pub fn new_full(
         select_chain,
         transaction_pool,
         other: (block_import, grandpa_link, mut telemetry, madara_backend),
-    } = new_partial(&config, build_import_queue, cache_more_things)?;
+    } = new_partial(&config, build_import_queue, cache_more_things, genesis_block)?;
 
     let mut net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
@@ -428,38 +425,9 @@ pub fn new_full(
     task_manager.spawn_essential_handle().spawn(
         "commitment-state-logger",
         Some("madara"),
-        log_commitment_state_diff(commitment_state_diff_rx),
+        verify_l2(commitment_state_diff_rx),
     );
-
-    // initialize data availability worker
-    if let Some((da_layer, da_path)) = da_layer {
-        let da_client: Box<dyn DaClient + Send + Sync> = match da_layer {
-            DaLayer::Celestia => {
-                let celestia_conf = CelestiaConfig::try_from(&da_path)?;
-                Box::new(CelestiaClient::try_from(celestia_conf).map_err(|e| ServiceError::Other(e.to_string()))?)
-            }
-            DaLayer::Ethereum => {
-                let ethereum_conf = EthereumConfig::try_from(&da_path)?;
-                Box::new(EthereumClient::try_from(ethereum_conf)?)
-            }
-            DaLayer::Avail => {
-                let avail_conf = AvailConfig::try_from(&da_path)?;
-                Box::new(AvailClient::try_from(avail_conf).map_err(|e| ServiceError::Other(e.to_string()))?)
-            }
-        };
-
-        task_manager.spawn_essential_handle().spawn(
-            "da-worker-prove",
-            Some("madara"),
-            DataAvailabilityWorker::prove_current_block(da_client.get_mode(), client.clone(), madara_backend.clone()),
-        );
-        task_manager.spawn_essential_handle().spawn(
-            "da-worker-update",
-            Some("madara"),
-            DataAvailabilityWorker::update_state(da_client, client.clone(), madara_backend),
-        );
-    };
-
+    
     if role.is_authority() {
         // manual-seal authorship
         if !sealing.is_default() {
@@ -467,9 +435,11 @@ pub fn new_full(
             //   For now I used a channel of size 100, this should be plently enough. That might
             //   become a config option in the future.
             let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<mp_block::Block>(100);
-
+            let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StarknetStateUpdate>(100);
+            
             run_manual_seal_authorship(
                 block_receiver,
+                state_update_receiver,
                 sealing,
                 client,
                 transaction_pool,
@@ -483,9 +453,13 @@ pub fn new_full(
 
             network_starter.start_network();
 
-            let command_sink = command_sink.unwrap().clone();
+            let sender_config = mc_deoxys::SenderConfig {
+                block_sender,
+                state_update_sender,
+                command_sink: command_sink.unwrap().clone(),
+            };
             tokio::spawn(async move {
-                mc_deoxys::fetch_block(command_sink, block_sender, fetch_config, rpc_port).await;
+                mc_deoxys::sync(sender_config, fetch_config, rpc_port, l1_url).await;
             });
 
             log::info!("Manual Seal Ready");
@@ -602,6 +576,7 @@ pub fn new_full(
 #[allow(clippy::too_many_arguments)]
 fn run_manual_seal_authorship(
     block_receiver: tokio::sync::mpsc::Receiver<mp_block::Block>,
+    state_update_receiver: tokio::sync::mpsc::Receiver<StarknetStateUpdate>,
     sealing: SealingMode,
     client: Arc<FullClient>,
     transaction_pool: Arc<FullPool<Block, FullClient>>,
@@ -662,6 +637,10 @@ where
 
         /// The receiver that we're using to receive blocks.
         block_receiver: tokio::sync::Mutex< tokio::sync::mpsc::Receiver<mp_block::Block>>,
+
+        /// The receiver that we're using to receive commitment state diffs.
+        state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StarknetStateUpdate>>,
+
     }
 
     impl<B, C> ConsensusDataProvider<B> for QueryBlockConsensusDataProvider<C>
@@ -676,8 +655,21 @@ where
             let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
             let block_digest_item: DigestItem =
                 sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
-            Ok(Digest { logs: vec![block_digest_item] })
+            let mut lock = self.state_update_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+            let state_update = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
+            let state_update_wrapper = StateUpdateWrapper::try_from(state_update).unwrap();
+            let state_update_digest_item: DigestItem =
+                sp_runtime::DigestItem::PreRuntime(mp_digest_log::STATE_ENGINE_ID, Encode::encode(&state_update_wrapper));
+            Ok(Digest { logs: vec![block_digest_item, state_update_digest_item] })
         }
+
+        // fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) -> Result<Digest, Error> {
+        //     let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+        //     let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
+        //     let block_digest_item: DigestItem =
+        //         sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
+        //     Ok(Digest { logs: vec![block_digest_item] })
+        // }
 
         fn append_block_import(
             &self,
@@ -703,6 +695,7 @@ where
                 consensus_data_provider: Some(Box::new(QueryBlockConsensusDataProvider {
                     _client: client,
                     block_receiver: tokio::sync::Mutex::new(block_receiver),
+                    state_update_receiver: tokio::sync::Mutex::new(state_update_receiver),
                 })),
                 create_inherent_data_providers,
             }))
@@ -737,6 +730,6 @@ type ChainOpsResult =
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things)?;
+        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things, mp_block::Block::default())?;
     Ok((client, backend, import_queue, task_manager, other.3))
 }

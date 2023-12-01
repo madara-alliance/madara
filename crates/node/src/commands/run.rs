@@ -1,7 +1,9 @@
 use std::path::PathBuf;
+use mc_deoxys::l2::fetch_genesis_block;
+use reqwest::Url;
+use std::result::Result as StdResult;
 
 use madara_runtime::SealingMode;
-use mc_data_availability::DaLayer;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use sc_service::BasePath;
 use serde::{Deserialize, Serialize};
@@ -60,15 +62,19 @@ impl NetworkType {
         }
     }
 
-    pub fn block_fetch_config(&self) -> mc_deoxys::BlockFetchConfig {
+    pub fn block_fetch_config(&self) -> mc_deoxys::FetchConfig {
         let uri = self.uri();
         let chain_id = self.chain_id();
 
         let gateway = format!("{uri}/gateway").parse().unwrap();
         let feeder_gateway = format!("{uri}/feeder_gateway").parse().unwrap();
 
-        mc_deoxys::BlockFetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false }
+        mc_deoxys::FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false }
     }
+}
+
+fn parse_url(s: &str) -> StdResult<Url, url::ParseError> {
+    s.parse()
 }
 
 #[derive(Clone, Debug, clap::Args)]
@@ -80,9 +86,9 @@ pub struct ExtendedRunCmd {
     #[clap(long, value_enum, ignore_case = true)]
     pub sealing: Option<Sealing>,
 
-    /// Choose a supported DA Layer
-    #[clap(long)]
-    pub da_layer: Option<DaLayer>,
+    /// The L1 rpc endpoint url for state verification
+    #[clap(long, value_parser = parse_url)]
+    pub l1_endpoint: Option<Url>,
 
     /// The network type to connect to.
     #[clap(long, short, default_value = "integration")]
@@ -95,10 +101,11 @@ pub struct ExtendedRunCmd {
     #[clap(long)]
     pub cache: bool,
 
-    /// Yes.
+    /// This will invoke sound interpreted from the block hashes.
     #[clap(long)]
     pub sound: bool,
 
+    /// This wrap a specific deoxys environment for a node quick start.
     #[clap(long)]
     pub deoxys: bool,
 }
@@ -120,30 +127,31 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         deoxys_environment(&mut cli.run);
     }
     let runner = cli.create_runner(&cli.run.base)?;
-    let data_path = &runner.config().data_path;
 
-    let da_config: Option<(DaLayer, PathBuf)> = match cli.run.da_layer {
-        Some(da_layer) => {
-            let da_path = data_path.join("da-config.json");
-            if !da_path.exists() {
-                log::info!("{} does not contain DA config", da_path.display());
-                return Err("DA config not available".into());
-            }
-
-            Some((da_layer, da_path))
-        }
-        None => {
-            log::info!("Madara initialized w/o DA layer");
-            None
-        }
+    //TODO: verify that the l1_endpoint is valid
+    let l1_endpoint = if let Some(url) = cli.run.l1_endpoint {
+        url
+    } else {
+        return Err(sc_cli::Error::Input("Missing required --l1-endpoint argument please reffer to https://deoxys-docs.kasar.io".to_string()));
     };
+
     runner.run_node_until_exit(|config| async move {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
         let mut fetch_block_config = cli.run.network.block_fetch_config();
+        let genesis_block = fetch_genesis_block(fetch_block_config.clone()).await.unwrap();
         fetch_block_config.sound = cli.run.sound;
-        service::new_full(config, sealing, da_config, cli.run.base.rpc_port.unwrap(), cache, fetch_block_config)
-            .map_err(sc_cli::Error::Service)
+
+        service::new_full(
+            config,
+            sealing,
+            cli.run.base.rpc_port.unwrap(),
+            l1_endpoint,
+            cache,
+            fetch_block_config,
+            genesis_block
+        )
+        .map_err(sc_cli::Error::Service)
     })
 }
 
@@ -164,21 +172,21 @@ fn override_dev_environment(cmd: &mut ExtendedRunCmd) {
 }
 
 fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
-    // create a reproducible dev environment
-    // by disabling the default substrate `dev` behaviour
-    cmd.base.shared_params.dev = false;
-    cmd.base.shared_params.chain = Some("dev".to_string());
+    // Set the blockchain network to 'starknet'
+    cmd.base.shared_params.chain = Some("starknet".to_string());
+    cmd.base.shared_params.base_path = Some(PathBuf::from("/tmp/deoxys"));
 
+    // Assign a random pokemon name at each startup
+    cmd.base.name = Some(tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(mc_deoxys::utility::get_random_pokemon_name())
+        .unwrap());
+
+    // Define telemetry endpoints at deoxys.kasar.io
+    cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://deoxys.kasar.io/submit/".to_string(), 0)];
+
+    // Enables authoring and manual sealing for custom block production
     cmd.base.force_authoring = true;
     cmd.base.alice = true;
-
-    // we can't set `--rpc-cors=all`, so it needs to be set manually if we want to connect with external
-    // hosts
-    cmd.base.rpc_external = true;
-    cmd.base.rpc_methods = RpcMethods::Unsafe;
-
-    cmd.base.name = Some("deoxys".to_string());
-    cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://deoxys.kasar.io/submit/".to_string(), 0)];
     cmd.sealing = Some(Sealing::Manual);
-    cmd.cache = true;
 }

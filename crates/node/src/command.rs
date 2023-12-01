@@ -12,7 +12,7 @@ use crate::{chain_spec, service};
 
 impl SubstrateCli for Cli {
     fn impl_name() -> String {
-        "Deoxys Node".into()
+        "👽 Deoxys Node".into()
     }
 
     fn impl_version() -> String {
@@ -28,7 +28,7 @@ impl SubstrateCli for Cli {
     }
 
     fn support_url() -> String {
-        "madara.zone".into()
+        "https://kasar.io".into()
     }
 
     fn copyright_start_year() -> i32 {
@@ -49,6 +49,11 @@ impl SubstrateCli for Cli {
             "" | "local" | "madara-local" => {
                 let base_path = self.run.base_path().map_err(|e| e.to_string())?;
                 Box::new(chain_spec::local_testnet_config(base_path, id)?)
+            },
+            "starknet" => {
+                let sealing = self.run.sealing.map(Into::into).unwrap_or_default();
+                let base_path = self.run.base_path().map_err(|e| e.to_string())?;
+                Box::new(chain_spec::deoxys_config(sealing, base_path, id)?)
             }
             path_or_url => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path_or_url))?),
         })

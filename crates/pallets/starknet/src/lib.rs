@@ -43,21 +43,14 @@ pub use pallet::*;
 pub mod blockifier_state_adapter;
 #[cfg(feature = "std")]
 pub mod genesis_loader;
-/// The implementation of the message type.
-pub mod message;
-/// The Starknet pallet's runtime API
-pub mod runtime_api;
 /// Transaction validation logic.
 pub mod transaction_validation;
 /// The Starknet pallet's runtime custom types.
 pub mod types;
 
-/// Everything needed to run the pallet offchain workers
-mod offchain_worker;
-
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
-use blockifier::state::cached_state::ContractStorageKey;
 use blockifier::transaction::objects::{TransactionExecutionInfo, TransactionExecutionResult};
+use blockifier::state::cached_state::ContractStorageKey;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Calldata, Event as StarknetEvent, Fee};
 
@@ -78,7 +71,7 @@ use blockifier_state_adapter::BlockifierStateAdapter;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
-use mp_block::{Block as StarknetBlock, BlockStatus, Header as StarknetHeader};
+use mp_block::{Block as StarknetBlock, BlockStatus, Header as StarknetHeader, state_update::StateUpdateWrapper};
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_fee::INITIAL_GAS;
 use mp_felt::Felt252Wrapper;
@@ -177,7 +170,6 @@ pub mod pallet {
         /// The block is being finalized.
         fn on_finalize(_n: BlockNumberFor<T>) {
             assert!(SeqAddrUpdate::<T>::take(), "Sequencer address must be set for the block");
-
             // Create a new Starknet block and store it.
             <Pallet<T>>::store_block(UniqueSaturatedInto::<u64>::unique_saturated_into(
                 frame_system::Pallet::<T>::block_number(),
@@ -186,9 +178,59 @@ pub mod pallet {
 
         /// The block is being initialized. Implement to have something happen.
         fn on_initialize(_: BlockNumberFor<T>) -> Weight {
-            log!(info, "Initializing block.");
+            let digest = frame_system::Pallet::<T>::digest();
+            let logs = digest.logs();
+        
+            if !logs.is_empty() {
+                for log_entry in logs {
+                    if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
+                        if *engine_id == mp_digest_log::STATE_ENGINE_ID {
+                            match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
+                                Ok(state_update) => {
+        
+                                    for (address, storage_diffs) in state_update.state_diff.storage_diffs {
+                                        for storage_diff in storage_diffs {
+                                            let contract_storage_key: ContractStorageKey = (ContractAddress(address.try_into().unwrap()), StorageKey(storage_diff.key.try_into().unwrap()));
+                                            let value = StarkFelt(storage_diff.value.try_into().unwrap());
+                                            <StorageView<T>>::insert(contract_storage_key, value)
+                                        }
+                                    }
+        
+                                    for deployed_contract in state_update.state_diff.deployed_contracts {
+                                        let contract_address = ContractAddress(deployed_contract.address.try_into().unwrap());
+                                        let class_hash = ClassHash(deployed_contract.class_hash.try_into().unwrap());
+                                        <ContractClassHashes<T>>::insert(contract_address, class_hash);
+                                    }
+
+                                    //TODO: old declared contracts
+        
+                                    for declared_class in state_update.state_diff.declared_classes {
+                                        let class_hash = ClassHash(declared_class.class_hash.try_into().unwrap());
+                                        let compiled_class_hash = CompiledClassHash(declared_class.compiled_class_hash.try_into().unwrap());
+                                        <CompiledClassHashes<T>>::insert(class_hash, compiled_class_hash);
+                                    }
+        
+                                    for (address, nonce) in state_update.state_diff.nonces {
+                                        let contract_address = ContractAddress(address.try_into().unwrap());
+                                        let nonce = Nonce(nonce.try_into().unwrap());
+                                        <Nonces<T>>::insert(contract_address, nonce);
+                                    }
+        
+                                    for replaced_class in state_update.state_diff.replaced_classes {
+                                        let contract_address = ContractAddress(replaced_class.address.try_into().unwrap());
+                                        let class_hash = ClassHash(replaced_class.class_hash.try_into().unwrap());
+                                        <ContractClassHashes<T>>::insert(contract_address, class_hash);
+                                    }
+                                },
+                                Err(e) => log!(info, "Decoding error: {:?}", e),
+                            }
+                        }
+                    }
+                }
+            }
+        
             Weight::zero()
-        }
+        }        
 
         /// Perform a module upgrade.
         fn on_runtime_upgrade() -> Weight {
@@ -200,17 +242,7 @@ pub mod pallet {
         /// # Arguments
         /// * `n` - The block number.
         fn offchain_worker(n: BlockNumberFor<T>) {
-            log!(info, "Running offchain worker at block {:?}.", n);
-
-            // match Self::process_l1_messages() {
-            //     Ok(_) => log!(info, "Successfully executed L1 messages"),
-            //     Err(err) => match err {
-            //         offchain_worker::OffchainWorkerError::NoLastKnownEthBlock => {
-            //             log!(info, "No last known Ethereum block number found. Skipping execution of L1 messages.")
-            //         }
-            //         _ => log!(error, "Failed to execute L1 messages: {:?}", err),
-            //     },
-            // }
+            
         }
     }
 
@@ -366,7 +398,6 @@ pub mod pallet {
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            <Pallet<T>>::store_block(0);
             frame_support::storage::unhashed::put::<StarknetStorageSchemaVersion>(
                 PALLET_STARKNET_SCHEMA,
                 &StarknetStorageSchemaVersion::V1,
@@ -991,7 +1022,7 @@ impl<T: Config> Pallet<T> {
     /// * `block_number` - The block number.
     fn store_block(block_number: u64) {
         let block: StarknetBlock;
-        if frame_system::Pallet::<T>::digest().logs().len() == 1 {
+        if frame_system::Pallet::<T>::digest().logs().len() >= 1 {
             match &frame_system::Pallet::<T>::digest().logs()[0] {
                 DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, encoded_data) => {
                     block = match StarknetBlock::decode(&mut encoded_data.as_slice()) {
@@ -1040,7 +1071,6 @@ impl<T: Config> Pallet<T> {
                 StarknetHeader::new(
                     parent_block_hash.into(),
                     block_number.into(),
-                    BlockStatus::default(),
                     global_state_root.into(),
                     sequencer_address,
                     block_timestamp,

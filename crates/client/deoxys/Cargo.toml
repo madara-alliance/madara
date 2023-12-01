@@ -3,7 +3,6 @@ name = "mc-deoxys"
 version = "0.1.0"
 description = "Deoxys crate for Madara"
 authors = [
-    "Amine Mrad <https://github.com/sparqet>",
     "Antiyro <https://github.com/antiyro>",
 ]
 homepage = "https://github.com/KasarLabs/deoxys"
@@ -23,17 +22,22 @@ targets = ["x86_64-unknown-linux-gnu"]
 starknet-gateway = "0.6"
 reqwest = "0.11"
 serde_json = "1"
-futures-channel.workspace = true
+anyhow = "1.0.75"
+web3 = "0.19.0"
+tokio-tungstenite = "0.20.1"
+lazy_static = "1.4.0"
 
+url = { workspace = true }
+serde = { workspace = true, default-features = true }
 rodio = { version = "0.17", optional = true }
-
+rand = { version = "0.8.5" }
+indexmap = { workspace = true }
 blockifier = { workspace = true, default-features = false, features = [
     "testing",
 ] }
 env_logger = "0.10.0"
 log = { version = "0.4.14" }
 mockito = { workspace = true }
-pallet-starknet = { workspace = true }
 sp-core = { workspace = true, features = ["std"] }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true, default-features = false, features = [
@@ -49,8 +53,13 @@ mp-commitments = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
+mc-commitment-state-diff = { workspace = true }
 validator = { workspace = true, features = ["derive"] }
 sc-consensus-manual-seal.workspace = true
+futures = { workspace = true, default-features = true }
+parity-scale-codec = { workspace = true, features = [
+  "derive",
+] }
 
 [dev-dependencies]
 # test_utils = { path = "./test_utils" }

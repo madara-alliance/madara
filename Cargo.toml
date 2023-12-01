@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/node",
   "crates/runtime",
+  "crates/pallets/starknet/runtime_api/",
   "crates/pallets/starknet",
   "crates/primitives/digest-log",
   "crates/primitives/transactions",
@@ -22,13 +23,13 @@ members = [
   "crates/client/storage",
   "crates/client/deoxys",
   "crates/client/commitment-state-diff",
-  "starknet-rpc-test",
 ]
-# All previous except for `starknet-rpc-test`
+
 # We don't want `cargo test` to trigger its tests
 default-members = [
   "crates/node",
   "crates/runtime",
+  "crates/pallets/starknet/runtime_api/",
   "crates/pallets/starknet",
   "crates/primitives/digest-log",
   "crates/primitives/transactions",
@@ -64,10 +65,10 @@ opt-level = 3        # Optimize for speed regardless of binary size or compile t
 rpath = false        # Disables adding rpath to the binary
 
 [workspace.package]
-authors = ["Abdelhamid Bakhta <@abdelhamidbakhta>"]
+authors = ["Antiyro <@antiyro>"]
 edition = "2021"
-repository = "https://github.com/keep-starknet-strange/madara/"
-version = "0.5.0"
+repository = "https://github.com/kasarlabs/deoxys/"
+version = "0.1.0"
 
 [workspace.dependencies]
 # Substrate frame dependencies
@@ -149,7 +150,7 @@ pallet-timestamp = { default-features = false, git = "https://github.com/parityt
 
 # Madara pallets
 pallet-starknet = { path = "crates/pallets/starknet", default-features = false }
-
+pallet-starknet-runtime-api = { path = "crates/pallets/starknet/runtime_api", default-features = false }
 # Madara primtitives
 mp-digest-log = { path = "crates/primitives/digest-log", default-features = false }
 mp-block = { path = "crates/primitives/block", default-features = false }
@@ -169,7 +170,6 @@ mc-db = { path = "crates/client/db" }
 mc-storage = { path = "crates/client/storage" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-rpc-core = { path = "crates/client/rpc-core" }
-mc-data-availability = { path = "crates/client/data-availability" }
 mc-commitment-state-diff = { path = "crates/client/commitment-state-diff" }
 
 # Madara runtime
@@ -183,7 +183,7 @@ cairo-vm = { git = "https://github.com/keep-starknet-strange/cairo-rs", branch =
 ] }
 starknet-crypto = { version = "0.6.1", default-features = false }
 starknet-core = { version = "0.6.0", default-features = false }
-starknet-gateway = { version = "0.6.0", default-features = false }
+starknet-gateway = { version = "0.6.1", default-features = false }
 starknet-ff = { version = "0.3.5", default-features = false }
 starknet-signers = { version = "0.4.0" }
 starknet-accounts = { version = "0.5.0" }
