@@ -12,7 +12,7 @@ use futures::future::BoxFuture;
 use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
-use mc_commitment_state_diff::{log_commitment_state_diff, CommitmentStateDiffWorker};
+use mc_commitment_state_diff::{verify_l2, CommitmentStateDiffWorker};
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
 use mc_deoxys::state_updates::StateUpdateWrapper;
@@ -425,7 +425,7 @@ pub fn new_full(
     task_manager.spawn_essential_handle().spawn(
         "commitment-state-logger",
         Some("madara"),
-        log_commitment_state_diff(commitment_state_diff_rx),
+        verify_l2(commitment_state_diff_rx),
     );
     
     if role.is_authority() {

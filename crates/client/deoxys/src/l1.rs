@@ -3,6 +3,8 @@
 use std::error::Error;
 use std::sync::Arc;
 use futures::{StreamExt, SinkExt};
+use hex::encode;
+use mp_block::state_update;
 use mp_commitments::StateCommitment;
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use starknet_api::block::{BlockNumber, BlockHash};
@@ -15,12 +17,15 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use std::sync::Mutex;
 use lazy_static::lazy_static;
 
+use crate::{utility::{format_address, get_state_update_at}, l2::STARKNET_STATE_UPDATE};
+
 lazy_static! {
-    pub static ref ETHEREUM_STATE_UPDATE: Mutex<EthereumStateUpdate> = Mutex::new(EthereumStateUpdate {
+    /// Shared latest L2 state update verified on L1
+    pub static ref ETHEREUM_STATE_UPDATE: Arc<Mutex<L1StateUpdate>> = Arc::new(Mutex::new(L1StateUpdate {
         global_root: StateCommitment::default(),
         block_number: BlockNumber::default(),
         block_hash: BlockHash::default(),
-    });
+    }));
 }
 
 
@@ -35,13 +40,13 @@ pub mod starknet_core_address {
 
 /// Contains the Starknet verified state on L1
 #[derive(Debug, Clone, Deserialize)]
-pub struct EthereumStateUpdate {
+pub struct L1StateUpdate {
     pub global_root: StateCommitment,
     pub block_number: BlockNumber,
     pub block_hash: BlockHash,
 }
 
-type StateUpdateCallback = Arc<dyn Fn(EthereumStateUpdate) + Send + Sync>;
+type StateUpdateCallback = Arc<dyn Fn(L1StateUpdate) + Send + Sync>;
 
 #[derive(Clone)]
 pub struct EthereumClient {
@@ -122,7 +127,7 @@ impl EthereumClient {
         Ok(response.to_string())
     }
     
-    pub async fn listen_and_update_state(wss_url: Url, subscription_id: &str, tx: Sender<EthereumStateUpdate>) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn listen_and_update_state(wss_url: Url, subscription_id: &str, tx: Sender<L1StateUpdate>) -> Result<(), Box<dyn std::error::Error>> {
         let (ws_stream, _) = connect_async(wss_url).await?;
         let mut ws_stream = ws_stream;
     
@@ -131,7 +136,7 @@ impl EthereumClient {
     
             if message.is_text() || message.is_binary() {
                 let data = message.into_text()?;
-                let event = serde_json::from_str::<EthereumStateUpdate>(&data)?;
+                let event = serde_json::from_str::<L1StateUpdate>(&data)?;
                 println!("ethereum: {:?}", data);
                 if subscription_id != subscription_id {
                     tx.send(event.clone()).await.unwrap();
@@ -141,7 +146,6 @@ impl EthereumClient {
     
         Ok(())
     }
-
 
     /// Generates a specific eth_call to the Starknet core contract
     async fn get_eth_call(&self, data: &str) -> Result<Felt252Wrapper, Felt252WrapperError> {
@@ -210,7 +214,7 @@ impl EthereumClient {
     }
 
     /// Get the last Starknet state update verified on the L1
-    pub async fn get_initial_state(client: &EthereumClient) -> Result<EthereumStateUpdate, ()> {
+    pub async fn get_initial_state(client: &EthereumClient) -> Result<L1StateUpdate, ()> {
         let global_root = client.get_last_state_root().await.map_err(|e| {
             log::error!("Failed to get last state root: {}", e);
             ()
@@ -226,7 +230,7 @@ impl EthereumClient {
             ()
         })?;
         
-        Ok(EthereumStateUpdate {
+        Ok(L1StateUpdate {
             global_root,
             block_number,
             block_hash,
@@ -234,8 +238,63 @@ impl EthereumClient {
     }
 }
 
+/// Update the L1 state with the latest data
+pub fn update_l1(state_update: L1StateUpdate) {
+    log::info!("🔄 Updated L1 head: Number: #{}, Hash: {}, Root: {}",
+    state_update.block_number,
+        format_address(&state_update.block_hash.to_string()),
+        format_address(&encode(state_update.global_root.0.to_bytes_be()))
+    );
+
+    {
+        let last_state_update = ETHEREUM_STATE_UPDATE.clone();
+        let mut new_state_update = last_state_update.lock().unwrap();
+        *new_state_update = state_update.clone();
+    }
+}
+
+/// Verify the L1 state with the latest data
+pub async fn verify_l1(state_update: L1StateUpdate, rpc_port: u16) -> Result<(), String> {
+    // Minimize the scope of the lock
+    let starknet_state_block_number = {
+        let starknet_state = STARKNET_STATE_UPDATE.lock().map_err(|e| e.to_string())?;
+        starknet_state.block_number
+    };
+
+    // Check if the node reached the latest verified state on Ethereum
+    if state_update.block_number > starknet_state_block_number {
+        return Err("🚨 L1 state verification failed: Node still syncing".into());
+    }
+
+    if state_update.block_number <= starknet_state_block_number {
+        let current_state_update = get_state_update_at(rpc_port, state_update.block_number.0)
+            .await
+            .map_err(|e| format!("Error retrieving state update: {}", e))?;
+
+        // Verifying Block Hash and State Root against L2
+        match (
+            current_state_update.global_root == state_update.global_root,
+            current_state_update.block_hash == state_update.block_hash,
+        ) {
+            (false, _) => Err("🚨 L1 state verification failed: State root does not match".into()),
+            (_, false) => Err("🚨 L1 state verification failed: Block hash does not match".into()),
+            (true, true) => {
+                log::info!(
+                    "✅ Verified L2 state via L1: #{}, Hash: {}, Root: {}",
+                    state_update.block_number,
+                    format_address(&state_update.block_hash.to_string()),
+                    format_address(&encode(state_update.global_root.0.to_bytes_be()))
+                );
+                Ok(())
+            }
+        }
+    } else {
+        Ok(())
+    }
+}
+
 /// Syncronize with the L1 latest state updates
-pub async fn sync(l1_url: Url) {
+pub async fn sync(l1_url: Url, rpc_port: u16) {
     let (tx, mut rx) = mpsc::channel(32);
 
     let client = match EthereumClient::new(l1_url) {
@@ -246,29 +305,24 @@ pub async fn sync(l1_url: Url) {
         }
     };
     
+    log::info!("🚀 Subscribed to L1 state verification");
+
     // Get and store the latest state
     let initial_state = match EthereumClient::get_initial_state(&client).await {
         Ok(state) => state,
         Err(_) => return,
     };
 
-    tx.send(initial_state.clone()).await.unwrap();
+    update_l1(initial_state);
 
-    log::info!("🚀 Subscribed to L1 state verification on block {}", initial_state.block_number);
-
-    println!("initial_state {:?}", initial_state);
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
     let wss_url = client.get_wss().unwrap();
     let subscription_id = client.get_eth_subscribe(vec!["0x77552641".to_string()]).await.unwrap();
     EthereumClient::listen_and_update_state(wss_url, &subscription_id, tx).await.unwrap();
 
-
     // Verify the latest state roots and block against L2
-    while let Some(event) = rx.recv().await {
-        // Verify
-        println!("TROUVEEE {:?}", event);
-        // Store
-        let mut current_state = ETHEREUM_STATE_UPDATE.lock().unwrap();
-        *current_state = event;
+    while let Some(new_state_update) = rx.recv().await {
+        verify_l1(new_state_update.clone(), rpc_port).await;
+        update_l1(new_state_update);
     }
 }

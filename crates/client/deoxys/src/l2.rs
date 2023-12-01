@@ -1,15 +1,38 @@
 //! Contains the code required to fetch data from the feeder efficiently.
 
-use std::fs;
 use std::time::Duration;
+use mp_commitments::StateCommitment;
 use reqwest::Url;
+use serde::Deserialize;
 use sp_core::H256;
+use starknet_api::block::{BlockNumber, BlockHash};
 use starknet_gateway::sequencer::models::BlockId;
 use starknet_gateway::SequencerGatewayProvider;
-use tokio::sync::mpsc::Sender;
+use anyhow::Result;
+use tokio::sync::mpsc::{Sender, self};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
+use std::sync::{Mutex, Arc};
+use lazy_static::lazy_static;
 
 use crate::state_updates::StarknetStateUpdate;
 use crate::CommandSink;
+
+/// Contains the Starknet verified state on L2
+#[derive(Debug, Clone, Deserialize)]
+pub struct L2StateUpdate {
+    pub global_root: StateCommitment,
+    pub block_number: BlockNumber,
+    pub block_hash: BlockHash,
+}
+
+lazy_static! {
+    /// Shared latest L2 state update verified on L2
+    pub static ref STARKNET_STATE_UPDATE: Arc<Mutex<L2StateUpdate>> = Arc::new(Mutex::new(L2StateUpdate {
+        global_root: StateCommitment::default(),
+        block_number: BlockNumber::default(),
+        block_hash: BlockHash::default(),
+    }));
+}
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
 /// feeder.
@@ -180,4 +203,13 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
 
     *parent_hash = Some(create_block_info.hash);
     Ok(())
+}
+
+/// Update the L2 state with the latest data
+pub fn update_l2(state_update: L2StateUpdate) {
+    {
+        let last_state_update = STARKNET_STATE_UPDATE.clone();
+        let mut new_state_update = last_state_update.lock().unwrap();
+        *new_state_update = state_update.clone();
+    }
 }

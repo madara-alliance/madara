@@ -19,7 +19,7 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::{Block as BlockT, Header};
 use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
-use starknet_api::block::BlockHash;
+use starknet_api::block::{BlockHash, BlockNumber};
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey as StarknetStorageKey;
 use thiserror::Error;
@@ -30,8 +30,8 @@ use mp_felt::Felt252Wrapper;
 pub struct CommitmentStateDiffWorker<B: BlockT, C, H> {
     client: Arc<C>,
     storage_event_stream: StorageEventStream<B::Hash>,
-    tx: mpsc::Sender<(BlockHash, CommitmentStateDiff)>,
-    msg: Option<(BlockHash, CommitmentStateDiff)>,
+    tx: mpsc::Sender<(BlockNumber, BlockHash, CommitmentStateDiff)>,
+    msg: Option<(BlockNumber, BlockHash, CommitmentStateDiff)>,
     phantom: PhantomData<H>,
 }
 
@@ -39,7 +39,7 @@ impl<B: BlockT, C, H> CommitmentStateDiffWorker<B, C, H>
 where
     C: BlockchainEvents<B>,
 {
-    pub fn new(client: Arc<C>, tx: mpsc::Sender<(BlockHash, CommitmentStateDiff)>) -> Self {
+    pub fn new(client: Arc<C>, tx: mpsc::Sender<(BlockNumber, BlockHash, CommitmentStateDiff)>) -> Self {
         let storage_event_stream = client
             .storage_changes_notification_stream(None, None)
             .expect("the node storage changes notification stream should be up and running");
@@ -132,13 +132,20 @@ pub enum BuildCommitmentStateDiffError {
 fn build_commitment_state_diff<B: BlockT, C, H>(
     client: Arc<C>,
     storage_notification: StorageNotification<B::Hash>,
-) -> Result<(BlockHash, CommitmentStateDiff), BuildCommitmentStateDiffError>
+) -> Result<(BlockNumber, BlockHash, CommitmentStateDiff), BuildCommitmentStateDiffError>
 where
     C: ProvideRuntimeApi<B>,
     C::Api: StarknetRuntimeApi<B>,
     C: HeaderBackend<B>,
     H: HasherT,
 {
+    let starknet_block_number: BlockNumber = {
+        let header = client.header(storage_notification.block)?.ok_or(BuildCommitmentStateDiffError::BlockNotFound)?;
+        let digest = header.digest();
+        let block = mp_digest_log::find_starknet_block(digest)?;
+        BlockNumber(block.header().block_number)
+    };
+
     let starknet_block_hash = {
         let header = client.header(storage_notification.block)?.ok_or(BuildCommitmentStateDiffError::BlockNotFound)?;
         let digest = header.digest();
@@ -208,13 +215,14 @@ where
         }
     }
 
-    Ok((starknet_block_hash, commitment_state_diff))
+    Ok((starknet_block_number, starknet_block_hash, commitment_state_diff))
 }
 
-pub async fn log_commitment_state_diff(mut rx: mpsc::Receiver<(BlockHash, CommitmentStateDiff)>) {
-    while let Some((block_hash, csd)) = rx.next().await {
+pub async fn verify_l2(mut rx: mpsc::Receiver<(BlockNumber, BlockHash, CommitmentStateDiff)>) {
+    while let Some((block_number, block_hash, csd)) = rx.next().await {
         //TODO: retrieve and deal with state commitment accross L1
         // println!("➡️ block_hash {:?} with {:?}", block_hash, state_commitment(csd).0);
+        // update_l2({block_number, block_hash, state_commitment})
     }
 }
 

@@ -542,7 +542,7 @@ where
 
         println!("AKHIIII: {:?}", mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0);
 
-        let actual_status = if (block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0) {
+        let actual_status = if block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
             BlockStatus::AcceptedOnL1.into()
         } else {
             BlockStatus::AcceptedOnL2.into()
