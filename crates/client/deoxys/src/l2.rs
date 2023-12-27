@@ -172,8 +172,6 @@ async fn fetch_state_update(
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    // TODO: 
-
     // Now send state_update, which moves it
     state_update_sender
         .send(StarknetStateUpdate(state_update))
