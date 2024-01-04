@@ -1,6 +1,6 @@
 <!-- markdownlint-disable -->
 <div align="center">
-<img src="https://github.com/KasarLabs/brand/blob/main/projects/deoxys/logo.png?raw=true" height="256" style="border-radius: 15px;">
+    <img src="https://github.com/KasarLabs/brand/blob/main/projects/deoxys/logo.png?raw=true" height="200" style="border-radius: 15px;">
 </div>
 <div align="center">
 <br />
@@ -17,3 +17,32 @@
 </div>
 
 # 👽 Deoxys: Starknet full node client on Substrate
+
+## ⚙️ Installation
+
+### Prerequisites
+
+### Build and Run
+
+### Run with Docker
+
+## 📸 Snapshots
+
+### Run Deoxys Using Snapshot
+
+After following these steps, Deoxys should be up and running on your machine, utilizing the provided snapshot.
+
+## ✔ Supported Features
+
+## 👍 Contribute
+
+## 🤝 Partnerships
+
+To establish a partnership with the Kasar team, or if you have any suggestion or special request, feel free to reach us
+on [telegram](https://t.me/kasarlabs).
+
+## ⚠️ License
+
+Copyright (c) 2022-present, with the following [contributors](https://github.com/KasarLabs/deoxys/graphs/contributors).
+
+Deoxys is open-source software licensed under the [Apache-2.0 License](https://github.com/KasarLabs/deoxys/blob/main/LICENSE).
