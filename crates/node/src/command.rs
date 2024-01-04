@@ -49,7 +49,7 @@ impl SubstrateCli for Cli {
             "" | "local" | "madara-local" => {
                 let base_path = self.run.base_path().map_err(|e| e.to_string())?;
                 Box::new(chain_spec::local_testnet_config(base_path, id)?)
-            },
+            }
             "starknet" => {
                 let sealing = self.run.sealing.map(Into::into).unwrap_or_default();
                 let base_path = self.run.base_path().map_err(|e| e.to_string())?;

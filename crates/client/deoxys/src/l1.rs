@@ -1,23 +1,24 @@
 //! Contains the necessaries to perform an L1 verification of the state
 
 use std::error::Error;
-use std::sync::Arc;
-use futures::{StreamExt, SinkExt};
+use std::sync::{Arc, Mutex};
+
+use anyhow::Result;
+use futures::{SinkExt, StreamExt};
 use hex::encode;
-use mp_block::state_update;
+use lazy_static::lazy_static;
 use mp_commitments::StateCommitment;
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
-use starknet_api::block::{BlockNumber, BlockHash};
 use reqwest::Url;
-use serde_json::Value;
 use serde::Deserialize;
-use anyhow::Result;
-use tokio::sync::mpsc::{Sender, self};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
-use std::sync::Mutex;
-use lazy_static::lazy_static;
+use serde_json::Value;
+use starknet_api::block::{BlockHash, BlockNumber};
+use tokio::sync::mpsc::{self, Sender};
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::Message;
 
-use crate::{utility::{format_address, get_state_update_at}, l2::STARKNET_STATE_UPDATE};
+use crate::l2::STARKNET_STATE_UPDATE;
+use crate::utility::{format_address, get_state_update_at};
 
 lazy_static! {
     /// Shared latest L2 state update verified on L1
@@ -28,8 +29,6 @@ lazy_static! {
     }));
 }
 
-
-const HTTP_OK: u16 = 200;
 pub mod starknet_core_address {
     pub const MAINNET: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
     pub const GOERLI_TESTNET: &str = "0xde29d060D45901Fb19ED6C6e959EB22d8626708e";
@@ -46,48 +45,43 @@ pub struct L1StateUpdate {
     pub block_hash: BlockHash,
 }
 
-type StateUpdateCallback = Arc<dyn Fn(L1StateUpdate) + Send + Sync>;
-
 #[derive(Clone)]
 pub struct EthereumClient {
-    http: reqwest::Client,
-    url: Url
+    _http: reqwest::Client,
+    url: Url,
 }
 
 /// Implementation of the Ethereum client to interact with L1
 impl EthereumClient {
-
     /// Create a new EthereumClient instance with the given RPC URL
     pub fn new(url: Url) -> Result<Self> {
-        Ok(Self {
-            http: reqwest::Client::new(),
-            url,
-        })
+        Ok(Self { _http: reqwest::Client::new(), url })
     }
 
     /// Get current RPC URL
     pub fn get_url(&self) -> Url {
         self.get_wss().unwrap()
-    }    
+    }
 
     /// Get current RPC URL
     pub fn get_wss(&self) -> Result<Url, Box<dyn Error>> {
         let mut wss_url = self.url.clone();
-    
+
         let new_scheme = match wss_url.scheme() {
             "http" => "ws",
             "https" => "wss",
             "ws" | "wss" => return Ok(wss_url),
             _ => return Err("Unsupported URL scheme".into()),
         };
-    
+
         wss_url.set_scheme(new_scheme).unwrap();
         Ok(wss_url)
     }
 
     /// Call the Ethereum RPC endpoint with the given JSON-RPC payload
     async fn call_ethereum(&self, value: Value) -> Result<Value> {
-        let (mut socket, _) = connect_async(&self.get_url()).await.map_err(|e| anyhow::anyhow!("WebSocket connect error: {}", e))?;
+        let (mut socket, _) =
+            connect_async(&self.get_url()).await.map_err(|e| anyhow::anyhow!("WebSocket connect error: {}", e))?;
 
         let request = serde_json::to_string(&value)?;
         socket.send(Message::Text(request)).await.map_err(|e| anyhow::anyhow!("WebSocket send error: {}", e))?;
@@ -121,19 +115,23 @@ impl EthereumClient {
 
         let response = match self.call_ethereum(payload).await {
             Ok(response) => response,
-            Err(e) => return Err(Felt252WrapperError::InvalidCharacter)
+            Err(_e) => return Err(Felt252WrapperError::InvalidCharacter),
         };
 
         Ok(response.to_string())
     }
-    
-    pub async fn listen_and_update_state(wss_url: Url, subscription_id: &str, tx: Sender<L1StateUpdate>) -> Result<(), Box<dyn std::error::Error>> {
+
+    pub async fn listen_and_update_state(
+        wss_url: Url,
+        subscription_id: &str,
+        tx: Sender<L1StateUpdate>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let (ws_stream, _) = connect_async(wss_url).await?;
         let mut ws_stream = ws_stream;
-    
+
         while let Some(message) = futures::StreamExt::next(&mut ws_stream).await {
             let message = message?;
-    
+
             if message.is_text() || message.is_binary() {
                 let data = message.into_text()?;
                 let event = serde_json::from_str::<L1StateUpdate>(&data)?;
@@ -143,7 +141,7 @@ impl EthereumClient {
                 }
             }
         }
-    
+
         Ok(())
     }
 
@@ -161,14 +159,12 @@ impl EthereumClient {
             ],
             "id": 2
         });
-        
+
         let response = match self.call_ethereum(payload).await {
             Ok(response) => response,
-            Err(e) => {
-                return Err(Felt252WrapperError::InvalidCharacter)
-            }  
+            Err(_e) => return Err(Felt252WrapperError::InvalidCharacter),
         };
-        
+
         let hex_str = match response.as_str() {
             Some(hex) => hex,
             None => return Err(Felt252WrapperError::InvalidCharacter),
@@ -197,15 +193,15 @@ impl EthereumClient {
             Err(_) => Err(Felt252WrapperError::FromArrayError.into()),
         }
     }
-    
+
     /// Get the last Starknet block hash verified on L1
     pub async fn get_last_block_hash(&self) -> Result<BlockHash> {
         let data = "0x382d83e3";
-        
+
         // Use `?` to propagate the error if `get_generic_call` results in an Err
         let block_hash_result = self.get_eth_call(data).await;
         let block_hash = block_hash_result?;
-        
+
         // Now we have a block hash and can try to convert it
         match Felt252Wrapper::try_from(block_hash) {
             Ok(val) => Ok(BlockHash(val.into())),
@@ -219,29 +215,26 @@ impl EthereumClient {
             log::error!("Failed to get last state root: {}", e);
             ()
         })?;
-        
+
         let block_number = client.get_last_block_number().await.map_err(|e| {
             log::error!("Failed to get last block number: {}", e);
             ()
         })?;
-        
+
         let block_hash = client.get_last_block_hash().await.map_err(|e| {
             log::error!("Failed to get last block hash: {}", e);
             ()
         })?;
-        
-        Ok(L1StateUpdate {
-            global_root,
-            block_number,
-            block_hash,
-        })
+
+        Ok(L1StateUpdate { global_root, block_number, block_hash })
     }
 }
 
 /// Update the L1 state with the latest data
 pub fn update_l1(state_update: L1StateUpdate) {
-    log::info!("🔄 Updated L1 head: Number: #{}, Hash: {}, Root: {}",
-    state_update.block_number,
+    log::info!(
+        "🔄 Updated L1 head: Number: #{}, Hash: {}, Root: {}",
+        state_update.block_number,
         format_address(&state_update.block_hash.to_string()),
         format_address(&encode(state_update.global_root.0.to_bytes_be()))
     );
@@ -304,7 +297,7 @@ pub async fn sync(l1_url: Url, rpc_port: u16) {
             return;
         }
     };
-    
+
     log::info!("🚀 Subscribed to L1 state verification");
 
     // Get and store the latest state
@@ -322,7 +315,7 @@ pub async fn sync(l1_url: Url, rpc_port: u16) {
 
     // Verify the latest state roots and block against L2
     while let Some(new_state_update) = rx.recv().await {
-        verify_l1(new_state_update.clone(), rpc_port).await;
+        let _ = verify_l1(new_state_update.clone(), rpc_port).await;
         update_l1(new_state_update);
     }
 }

@@ -1,18 +1,18 @@
 //! Contains the code required to fetch data from the feeder efficiently.
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use anyhow::Result;
+use lazy_static::lazy_static;
 use mp_commitments::StateCommitment;
 use reqwest::Url;
 use serde::Deserialize;
 use sp_core::H256;
-use starknet_api::block::{BlockNumber, BlockHash};
+use starknet_api::block::{BlockHash, BlockNumber};
 use starknet_gateway::sequencer::models::BlockId;
 use starknet_gateway::SequencerGatewayProvider;
-use anyhow::Result;
-use tokio::sync::mpsc::{Sender, self};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
-use std::sync::{Mutex, Arc};
-use lazy_static::lazy_static;
+use tokio::sync::mpsc::Sender;
 
 use crate::state_updates::StarknetStateUpdate;
 use crate::CommandSink;
@@ -100,33 +100,27 @@ pub async fn sync(mut sender_config: SenderConfig, config: FetchConfig, start_at
                 let block = fetch_block(&client, block_sender, current_block_number);
                 let state_update = fetch_state_update(&client, state_update_sender, current_block_number);
                 tokio::join!(block, state_update)
-            },
-            (false, true) => {
-                (fetch_block(&client, block_sender, current_block_number).await, Ok(()))
-            },
-            (true, false) => {
-                (Ok(()), fetch_state_update(&client, state_update_sender, current_block_number).await)
-            },
+            }
+            (false, true) => (fetch_block(&client, block_sender, current_block_number).await, Ok(())),
+            (true, false) => (Ok(()), fetch_state_update(&client, state_update_sender, current_block_number).await),
             (true, true) => unreachable!(),
         };
-        
+
         got_block = got_block || block.is_ok();
         got_state_update = got_state_update || state_update.is_ok();
-        
+
         match (block, state_update) {
-            (Ok(()), Ok(())) => {
-                match create_block(command_sink, &mut last_block_hash).await {
-                    Ok(()) => {
-                        current_block_number += 1;
-                        got_block = false;
-                        got_state_update = false;
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to create block: {}", e);
-                        return;
-                    }
+            (Ok(()), Ok(())) => match create_block(command_sink, &mut last_block_hash).await {
+                Ok(()) => {
+                    current_block_number += 1;
+                    got_block = false;
+                    got_state_update = false;
                 }
-            }
+                Err(e) => {
+                    eprintln!("Failed to create block: {}", e);
+                    return;
+                }
+            },
             (Err(a), Ok(())) => {
                 eprintln!("Failed to fetch block {}: {}", current_block_number, a);
                 tokio::time::sleep(Duration::from_secs(10)).await;
@@ -152,12 +146,9 @@ async fn fetch_block(
     Ok(())
 }
 
-pub async fn fetch_genesis_block(
-    config: FetchConfig
-) -> Result<mp_block::Block, String> {
+pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block, String> {
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
-    let block =
-        client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
+    let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
     Ok(crate::convert::block(&block))
 }
@@ -180,7 +171,6 @@ async fn fetch_state_update(
 
     Ok(())
 }
-
 
 /// Notifies the consensus engine that a new block should be created.
 async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) -> Result<(), String> {

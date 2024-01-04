@@ -61,10 +61,7 @@ impl Encode for StorageDiffWrapper {
 #[cfg(feature = "parity-scale-codec")]
 impl Decode for StorageDiffWrapper {
     fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
-        Ok(StorageDiffWrapper {
-            key: Felt252Wrapper::decode(input)?,
-            value: Felt252Wrapper::decode(input)?,
-        })
+        Ok(StorageDiffWrapper { key: Felt252Wrapper::decode(input)?, value: Felt252Wrapper::decode(input)? })
     }
 }
 
@@ -147,12 +144,14 @@ impl Decode for StateDiffWrapper {
     }
 }
 
-
 // Encode and Decode for `StateUpdateWrapper`
 #[cfg(feature = "parity-scale-codec")]
 impl Encode for StateUpdateWrapper {
     fn size_hint(&self) -> usize {
-        self.block_hash.size_hint() + self.new_root.size_hint() + self.old_root.size_hint() + self.state_diff.size_hint()
+        self.block_hash.size_hint()
+            + self.new_root.size_hint()
+            + self.old_root.size_hint()
+            + self.state_diff.size_hint()
     }
 
     fn encode_to<T: Output + ?Sized>(&self, dest: &mut T) {

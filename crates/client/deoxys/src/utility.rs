@@ -1,14 +1,16 @@
 //! Utility functions.
-use std::{time::Duration, thread::sleep, error::Error};
+use std::error::Error;
+use std::thread::sleep;
+use std::time::Duration;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use reqwest::header;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::l2::L2StateUpdate;
 
-//TODO: secure the auto calls here
+// TODO: secure the auto calls here
 
 /// Returns the block number of the last block (from Substrate).
 pub async fn get_last_synced_block(rpc_port: u16) -> u64 {
@@ -76,14 +78,14 @@ pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2S
                             attempts += 1;
                             sleep(RETRY_DELAY);
                         }
-                    },
+                    }
                     Err(e) => {
                         eprintln!("Failed to parse response as JSON: {}", e);
                         attempts += 1;
                         sleep(RETRY_DELAY);
                     }
                 }
-            },
+            }
             Err(e) => {
                 eprintln!("Request failed: {}, retrying...", e);
                 attempts += 1;
@@ -92,10 +94,7 @@ pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2S
         }
     }
 
-    Err(Box::new(std::io::Error::new(
-        std::io::ErrorKind::Other,
-        "Maximum retries exceeded",
-    )))
+    Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Maximum retries exceeded")))
 }
 
 /// Returns a random Pokémon name.
@@ -113,11 +112,7 @@ pub async fn get_random_pokemon_name() -> Result<String, Box<dyn std::error::Err
 
 /// Returns a truncated version of the given address
 pub fn format_address(address: &str) -> String {
-    let mut formatted_address = if address.starts_with("0x") {
-        address.to_string()
-    } else {
-        format!("0x{}", address)
-    };
+    let mut formatted_address = if address.starts_with("0x") { address.to_string() } else { format!("0x{}", address) };
 
     if let Some(non_zero_index) = formatted_address[2..].find(|c: char| c != '0') {
         formatted_address = format!("0x{}", &formatted_address[2 + non_zero_index..]);

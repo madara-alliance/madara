@@ -32,7 +32,14 @@ impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> MadaraGenesisBlockBu
         genesis_block: mp_block::Block,
     ) -> sp_blockchain::Result<Self> {
         let genesis_storage = build_genesis_storage.build_storage().map_err(sp_blockchain::Error::Storage)?;
-        Ok(Self { genesis_storage, commit_genesis_state, backend, executor, _phantom: PhantomData::<Block>, genesis_block })
+        Ok(Self {
+            genesis_storage,
+            commit_genesis_state,
+            backend,
+            executor,
+            _phantom: PhantomData::<Block>,
+            genesis_block,
+        })
     }
 }
 
@@ -54,14 +61,18 @@ impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> BuildGenesisBlock<Bl
 }
 
 /// Construct genesis block.
-fn construct_genesis_block<Block: BlockT>(state_root: Block::Hash, state_version: StateVersion, genesis_block: mp_block::Block) -> Block {
+fn construct_genesis_block<Block: BlockT>(
+    state_root: Block::Hash,
+    state_version: StateVersion,
+    genesis_block: mp_block::Block,
+) -> Block {
     let extrinsics_root =
         <<<Block as BlockT>::Header as HeaderT>::Hashing as HashT>::trie_root(Vec::new(), state_version);
 
     let mut digest = vec![];
 
     // Load first block from genesis folders
-    //TODO remove unecessary code from madara for genesis build
+    // TODO remove unecessary code from madara for genesis build
     digest.push(DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(genesis_block.clone()).encode()));
     log::info!("🌱 Genesis block imported correctly {:?}", genesis_block.header().hash::<PedersenHasher>());
 

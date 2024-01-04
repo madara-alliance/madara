@@ -1,9 +1,9 @@
 use std::path::PathBuf;
-use mc_deoxys::l2::fetch_genesis_block;
-use reqwest::Url;
 use std::result::Result as StdResult;
 
 use madara_runtime::SealingMode;
+use mc_deoxys::l2::fetch_genesis_block;
+use reqwest::Url;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use sc_service::BasePath;
 use serde::{Deserialize, Serialize};
@@ -128,11 +128,13 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
     }
     let runner = cli.create_runner(&cli.run.base)?;
 
-    //TODO: verify that the l1_endpoint is valid
+    // TODO: verify that the l1_endpoint is valid
     let l1_endpoint = if let Some(url) = cli.run.l1_endpoint {
         url
     } else {
-        return Err(sc_cli::Error::Input("Missing required --l1-endpoint argument please reffer to https://deoxys-docs.kasar.io".to_string()));
+        return Err(sc_cli::Error::Input(
+            "Missing required --l1-endpoint argument please reffer to https://deoxys-docs.kasar.io".to_string(),
+        ));
     };
 
     runner.run_node_until_exit(|config| async move {
@@ -149,7 +151,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             l1_endpoint,
             cache,
             fetch_block_config,
-            genesis_block
+            genesis_block,
         )
         .map_err(sc_cli::Error::Service)
     })
@@ -177,10 +179,8 @@ fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
     cmd.base.shared_params.base_path = Some(PathBuf::from("/tmp/deoxys"));
 
     // Assign a random pokemon name at each startup
-    cmd.base.name = Some(tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(mc_deoxys::utility::get_random_pokemon_name())
-        .unwrap());
+    cmd.base.name =
+        Some(tokio::runtime::Runtime::new().unwrap().block_on(mc_deoxys::utility::get_random_pokemon_name()).unwrap());
 
     // Define telemetry endpoints at deoxys.kasar.io
     cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://deoxys.kasar.io/submit/".to_string(), 0)];

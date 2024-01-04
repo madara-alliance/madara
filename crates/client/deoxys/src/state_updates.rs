@@ -1,16 +1,15 @@
+use blockifier::state::cached_state::CommitmentStateDiff;
+use indexmap::map::Entry;
+use indexmap::IndexMap;
 use mc_commitment_state_diff::BuildCommitmentStateDiffError;
 use mp_felt::Felt252Wrapper;
-use starknet_gateway::sequencer::models::state_update::{StateDiff, StorageDiff, DeployedContract, DeclaredContract};
-use parity_scale_codec::{Encode, Decode, Input, Output, Error};
-use starknet_ff::FieldElement;
-use starknet_gateway::sequencer::models::StateUpdate;
-use indexmap::map::Entry;
-
-use blockifier::state::cached_state::CommitmentStateDiff;
-use indexmap::IndexMap;
 use mp_hashers::HasherT;
+use parity_scale_codec::{Decode, Encode, Error, Input, Output};
 use starknet_api::api_core::{ContractAddress, Nonce, PatriciaKey};
 use starknet_api::state::StorageKey as StarknetStorageKey;
+use starknet_ff::FieldElement;
+use starknet_gateway::sequencer::models::state_update::{DeclaredContract, DeployedContract, StateDiff, StorageDiff};
+use starknet_gateway::sequencer::models::StateUpdate;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
@@ -82,15 +81,15 @@ impl From<StarknetStateUpdate> for StateUpdateWrapper {
 impl From<&StateDiff> for StateDiffWrapper {
     fn from(diff: &StateDiff) -> Self {
         StateDiffWrapper {
-            storage_diffs: diff.storage_diffs.iter()
+            storage_diffs: diff
+                .storage_diffs
+                .iter()
                 .map(|(key, diffs)| (Felt252Wrapper(*key), diffs.iter().map(StorageDiffWrapper::from).collect()))
                 .collect(),
             deployed_contracts: diff.deployed_contracts.iter().map(DeployedContractWrapper::from).collect(),
             old_declared_contracts: diff.old_declared_contracts.iter().map(|&hash| Felt252Wrapper(hash)).collect(),
             declared_classes: diff.declared_classes.iter().map(DeclaredContractWrapper::from).collect(),
-            nonces: diff.nonces.iter()
-                .map(|(&key, &value)| (Felt252Wrapper(key), Felt252Wrapper(value)))
-                .collect(),
+            nonces: diff.nonces.iter().map(|(&key, &value)| (Felt252Wrapper(key), Felt252Wrapper(value))).collect(),
             replaced_classes: diff.replaced_classes.iter().map(DeployedContractWrapper::from).collect(),
         }
     }
@@ -98,10 +97,7 @@ impl From<&StateDiff> for StateDiffWrapper {
 
 impl From<&StorageDiff> for StorageDiffWrapper {
     fn from(diff: &StorageDiff) -> Self {
-        StorageDiffWrapper {
-            key: Felt252Wrapper(diff.key),
-            value: Felt252Wrapper(diff.value),
-        }
+        StorageDiffWrapper { key: Felt252Wrapper(diff.key), value: Felt252Wrapper(diff.value) }
     }
 }
 
@@ -137,10 +133,7 @@ impl Encode for StorageDiffWrapper {
 
 impl Decode for StorageDiffWrapper {
     fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
-        Ok(StorageDiffWrapper {
-            key: Felt252Wrapper::decode(input)?,
-            value: Felt252Wrapper::decode(input)?,
-        })
+        Ok(StorageDiffWrapper { key: Felt252Wrapper::decode(input)?, value: Felt252Wrapper::decode(input)? })
     }
 }
 
@@ -217,11 +210,13 @@ impl Decode for StateDiffWrapper {
     }
 }
 
-
 // Encode and Decode for `StateUpdateWrapper`
 impl Encode for StateUpdateWrapper {
     fn size_hint(&self) -> usize {
-        self.block_hash.size_hint() + self.new_root.size_hint() + self.old_root.size_hint() + self.state_diff.size_hint()
+        self.block_hash.size_hint()
+            + self.new_root.size_hint()
+            + self.old_root.size_hint()
+            + self.state_diff.size_hint()
     }
 
     fn encode_to<T: Output + ?Sized>(&self, dest: &mut T) {
@@ -262,18 +257,28 @@ where
     };
 
     for (address, diffs) in &state_update.state_diff.storage_diffs {
-        let contract_address = ContractAddress(PatriciaKey((*address).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
+        let contract_address = ContractAddress(PatriciaKey(
+            (*address).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+        ));
         for storage_diff in diffs {
-            let storage_key = StarknetStorageKey(PatriciaKey(storage_diff.key.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
+            let storage_key = StarknetStorageKey(PatriciaKey(
+                storage_diff.key.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+            ));
             let value = storage_diff.value;
 
             match commitment_state_diff.storage_updates.entry(contract_address) {
                 Entry::Occupied(mut entry) => {
-                    entry.get_mut().insert(storage_key, value.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
+                    entry.get_mut().insert(
+                        storage_key,
+                        value.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+                    );
                 }
                 Entry::Vacant(entry) => {
                     let mut contract_storage = IndexMap::default();
-                    contract_storage.insert(storage_key, value.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
+                    contract_storage.insert(
+                        storage_key,
+                        value.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+                    );
                     entry.insert(contract_storage);
                 }
             }
@@ -281,16 +286,20 @@ where
     }
 
     // for contract in &state_update.state_diff.deployed_contracts {
-    //     let contract_address = ContractAddress(PatriciaKey(contract.address.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
-    //     let class_hash = ClassHash(contract.class_hash.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
-    //     let compiled_class_hash: CompiledClassHash = calculate_compiled_class_hash(&class_hash);
-    
+    //     let contract_address = ContractAddress(PatriciaKey(contract.address.try_into().map_err(|_|
+    // BuildCommitmentStateDiffError::ConversionError)?));     let class_hash =
+    // ClassHash(contract.class_hash.try_into().map_err(|_|
+    // BuildCommitmentStateDiffError::ConversionError)?);     let compiled_class_hash:
+    // CompiledClassHash = calculate_compiled_class_hash(&class_hash);
+
     //     commitment_state_diff.address_to_class_hash.insert(contract_address, class_hash);
-    //     commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
-    // }
+    //     commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash,
+    // compiled_class_hash); }
 
     for nonce in &state_update.state_diff.nonces {
-        let contract_address = ContractAddress(PatriciaKey((*nonce.0).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?));
+        let contract_address = ContractAddress(PatriciaKey(
+            (*nonce.0).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+        ));
         let nonce_value = Nonce((*nonce.1).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
         commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
     }
@@ -305,7 +314,6 @@ where
 //     let contracts_tree_root = {
 //         println!("Initializing or loading storage commitment tree");
 //         let mut contracts_tree = StateCommitmentTree::<H>::default();
-        
 
 //         contracts_tree.commit()
 //     };
@@ -316,6 +324,6 @@ where
 //         class_tree.commit()
 //     };
 
-//     let state_commitment = calculate_state_commitment::<H>(contracts_tree_root, classes_tree_root);
-//     state_commitment
+//     let state_commitment = calculate_state_commitment::<H>(contracts_tree_root,
+// classes_tree_root);     state_commitment
 // }

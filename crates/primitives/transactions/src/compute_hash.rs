@@ -73,7 +73,7 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
         &self,
         chain_id: Felt252Wrapper,
         is_query: bool,
-        block_number: Option<u64>,
+        _block_number: Option<u64>,
     ) -> Felt252Wrapper {
         let prefix = FieldElement::from_byte_slice_be(INVOKE_PREFIX).unwrap();
         let version = if is_query { SIMULATE_TX_VERSION_OFFSET + FieldElement::ONE } else { FieldElement::ONE };
@@ -342,7 +342,7 @@ impl DeployTransaction {
         &self,
         chain_id: FieldElement,
         contract_address: FieldElement,
-        is_query: bool,
+        _is_query: bool,
         block_number: Option<u64>,
     ) -> FieldElement {
         let prefix = FieldElement::from_byte_slice_be(DEPLOY_PREFIX).unwrap();
@@ -440,7 +440,7 @@ impl ComputeTransactionHash for UserTransaction {
         &self,
         chain_id: Felt252Wrapper,
         is_query: bool,
-        block_number: Option<u64>,
+        _block_number: Option<u64>,
     ) -> Felt252Wrapper {
         match self {
             UserTransaction::Declare(tx, _) => tx.compute_hash::<H>(chain_id, is_query, None),

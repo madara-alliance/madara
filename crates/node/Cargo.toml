@@ -4,9 +4,9 @@ version.workspace = true
 edition.workspace = true
 description = "Deoxys node."
 authors = [
-    "Kasar <@kasarLabs>",
-    "KSS <@keep-starknet-strange>",
-    "Substrate @substrate-developer-hub",
+  "Kasar <@kasarLabs>",
+  "KSS <@keep-starknet-strange>",
+  "Substrate @substrate-developer-hub",
 ]
 homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
@@ -120,9 +120,9 @@ substrate-build-script-utils = { workspace = true }
 default = []
 # Dependencies that are only required if runtime benchmarking should be build.
 runtime-benchmarks = [
-    "madara-runtime/runtime-benchmarks",
-    "frame-benchmarking/runtime-benchmarks",
-    "frame-benchmarking-cli/runtime-benchmarks",
+  "madara-runtime/runtime-benchmarks",
+  "frame-benchmarking/runtime-benchmarks",
+  "frame-benchmarking-cli/runtime-benchmarks",
 ]
 # Enable features that allow the runtime to be tried and debugged. Name might be subject to change
 # in the near future.

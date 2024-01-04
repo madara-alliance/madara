@@ -21,9 +21,9 @@ pallet-starknet = { workspace = true, default-features = true }
 pallet-starknet-runtime-api = { workspace = true, default-features = true }
 # Madara client
 mc-db = { workspace = true }
+mc-deoxys = { workspace = true }
 mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
-mc-deoxys = { workspace = true }
 # Substate primitives
 frame-support = { workspace = true }
 frame-system = { workspace = true }

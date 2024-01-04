@@ -1,7 +1,5 @@
 {
-  "eslint.workingDirectories": [
-    "tests"
-  ],
+  "eslint.workingDirectories": ["tests"],
   "editor.formatOnSave": false,
   "[rust]": {
     "editor.formatOnSave": false

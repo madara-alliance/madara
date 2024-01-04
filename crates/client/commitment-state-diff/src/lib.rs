@@ -1,4 +1,3 @@
-use std::default;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -8,9 +7,14 @@ use blockifier::state::cached_state::CommitmentStateDiff;
 use futures::channel::mpsc;
 use futures::{Stream, StreamExt};
 use indexmap::IndexMap;
-use mp_hashers::HasherT;
+use mp_commitments::{
+    calculate_class_commitment_leaf_hash, calculate_class_commitment_tree_root_hash, calculate_contract_state_hash,
+    calculate_state_commitment, StateCommitmentTree,
+};
+use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::poseidon::PoseidonHasher;
+use mp_hashers::HasherT;
 use mp_storage::{SN_COMPILED_CLASS_HASH_PREFIX, SN_CONTRACT_CLASS_HASH_PREFIX, SN_NONCE_PREFIX, SN_STORAGE_PREFIX};
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::client::BlockchainEvents;
@@ -20,12 +24,9 @@ use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::{Block as BlockT, Header};
 use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::block::{BlockHash, BlockNumber};
-use starknet_api::hash::{StarkFelt, StarkHash};
+use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey as StarknetStorageKey;
 use thiserror::Error;
-
-use mp_commitments::{StateCommitmentTree, calculate_contract_state_hash, calculate_class_commitment_leaf_hash, calculate_class_commitment_tree_root_hash, calculate_state_commitment};
-use mp_felt::Felt252Wrapper;
 
 pub struct CommitmentStateDiffWorker<B: BlockT, C, H> {
     client: Arc<C>,
@@ -126,7 +127,7 @@ pub enum BuildCommitmentStateDiffError {
     #[error("digest log not found")]
     DigestLogNotFound(#[from] mp_digest_log::FindLogError),
     #[error("conversion error")]
-    ConversionError
+    ConversionError,
 }
 
 fn build_commitment_state_diff<B: BlockT, C, H>(
@@ -219,8 +220,8 @@ where
 }
 
 pub async fn verify_l2(mut rx: mpsc::Receiver<(BlockNumber, BlockHash, CommitmentStateDiff)>) {
-    while let Some((block_number, block_hash, csd)) = rx.next().await {
-        //TODO: retrieve and deal with state commitment accross L1
+    while let Some((_block_number, _block_hash, _csd)) = rx.next().await {
+        // TODO: retrieve and deal with state commitment accross L1
         // println!("➡️ block_hash {:?} with {:?}", block_hash, state_commitment(csd).0);
         // update_l2({block_number, block_hash, state_commitment})
     }
@@ -257,9 +258,12 @@ pub fn state_commitment(csd: CommitmentStateDiff) -> Felt252Wrapper {
     };
 
     let classes_tree_root = {
-        let class_hashes: Vec<Felt252Wrapper> = csd.class_hash_to_compiled_class_hash
+        let class_hashes: Vec<Felt252Wrapper> = csd
+            .class_hash_to_compiled_class_hash
             .iter()
-            .map(|(_, compiled_class_hash)| calculate_class_commitment_leaf_hash::<PoseidonHasher>((*compiled_class_hash).into()))
+            .map(|(_, compiled_class_hash)| {
+                calculate_class_commitment_leaf_hash::<PoseidonHasher>((*compiled_class_hash).into())
+            })
             .collect();
         calculate_class_commitment_tree_root_hash::<PoseidonHasher>(&class_hashes)
     };
@@ -268,6 +272,5 @@ pub fn state_commitment(csd: CommitmentStateDiff) -> Felt252Wrapper {
         contracts_tree_root
     } else {
         calculate_state_commitment::<PoseidonHasher>(contracts_tree_root, classes_tree_root)
-    }  
+    }
 }
-

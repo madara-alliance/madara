@@ -19,12 +19,12 @@ use mc_db::Backend as MadaraBackend;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
+use mp_block::BlockStatus;
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_transactions::UserTransaction;
-use mp_block::BlockStatus;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -44,10 +44,11 @@ use starknet_core::types::{
     BlockHashAndNumber, BlockId, BlockTag, BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTransaction,
     BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass,
     DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt,
-    DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResult, FeeEstimate, FieldElement,
-    FunctionCall, InvokeTransactionReceipt, InvokeTransactionResult, L1HandlerTransactionReceipt,
-    MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingTransactionReceipt, StateDiff, StateUpdate,
-    SyncStatus, SyncStatusType, Transaction, TransactionFinalityStatus, TransactionReceipt,
+    DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResult,
+    FeeEstimate, FieldElement, FunctionCall, InvokeTransactionReceipt, InvokeTransactionResult,
+    L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+    MaybePendingTransactionReceipt, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
+    TransactionFinalityStatus, TransactionReceipt,
 };
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
@@ -542,11 +543,12 @@ where
 
         println!("AKHIIII: {:?}", mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0);
 
-        let actual_status = if block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
-            BlockStatus::AcceptedOnL1.into()
-        } else {
-            BlockStatus::AcceptedOnL2.into()
-        };
+        let actual_status =
+            if block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
+                BlockStatus::AcceptedOnL1.into()
+            } else {
+                BlockStatus::AcceptedOnL2.into()
+            };
 
         let transaction_hashes = if let Some(tx_hashes) = self.get_cached_transaction_hashes(block_hash.into()) {
             let mut v = Vec::with_capacity(tx_hashes.len());
@@ -560,7 +562,10 @@ where
             }
             v
         } else {
-            block.transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number)).map(FieldElement::from).collect()
+            block
+                .transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number))
+                .map(FieldElement::from)
+                .collect()
         };
 
         let parent_blockhash = block.header().parent_block_hash;
@@ -720,11 +725,12 @@ where
         let block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).unwrap_or_default();
         let block_hash = block.header().hash::<H>();
 
-        let actual_status = if block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
-            BlockStatus::AcceptedOnL1.into()
-        } else {
-            BlockStatus::AcceptedOnL2.into()
-        };
+        let actual_status =
+            if block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
+                BlockStatus::AcceptedOnL1.into()
+            } else {
+                BlockStatus::AcceptedOnL2.into()
+            };
 
         let chain_id = self.chain_id()?;
         let chain_id = Felt252Wrapper(chain_id.0);
@@ -932,7 +938,9 @@ where
             block
                 .transactions()
                 .iter()
-                .find(|tx| tx.compute_hash::<H>(chain_id, false, Some(block.header().block_number)).0 == transaction_hash)
+                .find(|tx| {
+                    tx.compute_hash::<H>(chain_id, false, Some(block.header().block_number)).0 == transaction_hash
+                })
                 .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
         };
 
@@ -1088,11 +1096,12 @@ where
             events_converted.last().unwrap().data[2]
         };
 
-        let actual_status = if block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
-            TransactionFinalityStatus::AcceptedOnL1.into()
-        } else {
-            TransactionFinalityStatus::AcceptedOnL2.into()
-        };
+        let actual_status =
+            if block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
+                TransactionFinalityStatus::AcceptedOnL1.into()
+            } else {
+                TransactionFinalityStatus::AcceptedOnL2.into()
+            };
 
         let receipt = match transaction {
             mp_transactions::Transaction::Declare(_) => TransactionReceipt::Declare(DeclareTransactionReceipt {
@@ -1117,20 +1126,18 @@ where
                     contract_address: tx.get_account_address(),
                     execution_result,
                 })
-            },
-            mp_transactions::Transaction::Deploy(tx) => {
-                TransactionReceipt::Deploy(DeployTransactionReceipt {
-                    transaction_hash,
-                    actual_fee,
-                    finality_status: actual_status,
-                    block_hash,
-                    block_number,
-                    messages_sent: Default::default(),
-                    events: events_converted,
-                    contract_address: tx.get_account_address(),
-                    execution_result,
-                })
-            },
+            }
+            mp_transactions::Transaction::Deploy(tx) => TransactionReceipt::Deploy(DeployTransactionReceipt {
+                transaction_hash,
+                actual_fee,
+                finality_status: actual_status,
+                block_hash,
+                block_number,
+                messages_sent: Default::default(),
+                events: events_converted,
+                contract_address: tx.get_account_address(),
+                execution_result,
+            }),
             mp_transactions::Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {
                 transaction_hash,
                 actual_fee,

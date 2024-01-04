@@ -49,8 +49,8 @@ pub mod transaction_validation;
 pub mod types;
 
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
-use blockifier::transaction::objects::{TransactionExecutionInfo, TransactionExecutionResult};
 use blockifier::state::cached_state::ContractStorageKey;
+use blockifier::transaction::objects::{TransactionExecutionInfo, TransactionExecutionResult};
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Calldata, Event as StarknetEvent, Fee};
 
@@ -71,7 +71,8 @@ use blockifier_state_adapter::BlockifierStateAdapter;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
-use mp_block::{Block as StarknetBlock, BlockStatus, Header as StarknetHeader, state_update::StateUpdateWrapper};
+use mp_block::state_update::StateUpdateWrapper;
+use mp_block::{Block as StarknetBlock, Header as StarknetHeader};
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_fee::INITIAL_GAS;
 use mp_felt::Felt252Wrapper;
@@ -180,57 +181,62 @@ pub mod pallet {
         fn on_initialize(_: BlockNumberFor<T>) -> Weight {
             let digest = frame_system::Pallet::<T>::digest();
             let logs = digest.logs();
-        
+
             if !logs.is_empty() {
                 for log_entry in logs {
                     if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
                         if *engine_id == mp_digest_log::STATE_ENGINE_ID {
                             match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
                                 Ok(state_update) => {
-        
                                     for (address, storage_diffs) in state_update.state_diff.storage_diffs {
                                         for storage_diff in storage_diffs {
-                                            let contract_storage_key: ContractStorageKey = (ContractAddress(address.try_into().unwrap()), StorageKey(storage_diff.key.try_into().unwrap()));
+                                            let contract_storage_key: ContractStorageKey = (
+                                                ContractAddress(address.try_into().unwrap()),
+                                                StorageKey(storage_diff.key.try_into().unwrap()),
+                                            );
                                             let value = StarkFelt(storage_diff.value.try_into().unwrap());
                                             <StorageView<T>>::insert(contract_storage_key, value)
                                         }
                                     }
-        
+
                                     for deployed_contract in state_update.state_diff.deployed_contracts {
-                                        let contract_address = ContractAddress(deployed_contract.address.try_into().unwrap());
+                                        let contract_address =
+                                            ContractAddress(deployed_contract.address.try_into().unwrap());
                                         let class_hash = ClassHash(deployed_contract.class_hash.try_into().unwrap());
                                         <ContractClassHashes<T>>::insert(contract_address, class_hash);
                                     }
 
-                                    //TODO: old declared contracts
-        
+                                    // TODO: old declared contracts
+
                                     for declared_class in state_update.state_diff.declared_classes {
                                         let class_hash = ClassHash(declared_class.class_hash.try_into().unwrap());
-                                        let compiled_class_hash = CompiledClassHash(declared_class.compiled_class_hash.try_into().unwrap());
+                                        let compiled_class_hash =
+                                            CompiledClassHash(declared_class.compiled_class_hash.try_into().unwrap());
                                         <CompiledClassHashes<T>>::insert(class_hash, compiled_class_hash);
                                     }
-        
+
                                     for (address, nonce) in state_update.state_diff.nonces {
                                         let contract_address = ContractAddress(address.try_into().unwrap());
                                         let nonce = Nonce(nonce.try_into().unwrap());
                                         <Nonces<T>>::insert(contract_address, nonce);
                                     }
-        
+
                                     for replaced_class in state_update.state_diff.replaced_classes {
-                                        let contract_address = ContractAddress(replaced_class.address.try_into().unwrap());
+                                        let contract_address =
+                                            ContractAddress(replaced_class.address.try_into().unwrap());
                                         let class_hash = ClassHash(replaced_class.class_hash.try_into().unwrap());
                                         <ContractClassHashes<T>>::insert(contract_address, class_hash);
                                     }
-                                },
+                                }
                                 Err(e) => log!(info, "Decoding error: {:?}", e),
                             }
                         }
                     }
                 }
             }
-        
+
             Weight::zero()
-        }        
+        }
 
         /// Perform a module upgrade.
         fn on_runtime_upgrade() -> Weight {
@@ -241,9 +247,7 @@ pub mod pallet {
         /// See: `<https://docs.substrate.io/reference/how-to-guides/offchain-workers/>`
         /// # Arguments
         /// * `n` - The block number.
-        fn offchain_worker(n: BlockNumberFor<T>) {
-            
-        }
+        fn offchain_worker(_n: BlockNumberFor<T>) {}
     }
 
     /// The Starknet pallet storage items.

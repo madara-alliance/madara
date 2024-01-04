@@ -14,7 +14,6 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::Transaction;
-use starknet_api::api_core::CompiledClassHash;
 use starknet_api::transaction::Event;
 use starknet_crypto::FieldElement;
 
@@ -149,11 +148,8 @@ where
 {
     let starknet_state_prefix = Felt252Wrapper::try_from("STARKNET_STATE_V0".as_bytes()).unwrap();
 
-    let state_commitment_hash = H::compute_hash_on_elements(&[
-        starknet_state_prefix.0,
-        contracts_tree_root.0,
-        classes_tree_root.0,
-    ]);
+    let state_commitment_hash =
+        H::compute_hash_on_elements(&[starknet_state_prefix.0, contracts_tree_root.0, classes_tree_root.0]);
 
     state_commitment_hash.into()
 }
@@ -289,7 +285,8 @@ pub fn calculate_contract_state_hash<H: HasherT>(
     root: Felt252Wrapper,
     nonce: Felt252Wrapper,
 ) -> Felt252Wrapper {
-    // Define the constant for the contract state hash version, ensure this aligns with StarkNet specifications.
+    // Define the constant for the contract state hash version, ensure this aligns with StarkNet
+    // specifications.
     const CONTRACT_STATE_HASH_VERSION: Felt252Wrapper = Felt252Wrapper::ZERO;
 
     // First hash: Combine class_hash and storage_root.

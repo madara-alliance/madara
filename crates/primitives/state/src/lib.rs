@@ -80,7 +80,5 @@ impl StateReader for DictStateReader {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests;

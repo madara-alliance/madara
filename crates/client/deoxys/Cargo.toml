@@ -2,9 +2,7 @@
 name = "mc-deoxys"
 version = "0.1.0"
 description = "Deoxys crate for Madara"
-authors = [
-    "Antiyro <https://github.com/antiyro>",
-]
+authors = ["Antiyro <https://github.com/antiyro>"]
 homepage = "https://github.com/KasarLabs/deoxys"
 edition = "2021"
 license = "MIT"
@@ -19,47 +17,45 @@ m = ["dep:rodio"]
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
-starknet-gateway = "0.6"
+anyhow = "1.0.75"
+lazy_static = "1.4.0"
 reqwest = "0.11"
 serde_json = "1"
-anyhow = "1.0.75"
-web3 = "0.19.0"
+starknet-gateway = "0.6"
 tokio-tungstenite = "0.20.1"
-lazy_static = "1.4.0"
+web3 = "0.19.0"
 
-url = { workspace = true }
-serde = { workspace = true, default-features = true }
-rodio = { version = "0.17", optional = true }
-rand = { version = "0.8.5" }
-indexmap = { workspace = true }
 blockifier = { workspace = true, default-features = false, features = [
-    "testing",
+  "testing",
 ] }
 env_logger = "0.10.0"
+indexmap = { workspace = true }
 log = { version = "0.4.14" }
 mockito = { workspace = true }
+rand = { version = "0.8.5" }
+rodio = { version = "0.17", optional = true }
+serde = { workspace = true, default-features = true }
 sp-core = { workspace = true, features = ["std"] }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true, default-features = false, features = [
-    "alloc",
-    "serde",
+  "alloc",
+  "serde",
 ] }
 starknet_api = { workspace = true, default-features = false }
 tokio = { workspace = true, features = ["macros", "test-util", "parking_lot"] }
+url = { workspace = true }
 # test_utils = { path = "./test_utils", optional = true }
+futures = { workspace = true, default-features = true }
 hex = "0.4"
+mc-commitment-state-diff = { workspace = true }
 mp-block = { workspace = true }
 mp-commitments = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
-mc-commitment-state-diff = { workspace = true }
-validator = { workspace = true, features = ["derive"] }
+parity-scale-codec = { workspace = true, features = ["derive"] }
 sc-consensus-manual-seal.workspace = true
-futures = { workspace = true, default-features = true }
-parity-scale-codec = { workspace = true, features = [
-  "derive",
-] }
+validator = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 # test_utils = { path = "./test_utils" }

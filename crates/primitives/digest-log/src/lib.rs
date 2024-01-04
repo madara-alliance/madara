@@ -30,7 +30,6 @@ pub const MADARA_ENGINE_ID: ConsensusEngineId = [b'm', b'a', b'd', b'a'];
 pub const BLOCK_ENGINE_ID: ConsensusEngineId = [b'b', b'l', b'o', b'c'];
 pub const STATE_ENGINE_ID: ConsensusEngineId = [b's', b't', b'a', b't'];
 
-
 /// A Madara log
 ///
 /// Right now we only expect Madara to log the Starknet block,

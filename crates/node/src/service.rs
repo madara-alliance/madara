@@ -4,8 +4,6 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::Duration;
 
-use mc_deoxys::state_updates::StarknetStateUpdate;
-use reqwest::Url;
 use futures::channel::mpsc;
 use futures::future;
 use futures::future::BoxFuture;
@@ -13,14 +11,15 @@ use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_commitment_state_diff::{verify_l2, CommitmentStateDiffWorker};
+use mc_deoxys::state_updates::{StarknetStateUpdate, StateUpdateWrapper};
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
-use mc_deoxys::state_updates::StateUpdateWrapper;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
 };
 use parity_scale_codec::Encode;
 use prometheus_endpoint::Registry;
+use reqwest::Url;
 use sc_basic_authorship::ProposerFactory;
 use sc_client_api::{Backend, BlockBackend, BlockchainEvents, HeaderBackend};
 use sc_consensus::{BasicQueue, BlockImportParams};
@@ -39,7 +38,7 @@ use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_inherents::InherentData;
 use sp_offchain::STORAGE_PREFIX;
 use sp_runtime::testing::{Digest, DigestItem};
-use sp_runtime::traits::{Block as BlockT};
+use sp_runtime::traits::Block as BlockT;
 
 use crate::genesis_block::MadaraGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
@@ -427,7 +426,7 @@ pub fn new_full(
         Some("madara"),
         verify_l2(commitment_state_diff_rx),
     );
-    
+
     if role.is_authority() {
         // manual-seal authorship
         if !sealing.is_default() {
@@ -436,7 +435,7 @@ pub fn new_full(
             //   become a config option in the future.
             let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<mp_block::Block>(100);
             let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StarknetStateUpdate>(100);
-            
+
             run_manual_seal_authorship(
                 block_receiver,
                 state_update_receiver,
@@ -636,11 +635,10 @@ where
         _client: Arc<C>,
 
         /// The receiver that we're using to receive blocks.
-        block_receiver: tokio::sync::Mutex< tokio::sync::mpsc::Receiver<mp_block::Block>>,
+        block_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<mp_block::Block>>,
 
         /// The receiver that we're using to receive commitment state diffs.
         state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StarknetStateUpdate>>,
-
     }
 
     impl<B, C> ConsensusDataProvider<B> for QueryBlockConsensusDataProvider<C>
@@ -658,17 +656,19 @@ where
             let mut lock = self.state_update_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let state_update = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
             let state_update_wrapper = StateUpdateWrapper::try_from(state_update).unwrap();
-            let state_update_digest_item: DigestItem =
-                sp_runtime::DigestItem::PreRuntime(mp_digest_log::STATE_ENGINE_ID, Encode::encode(&state_update_wrapper));
+            let state_update_digest_item: DigestItem = sp_runtime::DigestItem::PreRuntime(
+                mp_digest_log::STATE_ENGINE_ID,
+                Encode::encode(&state_update_wrapper),
+            );
             Ok(Digest { logs: vec![block_digest_item, state_update_digest_item] })
         }
 
-        // fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) -> Result<Digest, Error> {
-        //     let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+        // fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) -> Result<Digest, Error>
+        // {     let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
         //     let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
         //     let block_digest_item: DigestItem =
-        //         sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
-        //     Ok(Digest { logs: vec![block_digest_item] })
+        //         sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID,
+        // Encode::encode(&block));     Ok(Digest { logs: vec![block_digest_item] })
         // }
 
         fn append_block_import(
