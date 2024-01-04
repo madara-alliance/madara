@@ -20,17 +20,7 @@
 
 ## ⚙️ Installation
 
-### Prerequisites
-
-### Build and Run
-
-### Run with Docker
-
 ## 📸 Snapshots
-
-### Run Deoxys Using Snapshot
-
-After following these steps, Deoxys should be up and running on your machine, utilizing the provided snapshot.
 
 ## ✔ Supported Features
 
