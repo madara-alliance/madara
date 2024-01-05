@@ -33,10 +33,10 @@ sp-runtime = { workspace = true, default-features = true }
 # Starknet
 mp-block = { workspace = true, default-features = true }
 mp-digest-log = { workspace = true, features = ["std"] }
+mp-felt = { workspace = true, default-features = true }
 mp-hashers = { workspace = true, default-features = true }
 mp-messages = { workspace = true, default-features = true }
 mp-snos-output = { workspace = true, default-features = true }
-mp-felt = { workspace = true, default-features = true }
 mp-transactions = { workspace = true, default-features = true }
 starknet-crypto = { workspace = true, default-features = true }
 starknet_api = { workspace = true, default-features = true }

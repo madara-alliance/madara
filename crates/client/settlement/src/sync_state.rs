@@ -185,7 +185,9 @@ where
         let fee_token_address = substrate_client.runtime_api().fee_token_address(substrate_hash)?;
 
         let config_hash = pedersen_hash_array(&[
-            StarkFelt::from(Felt252Wrapper::from(FieldElement::from_byte_slice_be(SN_OS_CONFIG_HASH_VERSION.as_bytes()).unwrap())),
+            StarkFelt::from(Felt252Wrapper::from(
+                FieldElement::from_byte_slice_be(SN_OS_CONFIG_HASH_VERSION.as_bytes()).unwrap(),
+            )),
             chain_id.into(),
             fee_token_address.0.0,
         ]);
@@ -257,7 +259,8 @@ where
             if let Transaction::L1Handler(l1_handler) = tx {
                 messages_to_l2.push(l1_handler.clone().into());
             }
-            let tx_hash = TransactionHash(tx.compute_hash::<H>(chain_id, false, Some(next_block.header().block_number)).into());
+            let tx_hash =
+                TransactionHash(tx.compute_hash::<H>(chain_id, false, Some(next_block.header().block_number)).into());
             substrate_client
                 .runtime_api()
                 .get_tx_messages_to_l1(substrate_block_hash, tx_hash)?
