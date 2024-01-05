@@ -346,7 +346,7 @@ impl DeployTransaction {
         block_number: Option<u64>,
     ) -> FieldElement {
         let prefix = FieldElement::from_byte_slice_be(DEPLOY_PREFIX).unwrap();
-        let version = self.version.0.into();
+        let version = Felt252Wrapper::from(self.version.0).into();
         let constructor_calldata = compute_hash_on_elements(convert_calldata(&self.constructor_calldata));
         let constructor = starknet_keccak(b"constructor");
 
