@@ -21,7 +21,6 @@ anyhow = "1.0.75"
 lazy_static = "1.4.0"
 reqwest = "0.11"
 serde_json = "1"
-starknet-gateway = "0.6"
 tokio-tungstenite = "0.20.1"
 web3 = "0.19.0"
 
@@ -37,6 +36,7 @@ rodio = { version = "0.17", optional = true }
 serde = { workspace = true, default-features = true }
 sp-core = { workspace = true, features = ["std"] }
 starknet-core = { workspace = true }
+starknet-providers = { workspace = true }
 starknet-ff = { workspace = true, default-features = false, features = [
   "alloc",
   "serde",

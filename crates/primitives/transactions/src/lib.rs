@@ -21,6 +21,7 @@ use derive_more::From;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use starknet_api::transaction::{Fee, TransactionVersion};
+use starknet_core::types::{TransactionExecutionStatus, TransactionFinalityStatus};
 use starknet_ff::FieldElement;
 
 const SIMULATE_TX_VERSION_OFFSET: FieldElement =
@@ -47,6 +48,14 @@ lazy_static! {
 pub fn update_legacy() {
     let mut env = LEGACY_ENV.lock();
     env.legacy_mode = false;
+}
+
+// TODO(antiyro): remove this when released: https://github.com/xJonathanLEI/starknet-rs/blame/fec81d126c58ff3dff6cbfd4b9e714913298e54e/starknet-core/src/types/serde_impls.rs#L175
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TransactionStatus {
+    pub finality_status: TransactionFinalityStatus,
+    pub execution_status: TransactionExecutionStatus,
 }
 
 /// Wrapper type for transaction execution error.

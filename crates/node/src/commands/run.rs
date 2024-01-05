@@ -1,15 +1,53 @@
 use std::path::PathBuf;
 use std::result::Result as StdResult;
 
+use clap::ValueHint::FilePath;
 use madara_runtime::SealingMode;
 use mc_deoxys::l2::fetch_genesis_block;
 use reqwest::Url;
+use mc_settlement::SettlementLayer;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use sc_service::BasePath;
 use serde::{Deserialize, Serialize};
 
 use crate::cli::Cli;
 use crate::service;
+
+#[derive(Debug, Clone, clap::Args)]
+#[group(multiple = true)]
+pub struct L1MessagesParams {
+    /// Ethereum Provider (Node) Url
+    #[clap(
+        long,
+        value_hint=clap::ValueHint::Url,
+        conflicts_with="l1_messages_config",
+        requires="l1_contract_address",
+    )]
+    pub provider_url: Option<String>,
+
+    /// L1 Contract Address
+    #[clap(
+        long,
+        value_hint=clap::ValueHint::Other,
+        conflicts_with="l1_messages_config",
+        requires="provider_url",
+    )]
+    pub l1_contract_address: Option<String>,
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct L1Messages {
+    /// Path to configuration file for Ethereum Core Contract Events Listener
+    #[clap(
+        long,
+        conflicts_with_all=["provider_url", "l1_contract_address"],
+        value_hint=clap::ValueHint::FilePath,
+    )]
+    pub l1_messages_config: Option<PathBuf>,
+
+    #[clap(flatten)]
+    pub config_params: L1MessagesParams,
+}
 
 /// Available Sealing methods.
 #[derive(Debug, Copy, Clone, clap::ValueEnum, Default, Serialize, Deserialize)]
@@ -93,6 +131,15 @@ pub struct ExtendedRunCmd {
     /// The network type to connect to.
     #[clap(long, short, default_value = "integration")]
     pub network: NetworkType,
+
+    /// Choose a supported settlement layer
+    #[clap(long, ignore_case = true, requires = "settlement_conf")]
+    pub settlement: Option<SettlementLayer>,
+
+    /// Path to a file containing the settlement configuration
+    #[clap(long, value_hint = FilePath, requires = "settlement")]
+    pub settlement_conf: Option<PathBuf>,
+
     /// When enabled, more information about the blocks and their transaction is cached and stored
     /// in the database.
     ///
@@ -108,6 +155,9 @@ pub struct ExtendedRunCmd {
     /// This wrap a specific deoxys environment for a node quick start.
     #[clap(long)]
     pub deoxys: bool,
+    /// Configuration for L1 Messages (Syncing) Worker
+    #[clap(flatten)]
+    pub l1_messages_worker: L1Messages,
 }
 
 impl ExtendedRunCmd {
@@ -151,9 +201,8 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             l1_endpoint,
             cache,
             fetch_block_config,
-            genesis_block,
-        )
-        .map_err(sc_cli::Error::Service)
+            genesis_block
+        ).map_err(sc_cli::Error::Service)
     })
 }
 

@@ -15,6 +15,7 @@ blockifier = { workspace = true }
 derive_more = { workspace = true, features = ["from"] }
 frame-support = { workspace = true }
 lazy_static = { workspace = true }
+log = { workspace = true }
 mp-fee = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }

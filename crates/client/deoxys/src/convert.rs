@@ -1,8 +1,8 @@
-//! Converts types from [`starknet_gateway`] to madara's expected types.
+//! Converts types from [`starknet_providers`] to madara's expected types.
 
 use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
-use starknet_gateway::sequencer::models as p;
+use starknet_providers::sequencer::models as p;
 
 pub fn block(block: &p::Block) -> mp_block::Block {
     let transactions = transactions(&block.transactions);
