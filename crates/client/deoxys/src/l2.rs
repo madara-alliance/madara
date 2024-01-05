@@ -10,8 +10,8 @@ use reqwest::Url;
 use serde::Deserialize;
 use sp_core::H256;
 use starknet_api::block::{BlockHash, BlockNumber};
-use starknet_gateway::sequencer::models::BlockId;
-use starknet_gateway::SequencerGatewayProvider;
+use starknet_providers::sequencer::models::BlockId;
+use starknet_providers::SequencerGatewayProvider;
 use tokio::sync::mpsc::Sender;
 
 use crate::state_updates::StarknetStateUpdate;

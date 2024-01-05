@@ -8,15 +8,15 @@ use parity_scale_codec::{Decode, Encode, Error, Input, Output};
 use starknet_api::api_core::{ContractAddress, Nonce, PatriciaKey};
 use starknet_api::state::StorageKey as StarknetStorageKey;
 use starknet_ff::FieldElement;
-use starknet_gateway::sequencer::models::state_update::{DeclaredContract, DeployedContract, StateDiff, StorageDiff};
-use starknet_gateway::sequencer::models::StateUpdate;
+use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract, StateDiff, StorageDiff};
+use starknet_providers::sequencer::models::StateUpdate;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-pub struct StarknetStateUpdate(pub starknet_gateway::sequencer::models::StateUpdate);
+pub struct StarknetStateUpdate(pub starknet_providers::sequencer::models::StateUpdate);
 
 impl StarknetStateUpdate {
-    // Assuming `starknet_gateway::sequencer::models::StateUpdate` has these fields
+    // Assuming `starknet_providers::sequencer::models::StateUpdate` has these fields
     // and they are public or have getter methods that return the necessary types.
 
     pub fn get_block_hash(&self) -> Option<&FieldElement> {

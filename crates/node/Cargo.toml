@@ -21,6 +21,9 @@ targets = ["x86_64-unknown-linux-gnu"]
 name = "deoxys"
 
 [dependencies]
+# Ethereum
+ethers = { workspace = true, features = ["openssl"] }
+
 async-trait = "0.1"
 clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true, features = ["thread-pool"] }
@@ -84,25 +87,33 @@ hex = { workspace = true }
 madara-runtime = { workspace = true }
 mc-commitment-state-diff = { workspace = true }
 mc-db = { workspace = true }
+mc-l1-messages = { workspace = true }
 mc-mapping-sync = { workspace = true }
 mc-rpc = { workspace = true }
+mc-settlement = { workspace = true, features = ["clap"] }
 mc-storage = { workspace = true }
 pallet-starknet = { workspace = true }
 pallet-starknet-runtime-api = { workspace = true }
 starknet-core = { workspace = true }
-starknet-gateway = { workspace = true }
+starknet_api = { workspace = true, features = [
+  "scale-info",
+  "parity-scale-codec",
+] }
+
+# Madara utils
+mc-genesis-data-provider = { workspace = true }
 
 bincode = "1.3"
 mockito = { workspace = true }
-parity-scale-codec = "3.6.5"
 serde_json = "1.0.64"
-starknet_api = "0.4.1"
 # Primitives
 mp-block = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-sequencer-address = { workspace = true, features = ["client"] }
+mp-transactions = { workspace = true, features = ["scale-info"] }
+
 
 # CLI-specific dependencies
 try-runtime-cli = { optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.3.0" }
@@ -110,6 +121,7 @@ try-runtime-cli = { optional = true, git = "https://github.com/paritytech/polkad
 
 #Deoxys
 mc-deoxys = { workspace = true }
+parity-scale-codec = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true }
 url = { workspace = true }
 

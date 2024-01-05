@@ -1,6 +1,7 @@
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,6 +13,7 @@ use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_commitment_state_diff::{verify_l2, CommitmentStateDiffWorker};
 use mc_deoxys::state_updates::{StarknetStateUpdate, StateUpdateWrapper};
+use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
 use mp_sequencer_address::{
@@ -45,6 +47,8 @@ use crate::rpc::StarknetDeps;
 use crate::starknet::{db_config_dir, MadaraBackend};
 // Our native executor instance.
 pub struct ExecutorDispatch;
+
+const MADARA_TASK_GROUP: &str = "madara";
 
 impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
     /// Only enable the benchmarking host functions when we actually want to benchmark.
@@ -269,7 +273,7 @@ pub fn new_full(
     l1_url: Url,
     cache_more_things: bool,
     fetch_config: mc_deoxys::FetchConfig,
-    genesis_block: mp_block::Block,
+    genesis_block: mp_block::Block
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
@@ -355,12 +359,15 @@ pub fn new_full(
     };
 
     let overrides = overrides_handle(client.clone());
+    let config_dir: PathBuf = config.data_path.clone();
+    let genesis_data = OnDiskGenesisConfig(config_dir);
     let starknet_rpc_params = StarknetDeps {
         client: client.clone(),
         madara_backend: madara_backend.clone(),
         overrides,
         sync_service: sync_service.clone(),
         starting_block,
+        genesis_provider: genesis_data.into(),
     };
 
     let rpc_extensions_builder = {
@@ -399,7 +406,7 @@ pub fn new_full(
 
     task_manager.spawn_essential_handle().spawn(
         "mc-mapping-sync-worker",
-        Some("madara"),
+        Some(MADARA_TASK_GROUP),
         MappingSyncWorker::<_, _, _, StarknetHasher>::new(
             client.import_notification_stream(),
             Duration::new(6, 0),
@@ -477,7 +484,7 @@ pub fn new_full(
 
         let aura = sc_consensus_aura::start_aura::<AuraPair, _, _, _, _, _, _, _, _, _, _>(StartAuraParams {
             slot_duration,
-            client,
+            client: client.clone(),
             select_chain,
             block_import,
             proposer_factory,
