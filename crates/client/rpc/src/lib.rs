@@ -27,6 +27,7 @@ use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use mp_hashers::HasherT;
 use mp_simulations::{SimulatedTransaction, SimulationFlag, SimulationFlags};
 use mp_transactions::compute_hash::ComputeTransactionHash;
+use mp_transactions::execution::StarknetRPCExecutionResources;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_transactions::{TransactionStatus, UserTransaction};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -49,7 +50,7 @@ use starknet_core::types::{
     BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass,
     DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt, DeployTransactionReceipt,
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, ExecutionResult, FeeEstimate, FieldElement,
-    FunctionCall, InvokeTransactionReceipt, InvokeTransactionResult, L1HandlerTransactionReceipt,
+    FunctionCall, Hash256, InvokeTransactionReceipt, InvokeTransactionResult, L1HandlerTransactionReceipt,
     MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingTransactionReceipt, StateDiff, StateUpdate,
     SyncStatus, SyncStatusType, Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
@@ -830,6 +831,8 @@ where
 
         let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).unwrap_or_default();
         let chain_id = self.chain_id()?;
+        let starknet_version = starknet_block.header().protocol_version;
+        let l1_gas_price = starknet_block.header().l1_gas_price;
         let block_hash = starknet_block.header().hash::<H>();
 
         let actual_status =
@@ -859,11 +862,13 @@ where
             transactions: transaction_hashes,
             status: actual_status,
             block_hash: block_hash.into(),
-            parent_hash: parent_blockhash.into(),
+            parent_hash: Felt252Wrapper::from(parent_blockhash).into(),
             block_number: starknet_block.header().block_number,
-            new_root: starknet_block.header().global_state_root.into(),
+            new_root: Felt252Wrapper::from(starknet_block.header().global_state_root).into(),
             timestamp: starknet_block.header().block_timestamp,
             sequencer_address: Felt252Wrapper::from(starknet_block.header().sequencer_address).into(),
+            l1_gas_price: starknet_block.header().l1_gas_price.into(),
+            starknet_version: starknet_version.to_string(),
         };
 
         Ok(MaybePendingBlockWithTxHashes::Block(block_with_tx_hashes))
@@ -944,18 +949,6 @@ where
         request: Vec<BroadcastedTransaction>,
         block_id: BlockId,
     ) -> RpcResult<Vec<FeeEstimate>> {
-        let is_query = request.iter().any(|tx| match tx {
-            BroadcastedTransaction::Invoke(invoke_tx) => invoke_tx.is_query,
-            BroadcastedTransaction::Declare(BroadcastedDeclareTransaction::V1(tx_v1)) => tx_v1.is_query,
-            BroadcastedTransaction::Declare(BroadcastedDeclareTransaction::V2(tx_v2)) => tx_v2.is_query,
-            BroadcastedTransaction::DeployAccount(deploy_tx) => deploy_tx.is_query,
-        });
-        if !is_query {
-            log::error!(
-                "Got `is_query`: false. In a future version, this will fail fee estimation with UnsupportedTxVersion"
-            );
-        }
-
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
@@ -1075,6 +1068,7 @@ where
 
         let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).unwrap_or_default();
         let block_hash = starknet_block.header().hash::<H>();
+        let starknet_version = starknet_block.header().protocol_version;
 
         let actual_status =
             if starknet_block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
@@ -1114,12 +1108,14 @@ where
         let block_with_txs = BlockWithTxs {
             status: actual_status,
             block_hash: block_hash.into(),
-            parent_hash: starknet_block.header().parent_block_hash.into(),
+            parent_hash: Felt252Wrapper::from(starknet_block.header().parent_block_hash).into(),
             block_number: starknet_block.header().block_number,
-            new_root: starknet_block.header().global_state_root.into(),
+            new_root: Felt252Wrapper::from(starknet_block.header().global_state_root).into(),
             timestamp: starknet_block.header().block_timestamp,
             sequencer_address: Felt252Wrapper::from(starknet_block.header().sequencer_address).into(),
             transactions,
+            l1_gas_price: starknet_block.header().l1_gas_price.into(),
+            starknet_version: starknet_version.to_string(),
         };
 
         Ok(MaybePendingBlockWithTxs::Block(block_with_txs))
@@ -1152,8 +1148,7 @@ where
         let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).unwrap_or_default();
 
         let old_root = if starknet_block.header().block_number > 0 {
-            let parent_block_hash =
-                (TryInto::<FieldElement>::try_into(starknet_block.header().parent_block_hash)).unwrap();
+            let parent_block_hash = Felt252Wrapper::from(starknet_block.header().parent_block_hash).into();
             let substrate_parent_block_hash =
                 self.substrate_block_hash_from_starknet_block(BlockId::Hash(parent_block_hash)).map_err(|e| {
                     error!("'{e}'");
@@ -1162,14 +1157,14 @@ where
 
             let parent_block =
                 get_block_by_block_hash(self.client.as_ref(), substrate_parent_block_hash).unwrap_or_default();
-            parent_block.header().global_state_root.into()
+            Felt252Wrapper::from(parent_block.header().global_state_root).into()
         } else {
             FieldElement::default()
         };
 
         Ok(StateUpdate {
             block_hash: starknet_block.header().hash::<H>().into(),
-            new_root: starknet_block.header().global_state_root.into(),
+            new_root: Felt252Wrapper::from(starknet_block.header().global_state_root).into(),
             old_root,
             state_diff: StateDiff {
                 storage_diffs: Vec::new(),
@@ -1403,6 +1398,8 @@ where
 
         let chain_id = self.chain_id()?.0.into();
 
+        let starknet_version = starknet_block.header().protocol_version;
+
         let fee_disabled =
             self.client.runtime_api().is_transaction_fee_disabled(substrate_block_hash).map_err(|e| {
                 error!("Failed to get check fee disabled. Substrate block hash: {substrate_block_hash}, error: {e}");
@@ -1454,6 +1451,12 @@ where
                 Some(message) => ExecutionResult::Reverted { reason: unsafe { String::from_utf8_unchecked(message) } },
             }
         };
+
+        // TODO(#1291): compute execution_resources correctly to the receipt
+        let execution_resources = StarknetRPCExecutionResources::default();
+
+        // TODO(#1291): compute message hash correctly to L1HandlerTransactionReceipt
+        let message_hash: Hash256 = Hash256::from_felt(&FieldElement::default());
 
         fn event_conversion(event: starknet_api::transaction::Event) -> starknet_core::types::Event {
             starknet_core::types::Event {
@@ -1517,6 +1520,7 @@ where
                 messages_sent: messages.into_iter().map(message_conversion).collect(),
                 events: events_converted,
                 execution_result,
+                execution_resources: execution_resources.into(),
             }),
             mp_transactions::Transaction::DeployAccount(tx) => {
                 TransactionReceipt::DeployAccount(DeployAccountTransactionReceipt {
@@ -1529,6 +1533,7 @@ where
                     events: events_converted,
                     contract_address: tx.get_account_address(),
                     execution_result,
+                    execution_resources: execution_resources.into(),
                 })
             }
             mp_transactions::Transaction::Deploy(tx) => TransactionReceipt::Deploy(DeployTransactionReceipt {
@@ -1541,6 +1546,7 @@ where
                 events: events_converted,
                 contract_address: tx.get_account_address(),
                 execution_result,
+                execution_resources: execution_resources.into(),
             }),
             mp_transactions::Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {
                 transaction_hash,
@@ -1551,8 +1557,10 @@ where
                 messages_sent: messages.into_iter().map(message_conversion).collect(),
                 events: events_converted,
                 execution_result,
+                execution_resources: execution_resources.into(),
             }),
             mp_transactions::Transaction::L1Handler(_) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+                message_hash,
                 transaction_hash,
                 actual_fee,
                 finality_status: actual_status,
@@ -1561,6 +1569,7 @@ where
                 messages_sent: messages.into_iter().map(message_conversion).collect(),
                 events: events_converted,
                 execution_result,
+                execution_resources: execution_resources.into(),
             }),
         };
 

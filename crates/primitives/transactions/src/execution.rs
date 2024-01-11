@@ -25,10 +25,13 @@ use blockifier::transaction::transactions::{
 use mp_fee::{calculate_tx_fee, charge_fee, compute_transaction_resources};
 use mp_felt::Felt252Wrapper;
 use mp_state::StateChanges;
+use parity_scale_codec::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use starknet_api::api_core::{ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{Calldata, Fee, TransactionSignature, TransactionVersion};
+use starknet_core::types::ExecutionResources as CoreExecutionResources;
 
 use super::SIMULATE_TX_VERSION_OFFSET;
 
@@ -42,6 +45,8 @@ const TX_INITIAL_AVAILABLE_GAS: u64 = INITIAL_GAS_COST - TRANSACTION_GAS_COST;
 pub struct ExecutionConfig {
     /// If true, the transaction is a query.
     pub is_query: bool,
+    /// If true, the transaction version has the simulation offset.
+    pub offset_version: bool,
     /// If true, transaction fee calculation and charging
     /// is disabled for all transactions.
     pub disable_transaction_fee: bool,
@@ -51,6 +56,12 @@ pub struct ExecutionConfig {
     pub disable_nonce_validation: bool,
     /// If true, transaction validation is disabled for all transactions.
     pub disable_validation: bool,
+}
+
+impl ExecutionConfig {
+    pub fn set_offset_version(&mut self, value: bool) {
+        self.offset_version = value;
+    }
 }
 
 pub struct ValidateExecuteCallInfo {
@@ -70,7 +81,7 @@ impl ValidateExecuteCallInfo {
 }
 
 pub trait GetAccountTransactionContext {
-    fn get_account_transaction_context(&self, is_query: bool) -> AccountTransactionContext;
+    fn get_account_transaction_context(&self, offset_version: bool) -> AccountTransactionContext;
 }
 
 pub trait SimulateTxVersionOffset {
@@ -83,10 +94,51 @@ impl SimulateTxVersionOffset for TransactionVersion {
     }
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+#[cfg_attr(feature = "no_unknown_fields", serde(deny_unknown_fields))]
+pub struct StarknetRPCExecutionResources {
+    /// The number of cairo steps used
+    pub steps: u64,
+    /// The number of unused memory cells (each cell is roughly equivalent to a step)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_holes: Option<u64>,
+    /// The number of range_check builtin instances
+    pub range_check_builtin_applications: u64,
+    /// The number of pedersen builtin instances
+    pub pedersen_builtin_applications: u64,
+    /// The number of poseidon builtin instances
+    pub poseidon_builtin_applications: u64,
+    /// The number of ec_op builtin instances
+    pub ec_op_builtin_applications: u64,
+    /// The number of ecdsa builtin instances
+    pub ecdsa_builtin_applications: u64,
+    /// The number of bitwise builtin instances
+    pub bitwise_builtin_applications: u64,
+    /// The number of keccak builtin instances
+    pub keccak_builtin_applications: u64,
+}
+
+impl From<StarknetRPCExecutionResources> for CoreExecutionResources {
+    fn from(resources: StarknetRPCExecutionResources) -> Self {
+        CoreExecutionResources {
+            steps: resources.steps,
+            memory_holes: resources.memory_holes,
+            range_check_builtin_applications: resources.range_check_builtin_applications,
+            pedersen_builtin_applications: resources.pedersen_builtin_applications,
+            poseidon_builtin_applications: resources.poseidon_builtin_applications,
+            ec_op_builtin_applications: resources.ec_op_builtin_applications,
+            ecdsa_builtin_applications: resources.ecdsa_builtin_applications,
+            bitwise_builtin_applications: resources.bitwise_builtin_applications,
+            keccak_builtin_applications: resources.keccak_builtin_applications,
+        }
+    }
+}
+
 impl GetAccountTransactionContext for DeclareTransaction {
-    fn get_account_transaction_context(&self, is_query: bool) -> AccountTransactionContext {
+    fn get_account_transaction_context(&self, offset_version: bool) -> AccountTransactionContext {
         let mut version = self.tx().version();
-        if is_query {
+        if offset_version {
             version = version.apply_simulate_tx_version_offset();
         }
 
@@ -102,9 +154,9 @@ impl GetAccountTransactionContext for DeclareTransaction {
 }
 
 impl GetAccountTransactionContext for DeployAccountTransaction {
-    fn get_account_transaction_context(&self, is_query: bool) -> AccountTransactionContext {
+    fn get_account_transaction_context(&self, offset_version: bool) -> AccountTransactionContext {
         let mut version = self.version();
-        if is_query {
+        if offset_version {
             version = version.apply_simulate_tx_version_offset();
         }
 
@@ -120,12 +172,12 @@ impl GetAccountTransactionContext for DeployAccountTransaction {
 }
 
 impl GetAccountTransactionContext for InvokeTransaction {
-    fn get_account_transaction_context(&self, is_query: bool) -> AccountTransactionContext {
+    fn get_account_transaction_context(&self, offset_version: bool) -> AccountTransactionContext {
         let mut version = match self.tx {
             starknet_api::transaction::InvokeTransaction::V0(_) => TransactionVersion(StarkFelt::from(0u8)),
             starknet_api::transaction::InvokeTransaction::V1(_) => TransactionVersion(StarkFelt::from(1u8)),
         };
-        if is_query {
+        if offset_version {
             version = version.apply_simulate_tx_version_offset();
         }
 
@@ -151,9 +203,9 @@ impl GetAccountTransactionContext for InvokeTransaction {
 }
 
 impl GetAccountTransactionContext for L1HandlerTransaction {
-    fn get_account_transaction_context(&self, is_query: bool) -> AccountTransactionContext {
+    fn get_account_transaction_context(&self, offset_version: bool) -> AccountTransactionContext {
         let mut version = self.tx.version;
-        if is_query {
+        if offset_version {
             version = version.apply_simulate_tx_version_offset();
         }
 
@@ -238,9 +290,9 @@ pub trait Validate: GetAccountTransactionContext + GetTransactionCalldata {
         block_context: &BlockContext,
         resources: &mut ExecutionResources,
         remaining_gas: &mut u64,
-        is_query: bool,
+        validate_tx: bool,
     ) -> TransactionExecutionResult<Option<CallInfo>> {
-        let account_tx_context = self.get_account_transaction_context(is_query);
+        let account_tx_context = self.get_account_transaction_context(validate_tx);
         let mut context = EntryPointExecutionContext::new(
             block_context.clone(),
             account_tx_context,
@@ -368,7 +420,7 @@ pub trait Execute: Sized + GetAccountTransactionContext + GetTransactionCalldata
         let mut execution_resources = ExecutionResources::default();
         let mut remaining_gas = TX_INITIAL_AVAILABLE_GAS;
 
-        let account_tx_context = self.get_account_transaction_context(execution_config.is_query);
+        let account_tx_context = self.get_account_transaction_context(execution_config.offset_version);
 
         // Nonce and fee check should be done before running user code.
         Self::handle_nonce_and_check_fee_balance(state, block_context, &account_tx_context, execution_config)?;
@@ -432,6 +484,7 @@ pub trait Execute: Sized + GetAccountTransactionContext + GetTransactionCalldata
             &actual_resources,
             execution_config.disable_transaction_fee,
             execution_config.disable_fee_charge,
+            execution_config.is_query,
         )?;
 
         Ok((actual_fee, fee_transfer_call_info, actual_resources))
@@ -562,6 +615,7 @@ impl Execute for DeployAccountTransaction {
         // so that the `constructor` method can initialize the account state
         let execute_call_info = self.run_execute(state, resources, &mut context, remaining_gas)?;
         let validate_call_info = if !disable_validation {
+            log::info!("this is the context for validation {:?}", context);
             self.validate_tx_inner(state, resources, remaining_gas, &mut context, self.calldata())?
         } else {
             None

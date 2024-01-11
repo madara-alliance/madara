@@ -1,6 +1,7 @@
 //! Converts types from [`starknet_providers`] to madara's expected types.
 
 use starknet_api::hash::StarkFelt;
+use mp_fee::ResourcePrice;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 
@@ -10,6 +11,7 @@ pub fn block(block: &p::Block) -> mp_block::Block {
     let block_number = block.block_number.expect("no block number provided");
     let sequencer_address = block.sequencer_address.map_or(contract_address(FieldElement::ZERO), contract_address);
     let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number);
+    let l1_gas_price = ResourcePrice::default();
 
     let header = mp_block::Header {
         parent_block_hash: felt(block.parent_block_hash),
@@ -22,6 +24,7 @@ pub fn block(block: &p::Block) -> mp_block::Block {
         event_count: events.len() as u128,
         event_commitment,
         protocol_version: 0,
+        l1_gas_price,
         extra_data: block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be())),
     };
 
@@ -60,6 +63,7 @@ fn invoke_transaction(tx: &p::InvokeFunctionTransaction) -> mp_transactions::Inv
             nonce: felt(tx.nonce.expect("no nonce provided")).into(),
             sender_address: felt(tx.sender_address).into(),
             calldata: tx.calldata.iter().copied().map(felt).map(Into::into).collect(),
+            offset_version: false,
         })
     }
 }
@@ -80,6 +84,7 @@ fn declare_transaction(tx: &p::DeclareTransaction) -> mp_transactions::DeclareTr
             nonce: felt(tx.nonce).into(),
             class_hash: felt(tx.class_hash).into(),
             sender_address: felt(tx.sender_address).into(),
+            offset_version: false,
         })
     } else {
         mp_transactions::DeclareTransaction::V2(mp_transactions::DeclareTransactionV2 {
@@ -89,6 +94,7 @@ fn declare_transaction(tx: &p::DeclareTransaction) -> mp_transactions::DeclareTr
             class_hash: felt(tx.class_hash).into(),
             sender_address: felt(tx.sender_address).into(),
             compiled_class_hash: felt(tx.compiled_class_hash.expect("no class hash available")).into(),
+            offset_version: false,
         })
     }
 }
@@ -110,6 +116,7 @@ fn deploy_account_transaction(tx: &p::DeployAccountTransaction) -> mp_transactio
         contract_address_salt: felt(tx.contract_address_salt).into(),
         constructor_calldata: tx.constructor_calldata.iter().copied().map(felt).map(Into::into).collect(),
         class_hash: felt(tx.class_hash).into(),
+        offset_version: false,
     }
 }
 
