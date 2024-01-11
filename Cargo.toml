@@ -29,8 +29,6 @@ members = [
   "crates/client/deoxys",
   "crates/client/commitment-state-diff",
   "crates/client/settlement",
-  "starknet-rpc-test",
-  "starknet-e2e-test",
 ]
 # All previous except for `starknet-rpc-test` and `starknet-e2e-test`
 # We don't want `cargo test` to trigger its tests

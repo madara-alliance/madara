@@ -273,7 +273,7 @@ pub fn new_full(
     l1_url: Url,
     cache_more_things: bool,
     fetch_config: mc_deoxys::FetchConfig,
-    genesis_block: mp_block::Block
+    genesis_block: mp_block::Block,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };

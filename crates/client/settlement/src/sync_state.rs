@@ -259,7 +259,8 @@ where
             if let Transaction::L1Handler(l1_handler) = tx {
                 messages_to_l2.push(l1_handler.clone().into());
             }
-            let tx_hash = TransactionHash(tx.compute_hash::<H>(chain_id, false, Some(next_block.header().block_number)).into());
+            let tx_hash =
+                TransactionHash(tx.compute_hash::<H>(chain_id, false, Some(next_block.header().block_number)).into());
             substrate_client
                 .runtime_api()
                 .get_tx_messages_to_l1(substrate_block_hash, tx_hash)?

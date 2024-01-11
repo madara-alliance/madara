@@ -28,11 +28,13 @@
 
 ## 🤝 Partnerships
 
-To establish a partnership with the Kasar team, or if you have any suggestion or special request, feel free to reach us
-on [telegram](https://t.me/kasarlabs).
+To establish a partnership with the Kasar team, or if you have any suggestion or
+special request, feel free to reach us on [telegram](https://t.me/kasarlabs).
 
 ## ⚠️ License
 
-Copyright (c) 2022-present, with the following [contributors](https://github.com/KasarLabs/deoxys/graphs/contributors).
+Copyright (c) 2022-present, with the following
+[contributors](https://github.com/KasarLabs/deoxys/graphs/contributors).
 
-Deoxys is open-source software licensed under the [Apache-2.0 License](https://github.com/KasarLabs/deoxys/blob/main/LICENSE).
+Deoxys is open-source software licensed under the
+[Apache-2.0 License](https://github.com/KasarLabs/deoxys/blob/main/LICENSE).

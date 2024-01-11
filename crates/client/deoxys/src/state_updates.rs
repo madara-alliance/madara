@@ -258,11 +258,13 @@ where
 
     for (address, diffs) in &state_update.state_diff.storage_diffs {
         let contract_address = ContractAddress(PatriciaKey(
-            (*address).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+            Felt252Wrapper::from(*address).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
         ));
         for storage_diff in diffs {
             let storage_key = StarknetStorageKey(PatriciaKey(
-                storage_diff.key.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+                Felt252Wrapper::from(storage_diff.key)
+                    .try_into()
+                    .map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
             ));
             let value = storage_diff.value;
 
@@ -270,14 +272,18 @@ where
                 Entry::Occupied(mut entry) => {
                     entry.get_mut().insert(
                         storage_key,
-                        value.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+                        Felt252Wrapper::from(value)
+                            .try_into()
+                            .map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
                     );
                 }
                 Entry::Vacant(entry) => {
                     let mut contract_storage = IndexMap::default();
                     contract_storage.insert(
                         storage_key,
-                        value.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+                        Felt252Wrapper::from(value)
+                            .try_into()
+                            .map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
                     );
                     entry.insert(contract_storage);
                 }
@@ -298,9 +304,11 @@ where
 
     for nonce in &state_update.state_diff.nonces {
         let contract_address = ContractAddress(PatriciaKey(
-            (*nonce.0).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+            Felt252Wrapper::from(*nonce.0).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
         ));
-        let nonce_value = Nonce((*nonce.1).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?);
+        let nonce_value = Nonce(
+            Felt252Wrapper::from(*nonce.1).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+        );
         commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
     }
 

@@ -5,8 +5,7 @@ use std::task::Poll;
 
 use futures::channel::mpsc;
 use futures::{Stream, StreamExt};
-use indexmap::IndexMap;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use mp_hashers::HasherT;
 use mp_storage::{SN_COMPILED_CLASS_HASH_PREFIX, SN_CONTRACT_CLASS_HASH_PREFIX, SN_NONCE_PREFIX, SN_STORAGE_PREFIX};
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
@@ -242,9 +241,9 @@ pub async fn verify_l2(mut rx: mpsc::Receiver<BlockDAData>) {
 //             let mut storage_tree = StateCommitmentTree::<PedersenHasher>::default();
 
 //             let default_storage_updates = IndexMap::<StarknetStorageKey, StarkFelt>::default();
-//             let storage_updates = csd.storage_updates.get(&address).unwrap_or(&default_storage_updates);
-//             for (key, value) in storage_updates {
-//                 storage_tree.set((*key).into(), (*value).into());
+//             let storage_updates =
+// csd.storage_updates.get(&address).unwrap_or(&default_storage_updates);             for (key,
+// value) in storage_updates {                 storage_tree.set((*key).into(), (*value).into());
 //             }
 
 //             let storage_root = storage_tree.commit();
@@ -265,9 +264,9 @@ pub async fn verify_l2(mut rx: mpsc::Receiver<BlockDAData>) {
 //             .class_hash_to_compiled_class_hash
 //             .iter()
 //             .map(|(_, compiled_class_hash)| {
-//                 calculate_class_commitment_leaf_hash::<PoseidonHasher>((*compiled_class_hash).into())
-//             })
-//             .collect();
+//                 
+// calculate_class_commitment_leaf_hash::<PoseidonHasher>((*compiled_class_hash).into())            
+// })             .collect();
 //         calculate_class_commitment_tree_root_hash::<PoseidonHasher>(&class_hashes)
 //     };
 

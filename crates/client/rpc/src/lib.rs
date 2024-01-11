@@ -48,11 +48,12 @@ use starknet_api::transaction::Calldata;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BlockTag, BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTransaction,
     BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass,
-    DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt, DeployTransactionReceipt,
-    DeployAccountTransactionResult, EventFilterWithPage, EventsPage, ExecutionResult, FeeEstimate, FieldElement,
-    FunctionCall, Hash256, InvokeTransactionReceipt, InvokeTransactionResult, L1HandlerTransactionReceipt,
-    MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingTransactionReceipt, StateDiff, StateUpdate,
-    SyncStatus, SyncStatusType, Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
+    DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt,
+    DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResult,
+    FeeEstimate, FieldElement, FunctionCall, InvokeTransactionReceipt, InvokeTransactionResult,
+    L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+    MaybePendingTransactionReceipt, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
+    TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt, Hash256
 };
 use starknet_core::utils::get_selector_from_name;
 
@@ -507,7 +508,10 @@ where
                 starknet_block
                     .transactions()
                     .iter()
-                    .find(|tx| tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0 == transaction_hash)
+                    .find(|tx| {
+                        tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0
+                            == transaction_hash
+                    })
                     .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
             };
 
@@ -835,12 +839,13 @@ where
         let l1_gas_price = starknet_block.header().l1_gas_price;
         let block_hash = starknet_block.header().hash::<H>();
 
-        let actual_status =
-            if starknet_block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
-                BlockStatus::AcceptedOnL1.into()
-            } else {
-                BlockStatus::AcceptedOnL2.into()
-            };
+        let actual_status = if starknet_block.header().block_number
+            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0
+        {
+            BlockStatus::AcceptedOnL1.into()
+        } else {
+            BlockStatus::AcceptedOnL2.into()
+        };
 
         let transaction_hashes = if let Some(tx_hashes) = self.get_cached_transaction_hashes(block_hash.into()) {
             let mut v = Vec::with_capacity(tx_hashes.len());
@@ -854,7 +859,10 @@ where
             }
             v
         } else {
-            starknet_block.transactions_hashes::<H>(chain_id.0.into(), Some(starknet_block.header().block_number)).map(FieldElement::from).collect()
+            starknet_block
+                .transactions_hashes::<H>(chain_id.0.into(), Some(starknet_block.header().block_number))
+                .map(FieldElement::from)
+                .collect()
         };
 
         let parent_blockhash = starknet_block.header().parent_block_hash;
@@ -1070,12 +1078,13 @@ where
         let block_hash = starknet_block.header().hash::<H>();
         let starknet_version = starknet_block.header().protocol_version;
 
-        let actual_status =
-            if starknet_block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
-                BlockStatus::AcceptedOnL1.into()
-            } else {
-                BlockStatus::AcceptedOnL2.into()
-            };
+        let actual_status = if starknet_block.header().block_number
+            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0
+        {
+            BlockStatus::AcceptedOnL1.into()
+        } else {
+            BlockStatus::AcceptedOnL2.into()
+        };
 
         let chain_id = self.chain_id()?;
         let chain_id = Felt252Wrapper(chain_id.0);
@@ -1148,7 +1157,9 @@ where
         let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).unwrap_or_default();
 
         let old_root = if starknet_block.header().block_number > 0 {
-            let parent_block_hash = Felt252Wrapper::from(starknet_block.header().parent_block_hash).into();
+            let parent_block_hash =
+                (TryInto::<FieldElement>::try_into(Felt252Wrapper::from(starknet_block.header().parent_block_hash)))
+                    .unwrap();
             let substrate_parent_block_hash =
                 self.substrate_block_hash_from_starknet_block(BlockId::Hash(parent_block_hash)).map_err(|e| {
                     error!("'{e}'");
@@ -1304,7 +1315,10 @@ where
                 starknet_block
                     .transactions()
                     .iter()
-                    .find(|tx| tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0 == transaction_hash)
+                    .find(|tx| {
+                        tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0
+                            == transaction_hash
+                    })
                     .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
             };
 
@@ -1485,12 +1499,13 @@ where
             events_converted.last().unwrap().data[2]
         };
 
-        let actual_status =
-            if starknet_block.header().block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
-                TransactionFinalityStatus::AcceptedOnL1.into()
-            } else {
-                TransactionFinalityStatus::AcceptedOnL2.into()
-            };
+        let actual_status = if starknet_block.header().block_number
+            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0
+        {
+            TransactionFinalityStatus::AcceptedOnL1.into()
+        } else {
+            TransactionFinalityStatus::AcceptedOnL2.into()
+        };
         let messages = self
             .client
             .runtime_api()

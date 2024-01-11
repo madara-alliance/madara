@@ -4,8 +4,8 @@ use std::result::Result as StdResult;
 use clap::ValueHint::FilePath;
 use madara_runtime::SealingMode;
 use mc_deoxys::l2::fetch_genesis_block;
-use reqwest::Url;
 use mc_settlement::SettlementLayer;
+use reqwest::Url;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use sc_service::BasePath;
 use serde::{Deserialize, Serialize};
@@ -201,8 +201,9 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             l1_endpoint,
             cache,
             fetch_block_config,
-            genesis_block
-        ).map_err(sc_cli::Error::Service)
+            genesis_block,
+        )
+        .map_err(sc_cli::Error::Service)
     })
 }
 
