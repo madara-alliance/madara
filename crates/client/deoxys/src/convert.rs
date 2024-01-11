@@ -1,7 +1,7 @@
 //! Converts types from [`starknet_providers`] to madara's expected types.
 
-use starknet_api::hash::StarkFelt;
 use mp_fee::ResourcePrice;
+use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 

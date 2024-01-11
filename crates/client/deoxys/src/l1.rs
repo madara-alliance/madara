@@ -123,7 +123,6 @@ impl EthereumClient {
 
     pub async fn listen_and_update_state(
         wss_url: Url,
-        subscription_id: &str,
         tx: Sender<L1StateUpdate>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (ws_stream, _) = connect_async(wss_url).await?;
@@ -135,10 +134,7 @@ impl EthereumClient {
             if message.is_text() || message.is_binary() {
                 let data = message.into_text()?;
                 let event = serde_json::from_str::<L1StateUpdate>(&data)?;
-                println!("ethereum: {:?}", data);
-                if subscription_id != subscription_id {
-                    tx.send(event.clone()).await.unwrap();
-                }
+                tx.send(event.clone()).await.expect("Failed to send L1 state update");
             }
         }
 
@@ -309,9 +305,9 @@ pub async fn sync(l1_url: Url, rpc_port: u16) {
     update_l1(initial_state);
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    let wss_url = client.get_wss().unwrap();
-    let subscription_id = client.get_eth_subscribe(vec!["0x77552641".to_string()]).await.unwrap();
-    EthereumClient::listen_and_update_state(wss_url, &subscription_id, tx).await.unwrap();
+    let wss_url = client.get_wss().expect("Failed to get Websocket formated URL");
+    client.get_eth_subscribe(vec!["0x77552641".to_string()]).await.expect("Failed to subscribe to L1 state updates");
+    EthereumClient::listen_and_update_state(wss_url, tx).await.expect("Failed to listen to L1 state updates");
 
     // Verify the latest state roots and block against L2
     while let Some(new_state_update) = rx.recv().await {
