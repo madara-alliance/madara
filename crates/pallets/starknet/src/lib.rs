@@ -80,7 +80,7 @@ use frame_system::pallet_prelude::*;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::{Block as StarknetBlock, Header as StarknetHeader};
 use mp_digest_log::MADARA_ENGINE_ID;
-use mp_fee::INITIAL_GAS;
+use mp_fee::{ResourcePrice, INITIAL_GAS};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRESS, INHERENT_IDENTIFIER};
@@ -88,6 +88,7 @@ use mp_simulations::{
     DeclareTransactionTrace, DeployAccountTransactionTrace, FeeEstimate, FunctionInvocation, InvokeTransactionTrace,
     SimulatedTransaction, SimulationFlags, TransactionTrace,
 };
+use mp_state::rpc::StateDiff;
 use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use mp_transactions::execution::Execute;
 use mp_transactions::{
@@ -1034,6 +1035,9 @@ impl<T: Config> Pallet<T> {
             let protocol_version = T::ProtocolVersion::get();
             let extra_data = None;
 
+            // TODO: Compute l1_gas_price correctly
+            let l1_gas_price = ResourcePrice::default();
+
             let block = StarknetBlock::new(
                 StarknetHeader::new(
                     parent_block_hash.into(),
@@ -1046,6 +1050,7 @@ impl<T: Config> Pallet<T> {
                     events.len() as u128,
                     event_commitment.into(),
                     protocol_version,
+                    l1_gas_price,
                     extra_data,
                 ),
                 transactions,
@@ -1168,7 +1173,7 @@ impl<T: Config> Pallet<T> {
             &transactions,
             &Self::get_block_context(),
             chain_id,
-            &RuntimeExecutionConfigBuilder::new::<T>().with_query_mode().build(),
+            &mut RuntimeExecutionConfigBuilder::new::<T>().with_query_mode().build(),
         )?;
 
         let mut results = vec![];
@@ -1201,7 +1206,7 @@ impl<T: Config> Pallet<T> {
             &transactions,
             &Self::get_block_context(),
             chain_id,
-            &RuntimeExecutionConfigBuilder::new::<T>().with_simulation_mode(&simulation_flags).build(),
+            &mut RuntimeExecutionConfigBuilder::new::<T>().with_simulation_mode(&simulation_flags).build(),
         )?;
 
         fn get_function_invocation(
@@ -1224,6 +1229,7 @@ impl<T: Config> Pallet<T> {
                             log::error!("Failed to convert fee transfer call info to function invocation: {}", err);
                             Error::<T>::TransactionExecutionFailed
                         })?;
+
                     let transaction_trace = match tx {
                         UserTransaction::Invoke(_) => TransactionTrace::Invoke(InvokeTransactionTrace {
                             validate_invocation,
@@ -1235,10 +1241,14 @@ impl<T: Config> Pallet<T> {
                                 tx_exec_info.revert_error.as_ref(),
                             )?,
                             fee_transfer_invocation,
+                            // TODO(#1291): Compute state diff correctly
+                            state_diff: Some(StateDiff::default()),
                         }),
                         UserTransaction::Declare(_, _) => TransactionTrace::Declare(DeclareTransactionTrace {
                             validate_invocation,
                             fee_transfer_invocation,
+                            // TODO(#1291): Compute state diff correctly
+                            state_diff: Some(StateDiff::default()),
                         }),
                         UserTransaction::DeployAccount(_) => {
                             TransactionTrace::DeployAccount(DeployAccountTransactionTrace {
@@ -1251,6 +1261,8 @@ impl<T: Config> Pallet<T> {
                                     .map_err(|_| Error::<T>::TransactionExecutionFailed)?,
 
                                 fee_transfer_invocation,
+                                // TODO(#1291): Compute state diff correctly
+                                state_diff: Some(StateDiff::default()),
                             })
                         }
                     };
@@ -1264,14 +1276,14 @@ impl<T: Config> Pallet<T> {
                     results.push(SimulatedTransaction {
                         transaction_trace,
                         fee_estimation: FeeEstimate { gas_consumed, gas_price, overall_fee },
-                    })
+                    });
                 }
-                Err(e) => {
-                    log::error!("Failed to simulate transactions: {:?}, error: {:?}", tx, e);
+                Err(_e) => {
                     return Err(Error::<T>::TransactionExecutionFailed.into());
                 }
             }
         }
+
         Ok(results)
     }
 

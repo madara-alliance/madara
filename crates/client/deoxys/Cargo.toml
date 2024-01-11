@@ -53,6 +53,7 @@ mp-commitments = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
+mp-fee = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
 sc-consensus-manual-seal.workspace = true
 validator = { workspace = true, features = ["derive"] }
