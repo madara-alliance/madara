@@ -127,7 +127,7 @@ where
     C: HeaderBackend<B> + 'static,
 {
     pub fn current_spec_version(&self) -> RpcResult<String> {
-        Ok("0.4.0".to_string())
+        Ok("0.5.1".to_string())
     }
 }
 
