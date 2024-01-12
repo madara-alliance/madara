@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(spec_version): spec version now returning 0.5.1
 - chore: feature flags for avail and celestia DA
 - feat(rpc): added support for v0.5.1 JSON-RPC specs
 - feat(rpc): added ordered messages/events in trace fields
