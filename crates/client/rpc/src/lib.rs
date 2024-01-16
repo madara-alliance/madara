@@ -876,7 +876,7 @@ where
             timestamp: starknet_block.header().block_timestamp,
             sequencer_address: Felt252Wrapper::from(starknet_block.header().sequencer_address).into(),
             l1_gas_price: starknet_block.header().l1_gas_price.into(),
-            starknet_version: starknet_version.to_string(),
+            starknet_version: starknet_version.from_utf8().expect("starknet version should be a valid utf8 string"),
         };
 
         Ok(MaybePendingBlockWithTxHashes::Block(block_with_tx_hashes))
@@ -1124,7 +1124,7 @@ where
             sequencer_address: Felt252Wrapper::from(starknet_block.header().sequencer_address).into(),
             transactions,
             l1_gas_price: starknet_block.header().l1_gas_price.into(),
-            starknet_version: starknet_version.to_string(),
+            starknet_version: starknet_version.from_utf8().expect("starknet version should be a valid utf8 string"),
         };
 
         Ok(MaybePendingBlockWithTxs::Block(block_with_txs))
