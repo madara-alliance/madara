@@ -166,7 +166,7 @@ pub mod pallet {
         #[pallet::constant]
         type ValidateMaxNSteps: Get<u32>;
         #[pallet::constant]
-        type ProtocolVersion: Get<u8>;
+        type ProtocolVersion: Get<Felt252Wrapper>;
         #[pallet::constant]
         type ChainId: Get<Felt252Wrapper>;
         #[pallet::constant]
@@ -1049,7 +1049,7 @@ impl<T: Config> Pallet<T> {
                     transaction_commitment.into(),
                     events.len() as u128,
                     event_commitment.into(),
-                    protocol_version,
+                    protocol_version.into(),
                     l1_gas_price,
                     extra_data,
                 ),
