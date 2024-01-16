@@ -9,7 +9,5 @@
     "titleBar.activeBackground": "#0D474E",
     "titleBar.activeForeground": "#F2FCFD"
   },
-  "conventionalCommits.scopes": [
-    "spec_version"
-  ]
+  "conventionalCommits.scopes": ["spec_version"]
 }
