@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(rpc): add starknet_version and eth_l1_gas_fee on block header
 - fix(spec_version): spec version now returning 0.5.1
 - chore: feature flags for avail and celestia DA
 - feat(rpc): added support for v0.5.1 JSON-RPC specs

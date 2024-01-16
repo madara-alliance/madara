@@ -20,7 +20,12 @@ const INVOKE_PREFIX: &[u8] = b"invoke";
 const L1_HANDLER_PREFIX: &[u8] = b"l1_handler";
 
 pub trait ComputeTransactionHash {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, block_number: Option<u64>,) -> Felt252Wrapper;
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        block_number: Option<u64>,
+    ) -> Felt252Wrapper;
 }
 
 fn convert_calldata(data: &[Felt252Wrapper]) -> &[FieldElement] {
@@ -30,7 +35,12 @@ fn convert_calldata(data: &[Felt252Wrapper]) -> &[FieldElement] {
 }
 
 impl ComputeTransactionHash for InvokeTransactionV0 {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, block_number: Option<u64>,) -> Felt252Wrapper {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        block_number: Option<u64>,
+    ) -> Felt252Wrapper {
         let prefix = FieldElement::from_byte_slice_be(INVOKE_PREFIX).unwrap();
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { FieldElement::ZERO };
         let contract_address = self.contract_address.into();
@@ -59,7 +69,12 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
 }
 
 impl ComputeTransactionHash for InvokeTransactionV1 {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>,) -> Felt252Wrapper {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> Felt252Wrapper {
         let prefix = FieldElement::from_byte_slice_be(INVOKE_PREFIX).unwrap();
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::ONE } else { FieldElement::ONE };
         let sender_address = self.sender_address.into();
@@ -84,7 +99,12 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
 }
 
 impl ComputeTransactionHash for InvokeTransaction {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, block_number: Option<u64>) -> Felt252Wrapper {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        block_number: Option<u64>,
+    ) -> Felt252Wrapper {
         match self {
             InvokeTransaction::V0(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
             InvokeTransaction::V1(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
@@ -93,7 +113,12 @@ impl ComputeTransactionHash for InvokeTransaction {
 }
 
 impl ComputeTransactionHash for DeclareTransactionV0 {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>) -> Felt252Wrapper {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> Felt252Wrapper {
         let prefix = FieldElement::from_byte_slice_be(DECLARE_PREFIX).unwrap();
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { FieldElement::ZERO };
         let sender_address = self.sender_address.into();
@@ -118,7 +143,12 @@ impl ComputeTransactionHash for DeclareTransactionV0 {
 }
 
 impl ComputeTransactionHash for DeclareTransactionV1 {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>) -> Felt252Wrapper {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> Felt252Wrapper {
         let prefix = FieldElement::from_byte_slice_be(DECLARE_PREFIX).unwrap();
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::ONE } else { FieldElement::ONE };
         let sender_address = self.sender_address.into();
@@ -143,7 +173,12 @@ impl ComputeTransactionHash for DeclareTransactionV1 {
 }
 
 impl ComputeTransactionHash for DeclareTransactionV2 {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>) -> Felt252Wrapper {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> Felt252Wrapper {
         let prefix = FieldElement::from_byte_slice_be(DECLARE_PREFIX).unwrap();
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::TWO } else { FieldElement::TWO };
         let sender_address = self.sender_address.into();
@@ -170,7 +205,12 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
 }
 
 impl ComputeTransactionHash for DeclareTransaction {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>,) -> Felt252Wrapper {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> Felt252Wrapper {
         match self {
             DeclareTransaction::V0(tx) => tx.compute_hash::<H>(chain_id, offset_version, None),
             DeclareTransaction::V1(tx) => tx.compute_hash::<H>(chain_id, offset_version, None),
@@ -180,7 +220,12 @@ impl ComputeTransactionHash for DeclareTransaction {
 }
 
 impl ComputeTransactionHash for DeployAccountTransaction {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>) -> Felt252Wrapper {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> Felt252Wrapper {
         let chain_id = chain_id.into();
         let contract_address = self.get_account_address();
 
@@ -323,7 +368,12 @@ impl DeployTransaction {
 }
 
 impl ComputeTransactionHash for HandleL1MessageTransaction {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, block_number: Option<u64>) -> Felt252Wrapper {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        block_number: Option<u64>,
+    ) -> Felt252Wrapper {
         let prefix = FieldElement::from_byte_slice_be(L1_HANDLER_PREFIX).unwrap();
         let invoke_prefix = FieldElement::from_byte_slice_be(INVOKE_PREFIX).unwrap();
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { FieldElement::ZERO };
@@ -369,7 +419,12 @@ impl ComputeTransactionHash for HandleL1MessageTransaction {
 }
 
 impl ComputeTransactionHash for Transaction {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, block_number: Option<u64>) -> Felt252Wrapper {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        block_number: Option<u64>,
+    ) -> Felt252Wrapper {
         match self {
             Transaction::Declare(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
             Transaction::DeployAccount(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
@@ -381,7 +436,12 @@ impl ComputeTransactionHash for Transaction {
 }
 
 impl ComputeTransactionHash for UserTransaction {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>) -> Felt252Wrapper {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> Felt252Wrapper {
         match self {
             UserTransaction::Declare(tx, _) => tx.compute_hash::<H>(chain_id, offset_version, None),
             UserTransaction::DeployAccount(tx) => tx.compute_hash::<H>(chain_id, offset_version, None),

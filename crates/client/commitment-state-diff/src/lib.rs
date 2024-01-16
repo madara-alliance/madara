@@ -264,8 +264,8 @@ pub async fn verify_l2(mut rx: mpsc::Receiver<BlockDAData>) {
 //             .class_hash_to_compiled_class_hash
 //             .iter()
 //             .map(|(_, compiled_class_hash)| {
-//                 
-// calculate_class_commitment_leaf_hash::<PoseidonHasher>((*compiled_class_hash).into())            
+//
+// calculate_class_commitment_leaf_hash::<PoseidonHasher>((*compiled_class_hash).into())
 // })             .collect();
 //         calculate_class_commitment_tree_root_hash::<PoseidonHasher>(&class_hashes)
 //     };

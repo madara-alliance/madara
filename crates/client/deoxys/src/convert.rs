@@ -1,8 +1,8 @@
 //! Converts types from [`starknet_providers`] to madara's expected types.
 
+use mp_fee::ResourcePrice;
 use mp_felt::Felt252Wrapper;
 use starknet_api::hash::StarkFelt;
-use mp_fee::ResourcePrice;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 
@@ -142,10 +142,9 @@ fn l1_handler_transaction(tx: &p::L1HandlerTransaction) -> mp_transactions::Hand
 /// If the string contains more than 31 bytes, the function panics.
 fn starknet_version(version: &Option<String>) -> Felt252Wrapper {
     let ret = match version {
-        Some(version) => Felt252Wrapper::try_from(
-            version
-            .as_bytes())
-            .expect("Failed to convert version to felt: string is too long"),
+        Some(version) => {
+            Felt252Wrapper::try_from(version.as_bytes()).expect("Failed to convert version to felt: string is too long")
+        }
         None => Felt252Wrapper::ZERO,
     };
     println!("Starknet version: {}", ret.from_utf8().unwrap());
