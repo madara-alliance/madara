@@ -6,6 +6,7 @@ pub mod l1;
 pub mod l2;
 pub mod state_updates;
 pub mod utility;
+pub mod class_updates;
 pub use l2::{FetchConfig, SenderConfig};
 use tokio::join;
 #[cfg(feature = "m")]

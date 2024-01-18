@@ -5,15 +5,19 @@ use std::time::Duration;
 
 use anyhow::Result;
 use lazy_static::lazy_static;
+use mp_block::state_update;
 use mp_commitments::StateCommitment;
 use reqwest::Url;
 use serde::Deserialize;
 use sp_core::H256;
+use starknet_api::api_core::ClassHash;
 use starknet_api::block::{BlockHash, BlockNumber};
 use starknet_providers::sequencer::models::BlockId;
 use starknet_providers::SequencerGatewayProvider;
+use starknet_providers::sequencer::models::StateUpdate;
 use tokio::sync::mpsc::Sender;
 
+use crate::class_updates::StarknetClassUpdate;
 use crate::state_updates::StarknetStateUpdate;
 use crate::CommandSink;
 
@@ -81,13 +85,15 @@ pub struct SenderConfig {
     pub block_sender: Sender<mp_block::Block>,
     /// Sender for dispatching fetched state updates.
     pub state_update_sender: Sender<StarknetStateUpdate>,
+    /// Sender for dispatching fetched class hashes.
+    pub class_sender: Sender<StarknetClassUpdate>,
     /// The command sink used to notify the consensus engine that a new block should be created.
     pub command_sink: CommandSink,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
 pub async fn sync(mut sender_config: SenderConfig, config: FetchConfig, start_at: u64) {
-    let SenderConfig { block_sender, state_update_sender, command_sink } = &mut sender_config;
+    let SenderConfig { block_sender, state_update_sender, class_sender, command_sink } = &mut sender_config;
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
 
     let mut current_block_number = start_at;
@@ -98,11 +104,11 @@ pub async fn sync(mut sender_config: SenderConfig, config: FetchConfig, start_at
         let (block, state_update) = match (got_block, got_state_update) {
             (false, false) => {
                 let block = fetch_block(&client, block_sender, current_block_number);
-                let state_update = fetch_state_update(&client, state_update_sender, current_block_number);
+                let state_update = fetch_state_and_class_update(&client, state_update_sender, class_sender, current_block_number);
                 tokio::join!(block, state_update)
             }
             (false, true) => (fetch_block(&client, block_sender, current_block_number).await, Ok(())),
-            (true, false) => (Ok(()), fetch_state_update(&client, state_update_sender, current_block_number).await),
+            (true, false) => (Ok(()), fetch_state_and_class_update(&client, state_update_sender, class_sender, current_block_number).await),
             (true, true) => unreachable!(),
         };
 
@@ -153,23 +159,41 @@ pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block,
     Ok(crate::convert::block(&block))
 }
 
-async fn fetch_state_update(
+async fn fetch_state_and_class_update(
     client: &SequencerGatewayProvider,
     state_update_sender: &Sender<StarknetStateUpdate>,
+    class_sender: &Sender<StarknetClassUpdate>,
     block_number: u64,
 ) -> Result<(), String> {
-    let state_update = client
-        .get_state_update(BlockId::Number(block_number))
-        .await
-        .map_err(|e| format!("failed to get state update: {e}"))?;
+    let state_update = fetch_state_update(client, block_number).await?;
+    let class_update = StarknetClassUpdate::from(&state_update);
 
-    // Now send state_update, which moves it
+    // Now send state_update, which moves it. This will be received 
+    // by QueryBlockConsensusDataProvider in deoxys/crates/node/src/service.rs
     state_update_sender
         .send(StarknetStateUpdate(state_update))
         .await
         .map_err(|e| format!("failed to dispatch state update: {e}"))?;
 
+    // do the same to class update
+    class_sender
+        .send(class_update)
+        .await
+        .map_err(|e| format!("failed to dispatch class update: {e}"))?;
+
     Ok(())
+}
+
+async fn fetch_state_update(
+    client: &SequencerGatewayProvider,
+    block_number: u64,
+) -> Result<StateUpdate, String>{
+    let state_update = client
+        .get_state_update(BlockId::Number(block_number))
+        .await
+        .map_err(|e| format!("failed to get state update: {e}"))?;
+
+    Ok(state_update)
 }
 
 /// Notifies the consensus engine that a new block should be created.

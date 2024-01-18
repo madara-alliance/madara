@@ -29,6 +29,7 @@ pub const MADARA_ENGINE_ID: ConsensusEngineId = [b'm', b'a', b'd', b'a'];
 
 pub const BLOCK_ENGINE_ID: ConsensusEngineId = [b'b', b'l', b'o', b'c'];
 pub const STATE_ENGINE_ID: ConsensusEngineId = [b's', b't', b'a', b't'];
+pub const CLASS_ENGINE_ID: ConsensusEngineId = [b'c', b'l', b'a', b's'];
 
 /// A Madara log
 ///
