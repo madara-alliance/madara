@@ -141,14 +141,12 @@ fn l1_handler_transaction(tx: &p::L1HandlerTransaction) -> mp_transactions::Hand
 /// Converts a starknet version string to a felt value.
 /// If the string contains more than 31 bytes, the function panics.
 fn starknet_version(version: &Option<String>) -> Felt252Wrapper {
-    let ret = match version {
+    match version {
         Some(version) => {
             Felt252Wrapper::try_from(version.as_bytes()).expect("Failed to convert version to felt: string is too long")
         }
         None => Felt252Wrapper::ZERO,
-    };
-    println!("Starknet version: {}", ret.from_utf8().unwrap());
-    ret
+    }
 }
 
 fn fee(felt: starknet_ff::FieldElement) -> u128 {
