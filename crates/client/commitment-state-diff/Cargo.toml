@@ -14,7 +14,7 @@ sp-blockchain = { workspace = true }
 sp-runtime = { workspace = true, default-features = true }
 
 # Madara
-mp-commitments = { workspace = true, default-features = true }
+mc-db = { workspace = true, default-features = true }
 mp-digest-log = { workspace = true, default-features = true }
 mp-felt = { workspace = true, default-features = true }
 mp-hashers = { workspace = true, default-features = true }
