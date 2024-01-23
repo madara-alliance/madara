@@ -163,9 +163,11 @@ async fn fetch_state_update(
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    // Now send state_update, which moves it
+    let starknet_state_update = StarknetStateUpdate(state_update);
+    // Verify state update via verify_l2(starket_state_update).await
+
     state_update_sender
-        .send(StarknetStateUpdate(state_update))
+        .send(starknet_state_update)
         .await
         .map_err(|e| format!("failed to dispatch state update: {e}"))?;
 
@@ -200,4 +202,16 @@ pub fn update_l2(state_update: L2StateUpdate) {
         let mut new_state_update = last_state_update.lock().unwrap();
         *new_state_update = state_update.clone();
     }
+}
+
+/// Verify the L2 state according to the latest state update
+pub async fn verify_l2(mut state_update: StarknetStateUpdate) -> Result<(), String> {
+    // 1. Retrieve state diff
+    // 2. Compute state commitment
+    // state_root = state_commitment(csd)
+    // 3. Log latest L2 state verified on L2
+    // println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash, state_root;
+    // 4. Update hared latest L2 state update verified on L2
+    // update_l2({block_number, block_hash, state_commitment})
+    Ok(())
 }

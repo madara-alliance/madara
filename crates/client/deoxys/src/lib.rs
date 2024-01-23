@@ -1,15 +1,15 @@
 #![allow(deprecated)]
 
-use reqwest::Url;
-pub mod convert;
+pub mod utils;
+pub mod types;
 pub mod l1;
 pub mod l2;
-pub mod state_updates;
-pub mod utility;
-pub use l2::{FetchConfig, SenderConfig};
+
+use reqwest::Url;
 use tokio::join;
-#[cfg(feature = "m")]
-pub mod m;
+pub use utils::{convert, m, utility};
+pub use types::state_updates;
+pub use l2::{FetchConfig, SenderConfig};
 
 type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc::EngineCommand<sp_core::H256>>;
 
