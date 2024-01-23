@@ -129,7 +129,6 @@ impl Header {
     }
 
     /// Compute the hash of the header.
-    #[must_use]
     pub fn hash<H: HasherT>(&self) -> Felt252Wrapper {
         if self.block_number >= 833 {
             // Computes the block hash for blocks generated after Cairo 0.7.0

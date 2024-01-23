@@ -63,12 +63,14 @@ pub struct ResourcePrice {
     /// The price of one unit of the given resource, denominated in fri (10^-18 strk)
     pub price_in_strk: Option<u64>,
     /// The price of one unit of the given resource, denominated in wei
-    pub price_in_wei: u64,
+    pub price_in_wei: u128,
 }
 
 impl From<ResourcePrice> for CoreResourcePrice {
     fn from(item: ResourcePrice) -> Self {
-        CoreResourcePrice { price_in_strk: item.price_in_strk, price_in_wei: item.price_in_wei }
+        // TODO: when we rebase starknet-rs those field type will be FieldElements
+        // Get rid of the type conversions
+        CoreResourcePrice { price_in_strk: item.price_in_strk, price_in_wei: item.price_in_wei as u64 }
     }
 }
 
@@ -196,7 +198,7 @@ pub fn extract_l1_gas_and_vm_usage(resources: &ResourcesMapping) -> (usize, Reso
     let l1_gas_usage =
         vm_resource_usage.remove(GAS_USAGE).expect("`ResourcesMapping` does not have the key `l1_gas_usage`.");
 
-    (l1_gas_usage, ResourcesMapping(vm_resource_usage))
+    (l1_gas_usage as usize, ResourcesMapping(vm_resource_usage))
 }
 
 /// Calculates the L1 gas consumed when submitting the underlying Cairo program to SHARP.
