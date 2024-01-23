@@ -1235,13 +1235,12 @@ impl<T: Config> Pallet<T> {
     }
 
     pub fn config_hash() -> StarkHash {
-        Felt252Wrapper::from(
-            T::SystemHash::compute_hash_on_elements(&[
-                FieldElement::from_byte_slice_be(SN_OS_CONFIG_HASH_VERSION.as_bytes()).unwrap(),
-                T::ChainId::get().into(),
-                Felt252Wrapper::from(Self::fee_token_address().0.0).into(),
-            ])
-        ).into()
+        Felt252Wrapper::from(T::SystemHash::compute_hash_on_elements(&[
+            FieldElement::from_byte_slice_be(SN_OS_CONFIG_HASH_VERSION.as_bytes()).unwrap(),
+            T::ChainId::get().into(),
+            Felt252Wrapper::from(Self::fee_token_address().0.0).into(),
+        ]))
+        .into()
     }
 
     pub fn is_transaction_fee_disabled() -> bool {

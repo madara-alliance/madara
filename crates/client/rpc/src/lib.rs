@@ -47,10 +47,10 @@ use starknet_api::transaction::Calldata;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BlockTag, BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTransaction,
     BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass,
-    DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt, DeployTransactionReceipt,
-    DeployAccountTransactionResult, EventFilterWithPage, EventsPage, ExecutionResources, ExecutionResult, FeeEstimate,
-    FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt, InvokeTransactionResult,
-    L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+    DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt,
+    DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResources,
+    ExecutionResult, FeeEstimate, FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt,
+    InvokeTransactionResult, L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
     MaybePendingTransactionReceipt, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
     TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
@@ -871,7 +871,7 @@ where
             block_hash: block_hash.into(),
             parent_hash: Felt252Wrapper::from(parent_blockhash).into(),
             block_number: starknet_block.header().block_number,
-            new_root: starknet_block.header().global_state_root,
+            new_root: Felt252Wrapper::from(starknet_block.header().global_state_root).into(),
             timestamp: starknet_block.header().block_timestamp,
             sequencer_address: Felt252Wrapper::from(starknet_block.header().sequencer_address).into(),
             l1_gas_price: starknet_block.header().l1_gas_price.into(),
@@ -1118,7 +1118,7 @@ where
             block_hash: block_hash.into(),
             parent_hash: Felt252Wrapper::from(starknet_block.header().parent_block_hash).into(),
             block_number: starknet_block.header().block_number,
-            new_root: starknet_block.header().global_state_root,
+            new_root: Felt252Wrapper::from(starknet_block.header().global_state_root).into(),
             timestamp: starknet_block.header().block_timestamp,
             sequencer_address: Felt252Wrapper::from(starknet_block.header().sequencer_address).into(),
             transactions,
@@ -1174,7 +1174,7 @@ where
 
         Ok(StateUpdate {
             block_hash: starknet_block.header().hash::<H>().into(),
-            new_root: starknet_block.header().global_state_root,
+            new_root: Felt252Wrapper::from(starknet_block.header().global_state_root).into(),
             old_root,
             state_diff: StateDiff {
                 storage_diffs: Vec::new(),

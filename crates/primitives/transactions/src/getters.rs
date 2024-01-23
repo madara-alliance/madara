@@ -4,8 +4,8 @@ use mp_felt::Felt252Wrapper;
 
 use super::{DeclareTransaction, DeployAccountTransaction, InvokeTransaction, Transaction, UserTransaction};
 use crate::{
-    DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, HandleL1MessageTransaction, InvokeTransactionV0,
-    InvokeTransactionV1, UserAndL1HandlerTransaction, DeployTransaction
+    DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeployTransaction, HandleL1MessageTransaction,
+    InvokeTransactionV0, InvokeTransactionV1, UserAndL1HandlerTransaction,
 };
 
 impl Transaction {

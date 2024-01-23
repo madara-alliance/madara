@@ -237,9 +237,9 @@ impl Decode for StateUpdateWrapper {
 //     H: HasherT,
 // {
 //     let starknet_block_hash = match state_update.block_hash {
-//         Some(hash) => hash.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
-//         None => return Err(BuildCommitmentStateDiffError::BlockNotFound),
-//     };
+//         Some(hash) => hash.try_into().map_err(|_|
+// BuildCommitmentStateDiffError::ConversionError)?,         None => return
+// Err(BuildCommitmentStateDiffError::BlockNotFound),     };
 
 //     let mut commitment_state_diff = CommitmentStateDiff {
 //         address_to_class_hash: Default::default(),
@@ -250,8 +250,8 @@ impl Decode for StateUpdateWrapper {
 
 //     for (address, diffs) in &state_update.state_diff.storage_diffs {
 //         let contract_address = ContractAddress(PatriciaKey(
-//             Felt252Wrapper::from(*address).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
-//         ));
+//             Felt252Wrapper::from(*address).try_into().map_err(|_|
+// BuildCommitmentStateDiffError::ConversionError)?,         ));
 //         for storage_diff in diffs {
 //             let storage_key = StarknetStorageKey(PatriciaKey(
 //                 Felt252Wrapper::from(storage_diff.key)
@@ -284,9 +284,9 @@ impl Decode for StateUpdateWrapper {
 //     }
 
 //     // for contract in &state_update.state_diff.deployed_contracts {
-//     //     let contract_address = ContractAddress(PatriciaKey(contract.address.try_into().map_err(|_|
-//     // BuildCommitmentStateDiffError::ConversionError)?));     let class_hash =
-//     // ClassHash(contract.class_hash.try_into().map_err(|_|
+//     //     let contract_address =
+// ContractAddress(PatriciaKey(contract.address.try_into().map_err(|_|     // BuildCommitmentStateDiffError::ConversionError)?
+// ));     let class_hash =     // ClassHash(contract.class_hash.try_into().map_err(|_|
 //     // BuildCommitmentStateDiffError::ConversionError)?);     let compiled_class_hash:
 //     // CompiledClassHash = calculate_compiled_class_hash(&class_hash);
 
@@ -296,11 +296,11 @@ impl Decode for StateUpdateWrapper {
 
 //     for nonce in &state_update.state_diff.nonces {
 //         let contract_address = ContractAddress(PatriciaKey(
-//             Felt252Wrapper::from(*nonce.0).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
-//         ));
+//             Felt252Wrapper::from(*nonce.0).try_into().map_err(|_|
+// BuildCommitmentStateDiffError::ConversionError)?,         ));
 //         let nonce_value = Nonce(
-//             Felt252Wrapper::from(*nonce.1).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
-//         );
+//             Felt252Wrapper::from(*nonce.1).try_into().map_err(|_|
+// BuildCommitmentStateDiffError::ConversionError)?,         );
 //         commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
 //     }
 
