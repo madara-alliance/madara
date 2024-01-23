@@ -16,7 +16,6 @@ members = [
   "crates/primitives/block",
   "crates/primitives/sequencer-address",
   "crates/primitives/storage",
-  "crates/primitives/commitments",
   "crates/primitives/chain-id",
   "crates/primitives/messages",
   "crates/primitives/program-hash",
@@ -47,10 +46,10 @@ default-members = [
   "crates/primitives/block",
   "crates/primitives/sequencer-address",
   "crates/primitives/storage",
-  "crates/primitives/commitments",
   "crates/primitives/chain-id",
   "crates/primitives/messages",
   "crates/primitives/program-hash",
+  "crates/primitives/commitments",
   "crates/client/genesis-data-provider",
   "crates/client/db",
   "crates/client/rpc-core",
@@ -174,11 +173,11 @@ mp-snos-output = { path = "crates/primitives/snos-output", default-features = fa
 mp-state = { path = "crates/primitives/state", default-features = false }
 mp-storage = { path = "crates/primitives/storage", default-features = false }
 mp-transactions = { path = "crates/primitives/transactions", default-features = false }
-mp-commitments = { path = "crates/primitives/commitments", default-features = false }
 mp-chain-id = { path = "crates/primitives/chain-id", default-features = false }
 mp-simulations = { path = "crates/primitives/simulations", default-features = false }
 mp-program-hash = { path = "crates/primitives/program-hash", default-features = false }
 mp-messages = { path = "crates/primitives/messages", default-features = false }
+mp-commitments = { path = "crates/primitives/commitments", default-features = false }
 
 # Madara client
 mc-genesis-data-provider = { path = "crates/client/genesis-data-provider" }
@@ -240,7 +239,7 @@ jsonrpsee = { version = "0.16.3", default-features = false }
 clap = { version = "4.4.8", default-features = false }
 futures = { version = "0.3.29", default-features = false }
 futures-timer = { version = "3.0.2", default-features = false }
-md5 = { version = "0.7.0", default-features = false }
+sha3 = { version = "0.10.8", default-features = false }
 reqwest = { version = "0.11.22", default-features = false }
 serde = { version = "1.0.192", default-features = false }
 serde_json = { version = "1.0.108", default-features = false }
@@ -273,7 +272,6 @@ rand_chacha = "0.3.1"
 tokio-retry = "0.3"
 tracing = "0.1.37"
 assert = "0.0.4"
-itertools = "0.10.5"
 strum_macros = "0.25.2"
 tempfile = "3.3.0"
 async-stream = "0.3.3"
@@ -299,7 +297,6 @@ regex = "1.9.0"
 rustc-hex = "2.1.0"
 schemars = "0.8.12"
 serde_yaml = "0.9.16"
-sha3 = "0.10.8"
 simple_logger = "4.0.0"
 strum = "0.25.0"
 tokio-stream = "0.1.8"
@@ -311,6 +308,7 @@ tokio = "1.34.0"
 openssl = { version = "0.10", features = ["vendored"] }
 subxt = "0.29"
 async-lock = "3.1.0"
+itertools = "0.12.0"
 
 [patch."https://github.com/w3f/ring-vrf"]
 bandersnatch_vrfs = { git = "https://github.com/w3f/ring-vrf?rev=3ddc20", version = "0.0.4", rev = "3ddc20" }

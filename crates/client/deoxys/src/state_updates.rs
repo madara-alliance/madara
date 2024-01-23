@@ -1,15 +1,7 @@
-use blockifier::state::cached_state::CommitmentStateDiff;
-use indexmap::map::Entry;
-use indexmap::IndexMap;
-use mc_commitment_state_diff::BuildCommitmentStateDiffError;
 use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
 use parity_scale_codec::{Decode, Encode, Error, Input, Output};
-use starknet_api::api_core::{ContractAddress, Nonce, PatriciaKey};
-use starknet_api::state::StorageKey as StarknetStorageKey;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract, StateDiff, StorageDiff};
-use starknet_providers::sequencer::models::StateUpdate;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
@@ -238,82 +230,82 @@ impl Decode for StateUpdateWrapper {
     }
 }
 
-pub fn commitment_state_diff<H>(
-    state_update: &StateUpdate,
-) -> Result<(Felt252Wrapper, CommitmentStateDiff), BuildCommitmentStateDiffError>
-where
-    H: HasherT,
-{
-    let starknet_block_hash = match state_update.block_hash {
-        Some(hash) => hash.try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
-        None => return Err(BuildCommitmentStateDiffError::BlockNotFound),
-    };
+// pub fn commitment_state_diff<H>(
+//     state_update: &StateUpdate,
+// ) -> Result<(Felt252Wrapper, CommitmentStateDiff), BuildCommitmentStateDiffError>
+// where
+//     H: HasherT,
+// {
+//     let starknet_block_hash = match state_update.block_hash {
+//         Some(hash) => hash.try_into().map_err(|_|
+// BuildCommitmentStateDiffError::ConversionError)?,         None => return
+// Err(BuildCommitmentStateDiffError::BlockNotFound),     };
 
-    let mut commitment_state_diff = CommitmentStateDiff {
-        address_to_class_hash: Default::default(),
-        address_to_nonce: Default::default(),
-        storage_updates: Default::default(),
-        class_hash_to_compiled_class_hash: Default::default(),
-    };
+//     let mut commitment_state_diff = CommitmentStateDiff {
+//         address_to_class_hash: Default::default(),
+//         address_to_nonce: Default::default(),
+//         storage_updates: Default::default(),
+//         class_hash_to_compiled_class_hash: Default::default(),
+//     };
 
-    for (address, diffs) in &state_update.state_diff.storage_diffs {
-        let contract_address = ContractAddress(PatriciaKey(
-            Felt252Wrapper::from(*address).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
-        ));
-        for storage_diff in diffs {
-            let storage_key = StarknetStorageKey(PatriciaKey(
-                Felt252Wrapper::from(storage_diff.key)
-                    .try_into()
-                    .map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
-            ));
-            let value = storage_diff.value;
+//     for (address, diffs) in &state_update.state_diff.storage_diffs {
+//         let contract_address = ContractAddress(PatriciaKey(
+//             Felt252Wrapper::from(*address).try_into().map_err(|_|
+// BuildCommitmentStateDiffError::ConversionError)?,         ));
+//         for storage_diff in diffs {
+//             let storage_key = StarknetStorageKey(PatriciaKey(
+//                 Felt252Wrapper::from(storage_diff.key)
+//                     .try_into()
+//                     .map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+//             ));
+//             let value = storage_diff.value;
 
-            match commitment_state_diff.storage_updates.entry(contract_address) {
-                Entry::Occupied(mut entry) => {
-                    entry.get_mut().insert(
-                        storage_key,
-                        Felt252Wrapper::from(value)
-                            .try_into()
-                            .map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
-                    );
-                }
-                Entry::Vacant(entry) => {
-                    let mut contract_storage = IndexMap::default();
-                    contract_storage.insert(
-                        storage_key,
-                        Felt252Wrapper::from(value)
-                            .try_into()
-                            .map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
-                    );
-                    entry.insert(contract_storage);
-                }
-            }
-        }
-    }
+//             match commitment_state_diff.storage_updates.entry(contract_address) {
+//                 Entry::Occupied(mut entry) => {
+//                     entry.get_mut().insert(
+//                         storage_key,
+//                         Felt252Wrapper::from(value)
+//                             .try_into()
+//                             .map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+//                     );
+//                 }
+//                 Entry::Vacant(entry) => {
+//                     let mut contract_storage = IndexMap::default();
+//                     contract_storage.insert(
+//                         storage_key,
+//                         Felt252Wrapper::from(value)
+//                             .try_into()
+//                             .map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
+//                     );
+//                     entry.insert(contract_storage);
+//                 }
+//             }
+//         }
+//     }
 
-    // for contract in &state_update.state_diff.deployed_contracts {
-    //     let contract_address = ContractAddress(PatriciaKey(contract.address.try_into().map_err(|_|
-    // BuildCommitmentStateDiffError::ConversionError)?));     let class_hash =
-    // ClassHash(contract.class_hash.try_into().map_err(|_|
-    // BuildCommitmentStateDiffError::ConversionError)?);     let compiled_class_hash:
-    // CompiledClassHash = calculate_compiled_class_hash(&class_hash);
+//     // for contract in &state_update.state_diff.deployed_contracts {
+//     //     let contract_address =
+// ContractAddress(PatriciaKey(contract.address.try_into().map_err(|_|     // BuildCommitmentStateDiffError::ConversionError)?
+// ));     let class_hash =     // ClassHash(contract.class_hash.try_into().map_err(|_|
+//     // BuildCommitmentStateDiffError::ConversionError)?);     let compiled_class_hash:
+//     // CompiledClassHash = calculate_compiled_class_hash(&class_hash);
 
-    //     commitment_state_diff.address_to_class_hash.insert(contract_address, class_hash);
-    //     commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash,
-    // compiled_class_hash); }
+//     //     commitment_state_diff.address_to_class_hash.insert(contract_address, class_hash);
+//     //     commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash,
+//     // compiled_class_hash); }
 
-    for nonce in &state_update.state_diff.nonces {
-        let contract_address = ContractAddress(PatriciaKey(
-            Felt252Wrapper::from(*nonce.0).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
-        ));
-        let nonce_value = Nonce(
-            Felt252Wrapper::from(*nonce.1).try_into().map_err(|_| BuildCommitmentStateDiffError::ConversionError)?,
-        );
-        commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
-    }
+//     for nonce in &state_update.state_diff.nonces {
+//         let contract_address = ContractAddress(PatriciaKey(
+//             Felt252Wrapper::from(*nonce.0).try_into().map_err(|_|
+// BuildCommitmentStateDiffError::ConversionError)?,         ));
+//         let nonce_value = Nonce(
+//             Felt252Wrapper::from(*nonce.1).try_into().map_err(|_|
+// BuildCommitmentStateDiffError::ConversionError)?,         );
+//         commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
+//     }
 
-    Ok((starknet_block_hash, commitment_state_diff))
-}
+//     Ok((starknet_block_hash, commitment_state_diff))
+// }
 
 // Get L2 state commitment of a Block from a CommitmentStateDiff
 // pub async fn state_commitment<H: HasherT>(state_update: &StateUpdate) -> Felt252Wrapper {
