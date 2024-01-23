@@ -1,7 +1,8 @@
 //! Converts types from [`starknet_providers`] to madara's expected types.
 
-use starknet_api::hash::StarkFelt;
 use mp_fee::ResourcePrice;
+use mp_felt::Felt252Wrapper;
+use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 
@@ -11,7 +12,8 @@ pub fn block(block: &p::Block) -> mp_block::Block {
     let block_number = block.block_number.expect("no block number provided");
     let sequencer_address = block.sequencer_address.map_or(contract_address(FieldElement::ZERO), contract_address);
     let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number);
-    let l1_gas_price = ResourcePrice::default();
+    let l1_gas_price = resource_price(block.eth_l1_gas_price);
+    let protocol_version = starknet_version(&block.starknet_version);
 
     let header = mp_block::Header {
         parent_block_hash: felt(block.parent_block_hash),
@@ -23,7 +25,7 @@ pub fn block(block: &p::Block) -> mp_block::Block {
         transaction_commitment,
         event_count: events.len() as u128,
         event_commitment,
-        protocol_version: 0,
+        protocol_version,
         l1_gas_price,
         extra_data: block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be())),
     };
@@ -136,8 +138,28 @@ fn l1_handler_transaction(tx: &p::L1HandlerTransaction) -> mp_transactions::Hand
     }
 }
 
+/// Converts a starknet version string to a felt value.
+/// If the string contains more than 31 bytes, the function panics.
+fn starknet_version(version: &Option<String>) -> Felt252Wrapper {
+    let ret = match version {
+        Some(version) => {
+            Felt252Wrapper::try_from(version.as_bytes()).expect("Failed to convert version to felt: string is too long")
+        }
+        None => Felt252Wrapper::ZERO,
+    };
+    println!("Starknet version: {}", ret.from_utf8().unwrap());
+    ret
+}
+
 fn fee(felt: starknet_ff::FieldElement) -> u128 {
     felt.try_into().expect("Value out of range for u128")
+}
+
+fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> ResourcePrice {
+    ResourcePrice {
+        price_in_strk: None,
+        price_in_wei: fee(eth_l1_gas_price).try_into().expect("Value out of range for u64"),
+    }
 }
 
 fn events(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<starknet_api::transaction::Event> {

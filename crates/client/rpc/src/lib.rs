@@ -126,7 +126,7 @@ where
     C: HeaderBackend<B> + 'static,
 {
     pub fn current_spec_version(&self) -> RpcResult<String> {
-        Ok("0.4.0".to_string())
+        Ok("0.5.1".to_string())
     }
 }
 
@@ -871,11 +871,11 @@ where
             block_hash: block_hash.into(),
             parent_hash: Felt252Wrapper::from(parent_blockhash).into(),
             block_number: starknet_block.header().block_number,
-            new_root: Felt252Wrapper::from(self.backend.temporary_global_state_root_getter()).into(),
+            new_root: starknet_block.header().global_state_root,
             timestamp: starknet_block.header().block_timestamp,
             sequencer_address: Felt252Wrapper::from(starknet_block.header().sequencer_address).into(),
             l1_gas_price: starknet_block.header().l1_gas_price.into(),
-            starknet_version: starknet_version.to_string(),
+            starknet_version: starknet_version.from_utf8().expect("starknet version should be a valid utf8 string"),
         };
 
         Ok(MaybePendingBlockWithTxHashes::Block(block_with_tx_hashes))
@@ -1118,12 +1118,12 @@ where
             block_hash: block_hash.into(),
             parent_hash: Felt252Wrapper::from(starknet_block.header().parent_block_hash).into(),
             block_number: starknet_block.header().block_number,
-            new_root: Felt252Wrapper::from(self.backend.temporary_global_state_root_getter()).into(),
+            new_root: starknet_block.header().global_state_root,
             timestamp: starknet_block.header().block_timestamp,
             sequencer_address: Felt252Wrapper::from(starknet_block.header().sequencer_address).into(),
             transactions,
             l1_gas_price: starknet_block.header().l1_gas_price.into(),
-            starknet_version: starknet_version.to_string(),
+            starknet_version: starknet_version.from_utf8().expect("starknet version should be a valid utf8 string"),
         };
 
         Ok(MaybePendingBlockWithTxs::Block(block_with_txs))
@@ -1174,7 +1174,7 @@ where
 
         Ok(StateUpdate {
             block_hash: starknet_block.header().hash::<H>().into(),
-            new_root: Felt252Wrapper::from(self.backend.temporary_global_state_root_getter()).into(),
+            new_root: starknet_block.header().global_state_root,
             old_root,
             state_diff: StateDiff {
                 storage_diffs: Vec::new(),
