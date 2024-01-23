@@ -1397,19 +1397,10 @@ where
         let starknet_block: mp_block::Block =
             get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).unwrap_or_default();
         let block_header = starknet_block.header();
-        let block_hash = block_header.hash::<H>().into();
+        let block_hash: Felt252Wrapper = block_header.hash::<H>().into();
         let block_number = block_header.block_number;
 
-        let block_extrinsics = self
-            .client
-            .block_body(substrate_block_hash)
-            .map_err(|e| {
-                error!("Failed to get block body. Substrate block hash: {substrate_block_hash}, error: {e}");
-                StarknetRpcApiError::InternalServerError
-            })?
-            .ok_or(StarknetRpcApiError::BlockNotFound)?;
-
-        let chain_id = self.chain_id()?.0.into();
+        let chain_id = self.chain_id()?.0;
 
         let starknet_version = starknet_block.header().protocol_version;
 
@@ -1419,31 +1410,33 @@ where
                 StarknetRpcApiError::InternalServerError
             })?;
 
-        let (tx_index, transaction) = self
-            .client
-            .runtime_api()
-            .get_index_and_tx_for_tx_hash(substrate_block_hash, block_extrinsics, chain_id, transaction_hash.into())
-            .map_err(|e| {
-                error!(
-                    "Failed to get index for transaction hash. Substrate block hash: {substrate_block_hash}, \
-                     transaction hash: {transaction_hash}, error: {e}"
-                );
-                StarknetRpcApiError::InternalServerError
-            })?
-            .expect("the transaction should be present in the substrate extrinsics"); // not reachable
+        let block_txs_hashes: Vec<_> = if let Some(tx_hashes) = self.get_cached_transaction_hashes(block_hash.into()) {
+            tx_hashes
+                .into_iter()
+                .map(|h| {
+                    h256_to_felt(h)
+                        .map_err(|e| {
+                            CallError::Failed(anyhow::anyhow!(
+                                "The hash cached for block with hash {block_hash:?} is an invalid felt: '{h}'. The \
+                                 caching db has probably been tempered"
+                            ))
+                        })
+                        .unwrap()
+                })
+                .collect()
+        } else {
+            starknet_block
+                .transactions_hashes::<H>(chain_id.into(), Some(starknet_block.header().block_number))
+                .map(FieldElement::from)
+                .collect()
+        };
 
-        let events = self
-            .client
-            .runtime_api()
-            .get_events_for_tx_by_index(substrate_block_hash, tx_index)
-            .map_err(|e| {
-                error!(
-                    "Failed to get events for transaction index. Substrate block hash: {substrate_block_hash}, \
-                     transaction idx: {tx_index}, error: {e}"
-                );
-                StarknetRpcApiError::InternalServerError
-            })?
-            .expect("the transaction should be present in the substrate extrinsics"); // not reachable
+        let (tx_index, _) =
+            block_txs_hashes.into_iter().enumerate().find(|(_, hash)| hash == &transaction_hash.into()).unwrap().into();
+
+        let transaction = starknet_block.transactions().get(tx_index).unwrap();
+
+        let events = vec![];
 
         let execution_result = {
             let revert_error = self
@@ -1476,24 +1469,7 @@ where
             }
         }
 
-        let events_converted: Vec<starknet_core::types::Event> =
-            events.clone().into_iter().map(event_conversion).collect();
-
-        let actual_fee = if fee_disabled {
-            FieldElement::ZERO
-        } else {
-            // Event {
-            //     from_address: fee_token_address,
-            //     keys: [selector("Transfer")],
-            //     data: [
-            //         send_from_address,       // account_contract_address
-            //         send_to_address,         // to (sequencer address)
-            //         expected_fee_value_low,  // transfer amount (fee)
-            //         expected_fee_value_high,
-            //     ]},
-            // fee transfer must be the last event, except enabled disable-transaction-fee feature
-            events_converted.last().unwrap().data[2]
-        };
+        let actual_fee = FieldElement::ZERO;
 
         let actual_status = if starknet_block.header().block_number
             <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0
@@ -1524,13 +1500,13 @@ where
         // TODO: use actual execution ressources
         let receipt = match transaction {
             mp_transactions::Transaction::Declare(_) => TransactionReceipt::Declare(DeclareTransactionReceipt {
-                transaction_hash,
+                transaction_hash: transaction_hash.into(),
                 actual_fee,
                 finality_status: actual_status,
-                block_hash,
+                block_hash: block_hash.into(),
                 block_number,
                 messages_sent: messages.into_iter().map(message_conversion).collect(),
-                events: events_converted,
+                events,
                 execution_result,
                 execution_resources: ExecutionResources {
                     steps: 0,
@@ -1549,10 +1525,10 @@ where
                     transaction_hash,
                     actual_fee,
                     finality_status: actual_status,
-                    block_hash,
+                    block_hash: block_hash.into(),
                     block_number,
                     messages_sent: messages.into_iter().map(message_conversion).collect(),
-                    events: events_converted,
+                    events,
                     contract_address: tx.get_account_address(),
                     execution_result,
                     execution_resources: ExecutionResources {
@@ -1572,10 +1548,10 @@ where
                 transaction_hash,
                 actual_fee,
                 finality_status: actual_status,
-                block_hash,
+                block_hash: block_hash.into(),
                 block_number,
                 messages_sent: Default::default(),
-                events: events_converted,
+                events,
                 contract_address: tx.get_account_address(),
                 execution_result,
                 execution_resources: ExecutionResources {
@@ -1594,10 +1570,10 @@ where
                 transaction_hash,
                 actual_fee,
                 finality_status: actual_status,
-                block_hash,
+                block_hash: block_hash.into(),
                 block_number,
                 messages_sent: messages.into_iter().map(message_conversion).collect(),
-                events: events_converted,
+                events,
                 execution_result,
                 execution_resources: ExecutionResources {
                     steps: 0,
@@ -1616,10 +1592,10 @@ where
                 transaction_hash,
                 actual_fee,
                 finality_status: actual_status,
-                block_hash,
+                block_hash: block_hash.into(),
                 block_number,
                 messages_sent: messages.into_iter().map(message_conversion).collect(),
-                events: events_converted,
+                events,
                 execution_result,
                 execution_resources: ExecutionResources {
                     steps: 0,
