@@ -57,6 +57,7 @@ mp-transactions = { workspace = true, features = ["client"] }
 parity-scale-codec = { workspace = true, features = ["derive"] }
 sc-consensus-manual-seal.workspace = true
 validator = { workspace = true, features = ["derive"] }
+bonsai-trie = { git = "https://github.com/keep-starknet-strange/bonsai-trie.git", default-features = false }
 
 [dev-dependencies]
 # test_utils = { path = "./test_utils" }

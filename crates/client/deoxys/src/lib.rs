@@ -2,6 +2,7 @@
 
 pub mod utils;
 pub mod types;
+pub mod commitments;
 pub mod l1;
 pub mod l2;
 

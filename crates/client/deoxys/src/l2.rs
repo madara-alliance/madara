@@ -205,7 +205,7 @@ pub fn update_l2(state_update: L2StateUpdate) {
 }
 
 /// Verify the L2 state according to the latest state update
-pub async fn verify_l2(mut state_update: StarknetStateUpdate) -> Result<(), String> {
+pub async fn verify_l2(_state_update: StarknetStateUpdate) -> Result<(), String> {
     // 1. Retrieve state diff
     // 2. Compute state commitment
     // state_root = state_commitment(csd)
