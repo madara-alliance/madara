@@ -4,19 +4,24 @@
 #[doc(hidden)]
 pub extern crate alloc;
 
-mod header;
-pub mod state_update;
-
 use alloc::vec::Vec;
+
+mod header;
+mod ordered_events;
+pub mod state_update;
 
 pub use header::*;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::Transaction;
+pub use ordered_events::*;
 
 /// Block Transactions
 pub type BlockTransactions = Vec<Transaction>;
+
+/// Block Events
+pub type BlockEvents = Vec<OrderedEvents>;
 
 /// Block tag.
 ///
@@ -50,6 +55,8 @@ pub struct Block {
     header: Header,
     /// The block transactions.
     transactions: BlockTransactions,
+    /// The block events.
+    events: BlockEvents,
 }
 
 impl Block {
@@ -59,8 +66,8 @@ impl Block {
     ///
     /// * `header` - The block header.
     /// * `transactions` - The block transactions.
-    pub fn new(header: Header, transactions: BlockTransactions) -> Self {
-        Self { header, transactions }
+    pub fn new(header: Header, transactions: BlockTransactions, events: BlockEvents) -> Self {
+        Self { header, transactions, events }
     }
 
     /// Return a reference to the block header
@@ -71,6 +78,11 @@ impl Block {
     /// Return a reference to all transactions
     pub fn transactions(&self) -> &BlockTransactions {
         &self.transactions
+    }
+
+    // Return a reference to all events
+    pub fn events(&self) -> &BlockEvents {
+        &self.events
     }
 
     /// Returns an iterator that iterates over all transaction hashes.

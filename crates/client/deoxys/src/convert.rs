@@ -30,7 +30,15 @@ pub fn block(block: &p::Block) -> mp_block::Block {
         extra_data: block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be())),
     };
 
-    mp_block::Block::new(header, transactions)
+    let ordered_events: Vec<mp_block::OrderedEvents> = block
+        .transaction_receipts
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.events.len() > 0)
+        .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
+        .collect();
+
+    mp_block::Block::new(header, transactions, ordered_events)
 }
 
 fn transactions(txs: &[p::TransactionType]) -> Vec<mp_transactions::Transaction> {

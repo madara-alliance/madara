@@ -1436,7 +1436,13 @@ where
 
         let transaction = starknet_block.transactions().get(tx_index).unwrap();
 
-        let events = vec![];
+        let events = starknet_block
+            .events()
+            .into_iter()
+            .filter(|event| event.index == tx_index as u128)
+            .flat_map(|event| event.events.clone())
+            .map(event_conversion)
+            .collect();
 
         let execution_result = {
             let revert_error = self
