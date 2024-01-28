@@ -22,6 +22,7 @@ mod db_opening_utils;
 mod messaging_db;
 pub use messaging_db::LastSyncedEventBlock;
 mod meta_db;
+mod bonsai_db;
 
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -31,6 +32,7 @@ use da_db::DaDb;
 use mapping_db::MappingDb;
 use messaging_db::MessagingDb;
 use meta_db::MetaDb;
+use bonsai_db::BonsaiDb;
 use sc_client_db::DatabaseSource;
 use sp_database::Database;
 use sp_runtime::traits::Block as BlockT;
@@ -49,7 +51,7 @@ pub(crate) mod columns {
     // ===== /!\ ===================================================================================
     // MUST BE INCREMENTED WHEN A NEW COLUMN IN ADDED
     // ===== /!\ ===================================================================================
-    pub const NUM_COLUMNS: u32 = 7;
+    pub const NUM_COLUMNS: u32 = 8;
 
     pub const META: u32 = 0;
     pub const BLOCK_MAPPING: u32 = 1;
@@ -64,7 +66,11 @@ pub(crate) mod columns {
 
     /// This column contains last synchronized L1 block.
     pub const MESSAGING: u32 = 6;
+
+    /// This column contains the bonsai trie keys
+    pub const BONSAI: u32 = 6;
 }
+
 
 pub mod static_keys {
     pub const CURRENT_SYNCING_TIPS: &[u8] = b"CURRENT_SYNCING_TIPS";
@@ -74,14 +80,18 @@ pub mod static_keys {
 
 /// The Madara client database backend
 ///
-/// Contains two distinct databases: `meta` and `mapping`.
+/// Contains five distinct databases: `meta`, `mapping`, `messaging`, `da` and `bonsai``.
 /// `mapping` is used to map Starknet blocks to Substrate ones.
 /// `meta` is used to store data about the current state of the chain
+/// `messaging` is used to store data regarding l1 messagings.
+/// `da` is used to store the data availaiblity facts that need to be written to the L1.
+/// `bonsai` is used to store the commitment tries.
 pub struct Backend<B: BlockT> {
     meta: Arc<MetaDb<B>>,
     mapping: Arc<MappingDb<B>>,
     da: Arc<DaDb<B>>,
     messaging: Arc<MessagingDb<B>>,
+    bonsai: Arc<BonsaiDb<B>>,
 }
 
 /// Returns the Starknet database directory.
@@ -123,6 +133,7 @@ impl<B: BlockT> Backend<B> {
             meta: Arc::new(MetaDb { db: db.clone(), _marker: PhantomData }),
             da: Arc::new(DaDb { db: db.clone(), _marker: PhantomData }),
             messaging: Arc::new(MessagingDb { db: db.clone(), _marker: PhantomData }),
+            bonsai: Arc::new(BonsaiDb { db: db.clone(), _marker: PhantomData }),
         })
     }
 
@@ -144,6 +155,11 @@ impl<B: BlockT> Backend<B> {
     /// Return the da database manager
     pub fn messaging(&self) -> &Arc<MessagingDb<B>> {
         &self.messaging
+    }
+
+    /// Return the bonsai database manager
+    pub fn bonsai(&self) -> &Arc<BonsaiDb<B>> {
+        &self.bonsai
     }
 
     /// In the future, we will compute the block global state root asynchronously in the client,

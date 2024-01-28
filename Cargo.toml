@@ -158,6 +158,9 @@ pallet-aura = { default-features = false, git = "https://github.com/paritytech/p
 pallet-grandpa = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.3.0" }
 pallet-timestamp = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.3.0" }
 
+# Bonsai trie dependencies
+bonsai-trie = { default-features = false, git = "https://github.com/keep-starknet-strange/bonsai-trie.git", branch = "oss" }
+
 # Madara pallets
 pallet-starknet = { path = "crates/pallets/starknet", default-features = false }
 pallet-starknet-runtime-api = { path = "crates/pallets/starknet/runtime_api", default-features = false }

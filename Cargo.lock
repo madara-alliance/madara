@@ -923,7 +923,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.1.0-rc2"
-source = "git+https://github.com/keep-starknet-strange/blockifier?branch=no_std-support-7578442#85b4d15788eac61aa8af8ba21ac302657c78d014"
+source = "git+https://github.com/keep-starknet-strange/blockifier?branch=no_std-support-7578442#601a8906267d3b0021f2e1e3b215a09082116765"
 dependencies = [
  "ark-ff",
  "ark-secp256k1",
@@ -962,21 +962,15 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/bonsai-trie.git#72695feaa545fe594c84e66b665f27038822bc0a"
+source = "git+https://github.com/keep-starknet-strange/bonsai-trie.git?branch=oss#5b8b67ab9f80260445c5e89fd71864dddaae3dad"
 dependencies = [
- "bincode 1.3.3",
  "bitvec",
  "derive_more",
- "env_logger",
+ "hashbrown 0.14.3",
  "log",
- "lru 0.12.1",
- "mp-felt 0.6.0",
- "mp-hashers 0.6.0",
  "parity-scale-codec",
- "parking_lot 0.12.1",
- "rustc-hex",
  "serde",
- "smallvec",
+ "starknet-types-core",
 ]
 
 [[package]]
@@ -1046,9 +1040,9 @@ checksum = "e3b5ca7a04898ad4bcd41c90c5285445ff5b791899bb1b0abdd2a2aa791211d7"
 
 [[package]]
 name = "bytemuck"
-version = "1.14.0"
+version = "1.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "374d28ec25809ee0e23827c2ab573d729e293f281dfe393500e7ad618baa61c6"
+checksum = "ed2490600f404f2b94c167e31d3ed1d5f3c225a0f3b80230053b3e0b7b962bd9"
 
 [[package]]
 name = "byteorder"
@@ -1718,9 +1712,9 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.32"
+version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41daef31d7a747c5c847246f36de49ced6f7403b4cdabc807a97b5cc184cda7a"
+checksum = "9f13690e35a5e4ace198e7beea2895d29f3a9cc55015fcebe6336bd2010af9eb"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -2524,8 +2518,8 @@ dependencies = [
  "mockito",
  "mp-block",
  "mp-digest-log",
- "mp-felt 0.1.0",
- "mp-hashers 0.1.0",
+ "mp-felt",
+ "mp-hashers",
  "mp-sequencer-address",
  "mp-transactions",
  "pallet-starknet",
@@ -2566,7 +2560,7 @@ dependencies = [
  "sp-statement-store",
  "sp-timestamp",
  "sp-trie",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet_api",
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",
@@ -4100,7 +4094,7 @@ dependencies = [
  "aho-corasick",
  "bstr",
  "log",
- "regex-automata 0.4.4",
+ "regex-automata 0.4.5",
  "regex-syntax 0.8.2",
 ]
 
@@ -5118,6 +5112,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "lambdaworks-crypto"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d4c222d5b2fdc0faf702d3ab361d14589b097f40eac9dc550e27083483edc65"
+dependencies = [
+ "lambdaworks-math",
+ "sha2 0.10.8",
+ "sha3",
+]
+
+[[package]]
+name = "lambdaworks-math"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ee7dcab3968c71896b8ee4dc829147acc918cffe897af6265b1894527fe3add"
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5735,15 +5746,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lru"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2994eeba8ed550fd9b47a0b38f0242bc3344e496483c6180b69139cc2fa5d1d7"
-dependencies = [
- "hashbrown 0.14.3",
-]
-
-[[package]]
 name = "lru-cache"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5853,8 +5855,8 @@ dependencies = [
  "mp-block",
  "mp-chain-id",
  "mp-fee",
- "mp-felt 0.1.0",
- "mp-hashers 0.1.0",
+ "mp-felt",
+ "mp-hashers",
  "mp-program-hash",
  "mp-simulations",
  "mp-transactions",
@@ -5877,7 +5879,7 @@ dependencies = [
  "sp-std",
  "sp-transaction-pool",
  "sp-version",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
  "starknet_api",
  "substrate-wasm-builder",
@@ -5939,8 +5941,8 @@ dependencies = [
  "log",
  "mc-db",
  "mp-digest-log",
- "mp-felt 0.1.0",
- "mp-hashers 0.1.0",
+ "mp-felt",
+ "mp-hashers",
  "mp-storage",
  "pallet-starknet",
  "pallet-starknet-runtime-api",
@@ -5959,6 +5961,7 @@ dependencies = [
 name = "mc-db"
 version = "0.1.0"
 dependencies = [
+ "bonsai-trie",
  "ethers",
  "kvdb-rocksdb",
  "log",
@@ -5991,8 +5994,8 @@ dependencies = [
  "mp-block",
  "mp-commitments",
  "mp-fee",
- "mp-felt 0.1.0",
- "mp-hashers 0.1.0",
+ "mp-felt",
+ "mp-hashers",
  "mp-transactions",
  "parity-scale-codec",
  "rand 0.8.5",
@@ -6002,7 +6005,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sp-core",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
  "starknet-providers",
  "starknet_api",
@@ -6034,7 +6037,7 @@ dependencies = [
  "ethers",
  "log",
  "mc-db",
- "mp-felt 0.1.0",
+ "mp-felt",
  "mp-transactions",
  "pallet-starknet-runtime-api",
  "rustc-hex",
@@ -6062,8 +6065,8 @@ dependencies = [
  "mc-rpc-core",
  "mc-storage",
  "mp-digest-log",
- "mp-felt 0.1.0",
- "mp-hashers 0.1.0",
+ "mp-felt",
+ "mp-hashers",
  "mp-transactions",
  "pallet-starknet",
  "pallet-starknet-runtime-api",
@@ -6094,8 +6097,8 @@ dependencies = [
  "mc-storage",
  "mp-block",
  "mp-fee",
- "mp-felt 0.1.0",
- "mp-hashers 0.1.0",
+ "mp-felt",
+ "mp-hashers",
  "mp-simulations",
  "mp-transactions",
  "pallet-starknet",
@@ -6112,7 +6115,7 @@ dependencies = [
  "sp-blockchain",
  "sp-core",
  "sp-runtime",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
  "starknet_api",
  "thiserror",
@@ -6137,7 +6140,7 @@ dependencies = [
  "jsonrpsee",
  "mp-block",
  "mp-digest-log",
- "mp-felt 0.1.0",
+ "mp-felt",
  "mp-genesis-config",
  "mp-simulations",
  "mp-transactions",
@@ -6150,7 +6153,7 @@ dependencies = [
  "sp-blockchain",
  "sp-core",
  "sp-runtime",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet_api",
  "thiserror",
 ]
@@ -6168,8 +6171,8 @@ dependencies = [
  "mc-db",
  "mp-block",
  "mp-digest-log",
- "mp-felt 0.1.0",
- "mp-hashers 0.1.0",
+ "mp-felt",
+ "mp-hashers",
  "mp-messages",
  "mp-snos-output",
  "mp-transactions",
@@ -6209,7 +6212,7 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-storage",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet_api",
 ]
 
@@ -6407,15 +6410,15 @@ version = "0.1.0"
 dependencies = [
  "blockifier",
  "mp-fee",
- "mp-felt 0.1.0",
- "mp-hashers 0.1.0",
+ "mp-felt",
+ "mp-hashers",
  "mp-transactions",
  "parity-scale-codec",
  "scale-info",
  "serde",
  "serde_json",
  "sp-core",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet_api",
 ]
 
@@ -6423,7 +6426,7 @@ dependencies = [
 name = "mp-chain-id"
 version = "0.1.0"
 dependencies = [
- "mp-felt 0.1.0",
+ "mp-felt",
  "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
 ]
 
@@ -6434,13 +6437,13 @@ dependencies = [
  "bitvec",
  "derive_more",
  "frame-support",
- "mp-felt 0.1.0",
- "mp-hashers 0.1.0",
+ "mp-felt",
+ "mp-hashers",
  "mp-transactions",
  "parity-scale-codec",
  "scale-info",
  "serde",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet-crypto 0.6.1 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
  "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
  "starknet_api",
@@ -6462,7 +6465,7 @@ version = "0.1.0"
 dependencies = [
  "blockifier",
  "hashbrown 0.14.3",
- "mp-felt 0.1.0",
+ "mp-felt",
  "mp-state",
  "parity-scale-codec",
  "phf",
@@ -6470,7 +6473,7 @@ dependencies = [
  "serde",
  "serde_with",
  "sp-arithmetic",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet_api",
 ]
 
@@ -6485,24 +6488,8 @@ dependencies = [
  "serde",
  "serde_with",
  "sp-core",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
- "starknet_api",
- "thiserror-no-std",
-]
-
-[[package]]
-name = "mp-felt"
-version = "0.6.0"
-source = "git+https://github.com/keep-starknet-strange/madara.git?rev=f30acea8af7e28e956e771928130e12bfc084832#f30acea8af7e28e956e771928130e12bfc084832"
-dependencies = [
- "cairo-vm",
- "hex",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sp-core",
- "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=a35ce22)",
  "starknet_api",
  "thiserror-no-std",
 ]
@@ -6514,11 +6501,11 @@ dependencies = [
  "blockifier",
  "derive_more",
  "hex",
- "mp-felt 0.1.0",
+ "mp-felt",
  "serde",
  "serde_json",
  "serde_with",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet-crypto 0.6.1 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
 ]
 
@@ -6526,25 +6513,12 @@ dependencies = [
 name = "mp-hashers"
 version = "0.1.0"
 dependencies = [
- "mp-felt 0.1.0",
+ "mp-felt",
  "parity-scale-codec",
  "scale-info",
  "serde",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet-crypto 0.6.1 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
-]
-
-[[package]]
-name = "mp-hashers"
-version = "0.6.0"
-source = "git+https://github.com/keep-starknet-strange/madara.git?rev=f30acea8af7e28e956e771928130e12bfc084832#f30acea8af7e28e956e771928130e12bfc084832"
-dependencies = [
- "mp-felt 0.6.0",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "starknet-core 0.7.2",
- "starknet-crypto 0.6.1 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=a35ce22)",
 ]
 
 [[package]]
@@ -6563,7 +6537,7 @@ dependencies = [
 name = "mp-program-hash"
 version = "0.1.0"
 dependencies = [
- "mp-felt 0.1.0",
+ "mp-felt",
  "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
 ]
 
@@ -6584,7 +6558,7 @@ version = "0.1.0"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
- "starknet-core 0.8.0",
+ "starknet-core",
 ]
 
 [[package]]
@@ -6607,7 +6581,7 @@ name = "mp-state"
 version = "0.1.0"
 dependencies = [
  "blockifier",
- "mp-felt 0.1.0",
+ "mp-felt",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -6641,8 +6615,8 @@ dependencies = [
  "lazy_static",
  "log",
  "mp-fee",
- "mp-felt 0.1.0",
- "mp-hashers 0.1.0",
+ "mp-felt",
+ "mp-hashers",
  "mp-state",
  "num-bigint",
  "parity-scale-codec",
@@ -6650,7 +6624,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spin 0.9.8",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet-crypto 0.6.1 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
  "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
  "starknet_api",
@@ -7377,9 +7351,9 @@ dependencies = [
  "mp-commitments",
  "mp-digest-log",
  "mp-fee",
- "mp-felt 0.1.0",
+ "mp-felt",
  "mp-genesis-config",
- "mp-hashers 0.1.0",
+ "mp-hashers",
  "mp-program-hash",
  "mp-sequencer-address",
  "mp-simulations",
@@ -7404,7 +7378,7 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-std",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet-crypto 0.6.1 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
  "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
  "starknet_api",
@@ -7417,7 +7391,7 @@ version = "0.1.0"
 dependencies = [
  "blockifier",
  "hashbrown 0.14.3",
- "mp-felt 0.1.0",
+ "mp-felt",
  "mp-simulations",
  "mp-snos-output",
  "mp-transactions",
@@ -7426,7 +7400,7 @@ dependencies = [
  "sp-api",
  "sp-arithmetic",
  "sp-runtime",
- "starknet-core 0.8.0",
+ "starknet-core",
  "starknet_api",
 ]
 
@@ -7775,18 +7749,18 @@ checksum = "5be167a7af36ee22fe3115051bc51f6e6c7054c9348e28deb4f49bd6f705a315"
 
 [[package]]
 name = "pin-project"
-version = "1.1.3"
+version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fda4ed1c6c173e3fc7a83629421152e01d7b1f9b7f65fb301e490e8cfc656422"
+checksum = "0302c4a0442c456bd56f841aee5c3bfd17967563f6fadc9ceb9f9c23cf3807e0"
 dependencies = [
  "pin-project-internal",
 ]
 
 [[package]]
 name = "pin-project-internal"
-version = "1.1.3"
+version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4359fd9c9171ec6e8c62926d6faaf553a8dc3f64e1507e76da7911b4f6a04405"
+checksum = "266c042b60c9c76b8d53061e52b2e0d1116abc57cefc8c5cd671619a56ac3690"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8446,7 +8420,7 @@ checksum = "b62dbe01f0b06f9d8dc7d49e05a0785f153b00b2c227856282f671e0318c9b15"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.4.4",
+ "regex-automata 0.4.5",
  "regex-syntax 0.8.2",
 ]
 
@@ -8461,9 +8435,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.4"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b7fa1134405e2ec9353fd416b17f8dacd46c473d7d3fd1cf202706a14eb792a"
+checksum = "5bb987efffd3c6d0d8f5f89510bb458559eab11e4f869acb20bf845e016259cd"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -10405,9 +10379,9 @@ checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
 
 [[package]]
 name = "snow"
-version = "0.9.5"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e87c18a6608909007e75a60e04d03eda77b601c94de1c74d9a9dc2c04ab789a"
+checksum = "850948bee068e713b8ab860fe1adc4d109676ab4c3b621fd8147f06b261f2f85"
 dependencies = [
  "aes-gcm",
  "blake2 0.10.6",
@@ -11220,23 +11194,6 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "starknet-core"
-version = "0.7.2"
-source = "git+https://github.com/xJonathanLEI/starknet-rs.git?rev=a35ce22#a35ce22be52bf33b8e544d0df926031b0ec7d761"
-dependencies = [
- "base64 0.21.7",
- "flate2",
- "hex",
- "serde",
- "serde_json",
- "serde_json_pythonic",
- "serde_with",
- "sha3",
- "starknet-crypto 0.6.1 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=a35ce22)",
- "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=a35ce22)",
-]
-
-[[package]]
-name = "starknet-core"
 version = "0.8.0"
 source = "git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac#95d50ac0a3a537cb63a390bad818415899c90693"
 dependencies = [
@@ -11392,11 +11349,9 @@ version = "0.3.5"
 source = "git+https://github.com/xJonathanLEI/starknet-rs.git?rev=a35ce22#a35ce22be52bf33b8e544d0df926031b0ec7d761"
 dependencies = [
  "ark-ff",
- "bigdecimal",
  "crypto-bigint",
  "getrandom 0.2.12",
  "hex",
- "serde",
 ]
 
 [[package]]
@@ -11413,15 +11368,31 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "starknet-core 0.8.0",
+ "starknet-core",
  "thiserror",
  "url",
 ]
 
 [[package]]
+name = "starknet-types-core"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d791c671fecde494f435170a01c6fcb2949d0dd61be0b31b7c410b041609f96"
+dependencies = [
+ "bitvec",
+ "lambdaworks-crypto",
+ "lambdaworks-math",
+ "lazy_static",
+ "num-bigint",
+ "num-integer",
+ "num-traits 0.2.17",
+ "parity-scale-codec",
+]
+
+[[package]]
 name = "starknet_api"
 version = "0.4.1"
-source = "git+https://github.com/keep-starknet-strange/starknet-api?branch=no_std-support-dc83f05#3415c832bb0cd72d1764dcd9ce803ddf932895ef"
+source = "git+https://github.com/keep-starknet-strange/starknet-api?branch=no_std-support-dc83f05#ec9c7a20c76667e875a82fa5fdfd9049167780b1"
 dependencies = [
  "cairo-lang-casm-contract-class",
  "derive_more",
