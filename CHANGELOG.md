@@ -1,8 +1,12 @@
-# Madara Changelog
+git # Madara Changelog
 
 ## Next release
 
 - feat: store events in block, return events in call get_transaction_receipt
+- fix: don't ignore Sierra to CASM mapping in genesis config
+- refacto: early exit txs fee estimation when one fails
+- dev: fix linter warning in README.md
+- fix: remove waiting loop from `getTxReceipt`
 - feat: types in `mp-transactions` impl a method to get their version
 - feat: make L1 gas price a `const` of the `RuntimeConfig`
 - fix: broken class hashes and contracts in genesis
@@ -58,6 +62,9 @@
 - dev: add avail and celestia crates behind a feature flag
 - dev: replace md5 with sha3_256 hash function
 - feat: fixing getNonce Rpc Call and adding a new test
+- refactor: use Zaun crate for Starknet core contract bindings
+- refactor: use Anvil sandbox from Zaun crate
+- feat(rpc) : estimateMessageFee RPC call implementation
 
 ## v0.6.0
 
@@ -95,6 +102,7 @@
 - chore(data-availability-avail): implement fire and forget, and add ws
   reconnection logic
 - chore: update `polkadot-sdk` to `release-polkadot-v1.3.0`
+- feat: fallback default file for DA and Settlement configuration files
 
 ## v0.5.0
 
@@ -260,3 +268,4 @@
 - feat: add a `genesis_loader` for the node and mocking
 - feat: add `madara_tsukuyomi` as a submodule
 - branding: use new logo in the README
+- dev: Get the block status from the actual block in get_block_with_tx_hashes

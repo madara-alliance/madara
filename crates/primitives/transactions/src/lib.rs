@@ -21,7 +21,7 @@ use derive_more::From;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use starknet_api::transaction::{Fee, TransactionVersion};
-use starknet_core::types::{TransactionExecutionStatus, TransactionFinalityStatus};
+use starknet_core::types::{MsgFromL1, TransactionExecutionStatus, TransactionFinalityStatus};
 use starknet_ff::FieldElement;
 
 const SIMULATE_TX_VERSION_OFFSET: FieldElement =
@@ -222,4 +222,16 @@ pub struct HandleL1MessageTransaction {
     pub contract_address: Felt252Wrapper,
     pub entry_point_selector: Felt252Wrapper,
     pub calldata: Vec<Felt252Wrapper>,
+}
+
+impl From<MsgFromL1> for HandleL1MessageTransaction {
+    fn from(msg: MsgFromL1) -> Self {
+        let calldata = msg.payload.into_iter().map(|felt| felt.into()).collect();
+        Self {
+            contract_address: msg.to_address.into(),
+            nonce: 0u32.into(),
+            entry_point_selector: msg.entry_point_selector.into(),
+            calldata,
+        }
+    }
 }
