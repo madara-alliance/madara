@@ -1,3 +1,5 @@
+use bonsai_trie::DBError;
+
 #[derive(thiserror::Error, Debug)]
 pub enum DbError {
     #[error("Failed to commit DB Update: `{0}`")]
@@ -5,3 +7,5 @@ pub enum DbError {
     #[error("Failed to deserialize DB Data: `{0}`")]
     DeserializeError(#[from] scale_codec::Error),
 }
+
+impl DBError for DbError {}

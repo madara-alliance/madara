@@ -57,17 +57,26 @@ where
 /// # Returns
 ///
 /// The merkle root of the merkle tree built from the transactions.
-pub fn calculate_transaction_commitment<H: HasherT>(
+pub fn calculate_transaction_commitment<H>(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
-) -> Felt252Wrapper {
-    let mut tree = CommitmentTree::<H>::default();
+) -> Result<Felt252Wrapper, YourErrorType>
+where
+    H: HasherT,
+{
+    let mut tree = BonsaiDb::<YourBlockType>::new();
 
-    transactions.iter().enumerate().for_each(|(idx, tx)| {
-        let idx: u64 = idx.try_into().expect("too many transactions while calculating commitment");
+    for (idx, tx) in transactions.iter().enumerate() {
+        let idx = u64::try_from(idx).map_err(|_| YourErrorType::TooManyTransactions)?;
         let final_hash = calculate_transaction_hash_with_signature::<H>(tx, chain_id, block_number);
-        tree.set(idx, final_hash);
-    });
-    tree.commit()
+
+        let key = KeyType::from(idx);
+        let value = final_hash.to_bytes();
+
+        tree.insert(&key, &value, None)?;
+    }
+
+    tree.root_hash().map_err(|e| YourErrorType::TrieError(e))
 }
+
