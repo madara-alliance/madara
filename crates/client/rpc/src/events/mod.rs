@@ -49,35 +49,47 @@ where
                 StarknetRpcApiError::BlockNotFound
             })?;
 
-        let block_extrinsics = self
-            .client
-            .block_body(substrate_block_hash)
-            .map_err(|e| {
-                error!("Failed to retrieve block body. Substrate block hash: {substrate_block_hash}, error: {e}");
-                StarknetRpcApiError::InternalServerError
-            })?
+        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)
             .ok_or(StarknetRpcApiError::BlockNotFound)?;
+
+        let block_hash = starknet_block.header().hash::<H>();
 
         let chain_id = self.client.runtime_api().chain_id(substrate_block_hash).map_err(|_| {
             error!("Failed to retrieve chain id");
             StarknetRpcApiError::InternalServerError
         })?;
 
-        let tx_hash_and_events = self
-            .client
-            .runtime_api()
-            .get_starknet_events_and_their_associated_tx_hash(substrate_block_hash, block_extrinsics, chain_id)
-            .map_err(|e| {
-                error!(
-                    "Failed to retrieve starknet events and their associated transaction hash. Substrate block hash: \
-                     {substrate_block_hash}, chain ID: {chain_id:?}, error: {e}"
-                );
-                StarknetRpcApiError::InternalServerError
-            })?;
+        // get txs hashes from cache or compute them
+        let block_txs_hashes: Vec<_> = if let Some(tx_hashes) = self.get_cached_transaction_hashes(block_hash.into()) {
+            tx_hashes
+                .into_iter()
+                .map(|h| {
+                    Felt252Wrapper::try_from(h)
+                        .map(|f| f.0)
+                        .map_err(|e| {
+                            error!("'{e}'");
+                            StarknetRpcApiError::InternalServerError
+                        })
+                        .unwrap()
+                })
+                .collect()
+        } else {
+            starknet_block
+                .transactions_hashes::<H>(chain_id.into(), Some(starknet_block.header().block_number))
+                .map(FieldElement::from)
+                .collect()
+        };
 
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)
-            .ok_or(StarknetRpcApiError::BlockNotFound)?;
-        let block_hash = starknet_block.header().hash::<H>();
+        // get txs hashes and events from block
+        // the txs hashes are found by the index of the ordered event
+        let tx_hash_and_events: Vec<(Felt252Wrapper, _)> = starknet_block
+            .events()
+            .into_iter()
+            .flat_map(|ordered_event| {
+                let tx_hash = block_txs_hashes[ordered_event.index() as usize];
+                ordered_event.events().into_iter().map(move |events| (tx_hash.into(), events.clone()))
+            })
+            .collect();
 
         let emitted_events = tx_hash_and_events
             .into_iter()
