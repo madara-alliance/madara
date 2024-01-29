@@ -1030,6 +1030,8 @@ impl<T: Config> Pallet<T> {
             let extra_data = None;
             let l1_gas_price = T::L1GasPrice::get();
 
+            let ordered_events = vec![];
+
             let block = StarknetBlock::new(
                 StarknetHeader::new(
                     parent_block_hash.into(),
@@ -1046,6 +1048,7 @@ impl<T: Config> Pallet<T> {
                     extra_data,
                 ),
                 transactions,
+                ordered_events,
             );
             // Save the block number <> hash mapping.
             let blockhash = block.header().hash::<T::SystemHash>();
