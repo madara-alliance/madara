@@ -4470,7 +4470,7 @@ dependencies = [
  "iana-time-zone-haiku",
  "js-sys",
  "wasm-bindgen",
- "windows-core 0.52.0",
+ "windows-core",
 ]
 
 [[package]]
@@ -6021,6 +6021,7 @@ dependencies = [
  "sp-api",
  "sp-core",
  "sp-runtime",
+ "starknet-core-contract-client",
  "starknet_api",
  "thiserror",
  "url",
@@ -6127,6 +6128,7 @@ dependencies = [
  "sp-core",
  "sp-runtime",
  "starknet-core",
+ "starknet-providers",
  "starknet_api",
  "thiserror",
 ]
@@ -6160,6 +6162,7 @@ dependencies = [
  "sp-core",
  "sp-io",
  "sp-runtime",
+ "starknet-core-contract-client",
  "starknet-crypto 0.6.1 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=95d50ac)",
  "starknet_api",
  "thiserror",
@@ -6503,6 +6506,7 @@ dependencies = [
  "scale-info",
  "serde",
  "serde_with",
+ "starknet-core",
  "starknet_api",
 ]
 
@@ -11174,6 +11178,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "starknet-core-contract-client"
+version = "0.1.0"
+source = "git+https://github.com/keep-starknet-strange/zaun#9fe421790165166b714c4ef95c79ad49a959a05a"
+dependencies = [
+ "async-trait",
+ "ethers",
+ "log",
+ "num-traits 0.2.17",
+ "thiserror",
+]
+
+[[package]]
 name = "starknet-crypto"
 version = "0.6.1"
 source = "git+https://github.com/xJonathanLEI/starknet-rs.git?rev=64ebc36#64ebc364c0c346e81b715c5b4a3b32ef37b055c8"
@@ -13124,7 +13140,7 @@ version = "0.51.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca229916c5ee38c2f2bc1e9d8f04df975b4bd93f9955dc69fabb5d91270045c9"
 dependencies = [
- "windows-core 0.51.1",
+ "windows-core",
  "windows-targets 0.48.5",
 ]
 
@@ -13135,15 +13151,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1f8cf84f35d2db49a46868f947758c7a1138116f7fac3bc844f43ade1292e64"
 dependencies = [
  "windows-targets 0.48.5",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.52.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ab640c8d7e35bf8ba19b884ba838ceb4fba93a4e8c65a9059d08afcfc683d9"
-dependencies = [
- "windows-targets 0.52.0",
 ]
 
 [[package]]
