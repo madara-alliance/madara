@@ -77,12 +77,7 @@ pub fn calculate_class_commitment_leaf_hash<H: HasherT>(
 ///
 /// The merkle root of the merkle tree built from the classes.
 pub fn calculate_class_commitment_tree_root_hash<H: HasherT>(class_hashes: &[Felt252Wrapper]) -> Felt252Wrapper {
-    let mut tree = StateCommitmentTree::<H>::default();
-    class_hashes.iter().for_each(|class_hash| {
-        let final_hash = calculate_class_commitment_leaf_hash::<H>(*class_hash);
-        tree.set(*class_hash, final_hash);
-    });
-    tree.commit()
+    Felt252Wrapper::default()
 }
 
 /// Calculates the contract state hash from its preimage.

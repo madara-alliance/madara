@@ -1,3 +1,4 @@
+use anyhow::Ok;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use starknet_api::transaction::Event;
@@ -44,10 +45,5 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
 ///
 /// The merkle root of the merkle tree built from the events.
 pub(crate) fn calculate_event_commitment<H: HasherT>(events: &[Event]) -> Felt252Wrapper {
-    let mut tree = CommitmentTree::<H>::default();
-    events.iter().enumerate().for_each(|(id, event)| {
-        let final_hash = calculate_event_hash::<H>(event);
-        tree.set(id as u64, final_hash);
-    });
-    tree.commit()
+    Felt252Wrapper::default()
 }

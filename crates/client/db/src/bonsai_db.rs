@@ -27,7 +27,7 @@ impl<B: BlockT> BonsaiDb<B> {
     }
 }
 
-impl<B: BlockT> BonsaiDatabase for BonsaiDb<B> {
+impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
     type Batch = Vec<Change<DbHash>>;
     type DatabaseError = DbError;
 

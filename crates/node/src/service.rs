@@ -12,7 +12,6 @@ use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_commitment_state_diff::{verify_l2, CommitmentStateDiffWorker};
-use mc_deoxys::l2::fetch_genesis_block;
 use mc_deoxys::state_updates::{StarknetStateUpdate, StateUpdateWrapper};
 use mc_deoxys::StarknetSyncWorker;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
@@ -43,6 +42,7 @@ use sp_inherents::InherentData;
 use sp_offchain::STORAGE_PREFIX;
 use sp_runtime::testing::{Digest, DigestItem};
 use sp_runtime::traits::Block as BlockT;
+use starknet_providers::sequencer::models as starknet;
 
 use crate::genesis_block::MadaraGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
@@ -85,7 +85,6 @@ pub fn new_partial<BIQ>(
     config: &Configuration,
     build_import_queue: BIQ,
     cache_more_things: bool,
-    genesis_block: mp_block::Block,
 ) -> Result<
     sc_service::PartialComponents<
         FullClient,
@@ -128,6 +127,8 @@ where
     let executor = sc_service::new_native_or_wasm_executor(config);
 
     let backend = new_db_backend(config.db_config())?;
+
+    let genesis_block = mp_block::Block::default();
 
     let genesis_block_builder = MadaraGenesisBlockBuilder::<Block, _, _>::new(
         config.chain_spec.as_storage_builder(),
@@ -275,12 +276,10 @@ pub fn new_full(
     l1_url: Url,
     cache_more_things: bool,
     fetch_config: mc_deoxys::FetchConfig,
-    genesis_block: mp_block::Block,
+    genesis_block: starknet::Block,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
-
-    let genesis_block = mc_deoxys::convert::block(&genesis_block, backend);
 
     let sc_service::PartialComponents {
         client,
@@ -291,7 +290,7 @@ pub fn new_full(
         select_chain,
         transaction_pool,
         other: (block_import, grandpa_link, mut telemetry, madara_backend),
-    } = new_partial(&config, build_import_queue, cache_more_things, genesis_block)?;
+    } = new_partial(&config, build_import_queue, cache_more_things)?;
 
     let mut net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
@@ -436,6 +435,18 @@ pub fn new_full(
         .for_each(|()| future::ready(())),
     );
 
+    let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<mp_block::Block>(100);
+    let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StarknetStateUpdate>(100);
+
+    let sender_config =
+        mc_deoxys::SenderConfig { block_sender, state_update_sender, command_sink: command_sink.unwrap().clone() };
+
+    task_manager.spawn_essential_handle().spawn(
+        "starknet-sync-worker",
+        Some("madara"),
+        StarknetSyncWorker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend),
+    );
+
     task_manager.spawn_essential_handle().spawn(
         "commitment-state-logger",
         Some("madara"),
@@ -448,8 +459,6 @@ pub fn new_full(
             // NOTE(nils-mathieu):
             //   For now I used a channel of size 100, this should be plently enough. That might
             //   become a config option in the future.
-            let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<mp_block::Block>(100);
-            let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StarknetStateUpdate>(100);
 
             run_manual_seal_authorship(
                 block_receiver,
@@ -466,21 +475,6 @@ pub fn new_full(
             )?;
 
             network_starter.start_network();
-
-            let sender_config = mc_deoxys::SenderConfig {
-                block_sender,
-                state_update_sender,
-                command_sink: command_sink.unwrap().clone(),
-            };
-
-            let starknet_sync_worker =
-                StarknetSyncWorker::<_>::new(sender_config, fetch_config, rpc_port, l1_url, madara_backend);
-
-            task_manager.spawn_essential_handle().spawn(
-                "starknet-sync-worker",
-                Some("madara"),
-                starknet_sync_worker.sync(),
-            );
 
             log::info!("Manual Seal Ready");
             return Ok(task_manager);
@@ -751,6 +745,6 @@ type ChainOpsResult =
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things, mp_block::Block::default())?;
+        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things)?;
     Ok((client, backend, import_queue, task_manager, other.3))
 }

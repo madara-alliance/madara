@@ -36,12 +36,18 @@ impl<B: BlockT> StarknetSyncWorker<B> {
         StarknetSyncWorker { fetch_config, sender_config, rpc_port, l1_url, backend }
     }
 
-    pub async fn sync(&self) {
-        let first_block = utility::get_last_synced_block(self.rpc_port).await + 1;
+    pub async fn sync(
+        fetch_config: FetchConfig,
+        sender_config: SenderConfig,
+        rpc_port: u16,
+        l1_url: Url,
+        backend: Arc<mc_db::Backend<B>>,
+    ) {
+        let first_block = utility::get_last_synced_block(rpc_port).await + 1;
 
         let _ = tokio::join!(
-            l1::sync(self.l1_url.clone(), self.rpc_port),
-            l2::sync(self.sender_config.clone(), self.fetch_config.clone(), first_block, self.backend.clone())
+            l1::sync(l1_url.clone(), rpc_port),
+            l2::sync(sender_config.clone(), fetch_config.clone(), first_block, backend.clone())
         );
     }
 }

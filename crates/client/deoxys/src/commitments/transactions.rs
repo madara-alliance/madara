@@ -58,22 +58,24 @@ pub fn calculate_transaction_commitment<B, H>(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
-    backend: &Arc<Backend<B>>,
+    backend: Arc<Backend<B>>,
 ) -> Result<Felt252Wrapper, DbError>
 where
     B: BlockT,
-    H: HasherT
+    H: HasherT,
 {
     let config = BonsaiStorageConfig::default();
-    let mut bonsai_db = *backend.bonsai().clone().as_ref();
+    let mut bonsai_db = backend.bonsai().as_ref();
 
     let mut batch = bonsai_db.create_batch();
-    let mut bonsai_storage: BonsaiStorage<_, _, Pedersen> = BonsaiStorage::new(bonsai_db, config).unwrap();
+    let mut bonsai_storage: BonsaiStorage<BasicId, _, Pedersen> =
+        BonsaiStorage::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
     for (idx, tx) in transactions.iter().enumerate() {
-        let idx: u64 = idx.try_into().expect("Too many transactions");
+        let idx_bytes: [u8; 8] = idx.to_be_bytes();
         let final_hash = calculate_transaction_hash_with_signature::<H>(tx, chain_id, block_number);
-        bonsai_db.insert(&DatabaseKey::from(idx), &H256::from(final_hash.to_bytes_be()).encode(), Some(&mut batch));
+        let key = DatabaseKey::Flat(&idx_bytes);
+        bonsai_db.insert(&key, &H256::from(final_hash.to_bytes_be()).encode(), Some(&mut batch));
     }
 
     bonsai_db.write_batch(batch);

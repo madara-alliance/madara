@@ -2561,6 +2561,7 @@ dependencies = [
  "sp-timestamp",
  "sp-trie",
  "starknet-core",
+ "starknet-providers",
  "starknet_api",
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",

@@ -1,8 +1,9 @@
+use std::sync::Arc;
+
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::Transaction;
 use sp_runtime::traits::Block as BlockT;
-use std::sync::Arc; 
 use starknet_api::transaction::Event;
 
 use super::events::calculate_event_commitment;
@@ -25,7 +26,7 @@ pub fn calculate_commitments<B: BlockT, H: HasherT>(
     backend: Arc<mc_db::Backend<B>>,
 ) -> (Felt252Wrapper, Felt252Wrapper) {
     (
-        calculate_transaction_commitment::<B, H>(transactions, chain_id, block_number, &backend)
+        calculate_transaction_commitment::<B, H>(transactions, chain_id, block_number, backend)
             .expect("Failed to calculate transaction commitment"),
         calculate_event_commitment::<H>(events),
     )
