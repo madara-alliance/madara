@@ -27,6 +27,7 @@ use scale_info::{build::Fields, Path, Type, TypeInfo};
 use sp_core::{H256, U256};
 use starknet_api::hash::StarkFelt;
 use starknet_ff::{FieldElement, FromByteSliceError, FromStrError};
+use starknet_types_core::felt::Felt;
 use thiserror_no_std::Error;
 
 #[cfg(feature = "serde")]
@@ -225,6 +226,13 @@ impl From<Felt252Wrapper> for H256 {
 impl From<FieldElement> for Felt252Wrapper {
     fn from(ff: FieldElement) -> Self {
         Self(ff)
+    }
+}
+
+/// [`Felt252Wrapper`] from [`Felt`].
+impl From<Felt> for Felt252Wrapper {
+    fn from(value: Felt) -> Self {
+        Felt252Wrapper::try_from(&value.to_bytes_be()).unwrap()
     }
 }
 

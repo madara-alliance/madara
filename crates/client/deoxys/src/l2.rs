@@ -9,8 +9,9 @@ use mp_commitments::StateCommitment;
 use reqwest::Url;
 use serde::Deserialize;
 use sp_core::H256;
+use sp_runtime::traits::Block as BlockT;
 use starknet_api::block::{BlockHash, BlockNumber};
-use starknet_providers::sequencer::models::BlockId;
+use starknet_providers::sequencer::models::{Block, BlockId};
 use starknet_providers::SequencerGatewayProvider;
 use tokio::sync::mpsc::Sender;
 
@@ -76,6 +77,7 @@ impl Clone for FetchConfig {
 
 /// The configuration of the senders responsible for sending blocks and state updates from the
 /// feeder.
+#[derive(Clone)]
 pub struct SenderConfig {
     /// Sender for dispatching fetched blocks.
     pub block_sender: Sender<mp_block::Block>,
@@ -86,7 +88,12 @@ pub struct SenderConfig {
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-pub async fn sync(mut sender_config: SenderConfig, config: FetchConfig, start_at: u64) {
+pub async fn sync<B: BlockT>(
+    mut sender_config: SenderConfig,
+    config: FetchConfig,
+    start_at: u64,
+    backend: Arc<mc_db::Backend<B>>,
+) {
     let SenderConfig { block_sender, state_update_sender, command_sink } = &mut sender_config;
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
 
@@ -97,11 +104,11 @@ pub async fn sync(mut sender_config: SenderConfig, config: FetchConfig, start_at
     loop {
         let (block, state_update) = match (got_block, got_state_update) {
             (false, false) => {
-                let block = fetch_block(&client, block_sender, current_block_number);
+                let block = fetch_block(&client, block_sender, current_block_number, backend.clone());
                 let state_update = fetch_state_update(&client, state_update_sender, current_block_number);
                 tokio::join!(block, state_update)
             }
-            (false, true) => (fetch_block(&client, block_sender, current_block_number).await, Ok(())),
+            (false, true) => (fetch_block(&client, block_sender, current_block_number, backend.clone()).await, Ok(())),
             (true, false) => (Ok(()), fetch_state_update(&client, state_update_sender, current_block_number).await),
             (true, true) => unreachable!(),
         };
@@ -133,24 +140,28 @@ pub async fn sync(mut sender_config: SenderConfig, config: FetchConfig, start_at
     }
 }
 
-async fn fetch_block(
+async fn fetch_block<B: BlockT>(
     client: &SequencerGatewayProvider,
     block_sender: &Sender<mp_block::Block>,
     block_number: u64,
+    backend: Arc<mc_db::Backend<B>>,
 ) -> Result<(), String> {
     let block =
         client.get_block(BlockId::Number(block_number)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    block_sender.send(crate::convert::block(&block)).await.map_err(|e| format!("failed to dispatch block: {e}"))?;
+    block_sender
+        .send(crate::convert::block(&block, backend))
+        .await
+        .map_err(|e| format!("failed to dispatch block: {e}"))?;
 
     Ok(())
 }
 
-pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block, String> {
+pub async fn fetch_genesis_block(config: FetchConfig) -> Result<Block, String> {
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    Ok(crate::convert::block(&block))
+    Ok(block)
 }
 
 async fn fetch_state_update(
@@ -210,7 +221,8 @@ pub async fn verify_l2(_state_update: StarknetStateUpdate) -> Result<(), String>
     // 2. Compute state commitment
     // state_root = state_commitment(csd)
     // 3. Log latest L2 state verified on L2
-    // println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash, state_root;
+    // println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash,
+    // state_root;
     // 4. Update hared latest L2 state update verified on L2
     // update_l2({block_number, block_hash, state_commitment})
     Ok(())

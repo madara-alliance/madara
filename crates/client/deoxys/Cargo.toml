@@ -54,10 +54,16 @@ mp-fee = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
+mc-db = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
 sc-consensus-manual-seal.workspace = true
 validator = { workspace = true, features = ["derive"] }
 bonsai-trie = { workspace = true }
+sp-runtime = { workspace = true }
+starknet-types-core = { workspace = true, default-features = false, features = [
+    "hash",
+    "parity-scale-codec",
+] }
 
 [dev-dependencies]
 # test_utils = { path = "./test_utils" }

@@ -1,8 +1,18 @@
+use std::sync::Arc;
+
+use bonsai_trie::bonsai_database::DatabaseKey;
+use bonsai_trie::id::{BasicId, BasicIdBuilder};
+use bonsai_trie::{BonsaiDatabase, BonsaiStorage, BonsaiStorageConfig, BonsaiTrieHash, Membership, ProofNode};
+use mc_db::{Backend, DbError};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::Transaction;
+use parity_scale_codec::{Decode, Encode};
+use sp_core::H256;
+use sp_runtime::traits::Block as BlockT;
 use starknet_ff::FieldElement;
+use starknet_types_core::hash::Pedersen;
 
 /// Compute the combined hash of the transaction hash and the signature.
 ///
@@ -44,39 +54,29 @@ where
     transaction_hashes
 }
 
-/// Calculate transaction commitment hash value.
-///
-/// The transaction commitment is the root of the Patricia Merkle tree with height 64
-/// constructed by adding the (transaction_index, transaction_hash_with_signature)
-/// key-value pairs to the tree and computing the root hash.
-///
-/// # Arguments
-///
-/// * `transactions` - The transactions to get the root from.
-///
-/// # Returns
-///
-/// The merkle root of the merkle tree built from the transactions.
-pub fn calculate_transaction_commitment<H>(
+pub fn calculate_transaction_commitment<B, H>(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
-) -> Result<Felt252Wrapper, YourErrorType>
+    backend: &Arc<Backend<B>>,
+) -> Result<Felt252Wrapper, DbError>
 where
-    H: HasherT,
+    B: BlockT,
+    H: HasherT
 {
-    let mut tree = BonsaiDb::<YourBlockType>::new();
+    let config = BonsaiStorageConfig::default();
+    let mut bonsai_db = *backend.bonsai().clone().as_ref();
+
+    let mut batch = bonsai_db.create_batch();
+    let mut bonsai_storage: BonsaiStorage<_, _, Pedersen> = BonsaiStorage::new(bonsai_db, config).unwrap();
 
     for (idx, tx) in transactions.iter().enumerate() {
-        let idx = u64::try_from(idx).map_err(|_| YourErrorType::TooManyTransactions)?;
+        let idx: u64 = idx.try_into().expect("Too many transactions");
         let final_hash = calculate_transaction_hash_with_signature::<H>(tx, chain_id, block_number);
-
-        let key = KeyType::from(idx);
-        let value = final_hash.to_bytes();
-
-        tree.insert(&key, &value, None)?;
+        bonsai_db.insert(&DatabaseKey::from(idx), &H256::from(final_hash.to_bytes_be()).encode(), Some(&mut batch));
     }
 
-    tree.root_hash().map_err(|e| YourErrorType::TrieError(e))
-}
+    bonsai_db.write_batch(batch);
 
+    Ok(bonsai_storage.root_hash().expect("Failed to retrieve root hash from bonsai db").into())
+}

@@ -21,18 +21,18 @@ mod da_db;
 mod db_opening_utils;
 mod messaging_db;
 pub use messaging_db::LastSyncedEventBlock;
-mod meta_db;
 mod bonsai_db;
+mod meta_db;
 
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use bonsai_db::BonsaiDb;
 use da_db::DaDb;
 use mapping_db::MappingDb;
 use messaging_db::MessagingDb;
 use meta_db::MetaDb;
-use bonsai_db::BonsaiDb;
 use sc_client_db::DatabaseSource;
 use sp_database::Database;
 use sp_runtime::traits::Block as BlockT;
@@ -70,7 +70,6 @@ pub(crate) mod columns {
     /// This column contains the bonsai trie keys
     pub const BONSAI: u32 = 6;
 }
-
 
 pub mod static_keys {
     pub const CURRENT_SYNCING_TIPS: &[u8] = b"CURRENT_SYNCING_TIPS";

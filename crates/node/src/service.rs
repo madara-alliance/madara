@@ -12,7 +12,9 @@ use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_commitment_state_diff::{verify_l2, CommitmentStateDiffWorker};
+use mc_deoxys::l2::fetch_genesis_block;
 use mc_deoxys::state_updates::{StarknetStateUpdate, StateUpdateWrapper};
+use mc_deoxys::StarknetSyncWorker;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
@@ -278,6 +280,8 @@ pub fn new_full(
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
 
+    let genesis_block = mc_deoxys::convert::block(&genesis_block, backend);
+
     let sc_service::PartialComponents {
         client,
         backend,
@@ -468,9 +472,15 @@ pub fn new_full(
                 state_update_sender,
                 command_sink: command_sink.unwrap().clone(),
             };
-            tokio::spawn(async move {
-                mc_deoxys::sync(sender_config, fetch_config, rpc_port, l1_url).await;
-            });
+
+            let starknet_sync_worker =
+                StarknetSyncWorker::<_>::new(sender_config, fetch_config, rpc_port, l1_url, madara_backend);
+
+            task_manager.spawn_essential_handle().spawn(
+                "starknet-sync-worker",
+                Some("madara"),
+                starknet_sync_worker.sync(),
+            );
 
             log::info!("Manual Seal Ready");
             return Ok(task_manager);

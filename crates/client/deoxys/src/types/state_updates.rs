@@ -285,10 +285,11 @@ impl Decode for StateUpdateWrapper {
 
 //     // for contract in &state_update.state_diff.deployed_contracts {
 //     //     let contract_address =
-// ContractAddress(PatriciaKey(contract.address.try_into().map_err(|_|     // BuildCommitmentStateDiffError::ConversionError)?
-// ));     let class_hash =     // ClassHash(contract.class_hash.try_into().map_err(|_|
-//     // BuildCommitmentStateDiffError::ConversionError)?);     let compiled_class_hash:
-//     // CompiledClassHash = calculate_compiled_class_hash(&class_hash);
+// ContractAddress(PatriciaKey(contract.address.try_into().map_err(|_|     //
+// BuildCommitmentStateDiffError::ConversionError)? ));     let class_hash =     //
+// ClassHash(contract.class_hash.try_into().map_err(|_|     // BuildCommitmentStateDiffError::ConversionError)?
+// );     let compiled_class_hash:     // CompiledClassHash =
+// calculate_compiled_class_hash(&class_hash);
 
 //     //     commitment_state_diff.address_to_class_hash.insert(contract_address, class_hash);
 //     //     commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash,

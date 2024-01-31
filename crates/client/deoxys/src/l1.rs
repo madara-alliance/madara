@@ -37,7 +37,6 @@ lazy_static! {
     }));
 }
 
-
 /// Contains the Starknet verified state on L1
 #[derive(Debug, Clone, Deserialize)]
 pub struct L1StateUpdate {

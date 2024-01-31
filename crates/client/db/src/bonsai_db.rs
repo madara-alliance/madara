@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use bonsai_trie::{BonsaiDatabase, bonsai_database::DatabaseKey};
+use bonsai_trie::bonsai_database::DatabaseKey;
+use bonsai_trie::BonsaiDatabase;
 use sp_database::{Change, Database, Transaction};
 use sp_runtime::traits::Block as BlockT;
 
@@ -19,6 +20,7 @@ impl<B: BlockT> BonsaiDb<B> {
             match change {
                 Change::Set(column, key, value) => transaction.set(column, &key, &value),
                 Change::Remove(column, key) => transaction.remove(column, &key),
+                _ => unimplemented!(),
             }
         }
         self.db.commit(transaction).map_err(DbError::from)
@@ -38,7 +40,7 @@ impl<B: BlockT> BonsaiDatabase for BonsaiDb<B> {
             Some(raw) => Ok(Some(raw)),
             None => Ok(None),
         }
-    }    
+    }
 
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
         let result = self.db.get(crate::columns::BONSAI, key.as_slice());
@@ -46,7 +48,7 @@ impl<B: BlockT> BonsaiDatabase for BonsaiDb<B> {
             Some(_) => Ok(true),
             None => Ok(false),
         }
-    }    
+    }
 
     fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Self::DatabaseError> {
         // let mut result = Vec::new();
@@ -57,38 +59,60 @@ impl<B: BlockT> BonsaiDatabase for BonsaiDb<B> {
         //     }
         // }
         Ok(vec![])
-    }    
+    }
 
-    fn insert(&mut self, key: &DatabaseKey, value: &[u8], batch: Option<&mut Self::Batch>) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
+    fn insert(
+        &mut self,
+        key: &DatabaseKey,
+        value: &[u8],
+        batch: Option<&mut Self::Batch>,
+    ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
         match batch {
             Some(b) => {
                 b.push(Change::Set(crate::columns::BONSAI, key.as_slice().to_vec(), value.to_vec()));
                 Ok(None)
             }
             None => {
-                let old_value = self.db.get(crate::columns::BONSAI, key.as_slice())
-                    .ok_or(DbError::NotFound)?;
-                let mut transaction = Transaction::new();
-                transaction.set(crate::columns::BONSAI, key.as_slice(), value);
-                self.db.commit(transaction)?;
-                Ok(Some(old_value))
+                let result = self.db.get(crate::columns::BONSAI, key.as_slice());
+                match result {
+                    Some(old_value) => {
+                        let mut transaction = Transaction::new();
+                        transaction.set(crate::columns::BONSAI, key.as_slice(), value);
+                        self.db.commit(transaction)?;
+                        Ok(Some(old_value))
+                    }
+                    None => {
+                        let mut transaction = Transaction::new();
+                        transaction.set(crate::columns::BONSAI, key.as_slice(), value);
+                        self.db.commit(transaction)?;
+                        Ok(None)
+                    }
+                }
             }
         }
     }
-    
-    fn remove(&mut self, key: &DatabaseKey, batch: Option<&mut Self::Batch>) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
+
+    fn remove(
+        &mut self,
+        key: &DatabaseKey,
+        batch: Option<&mut Self::Batch>,
+    ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
         match batch {
             Some(b) => {
                 b.push(Change::Remove(crate::columns::BONSAI, key.as_slice().to_vec()));
                 Ok(None)
             }
             None => {
-                let old_value = self.db.get(crate::columns::BONSAI, key.as_slice())
-                    .ok_or(DbError::NotFound)?; // Convert Option to Result here
-                let mut transaction = Transaction::new();
-                transaction.remove(crate::columns::BONSAI, key.as_slice());
-                self.db.commit(transaction)?;
-                Ok(Some(old_value))
+                let result = self.db.get(crate::columns::BONSAI, key.as_slice());
+                match result {
+                    Some(old_value) => {
+                        let mut transaction = Transaction::new();
+                        transaction.remove(crate::columns::BONSAI, key.as_slice());
+                        self.db.commit(transaction)?;
+                        Ok(Some(old_value))
+                    }
+                    None => Ok(None),
+                }
             }
         }
     }

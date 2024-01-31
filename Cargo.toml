@@ -209,6 +209,7 @@ starknet-ff = { git = "https://github.com/xJonathanLEI/starknet-rs.git", rev = "
 starknet-signers = { git = "https://github.com/xJonathanLEI/starknet-rs.git", rev = "95d50ac", default-features = false }
 starknet-accounts = { git = "https://github.com/xJonathanLEI/starknet-rs.git", rev = "95d50ac", default-features = false }
 starknet-contract = { git = "https://github.com/xJonathanLEI/starknet-rs.git", rev = "95d50ac", default-features = false }
+starknet-types-core = { version = "0.0.7", default-features = false }
 
 blockifier = { git = "https://github.com/keep-starknet-strange/blockifier", branch = "no_std-support-7578442", default-features = false, features = [
   "parity-scale-codec",

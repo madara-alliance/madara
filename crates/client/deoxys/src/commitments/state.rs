@@ -1,8 +1,8 @@
- // State trie
+// State trie
 
- // Contract trie
+// Contract trie
 
-    // Storage trie
+// Storage trie
 
 // Class trie
 
