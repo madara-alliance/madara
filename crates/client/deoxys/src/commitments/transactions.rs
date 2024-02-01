@@ -3,7 +3,8 @@ use std::sync::Arc;
 use bonsai_trie::bonsai_database::DatabaseKey;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiDatabase, BonsaiStorage, BonsaiStorageConfig, BonsaiTrieHash, Membership, ProofNode};
-use mc_db::{Backend, DbError};
+use mc_db::bonsai_db::BonsaiDb;
+use mc_db::{Backend, BonsaiDbError};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -54,31 +55,32 @@ where
     transaction_hashes
 }
 
-pub fn calculate_transaction_commitment<B, H>(
+pub(crate) fn calculate_transaction_commitment<B, H>(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
-    backend: Arc<Backend<B>>,
-) -> Result<Felt252Wrapper, DbError>
+    backend: &Arc<BonsaiDb<B>>,
+) -> Result<Felt252Wrapper, BonsaiDbError>
 where
     B: BlockT,
     H: HasherT,
 {
     let config = BonsaiStorageConfig::default();
-    let mut bonsai_db = backend.bonsai().as_ref();
+    let mut bonsai_db = backend.as_ref();
 
     let mut batch = bonsai_db.create_batch();
-    let mut bonsai_storage: BonsaiStorage<BasicId, _, Pedersen> =
+    let bonsai_storage: BonsaiStorage<BasicId, _, Pedersen> =
         BonsaiStorage::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
     for (idx, tx) in transactions.iter().enumerate() {
         let idx_bytes: [u8; 8] = idx.to_be_bytes();
         let final_hash = calculate_transaction_hash_with_signature::<H>(tx, chain_id, block_number);
         let key = DatabaseKey::Flat(&idx_bytes);
-        bonsai_db.insert(&key, &H256::from(final_hash.to_bytes_be()).encode(), Some(&mut batch));
+        let _ = bonsai_db.insert(&key, &H256::from(final_hash.to_bytes_be()).encode(), Some(&mut batch));
     }
 
-    bonsai_db.write_batch(batch);
+    bonsai_db.write_batch(batch)?;
 
-    Ok(bonsai_storage.root_hash().expect("Failed to retrieve root hash from bonsai db").into())
+    let root = bonsai_storage.root_hash().expect("Failed to get bonsai root hash");
+    Ok(Felt252Wrapper::from(root))
 }

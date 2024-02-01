@@ -12,7 +12,7 @@
 //! flags. Support for custom databases is possible but not supported yet.
 
 mod error;
-pub use error::DbError;
+pub use error::{BonsaiDbError, DbError};
 
 mod mapping_db;
 pub use mapping_db::MappingCommitment;
@@ -21,7 +21,7 @@ mod da_db;
 mod db_opening_utils;
 mod messaging_db;
 pub use messaging_db::LastSyncedEventBlock;
-mod bonsai_db;
+pub mod bonsai_db;
 mod meta_db;
 
 use std::marker::PhantomData;
@@ -126,13 +126,17 @@ impl<B: BlockT> Backend<B> {
 
     fn new(config: &DatabaseSettings, cache_more_things: bool) -> Result<Self, String> {
         let db = db_opening_utils::open_database(config)?;
+        let kvdb = match &config.source {
+            DatabaseSource::RocksDb { path, .. } => db_opening_utils::open_kvdb(path, true),
+            _ => return Err("Unsupported database configuration".to_string()),
+        }?;
 
         Ok(Self {
             mapping: Arc::new(MappingDb::new(db.clone(), cache_more_things)),
             meta: Arc::new(MetaDb { db: db.clone(), _marker: PhantomData }),
             da: Arc::new(DaDb { db: db.clone(), _marker: PhantomData }),
             messaging: Arc::new(MessagingDb { db: db.clone(), _marker: PhantomData }),
-            bonsai: Arc::new(BonsaiDb { db: db.clone(), _marker: PhantomData }),
+            bonsai: Arc::new(BonsaiDb { db: kvdb.clone(), _marker: PhantomData }),
         })
     }
 

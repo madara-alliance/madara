@@ -1,8 +1,21 @@
+use std::sync::Arc;
+
 use anyhow::Ok;
+use bonsai_trie::bonsai_database::DatabaseKey;
+use bonsai_trie::id::{BasicId, BasicIdBuilder};
+use bonsai_trie::{BonsaiDatabase, BonsaiStorage, BonsaiStorageConfig, BonsaiTrieHash, Membership, ProofNode};
+use mc_db::bonsai_db::BonsaiDb;
+use mc_db::{Backend, BonsaiDbError};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
+use mp_transactions::compute_hash::ComputeTransactionHash;
+use mp_transactions::Transaction;
+use parity_scale_codec::{Decode, Encode};
+use sp_core::H256;
+use sp_runtime::traits::Block as BlockT;
 use starknet_api::transaction::Event;
 use starknet_ff::FieldElement;
+use starknet_types_core::hash::Pedersen;
 
 /// Calculate the hash of an event.
 ///
@@ -44,6 +57,31 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
 /// # Returns
 ///
 /// The merkle root of the merkle tree built from the events.
-pub(crate) fn calculate_event_commitment<H: HasherT>(events: &[Event]) -> Felt252Wrapper {
-    Felt252Wrapper::default()
+pub(crate) fn calculate_event_commitment<B, H>(
+    events: &[Event],
+    backend: &Arc<BonsaiDb<B>>,
+) -> Result<Felt252Wrapper, BonsaiDbError>
+where
+    B: BlockT,
+    H: HasherT,
+{
+    let config = BonsaiStorageConfig::default();
+    let mut bonsai_db = backend.as_ref();
+
+    let mut batch = bonsai_db.create_batch();
+    let bonsai_storage: BonsaiStorage<BasicId, _, Pedersen> =
+        BonsaiStorage::new(bonsai_db, config).expect("Failed to create bonsai storage");
+
+    events.iter().enumerate().for_each(|(id, event)| {
+        let final_hash = calculate_event_hash::<H>(event);
+        let idx_bytes: [u8; 8] = id.to_be_bytes();
+        let final_hash = calculate_event_hash::<H>(event);
+        let key = DatabaseKey::Flat(&idx_bytes);
+        let _ = bonsai_db.insert(&key, &H256::from(final_hash.to_bytes_be()).encode(), Some(&mut batch));
+    });
+
+    bonsai_db.write_batch(batch)?;
+
+    let root = bonsai_storage.root_hash().expect("Failed to get bonsai root hash");
+    Ok(Felt252Wrapper::from(root))
 }

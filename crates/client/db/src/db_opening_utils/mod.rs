@@ -21,6 +21,8 @@ mod parity_db_adapter;
 use std::path::Path;
 use std::sync::Arc;
 
+use kvdb::KeyValueDB;
+
 use crate::{Database, DatabaseSettings, DatabaseSource, DbHash};
 
 pub(crate) fn open_database(config: &DatabaseSettings) -> Result<Arc<dyn Database<DbHash>>, String> {
@@ -37,12 +39,20 @@ pub(crate) fn open_database(config: &DatabaseSettings) -> Result<Arc<dyn Databas
 }
 
 #[cfg(feature = "kvdb-rocksdb")]
-fn open_kvdb_rocksdb(path: &Path, create: bool) -> Result<Arc<dyn Database<DbHash>>, String> {
+pub fn open_kvdb_rocksdb(path: &Path, create: bool) -> Result<Arc<dyn Database<DbHash>>, String> {
     let mut db_config = kvdb_rocksdb::DatabaseConfig::with_columns(crate::columns::NUM_COLUMNS);
     db_config.create_if_missing = create;
 
     let db = kvdb_rocksdb::Database::open(&db_config, path).map_err(|err| format!("{}", err))?;
     Ok(sp_database::as_database(db))
+}
+
+pub fn open_kvdb(path: &Path, create: bool) -> Result<Arc<dyn KeyValueDB>, String> {
+    let mut db_config = kvdb_rocksdb::DatabaseConfig::with_columns(crate::columns::NUM_COLUMNS);
+    db_config.create_if_missing = create;
+
+    let db = kvdb_rocksdb::Database::open(&db_config, path).map_err(|err| format!("{}", err))?;
+    Ok(Arc::new(db))
 }
 
 #[cfg(not(feature = "kvdb-rocksdb"))]

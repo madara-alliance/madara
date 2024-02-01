@@ -31,6 +31,7 @@ starknet_api = { workspace = true, default-features = true }
 thiserror = { workspace = true }
 uuid = "1.4.1"
 bonsai-trie = { workspace = true }
+kvdb = "0.13.0"
 
 [features]
 default = ["kvdb-rocksdb", "parity-db"]
