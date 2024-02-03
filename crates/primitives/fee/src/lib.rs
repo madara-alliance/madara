@@ -60,7 +60,8 @@ pub const TRANSFER_SELECTOR_HASH: [u8; 32] = [
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ResourcePrice {
-    /// The price of one unit of the given resource, denominated in fri (10^-18 strk)
+    /// The price of one unit of the given resource, denominated in fri (10^-18
+    /// strk)
     pub price_in_strk: Option<u64>,
     /// The price of one unit of the given resource, denominated in wei
     pub price_in_wei: u64,
@@ -144,8 +145,8 @@ fn execute_fee_transfer(
         class_hash: None,
         code_address: None,
         entry_point_type: EntryPointType::External,
-        // The value TRANSFER_SELECTOR_HASH is hardcoded and it's the encoding of the "transfer" selector so it cannot
-        // fail.
+        // The value TRANSFER_SELECTOR_HASH is hardcoded and it's the encoding of the "transfer"
+        // selector so it cannot fail.
         entry_point_selector: EntryPointSelector(StarkFelt::new(TRANSFER_SELECTOR_HASH).unwrap()),
         calldata: calldata![
             *block_context.sequencer_address.0.key(), // Recipient.
@@ -181,7 +182,8 @@ pub fn calculate_tx_fee(resources: &ResourcesMapping, block_context: &BlockConte
     Ok(Fee(tx_fee))
 }
 
-/// Computes the fees for l1 gas usage and the vm usage from the execution resources.
+/// Computes the fees for l1 gas usage and the vm usage from the execution
+/// resources.
 ///
 /// # Arguments
 ///
@@ -196,18 +198,20 @@ pub fn extract_l1_gas_and_vm_usage(resources: &ResourcesMapping) -> (usize, Reso
     let l1_gas_usage =
         vm_resource_usage.remove(GAS_USAGE).expect("`ResourcesMapping` does not have the key `l1_gas_usage`.");
 
-    (l1_gas_usage, ResourcesMapping(vm_resource_usage))
+    (l1_gas_usage as usize, ResourcesMapping(vm_resource_usage))
 }
 
-/// Calculates the L1 gas consumed when submitting the underlying Cairo program to SHARP.
-/// I.e., returns the heaviest Cairo resource weight (in terms of L1 gas), as the size of
-/// a proof is determined similarly - by the (normalized) largest segment.
+/// Calculates the L1 gas consumed when submitting the underlying Cairo program
+/// to SHARP. I.e., returns the heaviest Cairo resource weight (in terms of L1
+/// gas), as the size of a proof is determined similarly - by the (normalized)
+/// largest segment.
 pub fn calculate_l1_gas_by_vm_usage(
     _block_context: &BlockContext,
     vm_resource_usage: &ResourcesMapping,
 ) -> TransactionExecutionResult<FixedU128> {
     let vm_resource_fee_costs: HashMap<&str, FixedU128> = HashMap::from(VM_RESOURCE_FEE_COSTS);
-    // Check if keys in vm_resource_usage are a subset of keys in VM_RESOURCE_FEE_COSTS
+    // Check if keys in vm_resource_usage are a subset of keys in
+    // VM_RESOURCE_FEE_COSTS
     if vm_resource_usage.0.keys().any(|key| !vm_resource_fee_costs.contains_key(key.as_str())) {
         return Err(TransactionExecutionError::CairoResourcesNotContainedInFeeCosts);
     };

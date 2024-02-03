@@ -10,6 +10,13 @@
     "titleBar.activeForeground": "#F2FCFD"
   },
   "cSpell.words": [
+    "blockifier",
+    "madara",
     "Starknet"
+  ],
+  "conventionalCommits.scopes": [
+    "work",
+    "class",
+    "update"
   ]
 }

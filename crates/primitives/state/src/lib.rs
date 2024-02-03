@@ -14,11 +14,11 @@ pub mod rpc;
 
 type ContractClassMapping = HashMap<ClassHash, ContractClass>;
 
-/// This trait allows to get the state changes of a starknet tx and therefore enables computing the
-/// fees.
+/// This trait allows to get the state changes of a starknet tx and therefore
+/// enables computing the fees.
 pub trait StateChanges {
-    /// This function counts the storage var updates implied by a transaction and the newly declared
-    /// class hashes.
+    /// This function counts the storage var updates implied by a transaction
+    /// and the newly declared class hashes.
     fn count_state_changes(&self) -> StateChangesCount;
 }
 

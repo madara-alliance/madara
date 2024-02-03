@@ -17,8 +17,8 @@ use starknet_api::stdlib::collections::HashMap;
 
 use super::merkle_node::{BinaryNode, Direction, EdgeNode, Node, NodeId};
 
-/// Wrapper type for a [HashMap<NodeId, Node>] object. (It's not really a wrapper it's a
-/// copy of the type but we implement the necessary traits.)
+/// Wrapper type for a [HashMap<NodeId, Node>] object. (It's not really a
+/// wrapper it's a copy of the type but we implement the necessary traits.)
 #[derive(Clone, Debug, PartialEq, Eq, Default, Constructor)]
 pub struct NodesMapping(pub HashMap<NodeId, Node>);
 
@@ -27,8 +27,8 @@ pub struct NodesMapping(pub HashMap<NodeId, Node>);
 impl Encode for NodesMapping {
     fn encode_to<T: Output + ?Sized>(&self, dest: &mut T) {
         // Convert the NodesMapping to Vec<(NodeId, Node)> to be
-        // able to use the Encode trait from this type. We implemented it for NodeId, derived it
-        // for Node so we can use it for Vec<(NodeId, Node)>.
+        // able to use the Encode trait from this type. We implemented it for NodeId,
+        // derived it for Node so we can use it for Vec<(NodeId, Node)>.
         let val: Vec<(NodeId, Node)> = self.0.clone().into_iter().collect();
         dest.write(&Encode::encode(&val));
     }
@@ -38,8 +38,8 @@ impl Encode for NodesMapping {
 impl Decode for NodesMapping {
     fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
         // Convert the NodesMapping to Vec<(NodeId, Node)> to be
-        // able to use the Decode trait from this type. We implemented it for NodeId, derived it
-        // for Node so we can use it for Vec<(NodeId, Node)>.
+        // able to use the Decode trait from this type. We implemented it for NodeId,
+        // derived it for Node so we can use it for Vec<(NodeId, Node)>.
         let val: Vec<(NodeId, Node)> =
             Decode::decode(input).map_err(|_| Error::from("Can't get NodesMapping from input buffer."))?;
         Ok(NodesMapping(HashMap::from_iter(val)))
@@ -60,7 +60,8 @@ impl TypeInfo for NodesMapping {
     }
 }
 
-/// Lightweight representation of [BinaryNode]. Only holds left and right hashes.
+/// Lightweight representation of [BinaryNode]. Only holds left and right
+/// hashes.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(TypeInfo))]
@@ -71,7 +72,8 @@ pub struct BinaryProofNode {
     pub right_hash: Felt252Wrapper,
 }
 
-/// Ligthtweight representation of [EdgeNode]. Only holds its path and its child's hash.
+/// Ligthtweight representation of [EdgeNode]. Only holds its path and its
+/// child's hash.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(TypeInfo))]
@@ -143,12 +145,14 @@ impl Serialize for ProofNode {
     }
 }
 
-/// A Starknet binary Merkle-Patricia tree with a specific root entry-point and storage.
+/// A Starknet binary Merkle-Patricia tree with a specific root entry-point and
+/// storage.
 ///
-/// This is used to update, mutate and access global Starknet state as well as individual contract
-/// states.
+/// This is used to update, mutate and access global Starknet state as well as
+/// individual contract states.
 ///
-/// For more information on how this functions internally, see [here](super::merkle_node).
+/// For more information on how this functions internally, see
+/// [here](super::merkle_node).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(TypeInfo))]
@@ -160,9 +164,9 @@ pub struct MerkleTree<H: HasherT> {
 }
 
 impl<H: HasherT> MerkleTree<H> {
-    /// Less visible initialization for `MerkleTree<T>` as the main entry points should be
-    /// [`MerkleTree::<RcNodeStorage>::load`] for persistent trees and [`MerkleTree::empty`] for
-    /// transient ones.
+    /// Less visible initialization for `MerkleTree<T>` as the main entry points
+    /// should be [`MerkleTree::<RcNodeStorage>::load`] for persistent trees
+    /// and [`MerkleTree::empty`] for transient ones.
     pub fn new(root: Felt252Wrapper) -> Self {
         let root_node = Node::Unresolved(root);
         let mut nodes_mapping: HashMap<NodeId, Node> = HashMap::new();
@@ -240,7 +244,8 @@ impl<H: HasherT> MerkleTree<H> {
         self.nodes.0.insert(*node_id, node.clone());
     }
 
-    /// Sets the value of a key. To delete a key, set the value to [Felt252Wrapper::ZERO].
+    /// Sets the value of a key. To delete a key, set the value to
+    /// [Felt252Wrapper::ZERO].
     ///
     /// # Arguments
     ///
@@ -269,12 +274,14 @@ impl<H: HasherT> MerkleTree<H> {
         // 3. The leaf does not exist, and the tree is not empty. The final node in the traversal will be an
         //    edge node who's path diverges from our new leaf node's.
         //
-        //    This edge must be split into a new subtree containing both the existing edge's child and the
-        //    new leaf. This requires an edge followed by a binary node and then further edges to both the
-        //    current child and the new leaf. Any of these new edges may also end with an empty path in
-        //    which case they should be elided. It depends on the common path length of the current edge
-        //    and the new leaf i.e. the split may be at the first bit (in which case there is no leading
-        //    edge), or the split may be in the middle (requires both leading and post edges), or the
+        //    This edge must be split into a new subtree containing both the existing
+        // edge's child and the    new leaf. This requires an edge followed by a
+        // binary node and then further edges to both the    current child and
+        // the new leaf. Any of these new edges may also end with an empty path in
+        //    which case they should be elided. It depends on the common path length of
+        // the current edge    and the new leaf i.e. the split may be at the
+        // first bit (in which case there is no leading    edge), or the split
+        // may be in the middle (requires both leading and post edges), or the
         //    split may be the final bit (no post edge).
         use Node::*;
         match path.last() {
@@ -385,8 +392,9 @@ impl<H: HasherT> MerkleTree<H> {
 
     /// Deletes a leaf node from the tree.
     ///
-    /// This is not an external facing API; the functionality is instead accessed by calling
-    /// [`MerkleTree::set`] with value set to [`Felt252Wrapper::ZERO`].
+    /// This is not an external facing API; the functionality is instead
+    /// accessed by calling [`MerkleTree::set`] with value set to
+    /// [`Felt252Wrapper::ZERO`].
     ///
     /// # Arguments
     ///
@@ -400,7 +408,8 @@ impl<H: HasherT> MerkleTree<H> {
         // must be a binary node. In either case we end up with a binary node
         // who's one child is deleted. This changes the binary to an edge node.
         //
-        // Note that its possible that there is no binary node -- if the resulting tree would be empty.
+        // Note that its possible that there is no binary node -- if the resulting tree
+        // would be empty.
         //
         // This new edge node may need to merge with the old binary node's parent node
         // and other remaining child node -- if they're also edges.
@@ -457,7 +466,8 @@ impl<H: HasherT> MerkleTree<H> {
             }
         };
 
-        // Check the parent of the new edge. If it is also an edge, then they must merge.
+        // Check the parent of the new edge. If it is also an edge, then they must
+        // merge.
         if let Some(node) = node_iter.next() {
             if let Node::Edge(edge) = nodes.get_mut(&node).unwrap() {
                 self.merge_edges(edge);
@@ -483,8 +493,9 @@ impl<H: HasherT> MerkleTree<H> {
 
     /// Generates a merkle-proof for a given `key`.
     ///
-    /// Returns vector of [`ProofNode`] which form a chain from the root to the key,
-    /// if it exists, or down to the node which proves that the key does not exist.
+    /// Returns vector of [`ProofNode`] which form a chain from the root to the
+    /// key, if it exists, or down to the node which proves that the key
+    /// does not exist.
     ///
     /// The nodes are returned in order, root first.
     ///
@@ -509,8 +520,8 @@ impl<H: HasherT> MerkleTree<H> {
             None => return Vec::new(),
         };
 
-        // A leaf node is redundant data as the information for it is already contained in the previous
-        // node.
+        // A leaf node is redundant data as the information for it is already contained
+        // in the previous node.
         if matches!(self.nodes.0.get(node).unwrap(), Node::Leaf(_)) {
             nodes.pop();
         }
@@ -525,18 +536,19 @@ impl<H: HasherT> MerkleTree<H> {
             .collect()
     }
 
-    /// Traverses from the current root towards the destination [Leaf](Node::Leaf) node.
-    /// Returns the list of nodes along the path.
+    /// Traverses from the current root towards the destination
+    /// [Leaf](Node::Leaf) node. Returns the list of nodes along the path.
     ///
     /// If the destination node exists, it will be the final node in the list.
     ///
-    /// This means that the final node will always be either a the destination [Leaf](Node::Leaf)
-    /// node, or an [Edge](Node::Edge) node who's path suffix does not match the leaf's path.
+    /// This means that the final node will always be either a the destination
+    /// [Leaf](Node::Leaf) node, or an [Edge](Node::Edge) node who's path
+    /// suffix does not match the leaf's path.
     ///
-    /// The final node can __not__ be a [Binary](Node::Binary) node since it would always be
-    /// possible to continue on towards the destination. Nor can it be an
-    /// [Unresolved](Node::Unresolved) node since this would be resolved to check if we can
-    /// travel further.
+    /// The final node can __not__ be a [Binary](Node::Binary) node since it
+    /// would always be possible to continue on towards the destination. Nor
+    /// can it be an [Unresolved](Node::Unresolved) node since this would be
+    /// resolved to check if we can travel further.
     ///
     /// # Arguments
     ///
@@ -583,13 +595,14 @@ impl<H: HasherT> MerkleTree<H> {
         }
     }
 
-    /// This is a convenience function which merges the edge node with its child __iff__ it is also
-    /// an edge.
+    /// This is a convenience function which merges the edge node with its child
+    /// __iff__ it is also an edge.
     ///
     /// Does nothing if the child is not also an edge node.
     ///
-    /// This can occur when mutating the tree (e.g. deleting a child of a binary node), and is an
-    /// illegal state (since edge nodes __must be__ maximal subtrees).
+    /// This can occur when mutating the tree (e.g. deleting a child of a binary
+    /// node), and is an illegal state (since edge nodes __must be__ maximal
+    /// subtrees).
     ///
     /// # Arguments
     ///

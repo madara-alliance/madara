@@ -1,15 +1,16 @@
 //! Utility to read the Starknet block form the Substrate block digest
 //!
-//! Following the wrapper block model, each one of the madara block contains a starknet block.
-//! This block is not only stored in the chain storage, but also pushed inton the wrapper block
-//! itself.
+//! Following the wrapper block model, each one of the madara block contains a
+//! starknet block. This block is not only stored in the chain storage, but also
+//! pushed inton the wrapper block itself.
 //!
-//! We expect the starknet pallet to push a log into the substrate digest in it's `on_finalize`
-//! hook. This log must contain the whole new starknet block.
+//! We expect the starknet pallet to push a log into the substrate digest in
+//! it's `on_finalize` hook. This log must contain the whole new starknet block.
 //!
-//! In the current state of this crate, only one single log must be pushed to the digest each block,
-//! and it should contain the starknet block. Pushing more log will make it impossible for this set
-//! of reader functions to operate properly.
+//! In the current state of this crate, only one single log must be pushed to
+//! the digest each block, and it should contain the starknet block. Pushing
+//! more log will make it impossible for this set of reader functions to operate
+//! properly.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::large_enum_variant)]
@@ -29,7 +30,7 @@ pub const MADARA_ENGINE_ID: ConsensusEngineId = [b'm', b'a', b'd', b'a'];
 
 pub const BLOCK_ENGINE_ID: ConsensusEngineId = [b'b', b'l', b'o', b'c'];
 pub const STATE_ENGINE_ID: ConsensusEngineId = [b's', b't', b'a', b't'];
-pub const CLASS_ENGINE_ID: ConsensusEngineId = [b'c', b'l', b'a', b's'];
+pub const CLASS_ENGINE_ID: ConsensusEngineId = [b'c', b'l', b'a', b'z'];
 
 /// A Madara log
 ///

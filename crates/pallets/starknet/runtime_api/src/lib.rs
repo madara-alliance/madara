@@ -16,6 +16,7 @@ pub extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use mp_contract::ContractAbi;
 use mp_simulations::{SimulatedTransaction, SimulationFlags};
 use sp_runtime::DispatchError;
 use starknet_api::api_core::{ChainId, ClassHash, ContractAddress, EntryPointSelector, Nonce};
@@ -43,6 +44,9 @@ sp_api::decl_runtime_apis! {
         fn call(address: ContractAddress, function_selector: EntryPointSelector, calldata: Calldata) -> Result<Vec<Felt252Wrapper>, DispatchError>;
         /// Returns the contract class hash at the given address.
         fn contract_class_hash_by_address(address: ContractAddress) -> ClassHash;
+        /// Returns the contract abi for the given class hash
+        fn contract_abi_by_class_hash(class_hash: ClassHash) ->
+        Option<ContractAbi>;
         /// Returns the contract class for the given class hash.
         fn contract_class_by_class_hash(class_hash: ClassHash) -> Option<ContractClass>;
         /// Returns the chain id.

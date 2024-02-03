@@ -1,4 +1,5 @@
-//! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
+//! Service and ServiceFactory implementation. Specialized wrapper over
+//! substrate service.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -12,11 +13,11 @@ use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_commitment_state_diff::{verify_l2, CommitmentStateDiffWorker};
-use mc_deoxys::state_updates::{StarknetStateUpdate, StateUpdateWrapper};
-use mc_deoxys::class_updates::StarknetClassUpdate;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
+use mp_block::state_update::StateUpdateWrapper;
+use mp_contract::class::ClassUpdateWrapper;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
 };
@@ -40,9 +41,9 @@ use sp_api::{ConstructRuntimeApi, ProvideRuntimeApi};
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_inherents::InherentData;
 use sp_offchain::STORAGE_PREFIX;
-use sp_runtime::DigestItem;
 use sp_runtime::testing::Digest;
 use sp_runtime::traits::Block as BlockT;
+use sp_runtime::DigestItem;
 
 use crate::genesis_block::MadaraGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
@@ -53,7 +54,8 @@ pub struct ExecutorDispatch;
 const MADARA_TASK_GROUP: &str = "madara";
 
 impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
-    /// Only enable the benchmarking host functions when we actually want to benchmark.
+    /// Only enable the benchmarking host functions when we actually want to
+    /// benchmark.
     #[cfg(feature = "runtime-benchmarks")]
     type ExtendHostFunctions = frame_benchmarking::benchmarking::HostFunctions;
     /// Otherwise we only use the default Substrate host functions.
@@ -69,7 +71,7 @@ impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
     }
 }
 
-pub(crate) type FullClient = sc_service::TFullClient<Block, RuntimeApi, NativeElseWasmExecutor<ExecutorDispatch>>;
+pub type FullClient = sc_service::TFullClient<Block, RuntimeApi, NativeElseWasmExecutor<ExecutorDispatch>>;
 type FullBackend = sc_service::TFullBackend<Block>;
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
@@ -366,7 +368,7 @@ pub fn new_full(
     let starknet_rpc_params = StarknetDeps {
         client: client.clone(),
         madara_backend: madara_backend.clone(),
-        overrides,
+        overrides: overrides.clone(),
         sync_service: sync_service.clone(),
         starting_block,
         genesis_provider: genesis_data.into(),
@@ -440,11 +442,11 @@ pub fn new_full(
         // manual-seal authorship
         if !sealing.is_default() {
             // NOTE(nils-mathieu):
-            //   For now I used a channel of size 100, this should be plently enough. That might
-            //   become a config option in the future.
+            //   For now I used a channel of size 100, this should be plently enough. That
+            // might   become a config option in the future.
             let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<mp_block::Block>(100);
-            let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StarknetStateUpdate>(100);
-            let (class_sender, class_receiver) = tokio::sync::mpsc::channel::<StarknetClassUpdate>(100);
+            let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StateUpdateWrapper>(100);
+            let (class_sender, class_receiver) = tokio::sync::mpsc::channel::<ClassUpdateWrapper>(100);
 
             run_manual_seal_authorship(
                 block_receiver,
@@ -468,6 +470,7 @@ pub fn new_full(
                 state_update_sender,
                 class_sender,
                 command_sink: command_sink.unwrap().clone(),
+                overrides: overrides.clone(),
             };
             tokio::spawn(async move {
                 mc_deoxys::sync(sender_config, fetch_config, rpc_port, l1_url).await;
@@ -587,8 +590,8 @@ pub fn new_full(
 #[allow(clippy::too_many_arguments)]
 fn run_manual_seal_authorship(
     block_receiver: tokio::sync::mpsc::Receiver<mp_block::Block>,
-    state_update_receiver: tokio::sync::mpsc::Receiver<StarknetStateUpdate>,
-    class_receiver: tokio::sync::mpsc::Receiver<StarknetClassUpdate>,
+    state_update_receiver: tokio::sync::mpsc::Receiver<StateUpdateWrapper>,
+    class_receiver: tokio::sync::mpsc::Receiver<ClassUpdateWrapper>,
     sealing: SealingMode,
     client: Arc<FullClient>,
     transaction_pool: Arc<FullPool<Block, FullClient>>,
@@ -613,8 +616,9 @@ where
 
     thread_local!(static TIMESTAMP: RefCell<u64> = RefCell::new(0));
 
-    /// Provide a mock duration starting at 0 in millisecond for timestamp inherent.
-    /// Each call will increment timestamp by slot_duration making Aura think time has passed.
+    /// Provide a mock duration starting at 0 in millisecond for timestamp
+    /// inherent. Each call will increment timestamp by slot_duration making
+    /// Aura think time has passed.
     struct MockTimestampInherentDataProvider;
 
     #[async_trait::async_trait]
@@ -651,10 +655,10 @@ where
         block_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<mp_block::Block>>,
 
         /// The receiver that we're using to receive commitment state diffs.
-        state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StarknetStateUpdate>>,
+        state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StateUpdateWrapper>>,
 
         /// The receiver that we're using to receive class updates.
-        class_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StarknetClassUpdate>>,
+        class_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<ClassUpdateWrapper>>,
     }
 
     impl<B, C> ConsensusDataProvider<B> for QueryBlockConsensusDataProvider<C>
@@ -668,33 +672,27 @@ where
             // listening for new blocks
             let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            let block_digest_item: DigestItem = sp_runtime::DigestItem::PreRuntime(
-                mp_digest_log::MADARA_ENGINE_ID,
-                Encode::encode(&block)
-            );
+            let block_digest_item: DigestItem =
+                sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
 
             // listening for new state
             let mut lock = self.state_update_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let state_update = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            let state_update_wrapper = StateUpdateWrapper::try_from(state_update).unwrap();
-            let state_update_digest_item: DigestItem = sp_runtime::DigestItem::PreRuntime(
-                mp_digest_log::STATE_ENGINE_ID,
-                Encode::encode(&state_update_wrapper),
-            );
+            let state_update_digest_item: DigestItem =
+                sp_runtime::DigestItem::PreRuntime(mp_digest_log::STATE_ENGINE_ID, Encode::encode(&state_update));
 
             // listening for new classes
             let mut lock = self.class_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let class = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            let class_digest_item: DigestItem = sp_runtime::DigestItem::PreRuntime(
-                mp_digest_log::CLASS_ENGINE_ID,
-                Encode::encode(&class)
-            );
+            let class_digest_item: DigestItem =
+                sp_runtime::DigestItem::PreRuntime(mp_digest_log::CLASS_ENGINE_ID, Encode::encode(&class));
 
             Ok(Digest { logs: vec![block_digest_item, state_update_digest_item, class_digest_item] })
         }
 
-        // fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) -> Result<Digest, Error>
-        // {     let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+        // fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) ->
+        // Result<Digest, Error> {     let mut lock =
+        // self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
         //     let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
         //     let block_digest_item: DigestItem =
         //         sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID,

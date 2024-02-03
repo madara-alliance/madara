@@ -100,7 +100,8 @@ impl SimulateTxVersionOffset for TransactionVersion {
 pub struct StarknetRPCExecutionResources {
     /// The number of cairo steps used
     pub steps: u64,
-    /// The number of unused memory cells (each cell is roughly equivalent to a step)
+    /// The number of unused memory cells (each cell is roughly equivalent to a
+    /// step)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_holes: Option<u64>,
     /// The number of range_check builtin instances

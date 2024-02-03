@@ -28,8 +28,8 @@ use crate::{BlockNumber, RUNTIME_API_VERSIONS};
 /// a.k.a `BLOCK_TIME`
 pub const MILLISECS_PER_BLOCK: u64 = 6000;
 
-// NOTE: Currently it is not possible to change the slot duration after the chain has started.
-//       Attempting to do so will brick block production.
+// NOTE: Currently it is not possible to change the slot duration after the
+// chain has started.       Attempting to do so will brick block production.
 pub const SLOT_DURATION: u64 = MILLISECS_PER_BLOCK;
 
 // To learn more about runtime versioning, see:
@@ -51,7 +51,8 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     state_version: 1,
 };
 
-/// The version information used to identify this runtime when compiled natively.
+/// The version information used to identify this runtime when compiled
+/// natively.
 #[cfg(feature = "std")]
 pub fn native_version() -> NativeVersion {
     NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
@@ -80,8 +81,9 @@ parameter_types! {
     pub const SS58Prefix: u8 = 42;
 }
 
-/// The current sealing mode being used. This is needed for the runtime to adjust its behavior
-/// accordingly, e.g. suppress Aura validations in `OnTimestampSet` for manual or instant sealing.
+/// The current sealing mode being used. This is needed for the runtime to
+/// adjust its behavior accordingly, e.g. suppress Aura validations in
+/// `OnTimestampSet` for manual or instant sealing.
 #[derive(Default, Clone, PartialEq, Decode, Encode, RuntimeDebug, Deserialize, Serialize)]
 pub enum SealingMode {
     #[default]

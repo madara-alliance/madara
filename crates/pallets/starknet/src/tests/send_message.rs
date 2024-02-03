@@ -20,8 +20,8 @@ const SEND_MESSAGE_CLASS_HASH: &str = "0x024e12108da2b3d3c80c7bc99aacdec97e44519
 const SEND_MESSAGE_TO_L1_SELECTOR: &str = "0x9139dbd19ca9654d773cd88f31af4c8d583beecc3362fb986dccfef5cf134f";
 
 // Troubleshooting notes:
-// Add println! to the necessary runtime method (e.g. print CallInfo structs or extended blockifier
-// message), then run:
+// Add println! to the necessary runtime method (e.g. print CallInfo structs or
+// extended blockifier message), then run:
 // cargo test --package pallet-starknet send_message -- --nocapture
 
 #[test]
@@ -57,7 +57,8 @@ fn messages_to_l1_are_stored() {
                 Felt252Wrapper::from(3u128), // Calldata len
                 class_hash,
                 salt,
-                Felt252Wrapper::ZERO, // Constructor calldata len (no explicit constructor declared)
+                Felt252Wrapper::ZERO, /* Constructor calldata len (no explicit constructor
+                                       * declared) */
             ],
             nonce: Felt252Wrapper::ONE,
             max_fee: u128::MAX,

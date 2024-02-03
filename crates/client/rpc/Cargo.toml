@@ -1,19 +1,19 @@
 [package]
-name = "mc-rpc"
-version.workspace = true
-edition.workspace = true
-description = "Starknet RPC compatibility layer for Substrate"
 authors = [
-  "Timothée Delabrouille <https://github.com/tdelabro>",
   "Substrate DevHub <https://github.com/substrate-developer-hub>",
+  "Timothée Delabrouille <https://github.com/tdelabro>",
 ]
+description = "Starknet RPC compatibility layer for Substrate"
+edition.workspace = true
 homepage = "https://github.com/keep-starknet-strange/madara"
 license = "MIT"
+name = "mc-rpc"
 publish = false
 repository = "https://github.com/keep-starknet-strange/madara"
+version.workspace = true
 
-[package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
+  [package.metadata.docs.rs]
+  targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 # Madara utils
@@ -48,11 +48,13 @@ starknet_api = { workspace = true, default-features = false }
 anyhow = { workspace = true }
 hex = { workspace = true, default-features = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
-  "server",
   "macros",
+  "server",
 ] }
 log = { workspace = true, default-features = true }
 mp-block = { workspace = true, default-features = true }
+mp-contract = { workspace = true, default-features = true }
+mp-convert = { workspace = true, default-features = true }
 mp-fee = { workspace = true, default-features = true }
 mp-felt = { workspace = true, default-features = true }
 mp-hashers = { workspace = true, default-features = true }
@@ -63,5 +65,5 @@ thiserror = { workspace = true }
 tokio = { workspace = true, default-features = true, features = ["time"] }
 
 [dev-dependencies]
-rstest = { workspace = true }
 pretty_assertions = { workspace = true }
+rstest = { workspace = true }

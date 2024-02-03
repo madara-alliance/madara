@@ -73,7 +73,8 @@ fn test_deploy_account_tx_hash() {
 
 #[test]
 fn test_declare_v0_tx_hash() {
-    // Computed with `calculate_declare_transaction_hash` from the cairo lang package
+    // Computed with `calculate_declare_transaction_hash` from the cairo lang
+    // package
     let expected_tx_hash =
         Felt252Wrapper::from_hex_be("0x052b849ca86ca1a1ce6ac7e069900a221b5741786bffe023804ef714f7bb46da").unwrap();
 
@@ -106,7 +107,8 @@ fn test_declare_v0_tx_hash() {
 
 #[test]
 fn test_declare_v1_tx_hash() {
-    // Computed with `calculate_declare_transaction_hash` from the cairo lang package
+    // Computed with `calculate_declare_transaction_hash` from the cairo lang
+    // package
     let expected_tx_hash =
         Felt252Wrapper::from_hex_be("0x077f205d4855199564663dc9810c1edfcf97573393033dedc3f12dac740aac13").unwrap();
 
@@ -140,7 +142,8 @@ fn test_declare_v1_tx_hash() {
 
 #[test]
 fn test_declare_v2_tx_hash() {
-    // Computed with `calculate_declare_transaction_hash` from the cairo lang package
+    // Computed with `calculate_declare_transaction_hash` from the cairo lang
+    // package
     let expected_tx_hash =
         Felt252Wrapper::from_hex_be("0x7ca2d13e00a7249a7f61cf65c20a20f2870276d4db00d816e836eb2ca9029ae").unwrap();
 

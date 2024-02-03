@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use blockifier::execution::contract_class::ContractClass;
 use frame_support::{Identity, StorageHasher};
+use mp_contract::ContractAbi;
 use mp_storage::StarknetStorageSchemaVersion;
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::{Backend, HeaderBackend, StorageProvider};
@@ -21,7 +22,8 @@ use crate::onchain_storage_schema;
 
 /// A handle containing multiple entities implementing `StorageOverride`
 pub struct OverrideHandle<B: BlockT> {
-    /// Contains one implementation of `StorageOverride` by version of the pallet storage schema
+    /// Contains one implementation of `StorageOverride` by version of the
+    /// pallet storage schema
     pub schemas: BTreeMap<StarknetStorageSchemaVersion, Box<dyn StorageOverride<B>>>,
     /// A non-failing way to retrieve the storage data
     pub fallback: Box<dyn StorageOverride<B>>,
@@ -49,11 +51,12 @@ impl<B: BlockT> OverrideHandle<B> {
     }
 }
 
-/// Something that can fetch Starknet-related data. This trait is quite similar to the runtime API,
-/// and indeed the implementation of it uses the runtime API.
-/// Having this trait is useful because it allows optimized implementations that fetch data from a
-/// State Backend with some assumptions about pallet-starknet's storage schema. Using such an
-/// optimized implementation avoids spawning a runtime and the overhead associated with it.
+/// Something that can fetch Starknet-related data. This trait is quite similar
+/// to the runtime API, and indeed the implementation of it uses the runtime
+/// API. Having this trait is useful because it allows optimized implementations
+/// that fetch data from a State Backend with some assumptions about
+/// pallet-starknet's storage schema. Using such an optimized implementation
+/// avoids spawning a runtime and the overhead associated with it.
 pub trait StorageOverride<B: BlockT>: Send + Sync {
     /// get storage
     fn get_storage_by_storage_key(
@@ -65,7 +68,8 @@ pub trait StorageOverride<B: BlockT>: Send + Sync {
 
     /// Return the class hash at the provided address for the provided block.
     fn contract_class_hash_by_address(&self, block_hash: B::Hash, address: ContractAddress) -> Option<ClassHash>;
-    /// Return the contract class at the provided address for the provided block.
+    /// Return the contract class at the provided address for the provided
+    /// block.
     fn contract_class_by_address(&self, block_hash: B::Hash, address: ContractAddress) -> Option<ContractClass>;
     /// Return the contract class for a provided class_hash and block hash.
     fn contract_class_by_class_hash(
@@ -73,6 +77,8 @@ pub trait StorageOverride<B: BlockT>: Send + Sync {
         block_hash: B::Hash,
         contract_class_hash: ClassHash,
     ) -> Option<ContractClass>;
+    /// Return the contract abi for a provided class_hash and block hash
+    fn contract_abi_by_class_hash(&self, block_hash: B::Hash, contract_class_hash: ClassHash) -> Option<ContractAbi>;
     /// Returns the nonce for a provided contract address and block hash.
     fn nonce(&self, block_hash: B::Hash, address: ContractAddress) -> Option<Nonce>;
 }
@@ -82,15 +88,16 @@ fn storage_prefix_build(module: &[u8], storage: &[u8]) -> Vec<u8> {
     [twox_128(module), twox_128(storage)].concat().to_vec()
 }
 
-/// Returns the storage key for single key maps using the Identity storage hasher.
+/// Returns the storage key for single key maps using the Identity storage
+/// hasher.
 fn storage_key_build(prefix: Vec<u8>, key: &[u8]) -> Vec<u8> {
     [prefix, Identity::hash(key)].concat()
 }
 
 /// A wrapper type for the Runtime API.
 ///
-/// This type implements `StorageOverride`, so it can be used when calling the runtime API is
-/// desired but a `dyn StorageOverride` is required.
+/// This type implements `StorageOverride`, so it can be used when calling the
+/// runtime API is desired but a `dyn StorageOverride` is required.
 pub struct RuntimeApiStorageOverride<B: BlockT, C> {
     client: Arc<C>,
     _marker: PhantomData<B>,
@@ -134,8 +141,8 @@ where
         api.contract_class_by_class_hash(block_hash, contract_class_hash).ok()?
     }
 
-    // Use the runtime api to fetch the class hash at the provided address for the provided block.
-    // # Arguments
+    // Use the runtime api to fetch the class hash at the provided address for the
+    // provided block. # Arguments
     //
     // * `block_hash` - The block hash
     // * `address` - The address to fetch the class hash for
@@ -166,6 +173,23 @@ where
         contract_class_hash: ClassHash,
     ) -> Option<ContractClass> {
         self.client.runtime_api().contract_class_by_class_hash(block_hash, contract_class_hash).ok()?
+    }
+
+    /// Return the contract ABI for a provided class_hash and block hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_hash` - The block hash
+    /// * `contract_class_hash` - The class hash to fetch the contract class for
+    ///
+    /// # Returns
+    /// * `Some(contract_abi)` - The contract ABI for the provided class hash and block hash
+    fn contract_abi_by_class_hash(
+        &self,
+        block_hash: <B as BlockT>::Hash,
+        contract_class_hash: ClassHash,
+    ) -> Option<ContractAbi> {
+        self.client.runtime_api().contract_abi_by_class_hash(block_hash, contract_class_hash).ok()?
     }
 
     /// Return the nonce for a provided contract address and block hash.

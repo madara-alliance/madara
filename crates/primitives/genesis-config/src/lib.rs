@@ -12,7 +12,8 @@ use serde_with::serde_as;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_crypto::FieldElement;
 
-/// A wrapper for FieldElement that implements serde's Serialize and Deserialize for hex strings.
+/// A wrapper for FieldElement that implements serde's Serialize and Deserialize
+/// for hex strings.
 #[serde_as]
 #[derive(Serialize, Deserialize, Copy, Clone)]
 pub struct HexFelt(#[serde_as(as = "UfeHex")] pub FieldElement);

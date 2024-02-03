@@ -3,11 +3,10 @@
 
 #[doc(hidden)]
 pub extern crate alloc;
+use alloc::vec::Vec;
 
 mod header;
 pub mod state_update;
-
-use alloc::vec::Vec;
 
 pub use header::*;
 use mp_felt::Felt252Wrapper;
@@ -24,6 +23,7 @@ pub type BlockTransactions = Vec<Transaction>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub enum BlockTag {
     #[cfg_attr(feature = "serde", serde(rename = "latest"))]
     Latest,

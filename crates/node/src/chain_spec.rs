@@ -15,13 +15,15 @@ use crate::constants::DEV_CHAIN_ID;
 pub const GENESIS_ASSETS_DIR: &str = "genesis-assets/";
 pub const GENESIS_ASSETS_FILE: &str = "genesis.json";
 
-/// Specialized `ChainSpec`. This is a specialization of the general Substrate ChainSpec type.
+/// Specialized `ChainSpec`. This is a specialization of the general Substrate
+/// ChainSpec type.
 pub type ChainSpec = sc_service::GenericChainSpec<RuntimeGenesisConfig>;
 
 /// Specialized `ChainSpec` for development.
 pub type DevChainSpec = sc_service::GenericChainSpec<DevGenesisExt>;
 
-/// Extension for the dev genesis config to support a custom changes to the genesis state.
+/// Extension for the dev genesis config to support a custom changes to the
+/// genesis state.
 #[derive(Serialize, Deserialize)]
 pub struct DevGenesisExt {
     /// Genesis config.
@@ -30,11 +32,13 @@ pub struct DevGenesisExt {
     sealing: SealingMode,
 }
 
-/// The `sealing` from the `DevGenesisExt` is passed to the runtime via the storage. The runtime
-/// can then use this information to adjust accordingly. This is just a common way to pass
-/// information from the chain spec to the runtime.
+/// The `sealing` from the `DevGenesisExt` is passed to the runtime via the
+/// storage. The runtime can then use this information to adjust accordingly.
+/// This is just a common way to pass information from the chain spec to the
+/// runtime.
 ///
-/// NOTE: if `sealing` is `None`, then the runtime will use the default sealing mode.
+/// NOTE: if `sealing` is `None`, then the runtime will use the default sealing
+/// mode.
 impl sp_runtime::BuildStorage for DevGenesisExt {
     fn assimilate_storage(&self, storage: &mut Storage) -> Result<(), String> {
         BasicExternalities::execute_with_storage(storage, || {

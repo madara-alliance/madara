@@ -52,8 +52,9 @@ where
     type Item = ();
 
     // CommitmentStateDiffWorker is a state machine with two states
-    // state 1: waiting for some StorageEvent to happen, `commitment_state_diff` field is `None`
-    // state 2: waiting for the channel to be ready, `commitment_state_diff` field is `Some`
+    // state 1: waiting for some StorageEvent to happen, `commitment_state_diff`
+    // field is `None` state 2: waiting for the channel to be ready,
+    // `commitment_state_diff` field is `Some`
     fn poll_next(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
         let self_as_mut = self.get_mut();
         if self_as_mut.msg.is_none() {
@@ -160,8 +161,8 @@ where
         }
         let prefix = &full_storage_key.0[..32];
 
-        // All the `try_into` are safe to `unwrap` because we know what the storage contains
-        // and therefore what size it is
+        // All the `try_into` are safe to `unwrap` because we know what the storage
+        // contains and therefore what size it is
         if prefix == *SN_NONCE_PREFIX {
             let contract_address =
                 ContractAddress(PatriciaKey(StarkFelt(full_storage_key.0[32..].try_into().unwrap())));
@@ -208,9 +209,10 @@ where
             accessed_addrs.insert(contract_address);
         } else if prefix == *SN_COMPILED_CLASS_HASH_PREFIX {
             let class_hash = ClassHash(StarkFelt(full_storage_key.0[32..].try_into().unwrap()));
-            // In the current state of starknet protocol, a compiled class hash can not be erased, so we should
-            // never see `change` being `None`. But there have been an "erase contract class" mechanism live on
-            // the network during the Regenesis migration. Better safe than sorry.
+            // In the current state of starknet protocol, a compiled class hash can not be
+            // erased, so we should never see `change` being `None`. But there
+            // have been an "erase contract class" mechanism live on the network
+            // during the Regenesis migration. Better safe than sorry.
             let compiled_class_hash =
                 CompiledClassHash(change.map(|data| StarkFelt(data.0.clone().try_into().unwrap())).unwrap_or_default());
 
@@ -224,32 +226,36 @@ where
 pub async fn verify_l2(mut rx: mpsc::Receiver<BlockDAData>) {
     while let Some(_rx) = rx.next().await {
         // TODO: retrieve and deal with state commitment accross L1
-        // println!("➡️ block_hash {:?} with {:?}", block_hash, state_commitment(csd).0);
-        // update_l2({block_number, block_hash, state_commitment})
+        // println!("➡️ block_hash {:?} with {:?}", block_hash,
+        // state_commitment(csd).0); update_l2({block_number,
+        // block_hash, state_commitment})
     }
 }
 
 // /// Get L2 state commitment of a Block from a CommitmentStateDiff
 // pub fn state_commitment(csd: CommitmentStateDiff) -> Felt252Wrapper {
 //     let contracts_tree_root = {
-//         let mut contracts_tree = StateCommitmentTree::<PedersenHasher>::default();
+//         let mut contracts_tree =
+// StateCommitmentTree::<PedersenHasher>::default();
 
 //         for (address, class_hash) in csd.address_to_class_hash {
 //             let default_nonce = Nonce::default();
-//             let nonce = csd.address_to_nonce.get(&address).unwrap_or(&default_nonce);
+//             let nonce =
+// csd.address_to_nonce.get(&address).unwrap_or(&default_nonce);
 
-//             let mut storage_tree = StateCommitmentTree::<PedersenHasher>::default();
+//             let mut storage_tree =
+// StateCommitmentTree::<PedersenHasher>::default();
 
-//             let default_storage_updates = IndexMap::<StarknetStorageKey, StarkFelt>::default();
-//             let storage_updates =
-// csd.storage_updates.get(&address).unwrap_or(&default_storage_updates);             for (key,
-// value) in storage_updates {                 storage_tree.set((*key).into(), (*value).into());
-//             }
+//             let default_storage_updates = IndexMap::<StarknetStorageKey,
+// StarkFelt>::default();             let storage_updates =
+// csd.storage_updates.get(&address).unwrap_or(&default_storage_updates);
+// for (key, value) in storage_updates {
+// storage_tree.set((*key).into(), (*value).into());             }
 
 //             let storage_root = storage_tree.commit();
-//             let contract_state_hash = calculate_contract_state_hash::<PedersenHasher>(
-//                 class_hash.into(),
-//                 storage_root.into(),
+//             let contract_state_hash =
+// calculate_contract_state_hash::<PedersenHasher>(
+// class_hash.into(),                 storage_root.into(),
 //                 (*nonce).into(),
 //             );
 
@@ -265,14 +271,14 @@ pub async fn verify_l2(mut rx: mpsc::Receiver<BlockDAData>) {
 //             .iter()
 //             .map(|(_, compiled_class_hash)| {
 //
-// calculate_class_commitment_leaf_hash::<PoseidonHasher>((*compiled_class_hash).into())
-// })             .collect();
-//         calculate_class_commitment_tree_root_hash::<PoseidonHasher>(&class_hashes)
-//     };
+// calculate_class_commitment_leaf_hash::<PoseidonHasher>((*
+// compiled_class_hash).into()) })             .collect();
+//         calculate_class_commitment_tree_root_hash::<PoseidonHasher>(&
+// class_hashes)     };
 
 //     if classes_tree_root == Felt252Wrapper::ZERO {
 //         contracts_tree_root
 //     } else {
-//         calculate_state_commitment::<PoseidonHasher>(contracts_tree_root, classes_tree_root)
-//     }
+//         calculate_state_commitment::<PoseidonHasher>(contracts_tree_root,
+// classes_tree_root)     }
 // }

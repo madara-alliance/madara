@@ -17,20 +17,23 @@ where
     BE: Backend<B>,
     H: HasherT,
 {
-    // Before storing the new block in the Madara backend database, we want to make sure that the
-    // wrapped Starknet block it contains is the same that we can find in the storage at this height.
-    // Then we will store the two block hashes (wrapper and wrapped) alongside in our db.
+    // Before storing the new block in the Madara backend database, we want to make
+    // sure that the wrapped Starknet block it contains is the same that we can
+    // find in the storage at this height. Then we will store the two block
+    // hashes (wrapper and wrapped) alongside in our db.
 
     let substrate_block_hash = header.hash();
     match mp_digest_log::find_starknet_block(header.digest()) {
         Ok(digest_starknet_block) => {
-            // Read the runtime storage in order to find the Starknet block stored under this Substrate block
+            // Read the runtime storage in order to find the Starknet block stored under
+            // this Substrate block
             let opt_storage_starknet_block = get_block_by_block_hash(client, substrate_block_hash);
             match opt_storage_starknet_block {
                 Some(storage_starknet_block) => {
                     let digest_starknet_block_hash = digest_starknet_block.header().hash::<H>();
                     let storage_starknet_block_hash = storage_starknet_block.header().hash::<H>();
-                    // Ensure the two blocks sources (chain storage and block digest) agree on the block content
+                    // Ensure the two blocks sources (chain storage and block digest) agree on the
+                    // block content
                     if digest_starknet_block_hash != storage_starknet_block_hash {
                         Err(format!(
                             "Starknet block hash mismatch: madara consensus digest ({digest_starknet_block_hash:?}), \

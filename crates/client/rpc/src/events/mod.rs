@@ -40,8 +40,9 @@ where
     ///
     /// # Returns
     ///
-    /// * `(transaction_receipts: Vec<TransactionReceiptWrapper>, block: Block)` - A tuple of the
-    ///   block transaction receipts with events in block_id and an instance of Block
+    /// * `(transaction_receipts: Vec<TransactionReceiptWrapper>, block: Block)`
+    ///   - A tuple of the block transaction receipts with events in block_id
+    ///   and an instance of Block
     pub fn get_block_events(&self, block_number: u64) -> Result<Vec<EmittedEvent>, StarknetRpcApiError> {
         let substrate_block_hash =
             self.substrate_block_hash_from_starknet_block(BlockId::Number(block_number)).map_err(|e| {

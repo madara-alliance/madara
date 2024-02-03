@@ -1,15 +1,17 @@
 //! A database backend storing data about madara chain
 //!
 //! # Usefulness
-//! Starknet RPC methods use Starknet block hash as arguments to access on-chain values.
-//! Because the Starknet blocks are wrapped inside the Substrate ones, we have no simple way to
-//! index the chain storage using this hash.
-//! Rather than iterating over all the Substrate blocks in order to find the one wrapping the
-//! requested Starknet one, we maintain a StarknetBlockHash to SubstrateBlock hash mapping.
+//! Starknet RPC methods use Starknet block hash as arguments to access on-chain
+//! values. Because the Starknet blocks are wrapped inside the Substrate ones,
+//! we have no simple way to index the chain storage using this hash.
+//! Rather than iterating over all the Substrate blocks in order to find the one
+//! wrapping the requested Starknet one, we maintain a StarknetBlockHash to
+//! SubstrateBlock hash mapping.
 //!
 //! # Databases supported
-//! `paritydb` and `rocksdb` are both supported, behind the `kvdb-rocksd` and `parity-db` feature
-//! flags. Support for custom databases is possible but not supported yet.
+//! `paritydb` and `rocksdb` are both supported, behind the `kvdb-rocksd` and
+//! `parity-db` feature flags. Support for custom databases is possible but not
+//! supported yet.
 
 mod error;
 pub use error::DbError;
@@ -54,8 +56,8 @@ pub(crate) mod columns {
     pub const TRANSACTION_MAPPING: u32 = 2;
     pub const SYNCED_MAPPING: u32 = 3;
     pub const DA: u32 = 4;
-    /// This column is used to map starknet block hashes to a list of transaction hashes that are
-    /// contained in the block.
+    /// This column is used to map starknet block hashes to a list of
+    /// transaction hashes that are contained in the block.
     ///
     /// This column should only be accessed if the `--cache` flag is enabled.
     pub const STARKNET_TRANSACTION_HASHES_CACHE: u32 = 5;
@@ -106,7 +108,9 @@ impl<B: BlockT> Backend<B> {
                         paritydb_path: starknet_database_dir(db_config_dir, "paritydb"),
                         cache_size: 0,
                     },
-                    _ => return Err("Supported db sources: `rocksdb` | `paritydb` | `auto`".to_string()),
+                    _ => {
+                        return Err("Supported db sources: `rocksdb` | `paritydb` | `auto`".to_string());
+                    }
                 },
             },
             cache_more_things,

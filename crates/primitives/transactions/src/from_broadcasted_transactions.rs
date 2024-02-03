@@ -368,8 +368,9 @@ mod tests {
     }
 
     fn get_flattened_sierra_contract_class() -> FlattenedSierraClass {
-        // when HelloStarknet is compiled into Sierra, the output does not have inputs: [] in the events ABI
-        // this has been manually added right now because starknet-rs expects it
+        // when HelloStarknet is compiled into Sierra, the output does not have inputs:
+        // [] in the events ABI this has been manually added right now because
+        // starknet-rs expects it
         let contract_class_bytes =
             include_bytes!("../../../../cairo-contracts/build/cairo_1/HelloStarknet.sierra.json");
 
@@ -452,7 +453,8 @@ mod tests {
             nonce: FieldElement::default(),
             contract_class: Arc::new(flattened_contract_class),
             sender_address: FieldElement::default(),
-            compiled_class_hash: FieldElement::from_hex_be("0x1").unwrap(), // incorrect compiled class hash
+            compiled_class_hash: FieldElement::from_hex_be("0x1").unwrap(), /* incorrect compiled
+                                                                             * class hash */
             is_query: false,
         };
 

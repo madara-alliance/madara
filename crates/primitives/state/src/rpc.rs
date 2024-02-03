@@ -103,8 +103,8 @@ pub struct NonceUpdate {
     pub nonce: Felt252Wrapper,
 }
 
-/// The change in state applied in this block, given as a mapping of addresses to the new values
-/// and/or new contracts.
+/// The change in state applied in this block, given as a mapping of addresses
+/// to the new values and/or new contracts.
 #[serde_with::serde_as]
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]

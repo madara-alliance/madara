@@ -19,7 +19,8 @@ fn given_default_runtime_with_fees_enabled_txn_deducts_fee_token() {
         let address = get_account_address(None, AccountType::V0(AccountTypeV0Inner::NoValidate));
         let (initial_balance_low, initial_balance_high) = get_balance_default_mock(address);
 
-        // transfer to zero fee token so that the only change in balance can happen because of fees
+        // transfer to zero fee token so that the only change in balance can happen
+        // because of fees
         assert_ok!(default_mock::Starknet::invoke(origin, build_invoke_transaction(address)));
         let (final_balance_low, final_balance_high) = get_balance_default_mock(address);
 
@@ -38,7 +39,8 @@ fn given_default_runtime_with_fees_disabled_txn_does_not_deduct_fee_token() {
         let address = get_account_address(None, AccountType::V0(AccountTypeV0Inner::NoValidate));
         let (initial_balance_low, initial_balance_high) = get_balance_fees_disabled_mock(address);
 
-        // transfer to zero fee token so that the only change in balance can happen because of fees
+        // transfer to zero fee token so that the only change in balance can happen
+        // because of fees
         assert_ok!(fees_disabled_mock::Starknet::invoke(origin, build_invoke_transaction(address)));
         let (final_balance_low, final_balance_high) = get_balance_fees_disabled_mock(address);
 

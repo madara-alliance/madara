@@ -24,16 +24,18 @@ impl HasherT for PoseidonHasher {
     /// The hash of the data.
     fn hash_bytes(data: &[u8]) -> Felt252Wrapper {
         // Calculate the number of 31-byte chunks we'll need, rounding up.
-        // (1 byte is used padding to prevent the value of field from being greater than modular)
-        // TODO: It is need a way to truncate bytes to fit into values smaller than modular(optimization)
+        // (1 byte is used padding to prevent the value of field from being greater than
+        // modular) TODO: It is need a way to truncate bytes to fit into values
+        // smaller than modular(optimization)
         const CHUNK_SIZE: usize = 31;
         let chunks = data.chunks(CHUNK_SIZE);
 
         let mut field_element_vector: Vec<FieldElement> = Vec::with_capacity(chunks.len());
 
         for chunk in chunks {
-            // It is safe to unwrap here because we know that the chunk size is 31 and the value can not
-            // overflow than the field's modulus value. In more detail, the FieldElement Maximum value is 2^251
+            // It is safe to unwrap here because we know that the chunk size is 31 and the
+            // value can not overflow than the field's modulus value. In more
+            // detail, the FieldElement Maximum value is 2^251
             // + 17 * 2^192. So the chunk (31 bytes is 248 bits) is smaller than the maximum value (== 2^248 - 1
             // < 2^251 + 17 * 2^192). So it is safe to unwrap here.
             field_element_vector.push(FieldElement::from_byte_slice_be(chunk).unwrap())

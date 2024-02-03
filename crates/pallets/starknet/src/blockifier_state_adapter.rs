@@ -15,11 +15,13 @@ use starknet_crypto::FieldElement;
 
 use crate::{Config, Pallet};
 
-/// Empty struct that implements the traits needed by the blockifier/starknet in rust.
+/// Empty struct that implements the traits needed by the blockifier/starknet in
+/// rust.
 ///
-/// We feed this struct when executing a transaction so that we directly use the substrate storage
-/// and not an extra layer that would add overhead.
-/// We don't implement those traits directly on the pallet to avoid compilation problems.
+/// We feed this struct when executing a transaction so that we directly use the
+/// substrate storage and not an extra layer that would add overhead.
+/// We don't implement those traits directly on the pallet to avoid compilation
+/// problems.
 pub struct BlockifierStateAdapter<T: Config> {
     storage_update: BTreeMap<ContractStorageKey, StarkFelt>,
     class_hash_update: usize,
@@ -121,7 +123,8 @@ impl<T: Config> State for BlockifierStateAdapter<T> {
         Ok(())
     }
 
-    /// As the state is updated during the execution, return an empty [StateDiff]
+    /// As the state is updated during the execution, return an empty
+    /// [StateDiff]
     ///
     /// There is no reason to use it in the current implementation of the trait
     fn to_state_diff(&self) -> CommitmentStateDiff {
