@@ -61,14 +61,13 @@ impl<T: crate::Config> From<GenesisLoader> for GenesisConfig<T> {
 
 /// Create a `ContractClass` from a JSON string
 ///
-/// This function takes a JSON string (`json_str`) containing the JSON
-/// representation of a ContractClass
+/// This function takes a JSON string (`json_str`) containing the JSON representation of a
+/// ContractClass
 ///
-/// `ContractClassV0` can be read directly from the JSON because the Serde
-/// methods have been implemented in the blockifier
+/// `ContractClassV0` can be read directly from the JSON because the Serde methods have been
+/// implemented in the blockifier
 ///
-/// `ContractClassV1` needs to be read in Casm and then converted to Contract
-/// Class V1
+/// `ContractClassV1` needs to be read in Casm and then converted to Contract Class V1
 pub fn read_contract_class_from_json(json_str: &str, version: u8) -> StarknetContractClass {
     if version == 0 {
         return StarknetContractClass::V0(

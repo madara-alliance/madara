@@ -201,8 +201,7 @@ pub fn get_declare_dummy(
     tx.into()
 }
 
-/// Returns a dummy deploy account transaction for the given salt and account
-/// type
+/// Returns a dummy deploy account transaction for the given salt and account type
 pub fn get_deploy_account_dummy(
     nonce: Felt252Wrapper,
     salt: Felt252Wrapper,

@@ -1,7 +1,7 @@
-//! L2 validity rollup, settling on Ethereum or as a L3 application-specific
-//! rollup, settling on public Starknet L2.
-//! For now this is the same because we don't support yet validity proofs and
-//! state updates to another layer.
+//! L2 validity rollup, settling on Ethereum or as a L3 application-specific rollup, settling on
+//! public Starknet L2.
+//! For now this is the same because we don't support yet validity proofs and state updates to
+//! another layer.
 #![cfg_attr(not(feature = "std"), no_std)]
 // `construct_runtime!` does a lot of recursion and requires us to increase the limit to 256.
 #![recursion_limit = "256"]
@@ -59,8 +59,7 @@ use starknet_api::transaction::{Calldata, Event as StarknetEvent, Fee, MessageTo
 /// Import the types.
 pub use types::*;
 
-// Create the runtime by composing the FRAME pallets that were previously
-// configured.
+// Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
     pub struct Runtime {
         System: frame_system,

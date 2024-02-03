@@ -303,8 +303,7 @@ fn vec_of_felt_to_calldata(felts: &[Felt252Wrapper]) -> sttx::Calldata {
 impl From<sttx::DeclareTransactionV0V1> for DeclareTransactionV0 {
     fn from(remote: sttx::DeclareTransactionV0V1) -> Self {
         DeclareTransactionV0 {
-            max_fee: remote.max_fee.0, /* This assumes the `Fee` type's internal value can be
-                                        * accessed this way. */
+            max_fee: remote.max_fee.0, // This assumes the `Fee` type's internal value can be accessed this way.
             signature: signature_to_vec_of_felt(&remote.signature),
             nonce: remote.nonce.into(),
             class_hash: remote.class_hash.into(),
@@ -317,8 +316,7 @@ impl From<sttx::DeclareTransactionV0V1> for DeclareTransactionV0 {
 impl From<sttx::DeclareTransactionV0V1> for DeclareTransactionV1 {
     fn from(remote: sttx::DeclareTransactionV0V1) -> Self {
         DeclareTransactionV1 {
-            max_fee: remote.max_fee.0, /* Assuming `Fee` type's inner value can be accessed with
-                                        * `.0`. */
+            max_fee: remote.max_fee.0, // Assuming `Fee` type's inner value can be accessed with `.0`.
             signature: signature_to_vec_of_felt(&remote.signature),
             nonce: remote.nonce.into(),
             class_hash: remote.class_hash.into(),
@@ -332,8 +330,7 @@ impl From<sttx::DeclareTransactionV0V1> for DeclareTransactionV1 {
 impl From<sttx::DeclareTransactionV2> for DeclareTransactionV2 {
     fn from(remote: sttx::DeclareTransactionV2) -> Self {
         DeclareTransactionV2 {
-            max_fee: remote.max_fee.0, /* Assuming `Fee` type's inner value can be accessed with
-                                        * `.0`. */
+            max_fee: remote.max_fee.0, // Assuming `Fee` type's inner value can be accessed with `.0`.
             signature: signature_to_vec_of_felt(&remote.signature),
             nonce: remote.nonce.into(),
             class_hash: remote.class_hash.into(),
@@ -344,8 +341,7 @@ impl From<sttx::DeclareTransactionV2> for DeclareTransactionV2 {
     }
 }
 
-// Utility function to convert `TransactionSignature` into a vector of
-// `Felt252Wrapper`
+// Utility function to convert `TransactionSignature` into a vector of `Felt252Wrapper`
 fn signature_to_vec_of_felt(sig: &sttx::TransactionSignature) -> Vec<Felt252Wrapper> {
     sig.0.iter().map(|&f| Felt252Wrapper::from(f)).collect()
 }

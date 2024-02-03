@@ -40,12 +40,10 @@ impl<B: BlockT> MappingDb<B> {
         }
     }
 
-    /// Return the hash of the Substrate block wrapping the Starknet block with
-    /// given hash
+    /// Return the hash of the Substrate block wrapping the Starknet block with given hash
     ///
-    /// Under some circumstances it can return multiples blocks hashes, meaning
-    /// that the result has to be checked against the actual blockchain
-    /// state in order to find the good one.
+    /// Under some circumstances it can return multiples blocks hashes, meaning that the result has
+    /// to be checked against the actual blockchain state in order to find the good one.
     pub fn block_hash(&self, starknet_block_hash: &H256) -> Result<Option<Vec<B::Hash>>, String> {
         match self.db.get(crate::columns::BLOCK_MAPPING, &starknet_block_hash.encode()) {
             Some(raw) => Ok(Some(Vec::<B::Hash>::decode(&mut &raw[..]).map_err(|e| format!("{:?}", e))?)),
@@ -53,8 +51,7 @@ impl<B: BlockT> MappingDb<B> {
         }
     }
 
-    /// Register that a Substrate block has been seen, without it containing a
-    /// Starknet one
+    /// Register that a Substrate block has been seen, without it containing a Starknet one
     pub fn write_none(&self, block_hash: B::Hash) -> Result<(), String> {
         let _lock = self.write_lock.lock();
 
@@ -67,8 +64,7 @@ impl<B: BlockT> MappingDb<B> {
         Ok(())
     }
 
-    /// Register that a Substate block has been seen and map it to the Statknet
-    /// block it contains
+    /// Register that a Substate block has been seen and map it to the Statknet block it contains
     pub fn write_hashes(&self, commitment: MappingCommitment<B>) -> Result<(), String> {
         let _lock = self.write_lock.lock();
 

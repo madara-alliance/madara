@@ -1,5 +1,5 @@
-//! Contains constructs for describing the nodes in a Binary Merkle Patricia
-//! Tree used by Starknet.
+//! Contains constructs for describing the nodes in a Binary Merkle Patricia Tree
+//! used by Starknet.
 //!
 //! For more information about how these Starknet trees are structured, see
 //! [`MerkleTree`](super::merkle_tree::MerkleTree).
@@ -124,9 +124,9 @@ impl From<Direction> for bool {
 impl BinaryNode {
     /// Maps the key's bit at the binary node's height to a [Direction].
     ///
-    /// This can be used to check which direction the key describes in the
-    /// context of this binary node i.e. which direction the child along the
-    /// key's path would take.
+    /// This can be used to check which direction the key describes in the context
+    /// of this binary node i.e. which direction the child along the key's path would
+    /// take.
     ///
     /// # Arguments
     ///
@@ -202,8 +202,8 @@ impl Node {
         }
     }
 
-    /// Returns true if the node represents an empty node -- this is defined as
-    /// a node with the [Felt252Wrapper::ZERO].
+    /// Returns true if the node represents an empty node -- this is defined as a node
+    /// with the [Felt252Wrapper::ZERO].
     ///
     /// This can occur for the root node in an empty graph.
     pub fn is_empty(&self) -> bool {
@@ -218,8 +218,7 @@ impl Node {
         matches!(self, Node::Binary(..))
     }
 
-    /// Convert to node to binary node type (returns None if it's not a binary
-    /// node).
+    /// Convert to node to binary node type (returns None if it's not a binary node).
     pub fn as_binary(&self) -> Option<&BinaryNode> {
         match self {
             Node::Binary(binary) => Some(binary),
@@ -227,8 +226,7 @@ impl Node {
         }
     }
 
-    /// Convert to node to edge node type (returns None if it's not a edge
-    /// node).
+    /// Convert to node to edge node type (returns None if it's not a edge node).
     pub fn as_edge(&self) -> Option<&EdgeNode> {
         match self {
             Node::Edge(edge) => Some(edge),
@@ -248,8 +246,7 @@ impl Node {
 }
 
 impl EdgeNode {
-    /// Returns true if the edge node's path matches the same path given by the
-    /// key.
+    /// Returns true if the edge node's path matches the same path given by the key.
     ///
     /// # Arguments
     ///
@@ -258,8 +255,7 @@ impl EdgeNode {
         self.path == key[(self.height as usize)..(self.height + self.path.len() as u64) as usize]
     }
 
-    /// Returns the common bit prefix between the edge node's path and the given
-    /// key.
+    /// Returns the common bit prefix between the edge node's path and the given key.
     ///
     /// This is calculated with the edge's height taken into account.
     ///

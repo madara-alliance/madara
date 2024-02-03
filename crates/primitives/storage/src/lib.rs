@@ -7,8 +7,7 @@ use alloc::vec::Vec;
 use lazy_static::lazy_static;
 use sp_io::hashing::twox_128;
 
-/// Current version of pallet Starknet's storage schema is stored under this
-/// key.
+/// Current version of pallet Starknet's storage schema is stored under this key.
 pub const PALLET_STARKNET_SCHEMA: &[u8] = b":starknet_schema";
 
 /// System storage items.

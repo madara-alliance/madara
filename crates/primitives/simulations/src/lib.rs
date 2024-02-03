@@ -91,8 +91,7 @@ pub struct FeeEstimate {
     pub gas_consumed: u64,
     /// The gas price (in gwei) that was used in the cost estimation
     pub gas_price: u64,
-    /// The estimated fee for the transaction (in gwei), product of gas_consumed
-    /// and gas_price
+    /// The estimated fee for the transaction (in gwei), product of gas_consumed and gas_price
     pub overall_fee: u64,
 }
 
@@ -132,8 +131,8 @@ pub struct InvokeTransactionTrace {
 pub struct DeployAccountTransactionTrace {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validate_invocation: Option<FunctionInvocation>,
-    /// The trace of the __execute__ call or constructor call, depending on the
-    /// transaction type (none for declare transactions)
+    /// The trace of the __execute__ call or constructor call, depending on the transaction type
+    /// (none for declare transactions)
     pub constructor_invocation: FunctionInvocation,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fee_transfer_invocation: Option<FunctionInvocation>,
@@ -147,8 +146,8 @@ pub struct DeployAccountTransactionTrace {
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct L1HandlerTransactionTrace {
-    /// The trace of the __execute__ call or constructor call, depending on the
-    /// transaction type (none for declare transactions)
+    /// The trace of the __execute__ call or constructor call, depending on the transaction type
+    /// (none for declare transactions)
     pub function_invocation: FunctionInvocation,
     /// The state diffs induced by the transaction
     #[serde(skip_serializing_if = "Option::is_none")]

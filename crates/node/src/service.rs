@@ -1,5 +1,4 @@
-//! Service and ServiceFactory implementation. Specialized wrapper over
-//! substrate service.
+//! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -616,9 +615,8 @@ where
 
     thread_local!(static TIMESTAMP: RefCell<u64> = RefCell::new(0));
 
-    /// Provide a mock duration starting at 0 in millisecond for timestamp
-    /// inherent. Each call will increment timestamp by slot_duration making
-    /// Aura think time has passed.
+    /// Provide a mock duration starting at 0 in millisecond for timestamp inherent.
+    /// Each call will increment timestamp by slot_duration making Aura think time has passed.
     struct MockTimestampInherentDataProvider;
 
     #[async_trait::async_trait]
@@ -690,9 +688,8 @@ where
             Ok(Digest { logs: vec![block_digest_item, state_update_digest_item, class_digest_item] })
         }
 
-        // fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) ->
-        // Result<Digest, Error> {     let mut lock =
-        // self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+        // fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) -> Result<Digest, Error>
+        // {     let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
         //     let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
         //     let block_digest_item: DigestItem =
         //         sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID,

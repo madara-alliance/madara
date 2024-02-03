@@ -46,8 +46,8 @@ lazy_static! {
     }));
 }
 
-/// The configuration of the worker responsible for fetching new blocks and
-/// state updates from the feeder.
+/// The configuration of the worker responsible for fetching new blocks and state updates from the
+/// feeder.
 #[derive(Clone, Debug)]
 pub struct FetchConfig {
     /// The URL of the sequencer gateway.

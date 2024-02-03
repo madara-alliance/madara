@@ -14,9 +14,9 @@ use crate::tests::constants::*;
 use crate::types::ContractStorageKey;
 
 /// Returns the storage key for a given storage name, keys and offset.
-/// Calculates pedersen(sn_keccak(storage_name), keys) + storage_key_offset
-/// which is the key in the starknet contract for storage_name(key_1, key_2,
-/// ..., key_n). https://docs.starknet.io/documentation/architecture_and_concepts/Contracts/contract-storage/#storage_variables
+/// Calculates pedersen(sn_keccak(storage_name), keys) + storage_key_offset which is the key in the
+/// starknet contract for storage_name(key_1, key_2, ..., key_n).
+/// https://docs.starknet.io/documentation/architecture_and_concepts/Contracts/contract-storage/#storage_variables
 pub fn get_storage_key(
     address: &ContractAddress,
     storage_name: &str,
@@ -50,8 +50,7 @@ pub enum AccountTypeV1Inner {
     NoValidate,
 }
 
-/// Returns the account address, class hash and calldata given an account type
-/// and given deploy salt
+/// Returns the account address, class hash and calldata given an account type and given deploy salt
 pub fn account_helper(account_type: AccountType) -> (ClassHash, Calldata) {
     let account_class_hash = get_account_class_hash(account_type);
     let calldata = get_account_calldata(account_type);

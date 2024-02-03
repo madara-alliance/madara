@@ -1,9 +1,9 @@
 //! A worker syncing the Madara db
 //!
 //! # Role
-//! The `MappingSyncWorker` listen to new Substrate blocks and read their digest
-//! to find `pallet-starknet` logs. Those logs should contain the data necessary
-//! to update the Madara mapping db: a starknet block header.
+//! The `MappingSyncWorker` listen to new Substrate blocks and read their digest to find
+//! `pallet-starknet` logs. Those logs should contain the data necessary to update the Madara
+//! mapping db: a starknet block header.
 //!
 //! # Usage
 //! The madara node should spawn a `MappingSyncWorker` among it's services.
@@ -27,8 +27,7 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 
-/// The worker in charge of syncing the Madara db when it receive a new
-/// Substrate block
+/// The worker in charge of syncing the Madara db when it receive a new Substrate block
 pub struct MappingSyncWorker<B: BlockT, C, BE, H> {
     import_notifications: ImportNotifications<B>,
     timeout: Duration,

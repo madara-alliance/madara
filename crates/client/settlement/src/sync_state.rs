@@ -31,14 +31,12 @@ where
     SC: ProvideRuntimeApi<B> + HeaderBackend<B> + BlockchainEvents<B>,
     SC::Api: StarknetRuntimeApi<B>,
 {
-    /// A thread responsible for updating (progressing) Starknet state on the
-    /// settlement layer. For now we use a simplified setup without validity
-    /// proofs & DA, but in the future Starknet state contract will also
-    /// validate state transition against the fact registry. That means we
-    /// will need to publish state diffs and STARK proof before state update.
+    /// A thread responsible for updating (progressing) Starknet state on the settlement layer.
+    /// For now we use a simplified setup without validity proofs & DA, but in the future
+    /// Starknet state contract will also validate state transition against the fact registry.
+    /// That means we will need to publish state diffs and STARK proof before state update.
     ///
-    /// This is an external loop that is responsible for handling temporary
-    /// (recoverable) errors.
+    /// This is an external loop that is responsible for handling temporary (recoverable) errors.
     pub async fn sync_state(
         substrate_client: Arc<SC>,
         settlement_provider: Box<dyn SettlementProvider<B>>,
@@ -73,16 +71,14 @@ where
     /// 2. Then it starts to listen for new finality notifications
     /// 3. For all incoming blocks with height lower than the settled one it checks the state root
     ///    validity.
-    /// Inconsistent state root means we have a fatal error, which cannot be
-    /// resolved automatically.
+    /// Inconsistent state root means we have a fatal error, which cannot be resolved automatically.
     ///
     /// 4. Once it gets up to the tip of the chain it starts to apply new state updates.
     /// It is possible that there is a need to apply multiple state updates.
     ///
-    /// Sync state loop operates as long as there are new blocks being
-    /// finalized. In case chain is stuck it won't update the state, even if
-    /// there are pending blocks. It is ok, since it's not a normal
-    /// condition, and generally we expect that the chain will
+    /// Sync state loop operates as long as there are new blocks being finalized.
+    /// In case chain is stuck it won't update the state, even if there are pending blocks.
+    /// It is ok, since it's not a normal condition, and generally we expect that the chain will
     /// advance indefinitely.
     async fn sync_state_loop<SP>(substrate_client: &SC, settlement_provider: &SP) -> Result<(), B>
     where
@@ -95,15 +91,14 @@ where
         let starknet_spec = settlement_provider.get_chain_spec().await?;
         log::debug!("[settlement] Starknet chain spec {:?}", starknet_spec);
 
-        // We need to make sure that we are on the same page with the settlement
-        // contract.
+        // We need to make sure that we are on the same page with the settlement contract.
         Self::verify_starknet_spec(substrate_client, &starknet_spec)?;
 
         let mut last_settled_state = settlement_provider.get_state().await?;
         log::debug!("[settlement] Last settled state {:?}", last_settled_state);
 
-        // If we haven't reached the settled level yet (e.g. syncing from scratch) this
-        // check will pass. But we need to run it again once we are up to speed.
+        // If we haven't reached the settled level yet (e.g. syncing from scratch) this check will pass.
+        // But we need to run it again once we are up to speed.
         Self::verify_starknet_state(substrate_client, &last_settled_state)?;
 
         let mut finality_notifications = substrate_client.finality_notification_stream();
@@ -153,18 +148,15 @@ where
     }
 
     /// Returns Starknet block given it's height (level, number).
-    /// The trick here is that Starknet blocks are embedded into Substrate
-    /// blocks.
+    /// The trick here is that Starknet blocks are embedded into Substrate blocks.
     ///
-    /// Firstly, we need to get Substrate block hash by the Starknet block
-    /// height. This mapping is kept in a separate storage and there is a
-    /// dedicated thread which maintains it. There might be situations when
-    /// we cannot resolve the query (e.g. our node is out of sync), but
-    /// eventually it will be ok.
+    /// Firstly, we need to get Substrate block hash by the Starknet block height.
+    /// This mapping is kept in a separate storage and there is a dedicated thread which maintains
+    /// it. There might be situations when we cannot resolve the query (e.g. our node is out of
+    /// sync), but eventually it will be ok.
     ///
-    /// Secondly, we try to find a corresponding Substrate block (header) by its
-    /// hash. Lastly, we extract Starknet block from the Substrate block
-    /// digest.
+    /// Secondly, we try to find a corresponding Substrate block (header) by its hash.
+    /// Lastly, we extract Starknet block from the Substrate block digest.
     fn get_starknet_block(substrate_client: &SC, block_number: u64) -> Result<(StarknetBlock, B::Hash), B> {
         let substrate_block_hash = substrate_client
             .hash(UniqueSaturatedInto::unique_saturated_into(block_number))?
@@ -179,8 +171,8 @@ where
         Ok((starknet_block, substrate_block_hash))
     }
 
-    /// Checks that settlement contract is initialized with the same program &
-    /// config hash as Madara.
+    /// Checks that settlement contract is initialized with the same program & config hash as
+    /// Madara.
     fn verify_starknet_spec(substrate_client: &SC, starknet_spec: &StarknetSpec) -> Result<(), B> {
         let substrate_hash = substrate_client.info().best_hash;
         let program_hash: StarkHash = substrate_client.runtime_api().program_hash(substrate_hash)?.into();
@@ -207,20 +199,18 @@ where
         Ok(())
     }
 
-    /// Tries to verify that the state root for the specified block in Madara
-    /// storage is the same as in the given state.
+    /// Tries to verify that the state root for the specified block in Madara storage
+    /// is the same as in the given state.
     ///
-    /// If Madara chain haven't reached the given block level yet, it returns
-    /// OK, assuming that as soon as it catches up - this check will be done
-    /// again.
+    /// If Madara chain haven't reached the given block level yet, it returns OK, assuming that as
+    /// soon as it catches up - this check will be done again.
     fn verify_starknet_state(substrate_client: &SC, state: &StarknetState) -> Result<(), B> {
         let height: u64 = state.block_number.try_into()?;
 
         match Self::get_starknet_block(substrate_client, height) {
             Ok((block, _)) => {
                 let state_root = block.header().global_state_root;
-                // Verify that current onchain state is consistent with corresponding Madara
-                // block
+                // Verify that current onchain state is consistent with corresponding Madara block
                 if state.state_root != state_root {
                     return Err(Error::StateRootMismatch { height, expected: state_root, actual: state.state_root });
                 }
@@ -231,8 +221,8 @@ where
         }
     }
 
-    /// Aggregates Starknet OS output from a given Starknet block and tries to
-    /// settle it using a particular provider.
+    /// Aggregates Starknet OS output from a given Starknet block and tries to settle it using a
+    /// particular provider.
     ///
     /// "Main part" of Starknet OS program output consists of:
     ///  - previous state root (at the beginning of the block)
@@ -241,10 +231,9 @@ where
     ///  - config hash
     ///  - list of messages transferred between L1 and L2
     ///
-    /// We construct it using fast execution results, without producing the
-    /// execution trace which is used for STARK proof. Still it must match
-    /// the output got from the respective circuit, otherwise the settlement
-    /// will fail.
+    /// We construct it using fast execution results, without producing the execution trace which is
+    /// used for STARK proof. Still it must match the output got from the respective circuit,
+    /// otherwise the settlement will fail.
     async fn update_starknet_state<SP>(
         substrate_client: &SC,
         settlement_provider: &SP,

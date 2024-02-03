@@ -146,8 +146,7 @@ where
         Ok(starknet_block.header().hash::<H>().into())
     }
 
-    /// Returns the substrate block hash corresponding to the given Starknet
-    /// block id
+    /// Returns the substrate block hash corresponding to the given Starknet block id
     fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<B::Hash, String> {
         match block_id {
             BlockId::Hash(h) => madara_backend_client::load_hash(
@@ -165,8 +164,7 @@ where
         .ok_or("Failed to retrieve the substrate block id".to_string())
     }
 
-    /// Helper function to get the substrate block number from a Starknet block
-    /// id
+    /// Helper function to get the substrate block number from a Starknet block id
     ///
     /// # Arguments
     ///
@@ -389,9 +387,8 @@ where
 {
     /// Returns the Version of the StarkNet JSON-RPC Specification Being Used
     ///
-    /// This method provides the version of the StarkNet JSON-RPC specification
-    /// that the node is currently using. The version is returned as a
-    /// semantic versioning (SemVer) string.
+    /// This method provides the version of the StarkNet JSON-RPC specification that the node is
+    /// currently using. The version is returned as a semantic versioning (SemVer) string.
     ///
     /// # Arguments
     ///
@@ -454,8 +451,8 @@ where
     ///
     /// ### Errors
     ///
-    /// This function may return a `BLOCK_NOT_FOUND` error if the specified
-    /// block does not exist in the blockchain.
+    /// This function may return a `BLOCK_NOT_FOUND` error if the specified block does not exist in
+    /// the blockchain.
     fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128> {
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
@@ -467,13 +464,12 @@ where
         Ok(starknet_block.header().transaction_count)
     }
 
-    /// Gets the Transaction Status, Including Mempool Status and Execution
-    /// Details
+    /// Gets the Transaction Status, Including Mempool Status and Execution Details
     ///
-    /// This method retrieves the status of a specified transaction. It provides
-    /// information on whether the transaction is still in the mempool, has
-    /// been executed, or dropped from the mempool. The status includes both
-    /// finality status and execution status of the transaction.
+    /// This method retrieves the status of a specified transaction. It provides information on
+    /// whether the transaction is still in the mempool, has been executed, or dropped from the
+    /// mempool. The status includes both finality status and execution status of the
+    /// transaction.
     ///
     /// ### Arguments
     ///
@@ -545,9 +541,8 @@ where
 
     /// Get the value of the storage at the given address and key.
     ///
-    /// This function retrieves the value stored in a specified contract's
-    /// storage, identified by a contract address and a storage key, within
-    /// a specified block in the current network.
+    /// This function retrieves the value stored in a specified contract's storage, identified by a
+    /// contract address and a storage key, within a specified block in the current network.
     ///
     /// ### Arguments
     ///
@@ -561,9 +556,8 @@ where
     ///
     /// ### Returns
     ///
-    /// Returns the value at the given key for the given contract, represented
-    /// as a `FieldElement`. If no value is found at the specified storage
-    /// key, returns 0.
+    /// Returns the value at the given key for the given contract, represented as a `FieldElement`.
+    /// If no value is found at the specified storage key, returns 0.
     ///
     /// ### Errors
     ///
@@ -688,8 +682,8 @@ where
         todo!()
     }
 
-    /// Get the contract class hash in the given block for the contract deployed
-    /// at the given address
+    /// Get the contract class hash in the given block for the contract deployed at the given
+    /// address
     ///
     /// ### Arguments
     ///
@@ -720,8 +714,7 @@ where
         todo!()
     }
 
-    /// Returns an object about the sync status, or false if the node is not
-    /// synching
+    /// Returns an object about the sync status, or false if the node is not synching
     ///
     /// ### Arguments
     ///
@@ -733,10 +726,9 @@ where
     ///   sync status, or a `Boolean` (`false`) indicating that the node is not currently
     ///   synchronizing.
     ///
-    /// This is an asynchronous function due to its reliance on
-    /// `sync_service.best_seen_block()`, which potentially involves network
-    /// communication and processing to determine the best block seen by the
-    /// sync service.
+    /// This is an asynchronous function due to its reliance on `sync_service.best_seen_block()`,
+    /// which potentially involves network communication and processing to determine the best block
+    /// seen by the sync service.
     async fn syncing(&self) -> RpcResult<SyncStatusType> {
         // obtain best seen (highest) block number
         match self.sync_service.best_seen_block().await {
@@ -759,8 +751,7 @@ where
                     madara_backend_client::starknet_block_from_substrate_hash(self.client.as_ref(), highest_number);
 
                 if starting_block.is_ok() && current_block.is_ok() && highest_block.is_ok() {
-                    // Convert block numbers and hashes to the respective type required by the
-                    // `syncing` endpoint.
+                    // Convert block numbers and hashes to the respective type required by the `syncing` endpoint.
                     let starting_block_num = UniqueSaturatedInto::<u64>::unique_saturated_into(self.starting_block);
                     let starting_block_hash = starting_block?.header().hash::<H>().0;
 
@@ -795,8 +786,7 @@ where
         }
     }
 
-    /// Get the contract class definition in the given block associated with the
-    /// given hash.
+    /// Get the contract class definition in the given block associated with the given hash.
     ///
     /// ### Arguments
     ///
@@ -806,9 +796,8 @@ where
     ///
     /// ### Returns
     ///
-    /// Returns the contract class definition if found. In case of an error,
-    /// returns a `StarknetRpcApiError` indicating either `BlockNotFound` or
-    /// `ClassHashNotFound`.
+    /// Returns the contract class definition if found. In case of an error, returns a
+    /// `StarknetRpcApiError` indicating either `BlockNotFound` or `ClassHashNotFound`.
     fn get_class(&self, block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass> {
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
@@ -852,10 +841,9 @@ where
     ///
     /// ### Returns
     ///
-    /// Returns block information with transaction hashes. This includes either
-    /// a confirmed block or a pending block with transaction hashes,
-    /// depending on the state of the requested block. In case the block is
-    /// not found, returns a `StarknetRpcApiError` with `BlockNotFound`.
+    /// Returns block information with transaction hashes. This includes either a confirmed block or
+    /// a pending block with transaction hashes, depending on the state of the requested block.
+    /// In case the block is not found, returns a `StarknetRpcApiError` with `BlockNotFound`.
     fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes> {
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
@@ -922,11 +910,10 @@ where
     ///
     /// ### Returns
     ///
-    /// Returns the contract's nonce at the requested state. The nonce is
-    /// returned as a `FieldElement`, representing the current state of the
-    /// contract in terms of transactions count or other contract-specific
-    /// operations. In case of errors, such as `BLOCK_NOT_FOUND` or
-    /// `CONTRACT_NOT_FOUND`, returns a `StarknetRpcApiError` indicating the
+    /// Returns the contract's nonce at the requested state. The nonce is returned as a
+    /// `FieldElement`, representing the current state of the contract in terms of transactions
+    /// count or other contract-specific operations. In case of errors, such as
+    /// `BLOCK_NOT_FOUND` or `CONTRACT_NOT_FOUND`, returns a `StarknetRpcApiError` indicating the
     /// specific issue.
     fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
@@ -950,9 +937,9 @@ where
 
     /// Return the currently configured chain id.
     ///
-    /// This function provides the chain id for the network that the node is
-    /// connected to. The chain id is a unique identifier that distinguishes
-    /// between different networks, such as mainnet or testnet.
+    /// This function provides the chain id for the network that the node is connected to. The chain
+    /// id is a unique identifier that distinguishes between different networks, such as mainnet or
+    /// testnet.
     ///
     /// ### Arguments
     ///
@@ -960,9 +947,8 @@ where
     ///
     /// ### Returns
     ///
-    /// Returns the chain id this node is connected to. The chain id is returned
-    /// as a specific type, defined by the Starknet protocol, indicating the
-    /// particular network.
+    /// Returns the chain id this node is connected to. The chain id is returned as a specific type,
+    /// defined by the Starknet protocol, indicating the particular network.
     fn chain_id(&self) -> RpcResult<Felt> {
         let best_block_hash = self.client.info().best_hash;
         let chain_id = self.client.runtime_api().chain_id(best_block_hash).map_err(|e| {
@@ -1025,10 +1011,9 @@ where
 
     /// Get the details of a transaction by a given block id and index.
     ///
-    /// This function fetches the details of a specific transaction in the
-    /// StarkNet network by identifying it through its block and position
-    /// (index) within that block. If no transaction is found at the
-    /// specified index, null is returned.
+    /// This function fetches the details of a specific transaction in the StarkNet network by
+    /// identifying it through its block and position (index) within that block. If no transaction
+    /// is found at the specified index, null is returned.
     ///
     /// ### Arguments
     ///
@@ -1041,11 +1026,10 @@ where
     ///
     /// ### Returns
     ///
-    /// Returns the details of the transaction if found, including the
-    /// transaction hash. The transaction details are returned as a type
-    /// conforming to the StarkNet protocol. In case of errors like
-    /// `BLOCK_NOT_FOUND` or `INVALID_TXN_INDEX`, returns a
-    /// `StarknetRpcApiError` indicating the specific issue.
+    /// Returns the details of the transaction if found, including the transaction hash. The
+    /// transaction details are returned as a type conforming to the StarkNet protocol. In case of
+    /// errors like `BLOCK_NOT_FOUND` or `INVALID_TXN_INDEX`, returns a `StarknetRpcApiError`
+    /// indicating the specific issue.
     fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<Transaction> {
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
@@ -1085,10 +1069,9 @@ where
 
     /// Get block information with full transactions given the block id.
     ///
-    /// This function retrieves detailed information about a specific block in
-    /// the StarkNet network, including all transactions contained within
-    /// that block. The block is identified using its unique block id, which
-    /// can be the block's hash, its number (height), or a block tag.
+    /// This function retrieves detailed information about a specific block in the StarkNet network,
+    /// including all transactions contained within that block. The block is identified using its
+    /// unique block id, which can be the block's hash, its number (height), or a block tag.
     ///
     /// ### Arguments
     ///
@@ -1098,10 +1081,9 @@ where
     ///
     /// ### Returns
     ///
-    /// Returns detailed block information along with full transactions.
-    /// Depending on the state of the block, this can include either a
-    /// confirmed block or a pending block with its transactions. In case
-    /// the specified block is not found, returns a `StarknetRpcApiError` with
+    /// Returns detailed block information along with full transactions. Depending on the state of
+    /// the block, this can include either a confirmed block or a pending block with its
+    /// transactions. In case the specified block is not found, returns a `StarknetRpcApiError` with
     /// `BlockNotFound`.
     fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
@@ -1167,10 +1149,9 @@ where
 
     /// Get the information about the result of executing the requested block.
     ///
-    /// This function fetches details about the state update resulting from
-    /// executing a specific block in the StarkNet network. The block is
-    /// identified using its unique block id, which can be the block's hash,
-    /// its number (height), or a block tag.
+    /// This function fetches details about the state update resulting from executing a specific
+    /// block in the StarkNet network. The block is identified using its unique block id, which can
+    /// be the block's hash, its number (height), or a block tag.
     ///
     /// ### Arguments
     ///
@@ -1180,10 +1161,9 @@ where
     ///
     /// ### Returns
     ///
-    /// Returns information about the state update of the requested block,
-    /// including any changes to the state of the network as a result of the
-    /// block's execution. This can include a confirmed state update or a
-    /// pending state update. If the block is not found, returns a
+    /// Returns information about the state update of the requested block, including any changes to
+    /// the state of the network as a result of the block's execution. This can include a confirmed
+    /// state update or a pending state update. If the block is not found, returns a
     /// `StarknetRpcApiError` with `BlockNotFound`.
     fn get_state_update(&self, block_id: BlockId) -> RpcResult<StateUpdate> {
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
@@ -1227,10 +1207,9 @@ where
 
     /// Returns all events matching the given filter.
     ///
-    /// This function retrieves all event objects that match the conditions
-    /// specified in the provided event filter. The filter can include
-    /// various criteria such as contract addresses, event types, and block
-    /// ranges. The function supports pagination through the result page
+    /// This function retrieves all event objects that match the conditions specified in the
+    /// provided event filter. The filter can include various criteria such as contract addresses,
+    /// event types, and block ranges. The function supports pagination through the result page
     /// request schema.
     ///
     /// ### Arguments
@@ -1241,13 +1220,11 @@ where
     ///
     /// ### Returns
     ///
-    /// Returns a chunk of event objects that match the filter criteria,
-    /// encapsulated in an `EventsChunk` type. The chunk includes details
-    /// about the events, such as their data, the block in which they
-    /// occurred, and the transaction that triggered them. In case of
-    /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`,
-    /// `BLOCK_NOT_FOUND`, or `TOO_MANY_KEYS_IN_FILTER`, returns a
-    /// `StarknetRpcApiError` indicating the specific issue.
+    /// Returns a chunk of event objects that match the filter criteria, encapsulated in an
+    /// `EventsChunk` type. The chunk includes details about the events, such as their data, the
+    /// block in which they occurred, and the transaction that triggered them. In case of
+    /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
+    /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
     async fn get_events(&self, filter: EventFilterWithPage) -> RpcResult<EventsPage> {
         let continuation_token = match filter.result_page_request.continuation_token {
             Some(token) => types::ContinuationToken::parse(token).map_err(|e| {
@@ -1301,10 +1278,9 @@ where
 
     /// Get the details and status of a submitted transaction.
     ///
-    /// This function retrieves the detailed information and status of a
-    /// transaction identified by its hash. The transaction hash uniquely
-    /// identifies a specific transaction that has been submitted to the
-    /// StarkNet network.
+    /// This function retrieves the detailed information and status of a transaction identified by
+    /// its hash. The transaction hash uniquely identifies a specific transaction that has been
+    /// submitted to the StarkNet network.
     ///
     /// ### Arguments
     ///
@@ -1313,12 +1289,11 @@ where
     ///
     /// ### Returns
     ///
-    /// Returns information about the requested transaction, including its
-    /// status, sender, recipient, and other transaction details. The
-    /// information is encapsulated in a `Transaction` type, which is a
-    /// combination of the `TXN` schema and additional properties, such as the
-    /// `transaction_hash`. In case the specified transaction hash is not found,
-    /// returns a `StarknetRpcApiError` with `TXN_HASH_NOT_FOUND`.
+    /// Returns information about the requested transaction, including its status, sender,
+    /// recipient, and other transaction details. The information is encapsulated in a `Transaction`
+    /// type, which is a combination of the `TXN` schema and additional properties, such as the
+    /// `transaction_hash`. In case the specified transaction hash is not found, returns a
+    /// `StarknetRpcApiError` with `TXN_HASH_NOT_FOUND`.
     ///
     /// ### Errors
     ///
@@ -1369,10 +1344,9 @@ where
 
     /// Get the transaction receipt by the transaction hash.
     ///
-    /// This function retrieves the transaction receipt for a specific
-    /// transaction identified by its hash. The transaction receipt includes
-    /// information about the execution status of the transaction, events
-    /// generated during its execution, and other relevant details.
+    /// This function retrieves the transaction receipt for a specific transaction identified by its
+    /// hash. The transaction receipt includes information about the execution status of the
+    /// transaction, events generated during its execution, and other relevant details.
     ///
     /// ### Arguments
     ///
@@ -1388,8 +1362,8 @@ where
     ///
     /// ### Errors
     ///
-    /// The function may return a `TXN_HASH_NOT_FOUND` error if the specified
-    /// transaction hash is not found.
+    /// The function may return a `TXN_HASH_NOT_FOUND` error if the specified transaction hash is
+    /// not found.
     async fn get_transaction_receipt(
         &self,
         transaction_hash: FieldElement,
@@ -1538,8 +1512,7 @@ where
             //         expected_fee_value_low,  // transfer amount (fee)
             //         expected_fee_value_high,
             //     ]},
-            // fee transfer must be the last event, except enabled disable-transaction-fee
-            // feature
+            // fee transfer must be the last event, except enabled disable-transaction-fee feature
             events_converted.last().unwrap().data[2]
         };
 

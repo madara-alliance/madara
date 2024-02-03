@@ -16,21 +16,17 @@ impl core::fmt::Display for FeltReaderError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             FeltReaderError::OutOfBounds => write!(f, "Reader reached the end of felt array"),
-            FeltReaderError::InvalidCast => {
-                write!(f, "Reader failed to cast felt to the target type")
-            }
+            FeltReaderError::InvalidCast => write!(f, "Reader failed to cast felt to the target type"),
         }
     }
 }
 
 /// Analogue of std::io::Cursor but for field elements.
-/// Allows to sequentially read felts and felt segments given a reference to a
-/// felt array.
+/// Allows to sequentially read felts and felt segments given a reference to a felt array.
 ///
-/// Felt segment is sub sequence of field elements within the original felt
-/// array. Felt segments can be recursively embedded.
-/// Felt segment is preceded by its size also encoded as felt, not included in
-/// segment size.
+/// Felt segment is sub sequence of field elements within the original felt array.
+/// Felt segments can be recursively embedded.
+/// Felt segment is preceded by its size also encoded as felt, not included in segment size.
 pub struct FeltReader<'a> {
     data: &'a [StarkFelt],
     offset: usize,

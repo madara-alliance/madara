@@ -8,29 +8,23 @@ use starknet_api::hash::StarkFelt;
 use crate::felt_reader::{FeltReader, FeltReaderError};
 use crate::StarknetOsOutput;
 
-/// This codec allows to convert structured OS program output into array of
-/// felts
+/// This codec allows to convert structured OS program output into array of felts
 ///
-/// In order to prepare parameters for the Starknet contract `updateState`
-/// method:
+/// In order to prepare parameters for the Starknet contract `updateState` method:
 ///     1. Cast the output to dynamic uint256[] array
 ///     2. Get onchain data hash & size
 ///     3. ABI encode parameters
 ///  
-/// NOTE: Field element (252 bit) is encoded as an EVM word (256 bit) and vice
-/// versa EVM developer should be aware of that and prevent data loss by not
-/// using the higest 4 bits
+/// NOTE: Field element (252 bit) is encoded as an EVM word (256 bit) and vice versa
+/// EVM developer should be aware of that and prevent data loss by not using the higest 4 bits
 pub trait SnosCodec: Sized {
-    /// Return an estimation of the number of field elements required to encode
-    /// `self`
+    /// Return an estimation of the number of field elements required to encode `self`
     ///
-    /// This is to be used for allocating the correct amount of memory before
-    /// encoding. It's for optimization purpose (avoiding reallocation) so
-    /// it's implementation should be efficient (no iteration, no IO, no
-    /// other allocation, no expensive
+    /// This is to be used for allocating the correct amount of memory before encoding.
+    /// It's for optimization purpose (avoiding reallocation) so it's implementation should be
+    /// efficient (no iteration, no IO, no other allocation, no expensive
     fn size_in_felts(&self) -> usize;
-    /// Encodes current snos output field as felt array and appends to the
-    /// result
+    /// Encodes current snos output field as felt array and appends to the result
     fn encode_to(self, output: &mut Vec<StarkFelt>);
     /// Tries to decode snos output field given a felt reader instance
     fn decode(input: &mut FeltReader) -> Result<Self, FeltReaderError>;
@@ -101,8 +95,8 @@ impl SnosCodec for Nonce {
 impl<T: SnosCodec> SnosCodec for Vec<T> {
     fn size_in_felts(&self) -> usize {
         // Works well for Vec<StarkFelt>
-        // Works less well for Vec<Message>, but it just means there will be some
-        // realocation Nothing terrible, and still better than iterating
+        // Works less well for Vec<Message>, but it just means there will be some realocation
+        // Nothing terrible, and still better than iterating
         1 + self.len()
     }
 

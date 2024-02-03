@@ -23,15 +23,13 @@ pub type StateCommitment = Felt252Wrapper;
 /// Hash of the leaf of the ClassCommitment tree
 pub type ClassCommitmentLeafHash = Felt252Wrapper;
 
-/// A Patricia Merkle tree with height 64 used to compute transaction and event
-/// commitments.
+/// A Patricia Merkle tree with height 64 used to compute transaction and event commitments.
 ///
 /// According to the [documentation](https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/header/)
-/// the commitment trees are of height 64, because the key used is the 64 bit
-/// representation of the index of the transaction / event within the block.
+/// the commitment trees are of height 64, because the key used is the 64 bit representation
+/// of the index of the transaction / event within the block.
 ///
-/// The tree height is 64 in our case since our set operation takes u64 index
-/// values.
+/// The tree height is 64 in our case since our set operation takes u64 index values.
 struct CommitmentTree<H: HasherT> {
     tree: RefMerkleTree<H>,
 }
@@ -60,15 +58,12 @@ impl<H: HasherT> CommitmentTree<H> {
     }
 }
 
-/// A Patricia Merkle tree with height 251 used to compute contract and class
-/// tree commitments.
+/// A Patricia Merkle tree with height 251 used to compute contract and class tree commitments.
 ///
 /// According to the [documentation](https://docs.starknet.io/documentation/architecture_and_concepts/State/starknet-state/)
-/// the commitment trees are of height 251, because the key used is a Field
-/// Element.
+/// the commitment trees are of height 251, because the key used is a Field Element.
 ///
-/// The tree height is 251 in our case since our set operation takes
-/// Fieldelement index values.
+/// The tree height is 251 in our case since our set operation takes Fieldelement index values.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
@@ -133,9 +128,8 @@ impl<H: HasherT> StateCommitmentTree<H> {
 
 /// Calculate state commitment hash value.
 ///
-/// The state commitment is the digest that uniquely (up to hash collisions)
-/// encodes the state. It combines the roots of two binary Merkle-Patricia trees
-/// of height 251.
+/// The state commitment is the digest that uniquely (up to hash collisions) encodes the state.
+/// It combines the roots of two binary Merkle-Patricia trees of height 251.
 ///
 /// # Arguments
 ///
@@ -160,8 +154,7 @@ where
     state_commitment_hash.into()
 }
 
-/// Calculate the transaction commitment, the event commitment and the event
-/// count.
+/// Calculate the transaction commitment, the event commitment and the event count.
 ///
 /// # Arguments
 ///
@@ -184,10 +177,9 @@ pub fn calculate_commitments<H: HasherT>(
 
 /// Calculate transaction commitment hash value.
 ///
-/// The transaction commitment is the root of the Patricia Merkle tree with
-/// height 64 constructed by adding the (transaction_index,
-/// transaction_hash_with_signature) key-value pairs to the tree and computing
-/// the root hash.
+/// The transaction commitment is the root of the Patricia Merkle tree with height 64
+/// constructed by adding the (transaction_index, transaction_hash_with_signature)
+/// key-value pairs to the tree and computing the root hash.
 ///
 /// # Arguments
 ///
@@ -257,9 +249,8 @@ pub fn calculate_class_commitment_leaf_hash<H: HasherT>(
 
 /// Calculate class commitment tree root hash value.
 ///
-/// The classes tree encodes the information about the existing classes in the
-/// state of Starknet. It maps (Cairo 1.0) class hashes to their compiled class
-/// hashes
+/// The classes tree encodes the information about the existing classes in the state of Starknet.
+/// It maps (Cairo 1.0) class hashes to their compiled class hashes
 ///
 /// # Arguments
 ///
@@ -294,8 +285,8 @@ pub fn calculate_contract_state_hash<H: HasherT>(
     root: Felt252Wrapper,
     nonce: Felt252Wrapper,
 ) -> Felt252Wrapper {
-    // Define the constant for the contract state hash version, ensure this aligns
-    // with StarkNet specifications.
+    // Define the constant for the contract state hash version, ensure this aligns with StarkNet
+    // specifications.
     const CONTRACT_STATE_HASH_VERSION: Felt252Wrapper = Felt252Wrapper::ZERO;
 
     // First hash: Combine class_hash and storage_root.
@@ -336,8 +327,7 @@ where
             &tx.signature().iter().map(|elt| FieldElement::from(*elt)).collect::<Vec<FieldElement>>(),
         )
     } else {
-        // Before block 61394, and for non-Invoke transactions, signatures are not
-        // included
+        // Before block 61394, and for non-Invoke transactions, signatures are not included
         H::compute_hash_on_elements(&[])
     };
 

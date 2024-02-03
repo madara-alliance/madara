@@ -55,8 +55,8 @@ pub enum Sealing {
     /// Seal using rpc method.
     #[default]
     Manual,
-    /// Seal when transaction is executed. This mode does not finalize blocks,
-    /// if you want to finalize blocks use `--sealing=instant-finality`.
+    /// Seal when transaction is executed. This mode does not finalize blocks, if you want to
+    /// finalize blocks use `--sealing=instant-finality`.
     Instant,
     /// Seal when transaction is executed with finalization.
     InstantFinality,
@@ -141,11 +141,11 @@ pub struct ExtendedRunCmd {
     #[clap(long, value_hint = FilePath, requires = "settlement")]
     pub settlement_conf: Option<PathBuf>,
 
-    /// When enabled, more information about the blocks and their transaction is
-    /// cached and stored in the database.
+    /// When enabled, more information about the blocks and their transaction is cached and stored
+    /// in the database.
     ///
-    /// This may improve response times for RPCs that require that information,
-    /// but it also increases the memory footprint of the node.
+    /// This may improve response times for RPCs that require that information, but it also
+    /// increases the memory footprint of the node.
     #[clap(long)]
     pub cache: bool,
 
@@ -218,8 +218,8 @@ fn override_dev_environment(cmd: &mut ExtendedRunCmd) {
     cmd.base.alice = true;
     cmd.base.tmp = true;
 
-    // we can't set `--rpc-cors=all`, so it needs to be set manually if we want to
-    // connect with external hosts
+    // we can't set `--rpc-cors=all`, so it needs to be set manually if we want to connect with external
+    // hosts
     cmd.base.rpc_external = true;
     cmd.base.rpc_methods = RpcMethods::Unsafe;
 }

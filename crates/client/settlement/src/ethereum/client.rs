@@ -7,24 +7,23 @@ use ethers::types::{Address, TransactionReceipt, I256, U256};
 
 use crate::ethereum::errors::{Error, Result};
 
-// Starknet core contract is responsible for advancing the rollup state and
-// l1<>l2 messaging. Check out https://l2beat.com/scaling/projects/starknet#contracts to get a big picture.
+// Starknet core contract is responsible for advancing the rollup state and l1<>l2 messaging.
+// Check out https://l2beat.com/scaling/projects/starknet#contracts to get a big picture.
 //
-// In this scope we work with a subset of methods responsible for querying and
-// updating chain state. Starknet state is basically block number + state root
-// hash. In order to update the state we need to provide the output of the
-// Starknet OS program, consisting of:
+// In this scope we work with a subset of methods responsible for querying and updating chain state.
+// Starknet state is basically block number + state root hash.
+// In order to update the state we need to provide the output of the Starknet OS program, consisting
+// of:
 //      1. Main part: previous/next state root, block number/hash, config hash, list of l1<>l2
 //         messages
 //      2. Data availability part: hash and size of the DA blob (the actual data is submitted
 //         onchain separately)
 //
-// NOTE that currently we are using a "validium" version of the core contract
-// which does not require the DA part.
+// NOTE that currently we are using a "validium" version of the core contract which does not
+// require the DA part.
 //
-// Starknet OS program is a Cairo program run by the SHARP to prove Starknet
-// state transition. SNOS program hash is registered on the Starknet core
-// contract to lock the version:
+// Starknet OS program is a Cairo program run by the SHARP to prove Starknet state transition.
+// SNOS program hash is registered on the Starknet core contract to lock the version:
 //      * SNOS program sources: https://github.com/starkware-libs/cairo-lang/tree/27a157d761ae49b242026bcbe5fca6e60c1e98bd/src/starkware/starknet/core/os
 //      * You can calculate program hash by running: cairo-hash-program --program
 //        build/os_latest.json

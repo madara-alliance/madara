@@ -66,8 +66,7 @@ impl frame_system::Config for Runtime {
     type AccountId = AccountId;
     /// The aggregated dispatch type that is available for extrinsics.
     type RuntimeCall = RuntimeCall;
-    /// The lookup mechanism to get account ID from whatever is passed in
-    /// dispatchers.
+    /// The lookup mechanism to get account ID from whatever is passed in dispatchers.
     type Lookup = AccountIdLookup<AccountId, ()>;
     /// The index type for storing how many extrinsics an account has signed.
     type Nonce = Index;
@@ -81,8 +80,7 @@ impl frame_system::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     /// The ubiquitous origin type.
     type RuntimeOrigin = RuntimeOrigin;
-    /// Maximum number of block number to block hash mappings to keep (oldest
-    /// pruned first).
+    /// Maximum number of block number to block hash mappings to keep (oldest pruned first).
     type BlockHashCount = BlockHashCount;
     /// The weight of database operations that the runtime can invoke.
     type DbWeight = RocksDbWeight;
@@ -100,8 +98,7 @@ impl frame_system::Config for Runtime {
     type AccountData = ();
     /// Weight information for the extrinsics of this pallet.
     type SystemWeightInfo = ();
-    /// This is used as an identifier of the chain. 42 is the generic substrate
-    /// prefix.
+    /// This is used as an identifier of the chain. 42 is the generic substrate prefix.
     type SS58Prefix = SS58Prefix;
     /// The set code logic, just the default since we're not a parachain.
     type OnSetCode = ();
@@ -115,8 +112,8 @@ impl frame_system::Config for Runtime {
 // Aura is the consensus algorithm used for block production.
 // Grandpa is the consensus algorithm used for block finalization.
 // We want to support multiple flavors of consensus algorithms.
-// Specifically we want to implement some proposals defined in the Starknet
-// community forum. For more information see: https://community.starknet.io/t/starknet-decentralized-protocol-i-introduction/2671
+// Specifically we want to implement some proposals defined in the Starknet community forum.
+// For more information see: https://community.starknet.io/t/starknet-decentralized-protocol-i-introduction/2671
 // You can also follow this issue on github: https://github.com/keep-starknet-strange/madara/issues/83
 
 /// Authority-based consensus protocol used for block production.
