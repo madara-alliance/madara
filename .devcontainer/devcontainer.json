@@ -3,6 +3,9 @@
         "dockerfile": "Dockerfile"
     },
 
+    // make sure to update `.devcontainer/Dockerfile` with you uid !!!
+    "remoteUser": "vscode",
+
     "customizations": {
         "vscode": {
             "settings": {
@@ -20,5 +23,6 @@
         }
     },
 
-    "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}"
+    "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+    "postAttachCommand": "${containerWorkspaceFolder}/.devcontainer/setup.sh"
 }

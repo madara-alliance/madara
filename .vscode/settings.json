@@ -17,6 +17,7 @@
   "conventionalCommits.scopes": [
     "work",
     "class",
-    "update"
+    "update",
+    "container"
   ]
 }
