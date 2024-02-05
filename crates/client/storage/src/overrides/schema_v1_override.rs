@@ -7,9 +7,9 @@ use mp_storage::{
     PALLET_STARKNET, STARKNET_CONTRACT_ABI, STARKNET_CONTRACT_CLASS, STARKNET_CONTRACT_CLASS_HASH, STARKNET_NONCE,
     STARKNET_STORAGE,
 };
+use parity_scale_codec::{Decode, Encode};
 // Substrate
 use sc_client_api::backend::{Backend, StorageProvider};
-use scale_codec::{Decode, Encode};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use sp_storage::StorageKey;
@@ -131,6 +131,8 @@ where
     }
 
     fn nonce(&self, block_hash: <B as BlockT>::Hash, address: ContractAddress) -> Option<Nonce> {
+        self.contract_class_hash_by_address(block_hash, address)?;
+
         let storage_nonce_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_NONCE);
         let nonce = self.query_storage::<Nonce>(
             block_hash,

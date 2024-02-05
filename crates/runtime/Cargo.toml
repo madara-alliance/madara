@@ -56,6 +56,7 @@ pallet-starknet-runtime-api = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-id = { workspace = true }
 mp-contract = { workspace = true }
+mp-fee = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-program-hash = { workspace = true }

@@ -13,6 +13,8 @@ cairo-lang-starknet = { workspace = true }
 cairo-lang-utils = { workspace = true }
 cairo-vm = { workspace = true }
 flate2 = { workspace = true }
+indexmap = { workspace = true }
+mp-felt = { workspace = true }
 num-bigint = { workspace = true }
 scale-info = { workspace = true, features = ["derive"] }
 starknet-core = { workspace = true }

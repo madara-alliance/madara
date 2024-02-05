@@ -10,7 +10,7 @@ cargo run -- setup --chain starknet --from-remote --base-path /tmp/deoxys \
 && cargo fmt
 
 # Uncomment this if you want to run deoxys on container start
-# cargo run cargo run -- \
+# cargo run -- \
 #     --deoxys \
 #     --rpc-port 9944 \ 
 #     --network main \

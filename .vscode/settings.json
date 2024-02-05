@@ -8,16 +8,5 @@
     "activityBar.background": "#093338",
     "titleBar.activeBackground": "#0D474E",
     "titleBar.activeForeground": "#F2FCFD"
-  },
-  "cSpell.words": [
-    "blockifier",
-    "madara",
-    "Starknet"
-  ],
-  "conventionalCommits.scopes": [
-    "work",
-    "class",
-    "update",
-    "container"
-  ]
+  }
 }

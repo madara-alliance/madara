@@ -229,9 +229,13 @@ cairo-lang-utils = { git = "https://github.com/keep-starknet-strange/cairo.git",
 ethers = { git = "https://github.com/gakonst/ethers-rs", rev = "f0e5b194f09c533feb10d1a686ddb9e5946ec107" }
 ethers-solc = { git = "https://github.com/gakonst/ethers-rs", rev = "f0e5b194f09c533feb10d1a686ddb9e5946ec107" }
 
+# Zaun
+starknet-core-contract-client = { git = "https://github.com/keep-starknet-strange/zaun" }
+zaun-sandbox = { git = "https://github.com/keep-starknet-strange/zaun", package = "sandbox" }
+
 # Other third party dependencies
 anyhow = "1.0.75"
-async-trait = "0.1.74"
+async-trait = "0.1.77"
 bitvec = { version = "1", default-features = false }
 clap = { version = "4.4.8", default-features = false }
 derive_more = { version = "0.99.17", default-features = false }
@@ -259,6 +263,7 @@ scale-info = { version = "2.10.0", default-features = false }
 serde = { version = "1.0.192", default-features = false }
 serde_json = { version = "1.0.108", default-features = false }
 serde_with = { version = "2.3.3", default-features = false }
+sha3 = { version = "0.10.8", default-features = false }
 thiserror = "1.0.50"
 thiserror-no-std = "2.0.2"
 
@@ -300,7 +305,6 @@ regex = "1.9.0"
 rustc-hex = "2.1.0"
 schemars = "0.8.12"
 serde_yaml = "0.9.16"
-sha3 = "0.10.8"
 simple_logger = "4.0.0"
 strum = "0.25.0"
 strum_macros = "0.25.2"

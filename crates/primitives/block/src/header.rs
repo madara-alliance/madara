@@ -70,7 +70,7 @@ pub struct Header {
     /// A commitment to the events produced in this block
     pub event_commitment: StarkHash,
     /// The version of the Starknet protocol used when creating this block
-    pub protocol_version: u8,
+    pub protocol_version: Felt252Wrapper,
     /// l1 gas price for this block
     pub l1_gas_price: ResourcePrice,
     /// Extraneous data that might be useful for running transactions
@@ -91,7 +91,7 @@ impl Header {
         transaction_commitment: StarkHash,
         event_count: u128,
         event_commitment: StarkHash,
-        protocol_version: u8,
+        protocol_version: Felt252Wrapper,
         l1_gas_price: ResourcePrice,
         extra_data: Option<U256>,
     ) -> Self {
@@ -129,7 +129,6 @@ impl Header {
     }
 
     /// Compute the hash of the header.
-    #[must_use]
     pub fn hash<H: HasherT>(&self) -> Felt252Wrapper {
         if self.block_number >= 833 {
             // Computes the block hash for blocks generated after Cairo 0.7.0

@@ -15,6 +15,8 @@ use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
+use indexmap::IndexMap;
+use mp_felt::Felt252Wrapper;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_api::api_core::EntryPointSelector;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
@@ -92,6 +94,36 @@ pub fn flattened_sierra_to_casm_contract_class(
     Ok(casm_contract_class)
 }
 
+pub fn flattened_sierra_to_sierra_contract_class(
+    flattened_sierra: Arc<FlattenedSierraClass>,
+) -> starknet_api::state::ContractClass {
+    let mut entry_point_by_type =
+        IndexMap::<starknet_api::state::EntryPointType, Vec<starknet_api::state::EntryPoint>>::with_capacity(3);
+    for sierra_entrypoint in flattened_sierra.entry_points_by_type.constructor.iter() {
+        entry_point_by_type
+            .entry(starknet_api::state::EntryPointType::Constructor)
+            .or_default()
+            .push(rpc_entry_point_to_starknet_api_entry_point(sierra_entrypoint));
+    }
+    for sierra_entrypoint in flattened_sierra.entry_points_by_type.external.iter() {
+        entry_point_by_type
+            .entry(starknet_api::state::EntryPointType::External)
+            .or_default()
+            .push(rpc_entry_point_to_starknet_api_entry_point(sierra_entrypoint));
+    }
+    for sierra_entrypoint in flattened_sierra.entry_points_by_type.l1_handler.iter() {
+        entry_point_by_type
+            .entry(starknet_api::state::EntryPointType::L1Handler)
+            .or_default()
+            .push(rpc_entry_point_to_starknet_api_entry_point(sierra_entrypoint));
+    }
+    starknet_api::state::ContractClass {
+        sierra_program: flattened_sierra.sierra_program.iter().map(|f| Felt252Wrapper(*f).into()).collect(),
+        entry_point_by_type,
+        abi: flattened_sierra.abi.clone(),
+    }
+}
+
 /// Converts a [EntryPointsByType] to a [ContractEntryPoints]
 fn entry_points_by_type_to_contract_entry_points(value: EntryPointsByType) -> ContractEntryPoints {
     fn sierra_entry_point_to_contract_entry_point(value: SierraEntryPoint) -> ContractEntryPoint {
@@ -104,6 +136,13 @@ fn entry_points_by_type_to_contract_entry_points(value: EntryPointsByType) -> Co
         constructor: value.constructor.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
         external: value.external.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
         l1_handler: value.l1_handler.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+    }
+}
+
+fn rpc_entry_point_to_starknet_api_entry_point(value: &SierraEntryPoint) -> starknet_api::state::EntryPoint {
+    starknet_api::state::EntryPoint {
+        function_idx: starknet_api::state::FunctionIndex(value.function_idx),
+        selector: Felt252Wrapper(value.selector).into(),
     }
 }
 
