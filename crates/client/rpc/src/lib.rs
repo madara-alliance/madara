@@ -58,6 +58,8 @@ use starknet_core::utils::get_selector_from_name;
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::types::RpcEventFilter;
 
+use mc_deoxys::l2::get_highest_block_hash_and_number;
+
 /// A Starknet RPC server for Madara
 pub struct Starknet<A: ChainApi, B: BlockT, BE, G, C, P, H> {
     client: Arc<C>,
@@ -766,8 +768,8 @@ where
                     let current_block_num = UniqueSaturatedInto::<u64>::unique_saturated_into(best_number);
                     let current_block_hash = current_block?.header().hash::<H>().0;
 
-                    let highest_block_num = UniqueSaturatedInto::<u64>::unique_saturated_into(highest_number);
-                    let highest_block_hash = highest_block?.header().hash::<H>().0;
+                    // Get the highest block number and hash from the global variable update in l2 sync()
+                    let (highest_block_hash, highest_block_num) =  get_highest_block_hash_and_number();
 
                     // Build the `SyncStatus` struct with the respective syn information
                     Ok(SyncStatusType::Syncing(SyncStatus {
