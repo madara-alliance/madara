@@ -48,8 +48,11 @@ pub fn open_kvdb_rocksdb(path: &Path, create: bool) -> Result<(Arc<dyn KeyValueD
     let mut db_config = kvdb_rocksdb::DatabaseConfig::with_columns(crate::columns::NUM_COLUMNS);
     db_config.create_if_missing = create;
 
+    println!("test 1");
     let db_kvdb = kvdb_rocksdb::Database::open(&db_config, path).map_err(|err| format!("{}", err))?;
+    println!("test 2");
     let db_spdb = kvdb_rocksdb::Database::open(&db_config, path).map_err(|err| format!("{}", err))?;
+    println!("test 3");
     let kvdb = Arc::new(db_kvdb);
     let spdb = sp_database::as_database(db_spdb);
     Ok((kvdb, spdb))

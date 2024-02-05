@@ -70,7 +70,7 @@ where
 
     let mut batch = bonsai_db.create_batch();
     let bonsai_storage: BonsaiStorage<BasicId, _, Pedersen> =
-        BonsaiStorage::new(*bonsai_db, config).expect("Failed to create bonsai storage");
+        BonsaiStorage::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
     for (idx, event) in events.iter().enumerate() {
         let idx_bytes: [u8; 8] = idx.to_be_bytes();
