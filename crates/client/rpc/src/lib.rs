@@ -15,6 +15,7 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
+use mc_deoxys::l2::get_highest_block_hash_and_number;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{
@@ -57,8 +58,6 @@ use starknet_core::utils::get_selector_from_name;
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::types::RpcEventFilter;
-
-use mc_deoxys::l2::get_highest_block_hash_and_number;
 
 /// A Starknet RPC server for Madara
 pub struct Starknet<A: ChainApi, B: BlockT, BE, G, C, P, H> {
@@ -769,7 +768,7 @@ where
                     let current_block_hash = current_block?.header().hash::<H>().0;
 
                     // Get the highest block number and hash from the global variable update in l2 sync()
-                    let (highest_block_hash, highest_block_num) =  get_highest_block_hash_and_number();
+                    let (highest_block_hash, highest_block_num) = get_highest_block_hash_and_number();
 
                     // Build the `SyncStatus` struct with the respective syn information
                     Ok(SyncStatusType::Syncing(SyncStatus {
