@@ -15,6 +15,7 @@ mod error;
 pub use error::{BonsaiDbError, DbError};
 
 mod mapping_db;
+use kvdb::KeyValueDB;
 pub use mapping_db::MappingCommitment;
 use starknet_api::hash::StarkHash;
 mod da_db;
@@ -36,6 +37,7 @@ use meta_db::MetaDb;
 use sc_client_db::DatabaseSource;
 use sp_database::Database;
 use sp_runtime::traits::Block as BlockT;
+use db_opening_utils::parity_db_adapter::DbAdapter;
 
 const DB_HASH_LEN: usize = 32;
 /// Hash type that this backend uses for the database.
@@ -126,16 +128,14 @@ impl<B: BlockT> Backend<B> {
 
     fn new(config: &DatabaseSettings, cache_more_things: bool) -> Result<Self, String> {
         let db = db_opening_utils::open_database(config)?;
-        let kvdb = match &config.source {
-            DatabaseSource::RocksDb { path, .. } => db_opening_utils::open_kvdb(path, true),
-            _ => return Err("Unsupported database configuration".to_string()),
-        }?;
+        let kvdb: Arc<dyn KeyValueDB> = db.0;
+        let spdb: Arc<dyn Database<DbHash>> = db.1;
 
         Ok(Self {
-            mapping: Arc::new(MappingDb::new(db.clone(), cache_more_things)),
-            meta: Arc::new(MetaDb { db: db.clone(), _marker: PhantomData }),
-            da: Arc::new(DaDb { db: db.clone(), _marker: PhantomData }),
-            messaging: Arc::new(MessagingDb { db: db.clone(), _marker: PhantomData }),
+            mapping: Arc::new(MappingDb::new(spdb.clone(), cache_more_things)),
+            meta: Arc::new(MetaDb { db: spdb.clone(), _marker: PhantomData }),
+            da: Arc::new(DaDb { db: spdb.clone(), _marker: PhantomData }),
+            messaging: Arc::new(MessagingDb { db: spdb.clone(), _marker: PhantomData }),
             bonsai: Arc::new(BonsaiDb { db: kvdb.clone(), _marker: PhantomData }),
         })
     }

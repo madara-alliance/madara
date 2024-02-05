@@ -26,7 +26,7 @@ pub fn calculate_commitments<B: BlockT, H: HasherT>(
     backend: Arc<mc_db::Backend<B>>,
 ) -> (Felt252Wrapper, Felt252Wrapper) {
     (
-        calculate_transaction_commitment::<B, H>(transactions, chain_id, block_number, backend.bonsai())
+        calculate_transaction_commitment::<B, H>(transactions, chain_id, block_number, backend.bonsai().clone())
             .expect("Failed to calculate transaction commitment"),
         calculate_event_commitment::<B, H>(events, backend.bonsai())
             .expect("Failed to calculate event commitment"),

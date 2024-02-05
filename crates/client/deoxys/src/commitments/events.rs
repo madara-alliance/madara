@@ -60,7 +60,7 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
 pub(crate) fn calculate_event_commitment<B, H>(
     events: &[Event],
     backend: &Arc<BonsaiDb<B>>,
-) -> Result<Felt252Wrapper, BonsaiDbError>
+) -> Result<Felt252Wrapper, anyhow::Error>
 where
     B: BlockT,
     H: HasherT,
@@ -70,18 +70,18 @@ where
 
     let mut batch = bonsai_db.create_batch();
     let bonsai_storage: BonsaiStorage<BasicId, _, Pedersen> =
-        BonsaiStorage::new(bonsai_db, config).expect("Failed to create bonsai storage");
+        BonsaiStorage::new(*bonsai_db, config).expect("Failed to create bonsai storage");
 
-    events.iter().enumerate().for_each(|(id, event)| {
-        let final_hash = calculate_event_hash::<H>(event);
-        let idx_bytes: [u8; 8] = id.to_be_bytes();
+    for (idx, event) in events.iter().enumerate() {
+        let idx_bytes: [u8; 8] = idx.to_be_bytes();
         let final_hash = calculate_event_hash::<H>(event);
         let key = DatabaseKey::Flat(&idx_bytes);
         let _ = bonsai_db.insert(&key, &H256::from(final_hash.to_bytes_be()).encode(), Some(&mut batch));
-    });
+    }
 
-    bonsai_db.write_batch(batch)?;
+    let _ = bonsai_db.write_batch(batch);
 
     let root = bonsai_storage.root_hash().expect("Failed to get bonsai root hash");
+    println!("Event commitment: {:?}", root);
     Ok(Felt252Wrapper::from(root))
 }

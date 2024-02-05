@@ -59,18 +59,18 @@ pub(crate) fn calculate_transaction_commitment<B, H>(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
-    backend: &Arc<BonsaiDb<B>>,
+    backend: Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, BonsaiDbError>
 where
     B: BlockT,
     H: HasherT,
 {
     let config = BonsaiStorageConfig::default();
-    let mut bonsai_db = backend.as_ref();
+    let mut bonsai_db = backend.clone();
 
     let mut batch = bonsai_db.create_batch();
     let bonsai_storage: BonsaiStorage<BasicId, _, Pedersen> =
-        BonsaiStorage::new(bonsai_db, config).expect("Failed to create bonsai storage");
+        BonsaiStorage::new(*bonsai_db, config).expect("Failed to create bonsai storage");
 
     for (idx, tx) in transactions.iter().enumerate() {
         let idx_bytes: [u8; 8] = idx.to_be_bytes();
@@ -82,5 +82,6 @@ where
     bonsai_db.write_batch(batch)?;
 
     let root = bonsai_storage.root_hash().expect("Failed to get bonsai root hash");
+    println!("Transaction commitment: {:?}", root);
     Ok(Felt252Wrapper::from(root))
 }

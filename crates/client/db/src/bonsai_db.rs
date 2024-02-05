@@ -13,7 +13,7 @@ pub struct BonsaiDb<B: BlockT> {
     pub(crate) _marker: PhantomData<B>,
 }
 
-impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
+impl<B: BlockT> BonsaiDatabase for BonsaiDb<B> {
     type Batch = DBTransaction;
     type DatabaseError = BonsaiDbError;
 
