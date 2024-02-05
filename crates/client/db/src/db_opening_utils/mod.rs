@@ -17,26 +17,30 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub mod parity_db_adapter;
+pub mod rock_db_adapter;
 
 use std::path::Path;
 use std::sync::Arc;
 
 use kvdb::KeyValueDB;
+use sp_database::Database;
 
-use crate::{Database, DatabaseSettings, DatabaseSource, DbHash};
+use crate::{DatabaseSettings, DatabaseSource, DbHash};
 
-pub(crate) fn open_database(config: &DatabaseSettings) -> Result<(Arc<dyn KeyValueDB>, Arc<dyn Database<DbHash>>), String> {
+pub(crate) fn open_database(
+    config: &DatabaseSettings,
+) -> Result<(Arc<dyn KeyValueDB>, Arc<dyn Database<DbHash>>), String> {
     let dbs: (Arc<dyn KeyValueDB>, Arc<dyn Database<DbHash>>) = match &config.source {
         // DatabaseSource::ParityDb { path } => open_parity_db(path).expect("Failed to open parity db"),
         DatabaseSource::RocksDb { path, .. } => {
             let dbs = open_kvdb_rocksdb(path, true)?;
             (dbs.0, dbs.1)
-        },
+        }
         DatabaseSource::Auto { paritydb_path, rocksdb_path, .. } => match open_kvdb_rocksdb(rocksdb_path, false) {
             Ok(_) => {
                 let dbs = open_kvdb_rocksdb(paritydb_path, true)?;
                 (dbs.0, dbs.1)
-            },
+            }
             Err(_) => Err("Missing feature flags `parity-db`".to_string())?,
         },
         _ => return Err("Missing feature flags `parity-db`".to_string()),
@@ -44,16 +48,16 @@ pub(crate) fn open_database(config: &DatabaseSettings) -> Result<(Arc<dyn KeyVal
     Ok(dbs)
 }
 
-pub fn open_kvdb_rocksdb(path: &Path, create: bool) -> Result<(Arc<dyn KeyValueDB>, Arc<dyn Database<DbHash>>), String> {
+pub fn open_kvdb_rocksdb(
+    path: &Path,
+    create: bool,
+) -> Result<(Arc<dyn KeyValueDB>, Arc<dyn Database<DbHash>>), String> {
     let mut db_config = kvdb_rocksdb::DatabaseConfig::with_columns(crate::columns::NUM_COLUMNS);
     db_config.create_if_missing = create;
 
-    println!("test 1");
     let db_kvdb = kvdb_rocksdb::Database::open(&db_config, path).map_err(|err| format!("{}", err))?;
-    println!("test 2");
-    let db_spdb = kvdb_rocksdb::Database::open(&db_config, path).map_err(|err| format!("{}", err))?;
-    println!("test 3");
-    let kvdb = Arc::new(db_kvdb);
-    let spdb = sp_database::as_database(db_spdb);
-    Ok((kvdb, spdb))
+    let x = Arc::new(db_kvdb);
+    let y = unsafe {std::mem::transmute::<_, Arc<rock_db_adapter::DbAdapter>>(x.clone())};
+
+    Ok((x, y))
 }

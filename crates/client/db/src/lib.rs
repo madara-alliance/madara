@@ -37,7 +37,6 @@ use meta_db::MetaDb;
 use sc_client_db::DatabaseSource;
 use sp_database::Database;
 use sp_runtime::traits::Block as BlockT;
-use db_opening_utils::parity_db_adapter::DbAdapter;
 
 const DB_HASH_LEN: usize = 32;
 /// Hash type that this backend uses for the database.

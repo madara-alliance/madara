@@ -82,5 +82,6 @@ where
     bonsai_db.write_batch(batch)?;
 
     let root = bonsai_storage.root_hash().expect("Failed to get bonsai root hash");
+    println!("Transaction commitment: {:?}", root);
     Ok(Felt252Wrapper::from(root))
 }
