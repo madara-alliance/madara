@@ -25,6 +25,8 @@ pub const STARKNET_CURRENT_BLOCK: &[u8] = b"CurrentBlock";
 pub const STARKNET_CONTRACT_CLASS_HASH: &[u8] = b"ContractClassHashes";
 /// Starknet contract class storage item.
 pub const STARKNET_CONTRACT_CLASS: &[u8] = b"ContractClasses";
+/// Starknet contract abi storage item.
+pub const STARKNET_CONTRACT_ABI: &[u8] = b"ContractAbis";
 /// Starknet nonce storage item.
 pub const STARKNET_NONCE: &[u8] = b"Nonces";
 /// Starknet storage

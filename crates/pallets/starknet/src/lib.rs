@@ -77,6 +77,7 @@ use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::{Block as StarknetBlock, Header as StarknetHeader};
+use mp_contract::ContractAbi;
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_fee::{ResourcePrice, INITIAL_GAS};
 use mp_felt::Felt252Wrapper;
@@ -123,6 +124,8 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
+    use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
+
     use super::*;
 
     #[pallet::pallet]
@@ -196,51 +199,10 @@ pub mod pallet {
             if !logs.is_empty() {
                 for log_entry in logs {
                     if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
-                        if *engine_id == mp_digest_log::STATE_ENGINE_ID {
-                            match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
-                                Ok(state_update) => {
-                                    for (address, storage_diffs) in state_update.state_diff.storage_diffs {
-                                        for storage_diff in storage_diffs {
-                                            let contract_storage_key: ContractStorageKey = (
-                                                ContractAddress(address.try_into().unwrap()),
-                                                StorageKey(storage_diff.key.try_into().unwrap()),
-                                            );
-                                            let value = StarkFelt(storage_diff.value.try_into().unwrap());
-                                            <StorageView<T>>::insert(contract_storage_key, value)
-                                        }
-                                    }
-
-                                    for deployed_contract in state_update.state_diff.deployed_contracts {
-                                        let contract_address =
-                                            ContractAddress(deployed_contract.address.try_into().unwrap());
-                                        let class_hash = ClassHash(deployed_contract.class_hash.try_into().unwrap());
-                                        <ContractClassHashes<T>>::insert(contract_address, class_hash);
-                                    }
-
-                                    // TODO: old declared contracts
-
-                                    for declared_class in state_update.state_diff.declared_classes {
-                                        let class_hash = ClassHash(declared_class.class_hash.try_into().unwrap());
-                                        let compiled_class_hash =
-                                            CompiledClassHash(declared_class.compiled_class_hash.try_into().unwrap());
-                                        <CompiledClassHashes<T>>::insert(class_hash, compiled_class_hash);
-                                    }
-
-                                    for (address, nonce) in state_update.state_diff.nonces {
-                                        let contract_address = ContractAddress(address.try_into().unwrap());
-                                        let nonce = Nonce(nonce.try_into().unwrap());
-                                        <Nonces<T>>::insert(contract_address, nonce);
-                                    }
-
-                                    for replaced_class in state_update.state_diff.replaced_classes {
-                                        let contract_address =
-                                            ContractAddress(replaced_class.address.try_into().unwrap());
-                                        let class_hash = ClassHash(replaced_class.class_hash.try_into().unwrap());
-                                        <ContractClassHashes<T>>::insert(contract_address, class_hash);
-                                    }
-                                }
-                                Err(e) => log!(info, "Decoding error: {:?}", e),
-                            }
+                        match *engine_id {
+                            mp_digest_log::STATE_ENGINE_ID => store_state_update::<T>(&encoded_data),
+                            mp_digest_log::CLASS_ENGINE_ID => store_class_update::<T>(&encoded_data),
+                            _ => {}
                         }
                     }
                 }
@@ -252,6 +214,83 @@ pub mod pallet {
         /// Perform a module upgrade.
         fn on_runtime_upgrade() -> Weight {
             Weight::zero()
+        }
+    }
+
+    fn store_state_update<T: Config>(encoded_data: &Vec<u8>) {
+        match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
+            Ok(state_update) => {
+                for (address, storage_diffs) in state_update.state_diff.storage_diffs {
+                    for storage_diff in storage_diffs {
+                        let contract_storage_key: ContractStorageKey = (
+                            ContractAddress(address.try_into().unwrap()),
+                            StorageKey(storage_diff.key.try_into().unwrap()),
+                        );
+                        let value = StarkFelt(storage_diff.value.try_into().unwrap());
+                        <StorageView<T>>::insert(contract_storage_key, value)
+                    }
+                }
+
+                // nonces stored for accessing on `starknet_getNonce` RPC call.
+                state_update
+                    .state_diff
+                    .nonces
+                    .into_iter()
+                    .map(|(address, nonce)| {
+                        (ContractAddress(address.try_into().unwrap()), Nonce(nonce.try_into().unwrap()))
+                    })
+                    .for_each(|(contract_address, nonce)| <Nonces<T>>::insert(contract_address, nonce));
+
+                // contract address to class hash equivalence (used in
+                // `starknet_getClassHashAt`` rpc call)
+                core::iter::empty()
+                    .chain(state_update.state_diff.deployed_contracts)
+                    .chain(state_update.state_diff.replaced_classes)
+                    .into_iter()
+                    .map(|contract| {
+                        (
+                            ContractAddress(contract.address.try_into().unwrap()),
+                            ClassHash(contract.class_hash.try_into().unwrap()),
+                        )
+                    })
+                    .for_each(|(contract_address, class_hash)| {
+                        <ContractClassHashes<T>>::insert(contract_address, class_hash)
+                    });
+
+                // we need to store the entire data from the StateDiff to be able to return it
+                // during `starknet_getStateUpdate`
+                state_update
+                    .state_diff
+                    .declared_classes
+                    .into_iter()
+                    .map(|declared_class| {
+                        (
+                            ClassHash(declared_class.class_hash.try_into().unwrap()),
+                            CompiledClassHash(declared_class.compiled_class_hash.try_into().unwrap()),
+                        )
+                    })
+                    .for_each(|(class_hash, compiled_class_hash)| {
+                        <CompiledClassHashes<T>>::insert(class_hash, compiled_class_hash)
+                    });
+            }
+            Err(e) => log!(info, "Decoding error: {:?}", e),
+        }
+    }
+
+    fn store_class_update<T: Config>(encoded_data: &Vec<u8>) {
+        match ClassUpdateWrapper::decode(&mut encoded_data.as_slice()) {
+            Ok(class_update) => {
+                class_update.0.into_iter().for_each(|ContractClassData { hash, contract_class }| {
+                    let ContractClassWrapper { contract, abi } = contract_class;
+
+                    // Blockifier class and ABI need to be stored separately since Blockifier
+                    // does not store ABI. In the future, it would be better to have a separate
+                    // storage structure which contains both the class data and the ABI
+                    <ContractClasses<T>>::insert(hash, contract);
+                    <ContractAbis<T>>::insert(hash, abi);
+                })
+            }
+            Err(e) => log!(info, "Decoding error: {:?}", e),
         }
     }
 
@@ -326,6 +365,13 @@ pub mod pallet {
 
     /// Mapping from Starknet Sierra class hash to  Casm compiled contract class.
     /// Safe to use `Identity` as the key is already a hash.
+    #[pallet::storage]
+    #[pallet::unbounded]
+    #[pallet::getter(fn contract_abi_by_class_hash)]
+    pub(super) type ContractAbis<T: Config> = StorageMap<_, Identity, CasmClassHash, ContractAbi, OptionQuery>;
+
+    /// Mapping from Starknet Sierra class hash to  Casm compiled contract
+    /// class. Safe to use `Identity` as the key is already a hash.
     #[pallet::storage]
     #[pallet::unbounded]
     #[pallet::getter(fn compiled_class_hash_by_class_hash)]

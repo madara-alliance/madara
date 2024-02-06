@@ -1,15 +1,13 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 // TODO: Find a better place than the block primitive crate to store this.
 use mp_felt::Felt252Wrapper;
-#[cfg(feature = "parity-scale-codec")]
-use parity_scale_codec::{Decode, Encode, Error, Input, Output};
 
 #[doc(hidden)]
 pub extern crate alloc;
-
 use alloc::vec::Vec;
 
 #[derive(Debug)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct StateUpdateWrapper {
     pub block_hash: Option<Felt252Wrapper>,
     pub new_root: Option<Felt252Wrapper>,
@@ -18,6 +16,7 @@ pub struct StateUpdateWrapper {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct StateDiffWrapper {
     pub storage_diffs: Vec<(Felt252Wrapper, Vec<StorageDiffWrapper>)>,
     pub deployed_contracts: Vec<DeployedContractWrapper>,
@@ -28,148 +27,87 @@ pub struct StateDiffWrapper {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct StorageDiffWrapper {
     pub key: Felt252Wrapper,
     pub value: Felt252Wrapper,
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct DeployedContractWrapper {
     pub address: Felt252Wrapper,
     pub class_hash: Felt252Wrapper,
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct DeclaredContractWrapper {
     pub class_hash: Felt252Wrapper,
     pub compiled_class_hash: Felt252Wrapper,
 }
 
-// Encode and Decode for `StorageDiffWrapper`
-#[cfg(feature = "parity-scale-codec")]
-impl Encode for StorageDiffWrapper {
-    fn size_hint(&self) -> usize {
-        self.key.size_hint() + self.value.size_hint()
+/// module `starknet-provider` uses `std` and as result cannot be included in the
+/// substrate runtime. This ensures conversions using `starknet-provider` are
+/// only available in `std` environments.
+#[cfg(feature = "std")]
+pub mod convert {
+    use starknet_providers::sequencer::models::state_update::{
+        DeclaredContract, DeployedContract, StateDiff, StorageDiff,
+    };
+    use starknet_providers::sequencer::models::StateUpdate;
+
+    use super::*;
+
+    impl From<starknet_providers::sequencer::models::StateUpdate> for StateUpdateWrapper {
+        fn from(update: StateUpdate) -> Self {
+            StateUpdateWrapper {
+                block_hash: update.block_hash.as_ref().cloned().map(Felt252Wrapper::from),
+                new_root: update.new_root.as_ref().cloned().map(Felt252Wrapper::from),
+                old_root: Felt252Wrapper::from(update.old_root),
+                state_diff: StateDiffWrapper::from(&update.state_diff),
+            }
+        }
     }
 
-    fn encode_to<T: Output + ?Sized>(&self, dest: &mut T) {
-        self.key.encode_to(dest);
-        self.value.encode_to(dest);
-    }
-}
-
-#[cfg(feature = "parity-scale-codec")]
-impl Decode for StorageDiffWrapper {
-    fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
-        Ok(StorageDiffWrapper { key: Felt252Wrapper::decode(input)?, value: Felt252Wrapper::decode(input)? })
-    }
-}
-
-// Encode and Decode for `DeployedContractWrapper`
-#[cfg(feature = "parity-scale-codec")]
-impl Encode for DeployedContractWrapper {
-    fn size_hint(&self) -> usize {
-        self.address.size_hint() + self.class_hash.size_hint()
+    impl From<&StateDiff> for StateDiffWrapper {
+        fn from(diff: &StateDiff) -> Self {
+            StateDiffWrapper {
+                storage_diffs: diff
+                    .storage_diffs
+                    .iter()
+                    .map(|(key, diffs)| (Felt252Wrapper(*key), diffs.iter().map(StorageDiffWrapper::from).collect()))
+                    .collect(),
+                deployed_contracts: diff.deployed_contracts.iter().map(DeployedContractWrapper::from).collect(),
+                old_declared_contracts: diff.old_declared_contracts.iter().map(|&hash| Felt252Wrapper(hash)).collect(),
+                declared_classes: diff.declared_classes.iter().map(DeclaredContractWrapper::from).collect(),
+                nonces: diff.nonces.iter().map(|(&key, &value)| (Felt252Wrapper(key), Felt252Wrapper(value))).collect(),
+                replaced_classes: diff.replaced_classes.iter().map(DeployedContractWrapper::from).collect(),
+            }
+        }
     }
 
-    fn encode_to<T: Output + ?Sized>(&self, dest: &mut T) {
-        self.address.encode_to(dest);
-        self.class_hash.encode_to(dest);
-    }
-}
-
-#[cfg(feature = "parity-scale-codec")]
-impl Decode for DeployedContractWrapper {
-    fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
-        Ok(DeployedContractWrapper {
-            address: Felt252Wrapper::decode(input)?,
-            class_hash: Felt252Wrapper::decode(input)?,
-        })
-    }
-}
-
-// Encode and Decode for `DeclaredContractWrapper`
-#[cfg(feature = "parity-scale-codec")]
-impl Encode for DeclaredContractWrapper {
-    fn size_hint(&self) -> usize {
-        self.class_hash.size_hint() + self.compiled_class_hash.size_hint()
+    impl From<&StorageDiff> for StorageDiffWrapper {
+        fn from(diff: &StorageDiff) -> Self {
+            StorageDiffWrapper { key: Felt252Wrapper(diff.key), value: Felt252Wrapper(diff.value) }
+        }
     }
 
-    fn encode_to<T: Output + ?Sized>(&self, dest: &mut T) {
-        self.class_hash.encode_to(dest);
-        self.compiled_class_hash.encode_to(dest);
-    }
-}
-
-#[cfg(feature = "parity-scale-codec")]
-impl Decode for DeclaredContractWrapper {
-    fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
-        Ok(DeclaredContractWrapper {
-            class_hash: Felt252Wrapper::decode(input)?,
-            compiled_class_hash: Felt252Wrapper::decode(input)?,
-        })
-    }
-}
-
-// Encode and Decode for `StateDiffWrapper`
-#[cfg(feature = "parity-scale-codec")]
-impl Encode for StateDiffWrapper {
-    fn size_hint(&self) -> usize {
-        // Implement size hint calculation based on the new Vec fields.
-        0 // Replace this with the actual calculation.
+    impl From<&DeployedContract> for DeployedContractWrapper {
+        fn from(contract: &DeployedContract) -> Self {
+            DeployedContractWrapper {
+                address: Felt252Wrapper(contract.address),
+                class_hash: Felt252Wrapper(contract.class_hash),
+            }
+        }
     }
 
-    fn encode_to<T: Output + ?Sized>(&self, dest: &mut T) {
-        // Encode each of the Vec fields.
-        self.storage_diffs.encode_to(dest);
-        self.deployed_contracts.encode_to(dest);
-        self.old_declared_contracts.encode_to(dest);
-        self.declared_classes.encode_to(dest);
-        self.nonces.encode_to(dest);
-        self.replaced_classes.encode_to(dest);
-    }
-}
-
-#[cfg(feature = "parity-scale-codec")]
-impl Decode for StateDiffWrapper {
-    fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
-        Ok(StateDiffWrapper {
-            storage_diffs: Vec::<(Felt252Wrapper, Vec<StorageDiffWrapper>)>::decode(input)?,
-            deployed_contracts: Vec::<DeployedContractWrapper>::decode(input)?,
-            old_declared_contracts: Vec::<Felt252Wrapper>::decode(input)?,
-            declared_classes: Vec::<DeclaredContractWrapper>::decode(input)?,
-            nonces: Vec::<(Felt252Wrapper, Felt252Wrapper)>::decode(input)?,
-            replaced_classes: Vec::<DeployedContractWrapper>::decode(input)?,
-        })
-    }
-}
-
-// Encode and Decode for `StateUpdateWrapper`
-#[cfg(feature = "parity-scale-codec")]
-impl Encode for StateUpdateWrapper {
-    fn size_hint(&self) -> usize {
-        self.block_hash.size_hint()
-            + self.new_root.size_hint()
-            + self.old_root.size_hint()
-            + self.state_diff.size_hint()
-    }
-
-    fn encode_to<T: Output + ?Sized>(&self, dest: &mut T) {
-        self.block_hash.encode_to(dest);
-        self.new_root.encode_to(dest);
-        self.old_root.encode_to(dest);
-        self.state_diff.encode_to(dest);
-    }
-}
-
-#[cfg(feature = "parity-scale-codec")]
-impl Decode for StateUpdateWrapper {
-    fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
-        Ok(StateUpdateWrapper {
-            block_hash: Option::<Felt252Wrapper>::decode(input)?,
-            new_root: Option::<Felt252Wrapper>::decode(input)?,
-            old_root: Felt252Wrapper::decode(input)?,
-            state_diff: StateDiffWrapper::decode(input)?,
-        })
+    impl From<&DeclaredContract> for DeclaredContractWrapper {
+        fn from(contract: &DeclaredContract) -> Self {
+            DeclaredContractWrapper {
+                class_hash: Felt252Wrapper(contract.class_hash),
+                compiled_class_hash: Felt252Wrapper(contract.compiled_class_hash),
+            }
+        }
     }
 }

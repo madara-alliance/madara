@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use blockifier::execution::contract_class::ContractClass;
 use frame_support::{Identity, StorageHasher};
+use mp_contract::ContractAbi;
 use mp_storage::StarknetStorageSchemaVersion;
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::{Backend, HeaderBackend, StorageProvider};
@@ -73,6 +74,8 @@ pub trait StorageOverride<B: BlockT>: Send + Sync {
         block_hash: B::Hash,
         contract_class_hash: ClassHash,
     ) -> Option<ContractClass>;
+    /// Return the contract abi for a provided class_hash and block hash
+    fn contract_abi_by_class_hash(&self, block_hash: B::Hash, contract_class_hash: ClassHash) -> Option<ContractAbi>;
     /// Returns the nonce for a provided contract address and block hash.
     fn nonce(&self, block_hash: B::Hash, address: ContractAddress) -> Option<Nonce>;
 }
@@ -166,6 +169,23 @@ where
         contract_class_hash: ClassHash,
     ) -> Option<ContractClass> {
         self.client.runtime_api().contract_class_by_class_hash(block_hash, contract_class_hash).ok()?
+    }
+
+    /// Return the contract ABI for a provided class_hash and block hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_hash` - The block hash
+    /// * `contract_class_hash` - The class hash to fetch the contract class for
+    ///
+    /// # Returns
+    /// * `Some(contract_abi)` - The contract ABI for the provided class hash and block hash
+    fn contract_abi_by_class_hash(
+        &self,
+        block_hash: <B as BlockT>::Hash,
+        contract_class_hash: ClassHash,
+    ) -> Option<ContractAbi> {
+        self.client.runtime_api().contract_abi_by_class_hash(block_hash, contract_class_hash).ok()?
     }
 
     /// Return the nonce for a provided contract address and block hash.

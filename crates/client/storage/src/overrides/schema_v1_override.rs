@@ -2,8 +2,10 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use blockifier::execution::contract_class::ContractClass;
+use mp_contract::ContractAbi;
 use mp_storage::{
-    PALLET_STARKNET, STARKNET_CONTRACT_CLASS, STARKNET_CONTRACT_CLASS_HASH, STARKNET_NONCE, STARKNET_STORAGE,
+    PALLET_STARKNET, STARKNET_CONTRACT_ABI, STARKNET_CONTRACT_CLASS, STARKNET_CONTRACT_CLASS_HASH, STARKNET_NONCE,
+    STARKNET_STORAGE,
 };
 use parity_scale_codec::{Decode, Encode};
 // Substrate
@@ -113,6 +115,18 @@ where
                 storage_contract_class_prefix,
                 &self.encode_storage_key(&contract_class_hash),
             )),
+        )
+    }
+
+    fn contract_abi_by_class_hash(
+        &self,
+        block_hash: <B as BlockT>::Hash,
+        contract_class_hash: ClassHash,
+    ) -> Option<ContractAbi> {
+        let storage_contract_abi_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_CONTRACT_ABI);
+        self.query_storage::<ContractAbi>(
+            block_hash,
+            &StorageKey(storage_key_build(storage_contract_abi_prefix, &self.encode_storage_key(&contract_class_hash))),
         )
     }
 

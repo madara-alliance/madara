@@ -1,23 +1,23 @@
 [package]
-name = "pallet-starknet"
-version.workspace = true
-edition.workspace = true
-description = "FRAME pallet to execute Starknet contracts."
 authors = ["Abdelhamid Bakhta <@abdelhamidbakhta>"]
+description = "FRAME pallet to execute Starknet contracts."
+edition.workspace = true
 homepage = "https://github.com/keep-starknet-strange/madara"
 license = "MIT"
+name = "pallet-starknet"
 publish = false
 repository = "https://github.com/keep-starknet-strange/madara"
+version.workspace = true
 
-
-[package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
+  [package.metadata.docs.rs]
+  targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 # Madara primitives
 mp-block = { workspace = true }
 mp-chain-id = { workspace = true }
 mp-commitments = { workspace = true }
+mp-contract = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-fee = { workspace = true }
 mp-felt = { workspace = true, features = ["parity-scale-codec", "serde"] }
@@ -38,15 +38,15 @@ mp-storage = { workspace = true, features = ["parity-scale-codec"] }
 mp-transactions = { workspace = true, features = ["scale-info"] }
 
 blockifier = { workspace = true, features = [
-  "testing",
   "parity-scale-codec",
   "scale-info",
+  "testing",
 ] }
 starknet-core = { workspace = true }
 starknet-crypto = { workspace = true, features = ["alloc"] }
 starknet_api = { workspace = true, features = [
-  "scale-info",
   "parity-scale-codec",
+  "scale-info",
 ] }
 
 # Substrate frame
@@ -85,39 +85,41 @@ serde_json = { workspace = true }
 serde_with = { workspace = true }
 
 [dev-dependencies]
+assert_matches = "1.5.0"
+hexlit = "0.5.5"
+lazy_static = "1.4.0"
 pallet-timestamp = { workspace = true }
 pretty_assertions = { workspace = true }
-test-case = "3.1.0"
-lazy_static = "1.4.0"
-hexlit = "0.5.5"
-assert_matches = "1.5.0"
-starknet-ff = { workspace = true }
 project-root = "0.2.2"
+starknet-ff = { workspace = true }
+test-case = "3.1.0"
 
 [features]
 default = ["std"]
+runtime-benchmarks = ["frame-benchmarking/runtime-benchmarks"]
 std = [
   # Substrate
+  "frame-benchmarking?/std",
   "frame-support/std",
   "frame-system/std",
+  "pallet-timestamp/std",
   "sc-cli",
+  "scale-info/std",
+  "sp-inherents/std",
   "sp-io/std",
   "sp-runtime/std",
-  "frame-benchmarking?/std",
-  "scale-info/std",
-  "pallet-timestamp/std",
-  "sp-inherents/std",
   # Starknet
-  "starknet-crypto/std",
   "blockifier/std",
   "mp-felt/std",
   "mp-sequencer-address/std",
+  "starknet-crypto/std",
   # Other third party dependencies
-  "dep:reqwest",
   "dep:cairo-lang-casm-contract-class",
+  "dep:reqwest",
+  "mp-block/std",
+  "mp-contract/std",
+  "mp-simulations/std",
   "parity-scale-codec/std",
   "starknet-core/std",
-  "mp-simulations/std",
 ]
-runtime-benchmarks = ["frame-benchmarking/runtime-benchmarks"]
 try-runtime = ["frame-support/try-runtime"]

@@ -6,7 +6,7 @@
 //! first one as a fallback.
 //! It can also support multiple versions of the pallet storage.
 
-mod overrides;
+pub mod overrides;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

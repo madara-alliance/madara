@@ -28,6 +28,7 @@ pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
 use frame_system::{EventRecord, Phase};
+use mp_contract::ContractAbi;
 use mp_felt::Felt252Wrapper;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -254,6 +255,11 @@ impl_runtime_apis! {
 
         fn contract_class_by_class_hash(class_hash: ClassHash) -> Option<ContractClass> {
             Starknet::contract_class_by_class_hash(class_hash)
+        }
+
+        fn contract_abi_by_class_hash(class_hash: ClassHash) ->
+        Option<ContractAbi> {
+            Starknet::contract_abi_by_class_hash(class_hash)
         }
 
         fn chain_id() -> Felt252Wrapper {

@@ -11,7 +11,8 @@ use mp_hashers::HasherT;
 
 use super::ref_merkle_node::{BinaryNode, Direction, EdgeNode, Node};
 
-/// Lightweight representation of [BinaryNode]. Only holds left and right hashes.
+/// Lightweight representation of [BinaryNode]. Only holds left and right
+/// hashes.
 #[derive(Debug, PartialEq, Eq)]
 pub struct BinaryProofNode {
     /// Left hash.
@@ -29,7 +30,8 @@ impl From<&BinaryNode> for ProofNode {
     }
 }
 
-/// Ligthtweight representation of [EdgeNode]. Only holds its path and its child's hash.
+/// Ligthtweight representation of [EdgeNode]. Only holds its path and its
+/// child's hash.
 #[derive(Debug, PartialEq, Eq)]
 pub struct EdgeProofNode {
     /// Path of the node.
@@ -58,12 +60,14 @@ pub enum ProofNode {
     Edge(EdgeProofNode),
 }
 
-/// A Starknet binary Merkle-Patricia tree with a specific root entry-point and storage.
+/// A Starknet binary Merkle-Patricia tree with a specific root entry-point and
+/// storage.
 ///
-/// This is used to update, mutate and access global Starknet state as well as individual contract
-/// states.
+/// This is used to update, mutate and access global Starknet state as well as
+/// individual contract states.
 ///
-/// For more information on how this functions internally, see [here](super::ref_merkle_tree).
+/// For more information on how this functions internally, see
+/// [here](super::ref_merkle_tree).
 #[derive(Debug, Clone)]
 pub struct RefMerkleTree<H: HasherT> {
     root: Rc<RefCell<Node>>,
@@ -71,9 +75,9 @@ pub struct RefMerkleTree<H: HasherT> {
 }
 
 impl<H: HasherT> RefMerkleTree<H> {
-    /// Less visible initialization for `MerkleTree<T>` as the main entry points should be
-    /// [`MerkleTree::<RcNodeStorage>::load`] for persistent trees and [`MerkleTree::empty`] for
-    /// transient ones.
+    /// Less visible initialization for `MerkleTree<T>` as the main entry points
+    /// should be [`MerkleTree::<RcNodeStorage>::load`] for persistent trees
+    /// and [`MerkleTree::empty`] for transient ones.
     fn new(root: Felt252Wrapper) -> Self {
         let root_node = Rc::new(RefCell::new(Node::Unresolved(root)));
         Self { root: root_node, _hasher: PhantomData }
@@ -135,7 +139,8 @@ impl<H: HasherT> RefMerkleTree<H> {
         }
     }
 
-    /// Sets the value of a key. To delete a key, set the value to [Felt252Wrapper::ZERO].
+    /// Sets the value of a key. To delete a key, set the value to
+    /// [Felt252Wrapper::ZERO].
     ///
     /// # Arguments
     ///
@@ -162,12 +167,14 @@ impl<H: HasherT> RefMerkleTree<H> {
         // 3. The leaf does not exist, and the tree is not empty. The final node in the traversal will be an
         //    edge node who's path diverges from our new leaf node's.
         //
-        //    This edge must be split into a new subtree containing both the existing edge's child and the
-        //    new leaf. This requires an edge followed by a binary node and then further edges to both the
-        //    current child and the new leaf. Any of these new edges may also end with an empty path in
-        //    which case they should be elided. It depends on the common path length of the current edge
-        //    and the new leaf i.e. the split may be at the first bit (in which case there is no leading
-        //    edge), or the split may be in the middle (requires both leading and post edges), or the
+        //    This edge must be split into a new subtree containing both the existing
+        // edge's child and the    new leaf. This requires an edge followed by a
+        // binary node and then further edges to both the    current child and
+        // the new leaf. Any of these new edges may also end with an empty path in
+        //    which case they should be elided. It depends on the common path length of
+        // the current edge    and the new leaf i.e. the split may be at the
+        // first bit (in which case there is no leading    edge), or the split
+        // may be in the middle (requires both leading and post edges), or the
         //    split may be the final bit (no post edge).
         use Node::*;
         match path.last() {
@@ -263,8 +270,9 @@ impl<H: HasherT> RefMerkleTree<H> {
 
     /// Deletes a leaf node from the tree.
     ///
-    /// This is not an external facing API; the functionality is instead accessed by calling
-    /// [`MerkleTree::set`] with value set to [`Felt252Wrapper::ZERO`].
+    /// This is not an external facing API; the functionality is instead
+    /// accessed by calling [`MerkleTree::set`] with value set to
+    /// [`Felt252Wrapper::ZERO`].
     ///
     /// # Arguments
     ///
@@ -277,7 +285,8 @@ impl<H: HasherT> RefMerkleTree<H> {
         // must be a binary node. In either case we end up with a binary node
         // who's one child is deleted. This changes the binary to an edge node.
         //
-        // Note that its possible that there is no binary node -- if the resulting tree would be empty.
+        // Note that its possible that there is no binary node -- if the resulting tree
+        // would be empty.
         //
         // This new edge node may need to merge with the old binary node's parent node
         // and other remaining child node -- if they're also edges.
@@ -331,7 +340,8 @@ impl<H: HasherT> RefMerkleTree<H> {
             }
         };
 
-        // Check the parent of the new edge. If it is also an edge, then they must merge.
+        // Check the parent of the new edge. If it is also an edge, then they must
+        // merge.
         if let Some(node) = node_iter.next() {
             if let Node::Edge(edge) = &mut *node.borrow_mut() {
                 self.merge_edges(edge);
@@ -358,8 +368,9 @@ impl<H: HasherT> RefMerkleTree<H> {
 
     /// Generates a merkle-proof for a given `key`.
     ///
-    /// Returns vector of [`ProofNode`] which form a chain from the root to the key,
-    /// if it exists, or down to the node which proves that the key does not exist.
+    /// Returns vector of [`ProofNode`] which form a chain from the root to the
+    /// key, if it exists, or down to the node which proves that the key
+    /// does not exist.
     ///
     /// The nodes are returned in order, root first.
     ///
@@ -385,8 +396,8 @@ impl<H: HasherT> RefMerkleTree<H> {
             None => return Vec::new(),
         };
 
-        // A leaf node is redundant data as the information for it is already contained in the previous
-        // node.
+        // A leaf node is redundant data as the information for it is already contained
+        // in the previous node.
         if matches!(&*node.borrow(), Node::Leaf(_)) {
             nodes.pop();
         }
@@ -401,18 +412,19 @@ impl<H: HasherT> RefMerkleTree<H> {
             .collect()
     }
 
-    /// Traverses from the current root towards the destination [Leaf](Node::Leaf) node.
-    /// Returns the list of nodes along the path.
+    /// Traverses from the current root towards the destination
+    /// [Leaf](Node::Leaf) node. Returns the list of nodes along the path.
     ///
     /// If the destination node exists, it will be the final node in the list.
     ///
-    /// This means that the final node will always be either a the destination [Leaf](Node::Leaf)
-    /// node, or an [Edge](Node::Edge) node who's path suffix does not match the leaf's path.
+    /// This means that the final node will always be either a the destination
+    /// [Leaf](Node::Leaf) node, or an [Edge](Node::Edge) node who's path
+    /// suffix does not match the leaf's path.
     ///
-    /// The final node can __not__ be a [Binary](Node::Binary) node since it would always be
-    /// possible to continue on towards the destination. Nor can it be an
-    /// [Unresolved](Node::Unresolved) node since this would be resolved to check if we can
-    /// travel further.
+    /// The final node can __not__ be a [Binary](Node::Binary) node since it
+    /// would always be possible to continue on towards the destination. Nor
+    /// can it be an [Unresolved](Node::Unresolved) node since this would be
+    /// resolved to check if we can travel further.
     ///
     /// # Arguments
     ///
@@ -459,13 +471,14 @@ impl<H: HasherT> RefMerkleTree<H> {
         }
     }
 
-    /// This is a convenience function which merges the edge node with its child __iff__ it is also
-    /// an edge.
+    /// This is a convenience function which merges the edge node with its child
+    /// __iff__ it is also an edge.
     ///
     /// Does nothing if the child is not also an edge node.
     ///
-    /// This can occur when mutating the tree (e.g. deleting a child of a binary node), and is an
-    /// illegal state (since edge nodes __must be__ maximal subtrees).
+    /// This can occur when mutating the tree (e.g. deleting a child of a binary
+    /// node), and is an illegal state (since edge nodes __must be__ maximal
+    /// subtrees).
     ///
     /// # Arguments
     ///
