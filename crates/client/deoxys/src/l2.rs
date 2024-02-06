@@ -46,6 +46,11 @@ lazy_static! {
     }));
 }
 
+lazy_static! {
+    /// Shared latest block number and hash of chain
+    static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: Arc<Mutex<(FieldElement, u64)>> = Arc::new(Mutex::new((FieldElement::default(), 0)));
+}
+
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
 /// feeder.
 #[derive(Clone, Debug)]
@@ -127,7 +132,14 @@ pub async fn sync(mut sender_config: SenderConfig, config: FetchConfig, start_at
     let mut last_block_hash = None;
     let mut got_block = false;
     let mut got_state_update = false;
+    let mut last_update_highest_block = tokio::time::Instant::now() - Duration::from_secs(20);
     loop {
+        if last_update_highest_block.elapsed() > Duration::from_secs(20) {
+            last_update_highest_block = tokio::time::Instant::now();
+            if let Err(e) = update_highest_block_hash_and_number(&client).await {
+                eprintln!("Failed to update highest block hash and number: {}", e);
+            }
+        }
         let (block, state_update) = match (got_block, got_state_update) {
             (false, false) => {
                 let block = fetch_block(&client, block_sender, current_block_number);
@@ -387,4 +399,29 @@ pub fn update_l2(state_update: L2StateUpdate) {
         let mut new_state_update = last_state_update.lock().unwrap();
         *new_state_update = state_update.clone();
     }
+}
+
+async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider) -> Result<(), String> {
+    let block = client.get_block(BlockId::Latest).await.map_err(|e| format!("failed to get block: {e}"))?;
+
+    let hash = block
+        .block_hash
+        .ok_or("block hash not found")?
+        .try_into()
+        .map_err(|e| format!("failed to convert block hash: {e}"))?;
+    let number = block
+        .block_number
+        .ok_or("block number not found")?
+        .try_into()
+        .map_err(|e| format!("failed to convert block number: {e}"))?;
+
+    let last_highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.clone();
+    let mut new_highest_block_hash_and_number = last_highest_block_hash_and_number.lock().unwrap();
+    *new_highest_block_hash_and_number = (hash, number);
+
+    Ok(())
+}
+
+pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
+    STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.lock().unwrap().clone()
 }
