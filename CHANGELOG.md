@@ -2,6 +2,7 @@ git # Madara Changelog
 
 ## Next release
 
+- feat: update and store highest block hash and number from sequencer
 - feat: store events in block, return events in call get_transaction_receipt
 - feat(client): on `add_declare_transaction` store sierra contract classes in
   the madara backend
