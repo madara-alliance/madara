@@ -29,6 +29,6 @@ pub fn calculate_commitments<B: BlockT, H: HasherT>(
     (
         calculate_transaction_commitment::<B, H>(transactions, chain_id, block_number, &backend.bonsai().clone())
             .expect("Failed to calculate transaction commitment"),
-        calculate_event_commitment::<B, H>(events, backend.bonsai()).expect("Failed to calculate event commitment"),
+        calculate_event_commitment::<B, H>(events, &backend.bonsai().clone()).expect("Failed to calculate event commitment"),
     )
 }
