@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bitvec::prelude::*;
 use bonsai_trie::bonsai_database::DatabaseKey;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiDatabase, BonsaiStorage, BonsaiStorageConfig, BonsaiTrieHash, Membership, ProofNode};
@@ -14,8 +15,8 @@ use sp_core::H256;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
-use starknet_types_core::{hash::Pedersen, felt::Felt};
-use bitvec::prelude::*;
+use starknet_types_core::felt::Felt;
+use starknet_types_core::hash::Pedersen;
 
 /// Compute the combined hash of the transaction hash and the signature.
 ///
@@ -69,35 +70,55 @@ where
 {
     let config = BonsaiStorageConfig::default();
     let bonsai_db = backend.as_ref();
+    let mut bonsai_storage =
+        BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
     let transactions: Vec<Transaction> = vec![
         mp_transactions::Transaction::Deploy(DeployTransaction {
-            version: starknet_api::transaction::TransactionVersion(StarkFelt(Felt252Wrapper::from_hex_be("0x0000000000000000000000000000000000000000000000000000000000000000").unwrap().into())),
-            class_hash: Felt252Wrapper::from_hex_be("0x010455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8").unwrap(),
-            contract_address_salt: Felt252Wrapper::from_hex_be("0x03a6b18fc3415b7d749f18483393b0d6a1aef168435016c0f5f5d8902a84a36f").unwrap(),
+            version: starknet_api::transaction::TransactionVersion(StarkFelt(
+                Felt252Wrapper::from_hex_be("0x0000000000000000000000000000000000000000000000000000000000000000")
+                    .unwrap()
+                    .into(),
+            )),
+            class_hash: Felt252Wrapper::from_hex_be(
+                "0x010455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8",
+            )
+            .unwrap(),
+            contract_address_salt: Felt252Wrapper::from_hex_be(
+                "0x03a6b18fc3415b7d749f18483393b0d6a1aef168435016c0f5f5d8902a84a36f",
+            )
+            .unwrap(),
             constructor_calldata: vec![
-                Felt252Wrapper::from_hex_be("0x04184fa5a6d40f47a127b046ed6facfa3e6bc3437b393da65cc74afe47ca6c6e").unwrap(),
-                Felt252Wrapper::from_hex_be("0x001ef78e458502cd457745885204a4ae89f3880ec24db2d8ca97979dce15fedc").unwrap()
-            ]
+                Felt252Wrapper::from_hex_be("0x04184fa5a6d40f47a127b046ed6facfa3e6bc3437b393da65cc74afe47ca6c6e")
+                    .unwrap(),
+                Felt252Wrapper::from_hex_be("0x001ef78e458502cd457745885204a4ae89f3880ec24db2d8ca97979dce15fedc")
+                    .unwrap(),
+            ],
         }),
         mp_transactions::Transaction::Invoke(mp_transactions::InvokeTransaction::V0(InvokeTransactionV0 {
             max_fee: 0,
             signature: vec![],
-            contract_address: mp_felt::Felt252Wrapper::from_hex_be("0x06538fdd3aa353af8a87f5fe77d1f533ea82815076e30a86d65b72d3eb4f0b80").unwrap(),
-            entry_point_selector: mp_felt::Felt252Wrapper::from_hex_be("0x0218f305395474a84a39307fa5297be118fe17bf65e27ac5e2de6617baa44c64").unwrap(),
+            contract_address: mp_felt::Felt252Wrapper::from_hex_be(
+                "0x06538fdd3aa353af8a87f5fe77d1f533ea82815076e30a86d65b72d3eb4f0b80",
+            )
+            .unwrap(),
+            entry_point_selector: mp_felt::Felt252Wrapper::from_hex_be(
+                "0x0218f305395474a84a39307fa5297be118fe17bf65e27ac5e2de6617baa44c64",
+            )
+            .unwrap(),
             calldata: vec![
-                mp_felt::Felt252Wrapper::from_hex_be("0x0327d34747122d7a40f4670265b098757270a449ec80c4871450fffdab7c2fa8").unwrap(),
+                mp_felt::Felt252Wrapper::from_hex_be(
+                    "0x0327d34747122d7a40f4670265b098757270a449ec80c4871450fffdab7c2fa8",
+                )
+                .unwrap(),
                 mp_felt::Felt252Wrapper::ZERO,
             ],
         })),
     ];
 
-    let mut bonsai_storage = BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
-
     for (i, tx) in transactions.iter().enumerate() {
         let tx_hash = calculate_transaction_hash_with_signature::<H>(tx, chain_id, block_number);
-        let mut key: BitVec<u8, Msb0> = bits![u8, Msb0; 0; 251].to_bitvec();
-        key.set(i, true);
+        let key = BitVec::from_vec(i.to_be_bytes().to_vec());
         let felt_value = Felt::from(Felt252Wrapper::from(tx_hash));
         bonsai_storage.insert(key.as_bitslice(), &felt_value).expect("Failed to insert into bonsai storage");
     }
@@ -105,7 +126,6 @@ where
     let mut id_builder = BasicIdBuilder::new();
     let id = id_builder.new_id();
     bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-    bonsai_storage.root_hash().expect("Failed to get root hash from bonsai storage");
 
     let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
     println!("Transaction commitment: {:?}", Felt252Wrapper::from(root_hash));

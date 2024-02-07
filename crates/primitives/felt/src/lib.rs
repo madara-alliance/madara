@@ -250,7 +250,6 @@ impl From<Felt252Wrapper> for Felt {
     }
 }
 
-
 /// [`Felt252Wrapper`] from [`Felt252`].
 impl From<Felt252> for Felt252Wrapper {
     fn from(value: Felt252) -> Self {

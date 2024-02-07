@@ -198,30 +198,51 @@ pub fn calculate_transaction_commitment<H: HasherT>(
 
     let transactions: Vec<Transaction> = vec![
         mp_transactions::Transaction::Deploy(DeployTransaction {
-            version: starknet_api::transaction::TransactionVersion(StarkFelt(Felt252Wrapper::from_hex_be("0x0000000000000000000000000000000000000000000000000000000000000000").unwrap().into())),
-            class_hash: Felt252Wrapper::from_hex_be("0x010455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8").unwrap(),
-            contract_address_salt: Felt252Wrapper::from_hex_be("0x03a6b18fc3415b7d749f18483393b0d6a1aef168435016c0f5f5d8902a84a36f").unwrap(),
+            version: starknet_api::transaction::TransactionVersion(StarkFelt(
+                Felt252Wrapper::from_hex_be("0x0000000000000000000000000000000000000000000000000000000000000000")
+                    .unwrap()
+                    .into(),
+            )),
+            class_hash: Felt252Wrapper::from_hex_be(
+                "0x010455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8",
+            )
+            .unwrap(),
+            contract_address_salt: Felt252Wrapper::from_hex_be(
+                "0x03a6b18fc3415b7d749f18483393b0d6a1aef168435016c0f5f5d8902a84a36f",
+            )
+            .unwrap(),
             constructor_calldata: vec![
-                Felt252Wrapper::from_hex_be("0x04184fa5a6d40f47a127b046ed6facfa3e6bc3437b393da65cc74afe47ca6c6e").unwrap(),
-                Felt252Wrapper::from_hex_be("0x001ef78e458502cd457745885204a4ae89f3880ec24db2d8ca97979dce15fedc").unwrap()
-            ]
+                Felt252Wrapper::from_hex_be("0x04184fa5a6d40f47a127b046ed6facfa3e6bc3437b393da65cc74afe47ca6c6e")
+                    .unwrap(),
+                Felt252Wrapper::from_hex_be("0x001ef78e458502cd457745885204a4ae89f3880ec24db2d8ca97979dce15fedc")
+                    .unwrap(),
+            ],
         }),
         mp_transactions::Transaction::Invoke(mp_transactions::InvokeTransaction::V0(InvokeTransactionV0 {
             max_fee: 0,
             signature: vec![],
-            contract_address: mp_felt::Felt252Wrapper::from_hex_be("0x06538fdd3aa353af8a87f5fe77d1f533ea82815076e30a86d65b72d3eb4f0b80").unwrap(),
-            entry_point_selector: mp_felt::Felt252Wrapper::from_hex_be("0x0218f305395474a84a39307fa5297be118fe17bf65e27ac5e2de6617baa44c64").unwrap(),
+            contract_address: mp_felt::Felt252Wrapper::from_hex_be(
+                "0x06538fdd3aa353af8a87f5fe77d1f533ea82815076e30a86d65b72d3eb4f0b80",
+            )
+            .unwrap(),
+            entry_point_selector: mp_felt::Felt252Wrapper::from_hex_be(
+                "0x0218f305395474a84a39307fa5297be118fe17bf65e27ac5e2de6617baa44c64",
+            )
+            .unwrap(),
             calldata: vec![
-                mp_felt::Felt252Wrapper::from_hex_be("0x0327d34747122d7a40f4670265b098757270a449ec80c4871450fffdab7c2fa8").unwrap(),
+                mp_felt::Felt252Wrapper::from_hex_be(
+                    "0x0327d34747122d7a40f4670265b098757270a449ec80c4871450fffdab7c2fa8",
+                )
+                .unwrap(),
                 mp_felt::Felt252Wrapper::ZERO,
             ],
         })),
     ];
 
-
     transactions.iter().enumerate().for_each(|(idx, tx)| {
         let idx: u64 = idx.try_into().expect("too many transactions while calculating commitment");
         let final_hash = calculate_transaction_hash_with_signature::<H>(tx, chain_id, block_number);
+        println!("idx: {:?}, final_hash: {:?}", idx, final_hash);
         tree.set(idx, final_hash);
     });
     println!("Transaction commitment: {:?}", tree.commit());

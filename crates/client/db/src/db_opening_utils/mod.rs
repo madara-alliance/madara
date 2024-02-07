@@ -57,7 +57,7 @@ pub fn open_kvdb_rocksdb(
 
     let db_kvdb = kvdb_rocksdb::Database::open(&db_config, path).map_err(|err| format!("{}", err))?;
     let x = Arc::new(db_kvdb);
-    let y = unsafe {std::mem::transmute::<_, Arc<rock_db_adapter::DbAdapter>>(x.clone())};
+    let y = unsafe { std::mem::transmute::<_, Arc<rock_db_adapter::DbAdapter>>(x.clone()) };
 
     Ok((x, y))
 }

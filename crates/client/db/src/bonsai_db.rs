@@ -184,15 +184,13 @@ impl<B: BlockT, ID: Id> BonsaiPersistentDatabase<ID> for &BonsaiDb<B> {
     type Transaction = TransactionWrapper;
     type DatabaseError = BonsaiDbError;
 
-    fn snapshot(&mut self, id: ID) {
-        
-    }
+    fn snapshot(&mut self, id: ID) {}
 
     fn transaction(&self, id: ID) -> Option<Self::Transaction> {
         None
     }
 
     fn merge(&mut self, transaction: Self::Transaction) -> Result<(), Self::DatabaseError> {
-        Ok(())    
+        Ok(())
     }
 }
