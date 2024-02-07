@@ -183,7 +183,7 @@ fn to_legacy_entry_points_by_type(
             .collect::<Result<Vec<LegacyContractEntryPoint>, FromByteArrayError>>()?)
     }
 
-    let constructor = collect_entry_points(entries, EntryPointType::Constructor)?;
+    let constructor = collect_entry_points(entries, EntryPointType::Constructor).unwrap_or_default();
     let external = collect_entry_points(entries, EntryPointType::External)?;
     let l1_handler = collect_entry_points(entries, EntryPointType::L1Handler).unwrap_or_default();
 
