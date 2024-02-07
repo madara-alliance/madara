@@ -2,6 +2,7 @@ git # Madara Changelog
 
 ## Next release
 
+- fix(class): #116
 - feat(class): download classes from sequencer
 - feat: update and store highest block hash and number from sequencer
 - feat: store events in block, return events in call get_transaction_receipt
