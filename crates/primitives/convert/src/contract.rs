@@ -185,7 +185,7 @@ fn to_legacy_entry_points_by_type(
 
     let constructor = collect_entry_points(entries, EntryPointType::Constructor)?;
     let external = collect_entry_points(entries, EntryPointType::External)?;
-    let l1_handler = collect_entry_points(entries, EntryPointType::L1Handler)?;
+    let l1_handler = collect_entry_points(entries, EntryPointType::L1Handler).unwrap_or_default();
 
     Ok(LegacyEntryPointsByType { constructor, external, l1_handler })
 }

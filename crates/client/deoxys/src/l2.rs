@@ -3,6 +3,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
@@ -350,6 +351,7 @@ fn aggregate_classes(state_update: &StateUpdate) -> Vec<&FieldElement> {
                 .map(|DeclaredContract { class_hash, compiled_class_hash: _ }| class_hash),
         )
         .chain(state_update.state_diff.old_declared_contracts.iter().map(|class_hash| class_hash))
+        .unique()
         .collect()
 }
 
