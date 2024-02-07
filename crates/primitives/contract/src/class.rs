@@ -128,7 +128,7 @@ pub mod convert {
                 r#type: AbiFunctionTypeWrapper::from(abi_function_entry.r#type),
                 name: abi_function_entry.name,
                 inputs: abi_function_entry.inputs.iter().map(|v| AbiTypedParameterWrapper::from(v.clone())).collect(),
-                outputs: abi_function_entry.inputs.iter().map(|v| AbiTypedParameterWrapper::from(v.clone())).collect(),
+                outputs: abi_function_entry.outputs.iter().map(|v| AbiTypedParameterWrapper::from(v.clone())).collect(),
                 state_mutability: abi_function_entry
                     .state_mutability
                     .map(|v| AbiFunctionStateMutabilityWrapper::from(v)),

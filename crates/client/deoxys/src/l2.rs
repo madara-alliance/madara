@@ -3,6 +3,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
@@ -105,6 +106,7 @@ pub struct BlockHashEquivalence {
 
 impl BlockHashEquivalence {
     async fn new(state_update: &StateUpdate, block_number: u64, rpc_port: u16) -> Self {
+        // TODO: use an actual Substrate client to convert from Madara to Substrate block hash
         let block_hash_madara = state_update.block_hash.unwrap();
         let block_hash_substrate = &get_block_hash_by_number(rpc_port, block_number).await;
 
@@ -261,8 +263,7 @@ async fn fetch_class_update(
     block_number: u64,
     rpc_port: u16,
 ) -> Result<Vec<ContractClassData>, String> {
-    // defaults to downloading ALL classes if a substrate block hash could not be
-    // determined
+    // defaults to downloading ALL classes if a substrate block hash could not be determined
     let block_hash = BlockHashEquivalence::new(state_update, block_number - 1, rpc_port).await;
     let missing_classes = match block_hash.substrate {
         Some(block_hash_substrate) => fetch_missing_classes(state_update, overrides, block_hash_substrate),
@@ -275,8 +276,7 @@ async fn fetch_class_update(
         set
     });
 
-    // WARNING: all class downloads will abort if even a single class fails to
-    // download.
+    // WARNING: all class downloads will abort if even a single class fails to download.
     let mut classes = vec![];
     while let Some(res) = task_set.join_next().await {
         match res {
@@ -298,13 +298,13 @@ async fn fetch_class_update(
 }
 
 /// Downloads a class definition from the Starknet sequencer. Note that because
-/// of the current type hell this needs to be converted into a blockifier
-/// equivalent
+/// of the current type hell this needs to be converted into a blockifier equivalent
 async fn download_class(
     class_hash: FieldElement,
     block_hash: FieldElement,
     provider: Arc<SequencerGatewayProvider>,
 ) -> anyhow::Result<ContractClassData> {
+    log::info!("💾 Downloading class {class_hash:#x}");
     let core_class = provider.get_class(BlockIdCore::Hash(block_hash), class_hash).await?;
 
     // Core classes have to be converted into Blockifier classes to gain support
@@ -350,6 +350,7 @@ fn aggregate_classes(state_update: &StateUpdate) -> Vec<&FieldElement> {
                 .map(|DeclaredContract { class_hash, compiled_class_hash: _ }| class_hash),
         )
         .chain(state_update.state_diff.old_declared_contracts.iter().map(|class_hash| class_hash))
+        .unique()
         .collect()
 }
 

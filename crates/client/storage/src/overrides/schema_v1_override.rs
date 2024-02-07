@@ -118,6 +118,15 @@ where
         )
     }
 
+    fn contract_abi_by_address(
+        &self,
+        block_hash: <B as BlockT>::Hash,
+        address: ContractAddress,
+    ) -> Option<ContractAbi> {
+        let contract_class_hash = self.contract_class_hash_by_address(block_hash, address)?;
+        self.contract_abi_by_class_hash(block_hash, contract_class_hash)
+    }
+
     fn contract_abi_by_class_hash(
         &self,
         block_hash: <B as BlockT>::Hash,
