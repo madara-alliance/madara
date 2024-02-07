@@ -229,6 +229,13 @@ impl From<FieldElement> for Felt252Wrapper {
     }
 }
 
+/// [`Felt252Wrapper`] to [`FieldElement`].
+impl From<Felt252Wrapper> for FieldElement {
+    fn from(ff: Felt252Wrapper) -> Self {
+        ff.0
+    }
+}
+
 /// [`Felt252Wrapper`] from [`Felt`].
 impl From<Felt> for Felt252Wrapper {
     fn from(value: Felt) -> Self {
@@ -236,12 +243,13 @@ impl From<Felt> for Felt252Wrapper {
     }
 }
 
-/// [`Felt252Wrapper`] to [`FieldElement`].
-impl From<Felt252Wrapper> for FieldElement {
-    fn from(ff: Felt252Wrapper) -> Self {
-        ff.0
+/// [`Felt252Wrapper`] to [`Felt`].
+impl From<Felt252Wrapper> for Felt {
+    fn from(value: Felt252Wrapper) -> Self {
+        Felt::from_bytes_be(&value.into())
     }
 }
+
 
 /// [`Felt252Wrapper`] from [`Felt252`].
 impl From<Felt252> for Felt252Wrapper {

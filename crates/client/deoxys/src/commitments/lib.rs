@@ -8,6 +8,7 @@ use starknet_api::transaction::Event;
 
 use super::events::calculate_event_commitment;
 use super::transactions::calculate_transaction_commitment;
+use mp_commitments::calculate_transaction_commitment as ctc;
 
 /// Calculate the transaction commitment, the event commitment and the event count.
 ///
@@ -26,8 +27,7 @@ pub fn calculate_commitments<B: BlockT, H: HasherT>(
     backend: Arc<mc_db::Backend<B>>,
 ) -> (Felt252Wrapper, Felt252Wrapper) {
     (
-        calculate_transaction_commitment::<B, H>(transactions, chain_id, block_number, &backend.bonsai().clone())
-            .expect("Failed to calculate transaction commitment"),
+        ctc::<H>(transactions, chain_id, block_number),
         calculate_event_commitment::<B, H>(events, backend.bonsai())
             .expect("Failed to calculate event commitment"),
     )

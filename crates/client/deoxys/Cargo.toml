@@ -65,5 +65,7 @@ starknet-types-core = { workspace = true, default-features = false, features = [
     "parity-scale-codec",
 ] }
 
+bitvec = "1.0.1"
+
 [dev-dependencies]
 # test_utils = { path = "./test_utils" }

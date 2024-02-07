@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use anyhow::Ok;
+use bitvec::bits;
+use bitvec::order::Msb0;
+use bitvec::vec::BitVec;
 use bonsai_trie::bonsai_database::DatabaseKey;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiDatabase, BonsaiStorage, BonsaiStorageConfig, BonsaiTrieHash, Membership, ProofNode};
@@ -15,7 +18,7 @@ use sp_core::H256;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::transaction::Event;
 use starknet_ff::FieldElement;
-use starknet_types_core::hash::Pedersen;
+use starknet_types_core::{hash::Pedersen, felt::Felt};
 
 /// Calculate the hash of an event.
 ///
@@ -66,22 +69,25 @@ where
     H: HasherT,
 {
     let config = BonsaiStorageConfig::default();
-    let mut bonsai_db = backend.as_ref();
+    let bonsai_db = backend.as_ref();
 
-    let mut batch = bonsai_db.create_batch();
-    let bonsai_storage: BonsaiStorage<BasicId, _, Pedersen> =
-        BonsaiStorage::new(bonsai_db, config).expect("Failed to create bonsai storage");
+    let mut bonsai_storage = BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    for (idx, event) in events.iter().enumerate() {
-        let idx_bytes: [u8; 8] = idx.to_be_bytes();
-        let final_hash = calculate_event_hash::<H>(event);
-        let key = DatabaseKey::Flat(&idx_bytes);
-        let _ = bonsai_db.insert(&key, &H256::from(final_hash.to_bytes_be()).encode(), Some(&mut batch));
+    for (i, event) in events.iter().enumerate() {
+        let event_hash = calculate_event_hash::<H>(event);
+        let mut key: BitVec<u8, Msb0> = bits![u8, Msb0; 0; 251].to_bitvec();
+        key.set(i, true);
+        let felt_value = Felt::from(Felt252Wrapper::from(event_hash));
+        bonsai_storage.insert(key.as_bitslice(), &felt_value).expect("Failed to insert into bonsai storage");
     }
 
-    let _ = bonsai_db.write_batch(batch);
+    let mut id_builder = BasicIdBuilder::new();
+    let id = id_builder.new_id();
+    bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+    bonsai_storage.root_hash().expect("Failed to get root hash from bonsai storage");
 
-    let root = bonsai_storage.root_hash().expect("Failed to get bonsai root hash");
-    println!("Event commitment: {:?}", root);
-    Ok(Felt252Wrapper::from(root))
+    let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
+    println!("Event commitment: {:?}", Felt252Wrapper::from(root_hash));
+
+    Ok(Felt252Wrapper::from(root_hash))
 }
