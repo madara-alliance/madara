@@ -6,6 +6,8 @@ use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 
+use crate::l2::get_config;
+
 pub fn block(block: &p::Block) -> mp_block::Block {
     let transactions = transactions(&block.transactions);
     let events = events(&block.transaction_receipts);
@@ -199,7 +201,7 @@ fn commitments(
 }
 
 fn chain_id() -> mp_felt::Felt252Wrapper {
-    starknet_ff::FieldElement::from_byte_slice_be(b"SN_MAIN").unwrap().into()
+    get_config().chain_id.into()
 }
 
 fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {
