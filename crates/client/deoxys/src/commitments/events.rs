@@ -1,20 +1,12 @@
 use std::sync::Arc;
 
 use anyhow::Ok;
-use bitvec::bits;
-use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
-use bonsai_trie::bonsai_database::DatabaseKey;
-use bonsai_trie::id::{BasicId, BasicIdBuilder};
-use bonsai_trie::{BonsaiDatabase, BonsaiStorage, BonsaiStorageConfig, BonsaiTrieHash, Membership, ProofNode};
+use bonsai_trie::id::BasicIdBuilder;
+use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mc_db::bonsai_db::BonsaiDb;
-use mc_db::{Backend, BonsaiDbError};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::Transaction;
-use parity_scale_codec::{Decode, Encode};
-use sp_core::H256;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::transaction::Event;
 use starknet_ff::FieldElement;
@@ -61,7 +53,7 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
 /// # Returns
 ///
 /// The merkle root of the merkle tree built from the events.
-pub(crate) fn calculate_event_commitment<B, H>(
+pub(crate) fn event_commitment<B, H>(
     events: &[Event],
     backend: &Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, anyhow::Error>

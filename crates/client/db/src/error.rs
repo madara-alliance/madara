@@ -10,18 +10,15 @@ pub enum DbError {
     DeserializeError(#[from] scale_codec::Error),
 }
 
-// Define a custom error type
 #[derive(Debug)]
 pub enum BonsaiDbError {
     Io(std::io::Error),
-    // Add other error types as needed
 }
 
 impl fmt::Display for BonsaiDbError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             BonsaiDbError::Io(ref err) => write!(f, "IO error: {}", err),
-            // Handle other errors
         }
     }
 }
@@ -30,7 +27,6 @@ impl error::Error for BonsaiDbError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
             BonsaiDbError::Io(ref err) => Some(err),
-            // Handle other errors
         }
     }
 }

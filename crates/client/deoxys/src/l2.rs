@@ -218,7 +218,7 @@ pub fn update_l2(state_update: L2StateUpdate) {
 /// Verify the L2 state according to the latest state update
 pub async fn verify_l2(_state_update: StarknetStateUpdate) -> Result<(), String> {
     // 1. Retrieve state diff
-    // 2. Compute state commitment
+    // 2. Compute commitments
     // state_root = state_commitment(csd)
     // 3. Log latest L2 state verified on L2
     // println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash,

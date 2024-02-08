@@ -1,19 +1,15 @@
 use std::sync::Arc;
 
 use bitvec::prelude::*;
-use bonsai_trie::bonsai_database::DatabaseKey;
-use bonsai_trie::id::{BasicId, BasicIdBuilder};
-use bonsai_trie::{BonsaiDatabase, BonsaiStorage, BonsaiStorageConfig, BonsaiTrieHash, Membership, ProofNode};
+use bonsai_trie::id::BasicIdBuilder;
+use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mc_db::bonsai_db::BonsaiDb;
-use mc_db::{Backend, BonsaiDbError};
+use mc_db::BonsaiDbError;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::{DeployTransaction, InvokeTransactionV0, Transaction};
-use parity_scale_codec::{Decode, Encode};
-use sp_core::H256;
+use mp_transactions::Transaction;
 use sp_runtime::traits::Block as BlockT;
-use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
@@ -58,7 +54,7 @@ where
     transaction_hashes
 }
 
-pub(crate) fn calculate_transaction_commitment<B, H>(
+pub(crate) fn transaction_commitment<B, H>(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
