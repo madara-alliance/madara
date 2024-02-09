@@ -15,7 +15,7 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
-use mc_db::Backend as MadaraBackend;
+use mc_deoxys::l2::get_highest_block_hash_and_number;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{
@@ -24,6 +24,8 @@ pub use mc_rpc_core::{
 };
 use mc_storage::OverrideHandle;
 use mp_block::BlockStatus;
+use mp_contract::class::ContractClassWrapper;
+use mp_convert::contract::flattened_sierra_to_sierra_contract_class;
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -51,7 +53,7 @@ use starknet_core::types::{
     DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResources,
     ExecutionResult, FeeEstimate, FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt,
     InvokeTransactionResult, L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
-    MaybePendingTransactionReceipt, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
+    MaybePendingTransactionReceipt, MsgFromL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
     TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
 use starknet_core::utils::get_selector_from_name;
@@ -270,6 +272,12 @@ where
     ) -> RpcResult<DeclareTransactionResult> {
         let best_block_hash = self.client.info().best_hash;
 
+        let opt_sierra_contract_class = if let BroadcastedDeclareTransaction::V2(ref tx) = declare_transaction {
+            Some(flattened_sierra_to_sierra_contract_class(tx.contract_class.clone()))
+        } else {
+            None
+        };
+
         let transaction: UserTransaction = declare_transaction.try_into().map_err(|e| {
             error!("Failed to convert BroadcastedDeclareTransaction to UserTransaction, error: {e}");
             StarknetRpcApiError::InternalServerError
@@ -296,10 +304,20 @@ where
 
         let chain_id = Felt252Wrapper(self.chain_id()?.0);
 
-        Ok(DeclareTransactionResult {
-            transaction_hash: transaction.compute_hash::<H>(chain_id, false, None).into(),
-            class_hash: class_hash.0,
-        })
+        let tx_hash = transaction.compute_hash::<H>(chain_id, false, None).into();
+
+        if let Some(sierra_contract_class) = opt_sierra_contract_class {
+            if let Some(e) = self
+                .backend
+                .sierra_classes()
+                .store_sierra_class(Felt252Wrapper::from(class_hash.0).into(), sierra_contract_class)
+                .err()
+            {
+                log::error!("Failed to store the sierra contract class for declare tx `{tx_hash:x}`: {e}")
+            }
+        }
+
+        Ok(DeclareTransactionResult { transaction_hash: tx_hash, class_hash: class_hash.0 })
     }
 
     /// Add an Invoke Transaction to invoke a contract function
@@ -661,6 +679,7 @@ where
         })?;
 
         let contract_address_wrapped = Felt252Wrapper(contract_address).into();
+
         let contract_class = self
             .overrides
             .for_block_hash(self.client.as_ref(), substrate_block_hash)
@@ -670,9 +689,20 @@ where
                 StarknetRpcApiError::ContractNotFound
             })?;
 
-        Ok(to_rpc_contract_class(contract_class).map_err(|e| {
-            error!("Failed to convert contract class at '{contract_address}' to RPC contract class: {e}");
-            StarknetRpcApiError::InvalidContractClass
+        // Blockifier classes do not store ABI, has to be retrieved separately
+        let contract_abi = self
+            .overrides
+            .for_block_hash(self.client.as_ref(), substrate_block_hash)
+            .contract_abi_by_address(substrate_block_hash, contract_address_wrapped)
+            .ok_or_else(|| {
+                error!("Failed to retrieve contract ABI at '{contract_address}'");
+                StarknetRpcApiError::ContractNotFound
+            })?;
+
+        // converting from stored Blockifier class to rpc class
+        Ok(ContractClassWrapper { contract: contract_class, abi: contract_abi }.try_into().map_err(|e| {
+            log::error!("Failed to convert contract class at address '{contract_address}' to RPC contract class: {e}");
+            StarknetRpcApiError::InternalServerError
         })?)
     }
 
@@ -751,8 +781,8 @@ where
                     let current_block_num = UniqueSaturatedInto::<u64>::unique_saturated_into(best_number);
                     let current_block_hash = current_block?.header().hash::<H>().0;
 
-                    let highest_block_num = UniqueSaturatedInto::<u64>::unique_saturated_into(highest_number);
-                    let highest_block_hash = highest_block?.header().hash::<H>().0;
+                    // Get the highest block number and hash from the global variable update in l2 sync()
+                    let (highest_block_hash, highest_block_num) = get_highest_block_hash_and_number();
 
                     // Build the `SyncStatus` struct with the respective syn information
                     Ok(SyncStatusType::Syncing(SyncStatus {
@@ -808,7 +838,18 @@ where
                 StarknetRpcApiError::ClassHashNotFound
             })?;
 
-        Ok(to_rpc_contract_class(contract_class).map_err(|e| {
+        // Blockifier classes do not store ABI, has to be retrieved separately
+        let contract_abi = self
+            .overrides
+            .for_block_hash(self.client.as_ref(), substrate_block_hash)
+            .contract_abi_by_class_hash(substrate_block_hash, class_hash)
+            .ok_or_else(|| {
+                error!("Failed to retrieve contract ABI from hash '{class_hash}'");
+                StarknetRpcApiError::ClassHashNotFound
+            })?;
+
+        // converting from stored Blockifier class to rpc class
+        Ok(ContractClassWrapper { contract: contract_class, abi: contract_abi }.try_into().map_err(|e| {
             error!("Failed to convert contract class from hash '{class_hash}' to RPC contract class: {e}");
             StarknetRpcApiError::InternalServerError
         })?)
@@ -862,6 +903,19 @@ where
                 .transactions_hashes::<H>(chain_id.0.into(), Some(starknet_block.header().block_number))
                 .map(FieldElement::from)
                 .collect()
+        };
+        let block_status = match self.backend.messaging().last_synced_l1_block_with_event() {
+            Ok(l1_block) => {
+                if l1_block.block_number >= starknet_block.header().block_number {
+                    BlockStatus::AcceptedOnL1
+                } else {
+                    BlockStatus::AcceptedOnL2
+                }
+            }
+            Err(e) => {
+                error!("Failed to get last synced l1 block, error: {e}");
+                Err(StarknetRpcApiError::InternalServerError)?
+            }
         };
 
         let parent_blockhash = starknet_block.header().parent_block_hash;
@@ -989,6 +1043,56 @@ where
             .collect();
 
         Ok(estimates)
+    }
+
+    /// Estimate the L2 fee of a message sent on L1
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - the message to estimate
+    /// * `block_id` - hash, number (height), or tag of the requested block
+    ///
+    /// # Returns
+    ///
+    /// * `FeeEstimate` - the fee estimation (gas consumed, gas price, overall fee, unit)
+    ///
+    /// # Errors
+    ///
+    /// BlockNotFound : If the specified block does not exist.
+    /// ContractNotFound : If the specified contract address does not exist.
+    /// ContractError : If there is an error with the contract.
+    async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<FeeEstimate> {
+        let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
+            error!("'{e}'");
+            StarknetRpcApiError::BlockNotFound
+        })?;
+        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+
+        let message = message.try_into().map_err(|e| {
+            error!("Failed to convert MsgFromL1 to UserTransaction: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        let fee_estimate = self
+            .client
+            .runtime_api()
+            .estimate_message_fee(substrate_block_hash, message)
+            .map_err(|e| {
+                error!("Runtime api error: {e}");
+                StarknetRpcApiError::InternalServerError
+            })?
+            .map_err(|e| {
+                error!("function execution failed: {:#?}", e);
+                StarknetRpcApiError::ContractError
+            })?;
+
+        let estimate = FeeEstimate {
+            gas_price: fee_estimate.0.try_into().map_err(|_| StarknetRpcApiError::InternalServerError)?,
+            gas_consumed: fee_estimate.2,
+            overall_fee: fee_estimate.1,
+        };
+
+        Ok(estimate)
     }
 
     /// Get the details of a transaction by a given block id and index.

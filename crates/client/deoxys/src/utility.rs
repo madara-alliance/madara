@@ -17,13 +17,13 @@ pub async fn get_last_synced_block(rpc_port: u16) -> u64 {
     let client = reqwest::Client::new();
 
     let url = format!("http://localhost:{}/", rpc_port);
-    let payload = serde_json::to_vec(&serde_json::json!({
+    let request = serde_json::json!({
         "id": 1,
         "jsonrpc": "2.0",
         "method": "chain_getBlock",
         "params": []
-    }))
-    .unwrap();
+    });
+    let payload = serde_json::to_vec(&request).unwrap();
 
     let response: serde_json::Value = client
         .post(&url)
@@ -41,16 +41,47 @@ pub async fn get_last_synced_block(rpc_port: u16) -> u64 {
     u64::from_str_radix(&number_as_hex[2..], 16).unwrap()
 }
 
+/// Returns the block hash for a given block number (from Substrate).
+pub async fn get_block_hash_by_number(rpc_port: u16, block_number: u64) -> Option<String> {
+    let client = reqwest::Client::new();
+
+    let url = format!("http://localhost:{}/", rpc_port);
+    let request = serde_json::json!({
+        "id": 1,
+        "jsonrpc": "2.0",
+        "method": "chain_getBlockHash",
+        "params": [block_number]
+    });
+    let payload = serde_json::to_vec(&request).unwrap();
+    let response: serde_json::Value = client
+        .post(&url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::ACCEPT, "application/json")
+        .body(payload)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    match response["result"].as_str() {
+        Some(string) => Some(String::from(string)),
+        None => None,
+    }
+}
+
 pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2StateUpdate, Box<dyn Error>> {
     let client = reqwest::Client::new();
     let url = format!("http://localhost:{}", rpc_port);
 
-    let payload = serde_json::to_vec(&json!({
+    let request = json!({
         "id": 1,
         "jsonrpc": "2.0",
         "method": "starknet_getStateUpdate",
         "params": [{ "block_number": block_number }]
-    }))?;
+    });
+    let payload = serde_json::to_vec(&request)?;
 
     const MAX_ATTEMPTS: u8 = 3;
     const RETRY_DELAY: Duration = Duration::from_secs(5);

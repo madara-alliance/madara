@@ -46,3 +46,6 @@ nohup.out
 # solidity cache
 starknet-e2e-test/contracts/cache
 starknet-e2e-test/contracts/build
+
+# vscode settings
+.vscode/settings.json

@@ -28,6 +28,7 @@ pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
 use frame_system::{EventRecord, Phase};
+use mp_contract::ContractAbi;
 use mp_felt::Felt252Wrapper;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -256,6 +257,11 @@ impl_runtime_apis! {
             Starknet::contract_class_by_class_hash(class_hash)
         }
 
+        fn contract_abi_by_class_hash(class_hash: ClassHash) ->
+        Option<ContractAbi> {
+            Starknet::contract_abi_by_class_hash(class_hash)
+        }
+
         fn chain_id() -> Felt252Wrapper {
             Starknet::chain_id()
         }
@@ -280,8 +286,12 @@ impl_runtime_apis! {
             Starknet::estimate_fee(transactions)
         }
 
+        fn estimate_message_fee(message: HandleL1MessageTransaction) -> Result<(u128, u64, u64), DispatchError> {
+            Starknet::estimate_message_fee(message)
+        }
+
         fn simulate_transactions(transactions: Vec<UserTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError> {
-            Starknet::simulate_transactions(transactions, simulation_flags)
+            Starknet::simulate_transactions(transactions, &simulation_flags)
         }
 
         fn get_starknet_events_and_their_associated_tx_hash(block_extrinsics: Vec<<Block as BlockT>::Extrinsic>, chain_id: Felt252Wrapper) -> Vec<(Felt252Wrapper, StarknetEvent)> {

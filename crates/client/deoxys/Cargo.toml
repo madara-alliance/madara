@@ -1,13 +1,13 @@
 [package]
-name = "mc-deoxys"
-version = "0.1.0"
-description = "Deoxys crate for Madara"
 authors = ["Antiyro <https://github.com/antiyro>"]
-homepage = "https://github.com/KasarLabs/deoxys"
+description = "Deoxys crate for Madara"
 edition = "2021"
+homepage = "https://github.com/KasarLabs/deoxys"
 license = "MIT"
+name = "mc-deoxys"
 publish = false
 repository = "https://github.com/KasarLabs/deoxys"
+version = "0.1.0"
 
 [features]
 default = ["m"]
@@ -28,13 +28,21 @@ blockifier = { workspace = true, default-features = false, features = [
   "testing",
 ] }
 env_logger = "0.10.0"
+futures = { workspace = true, default-features = true }
+hex = "0.4"
 indexmap = { workspace = true }
+itertools = { workspace = true }
 log = { version = "0.4.14" }
 mockito = { workspace = true }
 rand = { version = "0.8.5" }
 rodio = { version = "0.17", optional = true }
 serde = { workspace = true, default-features = true }
-sp-core = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["macros", "parking_lot", "test-util"] }
+url = { workspace = true }
+validator = { workspace = true, features = ["derive"] }
+
+madara-runtime = { workspace = true }
+parity-scale-codec = { workspace = true, features = ["derive"] }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true, default-features = false, features = [
   "alloc",
@@ -42,21 +50,24 @@ starknet-ff = { workspace = true, default-features = false, features = [
 ] }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true, default-features = false }
-tokio = { workspace = true, features = ["macros", "test-util", "parking_lot"] }
-url = { workspace = true }
-# test_utils = { path = "./test_utils", optional = true }
-futures = { workspace = true, default-features = true }
-hex = "0.4"
+
+sc-consensus-manual-seal.workspace = true
+sc-executor = { workspace = true }
+sc-service = { workspace = true }
+sp-core = { workspace = true, features = ["std"] }
+sp-runtime = { workspace = true }
+
 mc-commitment-state-diff = { workspace = true }
+mc-rpc-core = { workspace = true }
+mc-storage = { workspace = true }
 mp-block = { workspace = true }
 mp-commitments = { workspace = true }
+mp-contract = { workspace = true }
 mp-fee = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
+mp-storage = { workspace = true, default-features = true }
 mp-transactions = { workspace = true, features = ["client"] }
-parity-scale-codec = { workspace = true, features = ["derive"] }
-sc-consensus-manual-seal.workspace = true
-validator = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 # test_utils = { path = "./test_utils" }

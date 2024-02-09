@@ -1,28 +1,29 @@
 
 [package]
-name = "mc-storage"
-version.workspace = true
-edition.workspace = true
-description = "Starknet storage compatibility layer for Substrate."
 authors = [
-  "Timothée Delabrouille <https://github.com/tdelabro>",
   "Substrate DevHub <https://github.com/substrate-developer-hub>",
+  "Timothée Delabrouille <https://github.com/tdelabro>",
 ]
+description = "Starknet storage compatibility layer for Substrate."
+edition.workspace = true
 homepage = "https://github.com/keep-starknet-strange/madara"
 license = "MIT"
+name = "mc-storage"
 publish = false
 repository = "https://github.com/keep-starknet-strange/madara"
+version.workspace = true
 
 [dependencies]
 blockifier = { workspace = true, features = ["std"] }
 frame-support = { workspace = true, features = ["std"] }
 frame-system = { workspace = true, features = ["std"] }
 madara-runtime = { workspace = true, features = ["std"] }
+mp-contract = { workspace = true, features = ["std"] }
 mp-storage = { workspace = true, features = ["std"] }
 pallet-starknet = { workspace = true, features = ["std"] }
 pallet-starknet-runtime-api = { workspace = true, features = ["std"] }
+parity-scale-codec = { workspace = true, features = ["std"] }
 sc-client-api = { workspace = true }
-scale-codec = { workspace = true, features = ["std"] }
 sp-api = { workspace = true, features = ["std"] }
 sp-blockchain = { workspace = true }
 sp-core = { workspace = true, features = ["std"] }
