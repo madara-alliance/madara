@@ -2,6 +2,7 @@ git # Madara Changelog
 
 ## Next release
 
+- fix(genesis): #107
 - fix(class): #32 #33 #34
 - fix(class): #116
 - feat(class): download classes from sequencer
