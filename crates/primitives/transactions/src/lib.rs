@@ -210,6 +210,7 @@ pub struct DeployAccountTransaction {
 pub struct DeployTransaction {
     pub version: TransactionVersion,
     pub class_hash: Felt252Wrapper,
+    pub contract_address: Felt252Wrapper,
     pub contract_address_salt: Felt252Wrapper,
     pub constructor_calldata: Vec<Felt252Wrapper>,
 }

@@ -56,7 +56,6 @@ use starknet_core::types::{
     MaybePendingTransactionReceipt, MsgFromL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
     TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
-use starknet_core::utils::get_selector_from_name;
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::types::RpcEventFilter;
@@ -200,6 +199,7 @@ where
     }
 }
 
+// TODO: delete this
 /// Taken from https://github.com/paritytech/substrate/blob/master/client/rpc/src/author/mod.rs#L78
 const TX_SOURCE: TransactionSource = TransactionSource::External;
 
@@ -216,31 +216,32 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     fn predeployed_accounts(&self) -> RpcResult<Vec<PredeployedAccountWithBalance>> {
-        let genesis_data = self.genesis_provider.load_genesis_data()?;
-        let block_id = BlockId::Tag(BlockTag::Latest);
-        let fee_token_address: FieldElement = genesis_data.fee_token_address.0;
+        // let genesis_data = self.genesis_provider.load_genesis_data()?;
+        // let block_id = BlockId::Tag(BlockTag::Latest);
+        // let fee_token_address: FieldElement = genesis_data.fee_token_address.0;
 
-        Ok(genesis_data
-            .predeployed_accounts
-            .into_iter()
-            .map(|account| {
-                let contract_address: FieldElement = account.contract_address.into();
-                let balance_string = &self
-                    .call(
-                        FunctionCall {
-                            contract_address: fee_token_address,
-                            entry_point_selector: get_selector_from_name("balanceOf")
-                                .expect("the provided method name should be a valid ASCII string."),
-                            calldata: vec![contract_address],
-                        },
-                        block_id,
-                    )
-                    .expect("FunctionCall attributes should be correct.")[0];
-                let balance =
-                    Felt252Wrapper::from_hex_be(balance_string).expect("`balanceOf` should return a Felt").into();
-                PredeployedAccountWithBalance { account, balance }
-            })
-            .collect::<Vec<_>>())
+        // Ok(genesis_data
+        //     .predeployed_accounts
+        //     .into_iter()
+        //     .map(|account| {
+        //         let contract_address: FieldElement = account.contract_address.into();
+        //         let balance_string = &self
+        //             .call(
+        //                 FunctionCall {
+        //                     contract_address: fee_token_address,
+        //                     entry_point_selector: get_selector_from_name("balanceOf")
+        //                         .expect("the provided method name should be a valid ASCII string."),
+        //                     calldata: vec![contract_address],
+        //                 },
+        //                 block_id,
+        //             )
+        //             .expect("FunctionCall attributes should be correct.")[0];
+        //         let balance =
+        //             Felt252Wrapper::from_hex_be(balance_string).expect("`balanceOf` should return a
+        // Felt").into();         PredeployedAccountWithBalance { account, balance }
+        //     })
+        //     .collect::<Vec<_>>())
+        todo!()
     }
 }
 

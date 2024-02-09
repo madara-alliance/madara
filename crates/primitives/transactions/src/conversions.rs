@@ -16,7 +16,6 @@ use super::{
     DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeployAccountTransaction,
     HandleL1MessageTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1,
 };
-use crate::DeployTransaction;
 
 impl DeclareTransactionV0 {
     fn try_into_executable<H: HasherT>(
@@ -251,16 +250,17 @@ impl DeployAccountTransaction {
     }
 }
 
-impl DeployTransaction {
-    pub fn from_starknet(inner: starknet_api::transaction::DeployTransaction) -> Self {
-        Self {
-            contract_address_salt: inner.contract_address_salt.into(),
-            constructor_calldata: inner.constructor_calldata.0.iter().map(|felt| Felt252Wrapper::from(*felt)).collect(),
-            class_hash: inner.class_hash.into(),
-            version: inner.version.into(),
-        }
-    }
-}
+// TODO: delete this
+// impl DeployTransaction {
+//     pub fn from_starknet(inner: starknet_api::transaction::DeployTransaction) -> Self {
+//         Self {
+//             contract_address_salt: inner.contract_address_salt.into(),
+//             constructor_calldata: inner.constructor_calldata.0.iter().map(|felt|
+// Felt252Wrapper::from(*felt)).collect(),             class_hash: inner.class_hash.into(),
+//             version: inner.version.into(),
+//         }
+//     }
+// }
 
 impl HandleL1MessageTransaction {
     pub fn into_executable<H: HasherT>(

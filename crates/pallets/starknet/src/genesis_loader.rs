@@ -2,48 +2,13 @@ use std::vec::Vec;
 
 use blockifier::execution::contract_class::ContractClass as StarknetContractClass;
 use mp_felt::Felt252Wrapper;
-use mp_genesis_config::ContractClass;
 pub use mp_genesis_config::{GenesisData, GenesisLoader, HexFelt, PredeployedAccount};
 
 use crate::GenesisConfig;
 
-impl<T: crate::Config> From<GenesisLoader> for GenesisConfig<T> {
-    fn from(loader: GenesisLoader) -> Self {
-        let contract_classes = loader
-            .data()
-            .contract_classes
-            .clone()
-            .into_iter()
-            .map(|(hash, class)| {
-                let hash = Felt252Wrapper(hash.0).into();
-                match class {
-                    ContractClass::Path { path, version } => (
-                        hash,
-                        read_contract_class_from_json(
-                            &std::fs::read_to_string(loader.base_path().join(path)).expect(
-                                "Some contract is missing in the config folder. Try to run `madara setup` before \
-                                 opening an issue.",
-                            ),
-                            version,
-                        ),
-                    ),
-                    ContractClass::Class(class) => (hash, class),
-                }
-            })
-            .collect::<Vec<_>>();
-        let sierra_to_casm_class_hash = loader
-            .data()
-            .sierra_class_hash_to_casm_class_hash
-            .clone()
-            .into_iter()
-            .map(|(sierra_hash, casm_hash)| {
-                let sierra_hash = Felt252Wrapper(sierra_hash.0).into();
-                let casm_hash = Felt252Wrapper(casm_hash.0).into();
-                (sierra_hash, casm_hash)
-            })
-            .collect::<Vec<_>>();
-        let contracts = loader
-            .data()
+impl<T: crate::Config> From<GenesisData> for GenesisConfig<T> {
+    fn from(data: GenesisData) -> Self {
+        let contracts = data
             .contracts
             .clone()
             .into_iter()
@@ -53,27 +18,19 @@ impl<T: crate::Config> From<GenesisLoader> for GenesisConfig<T> {
                 (address, hash)
             })
             .collect::<Vec<_>>();
-        let storage = loader
-            .data()
-            .storage
+        let sierra_to_casm_class_hash = data
+            .sierra_class_hash_to_casm_class_hash
             .clone()
             .into_iter()
-            .map(|(key, value)| {
-                let key = (Felt252Wrapper(key.0.0).into(), Felt252Wrapper(key.1.0).into());
-                let value = Felt252Wrapper(value.0).into();
-                (key, value)
+            .map(|(sierra_hash, casm_hash)| {
+                let sierra_hash = Felt252Wrapper(sierra_hash.0).into();
+                let casm_hash = Felt252Wrapper(casm_hash.0).into();
+                (sierra_hash, casm_hash)
             })
             .collect::<Vec<_>>();
-        let fee_token_address = Felt252Wrapper(loader.data().fee_token_address.0).into();
+        let fee_token_address = Felt252Wrapper(data.fee_token_address.0).into();
 
-        GenesisConfig {
-            contracts,
-            contract_classes,
-            sierra_to_casm_class_hash,
-            storage,
-            fee_token_address,
-            ..Default::default()
-        }
+        GenesisConfig { contracts, sierra_to_casm_class_hash, fee_token_address, ..Default::default() }
     }
 }
 

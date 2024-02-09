@@ -5,12 +5,20 @@ use std::vec::Vec;
 
 use blockifier::execution::contract_class::ContractClass as StarknetContractClass;
 use derive_more::Constructor;
+use lazy_static::lazy_static;
 use mp_felt::Felt252Wrapper;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_crypto::FieldElement;
+use starknet_providers::sequencer::models::Block as BlockProvider;
+
+lazy_static! {
+    static ref ETH_TOKEN_ADDR: HexFelt = HexFelt(
+        FieldElement::from_hex_be("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap()
+    );
+}
 
 /// A wrapper for FieldElement that implements serde's Serialize and Deserialize for hex strings.
 #[serde_as]
@@ -49,17 +57,55 @@ pub type StorageKey = HexFelt;
 pub type ContractStorageKey = (ContractAddress, StorageKey);
 pub type StorageValue = HexFelt;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct GenesisData {
-    pub contract_classes: Vec<(ClassHash, ContractClass)>,
-    pub sierra_class_hash_to_casm_class_hash: Vec<(ClassHash, ClassHash)>,
     pub contracts: Vec<(ContractAddress, ClassHash)>,
-    pub predeployed_accounts: Vec<PredeployedAccount>,
-    pub storage: Vec<(ContractStorageKey, StorageValue)>,
+    pub sierra_class_hash_to_casm_class_hash: Vec<(ClassHash, ClassHash)>,
     pub fee_token_address: ContractAddress,
 }
 
-#[derive(Constructor)]
+#[cfg(feature = "std")]
+pub mod convert {
+    use starknet_providers::sequencer::models::TransactionType;
+
+    use super::*;
+
+    impl From<BlockProvider> for GenesisData {
+        fn from(genesis_block: BlockProvider) -> Self {
+            Self {
+                contracts: convert_contract(&genesis_block),
+                sierra_class_hash_to_casm_class_hash: convert_sierra_class_hash(&genesis_block),
+                fee_token_address: *ETH_TOKEN_ADDR,
+            }
+        }
+    }
+
+    fn convert_contract(genesis_block: &BlockProvider) -> Vec<(ContractAddress, ClassHash)> {
+        genesis_block
+            .transactions
+            .iter()
+            .filter_map(|transaction| if let TransactionType::Deploy(tx) = transaction { Some(tx) } else { None })
+            .map(|transaction| (HexFelt(transaction.contract_address), HexFelt(transaction.class_hash)))
+            .collect()
+    }
+
+    fn convert_sierra_class_hash(genesis_block: &BlockProvider) -> Vec<(ClassHash, ClassHash)> {
+        genesis_block
+            .transactions
+            .iter()
+            .filter_map(|transaction| if let TransactionType::Declare(tx) = transaction { Some(tx) } else { None })
+            .filter_map(|transaction| {
+                if let Some(compiled_class_hash) = transaction.compiled_class_hash {
+                    Some((HexFelt(transaction.class_hash), HexFelt(compiled_class_hash)))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}
+
+#[derive(Constructor, Clone)]
 pub struct GenesisLoader {
     base_path: PathBuf,
     data: GenesisData,

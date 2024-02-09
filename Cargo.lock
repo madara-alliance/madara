@@ -2553,6 +2553,7 @@ dependencies = [
  "sp-timestamp",
  "sp-trie",
  "starknet-core",
+ "starknet-providers",
  "starknet_api",
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",
@@ -6535,12 +6536,15 @@ dependencies = [
  "blockifier",
  "derive_more",
  "hex",
+ "lazy_static",
+ "mp-block",
  "mp-felt",
  "serde",
  "serde_json",
  "serde_with",
  "starknet-core",
  "starknet-crypto 0.6.1 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
+ "starknet-providers",
 ]
 
 [[package]]

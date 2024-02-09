@@ -128,28 +128,35 @@ where
 
     let executor = sc_service::new_native_or_wasm_executor(config);
 
-    let backend = new_db_backend(config.db_config())?;
+    // TODO: delete this
+    // let backend = new_db_backend(config.db_config())?;
 
-    let genesis_block_builder = MadaraGenesisBlockBuilder::<Block, _, _>::new(
-        config.chain_spec.as_storage_builder(),
-        true,
-        backend.clone(),
-        executor.clone(),
-        genesis_block,
-    )
-    .unwrap();
+    // let genesis_block_builder = MadaraGenesisBlockBuilder::<Block, _, _>::new(
+    //     config.chain_spec.as_storage_builder(),
+    //     true,
+    //     backend.clone(),
+    //     executor.clone(),
+    //     genesis_block,
+    // )
+    // .unwrap();
 
-    let (client, backend, keystore_container, task_manager) = sc_service::new_full_parts_with_genesis_builder::<
-        Block,
-        RuntimeApi,
-        _,
-        MadaraGenesisBlockBuilder<Block, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
-    >(
+    // let (client, backend, keystore_container, task_manager) =
+    // sc_service::new_full_parts_with_genesis_builder::<     Block,
+    //     RuntimeApi,
+    //     _,
+    //     MadaraGenesisBlockBuilder<Block, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
+    // >(
+    //     config,
+    //     telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
+    //     executor,
+    //     backend,
+    //     genesis_block_builder,
+    // )?;
+
+    let (client, backend, keystore_container, task_manager) = sc_service::new_full_parts::<Block, RuntimeApi, _>(
         config,
         telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
         executor,
-        backend,
-        genesis_block_builder,
     )?;
 
     let client = Arc::new(client);

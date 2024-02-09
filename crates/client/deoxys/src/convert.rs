@@ -113,6 +113,7 @@ fn deploy_transaction(tx: &p::DeployTransaction) -> mp_transactions::DeployTrans
     mp_transactions::DeployTransaction {
         version: starknet_api::transaction::TransactionVersion(felt(tx.version)),
         class_hash: felt(tx.class_hash).into(),
+        contract_address: felt(tx.contract_address).into(),
         contract_address_salt: felt(tx.contract_address_salt).into(),
         constructor_calldata: tx.constructor_calldata.iter().copied().map(felt).map(Into::into).collect(),
     }
