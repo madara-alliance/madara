@@ -168,6 +168,25 @@ impl ExtendedRunCmd {
             .base_path()?
             .unwrap_or_else(|| BasePath::from_project("", "", &<Cli as SubstrateCli>::executable_name())))
     }
+
+    /// The chain name
+    ///
+    /// Will use `""` (empty sting) if none is provided
+    fn chain_id(&self) -> &str {
+        match &self.base.shared_params.chain {
+            Some(s) => s,
+            None => "",
+        }
+    }
+
+    /// The path of the configuration folder of your chain
+    ///
+    /// "<base_path>/chains/<my_chain_id>"
+    fn chain_config_dir(&self) -> Result<PathBuf> {
+        let chain_id = self.chain_id();
+        let chain_config_dir = self.base_path()?.config_dir(chain_id);
+        Ok(chain_config_dir)
+    }
 }
 
 pub fn run_node(mut cli: Cli) -> Result<()> {
@@ -177,6 +196,8 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         deoxys_environment(&mut cli.run);
     }
     let runner = cli.create_runner(&cli.run.base)?;
+
+    let chain_config_dir = cli.run.chain_config_dir()?;
 
     // TODO: verify that the l1_endpoint is valid
     let l1_endpoint = if let Some(url) = cli.run.l1_endpoint {
