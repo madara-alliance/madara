@@ -46,8 +46,10 @@ where
                 StarknetRpcApiError::BlockNotFound
             })?;
 
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)
-            .ok_or(StarknetRpcApiError::BlockNotFound)?;
+        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).map_err(|e| {
+            error!("'{e}'");
+            StarknetRpcApiError::BlockNotFound
+        })?;
 
         let block_hash = starknet_block.header().hash::<H>();
 
@@ -125,9 +127,6 @@ where
 
         let mut filtered_events: Vec<EmittedEvent> = Vec::new();
 
-        println!("Filtering events from block {} to block {}", from_block, to_block);
-        println!("continuation_token: {:?}", continuation_token);
-
         // Iterate on block range
         while current_block <= to_block {
             let emitted_events = self.get_block_events(current_block)?;
@@ -135,11 +134,6 @@ where
             let block_filtered_events: Vec<EmittedEvent> = filter_events_by_params(emitted_events, from_address, &keys);
 
             if current_block == from_block && (block_filtered_events.len() as u64) < continuation_token.event_n {
-                eprintln!(
-                    "Invalid continuation token: block_filtered_events len = {}, continuation_token.event_n = {}",
-                    block_filtered_events.len(),
-                    continuation_token.event_n
-                );
                 return Err(StarknetRpcApiError::InvalidContinuationToken.into());
             }
 
