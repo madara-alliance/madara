@@ -463,23 +463,6 @@ pub mod pallet {
                 &StarknetStorageSchemaVersion::V1,
             );
 
-            // TODO: delete this
-            // for (class_hash, contract_class) in self.contract_classes.iter() {
-            //     ContractClasses::<T>::insert(class_hash, contract_class);
-            // }
-
-            // for (sierra_class_hash, casm_class_hash) in self.sierra_to_casm_class_hash.iter() {
-            //     CompiledClassHashes::<T>::insert(sierra_class_hash, CompiledClassHash(casm_class_hash.0));
-            // }
-
-            // for (address, class_hash) in self.contracts.iter() {
-            //     ContractClassHashes::<T>::insert(address, class_hash);
-            // }
-
-            // for (key, value) in self.storage.iter() {
-            //     StorageView::<T>::insert(key, value);
-            // }
-
             self.contracts.iter().for_each(|(contract_address, class_hash)| {
                 ContractClassHashes::<T>::insert(contract_address, class_hash)
             });

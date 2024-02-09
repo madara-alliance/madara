@@ -250,18 +250,6 @@ impl DeployAccountTransaction {
     }
 }
 
-// TODO: delete this
-// impl DeployTransaction {
-//     pub fn from_starknet(inner: starknet_api::transaction::DeployTransaction) -> Self {
-//         Self {
-//             contract_address_salt: inner.contract_address_salt.into(),
-//             constructor_calldata: inner.constructor_calldata.0.iter().map(|felt|
-// Felt252Wrapper::from(*felt)).collect(),             class_hash: inner.class_hash.into(),
-//             version: inner.version.into(),
-//         }
-//     }
-// }
-
 impl HandleL1MessageTransaction {
     pub fn into_executable<H: HasherT>(
         &self,

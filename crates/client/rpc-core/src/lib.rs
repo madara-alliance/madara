@@ -29,19 +29,6 @@ use starknet_core::types::{
 #[derive(Serialize, Deserialize)]
 pub struct Felt(#[serde_as(as = "UfeHex")] pub FieldElement);
 
-#[derive(Serialize, Deserialize)]
-pub struct PredeployedAccountWithBalance {
-    pub account: PredeployedAccount,
-    pub balance: FieldElement,
-}
-
-/// Madara rpc interface for additional features.
-#[rpc(server, namespace = "madara")]
-pub trait MadaraRpcApi: StarknetReadRpcApi {
-    #[method(name = "predeployedAccounts")]
-    fn predeployed_accounts(&self) -> RpcResult<Vec<PredeployedAccountWithBalance>>;
-}
-
 /// Starknet write rpc interface.
 #[rpc(server, namespace = "starknet")]
 pub trait StarknetWriteRpcApi {

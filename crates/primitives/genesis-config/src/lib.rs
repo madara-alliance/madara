@@ -12,7 +12,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_crypto::FieldElement;
-use starknet_providers::sequencer::models::Block as BlockProvider;
 
 lazy_static! {
     static ref ETH_TOKEN_ADDR: HexFelt = HexFelt(
@@ -66,7 +65,7 @@ pub struct GenesisData {
 
 #[cfg(feature = "std")]
 pub mod convert {
-    use starknet_providers::sequencer::models::TransactionType;
+    use starknet_providers::sequencer::models::{Block as BlockProvider, TransactionType};
 
     use super::*;
 

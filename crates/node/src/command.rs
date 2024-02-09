@@ -42,14 +42,6 @@ impl SubstrateCli for Cli {
                 let base_path = self.run.base_path().map_err(|e| e.to_string())?;
                 Box::new(chain_spec::development_config(sealing, base_path)?)
             }
-            #[cfg(feature = "sharingan")]
-            SHARINGAN_CHAIN_ID => Box::new(chain_spec::ChainSpec::from_json_bytes(
-                &include_bytes!("../../../configs/chain-specs/testnet-sharingan-raw.json")[..],
-            )?),
-            "" | "local" | "madara-local" => {
-                let base_path = self.run.base_path().map_err(|e| e.to_string())?;
-                Box::new(chain_spec::local_testnet_config(base_path, id)?)
-            }
             "starknet" => {
                 let sealing = self.run.sealing.map(Into::into).unwrap_or_default();
                 let base_path = self.run.base_path().map_err(|e| e.to_string())?;

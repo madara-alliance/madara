@@ -86,7 +86,6 @@ pub fn new_partial<BIQ>(
     config: &Configuration,
     build_import_queue: BIQ,
     cache_more_things: bool,
-    genesis_block: mp_block::Block,
 ) -> Result<
     sc_service::PartialComponents<
         FullClient,
@@ -127,31 +126,6 @@ where
         .transpose()?;
 
     let executor = sc_service::new_native_or_wasm_executor(config);
-
-    // TODO: delete this
-    // let backend = new_db_backend(config.db_config())?;
-
-    // let genesis_block_builder = MadaraGenesisBlockBuilder::<Block, _, _>::new(
-    //     config.chain_spec.as_storage_builder(),
-    //     true,
-    //     backend.clone(),
-    //     executor.clone(),
-    //     genesis_block,
-    // )
-    // .unwrap();
-
-    // let (client, backend, keystore_container, task_manager) =
-    // sc_service::new_full_parts_with_genesis_builder::<     Block,
-    //     RuntimeApi,
-    //     _,
-    //     MadaraGenesisBlockBuilder<Block, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
-    // >(
-    //     config,
-    //     telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
-    //     executor,
-    //     backend,
-    //     genesis_block_builder,
-    // )?;
 
     let (client, backend, keystore_container, task_manager) = sc_service::new_full_parts::<Block, RuntimeApi, _>(
         config,
@@ -283,7 +257,6 @@ pub fn new_full(
     l1_url: Url,
     cache_more_things: bool,
     fetch_config: mc_deoxys::FetchConfig,
-    genesis_block: mp_block::Block,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
@@ -297,7 +270,7 @@ pub fn new_full(
         select_chain,
         transaction_pool,
         other: (block_import, grandpa_link, mut telemetry, madara_backend),
-    } = new_partial(&config, build_import_queue, cache_more_things, genesis_block)?;
+    } = new_partial(&config, build_import_queue, cache_more_things)?;
 
     let mut net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
@@ -767,6 +740,6 @@ type ChainOpsResult =
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things, mp_block::Block::default())?;
+        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things)?;
     Ok((client, backend, import_queue, task_manager, other.3))
 }

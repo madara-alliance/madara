@@ -18,10 +18,7 @@ use log::error;
 use mc_deoxys::l2::get_highest_block_hash_and_number;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-pub use mc_rpc_core::{
-    Felt, MadaraRpcApiServer, PredeployedAccountWithBalance, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
-    StarknetWriteRpcApiServer,
-};
+pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
 use mp_block::BlockStatus;
 use mp_contract::class::ContractClassWrapper;
@@ -199,51 +196,8 @@ where
     }
 }
 
-// TODO: delete this
 /// Taken from https://github.com/paritytech/substrate/blob/master/client/rpc/src/author/mod.rs#L78
 const TX_SOURCE: TransactionSource = TransactionSource::External;
-
-impl<A, B, BE, G, C, P, H> MadaraRpcApiServer for Starknet<A, B, BE, G, C, P, H>
-where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    G: GenesisProvider + Send + Sync + 'static,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-    P: TransactionPool<Block = B> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    fn predeployed_accounts(&self) -> RpcResult<Vec<PredeployedAccountWithBalance>> {
-        // let genesis_data = self.genesis_provider.load_genesis_data()?;
-        // let block_id = BlockId::Tag(BlockTag::Latest);
-        // let fee_token_address: FieldElement = genesis_data.fee_token_address.0;
-
-        // Ok(genesis_data
-        //     .predeployed_accounts
-        //     .into_iter()
-        //     .map(|account| {
-        //         let contract_address: FieldElement = account.contract_address.into();
-        //         let balance_string = &self
-        //             .call(
-        //                 FunctionCall {
-        //                     contract_address: fee_token_address,
-        //                     entry_point_selector: get_selector_from_name("balanceOf")
-        //                         .expect("the provided method name should be a valid ASCII string."),
-        //                     calldata: vec![contract_address],
-        //                 },
-        //                 block_id,
-        //             )
-        //             .expect("FunctionCall attributes should be correct.")[0];
-        //         let balance =
-        //             Felt252Wrapper::from_hex_be(balance_string).expect("`balanceOf` should return a
-        // Felt").into();         PredeployedAccountWithBalance { account, balance }
-        //     })
-        //     .collect::<Vec<_>>())
-        todo!()
-    }
-}
 
 #[async_trait]
 impl<A, B, BE, G, C, P, H> StarknetWriteRpcApiServer for Starknet<A, B, BE, G, C, P, H>
