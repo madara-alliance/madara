@@ -184,7 +184,6 @@ pub mod pallet {
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         /// The block is being finalized.
         fn on_finalize(_n: BlockNumberFor<T>) {
-            println!("ARAAAH");
             assert!(SeqAddrUpdate::<T>::take(), "Sequencer address must be set for the block");
             // Create a new Starknet block and store it.
             <Pallet<T>>::store_block(UniqueSaturatedInto::<u64>::unique_saturated_into(
@@ -197,7 +196,6 @@ pub mod pallet {
             let digest = frame_system::Pallet::<T>::digest();
             let logs = digest.logs();
 
-            log::info!("MANIAAA");
             if !logs.is_empty() {
                 for log_entry in logs {
                     if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
@@ -1035,9 +1033,7 @@ impl<T: Config> Pallet<T> {
     /// * `block_number` - The block number.
     fn store_block(block_number: u64) {
         let block: StarknetBlock;
-        println!("CA PASSE 1");
         if frame_system::Pallet::<T>::digest().logs().len() >= 1 {
-            println!("CA PASSE");
             match &frame_system::Pallet::<T>::digest().logs()[0] {
                 DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, encoded_data) => {
                     block = match StarknetBlock::decode(&mut encoded_data.as_slice()) {

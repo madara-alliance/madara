@@ -47,7 +47,6 @@ pub fn calculate_commitments<B: BlockT, H: HasherT>(
 //     chain_id: Felt252Wrapper,
 //     block_number: u64,
 //     backend: Arc<mc_db::Backend<B>>,
-// ) -> Felt252Wrapper {
-//         state_commitment::<B, H>(transactions, chain_id, block_number, &backend.bonsai().clone())
-//             .expect("Failed to calculate transaction commitment")
+// ) -> Felt252Wrapper { state_commitment::<B, H>(transactions, chain_id, block_number,
+//   &backend.bonsai().clone()) .expect("Failed to calculate transaction commitment")
 // }

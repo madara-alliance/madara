@@ -18,10 +18,12 @@ pub use utils::{convert, m, utility};
 type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc::EngineCommand<sp_core::H256>>;
 
 pub mod starknet_sync_worker {
-    use super::*;
     use std::sync::Arc;
-    use sp_runtime::traits::Block as BlockT;
+
     use reqwest::Url;
+    use sp_runtime::traits::Block as BlockT;
+
+    use super::*;
 
     pub async fn sync<B: BlockT>(
         fetch_config: FetchConfig,

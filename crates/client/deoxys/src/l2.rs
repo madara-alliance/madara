@@ -15,7 +15,7 @@ use reqwest::Url;
 use serde::Deserialize;
 use sp_core::H256;
 use sp_runtime::generic::{Block, Header};
-use sp_runtime::traits::{Block as BlockT, BlakeTwo256};
+use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_api::block::{BlockHash, BlockNumber};
@@ -27,8 +27,8 @@ use starknet_providers::{Provider, SequencerGatewayProvider};
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinSet;
 
-use crate::utility::{get_block_hash_by_number, update_highest_block_hash_and_number};
 use crate::state_updates::StarknetStateUpdate;
+use crate::utility::{get_block_hash_by_number, update_highest_block_hash_and_number};
 use crate::CommandSink;
 
 /// Contains the Starknet verified state on L2
@@ -127,7 +127,13 @@ impl BlockHashEquivalence {
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-pub async fn sync<B: BlockT>(mut sender_config: SenderConfig, config: FetchConfig, start_at: u64, rpc_port: u16, backend: Arc<mc_db::Backend<B>>) {
+pub async fn sync<B: BlockT>(
+    mut sender_config: SenderConfig,
+    config: FetchConfig,
+    start_at: u64,
+    rpc_port: u16,
+    backend: Arc<mc_db::Backend<B>>,
+) {
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
 
@@ -156,7 +162,7 @@ pub async fn sync<B: BlockT>(mut sender_config: SenderConfig, config: FetchConfi
                 );
                 tokio::join!(block, state_update)
             }
-            (false, true) => (fetch_block(&client, block_sender, current_block_number,  backend.clone()).await, Ok(())),
+            (false, true) => (fetch_block(&client, block_sender, current_block_number, backend.clone()).await, Ok(())),
             (true, false) => (
                 Ok(()),
                 fetch_state_and_class_update(
@@ -371,8 +377,8 @@ fn is_missing_class(
     class_hash: Felt252Wrapper,
 ) -> bool {
     match overrides
-    .for_schema_version(&StarknetStorageSchemaVersion::Undefined)
-    .contract_class_by_class_hash(block_hash_substrate, ClassHash::from(class_hash))
+        .for_schema_version(&StarknetStorageSchemaVersion::Undefined)
+        .contract_class_by_class_hash(block_hash_substrate, ClassHash::from(class_hash))
     {
         Some(_) => false,
         None => true,
@@ -382,7 +388,7 @@ fn is_missing_class(
 /// Notifies the consensus engine that a new block should be created.
 async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) -> Result<(), String> {
     let (sender, receiver) = futures::channel::oneshot::channel();
-    
+
     cmds.try_send(sc_consensus_manual_seal::rpc::EngineCommand::SealNewBlock {
         create_empty: true,
         finalize: true,
@@ -391,13 +397,13 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
     })
     .unwrap();
 
-let create_block_info = receiver
-.await
-.map_err(|err| format!("failed to seal block: {err}"))?
-.map_err(|err| format!("failed to seal block: {err}"))?;
+    let create_block_info = receiver
+        .await
+        .map_err(|err| format!("failed to seal block: {err}"))?
+        .map_err(|err| format!("failed to seal block: {err}"))?;
 
-*parent_hash = Some(create_block_info.hash);
-Ok(())
+    *parent_hash = Some(create_block_info.hash);
+    Ok(())
 }
 
 /// Update the L2 state with the latest data

@@ -66,7 +66,7 @@ where
         let bonsai_db = backend.as_ref();
         let mut bonsai_storage =
             BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
-        
+
         let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
         println!("Root hash: {}", root_hash);
         let mut id_builder = BasicIdBuilder::new();
@@ -91,5 +91,5 @@ where
         Ok(Felt252Wrapper::from(root_hash))
     } else {
         Ok(Felt252Wrapper::ZERO)
-    } 
+    }
 }

@@ -141,7 +141,7 @@ impl<B: BlockT> Backend<B> {
             meta: Arc::new(MetaDb { db: spdb.clone(), _marker: PhantomData }),
             da: Arc::new(DaDb { db: spdb.clone(), _marker: PhantomData }),
             messaging: Arc::new(MessagingDb { db: spdb.clone(), _marker: PhantomData }),
-            sierra_classes: Arc::new(SierraClassesDb { db: spdb .clone(), _marker: PhantomData }),
+            sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone(), _marker: PhantomData }),
             bonsai: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData }),
         })
     }

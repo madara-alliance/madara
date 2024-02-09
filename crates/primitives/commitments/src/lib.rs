@@ -198,10 +198,8 @@ pub fn calculate_transaction_commitment<H: HasherT>(
     transactions.iter().enumerate().for_each(|(idx, tx)| {
         let idx: u64 = idx.try_into().expect("too many transactions while calculating commitment");
         let final_hash = calculate_transaction_hash_with_signature::<H>(tx, chain_id, block_number);
-        println!("idx: {:?}, final_hash: {:?}", idx, final_hash);
         tree.set(idx, final_hash);
     });
-    println!("Transaction commitment: {:?}", tree.commit());
     tree.commit()
 }
 

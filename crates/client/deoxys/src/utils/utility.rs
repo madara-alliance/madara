@@ -8,8 +8,8 @@ use rand::thread_rng;
 use reqwest::header;
 use serde_json::{json, Value};
 use starknet_ff::FieldElement;
-use starknet_providers::SequencerGatewayProvider;
 use starknet_providers::sequencer::models::BlockId;
+use starknet_providers::SequencerGatewayProvider;
 
 use crate::l2::{L2StateUpdate, STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER};
 
