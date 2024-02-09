@@ -16,55 +16,48 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-mod parity_db_adapter;
+pub mod parity_db_adapter;
+pub mod rock_db_adapter;
 
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::{Database, DatabaseSettings, DatabaseSource, DbHash};
+use kvdb::KeyValueDB;
+use sp_database::Database;
 
-pub(crate) fn open_database(config: &DatabaseSettings) -> Result<Arc<dyn Database<DbHash>>, String> {
-    let db: Arc<dyn Database<DbHash>> = match &config.source {
-        DatabaseSource::ParityDb { path } => open_parity_db(path)?,
-        DatabaseSource::RocksDb { path, .. } => open_kvdb_rocksdb(path, true)?,
+use crate::{DatabaseSettings, DatabaseSource, DbHash};
+
+pub(crate) fn open_database(
+    config: &DatabaseSettings,
+) -> Result<(Arc<dyn KeyValueDB>, Arc<dyn Database<DbHash>>), String> {
+    let dbs: (Arc<dyn KeyValueDB>, Arc<dyn Database<DbHash>>) = match &config.source {
+        // DatabaseSource::ParityDb { path } => open_parity_db(path).expect("Failed to open parity db"),
+        DatabaseSource::RocksDb { path, .. } => {
+            let dbs = open_kvdb_rocksdb(path, true)?;
+            (dbs.0, dbs.1)
+        }
         DatabaseSource::Auto { paritydb_path, rocksdb_path, .. } => match open_kvdb_rocksdb(rocksdb_path, false) {
-            Ok(db) => db,
-            Err(_) => open_parity_db(paritydb_path)?,
+            Ok(_) => {
+                let dbs = open_kvdb_rocksdb(paritydb_path, true)?;
+                (dbs.0, dbs.1)
+            }
+            Err(_) => Err("Missing feature flags `parity-db`".to_string())?,
         },
         _ => return Err("Missing feature flags `parity-db`".to_string()),
     };
-    Ok(db)
+    Ok(dbs)
 }
 
-#[cfg(feature = "kvdb-rocksdb")]
-fn open_kvdb_rocksdb(path: &Path, create: bool) -> Result<Arc<dyn Database<DbHash>>, String> {
+pub fn open_kvdb_rocksdb(
+    path: &Path,
+    create: bool,
+) -> Result<(Arc<dyn KeyValueDB>, Arc<dyn Database<DbHash>>), String> {
     let mut db_config = kvdb_rocksdb::DatabaseConfig::with_columns(crate::columns::NUM_COLUMNS);
     db_config.create_if_missing = create;
 
-    let db = kvdb_rocksdb::Database::open(&db_config, path).map_err(|err| format!("{}", err))?;
-    Ok(sp_database::as_database(db))
-}
+    let db_kvdb = kvdb_rocksdb::Database::open(&db_config, path).map_err(|err| format!("{}", err))?;
+    let x = Arc::new(db_kvdb);
+    let y = unsafe { std::mem::transmute::<_, Arc<rock_db_adapter::DbAdapter>>(x.clone()) };
 
-#[cfg(not(feature = "kvdb-rocksdb"))]
-fn open_kvdb_rocksdb(
-    _client: Arc<C>,
-    _path: &Path,
-    _create: bool,
-    _source: &DatabaseSource,
-) -> Result<Arc<dyn Database<DbHash>>, String> {
-    Err("Missing feature flags `kvdb-rocksdb`".to_string())
-}
-
-#[cfg(feature = "parity-db")]
-fn open_parity_db(path: &Path) -> Result<Arc<dyn Database<DbHash>>, String> {
-    let mut config = parity_db::Options::with_columns(path, crate::columns::NUM_COLUMNS as u8);
-    config.columns[crate::columns::BLOCK_MAPPING as usize].btree_index = true;
-
-    let db = parity_db::Db::open_or_create(&config).map_err(|err| format!("{}", err))?;
-    Ok(Arc::new(parity_db_adapter::DbAdapter(db)))
-}
-
-#[cfg(not(feature = "parity-db"))]
-fn open_parity_db(_path: &Path) -> Result<Arc<dyn Database<DbHash>>, String> {
-    Err("Missing feature flags `parity-db`".to_string())
+    Ok((x, y))
 }

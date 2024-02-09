@@ -7,8 +7,11 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 use reqwest::header;
 use serde_json::{json, Value};
+use starknet_ff::FieldElement;
+use starknet_providers::sequencer::models::BlockId;
+use starknet_providers::SequencerGatewayProvider;
 
-use crate::l2::L2StateUpdate;
+use crate::l2::{L2StateUpdate, STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER};
 
 // TODO: secure the auto calls here
 
@@ -126,6 +129,31 @@ pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2S
     }
 
     Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Maximum retries exceeded")))
+}
+
+pub async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider) -> Result<(), String> {
+    let block = client.get_block(BlockId::Latest).await.map_err(|e| format!("failed to get block: {e}"))?;
+
+    let hash = block
+        .block_hash
+        .ok_or("block hash not found")?
+        .try_into()
+        .map_err(|e| format!("failed to convert block hash: {e}"))?;
+    let number = block
+        .block_number
+        .ok_or("block number not found")?
+        .try_into()
+        .map_err(|e| format!("failed to convert block number: {e}"))?;
+
+    let last_highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.clone();
+    let mut new_highest_block_hash_and_number = last_highest_block_hash_and_number.lock().unwrap();
+    *new_highest_block_hash_and_number = (hash, number);
+
+    Ok(())
+}
+
+pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
+    STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.lock().unwrap().clone()
 }
 
 /// Returns a random Pokémon name.
