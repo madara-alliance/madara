@@ -68,6 +68,13 @@ mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-storage = { workspace = true, default-features = true }
 mp-transactions = { workspace = true, features = ["client"] }
+mc-db = { workspace = true }
+bonsai-trie = { workspace = true }
+starknet-types-core = { workspace = true, default-features = false, features = [
+    "hash",
+    "parity-scale-codec",
+] }
+bitvec = "1.0.1"
 
 [dev-dependencies]
 # test_utils = { path = "./test_utils" }

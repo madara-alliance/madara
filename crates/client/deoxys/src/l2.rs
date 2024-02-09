@@ -15,7 +15,7 @@ use reqwest::Url;
 use serde::Deserialize;
 use sp_core::H256;
 use sp_runtime::generic::{Block, Header};
-use sp_runtime::traits::BlakeTwo256;
+use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_api::block::{BlockHash, BlockNumber};
@@ -27,7 +27,7 @@ use starknet_providers::{Provider, SequencerGatewayProvider};
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinSet;
 
-use crate::utility::get_block_hash_by_number;
+use crate::utility::{get_block_hash_by_number, update_highest_block_hash_and_number};
 use crate::CommandSink;
 
 /// Contains the Starknet verified state on L2
@@ -49,7 +49,7 @@ lazy_static! {
 
 lazy_static! {
     /// Shared latest block number and hash of chain
-    static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: Arc<Mutex<(FieldElement, u64)>> = Arc::new(Mutex::new((FieldElement::default(), 0)));
+    pub static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: Arc<Mutex<(FieldElement, u64)>> = Arc::new(Mutex::new((FieldElement::default(), 0)));
 }
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
@@ -126,7 +126,13 @@ impl BlockHashEquivalence {
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-pub async fn sync(mut sender_config: SenderConfig, config: FetchConfig, start_at: u64, rpc_port: u16) {
+pub async fn sync<B: BlockT>(
+    mut sender_config: SenderConfig,
+    config: FetchConfig,
+    start_at: u64,
+    rpc_port: u16,
+    backend: Arc<mc_db::Backend<B>>,
+) {
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
 
@@ -144,7 +150,7 @@ pub async fn sync(mut sender_config: SenderConfig, config: FetchConfig, start_at
         }
         let (block, state_update) = match (got_block, got_state_update) {
             (false, false) => {
-                let block = fetch_block(&client, block_sender, current_block_number);
+                let block = fetch_block(&client, block_sender, current_block_number, backend.clone());
                 let state_update = fetch_state_and_class_update(
                     &client,
                     Arc::clone(&overrides),
@@ -155,7 +161,7 @@ pub async fn sync(mut sender_config: SenderConfig, config: FetchConfig, start_at
                 );
                 tokio::join!(block, state_update)
             }
-            (false, true) => (fetch_block(&client, block_sender, current_block_number).await, Ok(())),
+            (false, true) => (fetch_block(&client, block_sender, current_block_number, backend.clone()).await, Ok(())),
             (true, false) => (
                 Ok(()),
                 fetch_state_and_class_update(
@@ -198,24 +204,28 @@ pub async fn sync(mut sender_config: SenderConfig, config: FetchConfig, start_at
     }
 }
 
-async fn fetch_block(
+async fn fetch_block<B: BlockT>(
     client: &SequencerGatewayProvider,
     block_sender: &Sender<mp_block::Block>,
     block_number: u64,
+    backend: Arc<mc_db::Backend<B>>,
 ) -> Result<(), String> {
     let block =
         client.get_block(BlockId::Number(block_number)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    block_sender.send(crate::convert::block(&block)).await.map_err(|e| format!("failed to dispatch block: {e}"))?;
+    block_sender
+        .send(crate::convert::block(&block, backend))
+        .await
+        .map_err(|e| format!("failed to dispatch block: {e}"))?;
 
     Ok(())
 }
 
 pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block, String> {
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
-    let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
+    let _block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    Ok(crate::convert::block(&block))
+    Ok(mp_block::Block::default())
 }
 
 async fn fetch_state_and_class_update(
@@ -251,6 +261,8 @@ async fn fetch_state_update(provider: &SequencerGatewayProvider, block_number: u
         .get_state_update(BlockId::Number(block_number))
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
+
+    // Verify state update via verify_l2(starket_state_update).await
 
     Ok(state_update)
 }
@@ -304,7 +316,7 @@ async fn download_class(
     block_hash: FieldElement,
     provider: Arc<SequencerGatewayProvider>,
 ) -> anyhow::Result<ContractClassData> {
-    log::info!("💾 Downloading class {class_hash:#x}");
+    // log::info!("💾 Downloading class {class_hash:#x}");
     let core_class = provider.get_class(BlockIdCore::Hash(block_hash), class_hash).await?;
 
     // Core classes have to be converted into Blockifier classes to gain support
@@ -402,27 +414,15 @@ pub fn update_l2(state_update: L2StateUpdate) {
     }
 }
 
-async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider) -> Result<(), String> {
-    let block = client.get_block(BlockId::Latest).await.map_err(|e| format!("failed to get block: {e}"))?;
-
-    let hash = block
-        .block_hash
-        .ok_or("block hash not found")?
-        .try_into()
-        .map_err(|e| format!("failed to convert block hash: {e}"))?;
-    let number = block
-        .block_number
-        .ok_or("block number not found")?
-        .try_into()
-        .map_err(|e| format!("failed to convert block number: {e}"))?;
-
-    let last_highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.clone();
-    let mut new_highest_block_hash_and_number = last_highest_block_hash_and_number.lock().unwrap();
-    *new_highest_block_hash_and_number = (hash, number);
-
+/// Verify the L2 state according to the latest state update
+pub async fn verify_l2(_state_update: StateUpdateWrapper) -> Result<(), String> {
+    // 1. Retrieve state diff
+    // 2. Compute commitments
+    // state_root = state_commitment(csd)
+    // 3. Log latest L2 state verified on L2
+    // println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash,
+    // state_root;
+    // 4. Update hared latest L2 state update verified on L2
+    // update_l2({block_number, block_hash, state_commitment})
     Ok(())
-}
-
-pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
-    STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.lock().unwrap().clone()
 }

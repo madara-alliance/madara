@@ -11,7 +11,7 @@ use super::{
     HandleL1MessageTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, Transaction,
     UserTransaction, SIMULATE_TX_VERSION_OFFSET,
 };
-use crate::{DeployTransaction, LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK};
+use crate::{DeployTransaction, UserOrL1HandlerTransaction, LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK};
 
 const DECLARE_PREFIX: &[u8] = b"declare";
 const DEPLOY_ACCOUNT_PREFIX: &[u8] = b"deploy_account";
@@ -446,6 +446,22 @@ impl ComputeTransactionHash for UserTransaction {
             UserTransaction::Declare(tx, _) => tx.compute_hash::<H>(chain_id, offset_version, None),
             UserTransaction::DeployAccount(tx) => tx.compute_hash::<H>(chain_id, offset_version, None),
             UserTransaction::Invoke(tx) => tx.compute_hash::<H>(chain_id, offset_version, None),
+        }
+    }
+}
+
+impl ComputeTransactionHash for UserOrL1HandlerTransaction {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        block_number: Option<u64>,
+    ) -> Felt252Wrapper {
+        match self {
+            UserOrL1HandlerTransaction::User(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
+            UserOrL1HandlerTransaction::L1Handler(tx, _) => {
+                tx.compute_hash::<H>(chain_id, offset_version, block_number)
+            }
         }
     }
 }

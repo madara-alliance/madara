@@ -12,9 +12,10 @@
 //! flags. Support for custom databases is possible but not supported yet.
 
 mod error;
-pub use error::DbError;
+pub use error::{BonsaiDbError, DbError};
 
 mod mapping_db;
+use kvdb::KeyValueDB;
 pub use mapping_db::MappingCommitment;
 use sierra_classes_db::SierraClassesDb;
 use starknet_api::hash::StarkHash;
@@ -23,13 +24,17 @@ mod db_opening_utils;
 mod messaging_db;
 mod sierra_classes_db;
 pub use messaging_db::LastSyncedEventBlock;
+pub mod bonsai_db;
+mod l1_handler_tx_fee;
 mod meta_db;
 
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use bonsai_db::BonsaiDb;
 use da_db::DaDb;
+use l1_handler_tx_fee::L1HandlerTxFeeDb;
 use mapping_db::MappingDb;
 use messaging_db::MessagingDb;
 use meta_db::MetaDb;
@@ -51,7 +56,7 @@ pub(crate) mod columns {
     // ===== /!\ ===================================================================================
     // MUST BE INCREMENTED WHEN A NEW COLUMN IN ADDED
     // ===== /!\ ===================================================================================
-    pub const NUM_COLUMNS: u32 = 8;
+    pub const NUM_COLUMNS: u32 = 10;
 
     pub const META: u32 = 0;
     pub const BLOCK_MAPPING: u32 = 1;
@@ -70,6 +75,12 @@ pub(crate) mod columns {
 
     /// This column contains the Sierra contract classes
     pub const SIERRA_CONTRACT_CLASSES: u32 = 7;
+
+    /// This column stores the fee paid on l1 for L1Handler transactions
+    pub const L1_HANDLER_PAID_FEE: u32 = 8;
+
+    /// This column contains the bonsai trie keys
+    pub const BONSAI: u32 = 9;
 }
 
 pub mod static_keys {
@@ -80,15 +91,20 @@ pub mod static_keys {
 
 /// The Madara client database backend
 ///
-/// Contains two distinct databases: `meta` and `mapping`.
+/// Contains five distinct databases: `meta`, `mapping`, `messaging`, `da` and `bonsai``.
 /// `mapping` is used to map Starknet blocks to Substrate ones.
 /// `meta` is used to store data about the current state of the chain
+/// `messaging` is used to store data regarding l1 messagings.
+/// `da` is used to store the data availaiblity facts that need to be written to the L1.
+/// `bonsai` is used to store the commitment tries.
 pub struct Backend<B: BlockT> {
     meta: Arc<MetaDb<B>>,
     mapping: Arc<MappingDb<B>>,
-    da: Arc<DaDb<B>>,
-    messaging: Arc<MessagingDb<B>>,
-    sierra_classes: Arc<SierraClassesDb<B>>,
+    da: Arc<DaDb>,
+    messaging: Arc<MessagingDb>,
+    sierra_classes: Arc<SierraClassesDb>,
+    l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
+    bonsai: Arc<BonsaiDb<B>>,
 }
 
 /// Returns the Starknet database directory.
@@ -124,13 +140,17 @@ impl<B: BlockT> Backend<B> {
 
     fn new(config: &DatabaseSettings, cache_more_things: bool) -> Result<Self, String> {
         let db = db_opening_utils::open_database(config)?;
+        let kvdb: Arc<dyn KeyValueDB> = db.0;
+        let spdb: Arc<dyn Database<DbHash>> = db.1;
 
         Ok(Self {
-            mapping: Arc::new(MappingDb::new(db.clone(), cache_more_things)),
-            meta: Arc::new(MetaDb { db: db.clone(), _marker: PhantomData }),
-            da: Arc::new(DaDb { db: db.clone(), _marker: PhantomData }),
-            messaging: Arc::new(MessagingDb { db: db.clone(), _marker: PhantomData }),
-            sierra_classes: Arc::new(SierraClassesDb { db: db.clone(), _marker: PhantomData }),
+            mapping: Arc::new(MappingDb::new(spdb.clone(), cache_more_things)),
+            meta: Arc::new(MetaDb { db: spdb.clone(), _marker: PhantomData }),
+            da: Arc::new(DaDb { db: spdb.clone() }),
+            messaging: Arc::new(MessagingDb { db: spdb.clone() }),
+            sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
+            l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
+            bonsai: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData }),
         })
     }
 
@@ -145,18 +165,28 @@ impl<B: BlockT> Backend<B> {
     }
 
     /// Return the da database manager
-    pub fn da(&self) -> &Arc<DaDb<B>> {
+    pub fn da(&self) -> &Arc<DaDb> {
         &self.da
     }
 
     /// Return the da database manager
-    pub fn messaging(&self) -> &Arc<MessagingDb<B>> {
+    pub fn messaging(&self) -> &Arc<MessagingDb> {
         &self.messaging
     }
 
     /// Return the sierra classes database manager
-    pub fn sierra_classes(&self) -> &Arc<SierraClassesDb<B>> {
+    pub fn sierra_classes(&self) -> &Arc<SierraClassesDb> {
         &self.sierra_classes
+    }
+
+    /// Return the bonsai database manager
+    pub fn bonsai(&self) -> &Arc<BonsaiDb<B>> {
+        &self.bonsai
+    }
+
+    /// Return l1 handler tx paid fee database manager
+    pub fn l1_handler_paid_fee(&self) -> &Arc<L1HandlerTxFeeDb> {
+        &self.l1_handler_paid_fee
     }
 
     /// In the future, we will compute the block global state root asynchronously in the client,
