@@ -1,9 +1,6 @@
 #[cfg(test)]
 mod tests;
 
-use std::iter::Skip;
-use std::vec::IntoIter;
-
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_rpc_core::utils::get_block_by_block_hash;
@@ -119,52 +116,51 @@ where
         // get filter values
         let continuation_token = filter.continuation_token;
         // skip blocks with continuation token block number
-        let from_block = filter.from_block + continuation_token.block_n;
+        let from_block = continuation_token.block_n;
         let mut current_block = from_block;
         let to_block = filter.to_block;
         let from_address = filter.from_address;
         let keys = filter.keys;
         let chunk_size = filter.chunk_size;
 
-        let mut filtered_events = Vec::new();
+        let mut filtered_events: Vec<EmittedEvent> = Vec::new();
+
+        println!("Filtering events from block {} to block {}", from_block, to_block);
+        println!("continuation_token: {:?}", continuation_token);
 
         // Iterate on block range
         while current_block <= to_block {
             let emitted_events = self.get_block_events(current_block)?;
-            let mut unchecked_events = emitted_events.len();
-            let events = if current_block == from_block {
-                // check if continuation_token.event_n is not too big
-                if (unchecked_events as u64) < continuation_token.event_n {
-                    return Err(StarknetRpcApiError::InvalidContinuationToken.into());
-                }
-                unchecked_events -= continuation_token.event_n as usize;
-                emitted_events.into_iter().skip(continuation_token.event_n as usize)
-            } else {
-                #[allow(clippy::iter_skip_zero)]
-                emitted_events.into_iter().skip(0)
-            };
 
-            let mut n_visited = 0;
-            let block_filtered_events = filter_events_by_params(
-                events,
-                from_address,
-                &keys,
-                chunk_size as usize - filtered_events.len(),
-                &mut n_visited,
-            );
+            let block_filtered_events: Vec<EmittedEvent> = filter_events_by_params(emitted_events, from_address, &keys);
 
-            filtered_events.extend(block_filtered_events);
+            if current_block == from_block && (block_filtered_events.len() as u64) < continuation_token.event_n {
+                eprintln!(
+                    "Invalid continuation token: block_filtered_events len = {}, continuation_token.event_n = {}",
+                    block_filtered_events.len(),
+                    continuation_token.event_n
+                );
+                return Err(StarknetRpcApiError::InvalidContinuationToken.into());
+            }
+
+            #[allow(clippy::iter_skip_zero)]
+            let block_filtered_reduced_events: Vec<EmittedEvent> = block_filtered_events
+                .into_iter()
+                .skip(if current_block == from_block { continuation_token.event_n as usize } else { 0 })
+                .take(chunk_size as usize - filtered_events.len())
+                .collect();
+
+            let num_events = block_filtered_reduced_events.len();
+
+            filtered_events.extend(block_filtered_reduced_events);
 
             if filtered_events.len() == chunk_size as usize {
-                let token = if current_block < to_block || n_visited < unchecked_events {
-                    let mut event_n = n_visited as u64;
-                    if continuation_token.block_n == current_block {
-                        event_n += continuation_token.event_n;
-                    }
-                    Some(ContinuationToken { block_n: current_block - from_block, event_n }.to_string())
+                let event_n = if current_block == from_block {
+                    continuation_token.event_n + chunk_size
                 } else {
-                    None
+                    num_events as u64
                 };
+                let token = Some(ContinuationToken { block_n: current_block, event_n }.to_string());
 
                 return Ok(EventsPage { events: filtered_events, continuation_token: token });
             }
@@ -190,17 +186,14 @@ where
 /// * `(block_events: Vec<EventWrapper>, continuation_token: usize)` - A tuple of the filtered
 ///   events and the first index which still hasn't been processed block_id and an instance of Block
 pub fn filter_events_by_params<'a, 'b: 'a>(
-    events: Skip<IntoIter<EmittedEvent>>,
+    events: Vec<EmittedEvent>,
     address: Option<Felt252Wrapper>,
     keys: &'a [Vec<FieldElement>],
-    max_results: usize,
-    n_visited: &'b mut usize,
 ) -> Vec<EmittedEvent> {
     let mut filtered_events = vec![];
 
     // Iterate on block events.
     for event in events {
-        *n_visited += 1;
         let match_from_address = address.map_or(true, |addr| addr.0 == event.from_address);
         // Based on https://github.com/starkware-libs/papyrus
         let match_keys = keys
@@ -210,9 +203,6 @@ pub fn filter_events_by_params<'a, 'b: 'a>(
 
         if match_from_address && match_keys {
             filtered_events.push(event);
-            if filtered_events.len() >= max_results {
-                break;
-            }
         }
     }
     filtered_events

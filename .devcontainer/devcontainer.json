@@ -1,28 +1,28 @@
 {
-    "build": {
-        "dockerfile": "Dockerfile"
-    },
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
 
-    // make sure to update `.devcontainer/Dockerfile` with you uid !!!
-    "remoteUser": "vscode",
+  // make sure to update `.devcontainer/Dockerfile` with you uid !!!
+  "remoteUser": "vscode",
 
-    "customizations": {
-        "vscode": {
-            "settings": {
-                "terminal.integrated.defaultProfile.linux": "zsh",
-                "terminal.integrated.profiles.linux": { "zsh": { "path": "/bin/zsh" } }
-            },
-            "extensions": [
-                "rust-lang.rust-analyzer",
-                "1YiB.rust-bundle",
-                "tamasfe.even-better-toml",
-                "serayuzgur.crates",
-                "vivaxy.vscode-conventional-commits",
-                "streetsidesoftware.code-spell-checker"
-            ]
-        }
-    },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.profiles.linux": { "zsh": { "path": "/bin/zsh" } }
+      },
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "1YiB.rust-bundle",
+        "tamasfe.even-better-toml",
+        "serayuzgur.crates",
+        "vivaxy.vscode-conventional-commits",
+        "streetsidesoftware.code-spell-checker"
+      ]
+    }
+  },
 
-    "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
-    "postAttachCommand": "${containerWorkspaceFolder}/.devcontainer/setup.sh"
+  "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+  "postAttachCommand": "${containerWorkspaceFolder}/.devcontainer/setup.sh"
 }
