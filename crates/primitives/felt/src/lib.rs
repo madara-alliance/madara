@@ -27,6 +27,7 @@ use scale_info::{build::Fields, Path, Type, TypeInfo};
 use sp_core::{H256, U256};
 use starknet_api::hash::StarkFelt;
 use starknet_ff::{FieldElement, FromByteSliceError, FromStrError};
+use starknet_types_core::felt::Felt;
 use thiserror_no_std::Error;
 
 #[cfg(feature = "serde")]
@@ -34,6 +35,7 @@ pub use crate::with_serde::*;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Hash, Eq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(transparent)]
 pub struct Felt252Wrapper(pub FieldElement);
 
 impl Felt252Wrapper {
@@ -232,6 +234,20 @@ impl From<FieldElement> for Felt252Wrapper {
 impl From<Felt252Wrapper> for FieldElement {
     fn from(ff: Felt252Wrapper) -> Self {
         ff.0
+    }
+}
+
+/// [`Felt252Wrapper`] from [`Felt`].
+impl From<Felt> for Felt252Wrapper {
+    fn from(value: Felt) -> Self {
+        Felt252Wrapper::try_from(&value.to_bytes_be()).unwrap()
+    }
+}
+
+/// [`Felt252Wrapper`] to [`Felt`].
+impl From<Felt252Wrapper> for Felt {
+    fn from(value: Felt252Wrapper) -> Self {
+        Felt::from_bytes_be(&value.into())
     }
 }
 

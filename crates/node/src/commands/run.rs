@@ -86,8 +86,7 @@ pub enum NetworkType {
 impl NetworkType {
     pub fn uri(&self) -> &'static str {
         match self {
-            // NetworkType::Main => "http://127.0.0.1:3000",
-            NetworkType::Main => "https://alpha-mainnet.starknet.io",
+            NetworkType::Main => "http://test.querypointer.com:3000",
             NetworkType::Test => "https://alpha4.starknet.io",
             NetworkType::Integration => "https://external.integration.starknet.io",
         }
@@ -134,14 +133,10 @@ pub struct ExtendedRunCmd {
     pub network: NetworkType,
 
     /// Choose a supported settlement layer
-    #[clap(long, ignore_case = true)]
+    #[clap(long, ignore_case = true, requires = "settlement_conf")]
     pub settlement: Option<SettlementLayer>,
 
     /// Path to a file containing the settlement configuration
-    ///
-    /// If `settlement` is `Some` and `settlement_conf` is `None` we will try to read one at
-    /// `<chain_config_directory>/settlement_conf.json`. If it's not there, an error will be
-    /// returned.
     #[clap(long, value_hint = FilePath, requires = "settlement")]
     pub settlement_conf: Option<PathBuf>,
 
@@ -166,9 +161,6 @@ pub struct ExtendedRunCmd {
 }
 
 impl ExtendedRunCmd {
-    /// The substrate base directory on your machine
-    ///
-    /// Will be different depending on your OS
     pub fn base_path(&self) -> Result<BasePath> {
         Ok(self
             .base
@@ -180,7 +172,6 @@ impl ExtendedRunCmd {
     /// The chain name
     ///
     /// Will use `""` (empty sting) if none is provided
-    #[allow(dead_code)]
     fn chain_id(&self) -> &str {
         match &self.base.shared_params.chain {
             Some(s) => s,
@@ -191,7 +182,6 @@ impl ExtendedRunCmd {
     /// The path of the configuration folder of your chain
     ///
     /// "<base_path>/chains/<my_chain_id>"
-    #[allow(dead_code)]
     fn chain_config_dir(&self) -> Result<PathBuf> {
         let chain_id = self.chain_id();
         let chain_config_dir = self.base_path()?.config_dir(chain_id);
@@ -206,6 +196,8 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         deoxys_environment(&mut cli.run);
     }
     let runner = cli.create_runner(&cli.run.base)?;
+
+    let chain_config_dir = cli.run.chain_config_dir()?;
 
     // TODO: verify that the l1_endpoint is valid
     let l1_endpoint = if let Some(url) = cli.run.l1_endpoint {
