@@ -155,11 +155,13 @@ where
     /// Returns the substrate block hash corresponding to the given Starknet block id
     fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<B::Hash, StarknetRpcApiError> {
         match block_id {
-            BlockId::Hash(h) => madara_backend_client::load_hash(self.client.as_ref(), &self.backend, Felt252Wrapper::from(h).into())
-                .map_err(|e| {
-                    error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
-                    StarknetRpcApiError::BlockNotFound
-                })?,
+            BlockId::Hash(h) => {
+                madara_backend_client::load_hash(self.client.as_ref(), &self.backend, Felt252Wrapper::from(h).into())
+                    .map_err(|e| {
+                        error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
+                        StarknetRpcApiError::BlockNotFound
+                    })?
+            }
             BlockId::Number(n) => self
                 .client
                 .hash(UniqueSaturatedInto::unique_saturated_into(n))
@@ -1181,12 +1183,12 @@ where
             self.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into());
 
         let transaction_hash = if let Some(cached_tx_hashes) = opt_cached_transaction_hashes {
-            cached_tx_hashes.get(index as usize).map(|&fe| FieldElement::from(Felt252Wrapper::from(fe))).ok_or(CallError::Failed(
-                anyhow::anyhow!(
+            cached_tx_hashes.get(index as usize).map(|&fe| FieldElement::from(Felt252Wrapper::from(fe))).ok_or(
+                CallError::Failed(anyhow::anyhow!(
                     "Number of cached tx hashes does not match the number of transactions in block with id {:?}",
                     block_id
-                ),
-            ))?
+                )),
+            )?
         } else {
             transaction.compute_hash::<H>(chain_id.0.into(), false, Some(starknet_block.header().block_number)).0
         };
@@ -1239,12 +1241,12 @@ where
         let mut transactions = Vec::with_capacity(starknet_block.transactions().len());
         for (index, tx) in starknet_block.transactions().iter().enumerate() {
             let tx_hash = if let Some(cached_tx_hashes) = opt_cached_transaction_hashes.as_ref() {
-                cached_tx_hashes.get(index).map(|&h| FieldElement::from(Felt252Wrapper::from(h))).ok_or(CallError::Failed(
-                    anyhow::anyhow!(
+                cached_tx_hashes.get(index).map(|&h| FieldElement::from(Felt252Wrapper::from(h))).ok_or(
+                    CallError::Failed(anyhow::anyhow!(
                         "Number of cached tx hashes does not match the number of transactions in block with hash {:?}",
                         block_hash
-                    ),
-                ))?
+                    )),
+                )?
             } else {
                 tx.compute_hash::<H>(chain_id.0.into(), false, Some(starknet_block.header().block_number)).0
             };
@@ -1425,8 +1427,11 @@ where
     /// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
     ///   system's capacity.
     fn get_transaction_by_hash(&self, transaction_hash: FieldElement) -> RpcResult<Transaction> {
-        let substrate_block_hash_from_db =
-            self.backend.mapping().block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into()).map_err(|e| {
+        let substrate_block_hash_from_db = self
+            .backend
+            .mapping()
+            .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
+            .map_err(|e| {
                 error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
                 StarknetRpcApiError::TxnHashNotFound
             })?;

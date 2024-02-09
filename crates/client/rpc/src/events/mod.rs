@@ -89,7 +89,13 @@ where
         let mut tx_hash_and_events: Vec<(Felt252Wrapper, starknet_api::transaction::Event)> = vec![];
         for (index, event) in index_and_events {
             let tx_index = index as usize - inherent_count;
-            let tx_hash = self.try_txn_hash_from_cache(tx_index, &txn_hashes, &starknet_txs, chain_id, Some(starknet_block.header().block_number))?;
+            let tx_hash = self.try_txn_hash_from_cache(
+                tx_index,
+                &txn_hashes,
+                &starknet_txs,
+                chain_id,
+                Some(starknet_block.header().block_number),
+            )?;
             tx_hash_and_events.push((tx_hash, event));
         }
 

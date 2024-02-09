@@ -45,7 +45,14 @@ where
                             starknet_transaction_hashes: digest_starknet_block
                                 .transactions()
                                 .iter()
-                                .map(|tx| tx.compute_hash::<H>(chain_id, false, Some(digest_starknet_block.header().block_number)).into())
+                                .map(|tx| {
+                                    tx.compute_hash::<H>(
+                                        chain_id,
+                                        false,
+                                        Some(digest_starknet_block.header().block_number),
+                                    )
+                                    .into()
+                                })
                                 .collect(),
                         };
 

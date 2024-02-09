@@ -173,7 +173,11 @@ where
                 }
                 Transaction::L1Handler(handle_l1_message_tx) => {
                     let chain_id = self.chain_id()?.0.into();
-                    let tx_hash = handle_l1_message_tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number));
+                    let tx_hash = handle_l1_message_tx.compute_hash::<H>(
+                        chain_id,
+                        false,
+                        Some(starknet_block.header().block_number),
+                    );
                     let paid_fee =
                         self.backend.l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(tx_hash.into()).map_err(
                             |e| {
@@ -183,7 +187,7 @@ where
                         )?;
 
                     Ok(UserOrL1HandlerTransaction::L1Handler(handle_l1_message_tx.clone(), paid_fee))
-                },
+                }
                 Transaction::Deploy(_) => todo!(),
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -236,7 +240,9 @@ where
                     &tx_exec_info,
                 )
                 .map(|trace_root| TransactionTraceWithHash {
-                    transaction_hash: block_transactions[tx_idx].compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).into(),
+                    transaction_hash: block_transactions[tx_idx]
+                        .compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number))
+                        .into(),
                     trace_root,
                 })
             })

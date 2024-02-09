@@ -1,1 +1,1 @@
-pub mod state_updates;
+//! Mod for types used in Deoxys.

@@ -12,7 +12,6 @@ pub mod types;
 pub mod utils;
 
 pub use l2::{FetchConfig, SenderConfig};
-pub use types::state_updates;
 pub use utils::{convert, m, utility};
 
 type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc::EngineCommand<sp_core::H256>>;

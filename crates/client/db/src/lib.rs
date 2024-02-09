@@ -75,7 +75,7 @@ pub(crate) mod columns {
 
     /// This column contains the Sierra contract classes
     pub const SIERRA_CONTRACT_CLASSES: u32 = 7;
-    
+
     /// This column stores the fee paid on l1 for L1Handler transactions
     pub const L1_HANDLER_PAID_FEE: u32 = 8;
 

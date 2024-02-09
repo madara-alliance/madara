@@ -27,7 +27,6 @@ use starknet_providers::{Provider, SequencerGatewayProvider};
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinSet;
 
-use crate::state_updates::StarknetStateUpdate;
 use crate::utility::{get_block_hash_by_number, update_highest_block_hash_and_number};
 use crate::CommandSink;
 
@@ -317,7 +316,7 @@ async fn download_class(
     block_hash: FieldElement,
     provider: Arc<SequencerGatewayProvider>,
 ) -> anyhow::Result<ContractClassData> {
-    log::info!("💾 Downloading class {class_hash:#x}");
+    // log::info!("💾 Downloading class {class_hash:#x}");
     let core_class = provider.get_class(BlockIdCore::Hash(block_hash), class_hash).await?;
 
     // Core classes have to be converted into Blockifier classes to gain support
@@ -416,7 +415,7 @@ pub fn update_l2(state_update: L2StateUpdate) {
 }
 
 /// Verify the L2 state according to the latest state update
-pub async fn verify_l2(_state_update: StarknetStateUpdate) -> Result<(), String> {
+pub async fn verify_l2(_state_update: StateUpdateWrapper) -> Result<(), String> {
     // 1. Retrieve state diff
     // 2. Compute commitments
     // state_root = state_commitment(csd)
