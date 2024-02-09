@@ -76,7 +76,7 @@ pub fn calculate_class_commitment_leaf_hash<H: HasherT>(
 /// # Returns
 ///
 /// The merkle root of the merkle tree built from the classes.
-pub fn calculate_class_commitment_tree_root_hash<H: HasherT>(class_hashes: &[Felt252Wrapper]) -> Felt252Wrapper {
+pub fn calculate_class_commitment_tree_root_hash<H: HasherT>(_class_hashes: &[Felt252Wrapper]) -> Felt252Wrapper {
     Felt252Wrapper::default()
 }
 

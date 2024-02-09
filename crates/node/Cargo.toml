@@ -1,21 +1,21 @@
 [package]
-name = "deoxys"
-version.workspace = true
-edition.workspace = true
-description = "Deoxys node."
 authors = [
-  "Kasar <@kasarLabs>",
   "KSS <@keep-starknet-strange>",
+  "Kasar <@kasarLabs>",
   "Substrate @substrate-developer-hub",
 ]
+build = "build.rs"
+description = "Deoxys node."
+edition.workspace = true
 homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
+name = "deoxys"
 publish = false
 repository = "https://github.com/kasarlabs/deoxys"
-build = "build.rs"
+version.workspace = true
 
-[package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
+  [package.metadata.docs.rs]
+  targets = ["x86_64-unknown-linux-gnu"]
 
 [[bin]]
 name = "deoxys"
@@ -24,7 +24,7 @@ name = "deoxys"
 # Ethereum
 ethers = { workspace = true, features = ["openssl"] }
 
-async-trait = "0.1"
+async-trait = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true, features = ["thread-pool"] }
 lazy_static = { workspace = true }
@@ -97,8 +97,8 @@ pallet-starknet-runtime-api = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true, features = [
-  "scale-info",
   "parity-scale-codec",
+  "scale-info",
 ] }
 
 # Madara utils
@@ -109,16 +109,15 @@ mockito = { workspace = true }
 serde_json = "1.0.64"
 # Primitives
 mp-block = { workspace = true }
+mp-contract = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-sequencer-address = { workspace = true, features = ["client"] }
 mp-transactions = { workspace = true, features = ["scale-info"] }
 
-
 # CLI-specific dependencies
 try-runtime-cli = { optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.3.0" }
-
 
 #Deoxys
 mc-deoxys = { workspace = true }
@@ -133,14 +132,14 @@ substrate-build-script-utils = { workspace = true }
 default = []
 # Dependencies that are only required if runtime benchmarking should be build.
 runtime-benchmarks = [
-  "madara-runtime/runtime-benchmarks",
-  "frame-benchmarking/runtime-benchmarks",
   "frame-benchmarking-cli/runtime-benchmarks",
+  "frame-benchmarking/runtime-benchmarks",
+  "madara-runtime/runtime-benchmarks",
 ]
 # Enable features that allow the runtime to be tried and debugged. Name might be subject to change
 # in the near future.
-try-runtime = ["madara-runtime/try-runtime", "try-runtime-cli/try-runtime"]
 disable-transaction-fee = ["madara-runtime/disable-transaction-fee"]
+try-runtime = ["madara-runtime/try-runtime", "try-runtime-cli/try-runtime"]
 # Load sharingan chain-specs during the compilation
 # This is the way to run a sharingan chain
 sharingan = []

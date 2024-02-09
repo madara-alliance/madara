@@ -1,16 +1,28 @@
 {
-  "image": "mcr.microsoft.com/devcontainers/universal:2",
-  "features": {
-    "ghcr.io/devcontainers/features/rust:1": {},
-    "ghcr.io/lee-orr/rusty-dev-containers/wasm32-unknown-unknown:0": {},
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/node:1": {},
-    "ghcr.io/devcontainers-contrib/features/protoc-asdf:1": {},
-  },
-  "hostRequirements": {
-    "cpus": 8,
-    "memory": "16gb",
-    "storage": "128gb",
-  },
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+
+    // make sure to update `.devcontainer/Dockerfile` with you uid !!!
+    "remoteUser": "vscode",
+
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "zsh",
+                "terminal.integrated.profiles.linux": { "zsh": { "path": "/bin/zsh" } }
+            },
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "1YiB.rust-bundle",
+                "tamasfe.even-better-toml",
+                "serayuzgur.crates",
+                "vivaxy.vscode-conventional-commits",
+                "streetsidesoftware.code-spell-checker"
+            ]
+        }
+    },
+
+    "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+    "postAttachCommand": "${containerWorkspaceFolder}/.devcontainer/setup.sh"
 }

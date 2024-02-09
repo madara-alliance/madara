@@ -17,10 +17,12 @@ pub use error::{BonsaiDbError, DbError};
 mod mapping_db;
 use kvdb::KeyValueDB;
 pub use mapping_db::MappingCommitment;
+use sierra_classes_db::SierraClassesDb;
 use starknet_api::hash::StarkHash;
 mod da_db;
 mod db_opening_utils;
 mod messaging_db;
+mod sierra_classes_db;
 pub use messaging_db::LastSyncedEventBlock;
 pub mod bonsai_db;
 mod meta_db;
@@ -59,6 +61,7 @@ pub(crate) mod columns {
     pub const TRANSACTION_MAPPING: u32 = 2;
     pub const SYNCED_MAPPING: u32 = 3;
     pub const DA: u32 = 4;
+
     /// This column is used to map starknet block hashes to a list of transaction hashes that are
     /// contained in the block.
     ///
@@ -70,6 +73,8 @@ pub(crate) mod columns {
 
     /// This column contains the bonsai trie keys
     pub const BONSAI: u32 = 6;
+    /// This column contains the Sierra contract classes
+    pub const SIERRA_CONTRACT_CLASSES: u32 = 7;
 }
 
 pub mod static_keys {
@@ -92,6 +97,7 @@ pub struct Backend<B: BlockT> {
     da: Arc<DaDb<B>>,
     messaging: Arc<MessagingDb<B>>,
     bonsai: Arc<BonsaiDb<B>>,
+    sierra_classes: Arc<SierraClassesDb<B>>,
 }
 
 /// Returns the Starknet database directory.
@@ -135,7 +141,8 @@ impl<B: BlockT> Backend<B> {
             meta: Arc::new(MetaDb { db: spdb.clone(), _marker: PhantomData }),
             da: Arc::new(DaDb { db: spdb.clone(), _marker: PhantomData }),
             messaging: Arc::new(MessagingDb { db: spdb.clone(), _marker: PhantomData }),
-            bonsai: Arc::new(BonsaiDb { db: kvdb.clone(), _marker: PhantomData }),
+            sierra_classes: Arc::new(SierraClassesDb { db: spdb .clone(), _marker: PhantomData }),
+            bonsai: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData }),
         })
     }
 
@@ -157,6 +164,11 @@ impl<B: BlockT> Backend<B> {
     /// Return the da database manager
     pub fn messaging(&self) -> &Arc<MessagingDb<B>> {
         &self.messaging
+    }
+
+    /// Return the sierra classes database manager
+    pub fn sierra_classes(&self) -> &Arc<SierraClassesDb<B>> {
+        &self.sierra_classes
     }
 
     /// Return the bonsai database manager

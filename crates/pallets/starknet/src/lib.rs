@@ -45,6 +45,8 @@ pub mod blockifier_state_adapter;
 pub mod execution_config;
 #[cfg(feature = "std")]
 pub mod genesis_loader;
+/// Simulation, estimations and execution trace logic.
+pub mod simulations;
 /// Transaction validation logic.
 pub mod transaction_validation;
 /// The Starknet pallet's runtime custom types.
@@ -52,7 +54,6 @@ pub mod types;
 
 #[cfg(test)]
 mod tests;
-mod utils;
 
 #[macro_use]
 pub extern crate alloc;
@@ -70,19 +71,18 @@ use blockifier::execution::entry_point::{
 };
 use blockifier::execution::errors::{EntryPointExecutionError, PreExecutionError};
 use blockifier::state::cached_state::ContractStorageKey;
-use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier_state_adapter::BlockifierStateAdapter;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::{Block as StarknetBlock, Header as StarknetHeader};
+use mp_contract::ContractAbi;
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_fee::{ResourcePrice, INITIAL_GAS};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRESS, INHERENT_IDENTIFIER};
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
 use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use mp_transactions::execution::Execute;
 use mp_transactions::{
@@ -103,7 +103,6 @@ use transaction_validation::TxPriorityInfo;
 use crate::alloc::string::ToString;
 use crate::execution_config::RuntimeExecutionConfigBuilder;
 use crate::types::{CasmClassHash, SierraClassHash, StorageSlot};
-use crate::utils::execute_txs_and_rollback;
 
 pub(crate) const LOG_TARGET: &str = "runtime::starknet";
 
@@ -125,6 +124,8 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
+    use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
+
     use super::*;
 
     #[pallet::pallet]
@@ -183,6 +184,7 @@ pub mod pallet {
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         /// The block is being finalized.
         fn on_finalize(_n: BlockNumberFor<T>) {
+            println!("ARAAAH");
             assert!(SeqAddrUpdate::<T>::take(), "Sequencer address must be set for the block");
             // Create a new Starknet block and store it.
             <Pallet<T>>::store_block(UniqueSaturatedInto::<u64>::unique_saturated_into(
@@ -195,54 +197,14 @@ pub mod pallet {
             let digest = frame_system::Pallet::<T>::digest();
             let logs = digest.logs();
 
+            log::info!("MANIAAA");
             if !logs.is_empty() {
                 for log_entry in logs {
                     if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
-                        if *engine_id == mp_digest_log::STATE_ENGINE_ID {
-                            match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
-                                Ok(state_update) => {
-                                    for (address, storage_diffs) in state_update.state_diff.storage_diffs {
-                                        for storage_diff in storage_diffs {
-                                            let contract_storage_key: ContractStorageKey = (
-                                                ContractAddress(address.try_into().unwrap()),
-                                                StorageKey(storage_diff.key.try_into().unwrap()),
-                                            );
-                                            let value = StarkFelt(storage_diff.value.try_into().unwrap());
-                                            <StorageView<T>>::insert(contract_storage_key, value)
-                                        }
-                                    }
-
-                                    for deployed_contract in state_update.state_diff.deployed_contracts {
-                                        let contract_address =
-                                            ContractAddress(deployed_contract.address.try_into().unwrap());
-                                        let class_hash = ClassHash(deployed_contract.class_hash.try_into().unwrap());
-                                        <ContractClassHashes<T>>::insert(contract_address, class_hash);
-                                    }
-
-                                    // TODO: old declared contracts
-
-                                    for declared_class in state_update.state_diff.declared_classes {
-                                        let class_hash = ClassHash(declared_class.class_hash.try_into().unwrap());
-                                        let compiled_class_hash =
-                                            CompiledClassHash(declared_class.compiled_class_hash.try_into().unwrap());
-                                        <CompiledClassHashes<T>>::insert(class_hash, compiled_class_hash);
-                                    }
-
-                                    for (address, nonce) in state_update.state_diff.nonces {
-                                        let contract_address = ContractAddress(address.try_into().unwrap());
-                                        let nonce = Nonce(nonce.try_into().unwrap());
-                                        <Nonces<T>>::insert(contract_address, nonce);
-                                    }
-
-                                    for replaced_class in state_update.state_diff.replaced_classes {
-                                        let contract_address =
-                                            ContractAddress(replaced_class.address.try_into().unwrap());
-                                        let class_hash = ClassHash(replaced_class.class_hash.try_into().unwrap());
-                                        <ContractClassHashes<T>>::insert(contract_address, class_hash);
-                                    }
-                                }
-                                Err(e) => log!(info, "Decoding error: {:?}", e),
-                            }
+                        match *engine_id {
+                            mp_digest_log::STATE_ENGINE_ID => store_state_update::<T>(&encoded_data),
+                            mp_digest_log::CLASS_ENGINE_ID => store_class_update::<T>(&encoded_data),
+                            _ => {}
                         }
                     }
                 }
@@ -254,6 +216,83 @@ pub mod pallet {
         /// Perform a module upgrade.
         fn on_runtime_upgrade() -> Weight {
             Weight::zero()
+        }
+    }
+
+    fn store_state_update<T: Config>(encoded_data: &Vec<u8>) {
+        match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
+            Ok(state_update) => {
+                for (address, storage_diffs) in state_update.state_diff.storage_diffs {
+                    for storage_diff in storage_diffs {
+                        let contract_storage_key: ContractStorageKey = (
+                            ContractAddress(address.try_into().unwrap()),
+                            StorageKey(storage_diff.key.try_into().unwrap()),
+                        );
+                        let value = StarkFelt(storage_diff.value.try_into().unwrap());
+                        <StorageView<T>>::insert(contract_storage_key, value)
+                    }
+                }
+
+                // nonces stored for accessing on `starknet_getNonce` RPC call.
+                state_update
+                    .state_diff
+                    .nonces
+                    .into_iter()
+                    .map(|(address, nonce)| {
+                        (ContractAddress(address.try_into().unwrap()), Nonce(nonce.try_into().unwrap()))
+                    })
+                    .for_each(|(contract_address, nonce)| <Nonces<T>>::insert(contract_address, nonce));
+
+                // contract address to class hash equivalence (used in
+                // `starknet_getClassHashAt`` rpc call)
+                core::iter::empty()
+                    .chain(state_update.state_diff.deployed_contracts)
+                    .chain(state_update.state_diff.replaced_classes)
+                    .into_iter()
+                    .map(|contract| {
+                        (
+                            ContractAddress(contract.address.try_into().unwrap()),
+                            ClassHash(contract.class_hash.try_into().unwrap()),
+                        )
+                    })
+                    .for_each(|(contract_address, class_hash)| {
+                        <ContractClassHashes<T>>::insert(contract_address, class_hash)
+                    });
+
+                // we need to store the entire data from the StateDiff to be able to return it
+                // during `starknet_getStateUpdate`
+                state_update
+                    .state_diff
+                    .declared_classes
+                    .into_iter()
+                    .map(|declared_class| {
+                        (
+                            ClassHash(declared_class.class_hash.try_into().unwrap()),
+                            CompiledClassHash(declared_class.compiled_class_hash.try_into().unwrap()),
+                        )
+                    })
+                    .for_each(|(class_hash, compiled_class_hash)| {
+                        <CompiledClassHashes<T>>::insert(class_hash, compiled_class_hash)
+                    });
+            }
+            Err(e) => log!(info, "Decoding error: {:?}", e),
+        }
+    }
+
+    fn store_class_update<T: Config>(encoded_data: &Vec<u8>) {
+        match ClassUpdateWrapper::decode(&mut encoded_data.as_slice()) {
+            Ok(class_update) => {
+                class_update.0.into_iter().for_each(|ContractClassData { hash, contract_class }| {
+                    let ContractClassWrapper { contract, abi } = contract_class;
+
+                    // Blockifier class and ABI need to be stored separately since Blockifier
+                    // does not store ABI. In the future, it would be better to have a separate
+                    // storage structure which contains both the class data and the ABI
+                    <ContractClasses<T>>::insert(hash, contract);
+                    <ContractAbis<T>>::insert(hash, abi);
+                })
+            }
+            Err(e) => log!(info, "Decoding error: {:?}", e),
         }
     }
 
@@ -328,6 +367,13 @@ pub mod pallet {
 
     /// Mapping from Starknet Sierra class hash to  Casm compiled contract class.
     /// Safe to use `Identity` as the key is already a hash.
+    #[pallet::storage]
+    #[pallet::unbounded]
+    #[pallet::getter(fn contract_abi_by_class_hash)]
+    pub(super) type ContractAbis<T: Config> = StorageMap<_, Identity, CasmClassHash, ContractAbi, OptionQuery>;
+
+    /// Mapping from Starknet Sierra class hash to  Casm compiled contract
+    /// class. Safe to use `Identity` as the key is already a hash.
     #[pallet::storage]
     #[pallet::unbounded]
     #[pallet::getter(fn compiled_class_hash_by_class_hash)]
@@ -495,6 +541,7 @@ pub mod pallet {
         MissingCallInfo,
         FailedToCreateATransactionalStorageExecution,
         L1MessageAlreadyExecuted,
+        MissingL1GasUsage,
     }
 
     /// The Starknet pallet external functions.
@@ -988,7 +1035,9 @@ impl<T: Config> Pallet<T> {
     /// * `block_number` - The block number.
     fn store_block(block_number: u64) {
         let block: StarknetBlock;
+        println!("CA PASSE 1");
         if frame_system::Pallet::<T>::digest().logs().len() >= 1 {
+            println!("CA PASSE");
             match &frame_system::Pallet::<T>::digest().logs()[0] {
                 DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, encoded_data) => {
                     block = match StarknetBlock::decode(&mut encoded_data.as_slice()) {
@@ -1030,6 +1079,8 @@ impl<T: Config> Pallet<T> {
             let extra_data = None;
             let l1_gas_price = T::L1GasPrice::get();
 
+            let ordered_events = vec![];
+
             let block = StarknetBlock::new(
                 StarknetHeader::new(
                     parent_block_hash.into(),
@@ -1046,6 +1097,7 @@ impl<T: Config> Pallet<T> {
                     extra_data,
                 ),
                 transactions,
+                ordered_events,
             );
             // Save the block number <> hash mapping.
             let blockhash = block.header().hash::<T::SystemHash>();
@@ -1155,54 +1207,6 @@ impl<T: Config> Pallet<T> {
         }
 
         next_order
-    }
-
-    /// Estimate the fee associated with transaction
-    pub fn estimate_fee(transactions: Vec<UserTransaction>) -> Result<Vec<(u64, u64)>, DispatchError> {
-        let chain_id = Self::chain_id();
-
-        let execution_results = execute_txs_and_rollback::<T>(
-            &transactions,
-            &Self::get_block_context(),
-            chain_id,
-            &mut RuntimeExecutionConfigBuilder::new::<T>().with_query_mode().build(),
-        )?;
-
-        let mut results = vec![];
-        for res in execution_results {
-            match res {
-                Ok(tx_exec_info) => {
-                    log!(info, "Successfully estimated fee: {:?}", tx_exec_info);
-                    if let Some(l1_gas_usage) = tx_exec_info.actual_resources.0.get("l1_gas_usage") {
-                        results.push((tx_exec_info.actual_fee.0 as u64, *l1_gas_usage));
-                    } else {
-                        return Err(Error::<T>::TransactionExecutionFailed.into());
-                    }
-                }
-                Err(e) => {
-                    log!(info, "Failed to estimate fee: {:?}", e);
-                    return Err(Error::<T>::TransactionExecutionFailed.into());
-                }
-            }
-        }
-        Ok(results)
-    }
-
-    pub fn simulate_transactions(
-        transactions: Vec<UserTransaction>,
-        simulation_flags: SimulationFlags,
-    ) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>
-    {
-        let chain_id = Self::chain_id();
-
-        let tx_execution_results = execute_txs_and_rollback::<T>(
-            &transactions,
-            &Self::get_block_context(),
-            chain_id,
-            &mut RuntimeExecutionConfigBuilder::new::<T>().with_simulation_mode(&simulation_flags).build(),
-        )?;
-
-        Ok(tx_execution_results)
     }
 
     pub fn emit_and_store_tx_and_fees_events(

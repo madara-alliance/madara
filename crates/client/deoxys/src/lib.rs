@@ -1,4 +1,9 @@
 #![allow(deprecated)]
+#![feature(let_chains)]
+
+// use std::sync::Arc;
+// use sp_runtime::traits::Block as BlockT;
+// use reqwest::Url;
 
 pub mod commitments;
 pub mod l1;
@@ -6,37 +11,19 @@ pub mod l2;
 pub mod types;
 pub mod utils;
 
-use std::sync::Arc;
-
 pub use l2::{FetchConfig, SenderConfig};
-use reqwest::Url;
-use sp_runtime::traits::Block as BlockT;
-use tokio::join;
 pub use types::state_updates;
 pub use utils::{convert, m, utility};
 
 type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc::EngineCommand<sp_core::H256>>;
 
-pub struct StarknetSyncWorker<B: BlockT> {
-    fetch_config: FetchConfig,
-    sender_config: SenderConfig,
-    rpc_port: u16,
-    l1_url: Url,
-    backend: Arc<mc_db::Backend<B>>,
-}
+pub mod starknet_sync_worker {
+    use super::*;
+    use std::sync::Arc;
+    use sp_runtime::traits::Block as BlockT;
+    use reqwest::Url;
 
-impl<B: BlockT> StarknetSyncWorker<B> {
-    pub fn new(
-        fetch_config: FetchConfig,
-        sender_config: SenderConfig,
-        rpc_port: u16,
-        l1_url: Url,
-        backend: Arc<mc_db::Backend<B>>,
-    ) -> Self {
-        StarknetSyncWorker { fetch_config, sender_config, rpc_port, l1_url, backend }
-    }
-
-    pub async fn sync(
+    pub async fn sync<B: BlockT>(
         fetch_config: FetchConfig,
         sender_config: SenderConfig,
         rpc_port: u16,
@@ -47,7 +34,7 @@ impl<B: BlockT> StarknetSyncWorker<B> {
 
         let _ = tokio::join!(
             l1::sync(l1_url.clone(), rpc_port),
-            l2::sync(sender_config.clone(), fetch_config.clone(), first_block, backend.clone())
+            l2::sync(sender_config, fetch_config.clone(), first_block, rpc_port, backend.clone())
         );
     }
 }

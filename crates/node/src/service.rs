@@ -12,11 +12,12 @@ use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_commitment_state_diff::{verify_l2, CommitmentStateDiffWorker};
-use mc_deoxys::state_updates::{StarknetStateUpdate, StateUpdateWrapper};
-use mc_deoxys::StarknetSyncWorker;
+use mp_block::state_update::StateUpdateWrapper;
+use mc_deoxys::starknet_sync_worker;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
+use mp_contract::class::ClassUpdateWrapper;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
 };
@@ -40,9 +41,9 @@ use sp_api::{ConstructRuntimeApi, ProvideRuntimeApi};
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_inherents::InherentData;
 use sp_offchain::STORAGE_PREFIX;
-use sp_runtime::testing::{Digest, DigestItem};
+use sp_runtime::testing::Digest;
 use sp_runtime::traits::Block as BlockT;
-use starknet_providers::sequencer::models as starknet;
+use sp_runtime::DigestItem;
 
 use crate::genesis_block::MadaraGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
@@ -53,7 +54,8 @@ pub struct ExecutorDispatch;
 const MADARA_TASK_GROUP: &str = "madara";
 
 impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
-    /// Only enable the benchmarking host functions when we actually want to benchmark.
+    /// Only enable the benchmarking host functions when we actually want to
+    /// benchmark.
     #[cfg(feature = "runtime-benchmarks")]
     type ExtendHostFunctions = frame_benchmarking::benchmarking::HostFunctions;
     /// Otherwise we only use the default Substrate host functions.
@@ -69,7 +71,7 @@ impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
     }
 }
 
-pub(crate) type FullClient = sc_service::TFullClient<Block, RuntimeApi, NativeElseWasmExecutor<ExecutorDispatch>>;
+pub type FullClient = sc_service::TFullClient<Block, RuntimeApi, NativeElseWasmExecutor<ExecutorDispatch>>;
 type FullBackend = sc_service::TFullBackend<Block>;
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
@@ -85,6 +87,7 @@ pub fn new_partial<BIQ>(
     config: &Configuration,
     build_import_queue: BIQ,
     cache_more_things: bool,
+    genesis_block: mp_block::Block,
 ) -> Result<
     sc_service::PartialComponents<
         FullClient,
@@ -127,8 +130,6 @@ where
     let executor = sc_service::new_native_or_wasm_executor(config);
 
     let backend = new_db_backend(config.db_config())?;
-
-    let genesis_block = mp_block::Block::default();
 
     let genesis_block_builder = MadaraGenesisBlockBuilder::<Block, _, _>::new(
         config.chain_spec.as_storage_builder(),
@@ -276,7 +277,7 @@ pub fn new_full(
     l1_url: Url,
     cache_more_things: bool,
     fetch_config: mc_deoxys::FetchConfig,
-    genesis_block: starknet::Block,
+    genesis_block: mp_block::Block,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
@@ -290,7 +291,7 @@ pub fn new_full(
         select_chain,
         transaction_pool,
         other: (block_import, grandpa_link, mut telemetry, madara_backend),
-    } = new_partial(&config, build_import_queue, cache_more_things)?;
+    } = new_partial(&config, build_import_queue, cache_more_things, genesis_block)?;
 
     let mut net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
@@ -367,7 +368,7 @@ pub fn new_full(
     let starknet_rpc_params = StarknetDeps {
         client: client.clone(),
         madara_backend: madara_backend.clone(),
-        overrides,
+        overrides: overrides.clone(),
         sync_service: sync_service.clone(),
         starting_block,
         genesis_provider: genesis_data.into(),
@@ -436,15 +437,16 @@ pub fn new_full(
     );
 
     let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<mp_block::Block>(100);
-    let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StarknetStateUpdate>(100);
+    let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StateUpdateWrapper>(100);
+    let (class_sender, class_receiver) = tokio::sync::mpsc::channel::<ClassUpdateWrapper>(100);
 
     let sender_config =
-        mc_deoxys::SenderConfig { block_sender, state_update_sender, command_sink: command_sink.unwrap().clone() };
+        mc_deoxys::SenderConfig { block_sender, state_update_sender, command_sink: command_sink.unwrap().clone(), class_sender, overrides };
 
     task_manager.spawn_essential_handle().spawn(
         "starknet-sync-worker",
         Some("madara"),
-        StarknetSyncWorker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend),
+        starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend),
     );
 
     task_manager.spawn_essential_handle().spawn(
@@ -456,13 +458,10 @@ pub fn new_full(
     if role.is_authority() {
         // manual-seal authorship
         if !sealing.is_default() {
-            // NOTE(nils-mathieu):
-            //   For now I used a channel of size 100, this should be plently enough. That might
-            //   become a config option in the future.
-
             run_manual_seal_authorship(
                 block_receiver,
                 state_update_receiver,
+                class_receiver,
                 sealing,
                 client,
                 transaction_pool,
@@ -590,7 +589,8 @@ pub fn new_full(
 #[allow(clippy::too_many_arguments)]
 fn run_manual_seal_authorship(
     block_receiver: tokio::sync::mpsc::Receiver<mp_block::Block>,
-    state_update_receiver: tokio::sync::mpsc::Receiver<StarknetStateUpdate>,
+    state_update_receiver: tokio::sync::mpsc::Receiver<StateUpdateWrapper>,
+    class_receiver: tokio::sync::mpsc::Receiver<ClassUpdateWrapper>,
     sealing: SealingMode,
     client: Arc<FullClient>,
     transaction_pool: Arc<FullPool<Block, FullClient>>,
@@ -653,7 +653,10 @@ where
         block_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<mp_block::Block>>,
 
         /// The receiver that we're using to receive commitment state diffs.
-        state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StarknetStateUpdate>>,
+        state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StateUpdateWrapper>>,
+
+        /// The receiver that we're using to receive class updates.
+        class_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<ClassUpdateWrapper>>,
     }
 
     impl<B, C> ConsensusDataProvider<B> for QueryBlockConsensusDataProvider<C>
@@ -664,27 +667,26 @@ where
         type Proof = ();
 
         fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) -> Result<Digest, Error> {
+            // listening for new blocks
             let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
             let block_digest_item: DigestItem =
                 sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
+
+            // listening for new state
             let mut lock = self.state_update_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let state_update = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            let state_update_wrapper = StateUpdateWrapper::try_from(state_update).unwrap();
-            let state_update_digest_item: DigestItem = sp_runtime::DigestItem::PreRuntime(
-                mp_digest_log::STATE_ENGINE_ID,
-                Encode::encode(&state_update_wrapper),
-            );
-            Ok(Digest { logs: vec![block_digest_item, state_update_digest_item] })
-        }
+            let state_update_digest_item: DigestItem =
+                sp_runtime::DigestItem::PreRuntime(mp_digest_log::STATE_ENGINE_ID, Encode::encode(&state_update));
 
-        // fn create_digest(&self, _parent: &B::Header, _inherents: &InherentData) -> Result<Digest, Error>
-        // {     let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
-        //     let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-        //     let block_digest_item: DigestItem =
-        //         sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID,
-        // Encode::encode(&block));     Ok(Digest { logs: vec![block_digest_item] })
-        // }
+            // listening for new classes
+            let mut lock = self.class_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
+            let class = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
+            let class_digest_item: DigestItem =
+                sp_runtime::DigestItem::PreRuntime(mp_digest_log::CLASS_ENGINE_ID, Encode::encode(&class));
+
+            Ok(Digest { logs: vec![block_digest_item, state_update_digest_item, class_digest_item] })
+        }
 
         fn append_block_import(
             &self,
@@ -711,6 +713,7 @@ where
                     _client: client,
                     block_receiver: tokio::sync::Mutex::new(block_receiver),
                     state_update_receiver: tokio::sync::Mutex::new(state_update_receiver),
+                    class_receiver: tokio::sync::Mutex::new(class_receiver),
                 })),
                 create_inherent_data_providers,
             }))
@@ -745,6 +748,6 @@ type ChainOpsResult =
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things)?;
+        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things, mp_block::Block::default())?;
     Ok((client, backend, import_queue, task_manager, other.3))
 }

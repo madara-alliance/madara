@@ -7,8 +7,11 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 use reqwest::header;
 use serde_json::{json, Value};
+use starknet_ff::FieldElement;
+use starknet_providers::SequencerGatewayProvider;
+use starknet_providers::sequencer::models::BlockId;
 
-use crate::l2::L2StateUpdate;
+use crate::l2::{L2StateUpdate, STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER};
 
 // TODO: secure the auto calls here
 
@@ -17,13 +20,13 @@ pub async fn get_last_synced_block(rpc_port: u16) -> u64 {
     let client = reqwest::Client::new();
 
     let url = format!("http://localhost:{}/", rpc_port);
-    let payload = serde_json::to_vec(&serde_json::json!({
+    let request = serde_json::json!({
         "id": 1,
         "jsonrpc": "2.0",
         "method": "chain_getBlock",
         "params": []
-    }))
-    .unwrap();
+    });
+    let payload = serde_json::to_vec(&request).unwrap();
 
     let response: serde_json::Value = client
         .post(&url)
@@ -41,16 +44,47 @@ pub async fn get_last_synced_block(rpc_port: u16) -> u64 {
     u64::from_str_radix(&number_as_hex[2..], 16).unwrap()
 }
 
+/// Returns the block hash for a given block number (from Substrate).
+pub async fn get_block_hash_by_number(rpc_port: u16, block_number: u64) -> Option<String> {
+    let client = reqwest::Client::new();
+
+    let url = format!("http://localhost:{}/", rpc_port);
+    let request = serde_json::json!({
+        "id": 1,
+        "jsonrpc": "2.0",
+        "method": "chain_getBlockHash",
+        "params": [block_number]
+    });
+    let payload = serde_json::to_vec(&request).unwrap();
+    let response: serde_json::Value = client
+        .post(&url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::ACCEPT, "application/json")
+        .body(payload)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    match response["result"].as_str() {
+        Some(string) => Some(String::from(string)),
+        None => None,
+    }
+}
+
 pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2StateUpdate, Box<dyn Error>> {
     let client = reqwest::Client::new();
     let url = format!("http://localhost:{}", rpc_port);
 
-    let payload = serde_json::to_vec(&json!({
+    let request = json!({
         "id": 1,
         "jsonrpc": "2.0",
         "method": "starknet_getStateUpdate",
         "params": [{ "block_number": block_number }]
-    }))?;
+    });
+    let payload = serde_json::to_vec(&request)?;
 
     const MAX_ATTEMPTS: u8 = 3;
     const RETRY_DELAY: Duration = Duration::from_secs(5);
@@ -95,6 +129,31 @@ pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2S
     }
 
     Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Maximum retries exceeded")))
+}
+
+pub async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider) -> Result<(), String> {
+    let block = client.get_block(BlockId::Latest).await.map_err(|e| format!("failed to get block: {e}"))?;
+
+    let hash = block
+        .block_hash
+        .ok_or("block hash not found")?
+        .try_into()
+        .map_err(|e| format!("failed to convert block hash: {e}"))?;
+    let number = block
+        .block_number
+        .ok_or("block number not found")?
+        .try_into()
+        .map_err(|e| format!("failed to convert block number: {e}"))?;
+
+    let last_highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.clone();
+    let mut new_highest_block_hash_and_number = last_highest_block_hash_and_number.lock().unwrap();
+    *new_highest_block_hash_and_number = (hash, number);
+
+    Ok(())
+}
+
+pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
+    STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.lock().unwrap().clone()
 }
 
 /// Returns a random Pokémon name.

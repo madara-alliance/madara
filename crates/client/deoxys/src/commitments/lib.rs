@@ -32,22 +32,22 @@ pub fn calculate_commitments<B: BlockT, H: HasherT>(
     )
 }
 
-/// Calculate the transaction commitment, the event commitment and the event count.
-///
-/// # Arguments
-///
-/// * `transactions` - The transactions of the block
-///
-/// # Returns
-///
-/// The transaction commitment, the event commitment and the event count.
-pub fn calculate_state_commitments<B: BlockT, H: HasherT>(
-    transactions: &[Transaction],
-    events: &[Event],
-    chain_id: Felt252Wrapper,
-    block_number: u64,
-    backend: Arc<mc_db::Backend<B>>,
-) -> Felt252Wrapper {
-        state_commitment::<B, H>(transactions, chain_id, block_number, &backend.bonsai().clone())
-            .expect("Failed to calculate transaction commitment")
-}
+// /// Calculate the transaction commitment, the event commitment and the event count.
+// ///
+// /// # Arguments
+// ///
+// /// * `transactions` - The transactions of the block
+// ///
+// /// # Returns
+// ///
+// /// The transaction commitment, the event commitment and the event count.
+// pub fn calculate_state_commitments<B: BlockT, H: HasherT>(
+//     transactions: &[Transaction],
+//     events: &[Event],
+//     chain_id: Felt252Wrapper,
+//     block_number: u64,
+//     backend: Arc<mc_db::Backend<B>>,
+// ) -> Felt252Wrapper {
+//         state_commitment::<B, H>(transactions, chain_id, block_number, &backend.bonsai().clone())
+//             .expect("Failed to calculate transaction commitment")
+// }
