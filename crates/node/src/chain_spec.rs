@@ -1,19 +1,20 @@
-use std::path::PathBuf;
-
 use madara_runtime::{AuraConfig, GrandpaConfig, RuntimeGenesisConfig, SealingMode, SystemConfig, WASM_BINARY};
-use pallet_starknet::genesis_loader::{GenesisData, GenesisLoader};
-use sc_service::{BasePath, ChainType};
+use pallet_starknet::genesis_loader::GenesisData;
+use pallet_starknet::GenesisConfig;
+use sc_service::ChainType;
 use serde::{Deserialize, Serialize};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::storage::Storage;
 use sp_core::{Pair, Public};
 use sp_state_machine::BasicExternalities;
+use starknet_providers::sequencer::models::BlockId;
+use starknet_providers::SequencerGatewayProvider;
+use tokio::runtime::Runtime;
 
 use crate::constants::DEV_CHAIN_ID;
 
 pub const GENESIS_ASSETS_DIR: &str = "genesis-assets/";
-pub const GENESIS_ASSETS_FILE: &str = "genesis.json";
 
 /// Specialized `ChainSpec`. This is a specialization of the general Substrate ChainSpec type.
 pub type ChainSpec = sc_service::GenericChainSpec<RuntimeGenesisConfig>;
@@ -54,9 +55,10 @@ pub fn authority_keys_from_seed(s: &str) -> (AuraId, GrandpaId) {
     (get_from_seed::<AuraId>(s), get_from_seed::<GrandpaId>(s))
 }
 
-pub fn development_config(sealing: SealingMode, base_path: BasePath) -> Result<DevChainSpec, String> {
+pub fn development_config(sealing: SealingMode) -> Result<DevChainSpec, String> {
     let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
     let chain_id = DEV_CHAIN_ID;
+    let genesis_loader = load_genesis()?;
 
     Ok(DevChainSpec::from_genesis(
         // Name
@@ -65,11 +67,9 @@ pub fn development_config(sealing: SealingMode, base_path: BasePath) -> Result<D
         chain_id,
         ChainType::Development,
         move || {
-            let genesis_loader = load_genesis(base_path.config_dir(chain_id));
-
             DevGenesisExt {
                 genesis_config: testnet_genesis(
-                    genesis_loader,
+                    genesis_loader.clone(),
                     wasm_binary,
                     // Initial PoA authorities
                     vec![authority_keys_from_seed("Alice")],
@@ -92,44 +92,9 @@ pub fn development_config(sealing: SealingMode, base_path: BasePath) -> Result<D
     ))
 }
 
-pub fn local_testnet_config(base_path: BasePath, chain_id: &str) -> Result<ChainSpec, String> {
+pub fn deoxys_config(sealing: SealingMode, chain_id: &str) -> Result<DevChainSpec, String> {
     let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
-
-    let owned_chain_id = chain_id.to_owned();
-
-    Ok(ChainSpec::from_genesis(
-        // Name
-        "Local Testnet",
-        // ID
-        chain_id,
-        ChainType::Local,
-        move || {
-            testnet_genesis(
-                load_genesis(base_path.config_dir(&owned_chain_id)),
-                wasm_binary,
-                // Initial PoA authorities
-                // Intended to be only 2
-                vec![authority_keys_from_seed("Alice"), authority_keys_from_seed("Bob")],
-                true,
-            )
-        },
-        // Bootnodes
-        vec![],
-        // Telemetry
-        None,
-        // Protocol ID
-        None,
-        // Properties
-        None,
-        None,
-        // Extensions
-        None,
-    ))
-}
-
-pub fn deoxys_config(sealing: SealingMode, base_path: BasePath, chain_id: &str) -> Result<DevChainSpec, String> {
-    let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
-    let owned_chain_id = chain_id.to_owned();
+    let genesis_loader = load_genesis()?;
 
     Ok(DevChainSpec::from_genesis(
         // Name
@@ -138,11 +103,11 @@ pub fn deoxys_config(sealing: SealingMode, base_path: BasePath, chain_id: &str) 
         chain_id,
         ChainType::Development,
         move || {
-            let genesis_loader = load_genesis(base_path.config_dir(&owned_chain_id));
+            log::info!("🔃 Loading Deoxys config");
 
             DevGenesisExt {
                 genesis_config: testnet_genesis(
-                    genesis_loader,
+                    genesis_loader.clone(),
                     wasm_binary,
                     // Initial PoA authorities
                     vec![authority_keys_from_seed("Alice")],
@@ -165,24 +130,27 @@ pub fn deoxys_config(sealing: SealingMode, base_path: BasePath, chain_id: &str) 
     ))
 }
 
-fn load_genesis(data_path: PathBuf) -> GenesisLoader {
-    let genesis_path = data_path.join(GENESIS_ASSETS_DIR).join(GENESIS_ASSETS_FILE);
-    log::debug!("🧪 Loading genesis data at : {}", genesis_path.display());
-    let genesis_file_content = std::fs::read_to_string(genesis_path)
-        .expect("Failed to read genesis file. Please run `madara setup` before opening an issue.");
-    let genesis_data: GenesisData = serde_json::from_str(&genesis_file_content).expect("Failed loading genesis");
+fn load_genesis() -> Result<GenesisData, String> {
+    log::info!("🧪 Fetching genesis block");
+    let runtime = Runtime::new().unwrap();
+    let genesis_block = runtime.block_on(async {
+        SequencerGatewayProvider::starknet_alpha_mainnet()
+            .get_block(BlockId::Number(0))
+            .await
+            .map_err(|e| format!("failed to get block: {e}"))
+    })?;
 
-    GenesisLoader::new(data_path, genesis_data)
+    Ok(GenesisData::from(genesis_block))
 }
 
 /// Configure initial storage state for FRAME modules.
 fn testnet_genesis(
-    genesis_loader: GenesisLoader,
+    genesis_loader: GenesisData,
     wasm_binary: &[u8],
     initial_authorities: Vec<(AuraId, GrandpaId)>,
     _enable_println: bool,
 ) -> RuntimeGenesisConfig {
-    let starknet_genesis_config: madara_runtime::pallet_starknet::GenesisConfig<_> = genesis_loader.into();
+    let starknet_genesis_config = GenesisConfig::from(genesis_loader);
 
     RuntimeGenesisConfig {
         system: SystemConfig {

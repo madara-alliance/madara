@@ -21,7 +21,7 @@ mp-contract = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-fee = { workspace = true }
 mp-felt = { workspace = true, features = ["parity-scale-codec", "serde"] }
-mp-genesis-config = { workspace = true }
+mp-genesis-config = { workspace = true, default-features = false }
 mp-hashers = { workspace = true }
 mp-program-hash = { workspace = true }
 mp-sequencer-address = { workspace = true, features = ["parity-scale-codec"] }
@@ -111,6 +111,7 @@ std = [
   # Starknet
   "blockifier/std",
   "mp-felt/std",
+  "mp-genesis-config/std",
   "mp-sequencer-address/std",
   "starknet-crypto/std",
   # Other third party dependencies

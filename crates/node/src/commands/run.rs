@@ -3,11 +3,9 @@ use std::result::Result as StdResult;
 
 use clap::ValueHint::FilePath;
 use madara_runtime::SealingMode;
-use mc_deoxys::l2::fetch_genesis_block;
 use mc_settlement::SettlementLayer;
 use reqwest::Url;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
-use sc_service::BasePath;
 use serde::{Deserialize, Serialize};
 
 use crate::cli::Cli;
@@ -86,7 +84,7 @@ pub enum NetworkType {
 impl NetworkType {
     pub fn uri(&self) -> &'static str {
         match self {
-            NetworkType::Main => "http://test.querypointer.com:3000",
+            NetworkType::Main => "https://alpha-mainnet.starknet.io",
             NetworkType::Test => "https://alpha4.starknet.io",
             NetworkType::Integration => "https://external.integration.starknet.io",
         }
@@ -160,35 +158,6 @@ pub struct ExtendedRunCmd {
     pub l1_messages_worker: L1Messages,
 }
 
-impl ExtendedRunCmd {
-    pub fn base_path(&self) -> Result<BasePath> {
-        Ok(self
-            .base
-            .shared_params
-            .base_path()?
-            .unwrap_or_else(|| BasePath::from_project("", "", &<Cli as SubstrateCli>::executable_name())))
-    }
-
-    /// The chain name
-    ///
-    /// Will use `""` (empty sting) if none is provided
-    fn chain_id(&self) -> &str {
-        match &self.base.shared_params.chain {
-            Some(s) => s,
-            None => "",
-        }
-    }
-
-    /// The path of the configuration folder of your chain
-    ///
-    /// "<base_path>/chains/<my_chain_id>"
-    fn chain_config_dir(&self) -> Result<PathBuf> {
-        let chain_id = self.chain_id();
-        let chain_config_dir = self.base_path()?.config_dir(chain_id);
-        Ok(chain_config_dir)
-    }
-}
-
 pub fn run_node(mut cli: Cli) -> Result<()> {
     if cli.run.base.shared_params.dev {
         override_dev_environment(&mut cli.run);
@@ -196,8 +165,6 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         deoxys_environment(&mut cli.run);
     }
     let runner = cli.create_runner(&cli.run.base)?;
-
-    let chain_config_dir = cli.run.chain_config_dir()?;
 
     // TODO: verify that the l1_endpoint is valid
     let l1_endpoint = if let Some(url) = cli.run.l1_endpoint {
@@ -212,19 +179,10 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
         let mut fetch_block_config = cli.run.network.block_fetch_config();
-        let genesis_block = fetch_genesis_block(fetch_block_config.clone()).await.unwrap();
         fetch_block_config.sound = cli.run.sound;
 
-        service::new_full(
-            config,
-            sealing,
-            cli.run.base.rpc_port.unwrap(),
-            l1_endpoint,
-            cache,
-            fetch_block_config,
-            genesis_block,
-        )
-        .map_err(sc_cli::Error::Service)
+        service::new_full(config, sealing, cli.run.base.rpc_port.unwrap(), l1_endpoint, cache, fetch_block_config)
+            .map_err(sc_cli::Error::Service)
     })
 }
 
