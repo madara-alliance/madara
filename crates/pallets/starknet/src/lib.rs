@@ -436,12 +436,6 @@ pub mod pallet {
         /// a test environment or in the case of a migration of an existing chain state.
         pub contracts: Vec<(ContractAddress, SierraClassHash)>,
         pub sierra_to_casm_class_hash: Vec<(SierraClassHash, CasmClassHash)>,
-        /// The contract classes to be deployed at genesis.
-        /// This is a vector of tuples, where the first element is the contract class hash and the
-        /// second element is the contract class definition.
-        /// Same as `contracts`, this can be used to start the chain with a set of pre-deployed
-        /// contracts classes.
-        pub contract_classes: Vec<(SierraClassHash, ContractClass)>,
         pub storage: Vec<(ContractStorageKey, StarkFelt)>,
         /// The address of the fee token.
         /// Must be set to the address of the fee token ERC20 contract.
@@ -455,7 +449,6 @@ pub mod pallet {
             Self {
                 contracts: vec![],
                 sierra_to_casm_class_hash: vec![],
-                contract_classes: vec![],
                 storage: vec![],
                 fee_token_address: ContractAddress::default(),
                 _phantom: PhantomData,
@@ -471,21 +464,18 @@ pub mod pallet {
                 &StarknetStorageSchemaVersion::V1,
             );
 
-            for (class_hash, contract_class) in self.contract_classes.iter() {
-                ContractClasses::<T>::insert(class_hash, contract_class);
-            }
+            self.contracts.iter().for_each(|(contract_address, class_hash)| {
+                ContractClassHashes::<T>::insert(contract_address, class_hash)
+            });
 
-            for (sierra_class_hash, casm_class_hash) in self.sierra_to_casm_class_hash.iter() {
-                CompiledClassHashes::<T>::insert(sierra_class_hash, CompiledClassHash(casm_class_hash.0));
-            }
+            self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
+                CompiledClassHashes::<T>::insert(class_hash, CompiledClassHash(compiled_class_hash.0))
+            });
 
-            for (address, class_hash) in self.contracts.iter() {
-                ContractClassHashes::<T>::insert(address, class_hash);
-            }
-
-            for (key, value) in self.storage.iter() {
-                StorageView::<T>::insert(key, value);
-            }
+            log::info!("Saving Genesis storage diffs");
+            self.storage
+                .iter()
+                .for_each(|(contract_storage_key, value)| StorageView::<T>::insert(contract_storage_key, value));
 
             LastKnownEthBlock::<T>::set(None);
             // Set the fee token address from the genesis config.

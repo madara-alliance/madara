@@ -3,6 +3,8 @@ git # Madara Changelog
 ## Next release
 
 - feat(script): added CI scripts for starting Deoxys and comparing JSON RPC calls
+- fux(getStorageAt): #28
+- fix(genesis): #107
 - fix(class): #32 #33 #34
 - fix(class): #116
 - feat(class): download classes from sequencer
