@@ -60,47 +60,59 @@ pub type StorageValue = HexFelt;
 pub struct GenesisData {
     pub contracts: Vec<(ContractAddress, ClassHash)>,
     pub sierra_class_hash_to_casm_class_hash: Vec<(ClassHash, ClassHash)>,
+    pub storage: Vec<(ContractStorageKey, StorageValue)>,
     pub fee_token_address: ContractAddress,
 }
 
 #[cfg(feature = "std")]
 pub mod convert {
-    use starknet_providers::sequencer::models::{Block as BlockProvider, TransactionType};
+    use starknet_providers::sequencer::models::state_update::{StateDiff, StorageDiff};
 
     use super::*;
 
-    impl From<BlockProvider> for GenesisData {
-        fn from(genesis_block: BlockProvider) -> Self {
+    impl From<StateDiff> for GenesisData {
+        fn from(genesis_diff: StateDiff) -> Self {
             Self {
-                contracts: convert_contract(&genesis_block),
-                sierra_class_hash_to_casm_class_hash: convert_sierra_class_hash(&genesis_block),
+                contracts: convert_contract(&genesis_diff),
+                sierra_class_hash_to_casm_class_hash: convert_sierra_class_hash(&genesis_diff),
+                storage: convert_storage(&genesis_diff),
                 fee_token_address: *ETH_TOKEN_ADDR,
             }
         }
     }
 
-    fn convert_contract(genesis_block: &BlockProvider) -> Vec<(ContractAddress, ClassHash)> {
-        genesis_block
-            .transactions
+    fn convert_contract(genesis_diff: &StateDiff) -> Vec<(ContractAddress, ClassHash)> {
+        genesis_diff
+            .deployed_contracts
             .iter()
-            .filter_map(|transaction| if let TransactionType::Deploy(tx) = transaction { Some(tx) } else { None })
-            .map(|transaction| (HexFelt(transaction.contract_address), HexFelt(transaction.class_hash)))
+            .map(|contract| (HexFelt(contract.address), HexFelt(contract.class_hash)))
             .collect()
     }
 
-    fn convert_sierra_class_hash(genesis_block: &BlockProvider) -> Vec<(ClassHash, ClassHash)> {
-        genesis_block
-            .transactions
+    fn convert_sierra_class_hash(genesis_diff: &StateDiff) -> Vec<(ClassHash, ClassHash)> {
+        genesis_diff
+            .declared_classes
             .iter()
-            .filter_map(|transaction| if let TransactionType::Declare(tx) = transaction { Some(tx) } else { None })
-            .filter_map(|transaction| {
-                if let Some(compiled_class_hash) = transaction.compiled_class_hash {
-                    Some((HexFelt(transaction.class_hash), HexFelt(compiled_class_hash)))
-                } else {
-                    None
-                }
-            })
+            .map(|contract| (HexFelt(contract.class_hash), HexFelt(contract.compiled_class_hash)))
             .collect()
+    }
+
+    #[rustfmt::skip]
+    fn convert_storage(genesis_diff: &StateDiff) -> Vec<(ContractStorageKey, StorageValue)> {
+        genesis_diff.storage_diffs.iter().fold(vec![], |mut acc, diff| {
+            acc.extend(
+                diff.1
+                    .into_iter()
+                    .map(|StorageDiff { key, value }| (
+                        (
+                            HexFelt(diff.0.clone()), 
+                            HexFelt(key.clone())
+                        ), 
+                        HexFelt(value.clone()))
+                    )
+                );
+            acc
+        })
     }
 }
 
