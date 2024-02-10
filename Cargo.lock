@@ -11289,7 +11289,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "starknet-core"
 version = "0.8.0"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#5bce1aae4f4bee76359540bc368d76b10d11b337"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#629140c15e257bb3927a74e4c461246c30a748eb"
 dependencies = [
  "base64 0.21.5",
  "flate2",
@@ -11318,7 +11318,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto"
 version = "0.6.1"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#5bce1aae4f4bee76359540bc368d76b10d11b337"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#629140c15e257bb3927a74e4c461246c30a748eb"
 dependencies = [
  "crypto-bigint",
  "hex",
@@ -11374,7 +11374,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto-codegen"
 version = "0.3.2"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#5bce1aae4f4bee76359540bc368d76b10d11b337"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#629140c15e257bb3927a74e4c461246c30a748eb"
 dependencies = [
  "starknet-curve 0.4.0 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
  "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
@@ -11404,7 +11404,7 @@ dependencies = [
 [[package]]
 name = "starknet-curve"
 version = "0.4.0"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#5bce1aae4f4bee76359540bc368d76b10d11b337"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#629140c15e257bb3927a74e4c461246c30a748eb"
 dependencies = [
  "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
 ]
@@ -11428,7 +11428,7 @@ dependencies = [
 [[package]]
 name = "starknet-ff"
 version = "0.3.5"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#5bce1aae4f4bee76359540bc368d76b10d11b337"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#629140c15e257bb3927a74e4c461246c30a748eb"
 dependencies = [
  "ark-ff",
  "bigdecimal",
@@ -11463,7 +11463,7 @@ dependencies = [
 [[package]]
 name = "starknet-providers"
 version = "0.8.0"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#5bce1aae4f4bee76359540bc368d76b10d11b337"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#629140c15e257bb3927a74e4c461246c30a748eb"
 dependencies = [
  "async-trait",
  "auto_impl",
