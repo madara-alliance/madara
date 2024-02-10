@@ -2,8 +2,10 @@ git # Madara Changelog
 
 ## Next release
 
+- fix: get_events paging with continuation_token
 - fux(getStorageAt): #28
 - fix(genesis): #107
+
 - fix(class): #32 #33 #34
 - fix(class): #116
 - feat(class): download classes from sequencer

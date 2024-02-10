@@ -1304,13 +1304,6 @@ where
     /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
     /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
     async fn get_events(&self, filter: EventFilterWithPage) -> RpcResult<EventsPage> {
-        let continuation_token = match filter.result_page_request.continuation_token {
-            Some(token) => types::ContinuationToken::parse(token).map_err(|e| {
-                error!("Failed to parse continuation token: {:?}", e);
-                StarknetRpcApiError::InvalidContinuationToken
-            })?,
-            None => types::ContinuationToken::default(),
-        };
         let from_address = filter.event_filter.address.map(Felt252Wrapper::from);
         let keys = filter.event_filter.keys.unwrap_or_default();
         let chunk_size = filter.result_page_request.chunk_size;
@@ -1342,6 +1335,14 @@ where
                 error!("'{e}'");
                 StarknetRpcApiError::BlockNotFound
             })?;
+
+        let continuation_token = match filter.result_page_request.continuation_token {
+            Some(token) => types::ContinuationToken::parse(token).map_err(|e| {
+                error!("Failed to parse continuation token: {:?}", e);
+                StarknetRpcApiError::InvalidContinuationToken
+            })?,
+            None => types::ContinuationToken { block_n: from_block.into(), event_n: 0 },
+        };
 
         // Verify that the requested range is valid
         if from_block > to_block {
