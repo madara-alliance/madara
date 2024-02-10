@@ -2,6 +2,7 @@ git # Madara Changelog
 
 ## Next release
 
+- fux(getStorageAt): #28
 - fix(genesis): #107
 - fix(class): #32 #33 #34
 - fix(class): #116

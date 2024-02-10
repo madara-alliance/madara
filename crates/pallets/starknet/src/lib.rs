@@ -436,6 +436,7 @@ pub mod pallet {
         /// a test environment or in the case of a migration of an existing chain state.
         pub contracts: Vec<(ContractAddress, SierraClassHash)>,
         pub sierra_to_casm_class_hash: Vec<(SierraClassHash, CasmClassHash)>,
+        pub storage: Vec<(ContractStorageKey, StarkFelt)>,
         /// The address of the fee token.
         /// Must be set to the address of the fee token ERC20 contract.
         pub fee_token_address: ContractAddress,
@@ -448,6 +449,7 @@ pub mod pallet {
             Self {
                 contracts: vec![],
                 sierra_to_casm_class_hash: vec![],
+                storage: vec![],
                 fee_token_address: ContractAddress::default(),
                 _phantom: PhantomData,
             }
@@ -469,6 +471,11 @@ pub mod pallet {
             self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
                 CompiledClassHashes::<T>::insert(class_hash, CompiledClassHash(compiled_class_hash.0))
             });
+
+            log::info!("Saving Genesis storage diffs");
+            self.storage
+                .iter()
+                .for_each(|(contract_storage_key, value)| StorageView::<T>::insert(contract_storage_key, value));
 
             LastKnownEthBlock::<T>::set(None);
             // Set the fee token address from the genesis config.

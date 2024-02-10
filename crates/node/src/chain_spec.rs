@@ -133,14 +133,16 @@ pub fn deoxys_config(sealing: SealingMode, chain_id: &str) -> Result<DevChainSpe
 fn load_genesis() -> Result<GenesisData, String> {
     log::info!("🧪 Fetching genesis block");
     let runtime = Runtime::new().unwrap();
-    let genesis_block = runtime.block_on(async {
-        SequencerGatewayProvider::starknet_alpha_mainnet()
-            .get_block(BlockId::Number(0))
+    let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
+    let diff = runtime.block_on(async {
+        provider
+            .get_state_update(BlockId::Number(0))
             .await
-            .map_err(|e| format!("failed to get block: {e}"))
+            .map(|state_update| state_update.state_diff)
+            .map_err(|e| format!("Failed to get state update {e}"))
     })?;
 
-    Ok(GenesisData::from(genesis_block))
+    Ok(GenesisData::from(diff))
 }
 
 /// Configure initial storage state for FRAME modules.

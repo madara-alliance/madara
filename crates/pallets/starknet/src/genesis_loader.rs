@@ -3,6 +3,9 @@ use std::vec::Vec;
 use blockifier::execution::contract_class::ContractClass as StarknetContractClass;
 use mp_felt::Felt252Wrapper;
 pub use mp_genesis_config::{GenesisData, GenesisLoader, HexFelt, PredeployedAccount};
+use starknet_api::api_core::{ContractAddress, PatriciaKey};
+use starknet_api::hash::StarkFelt;
+use starknet_api::state::StorageKey;
 
 use crate::GenesisConfig;
 
@@ -28,9 +31,23 @@ impl<T: crate::Config> From<GenesisData> for GenesisConfig<T> {
                 (sierra_hash, casm_hash)
             })
             .collect::<Vec<_>>();
+        let storage = data
+            .storage
+            .clone()
+            .into_iter()
+            .map(|((contract_address, key), value)| {
+                (
+                    (
+                        ContractAddress(PatriciaKey(StarkFelt(contract_address.0.to_bytes_be()))),
+                        StorageKey(PatriciaKey(StarkFelt(key.0.to_bytes_be()))),
+                    ),
+                    StarkFelt(value.0.to_bytes_be()),
+                )
+            })
+            .collect();
         let fee_token_address = Felt252Wrapper(data.fee_token_address.0).into();
 
-        GenesisConfig { contracts, sierra_to_casm_class_hash, fee_token_address, ..Default::default() }
+        GenesisConfig { contracts, sierra_to_casm_class_hash, storage, fee_token_address, ..Default::default() }
     }
 }
 
@@ -60,8 +77,6 @@ pub fn read_contract_class_from_json(json_str: &str, version: u8) -> StarknetCon
 
 #[cfg(test)]
 mod tests {
-    use starknet_crypto::FieldElement;
-
     use super::*;
 
     #[test]
