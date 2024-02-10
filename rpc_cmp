@@ -1,0 +1,188 @@
+#!/bin/bash
+
+help() {
+    echo "Usage: [--deoxys=\"http://127.0.0.1:9944\"] [--pathfinder...] command args..."
+}
+
+# ================= #
+# PARSING ARGUMENTS #
+# ================= #
+
+if [ $# -lt 2 ]; then
+    help
+    exit 1
+fi
+
+OPTIONS=$(getopt -o '' -l deoxys:,pathfinder: -- "$@")
+if [ $? != 0 ]; then
+    help
+    exit 1
+fi
+
+eval set -- "$OPTIONS"
+
+PROVIDER_DEOXYS="http://127.0.0.1:9944"
+PROVIDER_PATHFINDER=""
+
+while true; do
+    case "$1" in
+        --deoxys)
+            PROVIDER_DEOXYS="$2"
+            shift 2
+            ;;
+        --pathfinder)
+            PROVIDER_PATHFINDER="$2"
+            shift 2
+            ;;
+        --)
+            shift 1
+            break
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+# ================= #
+#    RPC METHODS    #
+# ================= #
+
+rpc_call(){
+    local provider=$1
+    local method=$2
+    local params=$3
+
+    curl -s \
+        --request POST \
+        --url "$provider" \
+        --header 'accept: application/json' \
+        --header 'content-type: application/json' \
+        --data "
+    {
+    \"id\": 1,
+    \"jsonrpc\": \"2.0\",
+    \"method\": \"$method\",
+    \"params\": $params
+    }
+    " | jq --sort-keys
+}
+
+get_class(){
+    local provider=$1
+    local class_hash=$2
+    local output=$3
+
+    rpc_call "$provider" "starknet_getClass" "[
+        \"latest\",
+        \"$class_hash\"
+    ]" | jq 'del(.result.program)' > "$output"
+}
+
+get_class_at(){
+    local provider=$1
+    local contract_address=$2
+    local output=$3
+
+    rpc_call "$provider" "starknet_getClassAt" "[
+        \"latest\",
+        \"$contract_address\"
+    ]" | jq 'del(.result.program)' > "$output"
+}
+
+get_class_hash_at(){
+    local provider=$1
+    local contract_address=$2
+    local output=$3
+
+    rpc_call "$provider" "starknet_getClassHashAt" "[
+        \"latest\",
+        \"$contract_address\"
+    ]" > "$output"
+}
+
+get_storage_at(){
+    local provider=$1
+    local contract_addr=$2
+    local key=$3
+    local output=$4
+
+    rpc_call "$provider" "starknet_getStorageAt" "[
+        \"$contract_addr\",
+        \"$key\",
+        \"latest\"
+    ]" > "$output"
+}
+
+get_block_with_tx(){
+    local provider=$1
+    local block_number=$2
+    local output=$3
+
+    rpc_call "$provider" "starknet_getBlockWithTxs" "[
+        {
+            \"block_number\": $block_number
+        }
+    ]" > "$output"
+}
+
+# ================= #
+#      PROGRAM      #
+# ================= #
+
+OUTPUT_DEOXYS="output_deoxys.json"
+OUTPUT_PATHFINDER="output_pathfinder.json"
+
+COMMAND=$1
+shift 1
+
+validate_args(){
+    local arg_count=$1
+    local target=$2
+
+    if [ $arg_count -ne $target ]; then
+        echo "❌ Invalid RPC argument count"
+        exit 1
+    fi
+}
+
+case $COMMAND in
+    getClass)
+        echo "🧪 Testing starknet_getClass"
+        validate_args $# 1
+        get_class "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
+        get_class "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
+        ;;
+    getClassAt)
+        echo "🧪 Testing starknet_getClassAt"
+        validate_args $# 1
+        get_class_at "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
+        get_class_at "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
+        ;;
+    getClassHashAt)
+        echo "🧪 Testing starknet_getClassHashAt"
+        validate_args $# 2
+        get_class_hash_at "$PROVIDER_DEOXYS" "$1" "$2" "$OUTPUT_DEOXYS"
+        get_class_hash_at "$PROVIDER_PATHFINDER" "$1" "$2" "$OUTPUT_PATHFINDER"
+        ;;
+    getBlockWithTxs)
+        ;;
+    *)
+        echo "Invalid argument: $COMMAND"
+        exit 1
+        ;;
+esac
+
+diff output_deoxys.json output_pathfinder.json
+
+if [ $? -eq 0 ]; then
+    if [ -s "$OUTPUT_DEOXYS" ]; then
+        echo "✅ RPC results match"
+        exit 0
+    fi
+    echo "❌ Ouput files are empty"
+    exit 1
+else
+    echo "❌ RPC results don't match"
+    exit 1
+fi
