@@ -39,21 +39,11 @@ impl SubstrateCli for Cli {
         Ok(match id {
             DEV_CHAIN_ID => {
                 let sealing = self.run.sealing.map(Into::into).unwrap_or_default();
-                let base_path = self.run.base_path().map_err(|e| e.to_string())?;
-                Box::new(chain_spec::development_config(sealing, base_path)?)
-            }
-            #[cfg(feature = "sharingan")]
-            SHARINGAN_CHAIN_ID => Box::new(chain_spec::ChainSpec::from_json_bytes(
-                &include_bytes!("../../../configs/chain-specs/testnet-sharingan-raw.json")[..],
-            )?),
-            "" | "local" | "madara-local" => {
-                let base_path = self.run.base_path().map_err(|e| e.to_string())?;
-                Box::new(chain_spec::local_testnet_config(base_path, id)?)
+                Box::new(chain_spec::development_config(sealing)?)
             }
             "starknet" => {
                 let sealing = self.run.sealing.map(Into::into).unwrap_or_default();
-                let base_path = self.run.base_path().map_err(|e| e.to_string())?;
-                Box::new(chain_spec::deoxys_config(sealing, base_path, id)?)
+                Box::new(chain_spec::deoxys_config(sealing, id)?)
             }
             path_or_url => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path_or_url))?),
         })
@@ -139,7 +129,7 @@ pub fn run() -> sc_cli::Result<()> {
                     }
                     #[cfg(feature = "runtime-benchmarks")]
                     BenchmarkCmd::Storage(cmd) => {
-                        let (client, backend, _, _, _) = service::new_chain_ops(&mut config)?;
+                        let (client, backend, _, _, _) = service::new_chain_ops(&mut config, cli.run.cache)?;
                         let db = backend.expose_db();
                         let storage = backend.expose_storage();
 

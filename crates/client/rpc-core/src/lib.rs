@@ -15,7 +15,6 @@ use serde_with::serde_as;
 pub mod utils;
 
 use mp_transactions::TransactionStatus;
-use pallet_starknet::genesis_loader::PredeployedAccount;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
@@ -23,24 +22,12 @@ use starknet_core::types::{
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
     InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingTransactionReceipt,
     MsgFromL1, SimulatedTransaction, SimulationFlag, StateUpdate, SyncStatusType, Transaction,
+    TransactionTraceWithHash,
 };
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub struct Felt(#[serde_as(as = "UfeHex")] pub FieldElement);
-
-#[derive(Serialize, Deserialize)]
-pub struct PredeployedAccountWithBalance {
-    pub account: PredeployedAccount,
-    pub balance: FieldElement,
-}
-
-/// Madara rpc interface for additional features.
-#[rpc(server, namespace = "madara")]
-pub trait MadaraRpcApi: StarknetReadRpcApi {
-    #[method(name = "predeployedAccounts")]
-    fn predeployed_accounts(&self) -> RpcResult<Vec<PredeployedAccountWithBalance>>;
-}
 
 /// Starknet write rpc interface.
 #[rpc(server, namespace = "starknet")]
@@ -178,4 +165,8 @@ pub trait StarknetTraceRpcApi {
         transactions: Vec<BroadcastedTransaction>,
         simulation_flags: Vec<SimulationFlag>,
     ) -> RpcResult<Vec<SimulatedTransaction>>;
+
+    #[method(name = "traceBlockTransactions")]
+    /// Returns the execution traces of all transactions included in the given block
+    async fn trace_block_transactions(&self, block_id: BlockId) -> RpcResult<Vec<TransactionTraceWithHash>>;
 }

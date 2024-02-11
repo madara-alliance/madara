@@ -12,6 +12,8 @@ pub mod from_broadcasted_transactions;
 pub mod getters;
 #[cfg(feature = "client")]
 pub mod to_starknet_core_transaction;
+#[cfg(feature = "client")]
+pub mod utils;
 
 use alloc::vec::Vec;
 
@@ -87,6 +89,25 @@ impl From<TxType> for TransactionType {
     }
 }
 
+impl From<&UserTransaction> for TxType {
+    fn from(value: &UserTransaction) -> Self {
+        match value {
+            UserTransaction::Declare(_, _) => TxType::Declare,
+            UserTransaction::DeployAccount(_) => TxType::DeployAccount,
+            UserTransaction::Invoke(_) => TxType::Invoke,
+        }
+    }
+}
+
+impl From<&UserOrL1HandlerTransaction> for TxType {
+    fn from(value: &UserOrL1HandlerTransaction) -> Self {
+        match value {
+            UserOrL1HandlerTransaction::User(tx) => tx.into(),
+            UserOrL1HandlerTransaction::L1Handler(_, _) => TxType::L1Handler,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, From)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
@@ -110,7 +131,7 @@ pub enum Transaction {
 #[derive(Clone, Debug, Eq, PartialEq, From)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub enum UserAndL1HandlerTransaction {
+pub enum UserOrL1HandlerTransaction {
     User(UserTransaction),
     L1Handler(HandleL1MessageTransaction, Fee),
 }
@@ -210,6 +231,7 @@ pub struct DeployAccountTransaction {
 pub struct DeployTransaction {
     pub version: TransactionVersion,
     pub class_hash: Felt252Wrapper,
+    pub contract_address: Felt252Wrapper,
     pub contract_address_salt: Felt252Wrapper,
     pub constructor_calldata: Vec<Felt252Wrapper>,
 }

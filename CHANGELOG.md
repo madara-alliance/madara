@@ -3,11 +3,32 @@ git # Madara Changelog
 ## Next release
 
 - fix: update and store ConfigFetch in l2 sync(), chainId rpc call
+- fix: get_events paging with continuation_token
+- fux(getStorageAt): #28
+- fix(genesis): #107
 - fix(class): #32 #33 #34
 - fix(class): #116
 - feat(class): download classes from sequencer
 - feat: update and store highest block hash and number from sequencer
 - feat: store events in block, return events in call get_transaction_receipt
+- fix: updating outdated links to external resources in documentation
+- feat(client/data-availability): implement custom error handling
+- fix: get_block_by_block_hash then default rather than error
+- feat(rpc): added `get_state_update` real values from DA db
+- feat: add transparent representation to `Felt252Wrapper`
+- feat(rpc/trace_api): add `trace_block_transaction`
+- chore(db): changed the way hashes are encoded
+
+## v0.7.0
+
+- chore: release v0.7.0
+- refacto: remove abusive `TryInto` impl
+- dev: optimize tx trace creation
+- dev: make Madara std compatible
+- CI: fix taplo version
+- chore: add cache usage for `getEvents` and `getTransactionReceipt`
+- fix: cairo1 contracts should be identified by their sierra class hash
+- fix(cli): repair broken cli for da conf
 - feat(client): on `add_declare_transaction` store sierra contract classes in
   the madara backend
 - chore: use struct error in client/db
@@ -72,7 +93,7 @@ git # Madara Changelog
 - feat: fixing getNonce Rpc Call and adding a new test
 - refactor: use Zaun crate for Starknet core contract bindings
 - refactor: use Anvil sandbox from Zaun crate
-- feat(rpc) : estimateMessageFee RPC call implementation
+- feat(rpc): estimateMessageFee RPC call implementation
 
 ## v0.6.0
 
@@ -277,3 +298,5 @@ git # Madara Changelog
 - feat: add `madara_tsukuyomi` as a submodule
 - branding: use new logo in the README
 - dev: Get the block status from the actual block in get_block_with_tx_hashes
+- fix: l1-l2 messaging
+- dev : clean contracts and compiled files

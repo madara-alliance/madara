@@ -30,7 +30,6 @@
 //! invoke, ...), which allow users to interact with the pallet and invoke state changes. These
 //! functions are annotated with weight and return a DispatchResult.
 // Ensure we're `no_std` when compiling for Wasm.
-#![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::large_enum_variant)]
 
 /// Starknet pallet.
@@ -87,7 +86,7 @@ use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use mp_transactions::execution::Execute;
 use mp_transactions::{
     DeclareTransaction, DeployAccountTransaction, HandleL1MessageTransaction, InvokeTransaction, Transaction,
-    UserAndL1HandlerTransaction, UserTransaction,
+    UserOrL1HandlerTransaction, UserTransaction,
 };
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
@@ -437,12 +436,6 @@ pub mod pallet {
         /// a test environment or in the case of a migration of an existing chain state.
         pub contracts: Vec<(ContractAddress, SierraClassHash)>,
         pub sierra_to_casm_class_hash: Vec<(SierraClassHash, CasmClassHash)>,
-        /// The contract classes to be deployed at genesis.
-        /// This is a vector of tuples, where the first element is the contract class hash and the
-        /// second element is the contract class definition.
-        /// Same as `contracts`, this can be used to start the chain with a set of pre-deployed
-        /// contracts classes.
-        pub contract_classes: Vec<(SierraClassHash, ContractClass)>,
         pub storage: Vec<(ContractStorageKey, StarkFelt)>,
         /// The address of the fee token.
         /// Must be set to the address of the fee token ERC20 contract.
@@ -456,7 +449,6 @@ pub mod pallet {
             Self {
                 contracts: vec![],
                 sierra_to_casm_class_hash: vec![],
-                contract_classes: vec![],
                 storage: vec![],
                 fee_token_address: ContractAddress::default(),
                 _phantom: PhantomData,
@@ -472,21 +464,18 @@ pub mod pallet {
                 &StarknetStorageSchemaVersion::V1,
             );
 
-            for (class_hash, contract_class) in self.contract_classes.iter() {
-                ContractClasses::<T>::insert(class_hash, contract_class);
-            }
+            self.contracts.iter().for_each(|(contract_address, class_hash)| {
+                ContractClassHashes::<T>::insert(contract_address, class_hash)
+            });
 
-            for (sierra_class_hash, casm_class_hash) in self.sierra_to_casm_class_hash.iter() {
-                CompiledClassHashes::<T>::insert(sierra_class_hash, CompiledClassHash(casm_class_hash.0));
-            }
+            self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
+                CompiledClassHashes::<T>::insert(class_hash, CompiledClassHash(compiled_class_hash.0))
+            });
 
-            for (address, class_hash) in self.contracts.iter() {
-                ContractClassHashes::<T>::insert(address, class_hash);
-            }
-
-            for (key, value) in self.storage.iter() {
-                StorageView::<T>::insert(key, value);
-            }
+            log::info!("Saving Genesis storage diffs");
+            self.storage
+                .iter()
+                .for_each(|(contract_storage_key, value)| StorageView::<T>::insert(contract_storage_key, value));
 
             LastKnownEthBlock::<T>::set(None);
             // Set the fee token address from the genesis config.
@@ -848,14 +837,21 @@ pub mod pallet {
                 .longevity(T::TransactionLongevity::get())
                 .propagate(true);
 
-            // Make sure txs from same account are executed in correct order (nonce based ordering)
-            if let TxPriorityInfo::RegularTxs { sender_address, transaction_nonce, sender_nonce } = tx_priority_info {
-                valid_transaction_builder =
-                    valid_transaction_builder.and_provides((sender_address, Felt252Wrapper(transaction_nonce.0)));
-                if transaction_nonce > sender_nonce {
-                    valid_transaction_builder = valid_transaction_builder
-                        .and_requires((sender_address, Felt252Wrapper(transaction_nonce.0 - FieldElement::ONE)));
+            match tx_priority_info {
+                // Make sure txs from same account are executed in correct order (nonce based ordering)
+                TxPriorityInfo::RegularTxs { sender_address, transaction_nonce, sender_nonce } => {
+                    valid_transaction_builder =
+                        valid_transaction_builder.and_provides((sender_address, Felt252Wrapper(transaction_nonce.0)));
+                    if transaction_nonce > sender_nonce {
+                        valid_transaction_builder = valid_transaction_builder
+                            .and_requires((sender_address, Felt252Wrapper(transaction_nonce.0 - FieldElement::ONE)));
+                    }
                 }
+                TxPriorityInfo::L1Handler { nonce } => {
+                    valid_transaction_builder =
+                        valid_transaction_builder.and_provides((Felt252Wrapper::ZERO, Felt252Wrapper(nonce.0)));
+                }
+                _ => {}
             }
 
             valid_transaction_builder.build()
@@ -888,7 +884,7 @@ impl<T: Config> Pallet<T> {
     /// # Returns
     ///
     /// The transaction
-    fn get_call_transaction(call: Call<T>) -> Result<UserAndL1HandlerTransaction, ()> {
+    fn get_call_transaction(call: Call<T>) -> Result<UserOrL1HandlerTransaction, ()> {
         let tx = match call {
             Call::<T>::invoke { transaction } => UserTransaction::Invoke(transaction).into(),
             Call::<T>::declare { transaction, contract_class } => {
@@ -896,7 +892,7 @@ impl<T: Config> Pallet<T> {
             }
             Call::<T>::deploy_account { transaction } => UserTransaction::DeployAccount(transaction).into(),
             Call::<T>::consume_l1_message { transaction, paid_fee_on_l1 } => {
-                UserAndL1HandlerTransaction::L1Handler(transaction, paid_fee_on_l1)
+                UserOrL1HandlerTransaction::L1Handler(transaction, paid_fee_on_l1)
             }
             _ => return Err(()),
         };

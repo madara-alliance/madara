@@ -43,10 +43,11 @@ sc-network-sync = { workspace = true }
 blockifier = { workspace = true, default-features = true }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true }
-starknet_api = { workspace = true, default-features = false }
+starknet_api = { workspace = true, default-features = true }
 # Others
 anyhow = { workspace = true }
 hex = { workspace = true, default-features = true }
+indexmap = { workspace = true, default-features = true }
 itertools = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
