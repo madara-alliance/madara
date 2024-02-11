@@ -1,4 +1,5 @@
-//! Utility functions.
+//! Utility functions for Deoxys.
+
 use std::error::Error;
 use std::thread::sleep;
 use std::time::Duration;

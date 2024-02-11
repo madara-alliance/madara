@@ -301,8 +301,7 @@ cairo-lang-utils = { git = "https://github.com/keep-starknet-strange/cairo.git",
 ] }
 
 # Ethers: using the same versions as in Anvil
-ethers = { git = "https://github.com/gakonst/ethers-rs", rev = "f0e5b194f09c533feb10d1a686ddb9e5946ec107" }
-ethers-solc = { git = "https://github.com/gakonst/ethers-rs", rev = "f0e5b194f09c533feb10d1a686ddb9e5946ec107" }
+ethers = { git = "https://github.com/gakonst/ethers-rs"}
 
 # Zaun
 starknet-core-contract-client = { git = "https://github.com/keep-starknet-strange/zaun" }
