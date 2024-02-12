@@ -114,8 +114,8 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                         program: serde_json::from_slice(decompressed_bytes.as_slice())
                             .map_err(|_| BroadcastedTransactionConversionError::ProgramDeserializationFailed)?,
                         abi: match contract_class.abi.as_ref() {
-                            Some(abi) => abi.iter().cloned().map(|entry| entry.into()).collect::<Vec<_>>(),
-                            None => vec![],
+                            Some(abi) => Some(abi.iter().cloned().map(|entry| entry.into()).collect::<Vec<_>>()),
+                            None => vec![].into(),
                         },
                         entry_points_by_type: to_raw_legacy_entry_points(contract_class.entry_points_by_type.clone()),
                     };

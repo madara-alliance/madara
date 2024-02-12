@@ -3,24 +3,22 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
-use ethers::contract::Contract;
+use ethers::contract::{abigen, EthEvent};
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::types::transaction::eip2718::TypedTransaction;
-use ethers::types::{Address, BlockNumber as EthBlockNumber, TransactionRequest, U64};
+use ethers::types::{Address, BlockNumber as EthBlockNumber, Filter, TransactionRequest, I256, U64};
 use ethers::utils::hex::decode;
-use hex::encode;
+use futures::stream::StreamExt;
 use lazy_static::lazy_static;
-use mp_commitments::StateCommitment;
 use mp_felt::Felt252Wrapper;
+use primitive_types::{H256, U256};
 use reqwest::Url;
 use serde::Deserialize;
 use serde_json::Value;
-use starknet_api::block::{BlockHash, BlockNumber};
-use starknet_api::hash::{StarkFelt, StarkHash};
-use tokio::sync::mpsc::{self, Sender};
+use starknet_api::hash::StarkHash;
 
 use crate::l2::STARKNET_STATE_UPDATE;
-use crate::utility::{format_address, get_state_update_at};
+use crate::utility::{event_to_l1_state_update, get_state_update_at};
 use crate::utils::constant::starknet_core_address;
 
 lazy_static! {
@@ -40,6 +38,16 @@ pub struct L1StateUpdate {
     pub block_hash: StarkHash,
 }
 
+/// Starknet core LogStateUpdate event
+#[derive(Clone, Debug, EthEvent, Deserialize)]
+pub struct LogStateUpdate {
+    #[ethevent(indexed)]
+    pub global_root: U256,
+    pub block_number: I256,
+    pub block_hash: U256,
+}
+
+/// Ethereum client to interact with L1
 #[derive(Clone)]
 pub struct EthereumClient {
     provider: Arc<Provider<Http>>,
@@ -71,6 +79,20 @@ impl EthereumClient {
         Ok(block_number.as_u64().into())
     }
 
+    /// Get the block number of the last occurrence of a given event.
+    pub async fn get_last_event_block_number(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        let topic = ethers::utils::keccak256("0x77552641");
+        let filter = Filter::new().topic0(H256::from(topic));
+        let logs = self.provider.get_logs(&filter).await?;
+
+        if let Some(last_log) = logs.last() {
+            let last_block = last_log.block_number.ok_or("No block number in log")?;
+            Ok(last_block.as_u64())
+        } else {
+            Err("No events found".into())
+        }
+    }
+
     /// Get the last Starknet block number verified on L1
     pub async fn get_last_block_number(&self) -> Result<u64> {
         let data = decode("35befa5d")?;
@@ -79,16 +101,12 @@ impl EthereumClient {
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last block number");
         let result_str = result.to_string();
-        let hex_str = result_str
-            .trim_start_matches("Bytes(0x")
-            .trim_end_matches(")")
-            .trim_start_matches("0x");
+        let hex_str = result_str.trim_start_matches("Bytes(0x").trim_end_matches(")").trim_start_matches("0x");
         println!("Hex string to parse: {:?}", hex_str);
 
-        let block_number = u64::from_str_radix(hex_str, 16)
-            .expect("Failed to parse block number");
+        let block_number = u64::from_str_radix(hex_str, 16).expect("Failed to parse block number");
         Ok(block_number)
-    } 
+    }
 
     /// Get the last Starknet state root verified on L1
     pub async fn get_last_state_root(&self) -> Result<StarkHash> {
@@ -109,7 +127,7 @@ impl EthereumClient {
         let result = self.provider.call(&tx, None).await.expect("Failed to get last block hash");
         Ok(StarkHash::from(Felt252Wrapper::from_hex_be(&result.to_string()).expect("Failed to parse block hash")))
     }
-    
+
     /// Get the last Starknet state update verified on the L1
     pub async fn get_initial_state(client: &EthereumClient) -> Result<L1StateUpdate, ()> {
         let block_number = client.get_last_block_number().await.map_err(|e| {
@@ -125,16 +143,36 @@ impl EthereumClient {
             ()
         })?;
 
-        Ok(L1StateUpdate {
-            global_root,
-            block_number,
-            block_hash 
-        })
+        Ok(L1StateUpdate { global_root, block_number, block_hash })
     }
 
-    // /// Subscribes to a specific event from the Starknet core contract
-    pub async fn listen_and_update_state(start_block: u64, client: &EthereumClient) -> Result<(), Box<dyn std::error::Error>> {
-        
+    /// Subscribes to the LogStateUpdate event from the Starknet core contract
+    pub async fn listen_and_update_state(&self, start_block: u64) -> Result<(), Box<dyn std::error::Error>> {
+        let client = self.provider.clone();
+        let address: Address = starknet_core_address::MAINNET.parse().expect("Failed to parse Starknet core address");
+        abigen!(
+            StarknetCore,
+            "crates/client/deoxys/src/utils/abis/starknet_core.json",
+            event_derives(serde::Deserialize, serde::Serialize)
+        );
+        let contract = StarknetCore::new(address, client);
+
+        let event_filter = contract.event::<LogStateUpdate>().from_block(0).to_block(EthBlockNumber::Latest);
+
+        let mut event_stream = event_filter.stream().await.expect("Failed to initiate event stream");
+
+        while let Some(event_result) = event_stream.next().await {
+            match event_result {
+                Ok(log) => {
+                    let format_event =
+                        event_to_l1_state_update(log.clone()).expect("Failed to format event into an L1StateUpdate");
+                    println!("LogStateUpdate event: {:?}, format event: {:?}", log, format_event.clone());
+                    update_l1(format_event);
+                }
+                Err(e) => println!("Error while listening for events: {:?}", e),
+            }
+        }
+
         Ok(())
     }
 }
@@ -190,7 +228,7 @@ pub async fn verify_l1(state_update: L1StateUpdate, rpc_port: u16) -> Result<(),
 }
 
 /// Syncronize with the L1 latest state updates
-pub async fn sync(l1_url: Url, rpc_port: u16) {
+pub async fn sync(l1_url: Url) {
     let client = EthereumClient::new(l1_url).await.expect("Failed to create EthereumClient");
 
     log::info!("🚀 Subscribed to L1 state verification");
@@ -201,10 +239,12 @@ pub async fn sync(l1_url: Url, rpc_port: u16) {
         Err(_) => return,
     };
 
+    let start_block = EthereumClient::get_last_event_block_number(&client).await.expect("Failed to retrieve last event block number");
+
     update_l1(initial_state);
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    // EthereumClient::listen_and_update_state(wss_url, &subscription_id, tx).await.unwrap();
+    EthereumClient::listen_and_update_state(&client, start_block).await.unwrap();
 
     // Verify the latest state roots and block against L2
     // detect new events, verify and update the state
@@ -214,18 +254,18 @@ pub async fn sync(l1_url: Url, rpc_port: u16) {
 
 #[cfg(test)]
 mod l1_sync_tests {
-    use super::*;
-    use tokio;
-    use url::Url;
-    use ethers::prelude::*;
-    use ethers::core::types::*;
     // use futures_util::stream::StreamExt;
     // use futures_util::future::Either;
     use ethers::contract::{Contract, ContractFactory, EthEvent};
-    
-    use crate::l1::EthereumClient;
+    use ethers::core::types::*;
+    use ethers::prelude::*;
     use ethers::providers::Provider;
-    
+    use tokio;
+    use url::Url;
+
+    use super::*;
+    use crate::l1::EthereumClient;
+
     #[derive(Clone, Debug, EthEvent, Deserialize)]
     pub struct LogStateUpdate {
         #[ethevent(indexed)]
@@ -261,13 +301,12 @@ mod l1_sync_tests {
     async fn test_initial_state() {
         let url = Url::parse(eth_rpc::MAINNET).expect("Failed to parse URL");
         let client = EthereumClient::new(url).await.expect("Failed to create EthereumClient");
-    
+
         let initial_state = EthereumClient::get_initial_state(&client).await.expect("Failed to get initial state");
         assert!(!initial_state.global_root.0.is_empty(), "Global root should not be empty");
         assert!(!initial_state.block_number > 0, "Block number should be greater than 0");
         assert!(!initial_state.block_hash.0.is_empty(), "Block hash should not be empty");
     }
-
 
     #[tokio::test]
     async fn test_event_subscription() -> Result<(), Box<dyn std::error::Error>> {
@@ -284,17 +323,15 @@ mod l1_sync_tests {
                 event Approval(address indexed owner, address indexed spender, uint256 value)
             ]"#,
         );
-    
+
         const WETH_ADDRESS: &str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
-    
+
         let provider = Provider::<Http>::try_from(eth_rpc::MAINNET)?;
         let client = Arc::new(provider);
         let address: Address = WETH_ADDRESS.parse()?;
         let contract = IERC20::new(address, client);
 
-        let event = contract.event::<Transfer>()
-            .from_block(0)
-            .to_block(EthBlockNumber::Latest);
+        let event = contract.event::<Transfer>().from_block(0).to_block(EthBlockNumber::Latest);
 
         let mut event_stream = event.stream().await?;
 
@@ -302,7 +339,7 @@ mod l1_sync_tests {
             match event_result {
                 Ok(log) => {
                     println!("Transfer event: {:?}", log);
-                },
+                }
                 Err(e) => println!("Error while listening for events: {:?}", e),
             }
         }
@@ -312,23 +349,20 @@ mod l1_sync_tests {
 
     #[tokio::test]
     async fn listen_and_update_state() -> Result<(), Box<dyn std::error::Error>> {
-        
         abigen!(
-            StarkNetCore,
+            StarknetCore,
             "crates/client/deoxys/src/utils/abis/starknet_core.json",
             event_derives(serde::Deserialize, serde::Serialize)
         );
 
-        const STARKNET_CORE_ADDRESS: &str = "0x16938E4b59297060484Fa56a12594d8D6F4177e8";
+        const STARKNET_CORE_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
 
         let provider = Provider::<Http>::try_from(eth_rpc::MAINNET)?;
         let client = Arc::new(provider);
         let address: Address = STARKNET_CORE_ADDRESS.parse()?;
-        let contract = StarkNetCore::new(address, client.clone());
+        let contract = StarknetCore::new(address, client.clone());
 
-        let event_filter = contract.event::<LogStateUpdate>()
-            .from_block(0)
-            .to_block(EthBlockNumber::Latest);
+        let event_filter = contract.event::<LogStateUpdate>().from_block(0).to_block(EthBlockNumber::Latest);
 
         // Subscribe to the LogStateUpdate event
         let mut event_stream = event_filter.stream().await?;
@@ -339,7 +373,7 @@ mod l1_sync_tests {
                 Ok(log) => {
                     // Process the event data
                     println!("LogStateUpdate event: {:?}", log);
-                },
+                }
                 Err(e) => println!("Error while listening for events: {:?}", e),
             }
         }
