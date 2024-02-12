@@ -15,6 +15,7 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
+use mc_deoxys::l2::get_config;
 use mc_deoxys::utility::get_highest_block_hash_and_number;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
@@ -993,12 +994,9 @@ where
     /// defined by the Starknet protocol, indicating the particular network.
     fn chain_id(&self) -> RpcResult<Felt> {
         let best_block_hash = self.client.info().best_hash;
-        let chain_id = self.client.runtime_api().chain_id(best_block_hash).map_err(|e| {
-            error!("Failed to fetch chain_id with best_block_hash: {best_block_hash}, error: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
+        let chain_id = get_config().chain_id;
 
-        Ok(Felt(chain_id.0))
+        Ok(Felt(chain_id))
     }
 
     /// Estimate the fee associated with transaction
