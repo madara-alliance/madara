@@ -1,5 +1,6 @@
 //! Contains the necessaries to perform an L1 verification of the state
 
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -19,7 +20,7 @@ use starknet_api::hash::StarkHash;
 
 use crate::l2::STARKNET_STATE_UPDATE;
 use crate::utility::{event_to_l1_state_update, get_state_update_at};
-use crate::utils::constant::starknet_core_address;
+use crate::utils::constant::{starknet_core_address, LOG_STATE_UPDTATE_TOPIC};
 
 lazy_static! {
     /// Shared latest L2 state update verified on L1
@@ -81,8 +82,18 @@ impl EthereumClient {
 
     /// Get the block number of the last occurrence of a given event.
     pub async fn get_last_event_block_number(&self) -> Result<u64, Box<dyn std::error::Error>> {
-        let topic = ethers::utils::keccak256("0x77552641");
-        let filter = Filter::new().topic0(H256::from(topic));
+        let topic = H256::from_slice(&hex::decode(&LOG_STATE_UPDTATE_TOPIC[2..])?);
+        let address =
+            Address::from_str(starknet_core_address::MAINNET).map_err(|e| format!("Failed to parse address: {}", e))?;
+        let latest_block = self.get_latest_block_number().await.expect("Failed to retrieve latest block number");
+
+        // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurence in the last ~24h
+        let filter = Filter::new()
+            .from_block(latest_block - 6000)
+            .to_block(EthBlockNumber::Latest)
+            .address(vec![address])
+            .topic0(topic);
+
         let logs = self.provider.get_logs(&filter).await?;
 
         if let Some(last_log) = logs.last() {
@@ -146,7 +157,8 @@ impl EthereumClient {
         Ok(L1StateUpdate { global_root, block_number, block_hash })
     }
 
-    /// Subscribes to the LogStateUpdate event from the Starknet core contract
+    /// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
+    /// verified state
     pub async fn listen_and_update_state(&self, start_block: u64) -> Result<(), Box<dyn std::error::Error>> {
         let client = self.provider.clone();
         let address: Address = starknet_core_address::MAINNET.parse().expect("Failed to parse Starknet core address");
@@ -157,13 +169,14 @@ impl EthereumClient {
         );
         let contract = StarknetCore::new(address, client);
 
-        let event_filter = contract.event::<LogStateUpdate>().from_block(0).to_block(EthBlockNumber::Latest);
+        let event_filter = contract.event::<LogStateUpdate>().from_block(start_block).to_block(EthBlockNumber::Latest);
 
         let mut event_stream = event_filter.stream().await.expect("Failed to initiate event stream");
 
         while let Some(event_result) = event_stream.next().await {
             match event_result {
                 Ok(log) => {
+                    println!("Log event in log format: {:?}", log.clone());
                     let format_event =
                         event_to_l1_state_update(log.clone()).expect("Failed to format event into an L1StateUpdate");
                     println!("LogStateUpdate event: {:?}, format event: {:?}", log, format_event.clone());
@@ -233,30 +246,22 @@ pub async fn sync(l1_url: Url) {
 
     log::info!("🚀 Subscribed to L1 state verification");
 
-    // Get and store the latest state
+    // Get and store the latest verified state
     let initial_state = match EthereumClient::get_initial_state(&client).await {
         Ok(state) => state,
         Err(_) => return,
     };
-
-    let start_block = EthereumClient::get_last_event_block_number(&client).await.expect("Failed to retrieve last event block number");
-
     update_l1(initial_state);
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
+    let start_block =
+        EthereumClient::get_last_event_block_number(&client).await.expect("Failed to retrieve last event block number");
     EthereumClient::listen_and_update_state(&client, start_block).await.unwrap();
-
-    // Verify the latest state roots and block against L2
-    // detect new events, verify and update the state
-    // let _ = verify_l1(new_state_update.clone(), rpc_port).await;
-    //   update_l1(new_state_update);
 }
 
 #[cfg(test)]
 mod l1_sync_tests {
-    // use futures_util::stream::StreamExt;
-    // use futures_util::future::Either;
-    use ethers::contract::{Contract, ContractFactory, EthEvent};
+    use ethers::contract::EthEvent;
     use ethers::core::types::*;
     use ethers::prelude::*;
     use ethers::providers::Provider;
@@ -265,14 +270,6 @@ mod l1_sync_tests {
 
     use super::*;
     use crate::l1::EthereumClient;
-
-    #[derive(Clone, Debug, EthEvent, Deserialize)]
-    pub struct LogStateUpdate {
-        #[ethevent(indexed)]
-        pub global_root: U256,
-        pub block_number: I256,
-        pub block_hash: U256,
-    }
 
     #[derive(Clone, Debug, EthEvent)]
     pub struct Transfer {
@@ -284,17 +281,17 @@ mod l1_sync_tests {
     }
 
     pub mod eth_rpc {
-        pub const MAINNET: &str = "https://eth-mainnet.g.alchemy.com/v2/Oqh-00iLC3Nx08nkJOg241ky-7JA41cJ";
-        pub const GOERLI_TESTNET: &str = "0xde29d060D45901Fb19ED6C6e959EB22d8626708e";
-        pub const GOERLI_INTEGRATION: &str = "0xd5c325D183C592C94998000C5e0EED9e6655c020";
-        pub const SEPOLIA_TESTNET: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
-        pub const SEPOLIA_INTEGRATION: &str = "0x4737c0c1B4D5b1A687B42610DdabEE781152359c";
+        pub const MAINNET: &str = "<ENTER-YOUR-RPC-URL-HERE>";
     }
 
     #[tokio::test]
-    async fn test_client() {
+    async fn test_starting_block() {
         let url = Url::parse(eth_rpc::MAINNET).expect("Failed to parse URL");
         let client = EthereumClient::new(url).await.expect("Failed to create EthereumClient");
+
+        let start_block =
+            EthereumClient::get_last_event_block_number(&client).await.expect("Failed to get last event block number");
+        println!("The latest emission of the LogStateUpdate event was on block: {:?}", start_block);
     }
 
     #[tokio::test]
@@ -349,34 +346,13 @@ mod l1_sync_tests {
 
     #[tokio::test]
     async fn listen_and_update_state() -> Result<(), Box<dyn std::error::Error>> {
-        abigen!(
-            StarknetCore,
-            "crates/client/deoxys/src/utils/abis/starknet_core.json",
-            event_derives(serde::Deserialize, serde::Serialize)
-        );
-
-        const STARKNET_CORE_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
-
-        let provider = Provider::<Http>::try_from(eth_rpc::MAINNET)?;
-        let client = Arc::new(provider);
-        let address: Address = STARKNET_CORE_ADDRESS.parse()?;
-        let contract = StarknetCore::new(address, client.clone());
-
-        let event_filter = contract.event::<LogStateUpdate>().from_block(0).to_block(EthBlockNumber::Latest);
-
-        // Subscribe to the LogStateUpdate event
-        let mut event_stream = event_filter.stream().await?;
-
-        // Handle incoming events
-        while let Some(event_result) = event_stream.next().await {
-            match event_result {
-                Ok(log) => {
-                    // Process the event data
-                    println!("LogStateUpdate event: {:?}", log);
-                }
-                Err(e) => println!("Error while listening for events: {:?}", e),
-            }
-        }
+        let client = EthereumClient::new(Url::parse(eth_rpc::MAINNET).expect("Failed to parse rpc url"))
+            .await
+            .expect("Failed to create EthereumClient");
+        let start_block = EthereumClient::get_last_event_block_number(&client)
+            .await
+            .expect("Failed to retrieve last event block number");
+        EthereumClient::listen_and_update_state(&client, start_block).await.unwrap();
 
         Ok(())
     }

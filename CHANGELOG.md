@@ -2,7 +2,9 @@ git # Madara Changelog
 
 ## Next release
 
-- fux(getStorageAt): #28
+- fix(L1): fix l1 thread with battle tested implementation + removed l1-l2
+  messaging and settlement
+- fix(getStorageAt): #28
 - fix(genesis): #107
 - fix(class): #32 #33 #34
 - fix(class): #116
