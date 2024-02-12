@@ -1,16 +1,20 @@
-//! Utility functions.
+//! Utility functions for Deoxys.
+
 use std::error::Error;
 use std::thread::sleep;
 use std::time::Duration;
 
+use ethers::types::I256;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use reqwest::header;
 use serde_json::{json, Value};
+use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::BlockId;
 use starknet_providers::SequencerGatewayProvider;
 
+use crate::l1::{L1StateUpdate, LogStateUpdate};
 use crate::l2::{L2StateUpdate, STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER};
 
 // TODO: secure the auto calls here
@@ -184,4 +188,26 @@ pub fn format_address(address: &str) -> String {
     } else {
         formatted_address
     }
+}
+
+pub fn event_to_l1_state_update(log_state_update: LogStateUpdate) -> Result<L1StateUpdate, &'static str> {
+    let block_number_u64 = if log_state_update.block_number >= I256::from(0) {
+        log_state_update.block_number.low_u64()
+    } else {
+        return Err("Block number is negative");
+    };
+
+    let global_root_u128 = log_state_update.global_root.low_u128();
+    let block_hash_u128 = log_state_update.block_hash.low_u128();
+
+    if global_root_u128 as u128 != log_state_update.global_root.low_u128()
+        || block_hash_u128 as u128 != log_state_update.block_hash.low_u128()
+    {
+        return Err("Conversion from U256 to u128 resulted in data loss");
+    }
+
+    let global_root = StarkFelt::from(global_root_u128);
+    let block_hash = StarkFelt::from(block_hash_u128);
+
+    Ok(L1StateUpdate { block_number: block_number_u64, global_root, block_hash })
 }

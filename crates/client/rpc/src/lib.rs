@@ -892,7 +892,7 @@ where
         let block_hash = starknet_block.header().hash::<H>();
 
         let actual_status = if starknet_block.header().block_number
-            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0
+            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
             BlockStatus::AcceptedOnL1.into()
         } else {
@@ -1179,7 +1179,7 @@ where
         let starknet_version = starknet_block.header().protocol_version;
 
         let actual_status = if starknet_block.header().block_number
-            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0
+            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
             BlockStatus::AcceptedOnL1.into()
         } else {
@@ -1540,7 +1540,7 @@ where
         let actual_fee = FieldElement::ZERO;
 
         let actual_status = if starknet_block.header().block_number
-            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0
+            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
             TransactionFinalityStatus::AcceptedOnL1.into()
         } else {

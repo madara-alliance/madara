@@ -6,7 +6,6 @@ use std::time::Duration;
 use itertools::Itertools;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
-use mp_commitments::StateCommitment;
 use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
 use mp_felt::Felt252Wrapper;
 use mp_storage::StarknetStorageSchemaVersion;
@@ -17,7 +16,7 @@ use sp_runtime::generic::{Block, Header};
 use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
-use starknet_api::block::{BlockHash, BlockNumber};
+use starknet_api::hash::StarkHash;
 use starknet_core::types::BlockId as BlockIdCore;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
@@ -32,17 +31,17 @@ use crate::CommandSink;
 /// Contains the Starknet verified state on L2
 #[derive(Debug, Clone, Deserialize)]
 pub struct L2StateUpdate {
-    pub global_root: StateCommitment,
-    pub block_number: BlockNumber,
-    pub block_hash: BlockHash,
+    pub block_number: u64,
+    pub global_root: StarkHash,
+    pub block_hash: StarkHash,
 }
 
 lazy_static! {
     /// Shared latest L2 state update verified on L2
     pub static ref STARKNET_STATE_UPDATE: Arc<Mutex<L2StateUpdate>> = Arc::new(Mutex::new(L2StateUpdate {
-        global_root: StateCommitment::default(),
-        block_number: BlockNumber::default(),
-        block_hash: BlockHash::default(),
+        block_number: u64::default(),
+        global_root: StarkHash::default(),
+        block_hash: StarkHash::default(),
     }));
 }
 
