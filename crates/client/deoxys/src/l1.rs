@@ -113,7 +113,6 @@ impl EthereumClient {
         let result = self.provider.call(&tx, None).await.expect("Failed to get last block number");
         let result_str = result.to_string();
         let hex_str = result_str.trim_start_matches("Bytes(0x").trim_end_matches(")").trim_start_matches("0x");
-        println!("Hex string to parse: {:?}", hex_str);
 
         let block_number = u64::from_str_radix(hex_str, 16).expect("Failed to parse block number");
         Ok(block_number)
