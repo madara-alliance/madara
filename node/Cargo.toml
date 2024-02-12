@@ -85,7 +85,6 @@ frame-benchmarking-cli = { workspace = true }
 blockifier = { workspace = true }
 hex = { workspace = true }
 madara-runtime = { workspace = true }
-mc-commitment-state-diff = { workspace = true }
 mc-db = { workspace = true }
 mc-mapping-sync = { workspace = true }
 mc-rpc = { workspace = true }
@@ -118,7 +117,7 @@ mp-transactions = { workspace = true, features = ["scale-info"] }
 try-runtime-cli = { optional = true, git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
 #Deoxys
-mc-deoxys = { workspace = true }
+mc-sync = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true }
 url = { workspace = true }

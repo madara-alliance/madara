@@ -11,11 +11,10 @@ use futures::future::BoxFuture;
 use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
-use mc_commitment_state_diff::{verify_l2, CommitmentStateDiffWorker};
-use mc_deoxys::starknet_sync_worker;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
+use mc_sync::starknet_sync_worker;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::ClassUpdateWrapper;
 use mp_sequencer_address::{
@@ -256,7 +255,7 @@ pub fn new_full(
     rpc_port: u16,
     l1_url: Url,
     cache_more_things: bool,
-    fetch_config: mc_deoxys::FetchConfig,
+    fetch_config: mc_sync::FetchConfig,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
@@ -402,24 +401,11 @@ pub fn new_full(
         .for_each(|()| future::ready(())),
     );
 
-    let (commitment_state_diff_tx, commitment_state_diff_rx) = mpsc::channel(5);
-
-    task_manager.spawn_essential_handle().spawn(
-        "commitment-state-diff",
-        Some("madara"),
-        CommitmentStateDiffWorker::<_, _, StarknetHasher>::new(
-            client.clone(),
-            madara_backend.clone(),
-            commitment_state_diff_tx,
-        )
-        .for_each(|()| future::ready(())),
-    );
-
     let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<mp_block::Block>(100);
     let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StateUpdateWrapper>(100);
     let (class_sender, class_receiver) = tokio::sync::mpsc::channel::<ClassUpdateWrapper>(100);
 
-    let sender_config = mc_deoxys::SenderConfig {
+    let sender_config = mc_sync::SenderConfig {
         block_sender,
         state_update_sender,
         command_sink: command_sink.unwrap().clone(),
@@ -431,12 +417,6 @@ pub fn new_full(
         "starknet-sync-worker",
         Some("madara"),
         starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend),
-    );
-
-    task_manager.spawn_essential_handle().spawn(
-        "commitment-state-logger",
-        Some("madara"),
-        verify_l2(commitment_state_diff_rx),
     );
 
     if role.is_authority() {

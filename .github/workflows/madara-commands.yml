@@ -14,8 +14,7 @@ jobs:
         with:
           path: |
             target/release/madara
-          key:
-            ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}-${{
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}-${{
             github.run_id }}
           fail-on-cache-miss: true
       - name: Run setup

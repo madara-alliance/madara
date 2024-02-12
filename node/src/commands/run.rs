@@ -96,14 +96,14 @@ impl NetworkType {
         }
     }
 
-    pub fn block_fetch_config(&self) -> mc_deoxys::FetchConfig {
+    pub fn block_fetch_config(&self) -> mc_sync::FetchConfig {
         let uri = self.uri();
         let chain_id = self.chain_id();
 
         let gateway = format!("{uri}/gateway").parse().unwrap();
         let feeder_gateway = format!("{uri}/feeder_gateway").parse().unwrap();
 
-        mc_deoxys::FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false }
+        mc_sync::FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false }
     }
 }
 
@@ -199,7 +199,7 @@ fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
 
     // Assign a random pokemon name at each startup
     cmd.base.name =
-        Some(tokio::runtime::Runtime::new().unwrap().block_on(mc_deoxys::utility::get_random_pokemon_name()).unwrap());
+        Some(tokio::runtime::Runtime::new().unwrap().block_on(mc_sync::utility::get_random_pokemon_name()).unwrap());
 
     // Define telemetry endpoints at deoxys.kasar.io
     cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://deoxys.kasar.io/submit/".to_string(), 0)];

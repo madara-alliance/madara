@@ -15,12 +15,12 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
-use mc_deoxys::l2::get_config;
-use mc_deoxys::utility::get_highest_block_hash_and_number;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
+use mc_sync::l2::get_config;
+use mc_sync::utility::get_highest_block_hash_and_number;
 use mp_block::BlockStatus;
 use mp_contract::class::ContractClassWrapper;
 use mp_convert::contract::flattened_sierra_to_sierra_contract_class;
@@ -892,7 +892,7 @@ where
         let block_hash = starknet_block.header().hash::<H>();
 
         let actual_status = if starknet_block.header().block_number
-            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
+            <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
             BlockStatus::AcceptedOnL1.into()
         } else {
@@ -911,18 +911,12 @@ where
                 .map(FieldElement::from)
                 .collect()
         };
-        let block_status = match self.backend.messaging().last_synced_l1_block_with_event() {
-            Ok(l1_block) => {
-                if l1_block.block_number >= starknet_block.header().block_number {
-                    BlockStatus::AcceptedOnL1
-                } else {
-                    BlockStatus::AcceptedOnL2
-                }
-            }
-            Err(e) => {
-                error!("Failed to get last synced l1 block, error: {e}");
-                Err(StarknetRpcApiError::InternalServerError)?
-            }
+        let block_status: BlockStatus = if starknet_block.header().block_number
+            <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
+        {
+            BlockStatus::AcceptedOnL1.into()
+        } else {
+            BlockStatus::AcceptedOnL2.into()
         };
 
         let parent_blockhash = starknet_block.header().parent_block_hash;
@@ -1179,7 +1173,7 @@ where
         let starknet_version = starknet_block.header().protocol_version;
 
         let actual_status = if starknet_block.header().block_number
-            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
+            <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
             BlockStatus::AcceptedOnL1.into()
         } else {
@@ -1540,7 +1534,7 @@ where
         let actual_fee = FieldElement::ZERO;
 
         let actual_status = if starknet_block.header().block_number
-            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
+            <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
             TransactionFinalityStatus::AcceptedOnL1.into()
         } else {
