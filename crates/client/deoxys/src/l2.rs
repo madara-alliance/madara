@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
@@ -44,6 +43,14 @@ lazy_static! {
         global_root: StarkHash::default(),
         block_hash: StarkHash::default(),
     }));
+}
+
+use lazy_static::lazy_static;
+
+// TODO: find a better place to store this
+lazy_static! {
+    /// Store the configuration globally
+    static ref CONFIG: Arc<Mutex<FetchConfig>> = Arc::new(Mutex::new(FetchConfig::default()));
 }
 
 lazy_static! {
@@ -132,6 +139,7 @@ pub async fn sync<B: BlockT>(
     rpc_port: u16,
     backend: Arc<mc_db::Backend<B>>,
 ) {
+    update_config(&config);
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
 
@@ -424,4 +432,18 @@ pub async fn verify_l2(_state_update: StateUpdateWrapper) -> Result<(), String> 
     // 4. Update hared latest L2 state update verified on L2
     // update_l2({block_number, block_hash, state_commitment})
     Ok(())
+}
+
+pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
+    STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.lock().unwrap().clone()
+}
+
+fn update_config(config: &FetchConfig) {
+    let last_config = CONFIG.clone();
+    let mut new_config = last_config.lock().unwrap();
+    *new_config = config.clone();
+}
+
+pub fn get_config() -> FetchConfig {
+    CONFIG.lock().unwrap().clone()
 }

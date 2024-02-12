@@ -3,8 +3,9 @@ git # Madara Changelog
 ## Next release
 
 - fix(L1): fix l1 thread with battle tested implementation + removed l1-l2
-  messaging and settlement
-- fix(getStorageAt): #28
+- fix: update and store ConfigFetch in l2 sync(), chainId rpc call
+- fix: get_events paging with continuation_token
+- fux(getStorageAt): #28
 - fix(genesis): #107
 - fix(class): #32 #33 #34
 - fix(class): #116

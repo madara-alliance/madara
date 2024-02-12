@@ -155,6 +155,7 @@ impl pallet_timestamp::Config for Runtime {
     type WeightInfo = ();
 }
 
+// TODO: change the ChainId to the correct one which depends on the network
 parameter_types! {
     pub const UnsignedPriority: u64 = 1 << 20;
     pub const TransactionLongevity: u64 = u64::MAX;
