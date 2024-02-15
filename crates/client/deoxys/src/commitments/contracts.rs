@@ -48,8 +48,7 @@ pub fn calculate_contract_state_leaf_hash<H: HasherT>(contract_leaf_params: Cont
 
     let class_storage_hash = H::compute_hash_on_elements(&[contract_leaf_params.hash.0, contract_leaf_params.root.0]);
     let nonce_hash = H::compute_hash_on_elements(&[class_storage_hash, contract_leaf_params.nonce.0]);
-    let contract_state_hash =
-        H::compute_hash_on_elements(&[nonce_hash, CONTRACT_STATE_HASH_VERSION.0]);
+    let contract_state_hash = H::compute_hash_on_elements(&[nonce_hash, CONTRACT_STATE_HASH_VERSION.0]);
 
     contract_state_hash.into()
 }
@@ -73,7 +72,8 @@ where
     // let config = BonsaiStorageConfig::default();
     // let bonsai_db = backend.as_ref();
     // let mut bonsai_storage =
-    //     BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
+    //     BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai
+    // storage");
 
     // let contract_state_hash = calculate_contract_state_leaf_hash(contract_leaf_params);
 

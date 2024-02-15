@@ -56,7 +56,8 @@ where
     // let config = BonsaiStorageConfig::default();
     // let bonsai_db = backend.as_ref();
     // let mut bonsai_storage =
-    //     BonsaiStorage::<_, _, Poseidon>::new(bonsai_db, config).expect("Failed to create bonsai storage");
+    //     BonsaiStorage::<_, _, Poseidon>::new(bonsai_db, config).expect("Failed to create bonsai
+    // storage");
 
     // let class_commitment_leaf_hash = calculate_class_commitment_leaf_hash(compiled_class_hash);
 

@@ -55,16 +55,12 @@ where
     transaction_hashes
 }
 
-pub(crate) fn transaction_commitment<B, H>(
+pub(crate) fn transaction_commitment<B: BlockT>(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
     backend: &Arc<BonsaiDb<B>>,
-) -> Result<Felt252Wrapper, BonsaiDbError>
-where
-    B: BlockT,
-    H: HasherT,
-{
+) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
     let bonsai_db = backend.as_ref();
     let mut bonsai_storage =
@@ -91,7 +87,7 @@ where
     Ok(Felt252Wrapper::from(root_hash))
 }
 
-pub(crate) fn memory_transaction_commitment<H: HasherT>(
+pub(crate) fn memory_transaction_commitment(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
