@@ -32,7 +32,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use bonsai_db::BonsaiDb;
+use bonsai_db::{BonsaiDb, TrieColum};
 use da_db::DaDb;
 use l1_handler_tx_fee::L1HandlerTxFeeDb;
 use mapping_db::MappingDb;
@@ -56,7 +56,7 @@ pub(crate) mod columns {
     // ===== /!\ ===================================================================================
     // MUST BE INCREMENTED WHEN A NEW COLUMN IN ADDED
     // ===== /!\ ===================================================================================
-    pub const NUM_COLUMNS: u32 = 10;
+    pub const NUM_COLUMNS: u32 = 12;
 
     pub const META: u32 = 0;
     pub const BLOCK_MAPPING: u32 = 1;
@@ -79,8 +79,14 @@ pub(crate) mod columns {
     /// This column stores the fee paid on l1 for L1Handler transactions
     pub const L1_HANDLER_PAID_FEE: u32 = 8;
 
-    /// This column contains the bonsai trie keys
-    pub const BONSAI: u32 = 9;
+    // This column contains the bonsai trie for Contract commitments
+    pub const BONSAI_CONTRACTS: u32 = 9;
+
+    // This column contains the bonsai trie for Class commitments
+    pub const BONSAI_CLASSES: u32 = 10;
+
+    // This column contains the bonsai trie for Storage commitments
+    pub const BONSAI_STORAGE: u32 = 11;
 }
 
 pub mod static_keys {
@@ -150,7 +156,7 @@ impl<B: BlockT> Backend<B> {
             messaging: Arc::new(MessagingDb { db: spdb.clone() }),
             sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
             l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
-            bonsai: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData }),
+            bonsai: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData, current_column: TrieColum::default() }),
         })
     }
 

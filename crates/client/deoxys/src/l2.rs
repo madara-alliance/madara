@@ -137,7 +137,7 @@ pub async fn sync<B: BlockT>(
     config: FetchConfig,
     start_at: u64,
     rpc_port: u16,
-    backend: Arc<mc_db::Backend<B>>,
+    _backend: Arc<mc_db::Backend<B>>,
 ) {
     update_config(&config);
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
@@ -157,7 +157,7 @@ pub async fn sync<B: BlockT>(
         }
         let (block, state_update) = match (got_block, got_state_update) {
             (false, false) => {
-                let block = fetch_block(&client, block_sender, current_block_number, backend.clone());
+                let block = fetch_block(&client, block_sender, current_block_number);
                 let state_update = fetch_state_and_class_update(
                     &client,
                     Arc::clone(&overrides),
@@ -168,7 +168,7 @@ pub async fn sync<B: BlockT>(
                 );
                 tokio::join!(block, state_update)
             }
-            (false, true) => (fetch_block(&client, block_sender, current_block_number, backend.clone()).await, Ok(())),
+            (false, true) => (fetch_block(&client, block_sender, current_block_number).await, Ok(())),
             (true, false) => (
                 Ok(()),
                 fetch_state_and_class_update(
@@ -211,19 +211,15 @@ pub async fn sync<B: BlockT>(
     }
 }
 
-async fn fetch_block<B: BlockT>(
+async fn fetch_block(
     client: &SequencerGatewayProvider,
     block_sender: &Sender<mp_block::Block>,
     block_number: u64,
-    backend: Arc<mc_db::Backend<B>>,
 ) -> Result<(), String> {
     let block =
         client.get_block(BlockId::Number(block_number)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    block_sender
-        .send(crate::convert::block(&block, backend))
-        .await
-        .map_err(|e| format!("failed to dispatch block: {e}"))?;
+    block_sender.send(crate::convert::block(&block)).await.map_err(|e| format!("failed to dispatch block: {e}"))?;
 
     Ok(())
 }

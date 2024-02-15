@@ -271,7 +271,7 @@ starknet-crypto = { git = "https://github.com/jbcaron/starknet-rs.git", branch =
 starknet-ff = { git = "https://github.com/jbcaron/starknet-rs.git", branch = "classes", default-features = false }
 starknet-providers = { git = "https://github.com/jbcaron/starknet-rs.git", branch = "classes", default-features = false }
 starknet-signers = { git = "https://github.com/jbcaron/starknet-rs.git", branch = "classes", default-features = false }
-starknet-types-core = { version = "0.0.7", default-features = false }
+starknet-types-core = { git = "https://github.com/starknet-io/types-rs", branch = "main", default-features = false }
 
 blockifier = { git = "https://github.com/massalabs/blockifier", branch = "no_std-support-7578442-std", default-features = false, features = [
   "std",
