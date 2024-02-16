@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use mc_db::bonsai_db::BonsaiDb;
-use mc_db::Backend;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
@@ -19,7 +18,7 @@ use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_api::hash::StarkHash;
-use starknet_core::types::BlockId as BlockIdCore;
+use starknet_core::types::{BlockId as BlockIdCore};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
@@ -271,9 +270,7 @@ async fn fetch_state_update<B: BlockT>(provider: &SequencerGatewayProvider, bloc
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    let state_update_wrapper = StateUpdateWrapper::from(state_update);
-
-    verify_l2(block_number, state_update_wrapper, bonsai_db);
+    verify_l2(block_number, &state_update, bonsai_db);
 
     Ok(state_update)
 }
@@ -428,14 +425,15 @@ pub fn update_l2(state_update: L2StateUpdate) {
 /// Verify and update the L2 state according to the latest state update
 pub fn verify_l2<B: BlockT>(
     block_number: u64,
-    state_update: StateUpdateWrapper,
+    state_update: &StateUpdate,
     bonsai_db: &Arc<BonsaiDb<B>>,
 ) -> Result<(), String> {
-    let csd = build_commitment_state_diff(state_update.clone());
+    let state_update_wrapper = StateUpdateWrapper::from(state_update);
+    let csd = build_commitment_state_diff(state_update_wrapper.clone());
     let state_root = update_state_root(csd, &bonsai_db).expect("Failed to update state root");
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
-    update_l2(L2StateUpdate { block_number, global_root: state_root.into(), block_hash: block_hash.into() });
+    update_l2(L2StateUpdate { block_number, global_root: state_root.into(), block_hash: Felt252Wrapper::from(block_hash).into() });
     println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash, state_root);
 
     Ok(())

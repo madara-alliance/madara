@@ -20,15 +20,18 @@ use super::contracts::{get_contract_trie_root, update_contract_trie, update_stor
 use super::events::memory_event_commitment;
 use super::transactions::memory_transaction_commitment;
 
-/// Calculate the transaction commitment, the event commitment and the event count.
+/// Calculate the transaction and event commitment.
 ///
 /// # Arguments
 ///
-/// * `transactions` - The transactions of the block
+/// * `transactions` - The transactions of the block 
+/// * `events` - The events of the block
+/// * `chain_id` - The current chain id
+/// * `block_number` - The current block number
 ///
 /// # Returns
 ///
-/// The transaction commitment, the event commitment and the event count.
+/// The transaction and the event commitment as `Felt252Wrapper`.
 pub fn calculate_commitments(
     transactions: &[Transaction],
     events: &[Event],
@@ -42,6 +45,15 @@ pub fn calculate_commitments(
     )
 }
 
+/// Builds a `CommitmentStateDiff` from the `StateUpdateWrapper`.
+///
+/// # Arguments
+///
+/// * `StateUpdateWrapper` - The last state update fetched and formated.
+///
+/// # Returns
+///
+/// The commitment state diff as a `CommitmentStateDiff`.
 pub fn build_commitment_state_diff(state_update_wrapper: StateUpdateWrapper) -> CommitmentStateDiff {
     let mut commitment_state_diff = CommitmentStateDiff {
         address_to_class_hash: IndexMap::new(),
@@ -85,7 +97,7 @@ pub fn build_commitment_state_diff(state_update_wrapper: StateUpdateWrapper) -> 
 /// Calculate state commitment hash value.
 ///
 /// The state commitment is the digest that uniquely (up to hash collisions) encodes the state.
-/// It combines the roots of two binary Merkle-Patricia tries of height 251 using Poseidon hasher.
+/// It combines the roots of two binary Merkle-Patricia tries of height 251 using Poseidon/Pedersen hashers.
 ///
 /// # Arguments
 ///
@@ -94,7 +106,7 @@ pub fn build_commitment_state_diff(state_update_wrapper: StateUpdateWrapper) -> 
 ///
 /// # Returns
 ///
-/// The state commitment as a `StateCommitment`.
+/// The state commitment as a `Felt252Wrapper`.
 pub fn calculate_state_root<H: HasherT>(
     contracts_trie_root: Felt252Wrapper,
     classes_trie_root: Felt252Wrapper,
@@ -110,6 +122,19 @@ where
     state_commitment_hash.into()
 }
 
+/// Update the state commitment hash value.
+///
+/// The state commitment is the digest that uniquely (up to hash collisions) encodes the state.
+/// It combines the roots of two binary Merkle-Patricia tries of height 251 using Poseidon/Pedersen hashers.
+///
+/// # Arguments
+///
+/// * `CommitmentStateDiff` - The commitment state diff inducing unprocessed state changes.
+/// * `BonsaiDb` - The database responsible for storing computing the state tries.
+///
+/// # Returns
+///
+/// The updated state root as a `Felt252Wrapper`.
 pub fn update_state_root<B: BlockT>(
     csd: CommitmentStateDiff,
     bonsai_db: &Arc<BonsaiDb<B>>,
@@ -118,10 +143,11 @@ pub fn update_state_root<B: BlockT>(
     let mut class_trie_root = Felt252Wrapper::default();
 
     for (address, class_hash) in csd.address_to_class_hash.iter() {
-        let storage_root = update_storage_trie(csd, bonsai_db).expect("Failed to update storage trie");
+        let storage_root = update_storage_trie(csd.clone(), bonsai_db).expect("Failed to update storage trie");
         let nonce = csd.address_to_nonce.get(address).unwrap_or(&Felt252Wrapper::default().into()).clone();
 
-        let contract_leaf_params = ContractLeafParams { class_hash: class_hash.clone().into(), storage_root, nonce: nonce.into() };
+        let contract_leaf_params =
+            ContractLeafParams { class_hash: class_hash.clone().into(), storage_root, nonce: nonce.into() };
 
         contract_trie_root = update_contract_trie(address.clone().into(), contract_leaf_params, bonsai_db)?;
     }
@@ -135,6 +161,18 @@ pub fn update_state_root<B: BlockT>(
     Ok(state_root)
 }
 
+/// Retrieves and compute the actual state root.
+///
+/// The state commitment is the digest that uniquely (up to hash collisions) encodes the state.
+/// It combines the roots of two binary Merkle-Patricia tries of height 251 using Poseidon/Pedersen hasher.
+///
+/// # Arguments
+///
+/// * `BonsaiDb` - The database responsible for storing computing the state tries.
+///
+/// # Returns
+///
+/// The actual state root as a `Felt252Wrapper`.
 pub fn state_root<B, H>(bonsai_db: &Arc<BonsaiDb<B>>) -> Felt252Wrapper
 where
     B: BlockT,

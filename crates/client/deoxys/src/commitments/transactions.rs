@@ -24,13 +24,13 @@ use starknet_types_core::hash::Pedersen;
 ///
 /// # Arguments
 ///
-/// * `tx` - The transaction to compute the hash of.
+/// * `transaction` - The transaction to compute the hash of.
 ///
 /// # Returns
 ///
 /// The transaction hash with signature.
 pub fn calculate_transaction_hash_with_signature<H: HasherT>(
-    tx: &Transaction,
+    transaction: &Transaction,
     chain_id: Felt252Wrapper,
     block_number: u64,
 ) -> FieldElement
@@ -39,11 +39,11 @@ where
 {
     let include_signature = block_number >= 61394;
 
-    let signature_hash = if matches!(tx, Transaction::Invoke(_)) || include_signature {
+    let signature_hash = if matches!(transaction, Transaction::Invoke(_)) || include_signature {
         // Include signatures for Invoke transactions or for all transactions
         // starting from block 61394
         H::compute_hash_on_elements(
-            &tx.signature().iter().map(|elt| FieldElement::from(*elt)).collect::<Vec<FieldElement>>(),
+            &transaction.signature().iter().map(|elt| FieldElement::from(*elt)).collect::<Vec<FieldElement>>(),
         )
     } else {
         // Before block 61394, and for non-Invoke transactions, signatures are not included
@@ -51,12 +51,25 @@ where
     };
 
     let transaction_hashes =
-        H::hash_elements(FieldElement::from(tx.compute_hash::<H>(chain_id, false, Some(block_number))), signature_hash);
+        H::hash_elements(FieldElement::from(transaction.compute_hash::<H>(chain_id, false, Some(block_number))), signature_hash);
 
     transaction_hashes
 }
 
-pub(crate) fn transaction_commitment<B: BlockT>(
+/// Calculate the transaction commitment in storage using BonsaiDb (which is less efficient for this
+/// usecase).
+///
+/// # Arguments
+///
+/// * `transactions` - The transactions of the block
+/// * `chain_id` - The current chain id
+/// * `block_number` - The current block number
+/// * `bonsai_db` - The bonsai database responsible to compute the tries
+///
+/// # Returns
+///
+/// The transaction commitment as `Felt252Wrapper`.
+pub fn transaction_commitment<B: BlockT>(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
@@ -88,13 +101,25 @@ pub(crate) fn transaction_commitment<B: BlockT>(
     Ok(Felt252Wrapper::from(root_hash))
 }
 
-pub(crate) fn memory_transaction_commitment(
+/// Calculate the transaction commitment in memory using HashMapDb (which is more efficient for this
+/// usecase).
+///
+/// # Arguments
+///
+/// * `transactions` - The transactions of the block
+/// * `chain_id` - The current chain id
+/// * `block_number` - The current block number
+///
+/// # Returns
+///
+/// The transaction commitment as `Felt252Wrapper`.
+pub fn memory_transaction_commitment(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
-    let mut bonsai_db = HashMapDb::<BasicId>::default();
+    let bonsai_db = HashMapDb::<BasicId>::default();
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 

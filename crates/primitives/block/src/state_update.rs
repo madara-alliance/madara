@@ -70,6 +70,17 @@ pub mod convert {
         }
     }
 
+    impl From<&starknet_providers::sequencer::models::StateUpdate> for StateUpdateWrapper {
+        fn from(update: &StateUpdate) -> Self {
+            StateUpdateWrapper {
+                block_hash: update.block_hash.as_ref().cloned().map(Felt252Wrapper::from),
+                new_root: update.new_root.as_ref().cloned().map(Felt252Wrapper::from),
+                old_root: Felt252Wrapper::from(update.old_root),
+                state_diff: StateDiffWrapper::from(&update.state_diff),
+            }
+        }
+    }
+
     impl From<&StateDiff> for StateDiffWrapper {
         fn from(diff: &StateDiff) -> Self {
             StateDiffWrapper {

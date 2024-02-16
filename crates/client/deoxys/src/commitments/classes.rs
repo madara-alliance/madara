@@ -30,18 +30,20 @@ pub fn calculate_class_commitment_leaf_hash<H: HasherT>(compiled_class_hash: Fel
     hash.into()
 }
 
-/// Calculate class commitment trie root hash value.
+/// Update class trie root hash value with the new class definition.
 ///
 /// The classes trie encodes the information about the existing classes in the state of Starknet.
 /// It maps (Cairo 1.0) class hashes to their compiled class hashes
 ///
 /// # Arguments
 ///
-/// * `classes` - The classes to get the root from.
+/// * `class_hash` - The hash of the class.
+/// * `compiled_class_hash` - The hash of the compiled class.
+/// * `bonsai_db` - The bonsai database responsible to compute the tries
 ///
 /// # Returns
 ///
-/// The merkle root of the merkle trie built from the classes.
+/// The class trie root hash represented as a `Felt252Wrapper` or a `BonsaiDbError`.
 pub fn update_class_trie<B: BlockT>(
     class_hash: Felt252Wrapper,
     compiled_class_hash: Felt252Wrapper,
@@ -50,9 +52,8 @@ pub fn update_class_trie<B: BlockT>(
     let config = BonsaiStorageConfig::default();
     let bonsai_db = backend.as_ref();
 
-    let mut bonsai_storage = BonsaiStorage::<_, _, Poseidon>::new(bonsai_db, config).expect(
-        "Failed to create bonsai storage",
-    );
+    let mut bonsai_storage =
+        BonsaiStorage::<_, _, Poseidon>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
     // println!("Current column is: {:?}", bonsai_db.current_column);
     let class_commitment_leaf_hash = calculate_class_commitment_leaf_hash::<PoseidonHasher>(compiled_class_hash);
@@ -69,6 +70,15 @@ pub fn update_class_trie<B: BlockT>(
     Ok(Felt252Wrapper::from(root_hash))
 }
 
+/// Get the actual class trie root hash.
+///
+/// # Arguments
+///
+/// * `bonsai_db` - The database responsible for storing computing the state tries.
+///
+/// # Returns
+///
+/// The class trie root hash as a `Felt252Wrapper` or a `BonsaiDbError`.
 pub fn get_class_trie_root<B: BlockT>(backend: &Arc<BonsaiDb<B>>) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
     let bonsai_db = backend.as_ref();

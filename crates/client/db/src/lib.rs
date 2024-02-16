@@ -30,6 +30,7 @@ mod meta_db;
 
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 
 use bonsai_db::{BonsaiDb, TrieColum};
@@ -156,7 +157,7 @@ impl<B: BlockT> Backend<B> {
             messaging: Arc::new(MessagingDb { db: spdb.clone() }),
             sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
             l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
-            bonsai: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData, current_column: TrieColum::default() }),
+            bonsai: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData, current_column: AtomicU32::new(TrieColum::default().to_index()) }),
         })
     }
 

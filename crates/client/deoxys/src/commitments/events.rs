@@ -15,10 +15,15 @@ use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 
-/// Calculate the hash of an event.
+/// Calculate the hash of the event.
 ///
-/// See the [documentation](https://docs.starknet.io/documentation/architecture_and_concepts/Events/starknet-events/#event_hash)
-/// for details.
+/// # Arguments
+///
+/// * `event` - The event we want to calculate the hash of.
+///
+/// # Returns
+///
+/// The event hash as `FieldElement`.
 pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
     let keys_hash = H::compute_hash_on_elements(
         &event
@@ -41,21 +46,18 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
     H::compute_hash_on_elements(&[from_address, keys_hash, data_hash])
 }
 
-/// Calculate event commitment hash value.
-///
-/// The event commitment is the root of the Patricia Merkle tree with height 64
-/// constructed by adding the event hash
-/// (see https://docs.starknet.io/documentation/architecture_and_concepts/Events/starknet-events/#event_hash)
-/// to the tree and computing the root hash.
+/// Calculate the event commitment in storage using BonsaiDb (which is less efficient for this
+/// usecase).
 ///
 /// # Arguments
 ///
-/// * `events` - The events to calculate the commitment from.
+/// * `events` - The events of the block
+/// * `bonsai_db` - The bonsai database responsible to compute the tries
 ///
 /// # Returns
 ///
-/// The merkle root of the merkle tree built from the events.
-pub(crate) fn event_commitment<B: BlockT>(
+/// The event commitment as `Felt252Wrapper`.
+pub fn event_commitment<B: BlockT>(
     events: &[Event],
     bonsai_db: &Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, anyhow::Error> {
@@ -89,21 +91,17 @@ pub(crate) fn event_commitment<B: BlockT>(
     }
 }
 
-/// Calculating event commitment hash value using a HashMapDb.
-///
-/// This function assumes that there is a mechanism to compute a Merkle root equivalent
-/// from the key-value pairs stored in the HashMapDb. It stores event hashes in the HashMapDb
-/// and uses a custom method to calculate the "Merkle root".
+/// Calculate the event commitment in memory using HashMapDb (which is more efficient for this
+/// usecase).
 ///
 /// # Arguments
 ///
-/// * `events` - The events to calculate the commitment from.
-/// * `backend` - The HashMapDb backend.
+/// * `events` - The events of the block
 ///
 /// # Returns
 ///
-/// The merkle root equivalent of the merkle tree built from the events.
-pub(crate) fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, anyhow::Error> {
+/// The event commitment as `Felt252Wrapper`.
+pub fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, anyhow::Error> {
     if !events.is_empty() {
         let config = BonsaiStorageConfig::default();
         let bonsai_db = HashMapDb::<BasicId>::default();
