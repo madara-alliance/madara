@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 
-use bonsai_db::{BonsaiDb, TrieColum};
+use bonsai_db::{BonsaiDb, TrieColumn};
 use da_db::DaDb;
 use l1_handler_tx_fee::L1HandlerTxFeeDb;
 use mapping_db::MappingDb;
@@ -157,7 +157,11 @@ impl<B: BlockT> Backend<B> {
             messaging: Arc::new(MessagingDb { db: spdb.clone() }),
             sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
             l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
-            bonsai: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData, current_column: AtomicU32::new(TrieColum::default().to_index()) }),
+            bonsai: Arc::new(BonsaiDb {
+                db: kvdb,
+                _marker: PhantomData,
+                current_column: AtomicU32::new(TrieColumn::default().to_index()),
+            }),
         })
     }
 

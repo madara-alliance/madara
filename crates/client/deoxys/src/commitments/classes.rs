@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bitvec::vec::BitVec;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use mc_db::bonsai_db::BonsaiDb;
+use mc_db::bonsai_db::{BonsaiDb, TrieColumn};
 use mc_db::BonsaiDbError;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::poseidon::PoseidonHasher;
@@ -51,11 +51,11 @@ pub fn update_class_trie<B: BlockT>(
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
     let bonsai_db = backend.as_ref();
-
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Poseidon>::new(bonsai_db, config).expect("Failed to create bonsai storage");
+    println!("Current column is: {:?}", bonsai_db.get_current_column());
+    bonsai_db.set_current_column(TrieColumn::Class);
 
-    // println!("Current column is: {:?}", bonsai_db.current_column);
     let class_commitment_leaf_hash = calculate_class_commitment_leaf_hash::<PoseidonHasher>(compiled_class_hash);
     let key = BitVec::from_vec(class_hash.0.to_bytes_be()[..31].to_vec());
     bonsai_storage
@@ -84,8 +84,8 @@ pub fn get_class_trie_root<B: BlockT>(backend: &Arc<BonsaiDb<B>>) -> Result<Felt
     let bonsai_db = backend.as_ref();
     let bonsai_storage: BonsaiStorage<BasicId, &BonsaiDb<B>, Poseidon> =
         BonsaiStorage::<_, _, Poseidon>::new(bonsai_db, config).expect("Failed to create bonsai storage");
-
-    // println!("Current column is: {:?}", bonsai_db.current_column);
+    println!("Current column is: {:?}", bonsai_db.get_current_column());
+    bonsai_db.set_current_column(TrieColumn::Class);
 
     let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
     Ok(Felt252Wrapper::from(root_hash))

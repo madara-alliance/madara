@@ -24,7 +24,7 @@ use super::transactions::memory_transaction_commitment;
 ///
 /// # Arguments
 ///
-/// * `transactions` - The transactions of the block 
+/// * `transactions` - The transactions of the block
 /// * `events` - The events of the block
 /// * `chain_id` - The current chain id
 /// * `block_number` - The current block number
@@ -97,7 +97,8 @@ pub fn build_commitment_state_diff(state_update_wrapper: StateUpdateWrapper) -> 
 /// Calculate state commitment hash value.
 ///
 /// The state commitment is the digest that uniquely (up to hash collisions) encodes the state.
-/// It combines the roots of two binary Merkle-Patricia tries of height 251 using Poseidon/Pedersen hashers.
+/// It combines the roots of two binary Merkle-Patricia tries of height 251 using Poseidon/Pedersen
+/// hashers.
 ///
 /// # Arguments
 ///
@@ -125,7 +126,8 @@ where
 /// Update the state commitment hash value.
 ///
 /// The state commitment is the digest that uniquely (up to hash collisions) encodes the state.
-/// It combines the roots of two binary Merkle-Patricia tries of height 251 using Poseidon/Pedersen hashers.
+/// It combines the roots of two binary Merkle-Patricia tries of height 251 using Poseidon/Pedersen
+/// hashers.
 ///
 /// # Arguments
 ///
@@ -164,7 +166,8 @@ pub fn update_state_root<B: BlockT>(
 /// Retrieves and compute the actual state root.
 ///
 /// The state commitment is the digest that uniquely (up to hash collisions) encodes the state.
-/// It combines the roots of two binary Merkle-Patricia tries of height 251 using Poseidon/Pedersen hasher.
+/// It combines the roots of two binary Merkle-Patricia tries of height 251 using Poseidon/Pedersen
+/// hasher.
 ///
 /// # Arguments
 ///

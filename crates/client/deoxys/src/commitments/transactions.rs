@@ -50,8 +50,10 @@ where
         H::compute_hash_on_elements(&[])
     };
 
-    let transaction_hashes =
-        H::hash_elements(FieldElement::from(transaction.compute_hash::<H>(chain_id, false, Some(block_number))), signature_hash);
+    let transaction_hashes = H::hash_elements(
+        FieldElement::from(transaction.compute_hash::<H>(chain_id, false, Some(block_number))),
+        signature_hash,
+    );
 
     transaction_hashes
 }

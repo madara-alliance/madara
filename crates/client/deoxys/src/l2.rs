@@ -18,7 +18,7 @@ use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_api::hash::StarkHash;
-use starknet_core::types::{BlockId as BlockIdCore};
+use starknet_core::types::BlockId as BlockIdCore;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
@@ -264,13 +264,17 @@ async fn fetch_state_and_class_update<B: BlockT>(
 }
 
 /// retrieves state update from Starknet sequencer
-async fn fetch_state_update<B: BlockT>(provider: &SequencerGatewayProvider, block_number: u64, bonsai_db: &Arc<BonsaiDb<B>>) -> Result<StateUpdate, String> {
+async fn fetch_state_update<B: BlockT>(
+    provider: &SequencerGatewayProvider,
+    block_number: u64,
+    bonsai_db: &Arc<BonsaiDb<B>>,
+) -> Result<StateUpdate, String> {
     let state_update = provider
         .get_state_update(BlockId::Number(block_number))
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    verify_l2(block_number, &state_update, bonsai_db);
+    let _ = verify_l2(block_number, &state_update, bonsai_db);
 
     Ok(state_update)
 }
@@ -433,7 +437,11 @@ pub fn verify_l2<B: BlockT>(
     let state_root = update_state_root(csd, &bonsai_db).expect("Failed to update state root");
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
-    update_l2(L2StateUpdate { block_number, global_root: state_root.into(), block_hash: Felt252Wrapper::from(block_hash).into() });
+    update_l2(L2StateUpdate {
+        block_number,
+        global_root: state_root.into(),
+        block_hash: Felt252Wrapper::from(block_hash).into(),
+    });
     println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash, state_root);
 
     Ok(())

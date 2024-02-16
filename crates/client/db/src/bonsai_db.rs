@@ -10,25 +10,25 @@ use sp_runtime::traits::Block as BlockT;
 
 use crate::error::BonsaiDbError;
 
-pub enum TrieColum {
+pub enum TrieColumn {
     Class,
     Contract,
     Storage,
 }
 
-impl TrieColum {
+impl TrieColumn {
     pub fn to_index(&self) -> u32 {
         match self {
-            TrieColum::Class => crate::columns::BONSAI_CLASSES,
-            TrieColum::Contract => crate::columns::BONSAI_CONTRACTS,
-            TrieColum::Storage => crate::columns::BONSAI_STORAGE,
+            TrieColumn::Class => crate::columns::BONSAI_CLASSES,
+            TrieColumn::Contract => crate::columns::BONSAI_CONTRACTS,
+            TrieColumn::Storage => crate::columns::BONSAI_STORAGE,
         }
     }
 }
 
-impl default::Default for TrieColum {
+impl default::Default for TrieColumn {
     fn default() -> Self {
-        TrieColum::Class
+        TrieColumn::Class
     }
 }
 
@@ -42,9 +42,8 @@ pub struct BonsaiDb<B: BlockT> {
     pub(crate) current_column: AtomicU32,
 }
 
-
 impl<B: BlockT> BonsaiDb<B> {
-    pub fn set_current_column(&self, column: TrieColum) {
+    pub fn set_current_column(&self, column: TrieColumn) {
         self.current_column.store(column.to_index(), std::sync::atomic::Ordering::SeqCst);
     }
 
