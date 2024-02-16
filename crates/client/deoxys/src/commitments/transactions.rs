@@ -60,10 +60,10 @@ pub(crate) fn transaction_commitment<B: BlockT>(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
-    backend: &Arc<BonsaiDb<B>>,
+    bonsai_db: &Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
-    let bonsai_db = backend.as_ref();
+    let bonsai_db = bonsai_db.as_ref();
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 

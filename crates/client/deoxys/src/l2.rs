@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use mc_db::bonsai_db::BonsaiDb;
+use mc_db::Backend;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
@@ -139,12 +140,12 @@ pub async fn sync<B: BlockT>(
     config: FetchConfig,
     start_at: u64,
     rpc_port: u16,
-    _backend: Arc<mc_db::Backend<B>>,
+    backend: Arc<mc_db::Backend<B>>,
 ) {
     update_config(&config);
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
-
+    let bonsai_db = backend.bonsai();
     let mut current_block_number = start_at;
     let mut last_block_hash = None;
     let mut got_block = false;
@@ -167,6 +168,7 @@ pub async fn sync<B: BlockT>(
                     class_sender,
                     current_block_number,
                     rpc_port,
+                    bonsai_db,
                 );
                 tokio::join!(block, state_update)
             }
@@ -180,6 +182,7 @@ pub async fn sync<B: BlockT>(
                     class_sender,
                     current_block_number,
                     rpc_port,
+                    bonsai_db,
                 )
                 .await,
             ),
@@ -233,15 +236,16 @@ pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block,
     Ok(mp_block::Block::default())
 }
 
-async fn fetch_state_and_class_update(
+async fn fetch_state_and_class_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     state_update_sender: &Sender<StateUpdateWrapper>,
     class_sender: &Sender<ClassUpdateWrapper>,
     block_number: u64,
     rpc_port: u16,
+    bonsai_db: &Arc<BonsaiDb<B>>,
 ) -> Result<(), String> {
-    let state_update = fetch_state_update(&provider, block_number).await?;
+    let state_update = fetch_state_update(&provider, block_number, bonsai_db).await?;
     let class_update = fetch_class_update(&provider, &state_update, overrides, block_number, rpc_port).await?;
 
     // Now send state_update, which moves it. This will be received
@@ -261,13 +265,15 @@ async fn fetch_state_and_class_update(
 }
 
 /// retrieves state update from Starknet sequencer
-async fn fetch_state_update(provider: &SequencerGatewayProvider, block_number: u64) -> Result<StateUpdate, String> {
+async fn fetch_state_update<B: BlockT>(provider: &SequencerGatewayProvider, block_number: u64, bonsai_db: &Arc<BonsaiDb<B>>) -> Result<StateUpdate, String> {
     let state_update = provider
         .get_state_update(BlockId::Number(block_number))
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    // Verify state update via verify_l2(starket_state_update).await
+    let state_update_wrapper = StateUpdateWrapper::from(state_update);
+
+    verify_l2(block_number, state_update_wrapper, bonsai_db);
 
     Ok(state_update)
 }
@@ -419,17 +425,19 @@ pub fn update_l2(state_update: L2StateUpdate) {
     }
 }
 
-/// Verify the L2 state according to the latest state update
+/// Verify and update the L2 state according to the latest state update
 pub fn verify_l2<B: BlockT>(
     block_number: u64,
     state_update: StateUpdateWrapper,
-    backend: &Arc<BonsaiDb<B>>,
+    bonsai_db: &Arc<BonsaiDb<B>>,
 ) -> Result<(), String> {
     let csd = build_commitment_state_diff(state_update.clone());
-    let state_root = update_state_root(csd, &backend).expect("Failed to update state root");
+    let state_root = update_state_root(csd, &bonsai_db).expect("Failed to update state root");
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
+
     update_l2(L2StateUpdate { block_number, global_root: state_root.into(), block_hash: block_hash.into() });
     println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash, state_root);
+
     Ok(())
 }
 

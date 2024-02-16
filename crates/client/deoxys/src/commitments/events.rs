@@ -57,11 +57,11 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
 /// The merkle root of the merkle tree built from the events.
 pub(crate) fn event_commitment<B: BlockT>(
     events: &[Event],
-    backend: &Arc<BonsaiDb<B>>,
+    bonsai_db: &Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, anyhow::Error> {
     if events.len() > 0 {
         let config = BonsaiStorageConfig::default();
-        let bonsai_db = backend.as_ref();
+        let bonsai_db = bonsai_db.as_ref();
         let mut bonsai_storage =
             BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 

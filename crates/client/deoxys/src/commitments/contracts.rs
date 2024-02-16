@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
+use blockifier::state::cached_state::CommitmentStateDiff;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mc_db::bonsai_db::BonsaiDb;
@@ -28,13 +29,32 @@ pub struct ContractLeafParams {
 /// # Returns
 ///
 /// The storage root hash.
-pub fn update_storage_trie<H: HasherT>() -> Felt252Wrapper {
-    Felt252Wrapper::default()
+pub fn update_storage_trie<B: BlockT>(
+    commitment_state_diff: &CommitmentStateDiff,
+    bonsai_db: &Arc<BonsaiDb<B>>,
+) -> Result<Felt252Wrapper, BonsaiDbError> {
+    let config = BonsaiStorageConfig::default();
+    let bonsai_storage: BonsaiStorage<_, _, Pedersen> = BonsaiStorage::new(bonsai_db.as_ref(), config)
+        .expect("Failed to create bonsai storage");
+
+    for (contract_address, updates) in &commitment_state_diff.storage_updates {
+        for (storage_key, storage_value) in updates {
+            let key_bitslice = storage_key.to_bitslice();
+            let value_bitslice = storage_value.to_bitslice();
+
+            bonsai_storage.insert(key_bitslice, value_bitslice)
+                .expect("Failed to insert storage update into trie");
+        }
+    }
+
+    // After all updates are inserted, compute the root hash of the trie
+    let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
+    Ok(Felt252Wrapper::from(root_hash))
 }
 
-pub fn get_storage_trie_root<B: BlockT>(backend: &Arc<BonsaiDb<B>>) -> Result<Felt252Wrapper, BonsaiDbError> {
+pub fn get_storage_trie_root<B: BlockT>(bonsai_db: &Arc<BonsaiDb<B>>) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
-    let bonsai_db = backend.as_ref();
+    let bonsai_db = bonsai_db.as_ref();
     let bonsai_storage: BonsaiStorage<BasicId, &BonsaiDb<B>, Pedersen> =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
@@ -74,10 +94,10 @@ pub fn calculate_contract_state_leaf_hash<H: HasherT>(contract_leaf_params: Cont
 pub fn update_contract_trie<B: BlockT>(
     contract_hash: Felt252Wrapper,
     contract_leaf_params: ContractLeafParams,
-    backend: &Arc<BonsaiDb<B>>,
+    bonsai_db: &Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
-    let bonsai_db = backend.as_ref();
+    let bonsai_db = bonsai_db.as_ref();
 
     let mut bonsai_storage = BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect(
         "Failed to create bonsai
@@ -99,9 +119,9 @@ pub fn update_contract_trie<B: BlockT>(
     Ok(Felt252Wrapper::from(root_hash))
 }
 
-pub fn get_contract_trie_root<B: BlockT>(backend: &Arc<BonsaiDb<B>>) -> Result<Felt252Wrapper, BonsaiDbError> {
+pub fn get_contract_trie_root<B: BlockT>(bonsai_db: &Arc<BonsaiDb<B>>) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
-    let bonsai_db = backend.as_ref();
+    let bonsai_db = bonsai_db.as_ref();
     let mut bonsai_storage: BonsaiStorage<BasicId, &BonsaiDb<B>, Pedersen> =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 

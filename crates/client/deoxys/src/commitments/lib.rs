@@ -112,7 +112,7 @@ where
 
 pub fn update_state_root<B: BlockT>(
     csd: CommitmentStateDiff,
-    backend: &Arc<BonsaiDb<B>>,
+    bonsai_db: &Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     let mut contract_trie_root = Felt252Wrapper::default();
     let mut class_trie_root = Felt252Wrapper::default();
@@ -123,11 +123,11 @@ pub fn update_state_root<B: BlockT>(
 
         let contract_leaf_params = ContractLeafParams { class_hash: class_hash.clone().into(), storage_root, nonce: nonce.into() };
 
-        contract_trie_root = update_contract_trie(address.clone().into(), contract_leaf_params, backend)?;
+        contract_trie_root = update_contract_trie(address.clone().into(), contract_leaf_params, bonsai_db)?;
     }
 
     for (class_hash, compiled_class_hash) in csd.class_hash_to_compiled_class_hash.iter() {
-        class_trie_root = update_class_trie(class_hash.clone().into(), compiled_class_hash.clone().into(), backend)?;
+        class_trie_root = update_class_trie(class_hash.clone().into(), compiled_class_hash.clone().into(), bonsai_db)?;
     }
 
     let state_root = calculate_state_root::<PoseidonHasher>(contract_trie_root, class_trie_root);
@@ -135,13 +135,13 @@ pub fn update_state_root<B: BlockT>(
     Ok(state_root)
 }
 
-pub fn state_root<B, H>(backend: &Arc<BonsaiDb<B>>) -> Felt252Wrapper
+pub fn state_root<B, H>(bonsai_db: &Arc<BonsaiDb<B>>) -> Felt252Wrapper
 where
     B: BlockT,
     H: HasherT,
 {
-    let contract_trie_root = get_contract_trie_root(backend).expect("Failed to get contract trie root");
-    let class_trie_root = get_class_trie_root(backend).expect("Failed to get class trie root");
+    let contract_trie_root = get_contract_trie_root(bonsai_db).expect("Failed to get contract trie root");
+    let class_trie_root = get_class_trie_root(bonsai_db).expect("Failed to get class trie root");
 
     calculate_state_root::<H>(contract_trie_root, class_trie_root)
 }

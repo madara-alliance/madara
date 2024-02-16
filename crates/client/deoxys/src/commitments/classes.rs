@@ -51,8 +51,7 @@ pub fn update_class_trie<B: BlockT>(
     let bonsai_db = backend.as_ref();
 
     let mut bonsai_storage = BonsaiStorage::<_, _, Poseidon>::new(bonsai_db, config).expect(
-        "Failed to create bonsai
-    storage",
+        "Failed to create bonsai storage",
     );
 
     // println!("Current column is: {:?}", bonsai_db.current_column);
