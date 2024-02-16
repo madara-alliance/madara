@@ -3,7 +3,7 @@ use std::sync::Arc;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use mc_db::bonsai_db::BonsaiDb;
-use mc_db::BonsaiDbError;
+use mc_db::{BonsaiDbError, BonsaiDbs};
 use mp_block::state_update::StateUpdateWrapper;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::poseidon::PoseidonHasher;
@@ -139,23 +139,23 @@ where
 /// The updated state root as a `Felt252Wrapper`.
 pub fn update_state_root<B: BlockT>(
     csd: CommitmentStateDiff,
-    bonsai_db: &Arc<BonsaiDb<B>>,
+    bonsai_dbs: BonsaiDbs<B>,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     let mut contract_trie_root = Felt252Wrapper::default();
     let mut class_trie_root = Felt252Wrapper::default();
 
     for (address, class_hash) in csd.address_to_class_hash.iter() {
-        let storage_root = update_storage_trie(csd.clone(), bonsai_db).expect("Failed to update storage trie");
+        let storage_root = update_storage_trie(csd.clone(), &bonsai_dbs.storage).expect("Failed to update storage trie");
         let nonce = csd.address_to_nonce.get(address).unwrap_or(&Felt252Wrapper::default().into()).clone();
 
         let contract_leaf_params =
             ContractLeafParams { class_hash: class_hash.clone().into(), storage_root, nonce: nonce.into() };
 
-        contract_trie_root = update_contract_trie(address.clone().into(), contract_leaf_params, bonsai_db)?;
+        contract_trie_root = update_contract_trie(address.clone().into(), contract_leaf_params, &bonsai_dbs.contract)?;
     }
 
     for (class_hash, compiled_class_hash) in csd.class_hash_to_compiled_class_hash.iter() {
-        class_trie_root = update_class_trie(class_hash.clone().into(), compiled_class_hash.clone().into(), bonsai_db)?;
+        class_trie_root = update_class_trie(class_hash.clone().into(), compiled_class_hash.clone().into(), &bonsai_dbs.class)?;
     }
 
     let state_root = calculate_state_root::<PoseidonHasher>(contract_trie_root, class_trie_root);

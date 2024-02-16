@@ -26,12 +26,6 @@ impl TrieColumn {
     }
 }
 
-impl default::Default for TrieColumn {
-    fn default() -> Self {
-        TrieColumn::Class
-    }
-}
-
 /// Represents a Bonsai database instance parameterized by a block type.
 pub struct BonsaiDb<B: BlockT> {
     /// Database interface for key-value operations.
@@ -39,17 +33,7 @@ pub struct BonsaiDb<B: BlockT> {
     /// PhantomData to mark the block type used.
     pub(crate) _marker: PhantomData<B>,
     /// Set current column to give trie context
-    pub(crate) current_column: AtomicU32,
-}
-
-impl<B: BlockT> BonsaiDb<B> {
-    pub fn set_current_column(&self, column: TrieColumn) {
-        self.current_column.store(column.to_index(), std::sync::atomic::Ordering::SeqCst);
-    }
-
-    pub fn get_current_column(&self) -> u32 {
-        self.current_column.load(std::sync::atomic::Ordering::SeqCst)
-    }
+    pub(crate) current_column: TrieColumn,
 }
 
 impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
@@ -63,7 +47,7 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
 
     /// Retrieves a value by its database key.
     fn get(&self, key: &DatabaseKey) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        let column = self.current_column.load(std::sync::atomic::Ordering::SeqCst);
+        let column = self.current_column.to_index();
         let key_slice = key.as_slice();
         self.db.get(column, key_slice).map_err(Into::into)
     }
@@ -75,7 +59,7 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
         value: &[u8],
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        let column = self.current_column.load(std::sync::atomic::Ordering::SeqCst);
+        let column = self.current_column.to_index();
         let key_slice = key.as_slice();
         let previous_value = self.db.get(column, key_slice)?;
 
@@ -92,14 +76,14 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
 
     /// Checks if a key exists in the database.
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
-        let column = self.current_column.load(std::sync::atomic::Ordering::SeqCst);
+        let column = self.current_column.to_index();
         let key_slice = key.as_slice();
         self.db.has_key(column, key_slice).map_err(Into::into)
     }
 
     /// Retrieves all key-value pairs starting with a given prefix.
     fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Self::DatabaseError> {
-        let column = self.current_column.load(std::sync::atomic::Ordering::SeqCst);
+        let column = self.current_column.to_index();
         let prefix_slice = prefix.as_slice();
         let mut result = Vec::new();
 
@@ -117,7 +101,7 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
         key: &DatabaseKey,
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        let column = self.current_column.load(std::sync::atomic::Ordering::SeqCst);
+        let column = self.current_column.to_index();
         let key_slice = key.as_slice();
         let previous_value = self.db.get(column, key_slice)?;
 
@@ -134,7 +118,7 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
 
     /// Removes all key-value pairs starting with a given prefix.
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
-        let column = self.current_column.load(std::sync::atomic::Ordering::SeqCst);
+        let column = self.current_column.to_index();
         let prefix_slice = prefix.as_slice();
         let mut transaction = self.create_batch();
         transaction.delete_prefix(column, prefix_slice);

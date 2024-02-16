@@ -96,6 +96,15 @@ pub mod static_keys {
     pub const LAST_SYNCED_L1_EVENT_BLOCK: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
 }
 
+/// The Bonsai databases backend
+#[derive(Clone)]
+pub struct BonsaiDbs<B: BlockT> {
+    pub contract: Arc<BonsaiDb<B>>,
+    pub class: Arc<BonsaiDb<B>>,
+    pub storage: Arc<BonsaiDb<B>>,
+}
+
+
 /// The Madara client database backend
 ///
 /// Contains five distinct databases: `meta`, `mapping`, `messaging`, `da` and `bonsai``.
@@ -111,7 +120,7 @@ pub struct Backend<B: BlockT> {
     messaging: Arc<MessagingDb>,
     sierra_classes: Arc<SierraClassesDb>,
     l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
-    bonsai: Arc<BonsaiDb<B>>,
+    bonsai: BonsaiDbs<B>,
 }
 
 /// Returns the Starknet database directory.
@@ -150,6 +159,24 @@ impl<B: BlockT> Backend<B> {
         let kvdb: Arc<dyn KeyValueDB> = db.0;
         let spdb: Arc<dyn Database<DbHash>> = db.1;
 
+        let bonsai_dbs = BonsaiDbs {
+            contract: Arc::new(BonsaiDb {
+                db: kvdb.clone(),
+                _marker: PhantomData,
+                current_column: TrieColumn::Contract,
+            }),
+            class: Arc::new(BonsaiDb {
+                db: kvdb.clone(),
+                _marker: PhantomData,
+                current_column: TrieColumn::Class,
+            }),
+            storage: Arc::new(BonsaiDb {
+                db: kvdb,
+                _marker: PhantomData,
+                current_column: TrieColumn::Storage,
+            }),
+        };
+
         Ok(Self {
             mapping: Arc::new(MappingDb::new(spdb.clone(), cache_more_things)),
             meta: Arc::new(MetaDb { db: spdb.clone(), _marker: PhantomData }),
@@ -157,11 +184,7 @@ impl<B: BlockT> Backend<B> {
             messaging: Arc::new(MessagingDb { db: spdb.clone() }),
             sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
             l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
-            bonsai: Arc::new(BonsaiDb {
-                db: kvdb,
-                _marker: PhantomData,
-                current_column: AtomicU32::new(TrieColumn::default().to_index()),
-            }),
+            bonsai: bonsai_dbs
         })
     }
 
@@ -190,9 +213,16 @@ impl<B: BlockT> Backend<B> {
         &self.sierra_classes
     }
 
-    /// Return the bonsai database manager
-    pub fn bonsai(&self) -> &Arc<BonsaiDb<B>> {
-        &self.bonsai
+    pub fn bonsai_contract(&self) -> &Arc<BonsaiDb<B>> {
+        &self.bonsai.contract
+    }
+
+    pub fn bonsai_class(&self) -> &Arc<BonsaiDb<B>> {
+        &self.bonsai.class
+    }
+
+    pub fn bonsai_storage(&self) -> &Arc<BonsaiDb<B>> {
+        &self.bonsai.storage
     }
 
     /// Return l1 handler tx paid fee database manager

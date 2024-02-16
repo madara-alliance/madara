@@ -38,10 +38,6 @@ pub fn update_storage_trie<B: BlockT>(
     let mut bonsai_storage: BonsaiStorage<BasicId, &BonsaiDb<B>, Pedersen> =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    println!("Current column is: {:?}", bonsai_db.get_current_column());
-    bonsai_db.set_current_column(TrieColumn::Storage);
-    println!("Current column is: {:?}", bonsai_db.get_current_column());
-
     for (_contract_address, updates) in &commitment_state_diff.storage_updates {
         for (storage_key, storage_value) in updates {
             let key = BitVec::from_vec(Felt252Wrapper::from(storage_key.0.0).0.to_bytes_be()[..31].to_vec());
@@ -74,8 +70,6 @@ pub fn get_storage_trie_root<B: BlockT>(bonsai_db: &Arc<BonsaiDb<B>>) -> Result<
     let bonsai_db = bonsai_db.as_ref();
     let bonsai_storage: BonsaiStorage<BasicId, &BonsaiDb<B>, Pedersen> =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
-    println!("Current column is: {:?}", bonsai_db.get_current_column());
-    bonsai_db.set_current_column(TrieColumn::Storage);
 
     let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
     Ok(Felt252Wrapper::from(root_hash))
@@ -125,12 +119,9 @@ pub fn update_contract_trie<B: BlockT>(
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
     let bonsai_db = bonsai_db.as_ref();
-
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    println!("Current column is: {:?}", bonsai_db.get_current_column());
-    bonsai_db.set_current_column(TrieColumn::Contract);
     let class_commitment_leaf_hash = calculate_contract_state_leaf_hash::<PedersenHasher>(contract_leaf_params);
     let key = BitVec::from_vec(contract_hash.0.to_bytes_be()[..31].to_vec());
     bonsai_storage
@@ -159,9 +150,6 @@ pub fn get_contract_trie_root<B: BlockT>(bonsai_db: &Arc<BonsaiDb<B>>) -> Result
     let bonsai_db = bonsai_db.as_ref();
     let bonsai_storage: BonsaiStorage<BasicId, &BonsaiDb<B>, Pedersen> =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
-
-    println!("Current column is: {:?}", bonsai_db.get_current_column());
-    bonsai_db.set_current_column(TrieColumn::Contract);
 
     let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
     Ok(Felt252Wrapper::from(root_hash))
