@@ -16,7 +16,7 @@ use starknet_api::state::StorageKey;
 use starknet_api::transaction::Event;
 
 use super::classes::{get_class_trie_root, update_class_trie};
-use super::contracts::{get_contract_trie_root, update_contract_trie, ContractLeafParams};
+use super::contracts::{get_contract_trie_root, update_contract_trie, update_storage_trie, ContractLeafParams};
 use super::events::memory_event_commitment;
 use super::transactions::memory_transaction_commitment;
 
@@ -118,7 +118,7 @@ pub fn update_state_root<B: BlockT>(
     let mut class_trie_root = Felt252Wrapper::default();
 
     for (address, class_hash) in csd.address_to_class_hash.iter() {
-        let storage_root = Felt252Wrapper::default();
+        let storage_root = update_storage_trie(csd, bonsai_db).expect("Failed to update storage trie");
         let nonce = csd.address_to_nonce.get(address).unwrap_or(&Felt252Wrapper::default().into()).clone();
 
         let contract_leaf_params = ContractLeafParams { class_hash: class_hash.clone().into(), storage_root, nonce: nonce.into() };
