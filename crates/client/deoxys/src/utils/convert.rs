@@ -2,7 +2,6 @@
 
 use mp_fee::ResourcePrice;
 use mp_felt::Felt252Wrapper;
-use sp_runtime::traits::Block as BlockT;
 use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
@@ -193,11 +192,9 @@ fn commitments(
     events: &[starknet_api::transaction::Event],
     block_number: u64,
 ) -> (StarkFelt, StarkFelt) {
-    use mp_hashers::pedersen::PedersenHasher;
-
     let chain_id = chain_id();
 
-    let (a, b) = calculate_commitments::<PedersenHasher>(transactions, events, chain_id, block_number);
+    let (a, b) = calculate_commitments(transactions, events, chain_id, block_number);
 
     (a.into(), b.into())
 }

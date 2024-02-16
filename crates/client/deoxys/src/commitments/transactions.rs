@@ -7,6 +7,7 @@ use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mc_db::bonsai_db::BonsaiDb;
 use mc_db::BonsaiDbError;
 use mp_felt::Felt252Wrapper;
+use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::Transaction;
@@ -72,7 +73,7 @@ pub(crate) fn transaction_commitment<B: BlockT>(
     bonsai_storage.commit(zero).expect("Failed to commit to bonsai storage");
 
     for (i, tx) in transactions.iter().enumerate() {
-        let tx_hash = calculate_transaction_hash_with_signature::<H>(tx, chain_id, block_number);
+        let tx_hash = calculate_transaction_hash_with_signature::<PedersenHasher>(tx, chain_id, block_number);
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
         let value = Felt::from(Felt252Wrapper::from(tx_hash));
         bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
@@ -98,7 +99,7 @@ pub(crate) fn memory_transaction_commitment(
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
     for (i, tx) in transactions.iter().enumerate() {
-        let tx_hash = calculate_transaction_hash_with_signature::<H>(tx, chain_id, block_number);
+        let tx_hash = calculate_transaction_hash_with_signature::<PedersenHasher>(tx, chain_id, block_number);
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
         let value = Felt::from(Felt252Wrapper::from(tx_hash));
         bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");

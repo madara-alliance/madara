@@ -7,6 +7,7 @@ use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mc_db::bonsai_db::BonsaiDb;
 use mp_felt::Felt252Wrapper;
+use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::transaction::Event;
@@ -54,14 +55,10 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
 /// # Returns
 ///
 /// The merkle root of the merkle tree built from the events.
-pub(crate) fn event_commitment<B, H>(
+pub(crate) fn event_commitment<B: BlockT>(
     events: &[Event],
     backend: &Arc<BonsaiDb<B>>,
-) -> Result<Felt252Wrapper, anyhow::Error>
-where
-    B: BlockT,
-    H: HasherT,
-{
+) -> Result<Felt252Wrapper, anyhow::Error> {
     if events.len() > 0 {
         let config = BonsaiStorageConfig::default();
         let bonsai_db = backend.as_ref();
@@ -74,7 +71,7 @@ where
         bonsai_storage.commit(zero).expect("Failed to commit to bonsai storage");
 
         for (i, event) in events.iter().enumerate() {
-            let event_hash = calculate_event_hash::<H>(event);
+            let event_hash = calculate_event_hash::<PedersenHasher>(event);
             let key = BitVec::from_vec(i.to_be_bytes().to_vec());
             let value = Felt::from(Felt252Wrapper::from(event_hash));
             bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
@@ -106,15 +103,15 @@ where
 /// # Returns
 ///
 /// The merkle root equivalent of the merkle tree built from the events.
-pub(crate) fn memory_event_commitment<H: HasherT>(events: &[Event]) -> Result<Felt252Wrapper, anyhow::Error> {
+pub(crate) fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, anyhow::Error> {
     if !events.is_empty() {
         let config = BonsaiStorageConfig::default();
-        let mut bonsai_db = HashMapDb::<BasicId>::default();
+        let bonsai_db = HashMapDb::<BasicId>::default();
         let mut bonsai_storage =
             BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
         for (i, event) in events.iter().enumerate() {
-            let event_hash = calculate_event_hash::<H>(event);
+            let event_hash = calculate_event_hash::<PedersenHasher>(event);
             let key = BitVec::from_vec(i.to_be_bytes().to_vec());
             let value = Felt::from(Felt252Wrapper::from(event_hash));
             bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");

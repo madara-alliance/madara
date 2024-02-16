@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use itertools::Itertools;
+use mc_db::bonsai_db::BonsaiDb;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
@@ -25,6 +26,7 @@ use starknet_providers::{Provider, SequencerGatewayProvider};
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinSet;
 
+use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
 use crate::utility::{get_block_hash_by_number, update_highest_block_hash_and_number};
 use crate::CommandSink;
 
@@ -418,15 +420,16 @@ pub fn update_l2(state_update: L2StateUpdate) {
 }
 
 /// Verify the L2 state according to the latest state update
-pub async fn verify_l2(_state_update: StateUpdateWrapper) -> Result<(), String> {
-    // 1. Retrieve state diff
-    // 2. Compute commitments
-    // state_root = state_commitment(csd)
-    // 3. Log latest L2 state verified on L2
-    // println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash,
-    // state_root;
-    // 4. Update hared latest L2 state update verified on L2
-    // update_l2({block_number, block_hash, state_commitment})
+pub fn verify_l2<B: BlockT>(
+    block_number: u64,
+    state_update: StateUpdateWrapper,
+    backend: &Arc<BonsaiDb<B>>,
+) -> Result<(), String> {
+    let csd = build_commitment_state_diff(state_update.clone());
+    let state_root = update_state_root(csd, &backend).expect("Failed to update state root");
+    let block_hash = state_update.block_hash.expect("Block hash not found in state update");
+    update_l2(L2StateUpdate { block_number, global_root: state_root.into(), block_hash: block_hash.into() });
+    println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash, state_root);
     Ok(())
 }
 
