@@ -8,6 +8,8 @@ mod events;
 mod madara_backend_client;
 mod trace_api;
 mod types;
+mod utils;
+
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -64,6 +66,9 @@ use starknet_core::types::{
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::types::RpcEventFilter;
+use crate::utils::{
+    blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
+};
 
 /// A Starknet RPC server for Madara
 pub struct Starknet<A: ChainApi, B: BlockT, BE, G, C, P, H> {
@@ -1509,28 +1514,17 @@ where
             StarknetRpcApiError::InternalServerError
         })?;
 
-        block.transactions().iter().take(tx_index + 1).enumerate().for_each(|(i, tx)| match tx {
-            TransactionMp::Declare(_) => {
-                println!("transaction {i}: declare_tx");
-            }
-            TransactionMp::DeployAccount(_) => {
-                println!("transaction {i}: deploy_account_tx");
-            }
-            TransactionMp::Deploy(_) => {
-                println!("transaction {i}: deploy_tx");
-            }
-            TransactionMp::Invoke(_) => {
-                println!("transaction {i}: invoke_tx");
-            }
-            TransactionMp::L1Handler(_) => {
-                println!("transaction {i}: l1_handler_tx");
-            }
-        });
+        // TODO: remove this line when deploy is supported
+        if let TransactionMp::Deploy(..) = transaction {
+            log::error!("re executing a deploy transaction is not supported yet");
+            return Err(StarknetRpcApiError::InternalServerError.into());
+        }
 
         let transactions = block
             .transactions()
             .iter()
             .take(tx_index + 1)
+            .filter(|tx| matches!(tx, TransactionMp::Invoke(_) | TransactionMp::DeployAccount(_) | TransactionMp::Declare(_) | TransactionMp::L1Handler(_)))// TODO: remove this line when deploy is supported
             .map(|tx| match tx {
                 TransactionMp::Invoke(invoke_tx) => {
                     RpcResult::Ok(UserOrL1HandlerTransaction::User(UserTransaction::Invoke(invoke_tx.clone())))
@@ -1797,110 +1791,4 @@ where
 
 fn h256_to_felt(h256: H256) -> Result<FieldElement, Felt252WrapperError> {
     Felt252Wrapper::try_from(h256).map(|f| f.0)
-}
-
-fn blockifier_to_starknet_rs_ordered_events(
-    ordered_events: &[blockifier::execution::entry_point::OrderedEvent],
-) -> Vec<starknet_core::types::OrderedEvent> {
-    ordered_events
-        .iter()
-        .map(|event| starknet_core::types::OrderedEvent {
-            order: event.order as u64, // Convert usize to u64
-            keys: event.event.keys.iter().map(|key| FieldElement::from_byte_slice_be(key.0.bytes()).unwrap()).collect(),
-            data: event
-                .event
-                .data
-                .0
-                .iter()
-                .map(|data_item| FieldElement::from_byte_slice_be(data_item.bytes()).unwrap())
-                .collect(),
-        })
-        .collect()
-}
-
-fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> ExecutionResources {
-    let vm_ressources = &callinfo.vm_resources;
-
-    let steps = vm_ressources.n_steps as u64;
-    let memory_holes = match vm_ressources.n_memory_holes as u64 {
-        0 => None,
-        n => Some(n),
-    };
-
-    let builtin_insstance = &vm_ressources.builtin_instance_counter;
-
-    let range_check_builtin_applications = *builtin_insstance.get("range_check_builtin").unwrap_or(&0) as u64;
-    let pedersen_builtin_applications = *builtin_insstance.get("pedersen_builtin").unwrap_or(&0) as u64;
-    let poseidon_builtin_applications = *builtin_insstance.get("poseidon_builtin").unwrap_or(&0) as u64;
-    let ec_op_builtin_applications = *builtin_insstance.get("ec_op_builtin").unwrap_or(&0) as u64;
-    let ecdsa_builtin_applications = *builtin_insstance.get("ecdsa_builtin").unwrap_or(&0) as u64;
-    let bitwise_builtin_applications = *builtin_insstance.get("bitwise_builtin").unwrap_or(&0) as u64;
-    let keccak_builtin_applications = *builtin_insstance.get("keccak_builtin").unwrap_or(&0) as u64;
-
-    ExecutionResources {
-        steps,
-        memory_holes,
-        range_check_builtin_applications,
-        pedersen_builtin_applications,
-        poseidon_builtin_applications,
-        ec_op_builtin_applications,
-        ecdsa_builtin_applications,
-        bitwise_builtin_applications,
-        keccak_builtin_applications,
-    }
-}
-
-fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> {
-    let address = call_info.call.storage_address;
-    let events: Vec<_> = call_info
-        .execution
-        .events
-        .iter()
-        .map(|ordered_event| Event {
-            from_address: FieldElement::from_byte_slice_be(address.0.0.bytes()).unwrap(),
-            keys: ordered_event
-                .event
-                .keys
-                .iter()
-                .map(|key| FieldElement::from_byte_slice_be(key.0.bytes()).unwrap())
-                .collect(),
-            data: ordered_event
-                .event
-                .data
-                .0
-                .iter()
-                .map(|data_item| FieldElement::from_byte_slice_be(data_item.bytes()).unwrap())
-                .collect(),
-        })
-        .collect();
-
-    let inner_events: Vec<_> =
-        call_info.inner_calls.iter().flat_map(|inner_call| extract_events_from_call_info(inner_call)).collect();
-
-    events.into_iter().chain(inner_events).collect()
-}
-
-fn extract_messages_from_call_info(call_info: &CallInfo) -> Vec<MsgToL1> {
-    let address = call_info.call.storage_address;
-    let events: Vec<_> = call_info
-        .execution
-        .l2_to_l1_messages
-        .iter()
-        .map(|msg| MsgToL1 {
-            from_address: FieldElement::from_byte_slice_be(address.0.0.bytes()).unwrap(),
-            to_address: FieldElement::from_byte_slice_be(msg.message.to_address.0.to_fixed_bytes().as_slice()).unwrap(),
-            payload: msg
-                .message
-                .payload
-                .0
-                .iter()
-                .map(|data_item| FieldElement::from_byte_slice_be(data_item.bytes()).unwrap())
-                .collect(),
-        })
-        .collect();
-
-    let inner_messages: Vec<_> =
-        call_info.inner_calls.iter().flat_map(|inner_call| extract_messages_from_call_info(inner_call)).collect();
-
-    events.into_iter().chain(inner_messages).collect()
 }
