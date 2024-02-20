@@ -19,8 +19,8 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
-use mc_deoxys::l2::get_config;
 use mc_deoxys::commitments::transactions;
+use mc_deoxys::l2::get_config;
 use mc_deoxys::utility::get_highest_block_hash_and_number;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
@@ -1621,14 +1621,13 @@ where
                 log::error!("No execution info returned for the last transaction");
                 StarknetRpcApiError::InternalServerError
             })?;
-            
 
         // TODO(#1291): compute message hash correctly to L1HandlerTransactionReceipt
         let message_hash: Hash256 = Hash256::from_felt(&FieldElement::default());
 
         let actual_fee = execution_infos.actual_fee.0.into();
 
-        let actual_status = if block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0 {
+        let actual_status = if block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number {
             TransactionFinalityStatus::AcceptedOnL1.into()
         } else {
             TransactionFinalityStatus::AcceptedOnL2.into()
