@@ -22,7 +22,8 @@ lazy_static = "1.4.0"
 reqwest = "0.11"
 serde_json = "1"
 tokio-tungstenite = "0.20.1"
-web3 = "0.19.0"
+ethers = { workspace = true }
+
 
 blockifier = { workspace = true, default-features = false, features = [
   "testing",
@@ -35,6 +36,7 @@ itertools = { workspace = true }
 log = { version = "0.4.14" }
 mockito = { workspace = true }
 rand = { version = "0.8.5" }
+primitive-types = { version = "0.12.2"}
 rodio = { version = "0.17", optional = true }
 serde = { workspace = true, default-features = true }
 tokio = { workspace = true, features = ["macros", "parking_lot", "test-util"] }

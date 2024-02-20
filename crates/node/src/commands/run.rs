@@ -1,9 +1,7 @@
 use std::path::PathBuf;
 use std::result::Result as StdResult;
 
-use clap::ValueHint::FilePath;
 use madara_runtime::SealingMode;
-use mc_settlement::SettlementLayer;
 use reqwest::Url;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use serde::{Deserialize, Serialize};
@@ -129,14 +127,6 @@ pub struct ExtendedRunCmd {
     /// The network type to connect to.
     #[clap(long, short, default_value = "integration")]
     pub network: NetworkType,
-
-    /// Choose a supported settlement layer
-    #[clap(long, ignore_case = true, requires = "settlement_conf")]
-    pub settlement: Option<SettlementLayer>,
-
-    /// Path to a file containing the settlement configuration
-    #[clap(long, value_hint = FilePath, requires = "settlement")]
-    pub settlement_conf: Option<PathBuf>,
 
     /// When enabled, more information about the blocks and their transaction is cached and stored
     /// in the database.
