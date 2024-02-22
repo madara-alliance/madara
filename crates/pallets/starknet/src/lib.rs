@@ -472,7 +472,6 @@ pub mod pallet {
                 CompiledClassHashes::<T>::insert(class_hash, CompiledClassHash(compiled_class_hash.0))
             });
 
-            log::info!("Saving Genesis storage diffs");
             self.storage
                 .iter()
                 .for_each(|(contract_storage_key, value)| StorageView::<T>::insert(contract_storage_key, value));

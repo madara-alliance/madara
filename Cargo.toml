@@ -7,7 +7,6 @@ members = [
   "crates/client/mapping-sync",
   "crates/client/rpc",
   "crates/client/rpc-core",
-  "crates/client/settlement",
   "crates/client/storage",
   "crates/node",
   "crates/pallets/starknet",
@@ -41,7 +40,6 @@ default-members = [
   "crates/client/mapping-sync",
   "crates/client/rpc",
   "crates/client/rpc-core",
-  "crates/client/settlement",
   "crates/client/storage",
   "crates/node",
   "crates/pallets/starknet",
@@ -248,11 +246,9 @@ mp-transactions = { path = "crates/primitives/transactions", default-features = 
 mc-commitment-state-diff = { path = "crates/client/commitment-state-diff" }
 mc-db = { path = "crates/client/db" }
 mc-genesis-data-provider = { path = "crates/client/genesis-data-provider" }
-mc-l1-messages = { path = "crates/client/l1-messages" }
 mc-mapping-sync = { path = "crates/client/mapping-sync" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-rpc-core = { path = "crates/client/rpc-core" }
-mc-settlement = { path = "crates/client/settlement" }
 mc-storage = { path = "crates/client/storage" }
 
 # Madara runtime
@@ -301,8 +297,7 @@ cairo-lang-utils = { git = "https://github.com/keep-starknet-strange/cairo.git",
 ] }
 
 # Ethers: using the same versions as in Anvil
-ethers = { git = "https://github.com/gakonst/ethers-rs", rev = "f0e5b194f09c533feb10d1a686ddb9e5946ec107" }
-ethers-solc = { git = "https://github.com/gakonst/ethers-rs", rev = "f0e5b194f09c533feb10d1a686ddb9e5946ec107" }
+ethers = { git = "https://github.com/gakonst/ethers-rs"}
 
 # Zaun
 starknet-core-contract-client = { git = "https://github.com/keep-starknet-strange/zaun" }

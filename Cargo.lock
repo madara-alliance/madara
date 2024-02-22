@@ -1347,7 +1347,7 @@ source = "git+https://github.com/keep-starknet-strange/cairo.git?branch=no_std-s
 dependencies = [
  "cairo-lang-utils",
  "const-fnv1a-hash",
- "convert_case 0.6.0",
+ "convert_case",
  "derivative",
  "itertools 0.10.5",
  "lalrpop",
@@ -1468,7 +1468,7 @@ dependencies = [
  "cairo-lang-sierra-to-casm",
  "cairo-lang-syntax",
  "cairo-lang-utils",
- "convert_case 0.6.0",
+ "convert_case",
  "genco",
  "indent",
  "indoc",
@@ -2024,12 +2024,6 @@ checksum = "cd7e35aee659887cbfb97aaf227ac12cad1a9d7c71e55ff3376839ed4e282d08"
 
 [[package]]
 name = "convert_case"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
-
-[[package]]
-name = "convert_case"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec182b0ca2f35d8fc196cf3404988fd8b8c739a4d270ff118a398feb0cbec1ca"
@@ -2518,10 +2512,8 @@ dependencies = [
  "mc-db",
  "mc-deoxys",
  "mc-genesis-data-provider",
- "mc-l1-messages",
  "mc-mapping-sync",
  "mc-rpc",
- "mc-settlement",
  "mc-storage",
  "mockito",
  "mp-block",
@@ -2642,10 +2634,8 @@ version = "0.99.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fb810d30a7c1953f91334de7244731fc3f3c10d7fe163338a35b9f640960321"
 dependencies = [
- "convert_case 0.4.0",
  "proc-macro2",
  "quote",
- "rustc_version",
  "syn 1.0.109",
 ]
 
@@ -3091,8 +3081,8 @@ dependencies = [
 
 [[package]]
 name = "ethers"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.13"
+source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e935edf1343ec8"
 dependencies = [
  "ethers-addressbook",
  "ethers-contract",
@@ -3106,8 +3096,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-addressbook"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.13"
+source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e935edf1343ec8"
 dependencies = [
  "ethers-core",
  "once_cell",
@@ -3117,8 +3107,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-contract"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.13"
+source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e935edf1343ec8"
 dependencies = [
  "const-hex",
  "ethers-contract-abigen",
@@ -3135,8 +3125,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-contract-abigen"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.13"
+source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e935edf1343ec8"
 dependencies = [
  "Inflector",
  "const-hex",
@@ -3158,8 +3148,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-contract-derive"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.13"
+source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e935edf1343ec8"
 dependencies = [
  "Inflector",
  "const-hex",
@@ -3173,8 +3163,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-core"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.13"
+source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e935edf1343ec8"
 dependencies = [
  "arrayvec 0.7.4",
  "bytes",
@@ -3202,8 +3192,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-etherscan"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.13"
+source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e935edf1343ec8"
 dependencies = [
  "chrono",
  "ethers-core",
@@ -3217,8 +3207,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-middleware"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.13"
+source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e935edf1343ec8"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -3243,8 +3233,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-providers"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.13"
+source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e935edf1343ec8"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -3279,8 +3269,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-signers"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.13"
+source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e935edf1343ec8"
 dependencies = [
  "async-trait",
  "coins-bip32",
@@ -3297,8 +3287,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-solc"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.13"
+source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e935edf1343ec8"
 dependencies = [
  "cfg-if",
  "const-hex",
@@ -4237,30 +4227,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "headers"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06683b93020a07e3dbcf5f8c0f6d40080d725bea7936fc01ad345c01b97dc270"
-dependencies = [
- "base64 0.21.5",
- "bytes",
- "headers-core",
- "http",
- "httpdate",
- "mime",
- "sha1",
-]
-
-[[package]]
-name = "headers-core"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7f66481bfee273957b1f20485a4ff3362987f85b2c236580d81b4eb7a326429"
-dependencies = [
- "http",
-]
-
-[[package]]
 name = "heck"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4519,16 +4485,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "418a0a6fab821475f634efe3ccc45c013f742efe03d853e8d3355d5cb850ecf8"
 dependencies = [
  "matches",
- "unicode-bidi",
- "unicode-normalization",
-]
-
-[[package]]
-name = "idna"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d20d6b07bfbc108882d88ed8e37d39636dcc260e15e30c45e6ba089610b917c"
-dependencies = [
  "unicode-bidi",
  "unicode-normalization",
 ]
@@ -4852,21 +4808,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cee9c64da59eae3b50095c18d3e74f8b73c0b86d2792824ff01bbce68ba229ca"
 dependencies = [
  "wasm-bindgen",
-]
-
-[[package]]
-name = "jsonrpc-core"
-version = "18.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14f7f76aef2d054868398427f6c54943cf3d1caa9a7ec7d0c38d69df97a965eb"
-dependencies = [
- "futures",
- "futures-executor",
- "futures-util",
- "log",
- "serde",
- "serde_derive",
- "serde_json",
 ]
 
 [[package]]
@@ -6007,6 +5948,7 @@ dependencies = [
  "blockifier",
  "bonsai-trie",
  "env_logger",
+ "ethers",
  "futures",
  "hex",
  "indexmap 2.0.0-pre",
@@ -6028,6 +5970,7 @@ dependencies = [
  "mp-storage",
  "mp-transactions",
  "parity-scale-codec",
+ "primitive-types",
  "rand 0.8.5",
  "reqwest",
  "rodio",
@@ -6047,7 +5990,6 @@ dependencies = [
  "tokio-tungstenite",
  "url",
  "validator",
- "web3",
 ]
 
 [[package]]
@@ -6062,30 +6004,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
-]
-
-[[package]]
-name = "mc-l1-messages"
-version = "0.1.0"
-dependencies = [
- "ethers",
- "log",
- "mc-db",
- "mp-felt",
- "mp-transactions",
- "pallet-starknet-runtime-api",
- "rustc-hex",
- "sc-client-api",
- "sc-transaction-pool-api",
- "serde",
- "serde_json",
- "sp-api",
- "sp-core",
- "sp-runtime",
- "starknet-core-contract-client",
- "starknet_api",
- "thiserror",
- "url",
 ]
 
 [[package]]
@@ -6197,42 +6115,6 @@ dependencies = [
  "starknet-providers",
  "starknet_api",
  "thiserror",
-]
-
-[[package]]
-name = "mc-settlement"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "clap",
- "ethers",
- "futures",
- "futures-timer",
- "log",
- "mc-db",
- "mp-block",
- "mp-digest-log",
- "mp-felt",
- "mp-hashers",
- "mp-messages",
- "mp-snos-output",
- "mp-transactions",
- "pallet-starknet-runtime-api",
- "rustc-hex",
- "sc-client-api",
- "serde",
- "serde_json",
- "sp-api",
- "sp-arithmetic",
- "sp-blockchain",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "starknet-core-contract-client",
- "starknet-crypto 0.6.1 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
- "starknet_api",
- "thiserror",
- "url",
 ]
 
 [[package]]
@@ -10108,16 +9990,7 @@ version = "0.24.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1629c9c557ef9b293568b338dddfc8208c98a18c59d722a9d53f859d9c9b62"
 dependencies = [
- "secp256k1-sys 0.6.1",
-]
-
-[[package]]
-name = "secp256k1"
-version = "0.27.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25996b82292a7a57ed3508f052cfff8640d38d32018784acd714758b43da9c8f"
-dependencies = [
- "secp256k1-sys 0.8.1",
+ "secp256k1-sys",
 ]
 
 [[package]]
@@ -10125,15 +9998,6 @@ name = "secp256k1-sys"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83080e2c2fc1006e625be82e5d1eb6a43b7fd9578b617fcc55814daf286bba4b"
-dependencies = [
- "cc",
-]
-
-[[package]]
-name = "secp256k1-sys"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70a129b9e9efbfb223753b9163c4ab3b13cff7fd9c7f010fbac25ab4099fa07e"
 dependencies = [
  "cc",
 ]
@@ -10743,7 +10607,7 @@ dependencies = [
  "regex",
  "scale-info",
  "schnorrkel",
- "secp256k1 0.24.3",
+ "secp256k1",
  "secrecy",
  "serde",
  "sp-core-hashing",
@@ -10850,7 +10714,7 @@ dependencies = [
  "log",
  "parity-scale-codec",
  "rustversion",
- "secp256k1 0.24.3",
+ "secp256k1",
  "sp-core",
  "sp-externalities",
  "sp-keystore",
@@ -11304,18 +11168,6 @@ dependencies = [
  "sha3",
  "starknet-crypto 0.6.1 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
  "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
-]
-
-[[package]]
-name = "starknet-core-contract-client"
-version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/zaun#9fe421790165166b714c4ef95c79ad49a959a05a"
-dependencies = [
- "async-trait",
- "ethers",
- "log",
- "num-traits 0.2.17",
- "thiserror",
 ]
 
 [[package]]
@@ -13135,54 +12987,6 @@ checksum = "50c24a44ec86bb68fbecd1b3efed7e85ea5621b39b35ef2766b66cd984f8010f"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "web3"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5388522c899d1e1c96a4c307e3797e0f697ba7c77dd8e0e625ecba9dd0342937"
-dependencies = [
- "arrayvec 0.7.4",
- "base64 0.21.5",
- "bytes",
- "derive_more",
- "ethabi",
- "ethereum-types",
- "futures",
- "futures-timer",
- "headers",
- "hex",
- "idna 0.4.0",
- "jsonrpc-core",
- "log",
- "once_cell",
- "parking_lot 0.12.1",
- "pin-project",
- "reqwest",
- "rlp",
- "secp256k1 0.27.0",
- "serde",
- "serde_json",
- "soketto",
- "tiny-keccak",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "url",
- "web3-async-native-tls",
-]
-
-[[package]]
-name = "web3-async-native-tls"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f6d8d1636b2627fe63518d5a9b38a569405d9c9bc665c43c9c341de57227ebb"
-dependencies = [
- "native-tls",
- "thiserror",
- "tokio",
- "url",
 ]
 
 [[package]]

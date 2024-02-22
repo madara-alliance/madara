@@ -15,6 +15,7 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
+use mc_deoxys::l2::get_config;
 use mc_deoxys::utility::get_highest_block_hash_and_number;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
@@ -891,7 +892,7 @@ where
         let block_hash = starknet_block.header().hash::<H>();
 
         let actual_status = if starknet_block.header().block_number
-            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0
+            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
             BlockStatus::AcceptedOnL1.into()
         } else {
@@ -993,12 +994,9 @@ where
     /// defined by the Starknet protocol, indicating the particular network.
     fn chain_id(&self) -> RpcResult<Felt> {
         let best_block_hash = self.client.info().best_hash;
-        let chain_id = self.client.runtime_api().chain_id(best_block_hash).map_err(|e| {
-            error!("Failed to fetch chain_id with best_block_hash: {best_block_hash}, error: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
+        let chain_id = get_config().chain_id;
 
-        Ok(Felt(chain_id.0))
+        Ok(Felt(chain_id))
     }
 
     /// Estimate the fee associated with transaction
@@ -1181,7 +1179,7 @@ where
         let starknet_version = starknet_block.header().protocol_version;
 
         let actual_status = if starknet_block.header().block_number
-            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0
+            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
             BlockStatus::AcceptedOnL1.into()
         } else {
@@ -1304,13 +1302,6 @@ where
     /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
     /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
     async fn get_events(&self, filter: EventFilterWithPage) -> RpcResult<EventsPage> {
-        let continuation_token = match filter.result_page_request.continuation_token {
-            Some(token) => types::ContinuationToken::parse(token).map_err(|e| {
-                error!("Failed to parse continuation token: {:?}", e);
-                StarknetRpcApiError::InvalidContinuationToken
-            })?,
-            None => types::ContinuationToken::default(),
-        };
         let from_address = filter.event_filter.address.map(Felt252Wrapper::from);
         let keys = filter.event_filter.keys.unwrap_or_default();
         let chunk_size = filter.result_page_request.chunk_size;
@@ -1342,6 +1333,14 @@ where
                 error!("'{e}'");
                 StarknetRpcApiError::BlockNotFound
             })?;
+
+        let continuation_token = match filter.result_page_request.continuation_token {
+            Some(token) => types::ContinuationToken::parse(token).map_err(|e| {
+                error!("Failed to parse continuation token: {:?}", e);
+                StarknetRpcApiError::InvalidContinuationToken
+            })?,
+            None => types::ContinuationToken { block_n: from_block.into(), event_n: 0 },
+        };
 
         // Verify that the requested range is valid
         if from_block > to_block {
@@ -1541,7 +1540,7 @@ where
         let actual_fee = FieldElement::ZERO;
 
         let actual_status = if starknet_block.header().block_number
-            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number.0
+            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
             TransactionFinalityStatus::AcceptedOnL1.into()
         } else {
