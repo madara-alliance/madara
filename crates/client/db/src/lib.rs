@@ -57,7 +57,7 @@ pub(crate) mod columns {
     // ===== /!\ ===================================================================================
     // MUST BE INCREMENTED WHEN A NEW COLUMN IN ADDED
     // ===== /!\ ===================================================================================
-    pub const NUM_COLUMNS: u32 = 12;
+    pub const NUM_COLUMNS: u32 = 18;
 
     pub const META: u32 = 0;
     pub const BLOCK_MAPPING: u32 = 1;
@@ -80,14 +80,24 @@ pub(crate) mod columns {
     /// This column stores the fee paid on l1 for L1Handler transactions
     pub const L1_HANDLER_PAID_FEE: u32 = 8;
 
-    // This column contains the bonsai trie for Contract commitments
-    pub const BONSAI_CONTRACTS: u32 = 9;
+    /// The bonsai columns are triplicated since we need to set a column for
+    ///
+    /// const TRIE_LOG_CF: &str = "trie_log";
+    /// const TRIE_CF: &str = "trie";
+    /// const FLAT_CF: &str = "flat";
+    /// as defined in https://github.com/keep-starknet-strange/bonsai-trie/blob/oss/src/databases/rocks_db.rs
+    /// 
+    /// For each tries CONTRACTS, CLASSES and STORAGE
+    pub const TRIE_BONSAI_CONTRACTS: u32 = 9;
+    pub const FLAT_BONSAI_CONTRACTS: u32 = 10;
+    pub const LOG_BONSAI_CONTRACTS: u32 = 11;
+    pub const TRIE_BONSAI_CLASSES: u32 = 12;
+    pub const FLAT_BONSAI_CLASSES: u32 = 13;
+    pub const LOG_BONSAI_CLASSES: u32 = 14;
+    pub const TRIE_BONSAI_STORAGE: u32 = 15;
+    pub const FLAT_BONSAI_STORAGE: u32 = 16;
+    pub const LOG_BONSAI_STORAGE: u32 = 17;
 
-    // This column contains the bonsai trie for Class commitments
-    pub const BONSAI_CLASSES: u32 = 10;
-
-    // This column contains the bonsai trie for Storage commitments
-    pub const BONSAI_STORAGE: u32 = 11;
 }
 
 pub mod static_keys {
@@ -103,7 +113,6 @@ pub struct BonsaiDbs<B: BlockT> {
     pub class: Arc<BonsaiDb<B>>,
     pub storage: Arc<BonsaiDb<B>>,
 }
-
 
 /// The Madara client database backend
 ///
@@ -165,16 +174,8 @@ impl<B: BlockT> Backend<B> {
                 _marker: PhantomData,
                 current_column: TrieColumn::Contract,
             }),
-            class: Arc::new(BonsaiDb {
-                db: kvdb.clone(),
-                _marker: PhantomData,
-                current_column: TrieColumn::Class,
-            }),
-            storage: Arc::new(BonsaiDb {
-                db: kvdb,
-                _marker: PhantomData,
-                current_column: TrieColumn::Storage,
-            }),
+            class: Arc::new(BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class }),
+            storage: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData, current_column: TrieColumn::Storage }),
         };
 
         Ok(Self {
@@ -184,7 +185,7 @@ impl<B: BlockT> Backend<B> {
             messaging: Arc::new(MessagingDb { db: spdb.clone() }),
             sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
             l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
-            bonsai: bonsai_dbs
+            bonsai: bonsai_dbs,
         })
     }
 

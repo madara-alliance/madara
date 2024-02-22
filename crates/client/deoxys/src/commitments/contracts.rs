@@ -91,12 +91,11 @@ pub fn calculate_contract_state_leaf_hash<H: HasherT>(contract_leaf_params: Cont
     // Define the constant for the contract state hash version
     const CONTRACT_STATE_HASH_VERSION: Felt252Wrapper = Felt252Wrapper::ZERO;
 
-    let contract_state_hash = H::compute_hash_on_elements(&[
-        contract_leaf_params.class_hash.0,
-        contract_leaf_params.storage_root.0,
-        contract_leaf_params.nonce.0,
-        CONTRACT_STATE_HASH_VERSION.0,
-    ]);
+    // First hash: Combine class_hash and storage_root.
+    let contract_state_hash =
+        H::compute_hash_on_elements(&[contract_leaf_params.class_hash.0, contract_leaf_params.storage_root.0]);
+    let contract_state_hash = H::compute_hash_on_elements(&[contract_state_hash, contract_leaf_params.nonce.0]);
+    let contract_state_hash = H::compute_hash_on_elements(&[contract_state_hash, CONTRACT_STATE_HASH_VERSION.0]);
 
     contract_state_hash.into()
 }

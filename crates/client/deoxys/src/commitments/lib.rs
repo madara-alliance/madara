@@ -64,7 +64,12 @@ pub fn build_commitment_state_diff(state_update_wrapper: StateUpdateWrapper) -> 
 
     for deployed_contract in state_update_wrapper.state_diff.deployed_contracts.iter() {
         let address = ContractAddress::from(deployed_contract.address.clone());
-        let class_hash = ClassHash::from(deployed_contract.class_hash.clone());
+        let class_hash = if address == ContractAddress::from(Felt252Wrapper::ONE) {
+            // System contracts doesnt have class hashes
+            ClassHash::from(Felt252Wrapper::ZERO)
+        } else {
+            ClassHash::from(deployed_contract.class_hash.clone())
+        };
         commitment_state_diff.address_to_class_hash.insert(address, class_hash);
     }
 
@@ -115,6 +120,8 @@ pub fn calculate_state_root<H: HasherT>(
 where
     H: HasherT,
 {
+    println!("classes_trie_root: {:?}", classes_trie_root);
+    println!("contracts_trie_root: {:?}", contracts_trie_root);
     let starknet_state_prefix = Felt252Wrapper::try_from("STARKNET_STATE_V0".as_bytes()).unwrap();
 
     let state_commitment_hash =
@@ -145,7 +152,8 @@ pub fn update_state_root<B: BlockT>(
     let mut class_trie_root = Felt252Wrapper::default();
 
     for (address, class_hash) in csd.address_to_class_hash.iter() {
-        let storage_root = update_storage_trie(csd.clone(), &bonsai_dbs.storage).expect("Failed to update storage trie");
+        let storage_root =
+            update_storage_trie(csd.clone(), &bonsai_dbs.storage).expect("Failed to update storage trie");
         let nonce = csd.address_to_nonce.get(address).unwrap_or(&Felt252Wrapper::default().into()).clone();
 
         let contract_leaf_params =
@@ -155,7 +163,8 @@ pub fn update_state_root<B: BlockT>(
     }
 
     for (class_hash, compiled_class_hash) in csd.class_hash_to_compiled_class_hash.iter() {
-        class_trie_root = update_class_trie(class_hash.clone().into(), compiled_class_hash.clone().into(), &bonsai_dbs.class)?;
+        class_trie_root =
+            update_class_trie(class_hash.clone().into(), compiled_class_hash.clone().into(), &bonsai_dbs.class)?;
     }
 
     let state_root = calculate_state_root::<PoseidonHasher>(contract_trie_root, class_trie_root);
