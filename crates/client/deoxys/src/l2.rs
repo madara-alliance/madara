@@ -220,10 +220,8 @@ async fn fetch_block<B: BlockT>(
     let block =
         client.get_block(BlockId::Number(block_number)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    block_sender
-        .send(crate::convert::block(&block, backend))
-        .await
-        .map_err(|e| format!("failed to dispatch block: {e}"))?;
+    let block_conv = crate::convert::block(block, backend).await;
+    block_sender.send(block_conv).await.map_err(|e| format!("failed to dispatch block: {e}"))?;
 
     Ok(())
 }

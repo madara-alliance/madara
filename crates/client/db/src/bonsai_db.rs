@@ -9,6 +9,7 @@ use sp_runtime::traits::Block as BlockT;
 use crate::error::BonsaiDbError;
 
 /// Represents a Bonsai database instance parameterized by a block type.
+#[derive(Clone)]
 pub struct BonsaiDb<B: BlockT> {
     /// Database interface for key-value operations.
     pub(crate) db: Arc<dyn KeyValueDB>,
@@ -16,7 +17,7 @@ pub struct BonsaiDb<B: BlockT> {
     pub(crate) _marker: PhantomData<B>,
 }
 
-impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
+impl<B: BlockT> BonsaiDatabase for BonsaiDb<B> {
     type Batch = DBTransaction;
     type DatabaseError = BonsaiDbError;
 
@@ -174,7 +175,7 @@ impl BonsaiDatabase for TransactionWrapper {
 }
 
 /// This implementation is a stub to mute any error but is is currently not used.
-impl<B: BlockT, ID: Id> BonsaiPersistentDatabase<ID> for &BonsaiDb<B> {
+impl<B: BlockT, ID: Id> BonsaiPersistentDatabase<ID> for BonsaiDb<B> {
     type Transaction = TransactionWrapper;
     type DatabaseError = BonsaiDbError;
 
