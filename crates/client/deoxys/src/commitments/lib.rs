@@ -5,6 +5,7 @@ use mp_hashers::HasherT;
 use mp_transactions::Transaction;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::transaction::Event;
+use tokio::join;
 
 use super::events::event_commitment;
 use super::transactions::transaction_commitment;
@@ -27,14 +28,15 @@ pub async fn calculate_commitments<B: BlockT, H: HasherT>(
 ) -> (Felt252Wrapper, Felt252Wrapper) {
     let bonsai = backend.bonsai();
 
-    let commitment_tx = transaction_commitment::<B, H>(transactions, chain_id, block_number, Arc::clone(bonsai))
-        .await
-        .expect("Failed to calculate transaction commitment");
+    let (commitment_tx, commitment_event) = join!(
+        transaction_commitment::<B, H>(transactions, chain_id, block_number, bonsai),
+        event_commitment::<B, H>(events, bonsai)
+    );
 
-    let commitment_event =
-        event_commitment::<B, H>(events, Arc::clone(bonsai)).await.expect("Failed to calculate event commitment");
-
-    (commitment_tx, commitment_event)
+    (
+        commitment_tx.expect("Failed to calculate transaction commitment"),
+        commitment_event.expect("Failed to calculate event commitment"),
+    )
 }
 
 // /// Calculate the transaction commitment, the event commitment and the event count.

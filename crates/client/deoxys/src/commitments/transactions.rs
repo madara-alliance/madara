@@ -12,7 +12,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
-use tokio::task::{spawn_blocking, JoinSet};
+use tokio::task::JoinSet;
 
 /// Compute the combined hash of the transaction hash and the signature.
 ///
@@ -58,45 +58,49 @@ pub(crate) async fn transaction_commitment<B, H>(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
-    backend: Arc<BonsaiDb<B>>,
+    backend: &Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, String>
 where
     B: BlockT,
     H: HasherT,
 {
     let config = BonsaiStorageConfig::default();
-    let mut bonsai_storage = BonsaiStorage::<_, _, Pedersen>::new(backend.as_ref().clone(), config)
-        .expect("Failed to create bonsai storage");
+    let mut bonsai_storage =
+        BonsaiStorage::<_, _, Pedersen>::new(backend.as_ref(), config).expect("Failed to create bonsai storage");
 
     let mut id_builder = BasicIdBuilder::new();
 
     let zero = id_builder.new_id();
     bonsai_storage.commit(zero).expect("Failed to commit to bonsai storage");
 
+    // transaction hashes are calculated in parallel
     let mut set = JoinSet::new();
     for (i, tx) in transactions.iter().cloned().enumerate() {
         let arc_tx = Arc::new(tx);
         set.spawn(async move { (i, calculate_transaction_hash_with_signature::<H>(&arc_tx, chain_id, block_number)) });
     }
 
+    // resulting hashes are waited for and added to the Bonsai Trie db
     while let Some(res) = set.join_next().await {
         let (i, tx_hash) = res.map_err(|e| format!("Failed to compute transaction hash: {e}"))?;
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
         let value = Felt::from(Felt252Wrapper::from(tx_hash));
-        bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
+        bonsai_storage
+            .insert(key.as_bitslice(), &value)
+            .map_err(|_| format!("Failed to insert into bonsai storage"))?;
     }
 
-    let root_hash = spawn_blocking(move || {
-        let id = id_builder.new_id();
-        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+    // Note that committing changes still has the greatest performance hit
+    // as this is where the root hash is calculated. Due to the Merkle structure
+    // of Bonsai Tries, this results in a trie size that grows very rapidly with
+    // each new insertion. It seems that the only vector of optimization here
+    // would be to optimize the tree traversal and hash computation.
+    let id = id_builder.new_id();
+    bonsai_storage.commit(id).map_err(|_| format!("Failed to commit to bonsai storage"))?;
 
-        let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
-        bonsai_storage.revert_to(zero).unwrap();
-
-        root_hash
-    })
-    .await
-    .unwrap();
+    // restores the Bonsai Trie to it's previous state
+    let root_hash = bonsai_storage.root_hash().map_err(|_| format!("Failed to get root hash"))?;
+    bonsai_storage.revert_to(zero).unwrap();
 
     Ok(Felt252Wrapper::from(root_hash))
 }

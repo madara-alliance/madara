@@ -13,7 +13,7 @@ use starknet_api::transaction::Event;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
-use tokio::task::{spawn_blocking, JoinSet};
+use tokio::task::JoinSet;
 
 /// Calculate the hash of an event.
 ///
@@ -57,7 +57,7 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
 /// The merkle root of the merkle tree built from the events.
 pub(crate) async fn event_commitment<B, H>(
     events: &[Event],
-    backend: Arc<BonsaiDb<B>>,
+    backend: &Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, String>
 where
     B: BlockT,
@@ -68,42 +68,49 @@ where
     }
 
     let config = BonsaiStorageConfig::default();
-    let mut bonsai_storage = BonsaiStorage::<_, _, Pedersen>::new(backend.as_ref().clone(), config)
-        .expect("Failed to create bonsai storage");
+    let mut bonsai_storage =
+        BonsaiStorage::<_, _, Pedersen>::new(backend.as_ref(), config).expect("Failed to create bonsai storage");
 
     let mut id_builder = BasicIdBuilder::new();
 
     let zero = id_builder.new_id();
     bonsai_storage.commit(zero).expect("Failed to commit to bonsai storage");
 
+    // event hashes are calculated in parallel
     let mut set = JoinSet::new();
     for (i, event) in events.iter().cloned().enumerate() {
         let arc_event = Arc::new(event);
         set.spawn(async move { (i, get_hash::<H>(&Arc::clone(&arc_event))) });
     }
 
+    // resulting hashes are waited for and added to the Bonsai Trie db
     while let Some(res) = set.join_next().await {
         let (i, event_hash) = res.map_err(|e| format!("Failed to compute event hash: {e}"))?;
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
         let value = Felt::from(Felt252Wrapper::from(event_hash));
-        bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
+        bonsai_storage
+            .insert(key.as_bitslice(), &value)
+            .map_err(|_| format!("Failed to insert into bonsai storage"))?;
     }
 
-    let root_hash = spawn_blocking(move || {
-        let id = id_builder.new_id();
-        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+    // Note that committing changes still has the greatest performance hit
+    // as this is where the root hash is calculated. Due to the Merkle structure
+    // of Bonsai Tries, this results in a trie size that grows very rapidly with
+    // each new insertion. It seems that the only vector of optimization here
+    // would be to optimize the tree traversal and hash computation.
+    let id = id_builder.new_id();
+    bonsai_storage.commit(id).map_err(|_| format!("Failed to commit to bonsai storage"))?;
 
-        let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
-        bonsai_storage.revert_to(zero).unwrap();
-
-        root_hash
-    })
-    .await
-    .unwrap();
+    // restores the Bonsai Trie to it's previous state
+    let root_hash = bonsai_storage.root_hash().map_err(|_| format!("Failed to get root hash"))?;
+    bonsai_storage.revert_to(zero).unwrap();
 
     Ok(Felt252Wrapper::from(root_hash))
 }
 
+// Event hashes are cached to avoid re-computing hashes for duplicate events.
+// Note that this does not seem to have a huge impact on performance,
+// so might be removed in the future if the memory footprint becomes an issue.
 lazy_static! {
     static ref EVENT_HASHES: SkipMap<Event, FieldElement> = SkipMap::new();
 }

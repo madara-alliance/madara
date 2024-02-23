@@ -199,10 +199,10 @@ async fn commitments<B: BlockT>(
 
     let chain_id = chain_id();
 
-    let (a, b) =
+    let (commitment_tx, commitment_event) =
         calculate_commitments::<B, PedersenHasher>(transactions, events, chain_id, block_number, backend).await;
 
-    (a.into(), b.into())
+    (commitment_tx.into(), commitment_event.into())
 }
 
 fn chain_id() -> mp_felt::Felt252Wrapper {
