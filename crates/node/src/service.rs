@@ -32,7 +32,7 @@ use sc_consensus_grandpa::{GrandpaBlockImport, SharedVoterState};
 use sc_consensus_manual_seal::{ConsensusDataProvider, Error};
 pub use sc_executor::NativeElseWasmExecutor;
 use sc_service::error::Error as ServiceError;
-use sc_service::{Configuration, TaskManager, WarpSyncParams};
+use sc_service::{new_db_backend, Configuration, TaskManager, WarpSyncParams};
 use sc_telemetry::{Telemetry, TelemetryHandle, TelemetryWorker};
 use sc_transaction_pool::FullPool;
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
@@ -45,6 +45,7 @@ use sp_runtime::testing::Digest;
 use sp_runtime::traits::Block as BlockT;
 use sp_runtime::DigestItem;
 
+use crate::genesis_block::MadaraGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
 use crate::starknet::{db_config_dir, MadaraBackend};
 // Our native executor instance.
@@ -86,6 +87,7 @@ pub fn new_partial<BIQ>(
     config: &Configuration,
     build_import_queue: BIQ,
     cache_more_things: bool,
+    genesis_block: mp_block::Block,
 ) -> Result<
     sc_service::PartialComponents<
         FullClient,
@@ -127,12 +129,30 @@ where
 
     let executor = sc_service::new_native_or_wasm_executor(config);
 
-    let (client, backend, keystore_container, task_manager) = sc_service::new_full_parts::<Block, RuntimeApi, _>(
+    let backend = new_db_backend(config.db_config())?;
+
+    let genesis_block_builder = MadaraGenesisBlockBuilder::<Block, _, _>::new(
+        config.chain_spec.as_storage_builder(),
+        true,
+        backend.clone(),
+        executor.clone(),
+        genesis_block,
+    )
+    .unwrap();
+
+    let (client, backend, keystore_container, task_manager) = sc_service::new_full_parts_with_genesis_builder::<
+        Block,
+        RuntimeApi,
+        _,
+        MadaraGenesisBlockBuilder<Block, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
+    >(
         config,
         telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
         executor,
+        backend,
+        genesis_block_builder,
     )?;
-
+    
     let client = Arc::new(client);
 
     let telemetry = telemetry.map(|(worker, telemetry)| {
@@ -257,6 +277,7 @@ pub fn new_full(
     l1_url: Url,
     cache_more_things: bool,
     fetch_config: mc_deoxys::FetchConfig,
+    genesis_block: mp_block::Block,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
@@ -270,7 +291,7 @@ pub fn new_full(
         select_chain,
         transaction_pool,
         other: (block_import, grandpa_link, mut telemetry, madara_backend),
-    } = new_partial(&config, build_import_queue, cache_more_things)?;
+    } = new_partial(&config, build_import_queue, cache_more_things, genesis_block)?;
 
     let mut net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
@@ -732,6 +753,6 @@ type ChainOpsResult =
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things)?;
+        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things, mp_block::Block::default())?;
     Ok((client, backend, import_queue, task_manager, other.3))
 }

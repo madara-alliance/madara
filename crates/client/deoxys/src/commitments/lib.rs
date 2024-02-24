@@ -151,15 +151,15 @@ pub fn update_state_root<B: BlockT>(
     let mut contract_trie_root = Felt252Wrapper::default();
     let mut class_trie_root = Felt252Wrapper::default();
 
-    for (address, class_hash) in csd.address_to_class_hash.iter() {
+    for (contract_address, class_hash) in csd.address_to_class_hash.iter() {
         let storage_root =
-            update_storage_trie(csd.clone(), &bonsai_dbs.storage).expect("Failed to update storage trie");
-        let nonce = csd.address_to_nonce.get(address).unwrap_or(&Felt252Wrapper::default().into()).clone();
+            update_storage_trie(contract_address, csd.clone(), &bonsai_dbs.storage).expect("Failed to update storage trie");
+        let nonce = csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::default().into()).clone();
 
         let contract_leaf_params =
             ContractLeafParams { class_hash: class_hash.clone().into(), storage_root, nonce: nonce.into() };
 
-        contract_trie_root = update_contract_trie(address.clone().into(), contract_leaf_params, &bonsai_dbs.contract)?;
+        contract_trie_root = update_contract_trie(contract_address.clone().into(), contract_leaf_params, &bonsai_dbs.contract)?;
     }
 
     for (class_hash, compiled_class_hash) in csd.class_hash_to_compiled_class_hash.iter() {

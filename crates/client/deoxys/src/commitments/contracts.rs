@@ -1,15 +1,18 @@
 use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
+use blockifier::execution::contract_address;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
+use ethers::addressbook::Contract;
 use mc_db::bonsai_db::{BonsaiDb, TrieColumn};
 use mc_db::BonsaiDbError;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use sp_runtime::traits::Block as BlockT;
+use starknet_api::api_core::ContractAddress;
 use starknet_types_core::hash::Pedersen;
 
 pub struct ContractLeafParams {
@@ -30,6 +33,7 @@ pub struct ContractLeafParams {
 ///
 /// The storage root hash.
 pub fn update_storage_trie<B: BlockT>(
+    contract_address: &ContractAddress,
     commitment_state_diff: CommitmentStateDiff,
     bonsai_db: &Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
@@ -38,11 +42,10 @@ pub fn update_storage_trie<B: BlockT>(
     let mut bonsai_storage: BonsaiStorage<BasicId, &BonsaiDb<B>, Pedersen> =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    for (_contract_address, updates) in &commitment_state_diff.storage_updates {
+    if let Some(updates) = commitment_state_diff.storage_updates.get(contract_address) {
         for (storage_key, storage_value) in updates {
             let key = BitVec::from_vec(Felt252Wrapper::from(storage_key.0.0).0.to_bytes_be()[..31].to_vec());
             let value = Felt252Wrapper::from(*storage_value);
-
             bonsai_storage.insert(key.as_bitslice(), &value.into()).expect("Failed to insert storage update into trie");
         }
     }
@@ -51,10 +54,11 @@ pub fn update_storage_trie<B: BlockT>(
     let id = id_builder.new_id();
     bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
 
-    // After all updates are inserted, compute the root hash of the trie
     let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
+
     Ok(Felt252Wrapper::from(root_hash))
 }
+
 
 /// Get the storage trie root hash of the actual contract state.
 ///

@@ -88,7 +88,7 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
         value: &[u8],
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        println!("Key and keytype: {:?} {:?}", self.current_column, key_type(key));
+        // println!("Key and keytype: {:?} {:?}", self.current_column, key_type(key));
         let key_type = key_type(key);
         let column = self.current_column.to_index(key_type);
         let key_slice = key.as_slice();

@@ -12,6 +12,7 @@ mod configs;
 mod constants;
 mod rpc;
 mod starknet;
+mod genesis_block;
 
 fn main() -> sc_cli::Result<()> {
     command::run()
