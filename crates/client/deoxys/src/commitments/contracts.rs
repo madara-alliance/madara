@@ -59,7 +59,6 @@ pub fn update_storage_trie<B: BlockT>(
     Ok(Felt252Wrapper::from(root_hash))
 }
 
-
 /// Get the storage trie root hash of the actual contract state.
 ///
 /// # Arguments

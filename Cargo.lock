@@ -5962,7 +5962,6 @@ dependencies = [
  "mc-storage",
  "mockito",
  "mp-block",
- "mp-commitments",
  "mp-contract",
  "mp-fee",
  "mp-felt",
@@ -6365,25 +6364,6 @@ version = "0.1.0"
 dependencies = [
  "mp-felt",
  "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
-]
-
-[[package]]
-name = "mp-commitments"
-version = "0.1.0"
-dependencies = [
- "bitvec",
- "derive_more",
- "frame-support",
- "mp-felt",
- "mp-hashers",
- "mp-transactions",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "starknet-core",
- "starknet-crypto 0.6.1 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
- "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
- "starknet_api",
 ]
 
 [[package]]
@@ -7334,7 +7314,6 @@ dependencies = [
  "log",
  "mp-block",
  "mp-chain-id",
- "mp-commitments",
  "mp-contract",
  "mp-digest-log",
  "mp-fee",

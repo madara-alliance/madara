@@ -23,7 +23,7 @@ use starknet_types_core::hash::Poseidon;
 ///
 /// The hash of the class commitment trie leaf.
 pub fn calculate_class_commitment_leaf_hash<H: HasherT>(compiled_class_hash: Felt252Wrapper) -> Felt252Wrapper {
-    let contract_class_hash_version = Felt252Wrapper::try_from("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap(); // Unwrap safu
+    let contract_class_hash_version = Felt252Wrapper::try_from("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap();
 
     let hash = H::compute_hash_on_elements(&[contract_class_hash_version.0, compiled_class_hash.0]);
 

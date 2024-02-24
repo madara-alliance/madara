@@ -86,7 +86,7 @@ pub(crate) mod columns {
     /// const TRIE_CF: &str = "trie";
     /// const FLAT_CF: &str = "flat";
     /// as defined in https://github.com/keep-starknet-strange/bonsai-trie/blob/oss/src/databases/rocks_db.rs
-    /// 
+    ///
     /// For each tries CONTRACTS, CLASSES and STORAGE
     pub const TRIE_BONSAI_CONTRACTS: u32 = 9;
     pub const FLAT_BONSAI_CONTRACTS: u32 = 10;
@@ -97,7 +97,6 @@ pub(crate) mod columns {
     pub const TRIE_BONSAI_STORAGE: u32 = 15;
     pub const FLAT_BONSAI_STORAGE: u32 = 16;
     pub const LOG_BONSAI_STORAGE: u32 = 17;
-
 }
 
 pub mod static_keys {

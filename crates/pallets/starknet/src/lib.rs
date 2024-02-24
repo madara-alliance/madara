@@ -1064,8 +1064,7 @@ impl<T: Config> Pallet<T> {
             let sequencer_address = Self::sequencer_address();
             let block_timestamp = Self::block_timestamp();
             let chain_id = Self::chain_id();
-            let (transaction_commitment, event_commitment) =
-                mp_commitments::calculate_commitments::<T::SystemHash>(&transactions, &events, chain_id, block_number);
+            let (transaction_commitment, event_commitment) = (Felt252Wrapper::default(), Felt252Wrapper::default());
             let protocol_version = T::ProtocolVersion::get();
             let extra_data = None;
             let l1_gas_price = T::L1GasPrice::get();

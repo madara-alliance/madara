@@ -10,9 +10,9 @@ mod command;
 mod commands;
 mod configs;
 mod constants;
+mod genesis_block;
 mod rpc;
 mod starknet;
-mod genesis_block;
 
 fn main() -> sc_cli::Result<()> {
     command::run()

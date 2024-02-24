@@ -152,7 +152,7 @@ where
         backend,
         genesis_block_builder,
     )?;
-    
+
     let client = Arc::new(client);
 
     let telemetry = telemetry.map(|(worker, telemetry)| {

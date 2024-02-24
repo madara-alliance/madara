@@ -291,10 +291,8 @@ async fn fetch_genesis_state_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
     bonsai_dbs: BonsaiDbs<B>,
 ) -> Result<StateUpdate, String> {
-    let state_update = provider
-        .get_state_update(BlockId::Number(0))
-        .await
-        .map_err(|e| format!("failed to get state update: {e}"))?;
+    let state_update =
+        provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
 
     let _ = verify_l2(0, &state_update, bonsai_dbs);
 
