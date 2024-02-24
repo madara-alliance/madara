@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::result::Result as StdResult;
 
 use madara_runtime::SealingMode;
+use mc_deoxys::l2::fetch_genesis_block;
 use reqwest::Url;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use serde::{Deserialize, Serialize};
@@ -169,10 +170,19 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
         let mut fetch_block_config = cli.run.network.block_fetch_config();
+        let genesis_block = fetch_genesis_block(fetch_block_config.clone()).await.unwrap();
         fetch_block_config.sound = cli.run.sound;
 
-        service::new_full(config, sealing, cli.run.base.rpc_port.unwrap(), l1_endpoint, cache, fetch_block_config)
-            .map_err(sc_cli::Error::Service)
+        service::new_full(
+            config,
+            sealing,
+            cli.run.base.rpc_port.unwrap(),
+            l1_endpoint,
+            cache,
+            fetch_block_config,
+            genesis_block,
+        )
+        .map_err(sc_cli::Error::Service)
     })
 }
 

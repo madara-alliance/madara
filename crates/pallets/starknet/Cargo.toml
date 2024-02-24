@@ -16,7 +16,6 @@ version.workspace = true
 # Madara primitives
 mp-block = { workspace = true }
 mp-chain-id = { workspace = true }
-mp-commitments = { workspace = true }
 mp-contract = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-fee = { workspace = true }
