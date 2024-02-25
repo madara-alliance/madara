@@ -5,6 +5,7 @@ use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mc_db::bonsai_db::BonsaiDb;
+use mc_db::BonsaiDbError;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
@@ -14,7 +15,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
-use tokio::task::JoinSet;
+use tokio::task::{spawn_blocking, JoinSet};
 
 /// Compute the combined hash of the transaction hash and the signature.
 ///
@@ -71,6 +72,7 @@ where
 /// # Returns
 ///
 /// The transaction commitment as `Felt252Wrapper`.
+#[deprecated = "use `memory_transaction_commitment` instead"]
 pub fn transaction_commitment<B: BlockT>(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
@@ -78,9 +80,8 @@ pub fn transaction_commitment<B: BlockT>(
     bonsai_db: &Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
-    let bonsai_db = bonsai_db.as_ref();
     let mut bonsai_storage =
-        BonsaiStorage::<_, _, Pedersen>::new(backend.as_ref(), config).expect("Failed to create bonsai storage");
+        BonsaiStorage::<_, _, Pedersen>::new(bonsai_db.as_ref(), config).expect("Failed to create bonsai storage");
 
     let mut id_builder = BasicIdBuilder::new();
 
@@ -115,27 +116,47 @@ pub fn transaction_commitment<B: BlockT>(
 /// # Returns
 ///
 /// The transaction commitment as `Felt252Wrapper`.
-pub fn memory_transaction_commitment(
+pub async fn memory_transaction_commitment(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
-) -> Result<Felt252Wrapper, BonsaiDbError> {
+) -> Result<Felt252Wrapper, String> {
     let config = BonsaiStorageConfig::default();
     let bonsai_db = HashMapDb::<BasicId>::default();
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    for (i, tx) in transactions.iter().enumerate() {
-        let tx_hash = calculate_transaction_hash_with_signature::<PedersenHasher>(tx, chain_id, block_number);
+    // transaction hashes are computed in parallel
+    let mut task_set = JoinSet::new();
+    transactions.iter().cloned().enumerate().for_each(|(i, tx)| {
+        task_set.spawn(async move {
+            (i, calculate_transaction_hash_with_signature::<PedersenHasher>(&tx, chain_id, block_number))
+        });
+    });
+
+    // once transaction hashes have finished computing, they are inserted into the local Bonsai db
+    while let Some(res) = task_set.join_next().await {
+        let (i, tx_hash) = res.map_err(|e| format!("Failed to retrieve transaction hash: {e}"))?;
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
         let value = Felt::from(Felt252Wrapper::from(tx_hash));
         bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
     }
 
+    // Note that committing changes still has the greatest performance hit
+    // as this is where the root hash is calculated. Due to the Merkle structure
+    // of Bonsai Tries, this results in a trie size that grows very rapidly with
+    // each new insertion. It seems that the only vector of optimization here
+    // would be to optimize the tree traversal and hash computation.
     let mut id_builder = BasicIdBuilder::new();
     let id = id_builder.new_id();
-    bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
 
-    let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
+    // run in a blocking-safe thread to avoid starving the thread pool
+    let root_hash = spawn_blocking(move || {
+        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+        bonsai_storage.root_hash().expect("Failed to get root hash")
+    })
+    .await
+    .map_err(|e| format!("Failed to computed transaction root hash: {e}"))?;
+
     Ok(Felt252Wrapper::from(root_hash))
 }

@@ -30,7 +30,6 @@ mod meta_db;
 
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 
 use bonsai_db::{BonsaiDb, TrieColumn};

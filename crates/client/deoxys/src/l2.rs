@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use itertools::Itertools;
-use mc_db::bonsai_db::BonsaiDb;
 use mc_db::BonsaiDbs;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
@@ -231,7 +230,7 @@ async fn fetch_block(
     let block =
         client.get_block(BlockId::Number(block_number)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    let block_conv = crate::convert::block(block, backend).await;
+    let block_conv = crate::convert::block(block).await;
     block_sender.send(block_conv).await.map_err(|e| format!("failed to dispatch block: {e}"))?;
 
     Ok(())
@@ -241,7 +240,7 @@ pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block,
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    Ok(crate::convert::block(&block))
+    Ok(crate::convert::block(block).await)
 }
 
 async fn fetch_state_and_class_update<B: BlockT>(
@@ -283,7 +282,7 @@ async fn fetch_state_update<B: BlockT>(
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    let _ = verify_l2(block_number, &state_update, bonsai_dbs);
+    verify_l2(block_number, &state_update, bonsai_dbs)?;
 
     Ok(state_update)
 }
@@ -295,7 +294,7 @@ async fn fetch_genesis_state_update<B: BlockT>(
     let state_update =
         provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
 
-    let _ = verify_l2(0, &state_update, bonsai_dbs);
+    verify_l2(0, &state_update, bonsai_dbs)?;
 
     Ok(state_update)
 }
@@ -455,7 +454,7 @@ pub fn verify_l2<B: BlockT>(
 ) -> Result<(), String> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
-    let state_root = update_state_root(csd, bonsai_dbs).expect("Failed to update state root");
+    let state_root = update_state_root(csd, bonsai_dbs).map_err(|e| format!("Failed to update state root: {e}"))?;
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
     update_l2(L2StateUpdate {

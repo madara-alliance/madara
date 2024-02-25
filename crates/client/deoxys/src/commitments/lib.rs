@@ -14,6 +14,7 @@ use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonc
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::Event;
+use tokio::join;
 
 use super::classes::{get_class_trie_root, update_class_trie};
 use super::contracts::{get_contract_trie_root, update_contract_trie, update_storage_trie, ContractLeafParams};
@@ -32,16 +33,18 @@ use super::transactions::memory_transaction_commitment;
 /// # Returns
 ///
 /// The transaction and the event commitment as `Felt252Wrapper`.
-pub fn calculate_commitments(
+pub async fn calculate_commitments(
     transactions: &[Transaction],
     events: &[Event],
     chain_id: Felt252Wrapper,
     block_number: u64,
 ) -> (Felt252Wrapper, Felt252Wrapper) {
+    let (commitment_tx, commitment_event) =
+        join!(memory_transaction_commitment(transactions, chain_id, block_number), memory_event_commitment(events));
+
     (
-        memory_transaction_commitment(transactions, chain_id, block_number)
-            .expect("Failed to calculate transaction commitment"),
-        memory_event_commitment(events).expect("Failed to calculate event commitment"),
+        commitment_tx.expect("Failed to calculate transaction commitment"),
+        commitment_event.expect("Failed to calculate event commitment"),
     )
 }
 
@@ -120,8 +123,6 @@ pub fn calculate_state_root<H: HasherT>(
 where
     H: HasherT,
 {
-    println!("classes_trie_root: {:?}", classes_trie_root);
-    println!("contracts_trie_root: {:?}", contracts_trie_root);
     let starknet_state_prefix = Felt252Wrapper::try_from("STARKNET_STATE_V0".as_bytes()).unwrap();
 
     let state_commitment_hash =
