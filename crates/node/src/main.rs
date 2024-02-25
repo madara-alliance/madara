@@ -10,6 +10,7 @@ mod command;
 mod commands;
 mod configs;
 mod constants;
+mod genesis_block;
 mod rpc;
 mod starknet;
 

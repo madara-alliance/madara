@@ -1,23 +1,21 @@
 //! Converts types from [`starknet_providers`] to madara's expected types.
 
-use std::sync::Arc;
-
 use mp_fee::ResourcePrice;
 use mp_felt::Felt252Wrapper;
-use sp_runtime::traits::Block as BlockT;
 use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 
 use crate::commitments::lib::calculate_commitments;
 
-pub async fn block<B: BlockT>(block: p::Block, backend: Arc<mc_db::Backend<B>>) -> mp_block::Block {
-    let count_tx = block.transactions.len() as u128;
-
-    let mp_txs = conv_txs(block.transactions);
-    let mp_block_number = block.block_number.expect("no block number provided");
-    let mp_events = events(&block.transaction_receipts);
-    let (transaction_commitment, event_commitment) = commitments(&mp_txs, &mp_events, mp_block_number, backend).await;
+pub fn block(block: &p::Block) -> mp_block::Block {
+    let transactions = transactions(&block.transactions);
+    let events = events(&block.transaction_receipts);
+    let block_number = block.block_number.expect("no block number provided");
+    let sequencer_address = block.sequencer_address.map_or(contract_address(FieldElement::ZERO), contract_address);
+    let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number);
+    let l1_gas_price = resource_price(block.eth_l1_gas_price);
+    let protocol_version = starknet_version(&block.starknet_version);
 
     let header = mp_block::Header {
         parent_block_hash: felt(block.parent_block_hash),
@@ -189,18 +187,14 @@ fn event(event: &p::Event) -> starknet_api::transaction::Event {
     }
 }
 
-async fn commitments<B: BlockT>(
+fn commitments(
     transactions: &[mp_transactions::Transaction],
     events: &[starknet_api::transaction::Event],
     block_number: u64,
-    backend: Arc<mc_db::Backend<B>>,
 ) -> (StarkFelt, StarkFelt) {
-    use mp_hashers::pedersen::PedersenHasher;
-
     let chain_id = chain_id();
 
-    let (commitment_tx, commitment_event) =
-        calculate_commitments::<B, PedersenHasher>(transactions, events, chain_id, block_number, backend).await;
+    let (a, b) = calculate_commitments(transactions, events, chain_id, block_number);
 
     (commitment_tx.into(), commitment_event.into())
 }

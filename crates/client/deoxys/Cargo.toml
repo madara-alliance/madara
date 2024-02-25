@@ -64,7 +64,6 @@ mc-commitment-state-diff = { workspace = true }
 mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
 mp-block = { workspace = true }
-mp-commitments = { workspace = true }
 mp-contract = { workspace = true }
 mp-fee = { workspace = true }
 mp-felt = { workspace = true }

@@ -13,7 +13,6 @@ members = [
   "crates/pallets/starknet/runtime_api/",
   "crates/primitives/block",
   "crates/primitives/chain-id",
-  "crates/primitives/commitments",
   "crates/primitives/contract",
   "crates/primitives/convert",
   "crates/primitives/digest-log",
@@ -46,7 +45,6 @@ default-members = [
   "crates/pallets/starknet/runtime_api/",
   "crates/primitives/block",
   "crates/primitives/chain-id",
-  "crates/primitives/commitments",
   "crates/primitives/digest-log",
   "crates/primitives/fee",
   "crates/primitives/felt",
@@ -225,7 +223,6 @@ pallet-starknet-runtime-api = { path = "crates/pallets/starknet/runtime_api", de
 # Madara primtitives
 mp-block = { path = "crates/primitives/block", default-features = false }
 mp-chain-id = { path = "crates/primitives/chain-id", default-features = false }
-mp-commitments = { path = "crates/primitives/commitments", default-features = false }
 mp-contract = { path = "crates/primitives/contract", default-features = false }
 mp-convert = { path = "crates/primitives/convert", default-features = false }
 mp-digest-log = { path = "crates/primitives/digest-log", default-features = false }
@@ -271,7 +268,7 @@ starknet-crypto = { git = "https://github.com/jbcaron/starknet-rs.git", branch =
 starknet-ff = { git = "https://github.com/jbcaron/starknet-rs.git", branch = "classes", default-features = false }
 starknet-providers = { git = "https://github.com/jbcaron/starknet-rs.git", branch = "classes", default-features = false }
 starknet-signers = { git = "https://github.com/jbcaron/starknet-rs.git", branch = "classes", default-features = false }
-starknet-types-core = { version = "0.0.7", default-features = false }
+starknet-types-core = { git = "https://github.com/starknet-io/types-rs", branch = "main", default-features = false }
 
 blockifier = { git = "https://github.com/massalabs/blockifier", branch = "no_std-support-7578442-std", default-features = false, features = [
   "parity-scale-codec",

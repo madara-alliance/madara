@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use bitvec::vec::BitVec;
-use bonsai_trie::id::BasicIdBuilder;
+use bonsai_trie::databases::HashMapDb;
+use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use crossbeam_skiplist::SkipMap;
 use lazy_static::lazy_static;
 use mc_db::bonsai_db::BonsaiDb;
 use mp_felt::Felt252Wrapper;
+use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::transaction::Event;
@@ -15,10 +17,15 @@ use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 use tokio::task::JoinSet;
 
-/// Calculate the hash of an event.
+/// Calculate the hash of the event.
 ///
-/// See the [documentation](https://docs.starknet.io/documentation/architecture_and_concepts/Events/starknet-events/#event_hash)
-/// for details.
+/// # Arguments
+///
+/// * `event` - The event we want to calculate the hash of.
+///
+/// # Returns
+///
+/// The event hash as `FieldElement`.
 pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
     let keys_hash = H::compute_hash_on_elements(
         &event
@@ -41,57 +48,38 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
     H::compute_hash_on_elements(&[from_address, keys_hash, data_hash])
 }
 
-/// Calculate event commitment hash value.
-///
-/// The event commitment is the root of the Patricia Merkle tree with height 64
-/// constructed by adding the event hash
-/// (see https://docs.starknet.io/documentation/architecture_and_concepts/Events/starknet-events/#event_hash)
-/// to the tree and computing the root hash.
+/// Calculate the event commitment in storage using BonsaiDb (which is less efficient for this
+/// usecase).
 ///
 /// # Arguments
 ///
-/// * `events` - The events to calculate the commitment from.
+/// * `events` - The events of the block
+/// * `bonsai_db` - The bonsai database responsible to compute the tries
 ///
 /// # Returns
 ///
-/// The merkle root of the merkle tree built from the events.
-pub(crate) async fn event_commitment<B, H>(
+/// The event commitment as `Felt252Wrapper`.
+pub fn event_commitment<B: BlockT>(
     events: &[Event],
-    backend: &Arc<BonsaiDb<B>>,
-) -> Result<Felt252Wrapper, String>
-where
-    B: BlockT,
-    H: HasherT,
-{
-    if events.is_empty() {
-        return Ok(Felt252Wrapper::ZERO);
-    }
-
-    let config = BonsaiStorageConfig::default();
-    let mut bonsai_storage =
-        BonsaiStorage::<_, _, Pedersen>::new(backend.as_ref(), config).expect("Failed to create bonsai storage");
+    bonsai_db: &Arc<BonsaiDb<B>>,
+) -> Result<Felt252Wrapper, anyhow::Error> {
+    if events.len() > 0 {
+        let config = BonsaiStorageConfig::default();
+        let bonsai_db = bonsai_db.as_ref();
+        let mut bonsai_storage =
+            BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
     let mut id_builder = BasicIdBuilder::new();
 
     let zero = id_builder.new_id();
     bonsai_storage.commit(zero).expect("Failed to commit to bonsai storage");
 
-    // event hashes are calculated in parallel
-    let mut set = JoinSet::new();
-    for (i, event) in events.iter().cloned().enumerate() {
-        let arc_event = Arc::new(event);
-        set.spawn(async move { (i, get_hash::<H>(&Arc::clone(&arc_event))) });
-    }
-
-    // resulting hashes are waited for and added to the Bonsai Trie db
-    while let Some(res) = set.join_next().await {
-        let (i, event_hash) = res.map_err(|e| format!("Failed to compute event hash: {e}"))?;
-        let key = BitVec::from_vec(i.to_be_bytes().to_vec());
-        let value = Felt::from(Felt252Wrapper::from(event_hash));
-        bonsai_storage
-            .insert(key.as_bitslice(), &value)
-            .map_err(|_| format!("Failed to insert into bonsai storage"))?;
-    }
+        for (i, event) in events.iter().enumerate() {
+            let event_hash = calculate_event_hash::<PedersenHasher>(event);
+            let key = BitVec::from_vec(i.to_be_bytes().to_vec());
+            let value = Felt::from(Felt252Wrapper::from(event_hash));
+            bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
+        }
 
     // Note that committing changes still has the greatest performance hit
     // as this is where the root hash is calculated. Due to the Merkle structure
@@ -125,12 +113,37 @@ where
     }
 }
 
-fn store_hash<H>(event: &Event) -> FieldElement
-where
-    H: HasherT,
-{
-    let event_hash = calculate_event_hash::<H>(event);
-    EVENT_HASHES.insert(event.clone(), event_hash);
+/// Calculate the event commitment in memory using HashMapDb (which is more efficient for this
+/// usecase).
+///
+/// # Arguments
+///
+/// * `events` - The events of the block
+///
+/// # Returns
+///
+/// The event commitment as `Felt252Wrapper`.
+pub fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, anyhow::Error> {
+    if !events.is_empty() {
+        let config = BonsaiStorageConfig::default();
+        let bonsai_db = HashMapDb::<BasicId>::default();
+        let mut bonsai_storage =
+            BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    event_hash
+        for (i, event) in events.iter().enumerate() {
+            let event_hash = calculate_event_hash::<PedersenHasher>(event);
+            let key = BitVec::from_vec(i.to_be_bytes().to_vec());
+            let value = Felt::from(Felt252Wrapper::from(event_hash));
+            bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
+        }
+
+        let mut id_builder = BasicIdBuilder::new();
+        let id = id_builder.new_id();
+        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+
+        let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
+        Ok(Felt252Wrapper::from(root_hash))
+    } else {
+        Ok(Felt252Wrapper::ZERO)
+    }
 }

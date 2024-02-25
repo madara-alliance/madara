@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use itertools::Itertools;
+use mc_db::bonsai_db::BonsaiDb;
+use mc_db::BonsaiDbs;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
@@ -25,6 +27,7 @@ use starknet_providers::{Provider, SequencerGatewayProvider};
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinSet;
 
+use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
 use crate::utility::{get_block_hash_by_number, update_highest_block_hash_and_number};
 use crate::CommandSink;
 
@@ -142,12 +145,19 @@ pub async fn sync<B: BlockT>(
     update_config(&config);
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
-
+    let bonsai_dbs = BonsaiDbs {
+        contract: Arc::clone(backend.bonsai_contract()),
+        class: Arc::clone(backend.bonsai_class()),
+        storage: Arc::clone(backend.bonsai_storage()),
+    };
     let mut current_block_number = start_at;
     let mut last_block_hash = None;
     let mut got_block = false;
     let mut got_state_update = false;
     let mut last_update_highest_block = tokio::time::Instant::now() - Duration::from_secs(20);
+    if current_block_number == 0 {
+        let _ = fetch_genesis_state_update(&client, bonsai_dbs.clone()).await;
+    }
     loop {
         if last_update_highest_block.elapsed() > Duration::from_secs(20) {
             last_update_highest_block = tokio::time::Instant::now();
@@ -157,7 +167,7 @@ pub async fn sync<B: BlockT>(
         }
         let (block, state_update) = match (got_block, got_state_update) {
             (false, false) => {
-                let block = fetch_block(&client, block_sender, current_block_number, backend.clone());
+                let block = fetch_block(&client, block_sender, current_block_number);
                 let state_update = fetch_state_and_class_update(
                     &client,
                     Arc::clone(&overrides),
@@ -165,10 +175,11 @@ pub async fn sync<B: BlockT>(
                     class_sender,
                     current_block_number,
                     rpc_port,
+                    bonsai_dbs.clone(),
                 );
                 tokio::join!(block, state_update)
             }
-            (false, true) => (fetch_block(&client, block_sender, current_block_number, backend.clone()).await, Ok(())),
+            (false, true) => (fetch_block(&client, block_sender, current_block_number).await, Ok(())),
             (true, false) => (
                 Ok(()),
                 fetch_state_and_class_update(
@@ -178,6 +189,7 @@ pub async fn sync<B: BlockT>(
                     class_sender,
                     current_block_number,
                     rpc_port,
+                    bonsai_dbs.clone(),
                 )
                 .await,
             ),
@@ -211,11 +223,10 @@ pub async fn sync<B: BlockT>(
     }
 }
 
-async fn fetch_block<B: BlockT>(
+async fn fetch_block(
     client: &SequencerGatewayProvider,
     block_sender: &Sender<mp_block::Block>,
     block_number: u64,
-    backend: Arc<mc_db::Backend<B>>,
 ) -> Result<(), String> {
     let block =
         client.get_block(BlockId::Number(block_number)).await.map_err(|e| format!("failed to get block: {e}"))?;
@@ -228,20 +239,21 @@ async fn fetch_block<B: BlockT>(
 
 pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block, String> {
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
-    let _block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
+    let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    Ok(mp_block::Block::default())
+    Ok(crate::convert::block(&block))
 }
 
-async fn fetch_state_and_class_update(
+async fn fetch_state_and_class_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     state_update_sender: &Sender<StateUpdateWrapper>,
     class_sender: &Sender<ClassUpdateWrapper>,
     block_number: u64,
     rpc_port: u16,
+    bonsai_dbs: BonsaiDbs<B>,
 ) -> Result<(), String> {
-    let state_update = fetch_state_update(&provider, block_number).await?;
+    let state_update = fetch_state_update(&provider, block_number, bonsai_dbs).await?;
     let class_update = fetch_class_update(&provider, &state_update, overrides, block_number, rpc_port).await?;
 
     // Now send state_update, which moves it. This will be received
@@ -261,13 +273,29 @@ async fn fetch_state_and_class_update(
 }
 
 /// retrieves state update from Starknet sequencer
-async fn fetch_state_update(provider: &SequencerGatewayProvider, block_number: u64) -> Result<StateUpdate, String> {
+async fn fetch_state_update<B: BlockT>(
+    provider: &SequencerGatewayProvider,
+    block_number: u64,
+    bonsai_dbs: BonsaiDbs<B>,
+) -> Result<StateUpdate, String> {
     let state_update = provider
         .get_state_update(BlockId::Number(block_number))
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    // Verify state update via verify_l2(starket_state_update).await
+    let _ = verify_l2(block_number, &state_update, bonsai_dbs);
+
+    Ok(state_update)
+}
+
+async fn fetch_genesis_state_update<B: BlockT>(
+    provider: &SequencerGatewayProvider,
+    bonsai_dbs: BonsaiDbs<B>,
+) -> Result<StateUpdate, String> {
+    let state_update =
+        provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
+
+    let _ = verify_l2(0, &state_update, bonsai_dbs);
 
     Ok(state_update)
 }
@@ -419,16 +447,24 @@ pub fn update_l2(state_update: L2StateUpdate) {
     }
 }
 
-/// Verify the L2 state according to the latest state update
-pub async fn verify_l2(_state_update: StateUpdateWrapper) -> Result<(), String> {
-    // 1. Retrieve state diff
-    // 2. Compute commitments
-    // state_root = state_commitment(csd)
-    // 3. Log latest L2 state verified on L2
-    // println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash,
-    // state_root;
-    // 4. Update hared latest L2 state update verified on L2
-    // update_l2({block_number, block_hash, state_commitment})
+/// Verify and update the L2 state according to the latest state update
+pub fn verify_l2<B: BlockT>(
+    block_number: u64,
+    state_update: &StateUpdate,
+    bonsai_dbs: BonsaiDbs<B>,
+) -> Result<(), String> {
+    let state_update_wrapper = StateUpdateWrapper::from(state_update);
+    let csd = build_commitment_state_diff(state_update_wrapper.clone());
+    let state_root = update_state_root(csd, bonsai_dbs).expect("Failed to update state root");
+    let block_hash = state_update.block_hash.expect("Block hash not found in state update");
+
+    update_l2(L2StateUpdate {
+        block_number,
+        global_root: state_root.into(),
+        block_hash: Felt252Wrapper::from(block_hash).into(),
+    });
+    println!("➡️ block_number {:?}, block_hash {:?},  state_root {:?}", block_number, block_hash, state_root);
+
     Ok(())
 }
 
