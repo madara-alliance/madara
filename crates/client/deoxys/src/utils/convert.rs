@@ -20,7 +20,9 @@ pub async fn block(block: p::Block) -> mp_block::Block {
     let sequencer_address = block.sequencer_address.map_or(contract_address(FieldElement::ZERO), contract_address);
     let transaction_count = transactions.len() as u128;
     let event_count = events.len() as u128;
+
     let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number).await;
+
     let protocol_version = starknet_version(&block.starknet_version);
     let l1_gas_price = resource_price(block.eth_l1_gas_price);
     let extra_data = block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be()));
