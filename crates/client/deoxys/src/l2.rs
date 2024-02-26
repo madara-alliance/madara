@@ -155,7 +155,7 @@ pub async fn sync<B: BlockT>(
     let mut got_block = false;
     let mut got_state_update = false;
     let mut last_update_highest_block = tokio::time::Instant::now() - Duration::from_secs(20);
-    if current_block_number == 0 {
+    if current_block_number <= 1 {
         let _ = fetch_genesis_state_update(&client, bonsai_dbs.clone()).await;
     }
     loop {
@@ -291,6 +291,7 @@ async fn fetch_genesis_state_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
     bonsai_dbs: BonsaiDbs<B>,
 ) -> Result<StateUpdate, String> {
+    println!("Fetching genesis state update");
     let state_update =
         provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
 

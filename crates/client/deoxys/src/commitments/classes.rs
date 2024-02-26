@@ -25,7 +25,7 @@ use starknet_types_core::hash::Poseidon;
 pub fn calculate_class_commitment_leaf_hash<H: HasherT>(compiled_class_hash: Felt252Wrapper) -> Felt252Wrapper {
     let contract_class_hash_version = Felt252Wrapper::try_from("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap();
 
-    let hash = H::compute_hash_on_elements(&[contract_class_hash_version.0, compiled_class_hash.0]);
+    let hash = H::hash_elements(contract_class_hash_version.0, compiled_class_hash.0);
 
     hash.into()
 }
