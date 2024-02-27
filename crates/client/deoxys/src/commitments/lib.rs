@@ -166,6 +166,8 @@ async fn contract_trie_root<B: BlockT>(
     csd: Arc<CommitmentStateDiff>,
     bonsai_dbs: Arc<BonsaiDbs<B>>,
 ) -> anyhow::Result<Felt252Wrapper> {
+    // Risk of starving the thread pool (execution over 1s in some cases), must be run in a
+    // blocking-safe thread. Main bottleneck is still calling `commit` on the Bonsai db.
     let mut task_set = spawn_blocking(move || {
         let mut task_set = JoinSet::new();
 
@@ -185,6 +187,8 @@ async fn contract_trie_root<B: BlockT>(
     })
     .await?;
 
+    // The order in which contract trie roots are waited for is not important since each call to
+    // `update_contract_trie` in `contract_trie_root` mutates the Deoxys db.
     let mut contract_trie_root = Felt252Wrapper::ZERO;
     while let Some(res) = task_set.join_next().await {
         contract_trie_root = match res? {

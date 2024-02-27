@@ -456,6 +456,7 @@ pub async fn verify_l2<B: BlockT>(
 
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
 
+    // Main l2 sync bottleneck HERE!
     let state_root =
         update_state_root(csd, bonsai_dbs).await.map_err(|e| format!("Failed to update state root: {e}"))?;
 
