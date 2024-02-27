@@ -451,7 +451,7 @@ pub fn new_full(
     task_manager.spawn_essential_handle().spawn(
         "starknet-sync-worker",
         Some("madara"),
-        starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend),
+        starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend, Arc::clone(&client)),
     );
 
     task_manager.spawn_essential_handle().spawn(

@@ -59,6 +59,7 @@ sc-executor = { workspace = true }
 sc-service = { workspace = true }
 sp-core = { workspace = true, features = ["std"] }
 sp-runtime = { workspace = true }
+sp-blockchain = { workspace = true, default-features = true }
 
 mc-commitment-state-diff = { workspace = true }
 mc-rpc-core = { workspace = true }
