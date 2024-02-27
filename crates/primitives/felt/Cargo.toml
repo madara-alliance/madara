@@ -15,8 +15,8 @@ cairo-vm = { workspace = true }
 sp-core = { workspace = true }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true }
-starknet_api = { workspace = true }
 starknet-types-core = { workspace = true }
+starknet_api = { workspace = true }
 thiserror-no-std = { workspace = true }
 
 # Optional

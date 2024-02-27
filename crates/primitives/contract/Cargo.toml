@@ -7,15 +7,15 @@ name = "mp-contract"
 repository.workspace = true
 version.workspace = true
 
-    [package.metadata.docs.rs]
-    targets = ["x86_64-unknown-linux-gnu"]
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 blockifier = { workspace = true }
 mp-fee = { workspace = true, features = [
-    "parity-scale-codec",
-    "scale-info",
-    "serde",
+  "parity-scale-codec",
+  "scale-info",
+  "serde",
 ] }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
@@ -30,38 +30,38 @@ starknet_api = { workspace = true }
 anyhow = { workspace = true, optional = true }
 mp-convert = { workspace = true, optional = true }
 parity-scale-codec = { workspace = true, features = [
-    "derive",
+  "derive",
 ], optional = true }
 scale-info = { workspace = true, features = ["derive"], optional = true }
 
 [features]
 default = ["std"]
 parity-scale-codec = [
-    "blockifier/parity-scale-codec",
-    "dep:parity-scale-codec",
-    "mp-fee/parity-scale-codec",
-    "mp-felt/parity-scale-codec",
-    "mp-transactions/parity-scale-codec",
-    "starknet_api/parity-scale-codec",
+  "blockifier/parity-scale-codec",
+  "dep:parity-scale-codec",
+  "mp-fee/parity-scale-codec",
+  "mp-felt/parity-scale-codec",
+  "mp-transactions/parity-scale-codec",
+  "starknet_api/parity-scale-codec",
 ]
 scale-info = [
-    "blockifier/scale-info",
-    "dep:scale-info",
-    "mp-felt/scale-info",
-    "starknet_api/scale-info",
+  "blockifier/scale-info",
+  "dep:scale-info",
+  "mp-felt/scale-info",
+  "starknet_api/scale-info",
 ]
 std = [
-    "blockifier/std",
-    "mp-fee/std",
-    "mp-felt/std",
-    "mp-hashers/std",
-    "mp-transactions/std",
-    "serde/std",
-    "sp-core/std",
-    "starknet_api/std",
-    # Optionals
-    "anyhow/std",
-    "mp-convert/std",
-    "parity-scale-codec?/std",
-    "scale-info?/std",
+  "blockifier/std",
+  "mp-fee/std",
+  "mp-felt/std",
+  "mp-hashers/std",
+  "mp-transactions/std",
+  "serde/std",
+  "sp-core/std",
+  "starknet_api/std",
+  # Optionals
+  "anyhow/std",
+  "mp-convert/std",
+  "parity-scale-codec?/std",
+  "scale-info?/std",
 ]
