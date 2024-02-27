@@ -2,6 +2,7 @@ git # Madara Changelog
 
 ## Next release
 
+- feat(rpc): tx_receipt, re-execute tx
 - perf(verify_l2): parallelized l2 state root update
 - perf(state_commitment): parallelized state commitment hash computations
 - fix(L1): fix l1 thread with battle tested implementation + removed l1-l2
