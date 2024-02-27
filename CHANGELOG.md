@@ -2,10 +2,13 @@ git # Madara Changelog
 
 ## Next release
 
+- perf(verify_l2): parallelized l2 state root update
+- perf(state_commitment): parallelized state commitment hash computations
 - fix(L1): fix l1 thread with battle tested implementation + removed l1-l2
 - fix: update and store ConfigFetch in l2 sync(), chainId rpc call
 - fix: get_events paging with continuation_token
-- fux(getStorageAt): #28
+- fix(class): #125
+- fix(getStorageAt): #28
 - fix(genesis): #107
 - fix(class): #32 #33 #34
 - fix(class): #116

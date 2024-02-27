@@ -8,12 +8,58 @@ use sp_runtime::traits::Block as BlockT;
 
 use crate::error::BonsaiDbError;
 
+#[derive(Debug)]
+pub enum TrieColumn {
+    Class,
+    Contract,
+    Storage,
+}
+
+#[derive(Debug)]
+pub enum KeyType {
+    Trie,
+    Flat,
+    TrieLog,
+}
+
+impl TrieColumn {
+    pub fn to_index(&self, key_type: KeyType) -> u32 {
+        match self {
+            TrieColumn::Class => match key_type {
+                KeyType::Trie => crate::columns::TRIE_BONSAI_CLASSES,
+                KeyType::Flat => crate::columns::FLAT_BONSAI_CLASSES,
+                KeyType::TrieLog => crate::columns::LOG_BONSAI_CLASSES,
+            },
+            TrieColumn::Contract => match key_type {
+                KeyType::Trie => crate::columns::TRIE_BONSAI_CONTRACTS,
+                KeyType::Flat => crate::columns::FLAT_BONSAI_CONTRACTS,
+                KeyType::TrieLog => crate::columns::LOG_BONSAI_CONTRACTS,
+            },
+            TrieColumn::Storage => match key_type {
+                KeyType::Trie => crate::columns::TRIE_BONSAI_STORAGE,
+                KeyType::Flat => crate::columns::FLAT_BONSAI_STORAGE,
+                KeyType::TrieLog => crate::columns::LOG_BONSAI_STORAGE,
+            },
+        }
+    }
+}
+
 /// Represents a Bonsai database instance parameterized by a block type.
 pub struct BonsaiDb<B: BlockT> {
     /// Database interface for key-value operations.
     pub(crate) db: Arc<dyn KeyValueDB>,
     /// PhantomData to mark the block type used.
     pub(crate) _marker: PhantomData<B>,
+    /// Set current column to give trie context
+    pub(crate) current_column: TrieColumn,
+}
+
+pub fn key_type(key: &DatabaseKey) -> KeyType {
+    match key {
+        DatabaseKey::Trie(_) => return KeyType::Trie,
+        DatabaseKey::Flat(_) => return KeyType::Flat,
+        DatabaseKey::TrieLog(_) => return KeyType::TrieLog,
+    }
 }
 
 impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
@@ -27,7 +73,8 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
 
     /// Retrieves a value by its database key.
     fn get(&self, key: &DatabaseKey) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        let column = crate::columns::BONSAI;
+        let key_type = key_type(key);
+        let column = self.current_column.to_index(key_type);
         let key_slice = key.as_slice();
         self.db.get(column, key_slice).map_err(Into::into)
     }
@@ -39,7 +86,9 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
         value: &[u8],
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        let column = crate::columns::BONSAI;
+        // println!("Key and keytype: {:?} {:?}", self.current_column, key_type(key));
+        let key_type = key_type(key);
+        let column = self.current_column.to_index(key_type);
         let key_slice = key.as_slice();
         let previous_value = self.db.get(column, key_slice)?;
 
@@ -56,14 +105,16 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
 
     /// Checks if a key exists in the database.
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
-        let column = crate::columns::BONSAI;
+        let key_type = key_type(key);
+        let column = self.current_column.to_index(key_type);
         let key_slice = key.as_slice();
         self.db.has_key(column, key_slice).map_err(Into::into)
     }
 
     /// Retrieves all key-value pairs starting with a given prefix.
     fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Self::DatabaseError> {
-        let column = crate::columns::BONSAI;
+        let key_type = key_type(prefix);
+        let column = self.current_column.to_index(key_type);
         let prefix_slice = prefix.as_slice();
         let mut result = Vec::new();
 
@@ -81,7 +132,8 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
         key: &DatabaseKey,
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        let column = crate::columns::BONSAI;
+        let key_type = key_type(key);
+        let column = self.current_column.to_index(key_type);
         let key_slice = key.as_slice();
         let previous_value = self.db.get(column, key_slice)?;
 
@@ -98,7 +150,8 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
 
     /// Removes all key-value pairs starting with a given prefix.
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
-        let column = crate::columns::BONSAI;
+        let key_type = key_type(prefix);
+        let column = self.current_column.to_index(key_type);
         let prefix_slice = prefix.as_slice();
         let mut transaction = self.create_batch();
         transaction.delete_prefix(column, prefix_slice);

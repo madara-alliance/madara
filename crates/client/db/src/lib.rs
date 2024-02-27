@@ -32,7 +32,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use bonsai_db::BonsaiDb;
+use bonsai_db::{BonsaiDb, TrieColumn};
 use da_db::DaDb;
 use l1_handler_tx_fee::L1HandlerTxFeeDb;
 use mapping_db::MappingDb;
@@ -56,7 +56,7 @@ pub(crate) mod columns {
     // ===== /!\ ===================================================================================
     // MUST BE INCREMENTED WHEN A NEW COLUMN IN ADDED
     // ===== /!\ ===================================================================================
-    pub const NUM_COLUMNS: u32 = 10;
+    pub const NUM_COLUMNS: u32 = 18;
 
     pub const META: u32 = 0;
     pub const BLOCK_MAPPING: u32 = 1;
@@ -79,14 +79,37 @@ pub(crate) mod columns {
     /// This column stores the fee paid on l1 for L1Handler transactions
     pub const L1_HANDLER_PAID_FEE: u32 = 8;
 
-    /// This column contains the bonsai trie keys
-    pub const BONSAI: u32 = 9;
+    /// The bonsai columns are triplicated since we need to set a column for
+    ///
+    /// const TRIE_LOG_CF: &str = "trie_log";
+    /// const TRIE_CF: &str = "trie";
+    /// const FLAT_CF: &str = "flat";
+    /// as defined in https://github.com/keep-starknet-strange/bonsai-trie/blob/oss/src/databases/rocks_db.rs
+    ///
+    /// For each tries CONTRACTS, CLASSES and STORAGE
+    pub const TRIE_BONSAI_CONTRACTS: u32 = 9;
+    pub const FLAT_BONSAI_CONTRACTS: u32 = 10;
+    pub const LOG_BONSAI_CONTRACTS: u32 = 11;
+    pub const TRIE_BONSAI_CLASSES: u32 = 12;
+    pub const FLAT_BONSAI_CLASSES: u32 = 13;
+    pub const LOG_BONSAI_CLASSES: u32 = 14;
+    pub const TRIE_BONSAI_STORAGE: u32 = 15;
+    pub const FLAT_BONSAI_STORAGE: u32 = 16;
+    pub const LOG_BONSAI_STORAGE: u32 = 17;
 }
 
 pub mod static_keys {
     pub const CURRENT_SYNCING_TIPS: &[u8] = b"CURRENT_SYNCING_TIPS";
     pub const LAST_PROVED_BLOCK: &[u8] = b"LAST_PROVED_BLOCK";
     pub const LAST_SYNCED_L1_EVENT_BLOCK: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
+}
+
+/// The Bonsai databases backend
+#[derive(Clone)]
+pub struct BonsaiDbs<B: BlockT> {
+    pub contract: Arc<BonsaiDb<B>>,
+    pub class: Arc<BonsaiDb<B>>,
+    pub storage: Arc<BonsaiDb<B>>,
 }
 
 /// The Madara client database backend
@@ -104,7 +127,7 @@ pub struct Backend<B: BlockT> {
     messaging: Arc<MessagingDb>,
     sierra_classes: Arc<SierraClassesDb>,
     l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
-    bonsai: Arc<BonsaiDb<B>>,
+    bonsai: BonsaiDbs<B>,
 }
 
 /// Returns the Starknet database directory.
@@ -143,6 +166,16 @@ impl<B: BlockT> Backend<B> {
         let kvdb: Arc<dyn KeyValueDB> = db.0;
         let spdb: Arc<dyn Database<DbHash>> = db.1;
 
+        let bonsai_dbs = BonsaiDbs {
+            contract: Arc::new(BonsaiDb {
+                db: kvdb.clone(),
+                _marker: PhantomData,
+                current_column: TrieColumn::Contract,
+            }),
+            class: Arc::new(BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class }),
+            storage: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData, current_column: TrieColumn::Storage }),
+        };
+
         Ok(Self {
             mapping: Arc::new(MappingDb::new(spdb.clone(), cache_more_things)),
             meta: Arc::new(MetaDb { db: spdb.clone(), _marker: PhantomData }),
@@ -150,7 +183,7 @@ impl<B: BlockT> Backend<B> {
             messaging: Arc::new(MessagingDb { db: spdb.clone() }),
             sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
             l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
-            bonsai: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData }),
+            bonsai: bonsai_dbs,
         })
     }
 
@@ -179,9 +212,16 @@ impl<B: BlockT> Backend<B> {
         &self.sierra_classes
     }
 
-    /// Return the bonsai database manager
-    pub fn bonsai(&self) -> &Arc<BonsaiDb<B>> {
-        &self.bonsai
+    pub fn bonsai_contract(&self) -> &Arc<BonsaiDb<B>> {
+        &self.bonsai.contract
+    }
+
+    pub fn bonsai_class(&self) -> &Arc<BonsaiDb<B>> {
+        &self.bonsai.class
+    }
+
+    pub fn bonsai_storage(&self) -> &Arc<BonsaiDb<B>> {
+        &self.bonsai.storage
     }
 
     /// Return l1 handler tx paid fee database manager
