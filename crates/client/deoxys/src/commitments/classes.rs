@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bitvec::vec::BitVec;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use mc_db::bonsai_db::{BonsaiDb, TrieColumn};
+use mc_db::bonsai_db::BonsaiDb;
 use mc_db::BonsaiDbError;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::poseidon::PoseidonHasher;

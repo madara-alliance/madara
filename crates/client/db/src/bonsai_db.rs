@@ -1,6 +1,4 @@
-use std::default;
 use std::marker::PhantomData;
-use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 
 use bonsai_trie::id::Id;
@@ -58,9 +56,9 @@ pub struct BonsaiDb<B: BlockT> {
 
 pub fn key_type(key: &DatabaseKey) -> KeyType {
     match key {
-        DatabaseKey::Trie(bytes) => return KeyType::Trie,
-        DatabaseKey::Flat(bytes) => return KeyType::Flat,
-        DatabaseKey::TrieLog(bytes) => return KeyType::TrieLog,
+        DatabaseKey::Trie(_) => return KeyType::Trie,
+        DatabaseKey::Flat(_) => return KeyType::Flat,
+        DatabaseKey::TrieLog(_) => return KeyType::TrieLog,
     }
 }
 
