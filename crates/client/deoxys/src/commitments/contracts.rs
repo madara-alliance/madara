@@ -96,8 +96,7 @@ pub fn calculate_contract_state_leaf_hash<H: HasherT>(contract_leaf_params: Cont
     // Define the constant for the contract state hash version
     const CONTRACT_STATE_HASH_VERSION: Felt252Wrapper = Felt252Wrapper::ZERO;
 
-    let contract_state_hash =
-        H::hash_elements(contract_leaf_params.class_hash.0, contract_leaf_params.storage_root.0);
+    let contract_state_hash = H::hash_elements(contract_leaf_params.class_hash.0, contract_leaf_params.storage_root.0);
     let contract_state_hash = H::hash_elements(contract_state_hash, contract_leaf_params.nonce.0);
     let contract_state_hash = H::hash_elements(contract_state_hash, CONTRACT_STATE_HASH_VERSION.0);
 
@@ -162,37 +161,28 @@ pub fn get_contract_trie_root<B: BlockT>(bonsai_db: &Arc<BonsaiDb<B>>) -> Result
 mod tests {
     use mp_felt::Felt252Wrapper;
     use mp_hashers::pedersen::PedersenHasher;
-    use mp_hashers::HasherT;
 
     use super::calculate_contract_state_leaf_hash;
 
     #[test]
-    fn hash() {
+    fn test_contract_leaf_hash() {
         let contract_leaf_params = super::ContractLeafParams {
-            class_hash: Felt252Wrapper::from_hex_be("0x2ff4903e17f87b298ded00c44bfeb22874c5f73be2ced8f1d9d9556fb509779").unwrap(),
-            storage_root: Felt252Wrapper::from_hex_be("0x4fb440e8ca9b74fc12a22ebffe0bc0658206337897226117b985434c239c028").unwrap(),
-            nonce: Felt252Wrapper::ZERO
+            class_hash: Felt252Wrapper::from_hex_be(
+                "0x2ff4903e17f87b298ded00c44bfeb22874c5f73be2ced8f1d9d9556fb509779",
+            )
+            .unwrap(),
+            storage_root: Felt252Wrapper::from_hex_be(
+                "0x4fb440e8ca9b74fc12a22ebffe0bc0658206337897226117b985434c239c028",
+            )
+            .unwrap(),
+            nonce: Felt252Wrapper::ZERO,
         };
 
-        let expected = Felt252Wrapper::from_hex_be("0x7161b591c893836263a64f2a7e0d829c92f6956148a60ce5e99a3f55c7973f3").unwrap();
+        let expected =
+            Felt252Wrapper::from_hex_be("0x7161b591c893836263a64f2a7e0d829c92f6956148a60ce5e99a3f55c7973f3").unwrap();
 
         let result = calculate_contract_state_leaf_hash::<PedersenHasher>(contract_leaf_params);
 
         assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn hash_2() {
-        let contract_leaf_params = super::ContractLeafParams {
-            class_hash: Felt252Wrapper::from_hex_be("0x2ff4903e17f87b298ded00c44bfeb22874c5f73be2ced8f1d9d9556fb509779").unwrap(),
-            storage_root: Felt252Wrapper::from_hex_be("0x4fb440e8ca9b74fc12a22ebffe0bc0658206337897226117b985434c239c028").unwrap(),
-            nonce: Felt252Wrapper::ZERO
-        };
-
-        let expected = Felt252Wrapper::from_hex_be("0x7161b591c893836263a64f2a7e0d829c92f6956148a60ce5e99a3f55c7973f3").unwrap();
-
-        let result = PedersenHasher::compute_hash_on_elements(&[contract_leaf_params.class_hash.0, contract_leaf_params.storage_root.0, contract_leaf_params.nonce.0]);
-
-        assert_eq!(result, expected.0);
     }
 }

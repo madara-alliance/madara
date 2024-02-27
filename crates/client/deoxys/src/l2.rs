@@ -287,7 +287,7 @@ async fn fetch_state_update<B: BlockT>(
     Ok(state_update)
 }
 
-async fn fetch_genesis_state_update<B: BlockT>(
+pub async fn fetch_genesis_state_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
     bonsai_dbs: BonsaiDbs<B>,
 ) -> Result<StateUpdate, String> {

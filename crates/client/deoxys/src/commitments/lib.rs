@@ -10,9 +10,9 @@ use mp_hashers::poseidon::PoseidonHasher;
 use mp_hashers::HasherT;
 use mp_transactions::Transaction;
 use sp_runtime::traits::Block as BlockT;
-use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
+use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
-use starknet_api::state::StorageKey;
+use starknet_api::state::{StorageKey, ThinStateDiff};
 use starknet_api::transaction::Event;
 
 use super::classes::{get_class_trie_root, update_class_trie};
@@ -154,7 +154,7 @@ pub fn update_state_root<B: BlockT>(
     for (contract_address, class_hash) in csd.address_to_class_hash.iter() {
         let storage_root = update_storage_trie(contract_address, csd.clone(), &bonsai_dbs.storage)
             .expect("Failed to update storage trie");
-        let nonce = csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::default().into()).clone();
+        let nonce = csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::ZERO.into()).clone();
 
         let contract_leaf_params =
             ContractLeafParams { class_hash: class_hash.clone().into(), storage_root, nonce: nonce.into() };
@@ -195,4 +195,141 @@ where
     let class_trie_root = get_class_trie_root(bonsai_db).expect("Failed to get class trie root");
 
     calculate_state_root::<H>(contract_trie_root, class_trie_root)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::str::FromStr;
+    use std::string;
+
+    use starknet_core::types::BlockId;
+    use starknet_ff::FieldElement;
+    use starknet_providers::sequencer::models::state_update::{DeployedContract, StateDiff, StorageDiff};
+    use starknet_providers::sequencer::models::StateUpdate;
+    use starknet_providers::SequencerGatewayProvider;
+    use url::Url;
+
+    use super::*;
+
+    pub fn feltor(input: &str) -> FieldElement {
+        FieldElement::from_hex_be(input).unwrap()
+    }
+
+    pub fn fetch_raw_genesis_state_update() -> StateUpdate {
+        StateUpdate {
+            block_hash: Some(feltor("0x47c3637b57c2b079b93c61539950c17e868a28f46cdef28f88521067f21e943")),
+            new_root: Some(feltor("0x21870ba80540e7831fb21c591ee93481f5ae1bb71ff85a86ddd465be4eddee6")),
+            old_root: feltor("0x0"),
+            state_diff: StateDiff {
+                storage_diffs: vec![
+                    (feltor("0x20cfa74ee3564b4cd5435cdace0f9c4d43b939620e4a0bb5076105df0a626c6"), vec![
+                        StorageDiff { key: feltor("0x5"), value: feltor("0x22b") },
+                        StorageDiff { key: feltor("0x313ad57fdf765addc71329abf8d74ac2bce6d46da8c2b9b82255a5076620300"), value: feltor("0x4e7e989d58a17cd279eca440c5eaa829efb6f9967aaad89022acbe644c39b36") },
+                        StorageDiff { key: feltor("0x313ad57fdf765addc71329abf8d74ac2bce6d46da8c2b9b82255a5076620301"), value: feltor("0x453ae0c9610197b18b13645c44d3d0a407083d96562e8752aab3fab616cecb0") },
+                        StorageDiff { key: feltor("0x5aee31408163292105d875070f98cb48275b8c87e80380b78d30647e05854d5"), value: feltor("0x7e5") },
+                        StorageDiff { key: feltor("0x6cf6c2f36d36b08e591e4489e92ca882bb67b9c39a3afccf011972a8de467f0"), value: feltor("0x7ab344d88124307c07b56f6c59c12f4543e9c96398727854a322dea82c73240") },
+                    ]),
+                    (feltor("0x31c887d82502ceb218c06ebb46198da3f7b92864a8223746bc836dda3e34b52"), vec![
+                        StorageDiff { key: feltor("0xdf28e613c065616a2e79ca72f9c1908e17b8c913972a9993da77588dc9cae9"), value: feltor("0x1432126ac23c7028200e443169c2286f99cdb5a7bf22e607bcd724efa059040") },
+                        StorageDiff { key: feltor("0x5f750dc13ed239fa6fc43ff6e10ae9125a33bd05ec034fc3bb4dd168df3505f"), value: feltor("0x7c7") },
+                    ]),
+                    (feltor("0x31c9cdb9b00cb35cf31c05855c0ec3ecf6f7952a1ce6e3c53c3455fcd75a280"), vec![
+                        StorageDiff { key: feltor("0x5"), value: feltor("0x65") },
+                        StorageDiff { key: feltor("0xcfc2e2866fd08bfb4ac73b70e0c136e326ae18fc797a2c090c8811c695577e"), value: feltor("0x5f1dd5a5aef88e0498eeca4e7b2ea0fa7110608c11531278742f0b5499af4b3") },
+                        StorageDiff { key: feltor("0x5aee31408163292105d875070f98cb48275b8c87e80380b78d30647e05854d5"), value: feltor("0x7c7") },
+                        StorageDiff { key: feltor("0x5fac6815fddf6af1ca5e592359862ede14f171e1544fd9e792288164097c35d"), value: feltor("0x299e2f4b5a873e95e65eb03d31e532ea2cde43b498b50cd3161145db5542a5") },
+                        StorageDiff { key: feltor("0x5fac6815fddf6af1ca5e592359862ede14f171e1544fd9e792288164097c35e"), value: feltor("0x3d6897cf23da3bf4fd35cc7a43ccaf7c5eaf8f7c5b9031ac9b09a929204175f") },
+                    ]),
+                    (feltor("0x6ee3440b08a9c805305449ec7f7003f27e9f7e287b83610952ec36bdc5a6bae"), vec![
+                        StorageDiff { key: feltor("0x1e2cd4b3588e8f6f9c4e89fb0e293bf92018c96d7a93ee367d29a284223b6ff"), value: feltor("0x71d1e9d188c784a0bde95c1d508877a0d93e9102b37213d1e13f3ebc54a7751") },
+                        StorageDiff { key: feltor("0x449908c349e90f81ab13042b1e49dc251eb6e3e51092d9a40f86859f7f415b0"), value: feltor("0x6cb6104279e754967a721b52bcf5be525fdc11fa6db6ef5c3a4db832acf7804") },
+                        StorageDiff { key: feltor("0x48cba68d4e86764105adcdcf641ab67b581a55a4f367203647549c8bf1feea2"), value: feltor("0x362d24a3b030998ac75e838955dfee19ec5b6eceb235b9bfbeccf51b6304d0b") },
+                        StorageDiff { key: feltor("0x5bdaf1d47b176bfcd1114809af85a46b9c4376e87e361d86536f0288a284b65"), value: feltor("0x28dff6722aa73281b2cf84cac09950b71fa90512db294d2042119abdd9f4b87") },
+                        StorageDiff { key: feltor("0x5bdaf1d47b176bfcd1114809af85a46b9c4376e87e361d86536f0288a284b66"), value: feltor("0x57a8f8a019ccab5bfc6ff86c96b1392257abb8d5d110c01d326b94247af161c") },
+                        StorageDiff { key: feltor("0x5f750dc13ed239fa6fc43ff6e10ae9125a33bd05ec034fc3bb4dd168df3505f"), value: feltor("0x7e5") },
+                    ]),
+                    (feltor("0x735596016a37ee972c42adef6a3cf628c19bb3794369c65d2c82ba034aecf2c"), vec![
+                        StorageDiff { key: feltor("0x5"), value: feltor("0x64") },
+                        StorageDiff { key: feltor("0x2f50710449a06a9fa789b3c029a63bd0b1f722f46505828a9f815cf91b31d8"), value: feltor("0x2a222e62eabe91abdb6838fa8b267ffe81a6eb575f61e96ec9aa4460c0925a2") },
+                    ]),
+                ].into_iter().collect(),
+                nonces: HashMap::new(),
+                deployed_contracts: vec![
+                    DeployedContract {
+                        address: feltor("0x20cfa74ee3564b4cd5435cdace0f9c4d43b939620e4a0bb5076105df0a626c6"),
+                        class_hash: feltor("0x10455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8"),
+                    },
+                    DeployedContract {
+                        address: feltor("0x31c887d82502ceb218c06ebb46198da3f7b92864a8223746bc836dda3e34b52"),
+                        class_hash: feltor("0x10455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8"),
+                    },
+                    DeployedContract {
+                        address: feltor("0x31c9cdb9b00cb35cf31c05855c0ec3ecf6f7952a1ce6e3c53c3455fcd75a280"),
+                        class_hash: feltor("0x10455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8"),
+                    },
+                    DeployedContract {
+                        address: feltor("0x6ee3440b08a9c805305449ec7f7003f27e9f7e287b83610952ec36bdc5a6bae"),
+                        class_hash: feltor("0x10455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8"),
+                    },
+                    DeployedContract {
+                        address: feltor("0x735596016a37ee972c42adef6a3cf628c19bb3794369c65d2c82ba034aecf2c"),
+                        class_hash: feltor("0x10455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8"),
+                    },
+                ],
+                declared_classes: vec![],
+                old_declared_contracts: vec![],
+                replaced_classes: vec![],
+            },
+        }
+    }
+
+    pub fn build_raw_csd() -> CommitmentStateDiff {
+        CommitmentStateDiff {
+            address_to_class_hash: {
+                let mut map = IndexMap::new();
+                // Populating with deployed contracts' addresses and their class hashes
+                map.insert(feltor("0x20cfa74ee3564b4cd5435cdace0f9c4d43b939620e4a0bb5076105df0a626c6"), feltor("0x10455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8"));
+                map.insert(feltor("0x31c887d82502ceb218c06ebb46198da3f7b92864a8223746bc836dda3e34b52"), feltor("0x10455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8"));
+                // Add the rest of the deployed contracts here
+                map
+            },
+            address_to_nonce: IndexMap::new(),
+            storage_updates: {
+                let mut map = HashMap::new();
+                let mut storage_diffs = HashMap::new();
+                storage_diffs.insert(feltor("0x5"), feltor("0x22b"));
+                storage_diffs.insert(feltor("0x313ad57fdf765addc71329abf8d74ac2bce6d46da8c2b9b82255a5076620300"), feltor("0x4e7e989d58a17cd279eca440c5eaa829efb6f9967aaad89022acbe644c39b36"));
+                // Add the rest of the storage diffs here
+                map
+            },
+            class_hash_to_compiled_class_hash: HashMap::new(),
+        }
+    }
+
+    pub async fn fetch_genesis_state_update() -> Result<StateUpdate, String> {
+        let provider = SequencerGatewayProvider::new(
+            Url::from_str("https://alpha-mainnet.starknet.io/gateway").unwrap(),
+            Url::from_str("https://alpha-mainnet.starknet.io/feeder_gateway").unwrap(),
+            starknet_core::types::FieldElement::from_byte_slice_be(b"SN_MAIN").unwrap(),
+        );
+
+        let state_update = provider
+            .get_state_update(BlockId::Number(0).into())
+            .await
+            .map_err(|e| format!("failed to get state update: {e}"))?;
+
+        Ok(state_update)
+    }
+
+    #[tokio::test]
+    pub async fn test_build_csd() {
+        let fetch_csd = fetch_genesis_state_update().await.expect("Failed to fetch genesis state update");
+        let fetch_raw_csd = fetch_raw_genesis_state_update();
+        let build_raw_csd = build_commitment_state_diff(StateUpdateWrapper::from(fetch_raw_csd));
+        let build_fetch_csd = build_commitment_state_diff(StateUpdateWrapper::from(fetch_csd));
+        assert_eq!(build_raw_csd, build_fetch_csd);
+
+        let raw_build_csd = 
+    }
 }
