@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
-use blockifier::execution::contract_address;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use ethers::addressbook::Contract;
-use mc_db::bonsai_db::{BonsaiDb, TrieColumn};
+use mc_db::bonsai_db::BonsaiDb;
 use mc_db::BonsaiDbError;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
@@ -36,7 +34,7 @@ pub struct ContractLeafParams {
 /// The storage root hash.
 pub fn update_storage_trie<B: BlockT>(
     contract_address: &ContractAddress,
-    commitment_state_diff: CommitmentStateDiff,
+    csd: &Arc<CommitmentStateDiff>,
     bonsai_db: &Arc<BonsaiDb<B>>,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
@@ -44,7 +42,7 @@ pub fn update_storage_trie<B: BlockT>(
     let mut bonsai_storage: BonsaiStorage<BasicId, &BonsaiDb<B>, Pedersen> =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    if let Some(updates) = commitment_state_diff.storage_updates.get(contract_address) {
+    if let Some(updates) = csd.storage_updates.get(contract_address) {
         for (storage_key, storage_value) in updates {
             let key = BitVec::from_vec(Felt252Wrapper::from(storage_key.0.0).0.to_bytes_be()[..31].to_vec());
             let value = Felt252Wrapper::from(*storage_value);
@@ -118,7 +116,7 @@ pub fn update_contract_trie<B: BlockT>(
     contract_hash: Felt252Wrapper,
     contract_leaf_params: ContractLeafParams,
     bonsai_db: &Arc<BonsaiDb<B>>,
-) -> Result<Felt252Wrapper, BonsaiDbError> {
+) -> anyhow::Result<Felt252Wrapper> {
     let config = BonsaiStorageConfig::default();
     let bonsai_db = bonsai_db.as_ref();
     let mut bonsai_storage =
