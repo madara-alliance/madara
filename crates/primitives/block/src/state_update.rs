@@ -6,7 +6,7 @@ use mp_felt::Felt252Wrapper;
 pub extern crate alloc;
 use alloc::vec::Vec;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct StateUpdateWrapper {
     pub block_hash: Option<Felt252Wrapper>,
@@ -15,7 +15,7 @@ pub struct StateUpdateWrapper {
     pub state_diff: StateDiffWrapper,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct StateDiffWrapper {
     pub storage_diffs: Vec<(Felt252Wrapper, Vec<StorageDiffWrapper>)>,
@@ -26,21 +26,21 @@ pub struct StateDiffWrapper {
     pub replaced_classes: Vec<DeployedContractWrapper>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct StorageDiffWrapper {
     pub key: Felt252Wrapper,
     pub value: Felt252Wrapper,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct DeployedContractWrapper {
     pub address: Felt252Wrapper,
     pub class_hash: Felt252Wrapper,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct DeclaredContractWrapper {
     pub class_hash: Felt252Wrapper,
@@ -61,6 +61,17 @@ pub mod convert {
 
     impl From<starknet_providers::sequencer::models::StateUpdate> for StateUpdateWrapper {
         fn from(update: StateUpdate) -> Self {
+            StateUpdateWrapper {
+                block_hash: update.block_hash.as_ref().cloned().map(Felt252Wrapper::from),
+                new_root: update.new_root.as_ref().cloned().map(Felt252Wrapper::from),
+                old_root: Felt252Wrapper::from(update.old_root),
+                state_diff: StateDiffWrapper::from(&update.state_diff),
+            }
+        }
+    }
+
+    impl From<&starknet_providers::sequencer::models::StateUpdate> for StateUpdateWrapper {
+        fn from(update: &StateUpdate) -> Self {
             StateUpdateWrapper {
                 block_hash: update.block_hash.as_ref().cloned().map(Felt252Wrapper::from),
                 new_root: update.new_root.as_ref().cloned().map(Felt252Wrapper::from),

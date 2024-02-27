@@ -130,6 +130,7 @@ pub fn deoxys_config(sealing: SealingMode, chain_id: &str) -> Result<DevChainSpe
     ))
 }
 
+#[allow(deprecated)]
 fn load_genesis() -> Result<GenesisData, String> {
     log::info!("🧪 Fetching genesis block");
     let runtime = Runtime::new().unwrap();

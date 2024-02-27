@@ -42,6 +42,7 @@ serde = { workspace = true, default-features = true }
 tokio = { workspace = true, features = ["macros", "parking_lot", "test-util"] }
 url = { workspace = true }
 validator = { workspace = true, features = ["derive"] }
+crossbeam-skiplist ={ workspace = true }
 
 madara-runtime = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
@@ -63,7 +64,6 @@ mc-commitment-state-diff = { workspace = true }
 mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
 mp-block = { workspace = true }
-mp-commitments = { workspace = true }
 mp-contract = { workspace = true }
 mp-fee = { workspace = true }
 mp-felt = { workspace = true }
