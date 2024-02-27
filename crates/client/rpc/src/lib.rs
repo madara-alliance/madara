@@ -1515,14 +1515,14 @@ where
         // TODO: remove this line when deploy is supported
         if let TransactionMp::Deploy(..) = transaction {
             log::error!("re executing a deploy transaction is not supported yet");
-            return Err(StarknetRpcApiError::InternalServerError.into());
+            return Err(StarknetRpcApiError::UnimplementedMethod.into());
         }
 
         let transactions = block
             .transactions()
             .iter()
             .take(tx_index + 1)
-            .filter(|tx| matches!(tx, TransactionMp::Invoke(_) | TransactionMp::DeployAccount(_) | TransactionMp::Declare(_) | TransactionMp::L1Handler(_)))// TODO: remove this line when deploy is supported
+            .filter(|tx| !matches!(tx, TransactionMp::Deploy(_))) // TODO: remove this line when deploy is supported
             .map(|tx| match tx {
                 TransactionMp::Invoke(invoke_tx) => {
                     RpcResult::Ok(UserOrL1HandlerTransaction::User(UserTransaction::Invoke(invoke_tx.clone())))
