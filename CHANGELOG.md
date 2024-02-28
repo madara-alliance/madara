@@ -4,6 +4,7 @@ git # Madara Changelog
 
 - refactor(substrate_hash): Substrate hash is now retrieved via rpc client in
   `l2.rs`
+- feat(rpc): tx_receipt, re-execute tx
 - feat(script): added CI scripts for starting Deoxys and comparing JSON RPC
   calls
 - perf(verify_l2): parallelized l2 state root update
