@@ -4,7 +4,6 @@ use std::sync::Arc;
 use bonsai_trie::id::{BasicId, Id};
 use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, DatabaseKey};
 use kvdb::{DBTransaction, KeyValueDB};
-use sp_core::serde::de;
 use sp_runtime::traits::Block as BlockT;
 use starknet_types_core::hash::{Pedersen, Poseidon};
 
@@ -13,7 +12,7 @@ use crate::error::BonsaiDbError;
 #[derive(Debug)]
 pub enum TrieColumn {
     Class,
-    Contract
+    Contract,
 }
 
 #[derive(Debug)]
@@ -40,7 +39,7 @@ impl TrieColumn {
                 KeyType::Trie => crate::columns::TRIE_BONSAI_CONTRACTS,
                 KeyType::Flat => crate::columns::FLAT_BONSAI_CONTRACTS,
                 KeyType::TrieLog => crate::columns::LOG_BONSAI_CONTRACTS,
-            }
+            },
         }
     }
 }

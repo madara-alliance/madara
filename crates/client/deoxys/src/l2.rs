@@ -4,8 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use itertools::Itertools;
-use mc_db::bonsai_db::{BonsaiConfigs, BonsaiDb};
-use mc_db::BonsaiDbs;
+use mc_db::bonsai_db::BonsaiConfigs;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
@@ -140,18 +139,19 @@ pub async fn sync<B: BlockT>(
     config: FetchConfig,
     start_at: u64,
     rpc_port: u16,
-    bonsai_dbs: BonsaiConfigs<'_, B>
+    bonsai_dbs: BonsaiConfigs<'_, B>,
 ) {
     update_config(&config);
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
+    let bonsai_dbs = Arc::new(Mutex::new(bonsai_dbs));
     let mut current_block_number = start_at;
     let mut last_block_hash = None;
     let mut got_block = false;
     let mut got_state_update = false;
     let mut last_update_highest_block = tokio::time::Instant::now() - Duration::from_secs(20);
-    if current_block_number <= 1 {
-        let _ = fetch_genesis_state_update(&client, bonsai_dbs).await;
+    if current_block_number == 1 {
+        let _ = fetch_genesis_state_update(&client, Arc::clone(&bonsai_dbs)).await;
     }
     loop {
         if last_update_highest_block.elapsed() > Duration::from_secs(20) {
@@ -170,7 +170,7 @@ pub async fn sync<B: BlockT>(
                     class_sender,
                     current_block_number,
                     rpc_port,
-                    bonsai_dbs,
+                    Arc::clone(&bonsai_dbs),
                 );
                 tokio::join!(block, state_update)
             }
@@ -184,7 +184,7 @@ pub async fn sync<B: BlockT>(
                     class_sender,
                     current_block_number,
                     rpc_port,
-                    bonsai_dbs,
+                    Arc::clone(&bonsai_dbs),
                 )
                 .await,
             ),
@@ -246,7 +246,7 @@ async fn fetch_state_and_class_update<B: BlockT>(
     class_sender: &Sender<ClassUpdateWrapper>,
     block_number: u64,
     rpc_port: u16,
-    bonsai_dbs: BonsaiConfigs<'_, B>,
+    bonsai_dbs: Arc<Mutex<BonsaiConfigs<'_, B>>>,
 ) -> Result<(), String> {
     let state_update = fetch_state_update(&provider, block_number, bonsai_dbs).await?;
     let class_update = fetch_class_update(&provider, &state_update, overrides, block_number, rpc_port).await?;
@@ -271,7 +271,7 @@ async fn fetch_state_and_class_update<B: BlockT>(
 async fn fetch_state_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
     block_number: u64,
-    bonsai_dbs: BonsaiConfigs<'_, B>,
+    bonsai_dbs: Arc<Mutex<BonsaiConfigs<'_, B>>>,
 ) -> Result<StateUpdate, String> {
     let state_update = provider
         .get_state_update(BlockId::Number(block_number))
@@ -285,7 +285,7 @@ async fn fetch_state_update<B: BlockT>(
 
 pub async fn fetch_genesis_state_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
-    bonsai_dbs: BonsaiConfigs<'_, B>
+    bonsai_dbs: Arc<Mutex<BonsaiConfigs<'_, B>>>,
 ) -> Result<StateUpdate, String> {
     println!("Fetching genesis state update");
     let state_update =
@@ -447,7 +447,7 @@ pub fn update_l2(state_update: L2StateUpdate) {
 pub fn verify_l2<B: BlockT>(
     block_number: u64,
     state_update: &StateUpdate,
-    bonsai_dbs: BonsaiConfigs<B>
+    bonsai_dbs: Arc<Mutex<BonsaiConfigs<B>>>,
 ) -> Result<(), String> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
 

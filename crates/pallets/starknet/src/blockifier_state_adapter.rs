@@ -2,7 +2,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use core::marker::PhantomData;
 
 use blockifier::execution::contract_class::ContractClass;
-use blockifier::state::cached_state::{CommitmentStateDiff, ContractStorageKey, StateChangesCount};
+use blockifier::state::cached_state::{CommitmentStateDiff, StateChangesCount};
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
 use indexmap::IndexMap;
@@ -21,7 +21,7 @@ use crate::{Config, Pallet};
 /// and not an extra layer that would add overhead.
 /// We don't implement those traits directly on the pallet to avoid compilation problems.
 pub struct BlockifierStateAdapter<T: Config> {
-    storage_update: BTreeMap<ContractStorageKey, StarkFelt>,
+    storage_update: BTreeMap<ContractAddress, Vec<(StorageKey, StarkFelt)>>,
     class_hash_update: usize,
     compiled_class_hash_update: usize,
     _phantom: PhantomData<T>,
@@ -33,7 +33,7 @@ where
 {
     fn count_state_changes(&self) -> StateChangesCount {
         let keys = self.storage_update.keys();
-        let n_contract_updated = BTreeSet::from_iter(keys.clone().map(|&(contract_address, _)| contract_address)).len();
+        let n_contract_updated = BTreeSet::from_iter(keys.clone().map(|contract_address| contract_address)).len();
         StateChangesCount {
             n_modified_contracts: n_contract_updated,
             n_storage_updates: keys.len(),
@@ -56,8 +56,15 @@ impl<T: Config> Default for BlockifierStateAdapter<T> {
 
 impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     fn get_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
-        let contract_storage_key: ContractStorageKey = (contract_address, key);
-        Ok(Pallet::<T>::storage(contract_storage_key))
+        let search = Pallet::<T>::storage(contract_address).into_iter().find(|(storage_key, _)| key == *storage_key);
+
+        match search {
+            Some((_, value)) => Ok(value),
+            None => Err(StateError::StateReadError(format!(
+                "Failed to retrieve storage value for contract {} at key {}",
+                contract_address.0.0, key.0.0
+            ))),
+        }
     }
 
     fn get_nonce_at(&mut self, contract_address: ContractAddress) -> StateResult<Nonce> {
@@ -79,11 +86,8 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
 
 impl<T: Config> State for BlockifierStateAdapter<T> {
     fn set_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey, value: StarkFelt) {
-        let contract_storage_key: ContractStorageKey = (contract_address, key);
-
-        self.storage_update.insert(contract_storage_key, value);
-
-        crate::StorageView::<T>::insert(contract_storage_key, value);
+        self.storage_update.insert(contract_address, vec![(key, value)]);
+        crate::StorageView::<T>::insert(contract_address, vec![(key, value)]);
     }
 
     fn increment_nonce(&mut self, contract_address: ContractAddress) -> StateResult<()> {

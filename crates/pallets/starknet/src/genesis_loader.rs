@@ -35,13 +35,15 @@ impl<T: crate::Config> From<GenesisData> for GenesisConfig<T> {
             .storage
             .clone()
             .into_iter()
-            .map(|((contract_address, key), value)| {
+            .map(|(contract_address, storage)| {
                 (
-                    (
-                        ContractAddress(PatriciaKey(StarkFelt(contract_address.0.to_bytes_be()))),
-                        StorageKey(PatriciaKey(StarkFelt(key.0.to_bytes_be()))),
-                    ),
-                    StarkFelt(value.0.to_bytes_be()),
+                    ContractAddress(PatriciaKey(StarkFelt(contract_address.0.to_bytes_be()))),
+                    storage
+                        .into_iter()
+                        .map(|(key, value)| {
+                            (StorageKey(PatriciaKey(StarkFelt(key.0.to_bytes_be()))), StarkFelt(value.0.to_bytes_be()))
+                        })
+                        .collect(),
                 )
             })
             .collect();
