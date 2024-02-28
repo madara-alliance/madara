@@ -1,20 +1,19 @@
-use std::default;
 use std::marker::PhantomData;
-use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 
-use bonsai_trie::id::Id;
-use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, DatabaseKey};
+use bonsai_trie::id::{BasicId, Id};
+use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, DatabaseKey};
 use kvdb::{DBTransaction, KeyValueDB};
+use sp_core::serde::de;
 use sp_runtime::traits::Block as BlockT;
+use starknet_types_core::hash::{Pedersen, Poseidon};
 
 use crate::error::BonsaiDbError;
 
 #[derive(Debug)]
 pub enum TrieColumn {
     Class,
-    Contract,
-    Storage,
+    Contract
 }
 
 #[derive(Debug)]
@@ -22,6 +21,11 @@ pub enum KeyType {
     Trie,
     Flat,
     TrieLog,
+}
+
+pub struct BonsaiConfigs<'a, B: BlockT> {
+    pub contract: BonsaiStorage<BasicId, &'a BonsaiDb<B>, Pedersen>,
+    pub class: BonsaiStorage<BasicId, &'a BonsaiDb<B>, Poseidon>,
 }
 
 impl TrieColumn {
@@ -36,12 +40,7 @@ impl TrieColumn {
                 KeyType::Trie => crate::columns::TRIE_BONSAI_CONTRACTS,
                 KeyType::Flat => crate::columns::FLAT_BONSAI_CONTRACTS,
                 KeyType::TrieLog => crate::columns::LOG_BONSAI_CONTRACTS,
-            },
-            TrieColumn::Storage => match key_type {
-                KeyType::Trie => crate::columns::TRIE_BONSAI_STORAGE,
-                KeyType::Flat => crate::columns::FLAT_BONSAI_STORAGE,
-                KeyType::TrieLog => crate::columns::LOG_BONSAI_STORAGE,
-            },
+            }
         }
     }
 }
@@ -58,9 +57,9 @@ pub struct BonsaiDb<B: BlockT> {
 
 pub fn key_type(key: &DatabaseKey) -> KeyType {
     match key {
-        DatabaseKey::Trie(bytes) => return KeyType::Trie,
-        DatabaseKey::Flat(bytes) => return KeyType::Flat,
-        DatabaseKey::TrieLog(bytes) => return KeyType::TrieLog,
+        DatabaseKey::Trie(_bytes) => return KeyType::Trie,
+        DatabaseKey::Flat(_bytes) => return KeyType::Flat,
+        DatabaseKey::TrieLog(_bytes) => return KeyType::TrieLog,
     }
 }
 
@@ -89,7 +88,7 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
         // println!("Key and keytype: {:?} {:?}", self.current_column, key_type(key));
-        let key_type = key_type(key);
+        let key_type: KeyType = key_type(key);
         let column = self.current_column.to_index(key_type);
         let key_slice = key.as_slice();
         let previous_value = self.db.get(column, key_slice)?;

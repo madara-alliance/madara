@@ -5934,6 +5934,7 @@ dependencies = [
  "sp-core",
  "sp-database",
  "sp-runtime",
+ "starknet-types-core",
  "starknet_api",
  "thiserror",
  "uuid 1.6.1",

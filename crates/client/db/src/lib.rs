@@ -57,7 +57,7 @@ pub(crate) mod columns {
     // ===== /!\ ===================================================================================
     // MUST BE INCREMENTED WHEN A NEW COLUMN IN ADDED
     // ===== /!\ ===================================================================================
-    pub const NUM_COLUMNS: u32 = 18;
+    pub const NUM_COLUMNS: u32 = 15;
 
     pub const META: u32 = 0;
     pub const BLOCK_MAPPING: u32 = 1;
@@ -94,9 +94,6 @@ pub(crate) mod columns {
     pub const TRIE_BONSAI_CLASSES: u32 = 12;
     pub const FLAT_BONSAI_CLASSES: u32 = 13;
     pub const LOG_BONSAI_CLASSES: u32 = 14;
-    pub const TRIE_BONSAI_STORAGE: u32 = 15;
-    pub const FLAT_BONSAI_STORAGE: u32 = 16;
-    pub const LOG_BONSAI_STORAGE: u32 = 17;
 }
 
 pub mod static_keys {
@@ -109,8 +106,7 @@ pub mod static_keys {
 #[derive(Clone)]
 pub struct BonsaiDbs<B: BlockT> {
     pub contract: Arc<BonsaiDb<B>>,
-    pub class: Arc<BonsaiDb<B>>,
-    pub storage: Arc<BonsaiDb<B>>,
+    pub class: Arc<BonsaiDb<B>>
 }
 
 /// The Madara client database backend
@@ -173,8 +169,7 @@ impl<B: BlockT> Backend<B> {
                 _marker: PhantomData,
                 current_column: TrieColumn::Contract,
             }),
-            class: Arc::new(BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class }),
-            storage: Arc::new(BonsaiDb { db: kvdb, _marker: PhantomData, current_column: TrieColumn::Storage }),
+            class: Arc::new(BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class })
         };
 
         Ok(Self {
@@ -219,10 +214,6 @@ impl<B: BlockT> Backend<B> {
 
     pub fn bonsai_class(&self) -> &Arc<BonsaiDb<B>> {
         &self.bonsai.class
-    }
-
-    pub fn bonsai_storage(&self) -> &Arc<BonsaiDb<B>> {
-        &self.bonsai.storage
     }
 
     /// Return l1 handler tx paid fee database manager

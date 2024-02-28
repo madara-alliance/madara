@@ -247,7 +247,7 @@ impl From<Felt> for Felt252Wrapper {
 /// [`Felt252Wrapper`] to [`Felt`].
 impl From<Felt252Wrapper> for Felt {
     fn from(value: Felt252Wrapper) -> Self {
-        Felt::from_bytes_be(&value.into())
+        Felt::from_bytes_be(&value.0.to_bytes_be())
     }
 }
 

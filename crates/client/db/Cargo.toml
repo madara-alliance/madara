@@ -34,6 +34,10 @@ thiserror = { workspace = true }
 uuid = "1.4.1"
 bonsai-trie = { workspace = true }
 kvdb = "0.13.0"
+starknet-types-core = { workspace = true, default-features = false, features = [
+    "hash",
+    "parity-scale-codec",
+] }
 
 [features]
 default = ["kvdb-rocksdb", "parity-db"]
