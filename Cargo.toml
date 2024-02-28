@@ -391,6 +391,7 @@ tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
 url = "2.4.1"
 validator = "0.12"
+crossbeam-skiplist = "0.1"
 
 [patch."https://github.com/w3f/ring-vrf"]
 bandersnatch_vrfs = { git = "https://github.com/w3f/ring-vrf?rev=3ddc20", version = "0.0.4", rev = "3ddc20" }

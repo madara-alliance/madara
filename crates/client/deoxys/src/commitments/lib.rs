@@ -1,12 +1,8 @@
-use std::sync::Arc;
-
-use bitvec::vec::BitVec;
 use blockifier::state::cached_state::CommitmentStateDiff;
-use bonsai_trie::id::{self, BasicIdBuilder};
-use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
+use bonsai_trie::id::BasicIdBuilder;
 use indexmap::IndexMap;
-use mc_db::bonsai_db::{BonsaiConfigs, BonsaiDb};
-use mc_db::{BonsaiDbError, BonsaiDbs};
+use mc_db::bonsai_db::BonsaiConfigs;
+use mc_db::BonsaiDbError;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
@@ -19,6 +15,7 @@ use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::Event;
 use bitvec::view::BitView;
+use tokio::join;
 
 use crate::commitments::contracts::calculate_contract_state_leaf_hash;
 
@@ -39,16 +36,18 @@ use super::transactions::memory_transaction_commitment;
 /// # Returns
 ///
 /// The transaction and the event commitment as `Felt252Wrapper`.
-pub fn calculate_commitments(
+pub async fn calculate_commitments(
     transactions: &[Transaction],
     events: &[Event],
     chain_id: Felt252Wrapper,
     block_number: u64,
 ) -> (Felt252Wrapper, Felt252Wrapper) {
+    let (commitment_tx, commitment_event) =
+        join!(memory_transaction_commitment(transactions, chain_id, block_number), memory_event_commitment(events));
+
     (
-        memory_transaction_commitment(transactions, chain_id, block_number)
-            .expect("Failed to calculate transaction commitment"),
-        memory_event_commitment(events).expect("Failed to calculate event commitment"),
+        commitment_tx.expect("Failed to calculate transaction commitment"),
+        commitment_event.expect("Failed to calculate event commitment"),
     )
 }
 

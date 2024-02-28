@@ -1,4 +1,5 @@
 use bitvec::view::BitView;
+
 use blockifier::state::cached_state::CommitmentStateDiff;
 use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
@@ -6,7 +7,6 @@ use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mc_db::BonsaiDbError;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use sp_runtime::traits::Block as BlockT;
 use starknet_api::api_core::ContractAddress;
 use starknet_types_core::hash::Pedersen;
 
