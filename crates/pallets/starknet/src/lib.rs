@@ -69,7 +69,6 @@ use blockifier::execution::entry_point::{
     CallEntryPoint, CallInfo, CallType, EntryPointExecutionContext, ExecutionResources,
 };
 use blockifier::execution::errors::{EntryPointExecutionError, PreExecutionError};
-use blockifier::state::cached_state::ContractStorageKey;
 use blockifier_state_adapter::BlockifierStateAdapter;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
@@ -123,6 +122,7 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
+    use mp_block::state_update::StorageDiffWrapper;
     use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
 
     use super::*;
@@ -219,15 +219,13 @@ pub mod pallet {
     fn store_state_update<T: Config>(encoded_data: &Vec<u8>) {
         match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
             Ok(state_update) => {
-                for (address, storage_diffs) in state_update.state_diff.storage_diffs {
-                    for storage_diff in storage_diffs {
-                        let contract_storage_key: ContractStorageKey = (
-                            ContractAddress(address.try_into().unwrap()),
-                            StorageKey(storage_diff.key.try_into().unwrap()),
-                        );
-                        let value = StarkFelt(storage_diff.value.try_into().unwrap());
-                        <StorageView<T>>::insert(contract_storage_key, value)
-                    }
+                for (contract_address, storage_diffs) in state_update.state_diff.storage_diffs {
+                    let storage: Vec<(StorageKey, StarkFelt)> = storage_diffs
+                        .into_iter()
+                        .map(|StorageDiffWrapper { key, value }| (StorageKey::from(key), StarkFelt::from(value)))
+                        .collect();
+
+                    <StorageView<T>>::insert(ContractAddress(contract_address.into()), storage);
                 }
 
                 // nonces stored for accessing on `starknet_getNonce` RPC call.
@@ -389,7 +387,8 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::unbounded]
     #[pallet::getter(fn storage)]
-    pub(super) type StorageView<T: Config> = StorageMap<_, Identity, ContractStorageKey, StarkFelt, ValueQuery>;
+    pub(super) type StorageView<T: Config> =
+        StorageMap<_, Identity, ContractAddress, Vec<(StorageKey, StarkFelt)>, ValueQuery>;
 
     /// The last processed Ethereum block number for L1 messages consumption.
     /// This is used to avoid re-processing the same Ethereum block multiple times.
@@ -436,7 +435,7 @@ pub mod pallet {
         /// a test environment or in the case of a migration of an existing chain state.
         pub contracts: Vec<(ContractAddress, SierraClassHash)>,
         pub sierra_to_casm_class_hash: Vec<(SierraClassHash, CasmClassHash)>,
-        pub storage: Vec<(ContractStorageKey, StarkFelt)>,
+        pub storage: Vec<(ContractAddress, Vec<(StorageKey, StarkFelt)>)>,
         /// The address of the fee token.
         /// Must be set to the address of the fee token ERC20 contract.
         pub fee_token_address: ContractAddress,
@@ -474,7 +473,7 @@ pub mod pallet {
 
             self.storage
                 .iter()
-                .for_each(|(contract_storage_key, value)| StorageView::<T>::insert(contract_storage_key, value));
+                .for_each(|(contract_address, storage)| StorageView::<T>::insert(contract_address, storage));
 
             LastKnownEthBlock::<T>::set(None);
             // Set the fee token address from the genesis config.
@@ -1018,7 +1017,11 @@ impl<T: Config> Pallet<T> {
     pub fn get_storage_at(contract_address: ContractAddress, key: StorageKey) -> Result<StarkFelt, DispatchError> {
         // Get state
         ensure!(ContractClassHashes::<T>::contains_key(contract_address), Error::<T>::ContractNotFound);
-        Ok(Self::storage((contract_address, key)))
+
+        match Self::storage(contract_address).iter().find(|(storage_key, _)| key == *storage_key) {
+            Some((_, value)) => Ok(value.clone()),
+            None => Err(DispatchError::CannotLookup),
+        }
     }
 
     /// Store a Starknet block in the blockchain.
@@ -1063,7 +1066,6 @@ impl<T: Config> Pallet<T> {
             let events: Vec<StarknetEvent> = transaction_hashes.iter().flat_map(TxEvents::<T>::take).collect();
             let sequencer_address = Self::sequencer_address();
             let block_timestamp = Self::block_timestamp();
-            let chain_id = Self::chain_id();
             let (transaction_commitment, event_commitment) = (Felt252Wrapper::default(), Felt252Wrapper::default());
             let protocol_version = T::ProtocolVersion::get();
             let extra_data = None;

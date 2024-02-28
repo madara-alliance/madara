@@ -17,7 +17,7 @@ use sp_runtime::traits::{Block as BlockT, Header};
 use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::block::BlockHash;
 use starknet_api::hash::{StarkFelt, StarkHash};
-use starknet_api::state::{StorageKey as StarknetStorageKey, ThinStateDiff};
+use starknet_api::state::ThinStateDiff;
 use thiserror::Error;
 
 #[derive(Clone)]
@@ -178,24 +178,26 @@ where
             commitment_state_diff.nonces.insert(contract_address, nonce);
             accessed_addrs.insert(contract_address);
         } else if prefix == *SN_STORAGE_PREFIX {
-            let contract_address =
-                ContractAddress(PatriciaKey(StarkFelt(full_storage_key.0[32..64].try_into().unwrap())));
-            let storage_key = StarknetStorageKey(PatriciaKey(StarkFelt(full_storage_key.0[64..].try_into().unwrap())));
-            // `change` is safe to unwrap as `StorageView` storage is `ValueQuery`
-            let value = StarkFelt(change.unwrap().0.clone().try_into().unwrap());
+            // let contract_address =
+            //     ContractAddress(PatriciaKey(StarkFelt(full_storage_key.0[32..64].try_into().
+            // unwrap()))); let storage_key =
+            // StarknetStorageKey(PatriciaKey(StarkFelt(full_storage_key.0[64..].try_into().
+            // unwrap()))); // `change` is safe to unwrap as `StorageView` storage is
+            // `ValueQuery` let value =
+            // StarkFelt(change.unwrap().0.clone().try_into().unwrap());
 
-            match commitment_state_diff.storage_diffs.get_mut(&contract_address) {
-                Some(contract_storage) => {
-                    contract_storage.insert(storage_key, value);
-                }
-                None => {
-                    let mut contract_storage: IndexMap<_, _, _> = Default::default();
-                    contract_storage.insert(storage_key, value);
+            // match commitment_state_diff.storage_diffs.get_mut(&contract_address) {
+            //     Some(contract_storage) => {
+            //         contract_storage.insert(storage_key, value);
+            //     }
+            //     None => {
+            //         let mut contract_storage: IndexMap<_, _, _> = Default::default();
+            //         contract_storage.insert(storage_key, value);
 
-                    commitment_state_diff.storage_diffs.insert(contract_address, contract_storage);
-                }
-            }
-            accessed_addrs.insert(contract_address);
+            //         commitment_state_diff.storage_diffs.insert(contract_address,
+            // contract_storage);     }
+            // }
+            // accessed_addrs.insert(contract_address);
         } else if prefix == *SN_CONTRACT_CLASS_HASH_PREFIX {
             let contract_address =
                 ContractAddress(PatriciaKey(StarkFelt(full_storage_key.0[32..].try_into().unwrap())));

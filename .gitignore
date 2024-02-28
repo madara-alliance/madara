@@ -53,4 +53,7 @@ starknet-e2e-test/contracts/build
 # vscode settings
 .vscode/settings.json
 
+# rpc output
+output*
+
 tmp/

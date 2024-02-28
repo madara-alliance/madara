@@ -105,7 +105,7 @@ pub mod static_keys {
 #[derive(Clone)]
 pub struct BonsaiDbs<B: BlockT> {
     pub contract: Arc<BonsaiDb<B>>,
-    pub class: Arc<BonsaiDb<B>>
+    pub class: Arc<BonsaiDb<B>>,
 }
 
 /// The Madara client database backend
@@ -168,7 +168,7 @@ impl<B: BlockT> Backend<B> {
                 _marker: PhantomData,
                 current_column: TrieColumn::Contract,
             }),
-            class: Arc::new(BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class })
+            class: Arc::new(BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class }),
         };
 
         Ok(Self {
