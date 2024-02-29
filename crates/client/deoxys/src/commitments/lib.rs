@@ -7,13 +7,17 @@ use indexmap::IndexMap;
 use lazy_static::lazy_static;
 use mc_db::bonsai_db::BonsaiConfigs;
 use mc_db::BonsaiDbError;
+use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::poseidon::PoseidonHasher;
 use mp_hashers::HasherT;
 use mp_transactions::Transaction;
-use sp_runtime::traits::Block as BlockT;
+use sp_core::H256;
+use sp_runtime::generic::{Block, Header};
+use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
+use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -25,6 +29,7 @@ use super::contracts::{update_storage_trie, ContractLeafParams};
 use super::events::memory_event_commitment;
 use super::transactions::memory_transaction_commitment;
 use crate::commitments::contracts::calculate_contract_state_leaf_hash;
+use crate::l2::BlockHashEquivalence;
 
 /// Calculate the transaction and event commitment.
 ///
@@ -158,13 +163,15 @@ pub fn update_state_root<B: BlockT>(
     csd: CommitmentStateDiff,
     bonsai_dbs: Arc<Mutex<BonsaiConfigs<B>>>,
     _block_number: u64,
+    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    substrate_block_hash: Option<H256>,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     // TODO: implement Id for u64 to use `block_number` instead
     let id = ID_BUILDER.lock().unwrap().new_id();
 
     // Update contract and its storage tries
     for (contract_address, class_hash) in csd.address_to_class_hash.iter() {
-        let storage_root = update_storage_trie(contract_address, csd.clone()).expect("Failed to update storage trie");
+        let storage_root = update_storage_trie(contract_address, csd.clone(), overrides.clone(), substrate_block_hash).expect("Failed to update storage trie");
         let nonce = csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::ZERO.into()).clone();
 
         let contract_leaf_params =

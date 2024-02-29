@@ -40,6 +40,8 @@ sp_api::decl_runtime_apis! {
         fn nonce(contract_address: ContractAddress) -> Nonce;
         /// Returns a storage slot value
         fn get_storage_at(address: ContractAddress, key: StorageKey) -> Result<StarkFelt, DispatchError>;
+        /// Returns a storage keys and values of a given contract
+        fn get_storage_from(address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError>;
         /// Returns a `Call` response.
         fn call(address: ContractAddress, function_selector: EntryPointSelector, calldata: Calldata) -> Result<Vec<Felt252Wrapper>, DispatchError>;
         /// Returns the contract class hash at the given address.

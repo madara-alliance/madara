@@ -382,7 +382,7 @@ pub mod pallet {
     #[pallet::getter(fn nonce)]
     pub(super) type Nonces<T: Config> = StorageMap<_, Identity, ContractAddress, Nonce, ValueQuery>;
 
-    /// Mapping from Starknet contract storage key to its value.
+    /// Mapping from Starknet contract storage to its keys and values.
     /// Safe to use `Identity` as the key is already a hash.
     #[pallet::storage]
     #[pallet::unbounded]
@@ -1022,6 +1022,13 @@ impl<T: Config> Pallet<T> {
             Some((_, value)) => Ok(value.clone()),
             None => Err(DispatchError::CannotLookup),
         }
+    }
+
+    /// Returns a storage keys and values of a given contract
+    pub fn get_storage_from(address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
+        ensure!(ContractClassHashes::<T>::contains_key(address), Error::<T>::ContractNotFound);
+
+        Ok(Self::storage(address))
     }
 
     /// Store a Starknet block in the blockchain.

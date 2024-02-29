@@ -36,7 +36,6 @@ pub fn bonsai_configs<B: BlockT>(bonsai_dbs: &BonsaiDbs<B>) -> BonsaiConfigs<B> 
 
 pub mod starknet_sync_worker {
     use std::sync::Arc;
-
     use reqwest::Url;
     use sp_runtime::traits::Block as BlockT;
 
@@ -53,7 +52,6 @@ pub mod starknet_sync_worker {
 
         let bonsai_dbs =
             BonsaiDbs { contract: Arc::clone(backend.bonsai_contract()), class: Arc::clone(backend.bonsai_class()) };
-
         let bonsai_configs = bonsai_configs(&bonsai_dbs);
 
         let _ = tokio::join!(

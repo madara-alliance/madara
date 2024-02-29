@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use bitvec::view::BitView;
 
 use blockifier::state::cached_state::CommitmentStateDiff;
@@ -5,10 +7,16 @@ use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mc_db::BonsaiDbError;
+use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
+use mp_storage::StarknetStorageSchemaVersion;
+use sp_core::H256;
 use starknet_api::api_core::ContractAddress;
 use starknet_types_core::hash::Pedersen;
+use sp_runtime::generic::{Block, Header};
+use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
+use sp_runtime::OpaqueExtrinsic;
 
 #[derive(Debug)]
 pub struct ContractLeafParams {
@@ -32,14 +40,26 @@ pub struct ContractLeafParams {
 pub fn update_storage_trie(
     contract_address: &ContractAddress,
     commitment_state_diff: CommitmentStateDiff,
+    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    substrate_block_hash: Option<H256>
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     let config = BonsaiStorageConfig::default();
     let bonsai_db = HashMapDb::<BasicId>::default();
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    // Insert old storage changes
-
+    if let Some(block_hash) = substrate_block_hash {
+        let old_updates = overrides.for_schema_version(&StarknetStorageSchemaVersion::Undefined)
+            .get_storage_from(block_hash, *contract_address)
+            .expect("Failed to get storage updates");
+        println!("old_updates: {:?}", old_updates);
+    
+        for (storage_key, storage_value) in old_updates {
+            let key = Felt252Wrapper::from(storage_key.0.0).0.to_bytes_be().view_bits()[5..].to_owned();
+            let value = Felt252Wrapper::from(storage_value);
+            bonsai_storage.insert(&key, &value.into()).expect("Failed to insert storage update into trie");
+        }
+    }
 
     // Insert new storage changes
     if let Some(updates) = commitment_state_diff.storage_updates.get(contract_address) {

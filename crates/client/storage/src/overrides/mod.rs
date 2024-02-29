@@ -56,13 +56,20 @@ impl<B: BlockT> OverrideHandle<B> {
 /// State Backend with some assumptions about pallet-starknet's storage schema. Using such an
 /// optimized implementation avoids spawning a runtime and the overhead associated with it.
 pub trait StorageOverride<B: BlockT>: Send + Sync {
-    /// get storage
+    /// get storage by storage key for a specific contract address and block hash
     fn get_storage_by_storage_key(
         &self,
         block_hash: B::Hash,
         address: ContractAddress,
         key: StorageKey,
     ) -> Option<StarkFelt>;
+
+    /// get storage keys and values from a specific contract address
+    fn get_storage_from(
+        &self,
+        block_hash: B::Hash,
+        address: ContractAddress,
+    ) -> Option<Vec<(StorageKey, StarkFelt)>>;
 
     /// Return the class hash at the provided address for the provided block.
     fn contract_class_hash_by_address(&self, block_hash: B::Hash, address: ContractAddress) -> Option<ClassHash>;
@@ -112,6 +119,16 @@ where
     C: ProvideRuntimeApi<B> + Send + Sync,
     C::Api: StarknetRuntimeApi<B>,
 {
+    /// Get the storage value for a specific contract address and storage key
+    ///
+    /// # Arguments
+    ///
+    /// * `block_hash` - The block hash
+    /// * `address` - The contract address to fetch the storage from
+    /// * `key` - The storage key to fetch the value for
+    ///
+    /// # Returns
+    /// * `Some(storage_value)` - The storage value for the provided contract address and storage key
     fn get_storage_by_storage_key(
         &self,
         block_hash: <B as BlockT>::Hash,
@@ -127,6 +144,37 @@ where
         }
     }
 
+    /// Get the storage keys and values from a specific contract address
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - The contract address to fetch the storage from
+    ///
+    /// # Returns
+    /// * `Vec<(storage_key, storage_value)>` - The storage from the provided contract address
+    fn get_storage_from(
+        &self,
+        block_hash: <B as BlockT>::Hash,
+        address: ContractAddress,
+    ) -> Option<Vec<(StorageKey, StarkFelt)>> {
+        let api = self.client.runtime_api();
+
+        match api.get_storage_from(block_hash, address) {
+            Ok(Ok(storage)) => Some(storage),
+            Ok(Err(_)) => None,
+            Err(_) => None,
+        }
+    }
+
+    /// Return the class hash at the provided address for the provided block.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_hash` - The block hash
+    /// * `address` - The address to fetch the class hash for
+    ///
+    /// # Returns
+    /// * `Some(class_hash)` - The class hash at the provided address for the provided block
     fn contract_class_by_address(
         &self,
         block_hash: <B as BlockT>::Hash,

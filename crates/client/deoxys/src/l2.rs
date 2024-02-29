@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use mc_db::bonsai_db::BonsaiConfigs;
-use mc_storage::OverrideHandle;
+use mc_storage::{overrides, OverrideHandle};
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
 use mp_felt::Felt252Wrapper;
@@ -151,7 +151,7 @@ pub async fn sync<B: BlockT>(
     let mut got_state_update = false;
     let mut last_update_highest_block = tokio::time::Instant::now() - Duration::from_secs(20);
     if current_block_number == 1 {
-        let _ = fetch_genesis_state_update(&client, Arc::clone(&bonsai_dbs)).await;
+        let _ = fetch_genesis_state_update(&client, current_block_number, Arc::clone(&bonsai_dbs), Arc::clone(&overrides), rpc_port).await;
     }
     loop {
         if last_update_highest_block.elapsed() > Duration::from_secs(20) {
@@ -248,7 +248,7 @@ async fn fetch_state_and_class_update<B: BlockT>(
     rpc_port: u16,
     bonsai_dbs: Arc<Mutex<BonsaiConfigs<'_, B>>>,
 ) -> Result<(), String> {
-    let state_update = fetch_state_update(&provider, block_number, bonsai_dbs).await?;
+    let state_update = fetch_state_update(&provider, block_number, bonsai_dbs, overrides.clone(), rpc_port).await?;
     let class_update = fetch_class_update(&provider, &state_update, overrides, block_number, rpc_port).await?;
 
     // Now send state_update, which moves it. This will be received
@@ -272,26 +272,33 @@ async fn fetch_state_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
     block_number: u64,
     bonsai_dbs: Arc<Mutex<BonsaiConfigs<'_, B>>>,
+    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    rpc_port: u16,
 ) -> Result<StateUpdate, String> {
     let state_update = provider
         .get_state_update(BlockId::Number(block_number))
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    verify_l2(block_number, &state_update, bonsai_dbs)?;
+    let block_hash = BlockHashEquivalence::new(&state_update, block_number - 1, rpc_port).await.substrate;
+    verify_l2(block_number, &state_update, bonsai_dbs, overrides, block_hash)?;
 
     Ok(state_update)
 }
 
 pub async fn fetch_genesis_state_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
+    block_number: u64,
     bonsai_dbs: Arc<Mutex<BonsaiConfigs<'_, B>>>,
+    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    rpc_port: u16,
 ) -> Result<StateUpdate, String> {
     println!("Fetching genesis state update");
     let state_update =
         provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
 
-    verify_l2(0, &state_update, bonsai_dbs)?;
+    let block_hash = BlockHashEquivalence::new(&state_update, block_number - 1, rpc_port).await.substrate;
+    verify_l2(0, &state_update, bonsai_dbs, overrides, block_hash)?;
 
     Ok(state_update)
 }
@@ -448,11 +455,13 @@ pub fn verify_l2<B: BlockT>(
     block_number: u64,
     state_update: &StateUpdate,
     bonsai_dbs: Arc<Mutex<BonsaiConfigs<B>>>,
+    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    substrate_block_hash: Option<H256>
 ) -> Result<(), String> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
 
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
-    let state_root = update_state_root(csd, bonsai_dbs, block_number).expect("Failed to update state root");
+    let state_root = update_state_root(csd, bonsai_dbs, block_number, overrides, substrate_block_hash).expect("Failed to update state root");
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
     update_l2(L2StateUpdate {
