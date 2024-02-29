@@ -2,6 +2,7 @@ git # Madara Changelog
 
 ## Next release
 
+- feat(rpc): add_invoke_tx, add_deploy_account_tx, add_declare_tx
 - feat(rpc): tx_receipt, re-execute tx
 - feat(script): added CI scripts for starting Deoxys and comparing JSON RPC
   calls
