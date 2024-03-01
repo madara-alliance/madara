@@ -28,6 +28,7 @@ pub fn bonsai_configs<B: BlockT>(bonsai_dbs: &BonsaiDbs<B>) -> BonsaiConfigs<B> 
     let contract: BonsaiStorage<BasicId, &BonsaiDb<B>, Pedersen> =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_dbs.contract.as_ref(), config.clone())
             .expect("Failed to create bonsai storage");
+
     let class = BonsaiStorage::<_, _, Poseidon>::new(bonsai_dbs.class.as_ref(), config.clone())
         .expect("Failed to create bonsai storage");
 

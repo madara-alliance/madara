@@ -205,6 +205,18 @@ where
         })
     }
 
+    /// Return the block hash of a given block number.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_number` - The number of the block you'd like to retrieve the hash (starknet block).
+    fn get_cached_block_hash_by_number(&self, block_number: u64) -> Option<StarkHash> {
+        self.backend.mapping().cached_block_hash_from_block_number(block_number).unwrap_or_else(|err| {
+            error!("Failed to read from cache: {err}");
+            None
+        })
+    }
+
     /// Returns the state diff for the given block.
     ///
     /// # Arguments

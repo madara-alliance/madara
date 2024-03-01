@@ -89,12 +89,11 @@ where
         address: ContractAddress,
     ) -> Option<Vec<(StarknetStorageKey, StarkFelt)>> {
         let storage_storage_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_STORAGE);
-        println!("AYAAAH");
         let storage = self.query_storage::<Vec<(StarknetStorageKey, StarkFelt)>>(
             block_hash,
             &StorageKey(storage_key_build(storage_storage_prefix, &self.encode_storage_key(&address))),
         );
-        println!("storage: {:?}", storage);
+
         match storage {
             Some(storage) => Some(storage),
             None => Some(Default::default()),

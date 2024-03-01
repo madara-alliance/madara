@@ -56,7 +56,7 @@ pub(crate) mod columns {
     // ===== /!\ ===================================================================================
     // MUST BE INCREMENTED WHEN A NEW COLUMN IN ADDED
     // ===== /!\ ===================================================================================
-    pub const NUM_COLUMNS: u32 = 15;
+    pub const NUM_COLUMNS: u32 = 16;
 
     pub const META: u32 = 0;
     pub const BLOCK_MAPPING: u32 = 1;
@@ -70,14 +70,19 @@ pub(crate) mod columns {
     /// This column should only be accessed if the `--cache` flag is enabled.
     pub const STARKNET_TRANSACTION_HASHES_CACHE: u32 = 5;
 
+    /// This column is used to map starknet block numbers to their block hashes.
+    ///
+    /// This column should only be accessed if the `--cache` flag is enabled.
+    pub const STARKNET_BLOCK_HASHES_CACHE: u32 = 6;
+
     /// This column contains last synchronized L1 block.
-    pub const MESSAGING: u32 = 6;
+    pub const MESSAGING: u32 = 7;
 
     /// This column contains the Sierra contract classes
-    pub const SIERRA_CONTRACT_CLASSES: u32 = 7;
+    pub const SIERRA_CONTRACT_CLASSES: u32 = 8;
 
     /// This column stores the fee paid on l1 for L1Handler transactions
-    pub const L1_HANDLER_PAID_FEE: u32 = 8;
+    pub const L1_HANDLER_PAID_FEE: u32 = 9;
 
     /// The bonsai columns are triplicated since we need to set a column for
     ///
@@ -87,12 +92,12 @@ pub(crate) mod columns {
     /// as defined in https://github.com/keep-starknet-strange/bonsai-trie/blob/oss/src/databases/rocks_db.rs
     ///
     /// For each tries CONTRACTS, CLASSES and STORAGE
-    pub const TRIE_BONSAI_CONTRACTS: u32 = 9;
-    pub const FLAT_BONSAI_CONTRACTS: u32 = 10;
-    pub const LOG_BONSAI_CONTRACTS: u32 = 11;
-    pub const TRIE_BONSAI_CLASSES: u32 = 12;
-    pub const FLAT_BONSAI_CLASSES: u32 = 13;
-    pub const LOG_BONSAI_CLASSES: u32 = 14;
+    pub const TRIE_BONSAI_CONTRACTS: u32 = 10;
+    pub const FLAT_BONSAI_CONTRACTS: u32 = 11;
+    pub const LOG_BONSAI_CONTRACTS: u32 = 12;
+    pub const TRIE_BONSAI_CLASSES: u32 = 13;
+    pub const FLAT_BONSAI_CLASSES: u32 = 14;
+    pub const LOG_BONSAI_CLASSES: u32 = 15;
 }
 
 pub mod static_keys {

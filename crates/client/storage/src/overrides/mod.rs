@@ -158,7 +158,6 @@ where
         address: ContractAddress,
     ) -> Option<Vec<(StorageKey, StarkFelt)>> {
         let api = self.client.runtime_api();
-
         match api.get_storage_from(block_hash, address) {
             Ok(Ok(storage)) => Some(storage),
             Ok(Err(_)) => None,

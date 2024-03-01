@@ -43,23 +43,25 @@ pub fn update_storage_trie(
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     substrate_block_hash: Option<H256>
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
+    // println!("CONTRACT ADDRESS: {:?}", contract_address);
     let config = BonsaiStorageConfig::default();
     let bonsai_db = HashMapDb::<BasicId>::default();
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    if let Some(block_hash) = substrate_block_hash {
-        let old_updates = overrides.for_schema_version(&StarknetStorageSchemaVersion::Undefined)
-            .get_storage_from(block_hash, *contract_address)
-            .expect("Failed to get storage updates");
-        println!("old_updates: {:?}", old_updates);
+    // if let Some(block_hash) = substrate_block_hash {
+    //     println!("block_hash: {:?}", block_hash);
+    //     let old_updates = overrides.for_schema_version(&StarknetStorageSchemaVersion::Undefined)
+    //         .get_storage_from(block_hash, *contract_address)
+    //         .expect("Failed to get storage updates");
+    //     println!("old_updates: {:?}", old_updates);
     
-        for (storage_key, storage_value) in old_updates {
-            let key = Felt252Wrapper::from(storage_key.0.0).0.to_bytes_be().view_bits()[5..].to_owned();
-            let value = Felt252Wrapper::from(storage_value);
-            bonsai_storage.insert(&key, &value.into()).expect("Failed to insert storage update into trie");
-        }
-    }
+    //     for (storage_key, storage_value) in old_updates {
+    //         let key = Felt252Wrapper::from(storage_key.0.0).0.to_bytes_be().view_bits()[5..].to_owned();
+    //         let value = Felt252Wrapper::from(storage_value);
+    //         bonsai_storage.insert(&key, &value.into()).expect("Failed to insert storage update into trie");
+    //     }
+    // }
 
     // Insert new storage changes
     if let Some(updates) = commitment_state_diff.storage_updates.get(contract_address) {
@@ -74,7 +76,6 @@ pub fn update_storage_trie(
     let id = id_builder.new_id();
     bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
     let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
-
     Ok(Felt252Wrapper::from(root_hash))
 }
 

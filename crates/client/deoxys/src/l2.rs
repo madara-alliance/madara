@@ -293,11 +293,10 @@ pub async fn fetch_genesis_state_update<B: BlockT>(
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     rpc_port: u16,
 ) -> Result<StateUpdate, String> {
-    println!("Fetching genesis state update");
     let state_update =
         provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
 
-    let block_hash = BlockHashEquivalence::new(&state_update, block_number - 1, rpc_port).await.substrate;
+    let block_hash = BlockHashEquivalence::new(&state_update, block_number, rpc_port).await.substrate;
     verify_l2(0, &state_update, bonsai_dbs, overrides, block_hash)?;
 
     Ok(state_update)
@@ -312,7 +311,7 @@ async fn fetch_class_update(
     rpc_port: u16,
 ) -> Result<Vec<ContractClassData>, String> {
     // defaults to downloading ALL classes if a substrate block hash could not be determined
-    let block_hash = BlockHashEquivalence::new(state_update, block_number - 1, rpc_port).await;
+    let block_hash = BlockHashEquivalence::new(state_update, block_number, rpc_port).await;
     let missing_classes = match block_hash.substrate {
         Some(block_hash_substrate) => fetch_missing_classes(state_update, overrides, block_hash_substrate),
         None => aggregate_classes(state_update),

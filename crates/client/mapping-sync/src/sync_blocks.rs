@@ -40,6 +40,7 @@ where
 
                         // Success, we write the Starknet to Substate hashes mapping to db
                         let mapping_commitment = mc_db::MappingCommitment {
+                            block_number: digest_starknet_block.header().block_number,
                             block_hash: substrate_block_hash,
                             starknet_block_hash: digest_starknet_block_hash.into(),
                             starknet_transaction_hashes: digest_starknet_block
@@ -90,6 +91,7 @@ where
     };
     let block_hash = block.header().hash::<H>();
     let mapping_commitment = mc_db::MappingCommitment::<B> {
+        block_number: block.header().block_number,
         block_hash: substrate_block_hash,
         starknet_block_hash: block_hash.into(),
         starknet_transaction_hashes: Vec::new(),

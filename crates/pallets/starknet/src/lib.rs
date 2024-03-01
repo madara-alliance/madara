@@ -1025,10 +1025,10 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Returns a storage keys and values of a given contract
-    pub fn get_storage_from(address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
-        ensure!(ContractClassHashes::<T>::contains_key(address), Error::<T>::ContractNotFound);
-
-        Ok(Self::storage(address))
+    pub fn get_storage_from(contract_address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
+        let changes = Self::storage(contract_address);
+        println!("Changes: {:?}", changes);
+        Ok(changes)
     }
 
     /// Store a Starknet block in the blockchain.
