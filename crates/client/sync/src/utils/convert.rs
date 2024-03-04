@@ -1,38 +1,45 @@
 //! Converts types from [`starknet_providers`] to madara's expected types.
 
-use std::sync::Arc;
-
 use mp_fee::ResourcePrice;
 use mp_felt::Felt252Wrapper;
-use sp_runtime::traits::Block as BlockT;
 use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 
 use crate::commitments::lib::calculate_commitments;
 
-pub fn block<B: BlockT>(block: &p::Block, backend: Arc<mc_db::Backend<B>>) -> mp_block::Block {
-    let transactions = transactions(&block.transactions);
+pub async fn block(block: p::Block) -> mp_block::Block {
+    // converts starknet_provider transactions and events to mp_transactions and starknet_api events
+    let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
+
+    let parent_block_hash = felt(block.parent_block_hash);
     let block_number = block.block_number.expect("no block number provided");
+    let block_timestamp = block.timestamp;
+    let global_state_root = felt(block.state_root.expect("no state root provided"));
     let sequencer_address = block.sequencer_address.map_or(contract_address(FieldElement::ZERO), contract_address);
-    let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number, backend);
-    let l1_gas_price = resource_price(block.eth_l1_gas_price);
+    let transaction_count = transactions.len() as u128;
+    let event_count = events.len() as u128;
+
+    let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number).await;
+
     let protocol_version = starknet_version(&block.starknet_version);
+    let l1_gas_price = resource_price(block.eth_l1_gas_price);
+    let extra_data = block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be()));
 
     let header = mp_block::Header {
-        parent_block_hash: felt(block.parent_block_hash),
+        parent_block_hash,
         block_number,
-        block_timestamp: block.timestamp,
-        global_state_root: felt(block.state_root.expect("no state root provided")),
+        block_timestamp,
+        global_state_root,
         sequencer_address,
-        transaction_count: block.transactions.len() as u128,
+        transaction_count,
         transaction_commitment,
-        event_count: events.len() as u128,
+        event_count,
         event_commitment,
         protocol_version,
         l1_gas_price,
-        extra_data: block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be())),
+        extra_data,
     };
 
     let ordered_events: Vec<mp_block::OrderedEvents> = block
@@ -46,11 +53,11 @@ pub fn block<B: BlockT>(block: &p::Block, backend: Arc<mc_db::Backend<B>>) -> mp
     mp_block::Block::new(header, transactions, ordered_events)
 }
 
-fn transactions(txs: &[p::TransactionType]) -> Vec<mp_transactions::Transaction> {
-    txs.iter().map(transaction).collect()
+fn transactions(txs: Vec<p::TransactionType>) -> Vec<mp_transactions::Transaction> {
+    txs.into_iter().map(transaction).collect()
 }
 
-fn transaction(transaction: &p::TransactionType) -> mp_transactions::Transaction {
+fn transaction(transaction: p::TransactionType) -> mp_transactions::Transaction {
     match transaction {
         p::TransactionType::InvokeFunction(tx) => mp_transactions::Transaction::Invoke(invoke_transaction(tx)),
         p::TransactionType::Declare(tx) => mp_transactions::Transaction::Declare(declare_transaction(tx)),
@@ -62,32 +69,32 @@ fn transaction(transaction: &p::TransactionType) -> mp_transactions::Transaction
     }
 }
 
-fn invoke_transaction(tx: &p::InvokeFunctionTransaction) -> mp_transactions::InvokeTransaction {
+fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> mp_transactions::InvokeTransaction {
     if tx.version == FieldElement::ZERO {
         mp_transactions::InvokeTransaction::V0(mp_transactions::InvokeTransactionV0 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.iter().copied().map(felt).map(Into::into).collect(),
+            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
             contract_address: felt(tx.sender_address).into(),
             entry_point_selector: felt(tx.entry_point_selector.expect("no entry_point_selector provided")).into(),
-            calldata: tx.calldata.iter().copied().map(felt).map(Into::into).collect(),
+            calldata: tx.calldata.into_iter().map(felt).map(Into::into).collect(),
         })
     } else {
         mp_transactions::InvokeTransaction::V1(mp_transactions::InvokeTransactionV1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.iter().copied().map(felt).map(Into::into).collect(),
+            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
             nonce: felt(tx.nonce.expect("no nonce provided")).into(),
             sender_address: felt(tx.sender_address).into(),
-            calldata: tx.calldata.iter().copied().map(felt).map(Into::into).collect(),
+            calldata: tx.calldata.into_iter().map(felt).map(Into::into).collect(),
             offset_version: false,
         })
     }
 }
 
-fn declare_transaction(tx: &p::DeclareTransaction) -> mp_transactions::DeclareTransaction {
+fn declare_transaction(tx: p::DeclareTransaction) -> mp_transactions::DeclareTransaction {
     if tx.version == FieldElement::ZERO {
         mp_transactions::DeclareTransaction::V0(mp_transactions::DeclareTransactionV0 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.iter().copied().map(felt).map(Into::into).collect(),
+            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
             nonce: felt(tx.nonce).into(),
             class_hash: felt(tx.class_hash).into(),
             sender_address: felt(tx.sender_address).into(),
@@ -95,7 +102,7 @@ fn declare_transaction(tx: &p::DeclareTransaction) -> mp_transactions::DeclareTr
     } else if tx.version == FieldElement::ONE {
         mp_transactions::DeclareTransaction::V1(mp_transactions::DeclareTransactionV1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.iter().copied().map(felt).map(Into::into).collect(),
+            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
             nonce: felt(tx.nonce).into(),
             class_hash: felt(tx.class_hash).into(),
             sender_address: felt(tx.sender_address).into(),
@@ -104,7 +111,7 @@ fn declare_transaction(tx: &p::DeclareTransaction) -> mp_transactions::DeclareTr
     } else {
         mp_transactions::DeclareTransaction::V2(mp_transactions::DeclareTransactionV2 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.iter().copied().map(felt).map(Into::into).collect(),
+            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
             nonce: felt(tx.nonce).into(),
             class_hash: felt(tx.class_hash).into(),
             sender_address: felt(tx.sender_address).into(),
@@ -114,29 +121,29 @@ fn declare_transaction(tx: &p::DeclareTransaction) -> mp_transactions::DeclareTr
     }
 }
 
-fn deploy_transaction(tx: &p::DeployTransaction) -> mp_transactions::DeployTransaction {
+fn deploy_transaction(tx: p::DeployTransaction) -> mp_transactions::DeployTransaction {
     mp_transactions::DeployTransaction {
         version: starknet_api::transaction::TransactionVersion(felt(tx.version)),
         class_hash: felt(tx.class_hash).into(),
         contract_address: felt(tx.contract_address).into(),
         contract_address_salt: felt(tx.contract_address_salt).into(),
-        constructor_calldata: tx.constructor_calldata.iter().copied().map(felt).map(Into::into).collect(),
+        constructor_calldata: tx.constructor_calldata.into_iter().map(felt).map(Into::into).collect(),
     }
 }
 
-fn deploy_account_transaction(tx: &p::DeployAccountTransaction) -> mp_transactions::DeployAccountTransaction {
+fn deploy_account_transaction(tx: p::DeployAccountTransaction) -> mp_transactions::DeployAccountTransaction {
     mp_transactions::DeployAccountTransaction {
         max_fee: fee(tx.max_fee.expect("no max fee provided")),
-        signature: tx.signature.iter().copied().map(felt).map(Into::into).collect(),
+        signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
         nonce: felt(tx.nonce).into(),
         contract_address_salt: felt(tx.contract_address_salt).into(),
-        constructor_calldata: tx.constructor_calldata.iter().copied().map(felt).map(Into::into).collect(),
+        constructor_calldata: tx.constructor_calldata.into_iter().map(felt).map(Into::into).collect(),
         class_hash: felt(tx.class_hash).into(),
         offset_version: false,
     }
 }
 
-fn l1_handler_transaction(tx: &p::L1HandlerTransaction) -> mp_transactions::HandleL1MessageTransaction {
+fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> mp_transactions::HandleL1MessageTransaction {
     mp_transactions::HandleL1MessageTransaction {
         nonce: tx
             .nonce
@@ -148,7 +155,7 @@ fn l1_handler_transaction(tx: &p::L1HandlerTransaction) -> mp_transactions::Hand
             }),
         contract_address: felt(tx.contract_address).into(),
         entry_point_selector: felt(tx.entry_point_selector).into(),
-        calldata: tx.calldata.iter().copied().map(felt).map(Into::into).collect(),
+        calldata: tx.calldata.into_iter().map(felt).map(Into::into).collect(),
     }
 }
 
@@ -190,19 +197,16 @@ fn event(event: &p::Event) -> starknet_api::transaction::Event {
     }
 }
 
-fn commitments<B: BlockT>(
+async fn commitments(
     transactions: &[mp_transactions::Transaction],
     events: &[starknet_api::transaction::Event],
     block_number: u64,
-    backend: Arc<mc_db::Backend<B>>,
 ) -> (StarkFelt, StarkFelt) {
-    use mp_hashers::pedersen::PedersenHasher;
-
     let chain_id = chain_id();
 
-    let (a, b) = calculate_commitments::<B, PedersenHasher>(transactions, events, chain_id, block_number, backend);
+    let (commitment_tx, commitment_event) = calculate_commitments(transactions, events, chain_id, block_number).await;
 
-    (a.into(), b.into())
+    (commitment_tx.into(), commitment_event.into())
 }
 
 fn chain_id() -> mp_felt::Felt252Wrapper {

@@ -1,6 +1,6 @@
 <!-- markdownlint-disable -->
 <div align="center">
-    <img src="https://github.com/KasarLabs/brand/blob/main/projects/deoxys/logo.png?raw=true" height="200" style="border-radius: 15px;">
+    <img src="https://github.com/KasarLabs/brand/blob/main/projects/deoxys/Full/GradientFullWhite.png?raw=true" height="200" style="border-radius: 15px;">
 </div>
 <div align="center">
 <br />

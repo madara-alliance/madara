@@ -472,7 +472,6 @@ pub mod pallet {
                 CompiledClassHashes::<T>::insert(class_hash, CompiledClassHash(compiled_class_hash.0))
             });
 
-            log::info!("Saving Genesis storage diffs");
             self.storage
                 .iter()
                 .for_each(|(contract_storage_key, value)| StorageView::<T>::insert(contract_storage_key, value));
@@ -1064,9 +1063,7 @@ impl<T: Config> Pallet<T> {
             let events: Vec<StarknetEvent> = transaction_hashes.iter().flat_map(TxEvents::<T>::take).collect();
             let sequencer_address = Self::sequencer_address();
             let block_timestamp = Self::block_timestamp();
-            let chain_id = Self::chain_id();
-            let (transaction_commitment, event_commitment) =
-                mp_commitments::calculate_commitments::<T::SystemHash>(&transactions, &events, chain_id, block_number);
+            let (transaction_commitment, event_commitment) = (Felt252Wrapper::default(), Felt252Wrapper::default());
             let protocol_version = T::ProtocolVersion::get();
             let extra_data = None;
             let l1_gas_price = T::L1GasPrice::get();

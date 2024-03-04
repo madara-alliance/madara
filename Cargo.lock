@@ -962,7 +962,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/antiyro/bonsai-trie.git?branch=oss#6be56ff0296cbb3df0693ffc13e73a35329c0a0f"
+source = "git+https://github.com/antiyro/bonsai-trie.git?branch=oss#1b9b3f14dfcf96fd872634f2127b218b9ed26c2e"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -2245,6 +2245,16 @@ checksum = "0e3681d554572a651dda4186cd47240627c3d0114d45a95f6ad27f2f22e7548d"
 dependencies = [
  "autocfg",
  "cfg-if",
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-skiplist"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df29de440c58ca2cc6e587ec3d22347551a32435fbde9d2bff64e78a9ffa151b"
+dependencies = [
+ "crossbeam-epoch",
  "crossbeam-utils",
 ]
 
@@ -5994,6 +6004,7 @@ dependencies = [
  "sp-runtime",
  "starknet-core",
  "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
+ "starknet-providers",
  "starknet_api",
  "thiserror",
  "tokio",
@@ -6069,6 +6080,7 @@ dependencies = [
  "bitvec",
  "blockifier",
  "bonsai-trie",
+ "crossbeam-skiplist",
  "env_logger",
  "ethers",
  "futures",
@@ -6083,7 +6095,6 @@ dependencies = [
  "mc-storage",
  "mockito",
  "mp-block",
- "mp-commitments",
  "mp-contract",
  "mp-fee",
  "mp-felt",
@@ -6337,25 +6348,6 @@ version = "0.1.0"
 dependencies = [
  "mp-felt",
  "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
-]
-
-[[package]]
-name = "mp-commitments"
-version = "0.1.0"
-dependencies = [
- "bitvec",
- "derive_more",
- "frame-support",
- "mp-felt",
- "mp-hashers",
- "mp-transactions",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "starknet-core",
- "starknet-crypto 0.6.1 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
- "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
- "starknet_api",
 ]
 
 [[package]]
@@ -7038,7 +7030,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
 dependencies = [
- "proc-macro-crate 2.0.0",
+ "proc-macro-crate 1.1.3",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -7306,7 +7298,6 @@ dependencies = [
  "log",
  "mp-block",
  "mp-chain-id",
- "mp-commitments",
  "mp-contract",
  "mp-digest-log",
  "mp-fee",
@@ -11308,9 +11299,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-types-core"
-version = "0.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d791c671fecde494f435170a01c6fcb2949d0dd61be0b31b7c410b041609f96"
+version = "0.0.9"
+source = "git+https://github.com/starknet-io/types-rs?branch=main#eae04aa3e6a3716982ce39ec7ba87a47698096dc"
 dependencies = [
  "bitvec",
  "lambdaworks-crypto",
@@ -12343,7 +12333,7 @@ checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
  "digest 0.10.7",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 
