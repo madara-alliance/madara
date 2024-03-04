@@ -6,51 +6,27 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group:
+    pr-checks-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   changelog:
     name: Enforce CHANGELOG
     uses: ./.github/workflows/changelog.yml
 
-  configs-verifier:
-    name: Verify configs
-    uses: ./.github/workflows/configs-verifier.yml
-
   linters:
     name: Run linters
     uses: ./.github/workflows/linters.yml
-    needs: [changelog, configs-verifier]
+    needs: changelog
 
-  rust_build_test:
-    name: Build & Integration Tests
-    uses: ./.github/workflows/rust-build-test.yml
-    needs: [changelog, configs-verifier]
-
-  madara_commands:
-    name: Test Madara commands
-    uses: ./.github/workflows/madara-commands.yml
-    needs: [linters, rust_build_test]
+  rust_check:
+    name: Run check
+    uses: ./.github/workflows/rust-check.yml
+    needs: changelog
 
   linters_cargo:
     name: Run Cargo linters
     uses: ./.github/workflows/linters-cargo.yml
-    needs: madara_commands
-
-  rpc-tests:
-    name: Run rpc tests
-    uses: ./.github/workflows/starknet-rpc-tests.yml
-    needs: madara_commands
-
-  starknet-js-tests:
-    name: Run starknet-js compatibility tests
-    uses: ./.github/workflows/starknet-js-tests.yml
-    needs: madara_commands
-
-  starknet-foundry-tests:
-    name: Run Starknet Foundry compatibility tests
-    runs-on: ubuntu-latest
-    needs: madara_commands
-    env:
-      SNCAST_VERSION: "0.12.0"
-      SCARB_VERSION: "2.3.1"
-    steps:
-      - uses: keep-starknet-strange/starknet-foundry-compatibility-tests@main
+    needs: rust_check

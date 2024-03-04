@@ -33,6 +33,7 @@ use thiserror::Error;
 
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
+use crate::utils::blockifier_to_starknet_rs_ordered_events;
 
 #[async_trait]
 #[allow(unused_variables)]
@@ -284,25 +285,6 @@ fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core
             to_address: FieldElement::from_byte_slice_be(message.message.to_address.0.to_fixed_bytes().as_slice())
                 .unwrap(),
             from_address: Felt252Wrapper::from(call_info.call.storage_address.0.0).into(),
-        })
-        .collect()
-}
-
-fn blockifier_to_starknet_rs_ordered_events(
-    ordered_events: &[blockifier::execution::entry_point::OrderedEvent],
-) -> Vec<starknet_core::types::OrderedEvent> {
-    ordered_events
-        .iter()
-        .map(|event| starknet_core::types::OrderedEvent {
-            order: event.order as u64, // Convert usize to u64
-            keys: event.event.keys.iter().map(|key| FieldElement::from_byte_slice_be(key.0.bytes()).unwrap()).collect(),
-            data: event
-                .event
-                .data
-                .0
-                .iter()
-                .map(|data_item| FieldElement::from_byte_slice_be(data_item.bytes()).unwrap())
-                .collect(),
         })
         .collect()
 }

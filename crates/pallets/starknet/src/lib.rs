@@ -1063,7 +1063,6 @@ impl<T: Config> Pallet<T> {
             let events: Vec<StarknetEvent> = transaction_hashes.iter().flat_map(TxEvents::<T>::take).collect();
             let sequencer_address = Self::sequencer_address();
             let block_timestamp = Self::block_timestamp();
-            let chain_id = Self::chain_id();
             let (transaction_commitment, event_commitment) = (Felt252Wrapper::default(), Felt252Wrapper::default());
             let protocol_version = T::ProtocolVersion::get();
             let extra_data = None;

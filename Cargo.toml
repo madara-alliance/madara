@@ -1,8 +1,7 @@
 [workspace]
 members = [
-  "crates/client/commitment-state-diff",
   "crates/client/db",
-  "crates/client/deoxys",
+  "crates/client/sync",
   "crates/client/genesis-data-provider",
   "crates/client/mapping-sync",
   "crates/client/rpc",
@@ -33,7 +32,6 @@ resolver = "2"
 # All previous except for `starknet-rpc-test` and `starknet-e2e-test`
 # We don't want `cargo test` to trigger its tests
 default-members = [
-  "crates/client/commitment-state-diff",
   "crates/client/db",
   "crates/client/genesis-data-provider",
   "crates/client/mapping-sync",
@@ -240,7 +238,6 @@ mp-storage = { path = "crates/primitives/storage", default-features = false }
 mp-transactions = { path = "crates/primitives/transactions", default-features = false }
 
 # Madara client
-mc-commitment-state-diff = { path = "crates/client/commitment-state-diff" }
 mc-db = { path = "crates/client/db" }
 mc-genesis-data-provider = { path = "crates/client/genesis-data-provider" }
 mc-mapping-sync = { path = "crates/client/mapping-sync" }
@@ -336,11 +333,11 @@ jsonrpsee = { version = "0.16.3", default-features = false }
 jsonschema = "0.17.0"
 lazy_static = { version = "1.4.0", default-features = false }
 libmdbx = "0.3.5"
+mc-sync = { path = "crates/client/sync" }
 linked-hash-map = { version = "0.5.6", default-features = false, features = [
   "std",
 ] }
 log = { version = "0.4.20", default-features = false, features = ["std"] }
-mc-deoxys = { path = "crates/client/deoxys" }
 metrics = "0.21.0"
 mockall = "0.11.2"
 mockito = "0.31.0"

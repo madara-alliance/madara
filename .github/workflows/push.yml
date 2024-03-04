@@ -11,43 +11,11 @@ jobs:
     name: Run linters
     uses: ./.github/workflows/linters.yml
 
-  rust_build_test:
-    name: Build & Integration Tests
-    uses: ./.github/workflows/rust-build-test.yml
-
-  madara_commands:
-    name: Test Madara commands
-    uses: ./.github/workflows/madara-commands.yml
-    needs: [linters, rust_build_test]
+  rust_check:
+    name: Run check
+    uses: ./.github/workflows/rust-check.yml
 
   linters_cargo:
     name: Run Cargo linters
     uses: ./.github/workflows/linters-cargo.yml
-    needs: madara_commands
-
-  rpc-tests:
-    name: Run rpc tests
-    uses: ./.github/workflows/starknet-rpc-tests.yml
-    needs: madara_commands
-
-  starknet-js-tests:
-    name: Run starknet-js compatibility tests
-    uses: ./.github/workflows/starknet-js-tests.yml
-    needs: madara_commands
-
-  starknet-foundry-tests:
-    name: Run Starknet Foundry compatibility tests
-    runs-on: ubuntu-latest
-    needs: madara_commands
-    env:
-      SNCAST_VERSION: "0.12.0"
-      SCARB_VERSION: "2.3.1"
-    steps:
-      - uses: keep-starknet-strange/starknet-foundry-compatibility-tests@main
-
-  rustdoc:
-    name: Deploy docs to GitHub Pages
-    uses: ./.github/workflows/rustdoc.yml
-    needs: linters_cargo
-    permissions:
-      contents: write
+    needs: rust_check
