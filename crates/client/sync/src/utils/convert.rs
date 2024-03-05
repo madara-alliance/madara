@@ -46,7 +46,7 @@ pub async fn block(block: p::Block) -> mp_block::Block {
         .transaction_receipts
         .iter()
         .enumerate()
-        .filter(|(_, r)| r.events.len() > 0)
+        .filter(|(_, r)| !r.events.is_empty())
         .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
         .collect();
 
@@ -175,10 +175,7 @@ fn fee(felt: starknet_ff::FieldElement) -> u128 {
 }
 
 fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> ResourcePrice {
-    ResourcePrice {
-        price_in_strk: None,
-        price_in_wei: fee(eth_l1_gas_price).try_into().expect("Value out of range for u64"),
-    }
+    ResourcePrice { price_in_strk: None, price_in_wei: fee(eth_l1_gas_price) }
 }
 
 fn events(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<starknet_api::transaction::Event> {

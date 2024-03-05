@@ -42,7 +42,7 @@ impl DeclareTransactionV0 {
     pub fn from_starknet(inner: starknet_api::transaction::DeclareTransactionV0V1) -> Self {
         Self {
             nonce: inner.nonce.0.into(),
-            max_fee: inner.max_fee.0.into(),
+            max_fee: inner.max_fee.0,
             signature: inner.signature.0.iter().map(|felt| Felt252Wrapper::from(*felt)).collect(),
             sender_address: inner.sender_address.into(),
             class_hash: inner.class_hash.into(),
@@ -75,7 +75,7 @@ impl DeclareTransactionV1 {
     pub fn from_starknet(inner: starknet_api::transaction::DeclareTransactionV0V1) -> Self {
         Self {
             nonce: inner.nonce.0.into(),
-            max_fee: inner.max_fee.0.into(),
+            max_fee: inner.max_fee.0,
             signature: inner.signature.0.iter().map(|felt| Felt252Wrapper::from(*felt)).collect(),
             sender_address: inner.sender_address.into(),
             class_hash: inner.class_hash.into(),
@@ -110,7 +110,7 @@ impl DeclareTransactionV2 {
     pub fn from_starknet(inner: starknet_api::transaction::DeclareTransactionV2) -> Self {
         Self {
             nonce: inner.nonce.0.into(),
-            max_fee: inner.max_fee.0.into(),
+            max_fee: inner.max_fee.0,
             signature: inner.signature.0.iter().map(|felt| Felt252Wrapper::from(*felt)).collect(),
             sender_address: inner.sender_address.into(),
             class_hash: inner.class_hash.into(),
@@ -157,7 +157,7 @@ impl InvokeTransactionV0 {
 
     pub fn from_starknet(inner: starknet_api::transaction::InvokeTransactionV0) -> Self {
         Self {
-            max_fee: inner.max_fee.0.into(),
+            max_fee: inner.max_fee.0,
             signature: inner.signature.0.iter().map(|felt| Felt252Wrapper::from(*felt)).collect(),
             contract_address: inner.contract_address.into(),
             entry_point_selector: inner.entry_point_selector.into(),

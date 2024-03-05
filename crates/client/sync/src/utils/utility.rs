@@ -72,10 +72,7 @@ pub async fn get_block_hash_by_number(rpc_port: u16, block_number: u64) -> Optio
         .await
         .unwrap();
 
-    match response["result"].as_str() {
-        Some(string) => Some(String::from(string)),
-        None => None,
-    }
+    response["result"].as_str().map(String::from)
 }
 
 pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2StateUpdate, Box<dyn Error>> {
@@ -138,16 +135,8 @@ pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2S
 pub async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider) -> Result<(), String> {
     let block = client.get_block(BlockId::Latest).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    let hash = block
-        .block_hash
-        .ok_or("block hash not found")?
-        .try_into()
-        .map_err(|e| format!("failed to convert block hash: {e}"))?;
-    let number = block
-        .block_number
-        .ok_or("block number not found")?
-        .try_into()
-        .map_err(|e| format!("failed to convert block number: {e}"))?;
+    let hash = block.block_hash.ok_or("block hash not found")?;
+    let number = block.block_number.ok_or("block number not found")?;
 
     let last_highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.clone();
     let mut new_highest_block_hash_and_number = last_highest_block_hash_and_number.lock().unwrap();
@@ -157,7 +146,7 @@ pub async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvi
 }
 
 pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
-    STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.lock().unwrap().clone()
+    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.lock().expect("failed to lock STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
 }
 
 /// Returns a random Pokémon name.
@@ -200,8 +189,8 @@ pub fn event_to_l1_state_update(log_state_update: LogStateUpdate) -> Result<L1St
     let global_root_u128 = log_state_update.global_root.low_u128();
     let block_hash_u128 = log_state_update.block_hash.low_u128();
 
-    if global_root_u128 as u128 != log_state_update.global_root.low_u128()
-        || block_hash_u128 as u128 != log_state_update.block_hash.low_u128()
+    if global_root_u128 != log_state_update.global_root.low_u128()
+        || block_hash_u128 != log_state_update.block_hash.low_u128()
     {
         return Err("Conversion from U256 to u128 resulted in data loss");
     }
