@@ -218,11 +218,9 @@ pub mod pallet {
             Ok(state_update) => {
                 for (address, storage_diffs) in state_update.state_diff.storage_diffs {
                     for storage_diff in storage_diffs {
-                        let contract_storage_key: ContractStorageKey = (
-                            ContractAddress(address.try_into().unwrap()),
-                            StorageKey(storage_diff.key.try_into().unwrap()),
-                        );
-                        let value = StarkFelt(storage_diff.value.try_into().unwrap());
+                        let contract_storage_key: ContractStorageKey =
+                            (ContractAddress(address.into()), StorageKey(storage_diff.key.into()));
+                        let value = StarkFelt(storage_diff.value.into());
                         <StorageView<T>>::insert(contract_storage_key, value)
                     }
                 }
@@ -232,9 +230,7 @@ pub mod pallet {
                     .state_diff
                     .nonces
                     .into_iter()
-                    .map(|(address, nonce)| {
-                        (ContractAddress(address.try_into().unwrap()), Nonce(nonce.try_into().unwrap()))
-                    })
+                    .map(|(address, nonce)| (ContractAddress(address.into()), Nonce(nonce.into())))
                     .for_each(|(contract_address, nonce)| <Nonces<T>>::insert(contract_address, nonce));
 
                 // contract address to class hash equivalence (used in
@@ -242,12 +238,7 @@ pub mod pallet {
                 core::iter::empty()
                     .chain(state_update.state_diff.deployed_contracts)
                     .chain(state_update.state_diff.replaced_classes)
-                    .map(|contract| {
-                        (
-                            ContractAddress(contract.address.try_into().unwrap()),
-                            ClassHash(contract.class_hash.try_into().unwrap()),
-                        )
-                    })
+                    .map(|contract| (ContractAddress(contract.address.into()), ClassHash(contract.class_hash.into())))
                     .for_each(|(contract_address, class_hash)| {
                         <ContractClassHashes<T>>::insert(contract_address, class_hash)
                     });
@@ -260,8 +251,8 @@ pub mod pallet {
                     .into_iter()
                     .map(|declared_class| {
                         (
-                            ClassHash(declared_class.class_hash.try_into().unwrap()),
-                            CompiledClassHash(declared_class.compiled_class_hash.try_into().unwrap()),
+                            ClassHash(declared_class.class_hash.into()),
+                            CompiledClassHash(declared_class.compiled_class_hash.into()),
                         )
                     })
                     .for_each(|(class_hash, compiled_class_hash)| {

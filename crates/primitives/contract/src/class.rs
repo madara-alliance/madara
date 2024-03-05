@@ -127,8 +127,8 @@ pub mod convert {
             Self {
                 r#type: AbiFunctionTypeWrapper::from(abi_function_entry.r#type),
                 name: abi_function_entry.name,
-                inputs: abi_function_entry.inputs.iter().map(|v| AbiTypedParameterWrapper::from(v.clone())).collect(),
-                outputs: abi_function_entry.outputs.iter().map(|v| AbiTypedParameterWrapper::from(v.clone())).collect(),
+                inputs: abi_function_entry.inputs.into_iter().map(AbiTypedParameterWrapper::from).collect(),
+                outputs: abi_function_entry.outputs.into_iter().map(AbiTypedParameterWrapper::from).collect(),
                 state_mutability: abi_function_entry.state_mutability.map(AbiFunctionStateMutabilityWrapper::from),
             }
         }
@@ -241,7 +241,7 @@ pub mod convert {
                 r#type: abi_struct_entry.r#type.into(),
                 name: abi_struct_entry.name,
                 size: abi_struct_entry.size,
-                members: abi_struct_entry.members.into_iter().map(|v| v.into()).collect(),
+                members: abi_struct_entry.members.into_iter().map(LegacyStructMember::from).collect(),
             }
         }
     }
