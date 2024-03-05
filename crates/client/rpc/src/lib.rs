@@ -18,12 +18,12 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
-use mc_sync::l2::get_config;
-use mc_sync::utility::get_highest_block_hash_and_number;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
+use mc_sync::l2::get_config;
+use mc_sync::utility::get_highest_block_hash_and_number;
 use mp_block::BlockStatus;
 use mp_contract::class::ContractClassWrapper;
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
@@ -53,11 +53,11 @@ use starknet_core::types::{
     BlockHashAndNumber, BlockId, BlockTag, BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTransaction,
     BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass,
     DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt,
-    DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage,
-    ExecutionResources, ExecutionResult, FeeEstimate, FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt,
+    DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResources,
+    ExecutionResult, FeeEstimate, FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt,
     InvokeTransactionResult, L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
-    MaybePendingTransactionReceipt, MsgFromL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType,
-    Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
+    MaybePendingTransactionReceipt, MsgFromL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
+    TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 
@@ -885,9 +885,9 @@ where
         let block_status: BlockStatus = if starknet_block.header().block_number
             <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
-            BlockStatus::AcceptedOnL1.into()
+            BlockStatus::AcceptedOnL1
         } else {
-            BlockStatus::AcceptedOnL2.into()
+            BlockStatus::AcceptedOnL2
         };
 
         let parent_blockhash = starknet_block.header().parent_block_hash;
@@ -1581,7 +1581,7 @@ where
 
         let actual_fee = execution_infos.actual_fee.0.into();
 
-        let actual_status = if block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number {
+        let actual_status = if block_number <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number {
             TransactionFinalityStatus::AcceptedOnL1
         } else {
             TransactionFinalityStatus::AcceptedOnL2

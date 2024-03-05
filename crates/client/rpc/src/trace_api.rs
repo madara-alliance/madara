@@ -32,8 +32,8 @@ use starknet_ff::FieldElement;
 use thiserror::Error;
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
 use crate::utils::blockifier_to_starknet_rs_ordered_events;
+use crate::Starknet;
 
 #[async_trait]
 #[allow(unused_variables)]
