@@ -247,6 +247,7 @@ mc-mapping-sync = { path = "crates/client/mapping-sync" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-rpc-core = { path = "crates/client/rpc-core" }
 mc-storage = { path = "crates/client/storage" }
+mc-deoxys = { path = "crates/client/deoxys" }
 
 # Madara runtime
 madara-runtime = { path = "crates/runtime" }
@@ -340,7 +341,6 @@ linked-hash-map = { version = "0.5.6", default-features = false, features = [
   "std",
 ] }
 log = { version = "0.4.20", default-features = false, features = ["std"] }
-mc-deoxys = { path = "crates/client/deoxys" }
 metrics = "0.21.0"
 mockall = "0.11.2"
 mockito = "0.31.0"

@@ -360,9 +360,8 @@ impl DeployTransaction {
                 FieldElement::ZERO,
                 chain_id,
             ])
-            .into()
         } else {
-            H::compute_hash_on_elements(&[prefix, contract_address, constructor, constructor_calldata, chain_id]).into()
+            H::compute_hash_on_elements(&[prefix, contract_address, constructor, constructor_calldata, chain_id])
         }
     }
 }
@@ -383,7 +382,7 @@ impl ComputeTransactionHash for HandleL1MessageTransaction {
         let chain_id = chain_id.into();
         let nonce = self.nonce.into();
 
-        if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && block_number != None {
+        if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && block_number.is_some() {
             H::compute_hash_on_elements(&[
                 invoke_prefix,
                 contract_address,
@@ -392,7 +391,7 @@ impl ComputeTransactionHash for HandleL1MessageTransaction {
                 chain_id,
             ])
             .into()
-        } else if block_number < Some(LEGACY_BLOCK_NUMBER) && block_number != None {
+        } else if block_number < Some(LEGACY_BLOCK_NUMBER) && block_number.is_some() {
             H::compute_hash_on_elements(&[
                 prefix,
                 contract_address,

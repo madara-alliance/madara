@@ -14,12 +14,10 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use blockifier::execution::contract_class::{ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf};
-use blockifier::execution::entry_point::CallInfo;
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
-use mc_deoxys::commitments::transactions;
 use mc_deoxys::l2::get_config;
 use mc_deoxys::utility::get_highest_block_hash_and_number;
 use mc_genesis_data_provider::GenesisProvider;
@@ -28,7 +26,6 @@ pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
 use mc_storage::OverrideHandle;
 use mp_block::BlockStatus;
 use mp_contract::class::ContractClassWrapper;
-use mp_convert::contract::flattened_sierra_to_sierra_contract_class;
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -58,11 +55,11 @@ use starknet_core::types::{
     BlockHashAndNumber, BlockId, BlockTag, BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTransaction,
     BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass,
     DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt,
-    DeployAccountTransactionResult, DeployTransactionReceipt, Event, EventFilterWithPage, EventsPage,
-    ExecutionResources, ExecutionResult, FeeEstimate, FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt,
+    DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResources,
+    ExecutionResult, FeeEstimate, FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt,
     InvokeTransactionResult, L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
-    MaybePendingTransactionReceipt, MsgFromL1, MsgToL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType,
-    Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
+    MaybePendingTransactionReceipt, MsgFromL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
+    TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 
@@ -73,6 +70,7 @@ use crate::utils::{
 };
 
 /// A Starknet RPC server for Madara
+#[allow(dead_code)]
 pub struct Starknet<A: ChainApi, B: BlockT, BE, G, C, P, H> {
     client: Arc<C>,
     backend: Arc<mc_db::Backend<B>>,
@@ -233,6 +231,7 @@ where
         Ok(rpc_state_diff)
     }
 
+    #[allow(dead_code)]
     fn try_txn_hash_from_cache(
         &self,
         tx_index: usize,
@@ -266,6 +265,7 @@ where
 }
 
 /// Taken from https://github.com/paritytech/substrate/blob/master/client/rpc/src/author/mod.rs#L78
+#[allow(dead_code)]
 const TX_SOURCE: TransactionSource = TransactionSource::External;
 
 #[async_trait]
@@ -1313,7 +1313,7 @@ where
                 error!("Failed to parse continuation token: {:?}", e);
                 StarknetRpcApiError::InvalidContinuationToken
             })?,
-            None => types::ContinuationToken { block_n: from_block.into(), event_n: 0 },
+            None => types::ContinuationToken { block_n: from_block, event_n: 0 },
         };
 
         // Verify that the requested range is valid
@@ -1433,7 +1433,7 @@ where
         let block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)?;
         let block_header = block.header();
         let block_number = block_header.block_number;
-        let block_hash: Felt252Wrapper = block_header.hash::<H>().into();
+        let block_hash: Felt252Wrapper = block_header.hash::<H>();
         let starknet_version = block_header.protocol_version;
 
         let chain_id = self.chain_id()?.0;
@@ -1468,7 +1468,7 @@ where
         };
 
         let (tx_index, _) =
-            block_txs_hashes.into_iter().enumerate().find(|(_, hash)| hash == &transaction_hash.into()).unwrap().into();
+            block_txs_hashes.into_iter().enumerate().find(|(_, hash)| hash == &transaction_hash).unwrap();
 
         let transaction = block.transactions().get(tx_index).ok_or_else(|| {
             log::error!("Failed to retrieve transaction at index {tx_index} from block with hash {block_hash:?}");
@@ -1591,9 +1591,9 @@ where
         let actual_fee = execution_infos.actual_fee.0.into();
 
         let actual_status = if block_number <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number {
-            TransactionFinalityStatus::AcceptedOnL1.into()
+            TransactionFinalityStatus::AcceptedOnL1
         } else {
-            TransactionFinalityStatus::AcceptedOnL2.into()
+            TransactionFinalityStatus::AcceptedOnL2
         };
 
         let execution_result = match execution_infos.revert_error.clone() {
@@ -1629,7 +1629,7 @@ where
         // TODO: use actual execution ressources
         let receipt = match transaction {
             mp_transactions::Transaction::Declare(_) => TransactionReceipt::Declare(DeclareTransactionReceipt {
-                transaction_hash: transaction_hash.into(),
+                transaction_hash,
                 actual_fee,
                 finality_status: actual_status,
                 block_hash: block_hash.into(),
@@ -1694,6 +1694,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 async fn submit_extrinsic<P, B>(
     pool: Arc<P>,
     best_block_hash: <B as BlockT>::Hash,
@@ -1713,6 +1714,7 @@ where
     })
 }
 
+#[allow(dead_code)]
 async fn convert_tx_to_extrinsic<C, B>(
     client: Arc<C>,
     best_block_hash: <B as BlockT>::Hash,

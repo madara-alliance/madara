@@ -112,7 +112,7 @@ impl EthereumClient {
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last block number");
         let result_str = result.to_string();
-        let hex_str = result_str.trim_start_matches("Bytes(0x").trim_end_matches(")").trim_start_matches("0x");
+        let hex_str = result_str.trim_start_matches("Bytes(0x").trim_end_matches(')').trim_start_matches("0x");
 
         let block_number = u64::from_str_radix(hex_str, 16).expect("Failed to parse block number");
         Ok(block_number)
@@ -142,15 +142,12 @@ impl EthereumClient {
     pub async fn get_initial_state(client: &EthereumClient) -> Result<L1StateUpdate, ()> {
         let block_number = client.get_last_block_number().await.map_err(|e| {
             log::error!("Failed to get last block number: {}", e);
-            ()
         })?;
         let block_hash = client.get_last_block_hash().await.map_err(|e| {
             log::error!("Failed to get last block hash: {}", e);
-            ()
         })?;
         let global_root = client.get_last_state_root().await.map_err(|e| {
             log::error!("Failed to get last state root: {}", e);
-            ()
         })?;
 
         Ok(L1StateUpdate { global_root, block_number, block_hash })
@@ -207,8 +204,7 @@ pub fn update_l1(state_update: L1StateUpdate) {
 
 /// Verify the L1 state with the latest data
 pub async fn verify_l1(state_update: L1StateUpdate, rpc_port: u16) -> Result<(), String> {
-    let starknet_state = STARKNET_STATE_UPDATE.lock().map_err(|e| e.to_string())?;
-    let starknet_state_block_number = starknet_state.block_number;
+    let starknet_state_block_number = STARKNET_STATE_UPDATE.lock().map_err(|e| e.to_string())?.block_number;
 
     // Check if the node reached the latest verified state on Ethereum
     if state_update.block_number > starknet_state_block_number {

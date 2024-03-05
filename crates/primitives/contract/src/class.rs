@@ -91,7 +91,7 @@ pub mod convert {
     }
 
     fn from_rpc_contract_abi(abi: Option<Vec<LegacyContractAbiEntry>>) -> Option<Vec<AbiEntryWrapper>> {
-        abi.map(|entries| entries.into_iter().map(|v| AbiEntryWrapper::from(v)).collect())
+        abi.map(|entries| entries.into_iter().map(AbiEntryWrapper::from).collect())
     }
 
     impl From<LegacyContractAbiEntry> for AbiEntryWrapper {
@@ -110,9 +110,9 @@ pub mod convert {
         }
     }
 
-    impl Into<LegacyContractAbiEntry> for AbiEntryWrapper {
-        fn into(self) -> LegacyContractAbiEntry {
-            match self {
+    impl From<AbiEntryWrapper> for LegacyContractAbiEntry {
+        fn from(abi_entry: AbiEntryWrapper) -> Self {
+            match abi_entry {
                 AbiEntryWrapper::Function(abi_function) => LegacyContractAbiEntry::Function(abi_function.into()),
                 AbiEntryWrapper::Event(abi_event) => LegacyContractAbiEntry::Event(abi_event.into()),
                 AbiEntryWrapper::Struct(abi_struct) => LegacyContractAbiEntry::Struct(abi_struct.into()),
@@ -129,21 +129,19 @@ pub mod convert {
                 name: abi_function_entry.name,
                 inputs: abi_function_entry.inputs.iter().map(|v| AbiTypedParameterWrapper::from(v.clone())).collect(),
                 outputs: abi_function_entry.outputs.iter().map(|v| AbiTypedParameterWrapper::from(v.clone())).collect(),
-                state_mutability: abi_function_entry
-                    .state_mutability
-                    .map(|v| AbiFunctionStateMutabilityWrapper::from(v)),
+                state_mutability: abi_function_entry.state_mutability.map(AbiFunctionStateMutabilityWrapper::from),
             }
         }
     }
 
-    impl Into<LegacyFunctionAbiEntry> for AbiFunctionEntryWrapper {
-        fn into(self) -> LegacyFunctionAbiEntry {
+    impl From<AbiFunctionEntryWrapper> for LegacyFunctionAbiEntry {
+        fn from(abi_function_entry: AbiFunctionEntryWrapper) -> Self {
             LegacyFunctionAbiEntry {
-                r#type: self.r#type.into(),
-                name: self.name,
-                inputs: self.inputs.into_iter().map(|v| v.into()).collect(),
-                outputs: self.outputs.into_iter().map(|v| v.into()).collect(),
-                state_mutability: self.state_mutability.map(|v| v.into()),
+                r#type: abi_function_entry.r#type.into(),
+                name: abi_function_entry.name,
+                inputs: abi_function_entry.inputs.into_iter().map(|v| v.into()).collect(),
+                outputs: abi_function_entry.outputs.into_iter().map(|v| v.into()).collect(),
+                state_mutability: abi_function_entry.state_mutability.map(|v| v.into()),
             }
         }
     }
@@ -158,9 +156,9 @@ pub mod convert {
         }
     }
 
-    impl Into<LegacyFunctionAbiType> for AbiFunctionTypeWrapper {
-        fn into(self) -> LegacyFunctionAbiType {
-            match self {
+    impl From<AbiFunctionTypeWrapper> for LegacyFunctionAbiType {
+        fn from(abi_function_type: AbiFunctionTypeWrapper) -> Self {
+            match abi_function_type {
                 AbiFunctionTypeWrapper::Function => LegacyFunctionAbiType::Function,
                 AbiFunctionTypeWrapper::L1handler => LegacyFunctionAbiType::L1Handler,
                 AbiFunctionTypeWrapper::Constructor => LegacyFunctionAbiType::Constructor,
@@ -176,9 +174,9 @@ pub mod convert {
         }
     }
 
-    impl Into<FunctionStateMutability> for AbiFunctionStateMutabilityWrapper {
-        fn into(self) -> FunctionStateMutability {
-            match self {
+    impl From<AbiFunctionStateMutabilityWrapper> for FunctionStateMutability {
+        fn from(abi_func_state_mutability: AbiFunctionStateMutabilityWrapper) -> Self {
+            match abi_func_state_mutability {
                 AbiFunctionStateMutabilityWrapper::View => FunctionStateMutability::View,
             }
         }
@@ -191,19 +189,19 @@ pub mod convert {
             Self {
                 r#type: AbiEventTypeWrapper::from(abi_event_entry.r#type),
                 name: abi_event_entry.name,
-                keys: abi_event_entry.keys.into_iter().map(|v| AbiTypedParameterWrapper::from(v)).collect(),
-                data: abi_event_entry.data.into_iter().map(|v| AbiTypedParameterWrapper::from(v)).collect(),
+                keys: abi_event_entry.keys.into_iter().map(AbiTypedParameterWrapper::from).collect(),
+                data: abi_event_entry.data.into_iter().map(AbiTypedParameterWrapper::from).collect(),
             }
         }
     }
 
-    impl Into<LegacyEventAbiEntry> for AbiEventEntryWrapper {
-        fn into(self) -> LegacyEventAbiEntry {
+    impl From<AbiEventEntryWrapper> for LegacyEventAbiEntry {
+        fn from(abi_event_entry: AbiEventEntryWrapper) -> Self {
             LegacyEventAbiEntry {
-                r#type: self.r#type.into(),
-                name: self.name,
-                keys: self.keys.into_iter().map(|v| v.into()).collect(),
-                data: self.data.into_iter().map(|v| v.into()).collect(),
+                r#type: abi_event_entry.r#type.into(),
+                name: abi_event_entry.name,
+                keys: abi_event_entry.keys.into_iter().map(|v| v.into()).collect(),
+                data: abi_event_entry.data.into_iter().map(|v| v.into()).collect(),
             }
         }
     }
@@ -216,9 +214,9 @@ pub mod convert {
         }
     }
 
-    impl Into<LegacyEventAbiType> for AbiEventTypeWrapper {
-        fn into(self) -> LegacyEventAbiType {
-            match self {
+    impl From<AbiEventTypeWrapper> for LegacyEventAbiType {
+        fn from(abi_event_type: AbiEventTypeWrapper) -> Self {
+            match abi_event_type {
                 AbiEventTypeWrapper::Event => LegacyEventAbiType::Event,
             }
         }
@@ -232,18 +230,18 @@ pub mod convert {
                 r#type: AbiStructTypeWrapper::from(abi_struct_entry.r#type),
                 name: abi_struct_entry.name,
                 size: abi_struct_entry.size,
-                members: abi_struct_entry.members.into_iter().map(|v| AbiStructMemberWrapper::from(v)).collect(),
+                members: abi_struct_entry.members.into_iter().map(AbiStructMemberWrapper::from).collect(),
             }
         }
     }
 
-    impl Into<LegacyStructAbiEntry> for AbiStructEntryWrapper {
-        fn into(self) -> LegacyStructAbiEntry {
+    impl From<AbiStructEntryWrapper> for LegacyStructAbiEntry {
+        fn from(abi_struct_entry: AbiStructEntryWrapper) -> Self {
             LegacyStructAbiEntry {
-                r#type: self.r#type.into(),
-                name: self.name,
-                size: self.size,
-                members: self.members.into_iter().map(|v| v.into()).collect(),
+                r#type: abi_struct_entry.r#type.into(),
+                name: abi_struct_entry.name,
+                size: abi_struct_entry.size,
+                members: abi_struct_entry.members.into_iter().map(|v| v.into()).collect(),
             }
         }
     }
@@ -256,9 +254,9 @@ pub mod convert {
         }
     }
 
-    impl Into<LegacyStructAbiType> for AbiStructTypeWrapper {
-        fn into(self) -> LegacyStructAbiType {
-            match self {
+    impl From<AbiStructTypeWrapper> for LegacyStructAbiType {
+        fn from(abi_struct_type: AbiStructTypeWrapper) -> Self {
+            match abi_struct_type {
                 AbiStructTypeWrapper::Struct => LegacyStructAbiType::Struct,
             }
         }
@@ -270,9 +268,13 @@ pub mod convert {
         }
     }
 
-    impl Into<LegacyStructMember> for AbiStructMemberWrapper {
-        fn into(self) -> LegacyStructMember {
-            LegacyStructMember { name: self.name, r#type: self.r#type, offset: self.offset }
+    impl From<AbiStructMemberWrapper> for LegacyStructMember {
+        fn from(abi_struct_member: AbiStructMemberWrapper) -> Self {
+            LegacyStructMember {
+                name: abi_struct_member.name,
+                r#type: abi_struct_member.r#type,
+                offset: abi_struct_member.offset,
+            }
         }
     }
 
@@ -282,9 +284,9 @@ pub mod convert {
         }
     }
 
-    impl Into<LegacyTypedParameter> for AbiTypedParameterWrapper {
-        fn into(self) -> LegacyTypedParameter {
-            LegacyTypedParameter { name: self.name, r#type: self.r#type }
+    impl From<AbiTypedParameterWrapper> for LegacyTypedParameter {
+        fn from(abi_typed_parameter: AbiTypedParameterWrapper) -> Self {
+            LegacyTypedParameter { name: abi_typed_parameter.name, r#type: abi_typed_parameter.r#type }
         }
     }
 }
