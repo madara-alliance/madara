@@ -1,6 +1,5 @@
 //! Contains the necessaries to perform an L1 verification of the state
 
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -19,8 +18,8 @@ use serde_json::Value;
 use starknet_api::hash::StarkHash;
 
 use crate::l2::STARKNET_STATE_UPDATE;
-use crate::utility::{event_to_l1_state_update, get_state_update_at};
-use crate::utils::constant::{starknet_core_address, LOG_STATE_UPDTATE_TOPIC};
+use crate::utility::{event_to_l1_state_update, get_config, get_state_update_at};
+use crate::utils::constant::LOG_STATE_UPDTATE_TOPIC;
 
 lazy_static! {
     /// Shared latest L2 state update verified on L1
@@ -83,8 +82,7 @@ impl EthereumClient {
     /// Get the block number of the last occurrence of a given event.
     pub async fn get_last_event_block_number(&self) -> Result<u64, Box<dyn std::error::Error>> {
         let topic = H256::from_slice(&hex::decode(&LOG_STATE_UPDTATE_TOPIC[2..])?);
-        let address =
-            Address::from_str(starknet_core_address::MAINNET).map_err(|e| format!("Failed to parse address: {}", e))?;
+        let address = get_config()?.l1_core_address;
         let latest_block = self.get_latest_block_number().await.expect("Failed to retrieve latest block number");
 
         // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurence in the last ~24h
@@ -107,7 +105,7 @@ impl EthereumClient {
     /// Get the last Starknet block number verified on L1
     pub async fn get_last_block_number(&self) -> Result<u64> {
         let data = decode("35befa5d")?;
-        let to: Address = starknet_core_address::MAINNET.parse()?;
+        let to: Address = get_config().expect("Failed to get config").l1_core_address;
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last block number");
@@ -121,7 +119,7 @@ impl EthereumClient {
     /// Get the last Starknet state root verified on L1
     pub async fn get_last_state_root(&self) -> Result<StarkHash> {
         let data = decode("9588eca2")?;
-        let to: Address = starknet_core_address::MAINNET.parse()?;
+        let to: Address = get_config().expect("Failed to get config").l1_core_address;
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last state root");
@@ -131,7 +129,7 @@ impl EthereumClient {
     /// Get the last Starknet block hash verified on L1
     pub async fn get_last_block_hash(&self) -> Result<StarkHash> {
         let data = decode("0x382d83e3")?;
-        let to: Address = starknet_core_address::MAINNET.parse()?;
+        let to: Address = get_config().expect("Failed to get config").l1_core_address;
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last block hash");
@@ -160,7 +158,7 @@ impl EthereumClient {
     /// verified state
     pub async fn listen_and_update_state(&self, start_block: u64) -> Result<(), Box<dyn std::error::Error>> {
         let client = self.provider.clone();
-        let address: Address = starknet_core_address::MAINNET.parse().expect("Failed to parse Starknet core address");
+        let address: Address = get_config().expect("Failed to get config").l1_core_address;
         abigen!(
             StarknetCore,
             "crates/client/deoxys/src/utils/abis/starknet_core.json",

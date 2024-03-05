@@ -14,21 +14,18 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use blockifier::execution::contract_class::{ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf};
-use blockifier::execution::entry_point::CallInfo;
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
-use mc_deoxys::commitments::transactions;
-use mc_deoxys::l2::get_config;
-use mc_deoxys::utility::get_highest_block_hash_and_number;
+use mc_deoxys::l2::get_highest_block_hash_and_number;
+use mc_deoxys::utility::get_config;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
 use mp_block::BlockStatus;
 use mp_contract::class::ContractClassWrapper;
-use mp_convert::contract::flattened_sierra_to_sierra_contract_class;
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -58,11 +55,11 @@ use starknet_core::types::{
     BlockHashAndNumber, BlockId, BlockTag, BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTransaction,
     BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass,
     DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt,
-    DeployAccountTransactionResult, DeployTransactionReceipt, Event, EventFilterWithPage, EventsPage,
-    ExecutionResources, ExecutionResult, FeeEstimate, FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt,
+    DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResources,
+    ExecutionResult, FeeEstimate, FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt,
     InvokeTransactionResult, L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
-    MaybePendingTransactionReceipt, MsgFromL1, MsgToL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType,
-    Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
+    MaybePendingTransactionReceipt, MsgFromL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
+    TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 
@@ -294,7 +291,10 @@ where
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
     ) -> RpcResult<DeclareTransactionResult> {
-        let config = get_config();
+        let config = get_config().map_err(|e| {
+            error!("Failed to get config: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
         let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
         let sequencer_response = match sequencer.add_declare_transaction(declare_transaction).await {
@@ -324,7 +324,10 @@ where
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
     ) -> RpcResult<InvokeTransactionResult> {
-        let config = get_config();
+        let config = get_config().map_err(|e| {
+            error!("Failed to get config: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
         let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
         let sequencer_response = match sequencer.add_invoke_transaction(invoke_transaction).await {
@@ -355,7 +358,10 @@ where
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTransaction,
     ) -> RpcResult<DeployAccountTransactionResult> {
-        let config = get_config();
+        let config = get_config().map_err(|e| {
+            error!("Failed to get config: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
         let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
         let sequencer_response = match sequencer.add_deploy_account_transaction(deploy_account_transaction).await {
@@ -968,7 +974,12 @@ where
     /// defined by the Starknet protocol, indicating the particular network.
     fn chain_id(&self) -> RpcResult<Felt> {
         let best_block_hash = self.client.info().best_hash;
-        let chain_id = get_config().chain_id;
+        let chain_id = get_config()
+            .map_err(|e| {
+                error!("Failed to get config: {e}");
+                StarknetRpcApiError::InternalServerError
+            })?
+            .chain_id;
 
         Ok(Felt(chain_id))
     }

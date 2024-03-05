@@ -7,6 +7,7 @@ use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 
 use crate::commitments::lib::calculate_commitments;
+use crate::utility::get_config;
 
 pub async fn block(block: p::Block) -> mp_block::Block {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
@@ -210,7 +211,13 @@ async fn commitments(
 }
 
 fn chain_id() -> mp_felt::Felt252Wrapper {
-    starknet_ff::FieldElement::from_byte_slice_be(b"SN_MAIN").unwrap().into()
+    match get_config() {
+        Ok(config) => config.chain_id.into(),
+        Err(e) => {
+            log::error!("Failed to get chain id: {}", e);
+            FieldElement::from_byte_slice_be(b"").unwrap().into()
+        }
+    }
 }
 
 fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {
