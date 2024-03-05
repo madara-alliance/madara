@@ -11,7 +11,6 @@ use parity_scale_codec::{Decode, Encode};
 // Substrate
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_blockchain::HeaderBackend;
-use sp_core::offchain::storage;
 use sp_runtime::traits::Block as BlockT;
 use sp_storage::StorageKey;
 use starknet_api::api_core::{ClassHash, ContractAddress, Nonce};

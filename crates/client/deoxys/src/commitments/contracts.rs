@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use bitvec::view::BitView;
-
 use blockifier::state::cached_state::CommitmentStateDiff;
 use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
@@ -10,13 +9,12 @@ use mc_db::BonsaiDbError;
 use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use mp_storage::StarknetStorageSchemaVersion;
 use sp_core::H256;
+use sp_runtime::generic::{Block, Header};
+use sp_runtime::traits::BlakeTwo256;
+use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ContractAddress;
 use starknet_types_core::hash::Pedersen;
-use sp_runtime::generic::{Block, Header};
-use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
-use sp_runtime::OpaqueExtrinsic;
 
 #[derive(Debug)]
 pub struct ContractLeafParams {
@@ -25,8 +23,9 @@ pub struct ContractLeafParams {
     pub nonce: Felt252Wrapper,
 }
 
-/// Calculates the storage root in memory recomupting all the storage changes for a specific contract.
-/// NOTE: in the future this function should be persistent, replaced with a more efficient way computing only changes.
+/// Calculates the storage root in memory recomupting all the storage changes for a specific
+/// contract. NOTE: in the future this function should be persistent, replaced with a more efficient
+/// way computing only changes.
 ///
 /// `storage_root` is the root of another Merkle-Patricia trie of height 251 that is constructed
 /// from the contract’s storage.
@@ -40,8 +39,8 @@ pub struct ContractLeafParams {
 pub fn update_storage_trie(
     contract_address: &ContractAddress,
     commitment_state_diff: CommitmentStateDiff,
-    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    substrate_block_hash: Option<H256>
+    _overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    _substrate_block_hash: Option<H256>,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
     // println!("CONTRACT ADDRESS: {:?}", contract_address);
     let config = BonsaiStorageConfig::default();
@@ -49,19 +48,7 @@ pub fn update_storage_trie(
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    // if let Some(block_hash) = substrate_block_hash {
-    //     println!("block_hash: {:?}", block_hash);
-    //     let old_updates = overrides.for_schema_version(&StarknetStorageSchemaVersion::Undefined)
-    //         .get_storage_from(block_hash, *contract_address)
-    //         .expect("Failed to get storage updates");
-    //     println!("old_updates: {:?}", old_updates);
-    
-    //     for (storage_key, storage_value) in old_updates {
-    //         let key = Felt252Wrapper::from(storage_key.0.0).0.to_bytes_be().view_bits()[5..].to_owned();
-    //         let value = Felt252Wrapper::from(storage_value);
-    //         bonsai_storage.insert(&key, &value.into()).expect("Failed to insert storage update into trie");
-    //     }
-    // }
+    // TODO: insert OLD storage changes
 
     // Insert new storage changes
     if let Some(updates) = commitment_state_diff.storage_updates.get(contract_address) {

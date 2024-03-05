@@ -1,10 +1,9 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use bitvec::view::BitView;
 use blockifier::state::cached_state::CommitmentStateDiff;
-use bonsai_trie::id::{BasicId, BasicIdBuilder};
+use bonsai_trie::id::BasicId;
 use indexmap::IndexMap;
-use lazy_static::lazy_static;
 use mc_db::bonsai_db::BonsaiConfigs;
 use mc_db::BonsaiDbError;
 use mc_storage::OverrideHandle;
@@ -29,7 +28,6 @@ use super::contracts::{update_storage_trie, ContractLeafParams};
 use super::events::memory_event_commitment;
 use super::transactions::memory_transaction_commitment;
 use crate::commitments::contracts::calculate_contract_state_leaf_hash;
-use crate::l2::BlockHashEquivalence;
 
 /// Calculate the transaction and event commitment.
 ///
@@ -136,20 +134,13 @@ where
     let starknet_state_prefix = Felt252Wrapper::try_from("STARKNET_STATE_V0".as_bytes()).unwrap();
 
     if classes_trie_root == Felt252Wrapper::ZERO {
-        println!("STATE COMMITMENT HASH: {:?}", contracts_trie_root);
         contracts_trie_root
     } else {
         let state_commitment_hash =
-        H::compute_hash_on_elements(&[starknet_state_prefix.0, contracts_trie_root.0, classes_trie_root.0]);
+            H::compute_hash_on_elements(&[starknet_state_prefix.0, contracts_trie_root.0, classes_trie_root.0]);
 
-        println!("STATE COMMITMENT HASH: {:?}", state_commitment_hash);
         state_commitment_hash.into()
     }
-    
-}
-
-lazy_static! {
-    static ref ID_BUILDER: Mutex<BasicIdBuilder> = Mutex::new(BasicIdBuilder::new());
 }
 
 /// Update the state commitment hash value.
@@ -168,15 +159,15 @@ lazy_static! {
 /// The updated state root as a `Felt252Wrapper`.
 pub fn update_state_root<B: BlockT>(
     csd: CommitmentStateDiff,
-    bonsai_dbs: Arc<Mutex<BonsaiConfigs<B>>>,
+    bonsai_dbs: &mut BonsaiConfigs<B>,
     block_number: u64,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     substrate_block_hash: Option<H256>,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {
-    println!("BLOCK NUMBER: {:?}", block_number);
     // Update contract and its storage tries
     for (contract_address, class_hash) in csd.address_to_class_hash.iter() {
-        let storage_root = update_storage_trie(contract_address, csd.clone(), overrides.clone(), substrate_block_hash).expect("Failed to update storage trie");
+        let storage_root = update_storage_trie(contract_address, csd.clone(), overrides.clone(), substrate_block_hash)
+            .expect("Failed to update storage trie");
         let nonce = csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::ZERO.into()).clone();
 
         let contract_leaf_params =
@@ -185,15 +176,13 @@ pub fn update_state_root<B: BlockT>(
 
         let key = contract_address.0.0.0.view_bits()[5..].to_owned();
         bonsai_dbs
-            .lock()
-            .unwrap()
             .contract
             .insert(&key, &class_commitment_leaf_hash.into())
             .expect("Failed to insert into bonsai storage");
     }
 
-    bonsai_dbs.lock().unwrap().contract.commit(BasicId::new(block_number)).expect("Failed to commit to bonsai storage");
-    let contract_trie_root = bonsai_dbs.lock().unwrap().contract.root_hash().expect("Failed to get root hash").into();
+    bonsai_dbs.contract.commit(BasicId::new(block_number)).expect("Failed to commit to bonsai storage");
+    let contract_trie_root = bonsai_dbs.contract.root_hash().expect("Failed to get root hash").into();
 
     // Update class trie
     for (class_hash, compiled_class_hash) in csd.class_hash_to_compiled_class_hash.iter() {
@@ -201,15 +190,13 @@ pub fn update_state_root<B: BlockT>(
             calculate_class_commitment_leaf_hash::<PoseidonHasher>(Felt252Wrapper::from(compiled_class_hash.0));
         let key = class_hash.0.0.view_bits()[5..].to_owned();
         bonsai_dbs
-            .lock()
-            .unwrap()
             .class
             .insert(key.as_bitslice(), &class_commitment_leaf_hash.into())
             .expect("Failed to insert into bonsai storage");
     }
 
-    bonsai_dbs.lock().unwrap().class.commit(BasicId::new(block_number)).expect("Failed to commit to bonsai storage");
-    let class_trie_root = bonsai_dbs.lock().unwrap().class.root_hash().expect("Failed to get root hash").into();
+    bonsai_dbs.class.commit(BasicId::new(block_number)).expect("Failed to commit to bonsai storage");
+    let class_trie_root = bonsai_dbs.class.root_hash().expect("Failed to get root hash").into();
 
     let state_root = calculate_state_root::<PoseidonHasher>(contract_trie_root, class_trie_root);
     Ok(state_root)
