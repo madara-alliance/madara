@@ -160,7 +160,7 @@ impl EthereumClient {
         let address: Address = starknet_core_address::MAINNET.parse().expect("Failed to parse Starknet core address");
         abigen!(
             StarknetCore,
-            "crates/client/deoxys/src/utils/abis/starknet_core.json",
+            "crates/client/sync/src/utils/abis/starknet_core.json",
             event_derives(serde::Deserialize, serde::Serialize)
         );
         let contract = StarknetCore::new(address, client);

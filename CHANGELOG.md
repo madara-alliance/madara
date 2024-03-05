@@ -1,4 +1,4 @@
-git # Madara Changelog
+git # Deoxys Changelog
 
 ## Next release
 

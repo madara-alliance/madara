@@ -18,8 +18,8 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
-use mc_deoxys::l2::get_config;
-use mc_deoxys::utility::get_highest_block_hash_and_number;
+use mc_sync::l2::get_config;
+use mc_sync::utility::get_highest_block_hash_and_number;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
@@ -38,14 +38,12 @@ use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sc_network_sync::SyncingService;
 use sc_transaction_pool::{ChainApi, Pool};
-use sc_transaction_pool_api::error::{Error as PoolError, IntoPoolError};
-use sc_transaction_pool_api::{TransactionPool, TransactionSource};
+use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
-use sp_runtime::transaction_validity::InvalidTransaction;
 use sp_runtime::DispatchError;
 use starknet_api::api_core::ClassHash;
 use starknet_api::block::BlockHash;
@@ -55,11 +53,11 @@ use starknet_core::types::{
     BlockHashAndNumber, BlockId, BlockTag, BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTransaction,
     BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass,
     DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt,
-    DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResources,
-    ExecutionResult, FeeEstimate, FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt,
+    DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage,
+    ExecutionResources, ExecutionResult, FeeEstimate, FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt,
     InvokeTransactionResult, L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
-    MaybePendingTransactionReceipt, MsgFromL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
-    TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
+    MaybePendingTransactionReceipt, MsgFromL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType,
+    Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 
@@ -75,11 +73,13 @@ pub struct Starknet<A: ChainApi, B: BlockT, BE, G, C, P, H> {
     client: Arc<C>,
     backend: Arc<mc_db::Backend<B>>,
     overrides: Arc<OverrideHandle<B>>,
+    #[allow(dead_code)]
     pool: Arc<P>,
     #[allow(dead_code)]
     graph: Arc<Pool<A>>,
     sync_service: Arc<SyncingService<B>>,
     starting_block: <<B>::Header as HeaderT>::Number,
+    #[allow(dead_code)]
     genesis_provider: Arc<G>,
     _marker: PhantomData<(B, BE, H)>,
 }
@@ -232,6 +232,7 @@ where
     }
 
     #[allow(dead_code)]
+    #[allow(dead_code)]
     fn try_txn_hash_from_cache(
         &self,
         tx_index: usize,
@@ -263,10 +264,6 @@ where
         }
     }
 }
-
-/// Taken from https://github.com/paritytech/substrate/blob/master/client/rpc/src/author/mod.rs#L78
-#[allow(dead_code)]
-const TX_SOURCE: TransactionSource = TransactionSource::External;
 
 #[async_trait]
 impl<A, B, BE, G, C, P, H> StarknetWriteRpcApiServer for Starknet<A, B, BE, G, C, P, H>
@@ -866,7 +863,7 @@ where
         let block_hash = starknet_block.header().hash::<H>();
 
         let actual_status = if starknet_block.header().block_number
-            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
+            <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
             BlockStatus::AcceptedOnL1.into()
         } else {
@@ -885,18 +882,12 @@ where
                 .map(FieldElement::from)
                 .collect()
         };
-        let block_status = match self.backend.messaging().last_synced_l1_block_with_event() {
-            Ok(l1_block) => {
-                if l1_block.block_number >= starknet_block.header().block_number {
-                    BlockStatus::AcceptedOnL1
-                } else {
-                    BlockStatus::AcceptedOnL2
-                }
-            }
-            Err(e) => {
-                error!("Failed to get last synced l1 block, error: {e}");
-                Err(StarknetRpcApiError::InternalServerError)?
-            }
+        let block_status: BlockStatus = if starknet_block.header().block_number
+            <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
+        {
+            BlockStatus::AcceptedOnL1.into()
+        } else {
+            BlockStatus::AcceptedOnL2.into()
         };
 
         let parent_blockhash = starknet_block.header().parent_block_hash;
@@ -1153,7 +1144,7 @@ where
         let starknet_version = starknet_block.header().protocol_version;
 
         let actual_status = if starknet_block.header().block_number
-            <= mc_deoxys::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
+            <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
         {
             BlockStatus::AcceptedOnL1.into()
         } else {
@@ -1692,45 +1683,6 @@ where
 
         Ok(MaybePendingTransactionReceipt::Receipt(receipt))
     }
-}
-
-#[allow(dead_code)]
-async fn submit_extrinsic<P, B>(
-    pool: Arc<P>,
-    best_block_hash: <B as BlockT>::Hash,
-    extrinsic: <B as BlockT>::Extrinsic,
-) -> Result<<P as TransactionPool>::Hash, StarknetRpcApiError>
-where
-    P: TransactionPool<Block = B> + 'static,
-    B: BlockT,
-    <B as BlockT>::Extrinsic: Send + Sync + 'static,
-{
-    pool.submit_one(best_block_hash, TX_SOURCE, extrinsic).await.map_err(|e| {
-        error!("Failed to submit extrinsic: {:?}", e);
-        match e.into_pool_error() {
-            Ok(PoolError::InvalidTransaction(InvalidTransaction::BadProof)) => StarknetRpcApiError::ValidationFailure,
-            _ => StarknetRpcApiError::InternalServerError,
-        }
-    })
-}
-
-#[allow(dead_code)]
-async fn convert_tx_to_extrinsic<C, B>(
-    client: Arc<C>,
-    best_block_hash: <B as BlockT>::Hash,
-    transaction: UserTransaction,
-) -> Result<<B as BlockT>::Extrinsic, StarknetRpcApiError>
-where
-    B: BlockT,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-{
-    let extrinsic = client.runtime_api().convert_transaction(best_block_hash, transaction).map_err(|e| {
-        error!("Failed to convert transaction: {:?}", e);
-        StarknetRpcApiError::InternalServerError
-    })?;
-
-    Ok(extrinsic)
 }
 
 fn convert_error<C, B, T>(
