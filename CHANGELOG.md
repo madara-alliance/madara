@@ -29,6 +29,7 @@ git # Deoxys Changelog
 - feat: add transparent representation to `Felt252Wrapper`
 - feat(rpc/trace_api): add `trace_block_transaction`
 - chore(db): changed the way hashes are encoded
+- feat(rpc/trace_api): add `trace_transaction`
 
 ## v0.7.0
 
