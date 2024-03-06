@@ -3,9 +3,9 @@ use std::result::Result as StdResult;
 
 use log;
 use madara_runtime::SealingMode;
-use mc_deoxys::l2::fetch_genesis_block;
-use mc_deoxys::utility::update_config;
-use mc_deoxys::utils::constant::starknet_core_address;
+use mc_sync::l2::fetch_genesis_block;
+use mc_sync::utility::update_config;
+use mc_sync::utils::constant::starknet_core_address;
 use reqwest::Url;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use serde::{Deserialize, Serialize};
@@ -112,7 +112,7 @@ impl NetworkType {
         }
     }
 
-    pub fn block_fetch_config(&self) -> mc_deoxys::FetchConfig {
+    pub fn block_fetch_config(&self) -> mc_sync::FetchConfig {
         let uri = self.uri();
         let chain_id = self.chain_id();
 
@@ -120,7 +120,7 @@ impl NetworkType {
         let feeder_gateway = format!("{uri}/feeder_gateway").parse().unwrap();
         let l1_core_address = self.l1_core_address();
 
-        mc_deoxys::FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false, l1_core_address }
+        mc_sync::FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false, l1_core_address }
     }
 }
 
@@ -228,7 +228,7 @@ fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
 
     // Assign a random pokemon name at each startup
     cmd.base.name = Some(
-        tokio::runtime::Runtime::new().unwrap().block_on(mc_deoxys::utility::get_random_pokemon_name()).unwrap_or_else(
+        tokio::runtime::Runtime::new().unwrap().block_on(mc_sync::utility::get_random_pokemon_name()).unwrap_or_else(
             |e| {
                 log::warn!("Failed to get random pokemon name: {}", e);
                 "gimmighoul".to_string()

@@ -26,8 +26,7 @@ pub fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> {
         })
         .collect();
 
-    let inner_events: Vec<_> =
-        call_info.inner_calls.iter().flat_map(|inner_call| extract_events_from_call_info(inner_call)).collect();
+    let inner_events: Vec<_> = call_info.inner_calls.iter().flat_map(extract_events_from_call_info).collect();
 
     events.into_iter().chain(inner_events).collect()
 }
@@ -51,8 +50,7 @@ pub fn extract_messages_from_call_info(call_info: &CallInfo) -> Vec<MsgToL1> {
         })
         .collect();
 
-    let inner_messages: Vec<_> =
-        call_info.inner_calls.iter().flat_map(|inner_call| extract_messages_from_call_info(inner_call)).collect();
+    let inner_messages: Vec<_> = call_info.inner_calls.iter().flat_map(extract_messages_from_call_info).collect();
 
     events.into_iter().chain(inner_messages).collect()
 }
@@ -89,6 +87,7 @@ pub fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> Execut
     }
 }
 
+#[allow(dead_code)]
 pub fn blockifier_to_starknet_rs_ordered_events(
     ordered_events: &[blockifier::execution::entry_point::OrderedEvent],
 ) -> Vec<starknet_core::types::OrderedEvent> {

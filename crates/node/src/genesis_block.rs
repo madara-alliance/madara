@@ -69,11 +69,9 @@ fn construct_genesis_block<Block: BlockT>(
     let extrinsics_root =
         <<<Block as BlockT>::Header as HeaderT>::Hashing as HashT>::trie_root(Vec::new(), state_version);
 
-    let mut digest = vec![];
-
     // Load first block from genesis folders
     // TODO remove unecessary code from madara for genesis build
-    digest.push(DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(genesis_block.clone()).encode()));
+    let digest = vec![DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(genesis_block.clone()).encode())];
     log::info!("🌱 Genesis block imported correctly {:?}", genesis_block.header().hash::<PedersenHasher>());
 
     Block::new(

@@ -56,9 +56,9 @@ pub struct BonsaiDb<B: BlockT> {
 
 pub fn key_type(key: &DatabaseKey) -> KeyType {
     match key {
-        DatabaseKey::Trie(_) => return KeyType::Trie,
-        DatabaseKey::Flat(_) => return KeyType::Flat,
-        DatabaseKey::TrieLog(_) => return KeyType::TrieLog,
+        DatabaseKey::Trie(_) => KeyType::Trie,
+        DatabaseKey::Flat(_) => KeyType::Flat,
+        DatabaseKey::TrieLog(_) => KeyType::TrieLog,
     }
 }
 
@@ -119,7 +119,7 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
         let mut result = Vec::new();
 
         for pair in self.db.iter_with_prefix(column, prefix_slice) {
-            let pair = pair.map_err(|e| BonsaiDbError::from(e))?;
+            let pair = pair.map_err(BonsaiDbError::from)?;
             result.push((pair.0.into_vec(), pair.1));
         }
 

@@ -4,7 +4,7 @@ description = "Deoxys crate for Madara"
 edition = "2021"
 homepage = "https://github.com/KasarLabs/deoxys"
 license = "MIT"
-name = "mc-deoxys"
+name = "mc-sync"
 publish = false
 repository = "https://github.com/KasarLabs/deoxys"
 version = "0.1.0"
@@ -62,7 +62,6 @@ sp-runtime = { workspace = true }
 
 bitvec = "1.0.1"
 bonsai-trie = { workspace = true }
-mc-commitment-state-diff = { workspace = true }
 mc-db = { workspace = true }
 mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }

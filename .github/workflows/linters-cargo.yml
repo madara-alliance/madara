@@ -8,7 +8,7 @@ on:
 jobs:
   # FIXME: check why this is rebuilding the project every time
   cargo-lint:
-    runs-on: ubuntu-latest-32-cores
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
@@ -18,7 +18,7 @@ jobs:
       - name: Setup build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler
+          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler libasound2-dev
       - name: Format and clippy
         run: |
           cargo fmt -- --check

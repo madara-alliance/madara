@@ -188,9 +188,7 @@ where
         let api = self.client.runtime_api();
 
         let contract_class_hash = api.contract_class_hash_by_address(block_hash, address).ok()?;
-        let contract_abi = api.contract_abi_by_class_hash(block_hash, contract_class_hash).ok()?;
-
-        contract_abi
+        api.contract_abi_by_class_hash(block_hash, contract_class_hash).ok()?
     }
 
     /// Return the contract ABI for a provided class_hash and block hash.
