@@ -22,8 +22,8 @@ use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
-use mc_sync::l2::get_config;
-use mc_sync::utility::get_highest_block_hash_and_number;
+use mc_sync::l2::get_highest_block_hash_and_number;
+use mc_sync::utility::get_config;
 use mp_block::BlockStatus;
 use mp_contract::class::ContractClassWrapper;
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
@@ -291,7 +291,10 @@ where
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
     ) -> RpcResult<DeclareTransactionResult> {
-        let config = get_config();
+        let config = get_config().map_err(|e| {
+            error!("Failed to get config: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
         let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
         let sequencer_response = match sequencer.add_declare_transaction(declare_transaction).await {
@@ -321,7 +324,10 @@ where
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
     ) -> RpcResult<InvokeTransactionResult> {
-        let config = get_config();
+        let config = get_config().map_err(|e| {
+            error!("Failed to get config: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
         let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
         let sequencer_response = match sequencer.add_invoke_transaction(invoke_transaction).await {
@@ -352,7 +358,10 @@ where
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTransaction,
     ) -> RpcResult<DeployAccountTransactionResult> {
-        let config = get_config();
+        let config = get_config().map_err(|e| {
+            error!("Failed to get config: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
         let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
         let sequencer_response = match sequencer.add_deploy_account_transaction(deploy_account_transaction).await {
@@ -959,7 +968,12 @@ where
     /// defined by the Starknet protocol, indicating the particular network.
     fn chain_id(&self) -> RpcResult<Felt> {
         let best_block_hash = self.client.info().best_hash;
-        let chain_id = get_config().chain_id;
+        let chain_id = get_config()
+            .map_err(|e| {
+                error!("Failed to get config: {e}");
+                StarknetRpcApiError::InternalServerError
+            })?
+            .chain_id;
 
         Ok(Felt(chain_id))
     }

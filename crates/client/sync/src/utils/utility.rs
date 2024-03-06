@@ -1,21 +1,40 @@
 //! Utility functions for Deoxys.
 
 use std::error::Error;
+use std::sync::RwLock;
 use std::thread::sleep;
 use std::time::Duration;
 
 use ethers::types::I256;
+use lazy_static::lazy_static;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use reqwest::header;
 use serde_json::{json, Value};
 use starknet_api::hash::StarkFelt;
-use starknet_ff::FieldElement;
-use starknet_providers::sequencer::models::BlockId;
-use starknet_providers::SequencerGatewayProvider;
 
 use crate::l1::{L1StateUpdate, LogStateUpdate};
-use crate::l2::{L2StateUpdate, STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER};
+use crate::l2::{FetchConfig, L2StateUpdate};
+
+// TODO: find a better place to store this
+lazy_static! {
+    /// Store the configuration globally, using a RwLock to allow for concurrent reads and exclusive writes
+    static ref CONFIG: RwLock<Option<FetchConfig>> = RwLock::new(None);
+}
+
+/// this function needs to be called only once at the start of the program
+pub fn update_config(config: &FetchConfig) {
+    let mut new_config = CONFIG.write().expect("Failed to acquire write lock on CONFIG");
+    *new_config = Some(config.clone());
+}
+
+pub fn get_config() -> Result<FetchConfig, &'static str> {
+    let config_guard = CONFIG.read().expect("Failed to acquire read lock on CONFIG");
+    match &*config_guard {
+        Some(config) => Ok(config.clone()),
+        None => Err("Configuration not set yet"),
+    }
+}
 
 // TODO: secure the auto calls here
 
@@ -130,23 +149,6 @@ pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2S
     }
 
     Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Maximum retries exceeded")))
-}
-
-pub async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider) -> Result<(), String> {
-    let block = client.get_block(BlockId::Latest).await.map_err(|e| format!("failed to get block: {e}"))?;
-
-    let hash = block.block_hash.ok_or("block hash not found")?;
-    let number = block.block_number.ok_or("block number not found")?;
-
-    let last_highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.clone();
-    let mut new_highest_block_hash_and_number = last_highest_block_hash_and_number.lock().unwrap();
-    *new_highest_block_hash_and_number = (hash, number);
-
-    Ok(())
-}
-
-pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
-    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.lock().expect("failed to lock STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
 }
 
 /// Returns a random Pokémon name.
