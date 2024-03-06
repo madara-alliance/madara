@@ -1551,11 +1551,12 @@ where
                 TransactionMp::Deploy(_) => todo!(),
             })
             .collect::<Result<Vec<_>, _>>()?;
-
+        
+        let empty_transactions = vec![];
         let execution_infos = self
             .client
             .runtime_api()
-            .re_execute_transactions(previous_substrate_block_hash, transactions.clone())
+            .re_execute_transactions(previous_substrate_block_hash, empty_transactions, transactions.clone())
             .map_err(|e| {
                 log::error!("Failed to execute runtime API call: {e}");
                 StarknetRpcApiError::InternalServerError
