@@ -81,10 +81,10 @@ pub fn event_commitment<B: BlockT>(events: &[Event], bonsai_db: &Arc<BonsaiDb<B>
     }
 
     let id = id_builder.new_id();
-    bonsai_storage.commit(id).map_err(|_| format!("Failed to commit to bonsai storage"))?;
+    bonsai_storage.commit(id).map_err(|_| "Failed to commit to bonsai storage")?;
 
     // restores the Bonsai Trie to it's previous state
-    let root_hash = bonsai_storage.root_hash().map_err(|_| format!("Failed to get root hash"))?;
+    let root_hash = bonsai_storage.root_hash().map_err(|_| "Failed to get root hash")?;
     bonsai_storage.revert_to(zero).unwrap();
 
     Ok(Felt252Wrapper::from(root_hash))

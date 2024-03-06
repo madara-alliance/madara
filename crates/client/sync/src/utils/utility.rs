@@ -22,6 +22,7 @@ lazy_static! {
     static ref CONFIG: RwLock<Option<FetchConfig>> = RwLock::new(None);
 }
 
+/// this function needs to be called only once at the start of the program
 pub fn update_config(config: &FetchConfig) {
     let mut new_config = CONFIG.write().expect("Failed to acquire write lock on CONFIG");
     *new_config = Some(config.clone());
@@ -148,23 +149,6 @@ pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2S
     }
 
     Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Maximum retries exceeded")))
-}
-
-pub async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider) -> Result<(), String> {
-    let block = client.get_block(BlockId::Latest).await.map_err(|e| format!("failed to get block: {e}"))?;
-
-    let hash = block.block_hash.ok_or("block hash not found")?;
-    let number = block.block_number.ok_or("block number not found")?;
-
-    let last_highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.clone();
-    let mut new_highest_block_hash_and_number = last_highest_block_hash_and_number.lock().unwrap();
-    *new_highest_block_hash_and_number = (hash, number);
-
-    Ok(())
-}
-
-pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
-    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.lock().expect("failed to lock STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
 }
 
 /// Returns a random Pokémon name.

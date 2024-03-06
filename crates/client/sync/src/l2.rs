@@ -42,7 +42,6 @@ pub struct L2StateUpdate {
 lazy_static! {
     /// Shared latest L2 state update verified on L2
     pub static ref STARKNET_STATE_UPDATE: Mutex<L2StateUpdate> = Mutex::new(L2StateUpdate {
-    pub static ref STARKNET_STATE_UPDATE: Mutex<L2StateUpdate> = Mutex::new(L2StateUpdate {
         block_number: u64::default(),
         global_root: StarkHash::default(),
         block_hash: StarkHash::default(),
@@ -132,7 +131,6 @@ pub async fn sync<B: BlockT>(
         storage: Arc::clone(backend.bonsai_storage()),
     };
     let mut current_block_number = start_at;
-    current_block_number = 600_000;
     let mut last_block_hash = None;
     let mut got_block = false;
     let mut got_state_update = false;
@@ -453,16 +451,8 @@ pub async fn verify_l2<B: BlockT>(
 async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider) -> Result<(), String> {
     let block = client.get_block(BlockId::Latest).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    let hash = block
-        .block_hash
-        .ok_or("block hash not found")?
-        .try_into()
-        .map_err(|e| format!("failed to convert block hash: {e}"))?;
-    let number = block
-        .block_number
-        .ok_or("block number not found")?
-        .try_into()
-        .map_err(|e| format!("failed to convert block number: {e}"))?;
+    let hash = block.block_hash.ok_or("block hash not found")?;
+    let number = block.block_number.ok_or("block number not found")?;
 
     let mut highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
         .write()
@@ -473,8 +463,7 @@ async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider)
 }
 
 pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
-    STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
+    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
         .read()
         .expect("Failed to acquire read lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
-        .clone()
 }

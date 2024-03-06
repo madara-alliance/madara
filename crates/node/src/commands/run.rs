@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::result::Result as StdResult;
 
-use log;
 use madara_runtime::SealingMode;
 use mc_sync::l2::fetch_genesis_block;
 use mc_sync::utility::update_config;

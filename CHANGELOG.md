@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- feat: Removal of the hardcoded mainnet configuration
 - refactor: pass new CI
 - fix(workflows): Fix deoxys CI
 - feat(rpc): add_invoke_tx, add_deploy_account_tx, add_declare_tx
