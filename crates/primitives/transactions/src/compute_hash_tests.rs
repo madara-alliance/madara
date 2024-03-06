@@ -58,16 +58,16 @@ fn test_deploy_account_tx_hash() {
         offset_version: false,
     };
 
-    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
 
     assert_eq!(tx_hash, expected_tx_hash);
 
     let generic_transaction = Transaction::DeployAccount(transaction.clone());
-    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 
     let user_transaction = UserTransaction::DeployAccount(transaction);
-    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 }
 
@@ -87,20 +87,20 @@ fn test_declare_v0_tx_hash() {
         sender_address: Felt252Wrapper::from(19911991_u128),
     };
 
-    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
 
     assert_eq!(tx_hash, expected_tx_hash);
 
     let declare_v0_transaction = DeclareTransaction::V0(transaction);
-    let tx_hash = declare_v0_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = declare_v0_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 
     let generic_transaction = Transaction::Declare(declare_v0_transaction.clone());
-    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 
     let user_transaction = UserTransaction::Declare(declare_v0_transaction, ContractClass::V0(Default::default()));
-    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 }
 
@@ -121,20 +121,20 @@ fn test_declare_v1_tx_hash() {
         offset_version: false,
     };
 
-    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
 
     assert_eq!(tx_hash, expected_tx_hash);
 
     let declare_v1_transaction = DeclareTransaction::V1(transaction);
-    let tx_hash = declare_v1_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = declare_v1_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 
     let generic_transaction = Transaction::Declare(declare_v1_transaction.clone());
-    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 
     let user_transaction = UserTransaction::Declare(declare_v1_transaction, ContractClass::V0(Default::default()));
-    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 }
 
@@ -156,20 +156,20 @@ fn test_declare_v2_tx_hash() {
         offset_version: false,
     };
 
-    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
 
     assert_eq!(tx_hash, expected_tx_hash);
 
     let declare_v2_transaction = DeclareTransaction::V2(transaction);
-    let tx_hash = declare_v2_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = declare_v2_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 
     let generic_transaction = Transaction::Declare(declare_v2_transaction.clone());
-    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 
     let user_transaction = UserTransaction::Declare(declare_v2_transaction, ContractClass::V1(Default::default()));
-    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 }
 
@@ -189,20 +189,20 @@ fn test_invoke_tx_v0_hash() {
         calldata: vec![Felt252Wrapper::ONE, Felt252Wrapper::TWO, Felt252Wrapper::THREE],
     };
 
-    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
 
     assert_eq!(tx_hash, expected_tx_hash);
 
     let invoke_v0_transaction = InvokeTransaction::V0(transaction);
-    let tx_hash = invoke_v0_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = invoke_v0_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 
     let generic_transaction = Transaction::Invoke(invoke_v0_transaction.clone());
-    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 
     let user_transaction = UserTransaction::Invoke(invoke_v0_transaction.clone());
-    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 }
 
@@ -223,20 +223,20 @@ fn test_invoke_tx_v1_hash() {
         offset_version: false,
     };
 
-    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
 
     assert_eq!(tx_hash, expected_tx_hash);
 
     let invoke_v1_transaction = InvokeTransaction::V1(transaction);
-    let tx_hash = invoke_v1_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = invoke_v1_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 
     let generic_transaction = Transaction::Invoke(invoke_v1_transaction.clone());
-    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 
     let user_transaction = UserTransaction::Invoke(invoke_v1_transaction);
-    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false);
+    let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
     assert_eq!(tx_hash, expected_tx_hash);
 }
 

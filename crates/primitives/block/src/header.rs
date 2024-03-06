@@ -14,24 +14,19 @@ use starknet_core::types::FieldElement;
 /// Block status.
 ///
 /// The status of the block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub enum BlockStatus {
     #[cfg_attr(feature = "serde", serde(rename = "PENDING"))]
     Pending,
+    #[default]
     #[cfg_attr(feature = "serde", serde(rename = "ACCEPTED_ON_L2"))]
     AcceptedOnL2,
     #[cfg_attr(feature = "serde", serde(rename = "ACCEPTED_ON_L1"))]
     AcceptedOnL1,
     #[cfg_attr(feature = "serde", serde(rename = "REJECTED"))]
     Rejected,
-}
-
-impl Default for BlockStatus {
-    fn default() -> Self {
-        BlockStatus::AcceptedOnL2
-    }
 }
 
 impl From<BlockStatus> for starknet_core::types::BlockStatus {

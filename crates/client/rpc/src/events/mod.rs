@@ -1,6 +1,3 @@
-#[cfg(test)]
-mod tests;
-
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_rpc_core::utils::get_block_by_block_hash;
@@ -74,7 +71,7 @@ where
                 .collect()
         } else {
             starknet_block
-                .transactions_hashes::<H>(chain_id.into(), Some(starknet_block.header().block_number))
+                .transactions_hashes::<H>(chain_id, Some(starknet_block.header().block_number))
                 .map(FieldElement::from)
                 .collect()
         };
@@ -83,10 +80,10 @@ where
         // the txs hashes are found by the index of the ordered event
         let tx_hash_and_events: Vec<(Felt252Wrapper, _)> = starknet_block
             .events()
-            .into_iter()
+            .iter()
             .flat_map(|ordered_event| {
                 let tx_hash = block_txs_hashes[ordered_event.index() as usize];
-                ordered_event.events().into_iter().map(move |events| (tx_hash.into(), events.clone()))
+                ordered_event.events().iter().map(move |events| (tx_hash.into(), events.clone()))
             })
             .collect();
 

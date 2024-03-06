@@ -27,6 +27,7 @@ use sp_database::Database;
 
 use crate::{DatabaseSettings, DatabaseSource, DbHash};
 
+#[allow(clippy::type_complexity)]
 pub(crate) fn open_database(
     config: &DatabaseSettings,
 ) -> Result<(Arc<dyn KeyValueDB>, Arc<dyn Database<DbHash>>), String> {
@@ -48,6 +49,7 @@ pub(crate) fn open_database(
     Ok(dbs)
 }
 
+#[allow(clippy::type_complexity)]
 pub fn open_kvdb_rocksdb(
     path: &Path,
     create: bool,

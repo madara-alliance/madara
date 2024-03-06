@@ -154,7 +154,9 @@ where
                     &tx_exec_info,
                 )
                 .map(|trace_root| TransactionTraceWithHash {
-                    transaction_hash: block_transactions[tx_idx].compute_hash::<H>(chain_id, false, Some(block_number)).into(),
+                    transaction_hash: block_transactions[tx_idx]
+                        .compute_hash::<H>(chain_id, false, Some(block_number))
+                        .into(),
                     trace_root,
                 })
             })
@@ -253,11 +255,18 @@ fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core
         .enumerate()
         .map(|(index, message)| starknet_core::types::OrderedMessage {
             order: index as u64,
-            payload: message.message.payload.0.iter().map(|x| {
-                let felt_wrapper: Felt252Wrapper = Felt252Wrapper::from(*x);
-                FieldElement::from(felt_wrapper)
-            }).collect(),
-            to_address: FieldElement::from_byte_slice_be(message.message.to_address.0.to_fixed_bytes().as_slice()).unwrap(),
+            payload: message
+                .message
+                .payload
+                .0
+                .iter()
+                .map(|x| {
+                    let felt_wrapper: Felt252Wrapper = Felt252Wrapper::from(*x);
+                    FieldElement::from(felt_wrapper)
+                })
+                .collect(),
+            to_address: FieldElement::from_byte_slice_be(message.message.to_address.0.to_fixed_bytes().as_slice())
+                .unwrap(),
             from_address: {
                 let felt_wrapper: Felt252Wrapper = Felt252Wrapper::from(call_info.call.storage_address.0.0);
                 FieldElement::from(felt_wrapper)
@@ -265,7 +274,6 @@ fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core
         })
         .collect()
 }
-
 
 fn blockifier_to_starknet_rs_ordered_events(
     ordered_events: &[blockifier::execution::entry_point::OrderedEvent],
@@ -352,21 +360,16 @@ fn try_get_funtion_invocation_from_call_info<B: BlockT>(
     Ok(starknet_core::types::FunctionInvocation {
         contract_address: FieldElement::from(Felt252Wrapper::from(call_info.call.storage_address.0.0)),
         entry_point_selector: FieldElement::from(Felt252Wrapper::from(call_info.call.entry_point_selector.0)),
-        calldata: call_info.call.calldata.0.iter()
-            .map(|x| FieldElement::from(Felt252Wrapper::from(*x)))
-            .collect(),
+        calldata: call_info.call.calldata.0.iter().map(|x| FieldElement::from(Felt252Wrapper::from(*x))).collect(),
         caller_address: FieldElement::from(Felt252Wrapper::from(call_info.call.caller_address.0.0)),
         class_hash,
         entry_point_type,
         call_type,
-        result: call_info.execution.retdata.0.iter()
-            .map(|x| FieldElement::from(Felt252Wrapper::from(*x)))
-            .collect(),
+        result: call_info.execution.retdata.0.iter().map(|x| FieldElement::from(Felt252Wrapper::from(*x))).collect(),
         calls: inner_calls,
         events,
         messages,
     })
-    
 }
 
 fn tx_execution_infos_to_tx_trace<B: BlockT>(

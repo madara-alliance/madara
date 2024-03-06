@@ -244,6 +244,7 @@ mc-mapping-sync = { path = "crates/client/mapping-sync" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-rpc-core = { path = "crates/client/rpc-core" }
 mc-storage = { path = "crates/client/storage" }
+mc-deoxys = { path = "crates/client/deoxys" }
 
 # Madara runtime
 madara-runtime = { path = "crates/runtime" }

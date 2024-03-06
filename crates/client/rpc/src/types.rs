@@ -37,8 +37,8 @@ impl ContinuationToken {
         if arr.len() != 2 {
             return Err(ParseTokenError::WrongToken);
         }
-        let block_n = u64::from_str_radix(arr[0], 10).map_err(ParseTokenError::ParseFailed)?;
-        let event_n = u64::from_str_radix(arr[1], 10).map_err(ParseTokenError::ParseFailed)?;
+        let block_n = arr[0].parse::<u64>().map_err(ParseTokenError::ParseFailed)?;
+        let event_n = arr[0].parse::<u64>().map_err(ParseTokenError::ParseFailed)?;
 
         Ok(ContinuationToken { block_n, event_n })
     }
