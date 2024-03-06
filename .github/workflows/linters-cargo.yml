@@ -6,7 +6,6 @@ on:
   workflow_call:
 
 jobs:
-  # FIXME: check why this is rebuilding the project every time
   cargo-lint:
     runs-on: ubuntu-latest
     steps:
@@ -14,11 +13,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "cache"
-          save-if: false
+      - uses: actions/cache@v3
+        with:
+          path: |
+            target/release/deoxys
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}-${{
+            github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+            ${{ runner.os }}-cargo-
+
+      - name: Setup rust toolchain
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: rustup show
+
       - name: Setup build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm libudev-dev protobuf-compiler libasound2-dev
+
       - name: Format and clippy
         run: |
           cargo fmt -- --check
