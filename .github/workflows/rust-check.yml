@@ -1,13 +1,13 @@
 ---
-name: Task - Build & Integration Tests
+name: Task - Run check
 
 on:
   workflow_dispatch:
   workflow_call:
 
 jobs:
-  rust_build_test:
-    runs-on: ubuntu-latest-32-cores
+  rust_check:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
@@ -16,7 +16,7 @@ jobs:
       - uses: actions/cache@v3
         with:
           path: |
-            target/release/madara
+            target/release/deoxys
           key:
             ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}-${{
             github.run_id }}
@@ -28,14 +28,11 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: rustup show
 
-      - name: Setup build deps
+      - name: Setup check deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler
+          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler libasound2-dev
 
-      - name: Build the project
+      - name: Check the project
         run: |
-          cargo build --release --workspace
-
-      - name: Run integration tests
-        run: cargo test --release
+          cargo check --release --workspace

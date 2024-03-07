@@ -64,6 +64,7 @@ use starknet_core::types::{
     MaybePendingTransactionReceipt, MsgFromL1, MsgToL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType,
     Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
+use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::types::RpcEventFilter;
@@ -293,54 +294,21 @@ where
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
     ) -> RpcResult<DeclareTransactionResult> {
-        let best_block_hash = self.client.info().best_hash;
+        let config = get_config();
+        let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
-        let opt_sierra_contract_class = if let BroadcastedDeclareTransaction::V2(ref tx) = declare_transaction {
-            Some(flattened_sierra_to_sierra_contract_class(tx.contract_class.clone()))
-        } else {
-            None
-        };
-
-        let transaction: UserTransaction = declare_transaction.try_into().map_err(|e| {
-            error!("Failed to convert BroadcastedDeclareTransaction to UserTransaction, error: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-        let class_hash = match transaction {
-            UserTransaction::Declare(ref tx, _) => tx.class_hash(),
-            _ => Err(StarknetRpcApiError::InternalServerError)?,
-        };
-
-        let current_block_hash = self.client.info().best_hash;
-        let contract_class = self
-            .overrides
-            .for_block_hash(self.client.as_ref(), current_block_hash)
-            .contract_class_by_class_hash(current_block_hash, (*class_hash).into());
-
-        if let Some(contract_class) = contract_class {
-            error!("Contract class already exists: {:?}", contract_class);
-            return Err(StarknetRpcApiError::ClassAlreadyDeclared.into());
-        }
-
-        let extrinsic = convert_tx_to_extrinsic(self.client.clone(), best_block_hash, transaction.clone()).await?;
-
-        submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
-
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-
-        let tx_hash = transaction.compute_hash::<H>(chain_id, false, None).into();
-
-        if let Some(sierra_contract_class) = opt_sierra_contract_class {
-            if let Some(e) = self
-                .backend
-                .sierra_classes()
-                .store_sierra_class(Felt252Wrapper::from(class_hash.0).into(), sierra_contract_class)
-                .err()
-            {
-                log::error!("Failed to store the sierra contract class for declare tx `{tx_hash:x}`: {e}")
+        let sequencer_response = match sequencer.add_declare_transaction(declare_transaction).await {
+            Ok(response) => response,
+            Err(ProviderError::StarknetError(e)) => {
+                return Err(StarknetRpcApiError::from(e).into());
             }
-        }
+            Err(e) => {
+                error!("Failed to add invoke transaction to sequencer: {e}");
+                return Err(StarknetRpcApiError::InternalServerError.into());
+            }
+        };
 
-        Ok(DeclareTransactionResult { transaction_hash: tx_hash, class_hash: class_hash.0 })
+        Ok(sequencer_response)
     }
 
     /// Add an Invoke Transaction to invoke a contract function
@@ -356,20 +324,21 @@ where
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
     ) -> RpcResult<InvokeTransactionResult> {
-        let best_block_hash = self.client.info().best_hash;
+        let config = get_config();
+        let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
-        let transaction: UserTransaction = invoke_transaction.try_into().map_err(|e| {
-            error!("Failed to convert BroadcastedInvokeTransaction to UserTransaction: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
+        let sequencer_response = match sequencer.add_invoke_transaction(invoke_transaction).await {
+            Ok(response) => response,
+            Err(ProviderError::StarknetError(e)) => {
+                return Err(StarknetRpcApiError::from(e).into());
+            }
+            Err(e) => {
+                error!("Failed to add invoke transaction to sequencer: {e}");
+                return Err(StarknetRpcApiError::InternalServerError.into());
+            }
+        };
 
-        let extrinsic = convert_tx_to_extrinsic(self.client.clone(), best_block_hash, transaction.clone()).await?;
-
-        submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
-
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-
-        Ok(InvokeTransactionResult { transaction_hash: transaction.compute_hash::<H>(chain_id, false, None).into() })
+        Ok(sequencer_response)
     }
 
     /// Add an Deploy Account Transaction
@@ -386,27 +355,21 @@ where
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTransaction,
     ) -> RpcResult<DeployAccountTransactionResult> {
-        let best_block_hash = self.client.info().best_hash;
+        let config = get_config();
+        let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
-        let transaction: UserTransaction = deploy_account_transaction.try_into().map_err(|e| {
-            error!("Failed to convert BroadcastedDeployAccountTransaction to UserTransaction, error: {e}",);
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-        let extrinsic = convert_tx_to_extrinsic(self.client.clone(), best_block_hash, transaction.clone()).await?;
-
-        submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
-
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-        let account_address = match &transaction {
-            UserTransaction::DeployAccount(tx) => tx.account_address(),
-            _ => Err(StarknetRpcApiError::InternalServerError)?,
+        let sequencer_response = match sequencer.add_deploy_account_transaction(deploy_account_transaction).await {
+            Ok(response) => response,
+            Err(ProviderError::StarknetError(e)) => {
+                return Err(StarknetRpcApiError::from(e).into());
+            }
+            Err(e) => {
+                error!("Failed to add invoke transaction to sequencer: {e}");
+                return Err(StarknetRpcApiError::InternalServerError.into());
+            }
         };
 
-        Ok(DeployAccountTransactionResult {
-            transaction_hash: transaction.compute_hash::<H>(chain_id, false, None).into(),
-            contract_address: account_address.into(),
-        })
+        Ok(sequencer_response)
     }
 }
 
