@@ -38,7 +38,7 @@ pub struct ContractLeafParams {
 /// The storage root hash.
 pub fn update_storage_trie(
     contract_address: &ContractAddress,
-    commitment_state_diff: CommitmentStateDiff,
+    commitment_state_diff: &CommitmentStateDiff,
     _overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     _substrate_block_hash: Option<H256>,
 ) -> Result<Felt252Wrapper, BonsaiDbError> {

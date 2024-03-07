@@ -483,8 +483,7 @@ pub fn verify_l2<B: BlockT>(
 
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
     let state_root =
-        update_state_root(csd, overrides, bonsai_contract, bonsai_class, block_number, substrate_block_hash)
-            .expect("Failed to update state root");
+        update_state_root(csd, overrides, bonsai_contract, bonsai_class, block_number, substrate_block_hash);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
     update_l2(L2StateUpdate {
