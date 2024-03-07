@@ -211,7 +211,7 @@ pallet-grandpa = { default-features = true, git = "https://github.com/massalabs/
 pallet-timestamp = { default-features = true, git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/antiyro/bonsai-trie.git", branch = "oss" }
+bonsai-trie = { default-features = false, git = "https://github.com/trantorian1/bonsai-trie.git", branch = "oss" }
 
 # Madara pallets
 pallet-starknet = { path = "crates/pallets/starknet", default-features = false, features = [
@@ -268,7 +268,8 @@ starknet-crypto = { git = "https://github.com/jbcaron/starknet-rs.git", branch =
 starknet-ff = { git = "https://github.com/jbcaron/starknet-rs.git", branch = "classes", default-features = false }
 starknet-providers = { git = "https://github.com/jbcaron/starknet-rs.git", branch = "classes", default-features = false }
 starknet-signers = { git = "https://github.com/jbcaron/starknet-rs.git", branch = "classes", default-features = false }
-starknet-types-core = { git = "https://github.com/starknet-io/types-rs", branch = "main", default-features = false }
+
+starknet-types-core = { git = "https://github.com/starknet-io/types-rs.git", branch = "main", default-features = false }
 
 blockifier = { git = "https://github.com/massalabs/blockifier", branch = "no_std-support-7578442-std", default-features = false, features = [
   "parity-scale-codec",

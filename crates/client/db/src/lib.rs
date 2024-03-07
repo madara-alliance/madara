@@ -12,6 +12,8 @@
 //! flags. Support for custom databases is possible but not supported yet.
 
 mod error;
+use bonsai_trie::id::BasicId;
+use bonsai_trie::BonsaiStorage;
 pub use error::{BonsaiDbError, DbError};
 
 mod mapping_db;
@@ -24,15 +26,16 @@ mod db_opening_utils;
 mod messaging_db;
 mod sierra_classes_db;
 pub use messaging_db::LastSyncedEventBlock;
+use starknet_types_core::hash::{Pedersen, Poseidon};
 pub mod bonsai_db;
 mod l1_handler_tx_fee;
 mod meta_db;
 
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use bonsai_db::{BonsaiDb, TrieColumn};
+use bonsai_db::{BonsaiConfigs, BonsaiDb, TrieColumn};
 use da_db::DaDb;
 use l1_handler_tx_fee::L1HandlerTxFeeDb;
 use mapping_db::MappingDb;
@@ -128,7 +131,8 @@ pub struct Backend<B: BlockT> {
     messaging: Arc<MessagingDb>,
     sierra_classes: Arc<SierraClassesDb>,
     l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
-    bonsai: BonsaiDbs<B>,
+    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
 }
 
 /// Returns the Starknet database directory.
@@ -167,14 +171,9 @@ impl<B: BlockT> Backend<B> {
         let kvdb: Arc<dyn KeyValueDB> = db.0;
         let spdb: Arc<dyn Database<DbHash>> = db.1;
 
-        let bonsai_dbs = BonsaiDbs {
-            contract: Arc::new(BonsaiDb {
-                db: kvdb.clone(),
-                _marker: PhantomData,
-                current_column: TrieColumn::Contract,
-            }),
-            class: Arc::new(BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class }),
-        };
+        let contract = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Contract };
+        let class = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class };
+        let config = BonsaiConfigs::new(contract, class);
 
         Ok(Self {
             mapping: Arc::new(MappingDb::new(spdb.clone(), cache_more_things)),
@@ -183,7 +182,8 @@ impl<B: BlockT> Backend<B> {
             messaging: Arc::new(MessagingDb { db: spdb.clone() }),
             sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
             l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
-            bonsai: bonsai_dbs,
+            bonsai_contract: Arc::new(Mutex::new(config.contract)),
+            bonsai_class: Arc::new(Mutex::new(config.class)),
         })
     }
 
@@ -212,12 +212,12 @@ impl<B: BlockT> Backend<B> {
         &self.sierra_classes
     }
 
-    pub fn bonsai_contract(&self) -> &Arc<BonsaiDb<B>> {
-        &self.bonsai.contract
+    pub fn bonsai_contract(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>> {
+        &self.bonsai_contract
     }
 
-    pub fn bonsai_class(&self) -> &Arc<BonsaiDb<B>> {
-        &self.bonsai.class
+    pub fn bonsai_class(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>> {
+        &self.bonsai_class
     }
 
     /// Return l1 handler tx paid fee database manager

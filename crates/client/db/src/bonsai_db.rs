@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use bonsai_trie::id::{BasicId, Id};
-use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, DatabaseKey};
+use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, BonsaiStorageConfig, DatabaseKey};
 use kvdb::{DBTransaction, KeyValueDB};
 use sp_runtime::traits::Block as BlockT;
 use starknet_types_core::hash::{Pedersen, Poseidon};
@@ -22,9 +22,23 @@ pub enum KeyType {
     TrieLog,
 }
 
-pub struct BonsaiConfigs<'a, B: BlockT> {
-    pub contract: BonsaiStorage<BasicId, &'a BonsaiDb<B>, Pedersen>,
-    pub class: BonsaiStorage<BasicId, &'a BonsaiDb<B>, Poseidon>,
+pub struct BonsaiConfigs<B: BlockT> {
+    pub contract: BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>,
+    pub class: BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>,
+}
+
+impl<B: BlockT> BonsaiConfigs<B> {
+    pub fn new(contract: BonsaiDb<B>, class: BonsaiDb<B>) -> Self {
+        let config = BonsaiStorageConfig::default();
+
+        let contract =
+            BonsaiStorage::<_, _, Pedersen>::new(contract, config.clone()).expect("Failed to create bonsai storage");
+
+        let class =
+            BonsaiStorage::<_, _, Poseidon>::new(class, config.clone()).expect("Failed to create bonsai storage");
+
+        Self { contract, class }
+    }
 }
 
 impl TrieColumn {
@@ -62,7 +76,7 @@ pub fn key_type(key: &DatabaseKey) -> KeyType {
     }
 }
 
-impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
+impl<B: BlockT> BonsaiDatabase for BonsaiDb<B> {
     type Batch = DBTransaction;
     type DatabaseError = BonsaiDbError;
 
@@ -226,7 +240,7 @@ impl BonsaiDatabase for TransactionWrapper {
 }
 
 /// This implementation is a stub to mute any error but is is currently not used.
-impl<B: BlockT, ID: Id> BonsaiPersistentDatabase<ID> for &BonsaiDb<B> {
+impl<B: BlockT, ID: Id> BonsaiPersistentDatabase<ID> for BonsaiDb<B> {
     type Transaction = TransactionWrapper;
     type DatabaseError = BonsaiDbError;
 
