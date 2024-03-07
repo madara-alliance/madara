@@ -1,0 +1,53 @@
+title DA Service
+
+participant DA service
+database DB
+participant Madara
+
+
+DA service->DB: get last updated block
+DB-->DA service: last_updated_block
+DA service->Madara: get latest block
+Madara -->DA service: latest block
+loop for each block
+DA service->DB: insert new row with block_no\nas primary key, status as CREATED in da_tracker table
+DB-->DA service:ok
+DA service->Queue: process block_no, attempt 1
+end
+group for each block
+Queue-->DA service:receive message to process block_no, attemp_no (n)
+alt case n<MAX_ATTEMPTS_SUBMISSION
+DA service->DB: get block_no row from da_tracker
+DB-->DA service: row
+note over DA service: ensure row is in CREATED state\nand take a lock over it to avoid\nduplicate submissions
+DA service->Madara: starknet_getStateUpdate
+Madara-->DA service: state diffs
+note over DA service: convert state diffs to calldata
+DA service->DA layer: submit data blob
+DA layer-->DA service: txn_hash
+DA service->DB: update block_no with txn_hash and change status\nto SUBMITTED and release lock
+DB-->DA service:ok
+DA service->Queue: verify txn_hash with d delay, attempt 1
+Queue-->DA service: receive message to verify txn hash
+DA service->DA layer: check txn inclusion
+alt case transaction is finalized
+DA layer-->DA service: txn has been finalized
+DA service->DB: update block_no row to SUCCESS
+DB-->DA service:ok
+else case transaction is still pending
+DA layer-->DA service: txn hasn't been finalized yet
+alt case n < MAX_ATTEMPTS_VERIFICATION
+DA service->Queue: verify txn_hash with d delay, attempt n+1
+else case n >= MAX_ATTEMPTS_VERIFICATION
+DA service->DB: update block_no to TIMED_OUT_VERIFICATION and raise alert
+DB-->DA service: ok
+end
+else case txn has been rejected/orphaned
+DA layer-->DA service: txn failed/not found
+DA service->Queue: process block_no, attempt n+1
+end
+else case n>=MAX_ATTEMPTS_SUBMISSION
+DA service->DB:update block_no to TIMED_OUT_SUBMISSION and raise alert
+DB-->DA service:ok
+end
+end

@@ -1,0 +1,35 @@
+[package]
+name = "madara-orchestrator"
+version = "0.1.0"
+edition = "2021"
+authors = ["Apoorv Sadana <@apoorvsadana>"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum = { version = "0.7.4", features = ["macros"] }
+axum-macros = "0.4.1"
+tokio = { version = "1.36.0", features = ["sync", "macros", "rt-multi-thread"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+dotenvy = "0.15.7"
+starknet = "0.9.0"
+color-eyre = "0.6.2"
+rstest = "0.18.2"
+async-trait = "0.1.77"
+alloy = { git = "https://github.com/alloy-rs/alloy", rev = "86027c9bb984f3a12a30ffd2a3c5f2f06595f1d6", features = ["providers", "rpc-client", "transport-http"], optional = true }
+reqwest = { version = "0.11.24", optional = true }
+url = "2.5.0"
+uuid = { version = "1.7.0", features = ["v4", "serde"] }
+serde = { version = "1.0.197" }
+futures = "0.3.30"
+mongodb = { version = "2.8.1", features = ["bson-uuid-1"], optional = true }
+omniqueue = { version = "0.2.0", optional = true }
+thiserror = "1.0.57"
+serde_json = "1.0.114"
+
+[features]
+default = ["ethereum", "with_mongdb", "with_sqs"]
+ethereum = ["alloy", "reqwest"]
+with_mongdb = ["mongodb"]
+with_sqs = ["omniqueue"]
