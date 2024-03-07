@@ -167,7 +167,7 @@ case $COMMAND in
         ;;
     getBlockWithTxs)
         echo "🧪 Testing starknet_getBlockWithTxs"
-        validate_args $# 2
+        validate_args $# 1
         get_block_with_tx "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
         get_block_with_tx "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
         ;;

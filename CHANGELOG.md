@@ -2,6 +2,8 @@ git # Deoxys Changelog
 
 ## Next release
 
+- refactor(substrate_hash): Substrate hash is now retrieved via rpc client in
+  `l2.rs`
 - fix(worflows): fix toolchain and cache issue
 - feat: Removal of the hardcoded mainnet configuration
 - refactor: pass new CI
