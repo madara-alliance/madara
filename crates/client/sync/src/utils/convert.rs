@@ -7,6 +7,7 @@ use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 
 use crate::commitments::lib::calculate_commitments;
+use crate::utility::get_config;
 
 pub async fn block(block: p::Block) -> mp_block::Block {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
@@ -46,7 +47,7 @@ pub async fn block(block: p::Block) -> mp_block::Block {
         .transaction_receipts
         .iter()
         .enumerate()
-        .filter(|(_, r)| r.events.len() > 0)
+        .filter(|(_, r)| !r.events.is_empty())
         .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
         .collect();
 
@@ -175,10 +176,7 @@ fn fee(felt: starknet_ff::FieldElement) -> u128 {
 }
 
 fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> ResourcePrice {
-    ResourcePrice {
-        price_in_strk: None,
-        price_in_wei: fee(eth_l1_gas_price).try_into().expect("Value out of range for u64"),
-    }
+    ResourcePrice { price_in_strk: None, price_in_wei: fee(eth_l1_gas_price) }
 }
 
 fn events(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<starknet_api::transaction::Event> {
@@ -210,7 +208,13 @@ async fn commitments(
 }
 
 fn chain_id() -> mp_felt::Felt252Wrapper {
-    starknet_ff::FieldElement::from_byte_slice_be(b"SN_MAIN").unwrap().into()
+    match get_config() {
+        Ok(config) => config.chain_id.into(),
+        Err(e) => {
+            log::error!("Failed to get chain id: {}", e);
+            FieldElement::from_byte_slice_be(b"").unwrap().into()
+        }
+    }
 }
 
 fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {

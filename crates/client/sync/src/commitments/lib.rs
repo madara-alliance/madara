@@ -67,36 +67,36 @@ pub fn build_commitment_state_diff(state_update_wrapper: StateUpdateWrapper) -> 
     };
 
     for deployed_contract in state_update_wrapper.state_diff.deployed_contracts.iter() {
-        let address = ContractAddress::from(deployed_contract.address.clone());
+        let address = ContractAddress::from(deployed_contract.address);
         let class_hash = if address == ContractAddress::from(Felt252Wrapper::ONE) {
             // System contracts doesnt have class hashes
             ClassHash::from(Felt252Wrapper::ZERO)
         } else {
-            ClassHash::from(deployed_contract.class_hash.clone())
+            ClassHash::from(deployed_contract.class_hash)
         };
         commitment_state_diff.address_to_class_hash.insert(address, class_hash);
     }
 
     for (address, nonce) in state_update_wrapper.state_diff.nonces.iter() {
-        let contract_address = ContractAddress::from(address.clone());
-        let nonce_value = Nonce::from(nonce.clone());
+        let contract_address = ContractAddress::from(*address);
+        let nonce_value = Nonce::from(*nonce);
         commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
     }
 
     for (address, storage_diffs) in state_update_wrapper.state_diff.storage_diffs.iter() {
-        let contract_address = ContractAddress::from(address.clone());
+        let contract_address = ContractAddress::from(*address);
         let mut storage_map = IndexMap::new();
         for storage_diff in storage_diffs.iter() {
-            let key = StorageKey::from(storage_diff.key.clone());
-            let value = StarkFelt::from(storage_diff.value.clone());
+            let key = StorageKey::from(storage_diff.key);
+            let value = StarkFelt::from(storage_diff.value);
             storage_map.insert(key, value);
         }
         commitment_state_diff.storage_updates.insert(contract_address, storage_map);
     }
 
     for declared_class in state_update_wrapper.state_diff.declared_classes.iter() {
-        let class_hash = ClassHash::from(declared_class.class_hash.clone());
-        let compiled_class_hash = CompiledClassHash::from(declared_class.compiled_class_hash.clone());
+        let class_hash = ClassHash::from(declared_class.class_hash);
+        let compiled_class_hash = CompiledClassHash::from(declared_class.compiled_class_hash);
         commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
     }
 
@@ -175,12 +175,7 @@ async fn contract_trie_root<B: BlockT>(
             let csd_clone = Arc::clone(&csd);
             let bonsai_dbs_clone = Arc::clone(&bonsai_dbs);
 
-            task_set.spawn(contract_trie_root_loop(
-                csd_clone,
-                bonsai_dbs_clone,
-                contract_address.clone(),
-                class_hash.clone(),
-            ));
+            task_set.spawn(contract_trie_root_loop(csd_clone, bonsai_dbs_clone, *contract_address, *class_hash));
         });
 
         task_set
@@ -211,10 +206,9 @@ async fn contract_trie_root_loop<B: BlockT>(
 ) -> anyhow::Result<Felt252Wrapper> {
     let storage_root =
         update_storage_trie(&contract_address, &csd, &bonsai_dbs.storage).expect("Failed to update storage trie");
-    let nonce = csd.address_to_nonce.get(&contract_address).unwrap_or(&Felt252Wrapper::default().into()).clone();
+    let nonce = *csd.address_to_nonce.get(&contract_address).unwrap_or(&Felt252Wrapper::default().into());
 
-    let contract_leaf_params =
-        ContractLeafParams { class_hash: class_hash.clone().into(), storage_root, nonce: nonce.into() };
+    let contract_leaf_params = ContractLeafParams { class_hash: class_hash.into(), storage_root, nonce: nonce.into() };
 
     update_contract_trie(contract_address.into(), contract_leaf_params, &bonsai_dbs.contract)
 }
@@ -229,8 +223,7 @@ fn class_trie_root<B: BlockT>(
     // compared to the contract trie root. It is likely that parallelizing this would yield no
     // observalble benefits.
     for (class_hash, compiled_class_hash) in csd.class_hash_to_compiled_class_hash.iter() {
-        class_trie_root =
-            update_class_trie(class_hash.clone().into(), compiled_class_hash.clone().into(), &bonsai_dbs.class)?;
+        class_trie_root = update_class_trie((*class_hash).into(), (*compiled_class_hash).into(), &bonsai_dbs.class)?;
     }
 
     Ok(class_trie_root)

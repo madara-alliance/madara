@@ -102,13 +102,13 @@ pub mod convert {
         genesis_diff.storage_diffs.iter().fold(vec![], |mut acc, diff| {
             acc.extend(
                 diff.1
-                    .into_iter()
+                    .iter()
                     .map(|StorageDiff { key, value }| (
                         (
-                            HexFelt(diff.0.clone()), 
-                            HexFelt(key.clone())
+                            HexFelt(*diff.0), 
+                            HexFelt(*key)
                         ), 
-                        HexFelt(value.clone()))
+                        HexFelt(*value))
                     )
                 );
             acc

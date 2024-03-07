@@ -51,9 +51,6 @@ pub mod transaction_validation;
 /// The Starknet pallet's runtime custom types.
 pub mod types;
 
-#[cfg(test)]
-mod tests;
-
 #[macro_use]
 pub extern crate alloc;
 
@@ -199,8 +196,8 @@ pub mod pallet {
                 for log_entry in logs {
                     if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
                         match *engine_id {
-                            mp_digest_log::STATE_ENGINE_ID => store_state_update::<T>(&encoded_data),
-                            mp_digest_log::CLASS_ENGINE_ID => store_class_update::<T>(&encoded_data),
+                            mp_digest_log::STATE_ENGINE_ID => store_state_update::<T>(encoded_data),
+                            mp_digest_log::CLASS_ENGINE_ID => store_class_update::<T>(encoded_data),
                             _ => {}
                         }
                     }
@@ -221,11 +218,9 @@ pub mod pallet {
             Ok(state_update) => {
                 for (address, storage_diffs) in state_update.state_diff.storage_diffs {
                     for storage_diff in storage_diffs {
-                        let contract_storage_key: ContractStorageKey = (
-                            ContractAddress(address.try_into().unwrap()),
-                            StorageKey(storage_diff.key.try_into().unwrap()),
-                        );
-                        let value = StarkFelt(storage_diff.value.try_into().unwrap());
+                        let contract_storage_key: ContractStorageKey =
+                            (ContractAddress(address.into()), StorageKey(storage_diff.key.into()));
+                        let value = StarkFelt(storage_diff.value.into());
                         <StorageView<T>>::insert(contract_storage_key, value)
                     }
                 }
@@ -235,9 +230,7 @@ pub mod pallet {
                     .state_diff
                     .nonces
                     .into_iter()
-                    .map(|(address, nonce)| {
-                        (ContractAddress(address.try_into().unwrap()), Nonce(nonce.try_into().unwrap()))
-                    })
+                    .map(|(address, nonce)| (ContractAddress(address.into()), Nonce(nonce.into())))
                     .for_each(|(contract_address, nonce)| <Nonces<T>>::insert(contract_address, nonce));
 
                 // contract address to class hash equivalence (used in
@@ -245,13 +238,7 @@ pub mod pallet {
                 core::iter::empty()
                     .chain(state_update.state_diff.deployed_contracts)
                     .chain(state_update.state_diff.replaced_classes)
-                    .into_iter()
-                    .map(|contract| {
-                        (
-                            ContractAddress(contract.address.try_into().unwrap()),
-                            ClassHash(contract.class_hash.try_into().unwrap()),
-                        )
-                    })
+                    .map(|contract| (ContractAddress(contract.address.into()), ClassHash(contract.class_hash.into())))
                     .for_each(|(contract_address, class_hash)| {
                         <ContractClassHashes<T>>::insert(contract_address, class_hash)
                     });
@@ -264,8 +251,8 @@ pub mod pallet {
                     .into_iter()
                     .map(|declared_class| {
                         (
-                            ClassHash(declared_class.class_hash.try_into().unwrap()),
-                            CompiledClassHash(declared_class.compiled_class_hash.try_into().unwrap()),
+                            ClassHash(declared_class.class_hash.into()),
+                            CompiledClassHash(declared_class.compiled_class_hash.into()),
                         )
                     })
                     .for_each(|(class_hash, compiled_class_hash)| {
@@ -1028,7 +1015,7 @@ impl<T: Config> Pallet<T> {
     /// * `block_number` - The block number.
     fn store_block(block_number: u64) {
         let block: StarknetBlock;
-        if frame_system::Pallet::<T>::digest().logs().len() >= 1 {
+        if !frame_system::Pallet::<T>::digest().logs().is_empty() {
             match &frame_system::Pallet::<T>::digest().logs()[0] {
                 DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, encoded_data) => {
                     block = match StarknetBlock::decode(&mut encoded_data.as_slice()) {
@@ -1073,7 +1060,7 @@ impl<T: Config> Pallet<T> {
             let block = StarknetBlock::new(
                 StarknetHeader::new(
                     parent_block_hash.into(),
-                    block_number.into(),
+                    block_number,
                     global_state_root.into(),
                     sequencer_address,
                     block_timestamp,
@@ -1081,7 +1068,7 @@ impl<T: Config> Pallet<T> {
                     transaction_commitment.into(),
                     events.len() as u128,
                     event_commitment.into(),
-                    protocol_version.into(),
+                    protocol_version,
                     l1_gas_price,
                     extra_data,
                 ),

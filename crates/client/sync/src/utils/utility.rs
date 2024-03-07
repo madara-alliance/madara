@@ -1,21 +1,40 @@
 //! Utility functions for Deoxys.
 
 use std::error::Error;
+use std::sync::RwLock;
 use std::thread::sleep;
 use std::time::Duration;
 
 use ethers::types::I256;
+use lazy_static::lazy_static;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use reqwest::header;
 use serde_json::{json, Value};
 use starknet_api::hash::StarkFelt;
-use starknet_ff::FieldElement;
-use starknet_providers::sequencer::models::BlockId;
-use starknet_providers::SequencerGatewayProvider;
 
 use crate::l1::{L1StateUpdate, LogStateUpdate};
-use crate::l2::{L2StateUpdate, STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER};
+use crate::l2::{FetchConfig, L2StateUpdate};
+
+// TODO: find a better place to store this
+lazy_static! {
+    /// Store the configuration globally, using a RwLock to allow for concurrent reads and exclusive writes
+    static ref CONFIG: RwLock<Option<FetchConfig>> = RwLock::new(None);
+}
+
+/// this function needs to be called only once at the start of the program
+pub fn update_config(config: &FetchConfig) {
+    let mut new_config = CONFIG.write().expect("Failed to acquire write lock on CONFIG");
+    *new_config = Some(config.clone());
+}
+
+pub fn get_config() -> Result<FetchConfig, &'static str> {
+    let config_guard = CONFIG.read().expect("Failed to acquire read lock on CONFIG");
+    match &*config_guard {
+        Some(config) => Ok(config.clone()),
+        None => Err("Configuration not set yet"),
+    }
+}
 
 // TODO: secure the auto calls here
 
@@ -72,10 +91,7 @@ pub async fn get_block_hash_by_number(rpc_port: u16, block_number: u64) -> Optio
         .await
         .unwrap();
 
-    match response["result"].as_str() {
-        Some(string) => Some(String::from(string)),
-        None => None,
-    }
+    response["result"].as_str().map(String::from)
 }
 
 pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2StateUpdate, Box<dyn Error>> {
@@ -135,31 +151,6 @@ pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2S
     Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Maximum retries exceeded")))
 }
 
-pub async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider) -> Result<(), String> {
-    let block = client.get_block(BlockId::Latest).await.map_err(|e| format!("failed to get block: {e}"))?;
-
-    let hash = block
-        .block_hash
-        .ok_or("block hash not found")?
-        .try_into()
-        .map_err(|e| format!("failed to convert block hash: {e}"))?;
-    let number = block
-        .block_number
-        .ok_or("block number not found")?
-        .try_into()
-        .map_err(|e| format!("failed to convert block number: {e}"))?;
-
-    let last_highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.clone();
-    let mut new_highest_block_hash_and_number = last_highest_block_hash_and_number.lock().unwrap();
-    *new_highest_block_hash_and_number = (hash, number);
-
-    Ok(())
-}
-
-pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
-    STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.lock().unwrap().clone()
-}
-
 /// Returns a random Pokémon name.
 pub async fn get_random_pokemon_name() -> Result<String, Box<dyn std::error::Error>> {
     let res = reqwest::get("https://pokeapi.co/api/v2/pokemon/?limit=1000").await?;
@@ -200,8 +191,8 @@ pub fn event_to_l1_state_update(log_state_update: LogStateUpdate) -> Result<L1St
     let global_root_u128 = log_state_update.global_root.low_u128();
     let block_hash_u128 = log_state_update.block_hash.low_u128();
 
-    if global_root_u128 as u128 != log_state_update.global_root.low_u128()
-        || block_hash_u128 as u128 != log_state_update.block_hash.low_u128()
+    if global_root_u128 != log_state_update.global_root.low_u128()
+        || block_hash_u128 != log_state_update.block_hash.low_u128()
     {
         return Err("Conversion from U256 to u128 resulted in data loss");
     }

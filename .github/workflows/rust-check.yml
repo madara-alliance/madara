@@ -13,20 +13,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "cache"
-      - uses: actions/cache@v3
+      - uses: actions-rs/toolchain@v1
         with:
-          path: |
-            target/release/deoxys
-          key:
-            ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}-${{
-            github.run_id }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
-            ${{ runner.os }}-cargo-
-
-      - name: Setup rust toolchain
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: rustup show
+          toolchain: nightly-2023-08-24
+          components: rustfmt, clippy
+          target: wasm32-unknown-unknown
+          profile: minimal
 
       - name: Setup check deps
         run: |
