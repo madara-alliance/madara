@@ -78,36 +78,36 @@ pub fn build_commitment_state_diff(state_update_wrapper: StateUpdateWrapper) -> 
     };
 
     for deployed_contract in state_update_wrapper.state_diff.deployed_contracts.iter() {
-        let address = ContractAddress::from(deployed_contract.address.clone());
+        let address = ContractAddress::from(deployed_contract.address);
         let class_hash = if address == ContractAddress::from(Felt252Wrapper::ONE) {
             // System contracts doesnt have class hashes
             ClassHash::from(Felt252Wrapper::ZERO)
         } else {
-            ClassHash::from(deployed_contract.class_hash.clone())
+            ClassHash::from(deployed_contract.class_hash)
         };
         commitment_state_diff.address_to_class_hash.insert(address, class_hash);
     }
 
     for (address, nonce) in state_update_wrapper.state_diff.nonces.iter() {
-        let contract_address = ContractAddress::from(address.clone());
-        let nonce_value = Nonce::from(nonce.clone());
+        let contract_address = ContractAddress::from(*address);
+        let nonce_value = Nonce::from(*nonce);
         commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
     }
 
     for (address, storage_diffs) in state_update_wrapper.state_diff.storage_diffs.iter() {
-        let contract_address = ContractAddress::from(address.clone());
+        let contract_address = ContractAddress::from(*address);
         let mut storage_map = IndexMap::new();
         for storage_diff in storage_diffs.iter() {
-            let key = StorageKey::from(storage_diff.key.clone());
-            let value = StarkFelt::from(storage_diff.value.clone());
+            let key = StorageKey::from(storage_diff.key);
+            let value = StarkFelt::from(storage_diff.value);
             storage_map.insert(key, value);
         }
         commitment_state_diff.storage_updates.insert(contract_address, storage_map);
     }
 
     for declared_class in state_update_wrapper.state_diff.declared_classes.iter() {
-        let class_hash = ClassHash::from(declared_class.class_hash.clone());
-        let compiled_class_hash = CompiledClassHash::from(declared_class.compiled_class_hash.clone());
+        let class_hash = ClassHash::from(declared_class.class_hash);
+        let compiled_class_hash = CompiledClassHash::from(declared_class.compiled_class_hash);
         commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
     }
 

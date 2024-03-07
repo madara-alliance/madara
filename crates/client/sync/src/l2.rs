@@ -1,11 +1,12 @@
 //! Contains the code required to fetch data from the feeder efficiently.
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use mc_db::bonsai_db::BonsaiDb;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
@@ -14,9 +15,10 @@ use mp_felt::Felt252Wrapper;
 use mp_storage::StarknetStorageSchemaVersion;
 use reqwest::Url;
 use serde::Deserialize;
-use sp_core::H256;
+use sp_blockchain::HeaderBackend;
+use sp_core::{H160, H256};
 use sp_runtime::generic::{Block, Header};
-use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
+use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_api::hash::StarkHash;
@@ -30,7 +32,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::task::JoinSet;
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
-use crate::utility::{get_block_hash_by_number, update_highest_block_hash_and_number};
+use crate::utility::update_config;
 use crate::CommandSink;
 
 /// Contains the Starknet verified state on L2
@@ -43,24 +45,16 @@ pub struct L2StateUpdate {
 
 lazy_static! {
     /// Shared latest L2 state update verified on L2
-    pub static ref STARKNET_STATE_UPDATE: Arc<Mutex<L2StateUpdate>> = Arc::new(Mutex::new(L2StateUpdate {
+    pub static ref STARKNET_STATE_UPDATE: Mutex<L2StateUpdate> = Mutex::new(L2StateUpdate {
         block_number: u64::default(),
         global_root: StarkHash::default(),
         block_hash: StarkHash::default(),
-    }));
-}
-
-use lazy_static::lazy_static;
-
-// TODO: find a better place to store this
-lazy_static! {
-    /// Store the configuration globally
-    static ref CONFIG: Arc<Mutex<FetchConfig>> = Arc::new(Mutex::new(FetchConfig::default()));
+    });
 }
 
 lazy_static! {
-    /// Shared latest block number and hash of chain
-    pub static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: Arc<Mutex<(FieldElement, u64)>> = Arc::new(Mutex::new((FieldElement::default(), 0)));
+    /// Shared latest block number and hash of chain, using a RwLock to allow for concurrent reads and exclusive writes
+    static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: RwLock<(FieldElement, u64)> = RwLock::new((FieldElement::default(), 0));
 }
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
@@ -77,19 +71,8 @@ pub struct FetchConfig {
     pub workers: u32,
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
-}
-
-impl Default for FetchConfig {
-    fn default() -> Self {
-        FetchConfig {
-            // Provide default values for each field of FetchConfig
-            gateway: Url::parse("http://default-gateway-url.com").unwrap(),
-            feeder_gateway: Url::parse("http://default-feeder-gateway-url.com").unwrap(),
-            chain_id: starknet_ff::FieldElement::default(), // Adjust as necessary
-            workers: 4,
-            sound: false,
-        }
-    }
+    /// The L1 contract core address
+    pub l1_core_address: H160,
 }
 
 /// The configuration of the senders responsible for sending blocks and state
@@ -108,48 +91,26 @@ pub struct SenderConfig {
     pub overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
 }
 
-// TODO: find a better place to store this
-/// Stores a madara block hash and it's associated substrate hash.
-pub struct BlockHashEquivalence {
-    pub madara: FieldElement,
-    pub substrate: Option<H256>,
-}
-
-impl BlockHashEquivalence {
-    async fn new(state_update: &StateUpdate, block_number: u64, rpc_port: u16) -> Self {
-        // TODO: use an actual Substrate client to convert from Madara to Substrate block hash
-        let block_hash_madara = state_update.block_hash.unwrap();
-        let block_hash_substrate = &get_block_hash_by_number(rpc_port, block_number).await;
-
-        // WARNING: might causes issues related to eRFC 2497 (https://github.com/rust-lang/rust/issues/53667)
-        if block_number > 0 && let Some(block_hash_substrate) = block_hash_substrate {
-            BlockHashEquivalence {
-                madara: block_hash_madara,
-                substrate: Some(H256::from_str(&block_hash_substrate).unwrap()),
-            }
-        } else {
-            BlockHashEquivalence {
-                madara: block_hash_madara,
-                substrate: None,
-            }
-        }
-    }
-}
-
 /// Spawns workers to fetch blocks and state updates from the feeder.
-pub async fn sync<B: BlockT>(
+pub async fn sync<B, C>(
     mut sender_config: SenderConfig,
-    config: FetchConfig,
-    start_at: u64,
-    rpc_port: u16,
+    fetch_config: FetchConfig,
+    first_block: u64,
     bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
-) {
-    update_config(&config);
+    client: Arc<C>,
+) where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
+    update_config(&fetch_config);
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
-    let provider =
-        SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
-    let mut current_block_number = start_at;
+    let provider = SequencerGatewayProvider::new(
+        fetch_config.gateway.clone(),
+        fetch_config.feeder_gateway.clone(),
+        fetch_config.chain_id,
+    );
+    let mut current_block_number = first_block;
     let mut last_block_hash = None;
     let mut got_block = false;
     let mut got_state_update = false;
@@ -163,7 +124,7 @@ pub async fn sync<B: BlockT>(
             Arc::clone(&overrides),
             Arc::clone(bonsai_contract),
             Arc::clone(bonsai_class),
-            rpc_port,
+            client.as_ref(),
         )
         .await;
     }
@@ -186,7 +147,7 @@ pub async fn sync<B: BlockT>(
                     Arc::clone(bonsai_class),
                     state_update_sender,
                     class_sender,
-                    rpc_port,
+                    client.as_ref(),
                 );
                 tokio::join!(block, state_update)
             }
@@ -201,7 +162,7 @@ pub async fn sync<B: BlockT>(
                     Arc::clone(bonsai_class),
                     state_update_sender,
                     class_sender,
-                    rpc_port,
+                    client.as_ref(),
                 )
                 .await,
             ),
@@ -256,7 +217,7 @@ pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block,
     Ok(crate::convert::block(block).await)
 }
 
-async fn fetch_state_and_class_update<B: BlockT>(
+async fn fetch_state_and_class_update<B, C>(
     provider: &SequencerGatewayProvider,
     block_number: u64,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
@@ -264,11 +225,15 @@ async fn fetch_state_and_class_update<B: BlockT>(
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     state_update_sender: &Sender<StateUpdateWrapper>,
     class_sender: &Sender<ClassUpdateWrapper>,
-    rpc_port: u16,
-) -> Result<(), String> {
+    client: &C,
+) -> Result<(), String>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
     let state_update =
-        fetch_state_update(&provider, block_number, overrides.clone(), bonsai_contract, bonsai_class, rpc_port).await?;
-    let class_update = fetch_class_update(&provider, &state_update, overrides, block_number, rpc_port).await?;
+        fetch_state_update(&provider, block_number, overrides.clone(), bonsai_contract, bonsai_class, client).await?;
+    let class_update = fetch_class_update(&provider, &state_update, overrides, block_number, client).await?;
 
     // Now send state_update, which moves it. This will be received
     // by QueryBlockConsensusDataProvider in deoxys/crates/node/src/service.rs
@@ -287,60 +252,71 @@ async fn fetch_state_and_class_update<B: BlockT>(
 }
 
 /// retrieves state update from Starknet sequencer
-async fn fetch_state_update<B: BlockT>(
+async fn fetch_state_update<B, C>(
     provider: &SequencerGatewayProvider,
     block_number: u64,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
-    rpc_port: u16,
-) -> Result<StateUpdate, String> {
+    client: &C,
+) -> Result<StateUpdate, String>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
     let state_update = provider
         .get_state_update(BlockId::Number(block_number))
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    let block_hash = BlockHashEquivalence::new(&state_update, block_number - 1, rpc_port).await.substrate;
+    let block_hash = block_hash_substrate(client, block_number);
     verify_l2(block_number, &state_update, overrides, bonsai_contract, bonsai_class, block_hash)?;
 
     Ok(state_update)
 }
 
-pub async fn fetch_genesis_state_update<B: BlockT>(
+pub async fn fetch_genesis_state_update<B, C>(
     provider: &SequencerGatewayProvider,
     block_number: u64,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
-    rpc_port: u16,
-) -> Result<StateUpdate, String> {
+    client: &C,
+) -> Result<StateUpdate, String>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
     let state_update =
         provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
 
-    let block_hash = BlockHashEquivalence::new(&state_update, block_number, rpc_port).await.substrate;
+    let block_hash = block_hash_substrate(client, block_number);
     verify_l2(0, &state_update, overrides, bonsai_contract, bonsai_class, block_hash)?;
 
     Ok(state_update)
 }
 
 /// retrieves class updates from Starknet sequencer
-async fn fetch_class_update(
+async fn fetch_class_update<B, C>(
     provider: &SequencerGatewayProvider,
     state_update: &StateUpdate,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_number: u64,
-    rpc_port: u16,
-) -> Result<Vec<ContractClassData>, String> {
+    client: &C,
+) -> Result<Vec<ContractClassData>, String>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
     // defaults to downloading ALL classes if a substrate block hash could not be determined
-    let block_hash = BlockHashEquivalence::new(state_update, block_number, rpc_port).await;
-    let missing_classes = match block_hash.substrate {
+    let missing_classes = match block_hash_substrate(client, block_number) {
         Some(block_hash_substrate) => fetch_missing_classes(state_update, overrides, block_hash_substrate),
         None => aggregate_classes(state_update),
     };
 
     let arc_provider = Arc::new(provider.clone());
     let mut task_set = missing_classes.into_iter().fold(JoinSet::new(), |mut set, class_hash| {
-        set.spawn(download_class(*class_hash, block_hash.madara, Arc::clone(&arc_provider)));
+        set.spawn(download_class(*class_hash, block_hash_madara(state_update), Arc::clone(&arc_provider)));
         set
     });
 
@@ -363,6 +339,23 @@ async fn fetch_class_update(
     }
 
     Ok(classes)
+}
+
+/// Retrieves Madara block hash from state update
+fn block_hash_madara(state_update: &StateUpdate) -> FieldElement {
+    state_update.block_hash.unwrap()
+}
+
+/// Retrieves Substrate block hash from rpc client
+fn block_hash_substrate<B, C>(client: &C, block_number: u64) -> Option<H256>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
+    client
+        .hash(UniqueSaturatedInto::unique_saturated_into(block_number))
+        .unwrap()
+        .map(|hash| H256::from_str(&hash.to_string()).unwrap())
 }
 
 /// Downloads a class definition from the Starknet sequencer. Note that because
@@ -417,7 +410,6 @@ fn aggregate_classes(state_update: &StateUpdate) -> Vec<&FieldElement> {
                 .iter()
                 .map(|DeclaredContract { class_hash, compiled_class_hash: _ }| class_hash),
         )
-        .chain(state_update.state_diff.old_declared_contracts.iter().map(|class_hash| class_hash))
         .unique()
         .collect()
 }
@@ -431,13 +423,10 @@ fn is_missing_class(
     block_hash_substrate: H256,
     class_hash: Felt252Wrapper,
 ) -> bool {
-    match overrides
+    overrides
         .for_schema_version(&StarknetStorageSchemaVersion::Undefined)
         .contract_class_by_class_hash(block_hash_substrate, ClassHash::from(class_hash))
-    {
-        Some(_) => false,
-        None => true,
-    }
+        .is_none()
 }
 
 /// Notifies the consensus engine that a new block should be created.
@@ -464,9 +453,9 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
 /// Update the L2 state with the latest data
 pub fn update_l2(state_update: L2StateUpdate) {
     {
-        let last_state_update = STARKNET_STATE_UPDATE.clone();
-        let mut new_state_update = last_state_update.lock().unwrap();
-        *new_state_update = state_update.clone();
+        let mut last_state_update =
+            STARKNET_STATE_UPDATE.lock().expect("Failed to acquire lock on STARKNET_STATE_UPDATE");
+        *last_state_update = state_update.clone();
     }
 }
 
@@ -495,16 +484,22 @@ pub fn verify_l2<B: BlockT>(
     Ok(())
 }
 
+async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider) -> Result<(), String> {
+    let block = client.get_block(BlockId::Latest).await.map_err(|e| format!("failed to get block: {e}"))?;
+
+    let hash = block.block_hash.ok_or("block hash not found")?;
+    let number = block.block_number.ok_or("block number not found")?;
+
+    let mut highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
+        .write()
+        .expect("Failed to acquire write lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER");
+    *highest_block_hash_and_number = (hash, number);
+
+    Ok(())
+}
+
 pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
-    STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER.lock().unwrap().clone()
-}
-
-fn update_config(config: &FetchConfig) {
-    let last_config = CONFIG.clone();
-    let mut new_config = last_config.lock().unwrap();
-    *new_config = config.clone();
-}
-
-pub fn get_config() -> FetchConfig {
-    CONFIG.lock().unwrap().clone()
+    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
+        .read()
+        .expect("Failed to acquire read lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
 }

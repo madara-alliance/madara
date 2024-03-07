@@ -1,7 +1,17 @@
-git # Madara Changelog
+git # Deoxys Changelog
 
 ## Next release
 
+- refactor(substrate_hash): Substrate hash is now retrieved via rpc client in
+  `l2.rs`
+- fix(worflows): fix toolchain and cache issue
+- feat: Removal of the hardcoded mainnet configuration
+- refactor: pass new CI
+- fix(workflows): Fix deoxys CI
+- feat(rpc): add_invoke_tx, add_deploy_account_tx, add_declare_tx
+- feat(rpc): tx_receipt, re-execute tx
+- feat(script): added CI scripts for starting Deoxys and comparing JSON RPC
+  calls
 - perf(verify_l2): parallelized l2 state root update
 - perf(state_commitment): parallelized state commitment hash computations
 - fix(L1): fix l1 thread with battle tested implementation + removed l1-l2
@@ -22,6 +32,7 @@ git # Madara Changelog
 - feat: add transparent representation to `Felt252Wrapper`
 - feat(rpc/trace_api): add `trace_block_transaction`
 - chore(db): changed the way hashes are encoded
+- feat(rpc/trace_api): add `trace_transaction`
 
 ## v0.7.0
 

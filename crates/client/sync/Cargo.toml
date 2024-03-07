@@ -4,7 +4,7 @@ description = "Deoxys crate for Madara"
 edition = "2021"
 homepage = "https://github.com/KasarLabs/deoxys"
 license = "MIT"
-name = "mc-deoxys"
+name = "mc-sync"
 publish = false
 repository = "https://github.com/KasarLabs/deoxys"
 version = "0.1.0"
@@ -18,16 +18,17 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 anyhow = "1.0.75"
+ethers = { workspace = true }
 lazy_static = "1.4.0"
 reqwest = "0.11"
 serde_json = "1"
 tokio-tungstenite = "0.20.1"
-ethers = { workspace = true }
 
 
 blockifier = { workspace = true, default-features = false, features = [
   "testing",
 ] }
+crossbeam-skiplist = { workspace = true }
 env_logger = "0.10.0"
 futures = { workspace = true, default-features = true }
 hex = "0.4"
@@ -35,14 +36,13 @@ indexmap = { workspace = true }
 itertools = { workspace = true }
 log = { version = "0.4.14" }
 mockito = { workspace = true }
+primitive-types = { version = "0.12.2" }
 rand = { version = "0.8.5" }
-primitive-types = { version = "0.12.2"}
 rodio = { version = "0.17", optional = true }
 serde = { workspace = true, default-features = true }
 tokio = { workspace = true, features = ["macros", "parking_lot", "test-util"] }
 url = { workspace = true }
 validator = { workspace = true, features = ["derive"] }
-crossbeam-skiplist ={ workspace = true }
 
 madara-runtime = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
@@ -57,10 +57,13 @@ starknet_api = { workspace = true, default-features = false }
 sc-consensus-manual-seal.workspace = true
 sc-executor = { workspace = true }
 sc-service = { workspace = true }
+sp-blockchain = { workspace = true, default-features = true }
 sp-core = { workspace = true, features = ["std"] }
 sp-runtime = { workspace = true }
 
-mc-commitment-state-diff = { workspace = true }
+bitvec = "1.0.1"
+bonsai-trie = { workspace = true }
+mc-db = { workspace = true }
 mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
 mp-block = { workspace = true }
@@ -70,13 +73,10 @@ mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-storage = { workspace = true, default-features = true }
 mp-transactions = { workspace = true, features = ["client"] }
-mc-db = { workspace = true }
-bonsai-trie = { workspace = true }
 starknet-types-core = { workspace = true, default-features = false, features = [
-    "hash",
-    "parity-scale-codec",
+  "hash",
+  "parity-scale-codec",
 ] }
-bitvec = "1.0.1"
 
 [dev-dependencies]
 # test_utils = { path = "./test_utils" }

@@ -18,9 +18,9 @@ futures = { workspace = true, default-features = true }
 futures-timer = "3.0.2"
 log = { workspace = true, default-features = true }
 mc-db = { workspace = true }
-mc-deoxys = { workspace = true }
 mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
+mc-sync = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }

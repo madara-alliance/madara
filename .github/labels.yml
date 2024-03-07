@@ -1,8 +1,7 @@
 ---
 - name: "breaking-change"
   color: ee0701
-  description:
-    "A change that changes the API or breaks backward compatibility for users."
+  description: "A change that changes the API or breaks backward compatibility for users."
 - name: "bugfix"
   color: ee0701
   description:
@@ -21,8 +20,7 @@
     syntax or methods, but not introducing new features."
 - name: "performance"
   color: 1d76db
-  description:
-    "Improving performance of the project, not introducing new features."
+  description: "Improving performance of the project, not introducing new features."
 - name: "new-feature"
   color: 0e8a16
   description: "New features or options."
@@ -54,17 +52,14 @@
   description: "Missing information."
 - name: "invalid"
   color: fef2c0
-  description:
-    "This is off-topic, spam, or otherwise doesn't apply to this project."
+  description: "This is off-topic, spam, or otherwise doesn't apply to this project."
 
 - name: "beginner-friendly"
   color: 0e8a16
-  description:
-    "Good first issue for people wanting to contribute to this project."
+  description: "Good first issue for people wanting to contribute to this project."
 - name: "help-wanted"
   color: 0e8a16
-  description:
-    "We need some extra helping hands or expertise in order to resolve this!"
+  description: "We need some extra helping hands or expertise in order to resolve this!"
 
 - name: "priority-critical"
   color: ee0701

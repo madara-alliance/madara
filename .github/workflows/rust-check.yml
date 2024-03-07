@@ -1,0 +1,30 @@
+---
+name: Task - Run check
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  rust_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "cache"
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2023-08-24
+          components: rustfmt, clippy
+          target: wasm32-unknown-unknown
+          profile: minimal
+
+      - name: Setup check deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler libasound2-dev
+
+      - name: Check the project
+        run: |
+          cargo check --release --workspace

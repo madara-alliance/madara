@@ -2,10 +2,13 @@ use std::path::PathBuf;
 use std::result::Result as StdResult;
 
 use madara_runtime::SealingMode;
-use mc_deoxys::l2::fetch_genesis_block;
+use mc_sync::l2::fetch_genesis_block;
+use mc_sync::utility::update_config;
+use mc_sync::utils::constant::starknet_core_address;
 use reqwest::Url;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use serde::{Deserialize, Serialize};
+use sp_core::H160;
 
 use crate::cli::Cli;
 use crate::service;
@@ -80,11 +83,14 @@ pub enum NetworkType {
     Integration,
 }
 
+/// Test network is on Sepolia,
+/// Goerli is the deprecated test network for StarkNet and it is not supported after the 11th of
+/// april 2024.
 impl NetworkType {
     pub fn uri(&self) -> &'static str {
         match self {
             NetworkType::Main => "https://alpha-mainnet.starknet.io",
-            NetworkType::Test => "https://alpha4.starknet.io",
+            NetworkType::Test => "https://alpha-sepolia.starknet.io",
             NetworkType::Integration => "https://external.integration.starknet.io",
         }
     }
@@ -92,19 +98,28 @@ impl NetworkType {
     pub fn chain_id(&self) -> starknet_core::types::FieldElement {
         match self {
             NetworkType::Main => starknet_core::types::FieldElement::from_byte_slice_be(b"SN_MAIN").unwrap(),
-            NetworkType::Test => starknet_core::types::FieldElement::from_byte_slice_be(b"SN_TEST").unwrap(),
+            NetworkType::Test => starknet_core::types::FieldElement::from_byte_slice_be(b"SN_SEPOLIA").unwrap(),
             NetworkType::Integration => starknet_core::types::FieldElement::from_byte_slice_be(b"SN_INTE").unwrap(),
         }
     }
 
-    pub fn block_fetch_config(&self) -> mc_deoxys::FetchConfig {
+    pub fn l1_core_address(&self) -> H160 {
+        match self {
+            NetworkType::Main => starknet_core_address::MAINNET.parse().unwrap(),
+            NetworkType::Test => starknet_core_address::SEPOLIA_TESTNET.parse().unwrap(),
+            NetworkType::Integration => starknet_core_address::SEPOLIA_INTEGRATION.parse().unwrap(),
+        }
+    }
+
+    pub fn block_fetch_config(&self) -> mc_sync::FetchConfig {
         let uri = self.uri();
         let chain_id = self.chain_id();
 
         let gateway = format!("{uri}/gateway").parse().unwrap();
         let feeder_gateway = format!("{uri}/feeder_gateway").parse().unwrap();
+        let l1_core_address = self.l1_core_address();
 
-        mc_deoxys::FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false }
+        mc_sync::FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false, l1_core_address }
     }
 }
 
@@ -173,6 +188,9 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         let genesis_block = fetch_genesis_block(fetch_block_config.clone()).await.unwrap();
         fetch_block_config.sound = cli.run.sound;
 
+        update_config(&fetch_block_config);
+        log::debug!("Using fetch block config: {:?}", fetch_block_config);
+
         service::new_full(
             config,
             sealing,
@@ -205,11 +223,17 @@ fn override_dev_environment(cmd: &mut ExtendedRunCmd) {
 fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
     // Set the blockchain network to 'starknet'
     cmd.base.shared_params.chain = Some("starknet".to_string());
-    cmd.base.shared_params.base_path = Some(PathBuf::from("/tmp/deoxys"));
+    cmd.base.shared_params.base_path = Some(PathBuf::from("../db_deoxys"));
 
     // Assign a random pokemon name at each startup
-    cmd.base.name =
-        Some(tokio::runtime::Runtime::new().unwrap().block_on(mc_deoxys::utility::get_random_pokemon_name()).unwrap());
+    cmd.base.name = Some(
+        tokio::runtime::Runtime::new().unwrap().block_on(mc_sync::utility::get_random_pokemon_name()).unwrap_or_else(
+            |e| {
+                log::warn!("Failed to get random pokemon name: {}", e);
+                "gimmighoul".to_string()
+            },
+        ),
+    );
 
     // Define telemetry endpoints at deoxys.kasar.io
     cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://deoxys.kasar.io/submit/".to_string(), 0)];

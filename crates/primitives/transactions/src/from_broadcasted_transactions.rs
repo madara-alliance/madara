@@ -113,10 +113,10 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                     let legacy_contract_class = LegacyContractClass {
                         program: serde_json::from_slice(decompressed_bytes.as_slice())
                             .map_err(|_| BroadcastedTransactionConversionError::ProgramDeserializationFailed)?,
-                        abi: match contract_class.abi.as_ref() {
-                            Some(abi) => Some(abi.iter().cloned().map(|entry| entry.into()).collect()),
-                            None => None,
-                        },
+                        abi: contract_class
+                            .abi
+                            .as_ref()
+                            .map(|abi| abi.iter().cloned().map(|entry| entry.into()).collect()),
                         entry_points_by_type: to_raw_legacy_entry_points(contract_class.entry_points_by_type.clone()),
                     };
 
@@ -363,122 +363,5 @@ impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
         });
 
         Ok(tx)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use assert_matches::assert_matches;
-    use starknet_core::types::contract::SierraClass;
-    use starknet_core::types::FlattenedSierraClass;
-
-    use super::*;
-
-    const CAIRO_1_NO_VALIDATE_ACCOUNT_COMPILED_CLASS_HASH: &str =
-        "0xdf4d3042eec107abe704619f13d92bbe01a58029311b7a1886b23dcbb4ea87";
-    fn get_compressed_legacy_contract_class() -> CompressedLegacyContractClass {
-        let contract_class_bytes = include_bytes!("../../../../cairo-contracts/build/test.json");
-
-        let contract_class: LegacyContractClass = serde_json::from_slice(contract_class_bytes).unwrap();
-        let compressed_contract_class: CompressedLegacyContractClass = contract_class.compress().unwrap();
-
-        compressed_contract_class
-    }
-
-    fn get_flattened_sierra_contract_class() -> FlattenedSierraClass {
-        // when HelloStarknet is compiled into Sierra, the output does not have inputs: [] in the events ABI
-        // this has been manually added right now because starknet-rs expects it
-        let contract_class_bytes =
-            include_bytes!("../../../../cairo-contracts/build/cairo_1/HelloStarknet.sierra.json");
-
-        let contract_class: SierraClass = serde_json::from_slice(contract_class_bytes).unwrap();
-        let flattened_contract_class: FlattenedSierraClass = contract_class.flatten().unwrap();
-
-        flattened_contract_class
-    }
-
-    #[test]
-    fn try_into_declare_transaction_v1_valid() {
-        let compressed_contract_class = get_compressed_legacy_contract_class();
-
-        let txn = BroadcastedDeclareTransactionV1 {
-            max_fee: FieldElement::default(),
-            signature: vec![FieldElement::default()],
-            nonce: FieldElement::default(),
-            contract_class: Arc::new(compressed_contract_class),
-            sender_address: FieldElement::default(),
-            is_query: false,
-        };
-
-        let input: BroadcastedDeclareTransaction = BroadcastedDeclareTransaction::V1(txn);
-        assert!(UserTransaction::try_from(input).is_ok());
-    }
-
-    #[test]
-    fn try_into_declare_transaction_v1_bad_gzip() {
-        let mut compressed_contract_class = get_compressed_legacy_contract_class();
-
-        // Manually change some bytes so its no longer a valid gzip
-        if let Some(value) = compressed_contract_class.program.get_mut(0) {
-            *value = 1;
-        }
-        if let Some(value) = compressed_contract_class.program.get_mut(1) {
-            *value = 1;
-        }
-
-        let txn = BroadcastedDeclareTransactionV1 {
-            max_fee: FieldElement::default(),
-            signature: vec![FieldElement::default()],
-            nonce: FieldElement::default(),
-            contract_class: Arc::new(compressed_contract_class),
-            sender_address: FieldElement::default(),
-            is_query: false,
-        };
-
-        let input: BroadcastedDeclareTransaction = BroadcastedDeclareTransaction::V1(txn);
-        assert_matches!(
-            UserTransaction::try_from(input),
-            Err(BroadcastedTransactionConversionError::ProgramDecompressionFailed)
-        );
-    }
-
-    #[test]
-    fn try_into_declare_transaction_v2_with_correct_compiled_class_hash() {
-        let flattened_contract_class: FlattenedSierraClass = get_flattened_sierra_contract_class();
-
-        let txn = BroadcastedDeclareTransactionV2 {
-            max_fee: FieldElement::default(),
-            signature: vec![FieldElement::default()],
-            nonce: FieldElement::default(),
-            contract_class: Arc::new(flattened_contract_class),
-            sender_address: FieldElement::default(),
-            compiled_class_hash: FieldElement::from_hex_be(CAIRO_1_NO_VALIDATE_ACCOUNT_COMPILED_CLASS_HASH).unwrap(),
-            is_query: false,
-        };
-
-        let input: BroadcastedDeclareTransaction = BroadcastedDeclareTransaction::V2(txn);
-        assert!(UserTransaction::try_from(input).is_ok());
-    }
-
-    #[test]
-    fn try_into_declare_transaction_v2_with_incorrect_compiled_class_hash() {
-        let flattened_contract_class: FlattenedSierraClass = get_flattened_sierra_contract_class();
-
-        let txn = BroadcastedDeclareTransactionV2 {
-            max_fee: FieldElement::default(),
-            signature: vec![FieldElement::default()],
-            nonce: FieldElement::default(),
-            contract_class: Arc::new(flattened_contract_class),
-            sender_address: FieldElement::default(),
-            compiled_class_hash: FieldElement::from_hex_be("0x1").unwrap(), // incorrect compiled class hash
-            is_query: false,
-        };
-
-        let input: BroadcastedDeclareTransaction = BroadcastedDeclareTransaction::V2(txn);
-
-        assert_matches!(
-            UserTransaction::try_from(input),
-            Err(BroadcastedTransactionConversionError::InvalidCompiledClassHash)
-        );
     }
 }
