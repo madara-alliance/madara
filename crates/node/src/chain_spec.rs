@@ -103,8 +103,6 @@ pub fn deoxys_config(sealing: SealingMode, chain_id: &str) -> Result<DevChainSpe
         chain_id,
         ChainType::Development,
         move || {
-            log::info!("🔃 Loading Deoxys config");
-
             DevGenesisExt {
                 genesis_config: testnet_genesis(
                     genesis_loader.clone(),

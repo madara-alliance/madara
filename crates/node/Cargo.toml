@@ -1,8 +1,7 @@
 [package]
 authors = [
-  "KSS <@keep-starknet-strange>",
   "Kasar <@kasarLabs>",
-  "Substrate @substrate-developer-hub",
+  "KSS <@keep-starknet-strange>",
 ]
 build = "build.rs"
 description = "Deoxys node."
