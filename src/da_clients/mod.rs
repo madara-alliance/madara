@@ -5,11 +5,6 @@ use starknet::core::types::FieldElement;
 
 pub mod ethereum;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum DaLayer {
-    Ethereum,
-}
-
 #[async_trait]
 pub trait DaClient: Send + Sync {
     async fn publish_state_diff(&self, state_diff: Vec<FieldElement>) -> Result<String>;

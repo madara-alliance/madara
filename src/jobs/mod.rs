@@ -1,5 +1,5 @@
 use crate::config::{config, Config};
-use crate::jobs::constants::JOB_PROCESS_ATTEMPT_METADATA_KEY;
+use crate::jobs::constants::{JOB_PROCESS_ATTEMPT_METADATA_KEY, JOB_VERIFICATION_ATTEMPT_METADATA_KEY};
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use crate::queue::job_queue::{add_job_to_process_queue, add_job_to_verification_queue};
 use async_trait::async_trait;
@@ -112,10 +112,21 @@ pub async fn verify_job(id: Uuid) -> Result<()> {
                 );
                 add_job_to_process_queue(job.id).await?;
                 return Ok(());
+            } else {
+                // TODO: send alert
             }
         }
         JobVerificationStatus::PENDING => {
             log::info!("Inclusion is still pending for job {}. Pushing back to queue.", job.id);
+            let verify_attempts = get_u64_from_metadata(&job.metadata, JOB_VERIFICATION_ATTEMPT_METADATA_KEY)?;
+            if verify_attempts >= job_handler.max_verification_attempts() {
+                // TODO: send alert
+                log::info!("Verification attempts exceeded for job {}. Marking as timedout.", job.id);
+                config.database().update_job_status(&job, JobStatus::VerificationTimeout).await?;
+                return Ok(());
+            }
+            let metadata = increment_key_in_metadata(&job.metadata, JOB_VERIFICATION_ATTEMPT_METADATA_KEY)?;
+            config.database().update_metadata(&job, metadata).await?;
             add_job_to_verification_queue(
                 job.id,
                 Duration::from_secs(job_handler.verification_polling_delay_seconds()),
