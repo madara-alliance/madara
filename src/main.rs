@@ -1,11 +1,14 @@
+#![warn(missing_docs)]
+#![warn(clippy::missing_docs_in_private_items)]
+
 mod config;
+mod controllers;
 mod da_clients;
 mod database;
 mod jobs;
 mod queue;
 mod routes;
 mod utils;
-mod controllers;
 
 use crate::config::config;
 use crate::queue::init_consumers;
