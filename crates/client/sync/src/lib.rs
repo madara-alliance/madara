@@ -31,7 +31,7 @@ pub mod starknet_sync_worker {
         l1_url: Url,
         backend: Arc<mc_db::Backend<B>>,
     ) {
-        let first_block = utility::get_last_synced_block(rpc_port).await + 1;
+        let first_block = utility::get_last_synced_block(rpc_port).await + 20000;
 
         let _ = tokio::join!(
             l1::sync(l1_url.clone()),

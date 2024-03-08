@@ -223,7 +223,7 @@ fn override_dev_environment(cmd: &mut ExtendedRunCmd) {
 fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
     // Set the blockchain network to 'starknet'
     cmd.base.shared_params.chain = Some("starknet".to_string());
-    cmd.base.shared_params.base_path = Some(PathBuf::from("../db_deoxys"));
+    cmd.base.shared_params.base_path = Some(PathBuf::from("/tmp/deoxys"));
 
     // Assign a random pokemon name at each startup
     cmd.base.name = Some(
@@ -235,8 +235,8 @@ fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
         ),
     );
 
-    // Define telemetry endpoints at deoxys.kasar.io
-    cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://deoxys.kasar.io/submit/".to_string(), 0)];
+    // Define telemetry endpoints at starknodes.com
+    cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://starknodes.com/submit/".to_string(), 0)];
 
     // Enables authoring and manual sealing for custom block production
     cmd.base.force_authoring = true;

@@ -210,8 +210,7 @@ async fn commitments(
 fn chain_id() -> mp_felt::Felt252Wrapper {
     match get_config() {
         Ok(config) => config.chain_id.into(),
-        Err(e) => {
-            log::error!("Failed to get chain id: {}", e);
+        Err(_) => {
             FieldElement::from_byte_slice_be(b"").unwrap().into()
         }
     }

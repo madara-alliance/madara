@@ -72,7 +72,6 @@ fn construct_genesis_block<Block: BlockT>(
     // Load first block from genesis folders
     // TODO remove unecessary code from madara for genesis build
     let digest = vec![DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(genesis_block.clone()).encode())];
-    log::info!("🌱 Genesis block imported correctly {:?}", genesis_block.header().hash::<PedersenHasher>());
 
     Block::new(
         <<Block as BlockT>::Header as HeaderT>::new(
