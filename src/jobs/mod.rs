@@ -14,19 +14,35 @@ mod constants;
 pub mod da_job;
 pub mod types;
 
+/// The Job trait is used to define the methods that a job
+/// should implement to be used as a job for the orchestrator. The orchestrator automatically
+/// handles queueing and processing of jobs as long as they implement the trait.
 #[async_trait]
 pub trait Job: Send + Sync {
+    /// Should build a new job item and return it
     async fn create_job(&self, config: &Config, internal_id: String) -> Result<JobItem>;
+    /// Should process the job and return the external_id which can be used to
+    /// track the status of the job. For example, a DA job will submit the state diff
+    /// to the DA layer and return the txn hash.
     async fn process_job(&self, config: &Config, job: &JobItem) -> Result<String>;
+    /// Should verify the job and return the status of the verification. For example,
+    /// a DA job will verify the inclusion of the state diff in the DA layer and return
+    /// the status of the verification.
     async fn verify_job(&self, config: &Config, job: &JobItem) -> Result<JobVerificationStatus>;
+    /// Should return the maximum number of attempts to process the job. A new attempt is made
+    /// every time the verification returns `JobVerificationStatus::Rejected`
     fn max_process_attempts(&self) -> u64;
+    /// Should return the maximum number of attempts to verify the job. A new attempt is made
+    /// every few seconds depending on the result `verification_polling_delay_seconds`
     fn max_verification_attempts(&self) -> u64;
+    /// Should return the number of seconds to wait before polling for verification
     fn verification_polling_delay_seconds(&self) -> u64;
 }
 
+/// Creates the job in the DB in the created state and adds it to the process queue
 pub async fn create_job(job_type: JobType, internal_id: String) -> Result<()> {
     let config = config().await;
-    let existing_job = config.database().get_job_by_internal_id_and_type(&internal_id, &job_type).await?;
+    let existing_job = config.database().get_job_by_internal_id_and_type(internal_id.as_str(), &job_type).await?;
     if existing_job.is_some() {
         log::debug!("Job already exists for internal_id {:?} and job_type {:?}. Skipping.", internal_id, job_type);
         return Err(eyre!(
@@ -44,6 +60,8 @@ pub async fn create_job(job_type: JobType, internal_id: String) -> Result<()> {
     Ok(())
 }
 
+/// Processes the job, increments the process attempt count and updates the status of the job in the DB.
+/// It then adds the job to the verification queue.
 pub async fn process_job(id: Uuid) -> Result<()> {
     let config = config().await;
     let job = get_job(id).await?;
@@ -78,6 +96,9 @@ pub async fn process_job(id: Uuid) -> Result<()> {
     Ok(())
 }
 
+/// Verifies the job and updates the status of the job in the DB. If the verification fails, it retries
+/// processing the job if the max attempts have not been exceeded. If the max attempts have been exceeded,
+/// it marks the job as timedout. If the verification is still pending, it pushes the job back to the queue.
 pub async fn verify_job(id: Uuid) -> Result<()> {
     let config = config().await;
     let job = get_job(id).await?;
@@ -96,10 +117,10 @@ pub async fn verify_job(id: Uuid) -> Result<()> {
     let verification_status = job_handler.verify_job(config, &job).await?;
 
     match verification_status {
-        JobVerificationStatus::VERIFIED => {
+        JobVerificationStatus::Verified => {
             config.database().update_job_status(&job, JobStatus::Completed).await?;
         }
-        JobVerificationStatus::REJECTED => {
+        JobVerificationStatus::Rejected => {
             config.database().update_job_status(&job, JobStatus::VerificationFailed).await?;
 
             // retry job processing if we haven't exceeded the max limit
@@ -116,7 +137,7 @@ pub async fn verify_job(id: Uuid) -> Result<()> {
                 // TODO: send alert
             }
         }
-        JobVerificationStatus::PENDING => {
+        JobVerificationStatus::Pending => {
             log::info!("Inclusion is still pending for job {}. Pushing back to queue.", job.id);
             let verify_attempts = get_u64_from_metadata(&job.metadata, JOB_VERIFICATION_ATTEMPT_METADATA_KEY)?;
             if verify_attempts >= job_handler.max_verification_attempts() {

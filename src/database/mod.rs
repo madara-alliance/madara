@@ -4,6 +4,7 @@ use color_eyre::Result;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+/// MongoDB
 pub mod mongodb;
 
 /// The Database trait is used to define the methods that a database
@@ -19,11 +20,7 @@ pub mod mongodb;
 pub trait Database: Send + Sync {
     async fn create_job(&self, job: JobItem) -> Result<JobItem>;
     async fn get_job_by_id(&self, id: Uuid) -> Result<Option<JobItem>>;
-    async fn get_job_by_internal_id_and_type(
-        &self,
-        internal_id: &String,
-        job_type: &JobType,
-    ) -> Result<Option<JobItem>>;
+    async fn get_job_by_internal_id_and_type(&self, internal_id: &str, job_type: &JobType) -> Result<Option<JobItem>>;
     async fn update_job_status(&self, job: &JobItem, new_status: JobStatus) -> Result<()>;
     async fn update_external_id_and_status_and_metadata(
         &self,

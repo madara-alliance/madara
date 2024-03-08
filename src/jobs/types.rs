@@ -55,7 +55,10 @@ pub struct JobItem {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum JobVerificationStatus {
-    PENDING,
-    VERIFIED,
-    REJECTED,
+    #[allow(dead_code)]
+    Pending,
+    #[allow(dead_code)]
+    Verified,
+    #[allow(dead_code)]
+    Rejected,
 }

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+#![allow(clippy::missing_docs_in_private_items)]
 use alloy::rpc::client::RpcClient;
 use alloy::transports::http::Http;
 use async_trait::async_trait;
@@ -13,6 +15,7 @@ use crate::jobs::types::JobVerificationStatus;
 
 pub mod config;
 pub struct EthereumDaClient {
+    #[allow(dead_code)]
     provider: RpcClient<Http<Client>>,
 }
 
@@ -22,7 +25,7 @@ impl DaClient for EthereumDaClient {
         unimplemented!()
     }
 
-    async fn verify_inclusion(&self, _external_id: &String) -> Result<JobVerificationStatus> {
+    async fn verify_inclusion(&self, _external_id: &str) -> Result<JobVerificationStatus> {
         todo!()
     }
 }

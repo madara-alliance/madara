@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
-use crate::jobs::{Job};
+use crate::jobs::Job;
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
@@ -49,7 +49,7 @@ impl Job for DaJob {
     }
 
     async fn verify_job(&self, config: &Config, job: &JobItem) -> Result<JobVerificationStatus> {
-        Ok(config.da_client().verify_inclusion(&job.external_id).await?)
+        Ok(config.da_client().verify_inclusion(job.external_id.as_str()).await?)
     }
 
     fn max_process_attempts(&self) -> u64 {

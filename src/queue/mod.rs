@@ -7,6 +7,9 @@ use omniqueue::{Delivery, QueueError};
 
 use std::time::Duration;
 
+/// The QueueProvider trait is used to define the methods that a queue
+/// should implement to be used as a queue for the orchestrator. The
+/// purpose of this trait is to allow developers to use any queue of their choice.
 #[async_trait]
 pub trait QueueProvider: Send + Sync {
     async fn send_message_to_queue(&self, queue: String, payload: String, delay: Option<Duration>) -> Result<()>;

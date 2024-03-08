@@ -4,7 +4,7 @@ use crate::jobs::types::{JobItem, JobStatus, JobType};
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use mongodb::bson::{Document};
+use mongodb::bson::Document;
 use mongodb::options::UpdateOptions;
 use mongodb::{
     bson::doc,
@@ -70,11 +70,7 @@ impl Database for MongoDb {
         Ok(self.get_job_collection().find_one(filter, None).await?)
     }
 
-    async fn get_job_by_internal_id_and_type(
-        &self,
-        internal_id: &String,
-        job_type: &JobType,
-    ) -> Result<Option<JobItem>> {
+    async fn get_job_by_internal_id_and_type(&self, internal_id: &str, job_type: &JobType) -> Result<Option<JobItem>> {
         let filter = doc! {
             "internal_id": internal_id,
             "job_type": mongodb::bson::to_bson(&job_type)?,
