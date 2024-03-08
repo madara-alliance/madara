@@ -141,7 +141,7 @@ async fn get_job(id: Uuid) -> Result<JobItem> {
         Some(job) => Ok(job),
         None => {
             log::error!("Failed to find job with id {:?}", id);
-            return Err(eyre!("Failed to process job with id {:?}", id));
+            Err(eyre!("Failed to process job with id {:?}", id))
         }
     }
 }

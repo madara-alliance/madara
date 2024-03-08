@@ -18,11 +18,11 @@ pub struct EthereumDaClient {
 
 #[async_trait]
 impl DaClient for EthereumDaClient {
-    async fn publish_state_diff(&self, state_diff: Vec<FieldElement>) -> Result<String> {
+    async fn publish_state_diff(&self, _state_diff: Vec<FieldElement>) -> Result<String> {
         unimplemented!()
     }
 
-    async fn verify_inclusion(&self, external_id: &String) -> Result<JobVerificationStatus> {
+    async fn verify_inclusion(&self, _external_id: &String) -> Result<JobVerificationStatus> {
         todo!()
     }
 }

@@ -12,7 +12,7 @@ pub struct CreateJobRequest {
 }
 
 pub async fn create_job(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Json(payload): Json<CreateJobRequest>,
 ) -> Result<Json<()>, AppError> {
     crate::jobs::create_job(payload.job_type, payload.internal_id).await?;

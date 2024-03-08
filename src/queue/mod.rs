@@ -4,7 +4,7 @@ pub mod sqs;
 use async_trait::async_trait;
 use color_eyre::Result;
 use omniqueue::{Delivery, QueueError};
-use std::hash::Hash;
+
 use std::time::Duration;
 
 #[async_trait]
@@ -14,5 +14,5 @@ pub trait QueueProvider: Send + Sync {
 }
 
 pub async fn init_consumers() -> Result<()> {
-    Ok(job_queue::init_consumers().await?)
+    job_queue::init_consumers().await
 }

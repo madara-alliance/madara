@@ -4,7 +4,7 @@ use crate::jobs::types::{JobItem, JobStatus, JobType};
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use mongodb::bson::{Bson, Document};
+use mongodb::bson::{Document};
 use mongodb::options::UpdateOptions;
 use mongodb::{
     bson::doc,

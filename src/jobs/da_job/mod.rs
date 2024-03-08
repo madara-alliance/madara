@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
-use crate::jobs::{increment_key_in_metadata, Job};
+use crate::jobs::{Job};
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
@@ -14,7 +14,7 @@ pub struct DaJob;
 
 #[async_trait]
 impl Job for DaJob {
-    async fn create_job(&self, config: &Config, internal_id: String) -> Result<JobItem> {
+    async fn create_job(&self, _config: &Config, internal_id: String) -> Result<JobItem> {
         Ok(JobItem {
             id: Uuid::new_v4(),
             internal_id,
@@ -89,7 +89,7 @@ fn state_update_to_blob_data(block_no: u64, state_update: StateUpdate) -> Vec<Fi
 
     // Loop over storage diffs
     for (addr, writes) in storage_diffs {
-        blob_data.push(addr.clone());
+        blob_data.push(addr);
 
         let class_flag = deployed_contracts.get(&addr).or_else(|| replaced_classes.get(&addr));
 
@@ -97,7 +97,7 @@ fn state_update_to_blob_data(block_no: u64, state_update: StateUpdate) -> Vec<Fi
         blob_data.push(da_word(class_flag.is_some(), nonce, writes.len() as u64));
 
         if let Some(class_hash) = class_flag {
-            blob_data.push(class_hash.clone());
+            blob_data.push(*class_hash);
         }
 
         for entry in writes {
@@ -114,7 +114,7 @@ fn state_update_to_blob_data(block_no: u64, state_update: StateUpdate) -> Vec<Fi
 
         blob_data.push(da_word(class_flag.is_some(), Some(nonce), 0_u64));
         if let Some(class_hash) = class_flag {
-            blob_data.push(class_hash.clone());
+            blob_data.push(*class_hash);
         }
     }
 
@@ -130,8 +130,8 @@ fn state_update_to_blob_data(block_no: u64, state_update: StateUpdate) -> Vec<Fi
     blob_data.push(FieldElement::from(declared_classes.len()));
 
     for (class_hash, compiled_class_hash) in &declared_classes {
-        blob_data.push(class_hash.clone());
-        blob_data.push(compiled_class_hash.clone());
+        blob_data.push(*class_hash);
+        blob_data.push(*compiled_class_hash);
     }
 
     blob_data
