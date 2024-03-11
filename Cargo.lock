@@ -1347,7 +1347,7 @@ source = "git+https://github.com/keep-starknet-strange/cairo.git?branch=no_std-s
 dependencies = [
  "cairo-lang-utils",
  "const-fnv1a-hash",
- "convert_case 0.6.0",
+ "convert_case",
  "derivative",
  "itertools 0.10.5",
  "lalrpop",
@@ -1468,7 +1468,7 @@ dependencies = [
  "cairo-lang-sierra-to-casm",
  "cairo-lang-syntax",
  "cairo-lang-utils",
- "convert_case 0.6.0",
+ "convert_case",
  "genco",
  "indent",
  "indoc",
@@ -2021,12 +2021,6 @@ name = "constcat"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd7e35aee659887cbfb97aaf227ac12cad1a9d7c71e55ff3376839ed4e282d08"
-
-[[package]]
-name = "convert_case"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "convert_case"
@@ -2649,10 +2643,8 @@ version = "0.99.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fb810d30a7c1953f91334de7244731fc3f3c10d7fe163338a35b9f640960321"
 dependencies = [
- "convert_case 0.4.0",
  "proc-macro2",
  "quote",
- "rustc_version",
  "syn 1.0.109",
 ]
 
@@ -5915,7 +5907,6 @@ name = "mc-db"
 version = "0.1.0"
 dependencies = [
  "bonsai-trie",
- "derive_more",
  "ethers",
  "kvdb",
  "kvdb-rocksdb",
