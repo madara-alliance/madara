@@ -235,8 +235,8 @@ fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
         ),
     );
 
-    // Define telemetry endpoints at deoxys.kasar.io
-    cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://deoxys.kasar.io/submit/".to_string(), 0)];
+    // Define telemetry endpoints at starknodes.com
+    cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://starknodes.com/submit/".to_string(), 0)];
 
     // Enables authoring and manual sealing for custom block production
     cmd.base.force_authoring = true;

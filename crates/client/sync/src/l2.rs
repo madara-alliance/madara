@@ -132,11 +132,13 @@ pub async fn sync<B, C>(
         if last_update_highest_block.elapsed() > Duration::from_secs(20) {
             last_update_highest_block = tokio::time::Instant::now();
             if let Err(e) = update_highest_block_hash_and_number(&provider).await {
+            if let Err(e) = update_highest_block_hash_and_number(&provider).await {
                 eprintln!("Failed to update highest block hash and number: {}", e);
             }
         }
         let (block, state_update) = match (got_block, got_state_update) {
             (false, false) => {
+                let block = fetch_block(&provider, block_sender, current_block_number);
                 let block = fetch_block(&provider, block_sender, current_block_number);
                 let state_update = fetch_state_and_class_update(
                     &provider,
@@ -150,6 +152,7 @@ pub async fn sync<B, C>(
                 );
                 tokio::join!(block, state_update)
             }
+            (false, true) => (fetch_block(&provider, block_sender, current_block_number).await, Ok(())),
             (false, true) => (fetch_block(&provider, block_sender, current_block_number).await, Ok(())),
             (true, false) => (
                 Ok(()),
@@ -294,6 +297,7 @@ async fn fetch_class_update<B, C>(
     provider: &SequencerGatewayProvider,
     state_update: &StateUpdate,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    client: Arc<C>,
     block_number: u64,
     client: &C,
 ) -> Result<Vec<ContractClassData>, String>
