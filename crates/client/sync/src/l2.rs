@@ -1,8 +1,9 @@
 //! Contains the code required to fetch data from the feeder efficiently.
-use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
+use bitvec::order::Msb0;
+use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
 use itertools::Itertools;
@@ -120,11 +121,9 @@ pub async fn sync<B, C>(
     if current_block_number == 1 {
         let _ = fetch_genesis_state_update(
             &provider,
-            current_block_number,
-            Arc::clone(&overrides),
+            Arc::clone(overrides),
             Arc::clone(bonsai_contract),
             Arc::clone(bonsai_class),
-            client.as_ref(),
         )
         .await;
     }
@@ -142,7 +141,7 @@ pub async fn sync<B, C>(
                 let state_update = fetch_state_and_class_update(
                     &provider,
                     current_block_number,
-                    Arc::clone(&overrides),
+                    Arc::clone(overrides),
                     Arc::clone(bonsai_contract),
                     Arc::clone(bonsai_class),
                     state_update_sender,
@@ -157,7 +156,7 @@ pub async fn sync<B, C>(
                 fetch_state_and_class_update(
                     &provider,
                     current_block_number,
-                    Arc::clone(&overrides),
+                    Arc::clone(overrides),
                     Arc::clone(bonsai_contract),
                     Arc::clone(bonsai_class),
                     state_update_sender,
@@ -217,6 +216,7 @@ pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block,
     Ok(crate::convert::block(block).await)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn fetch_state_and_class_update<B, C>(
     provider: &SequencerGatewayProvider,
     block_number: u64,
@@ -232,8 +232,8 @@ where
     C: HeaderBackend<B>,
 {
     let state_update =
-        fetch_state_update(&provider, block_number, overrides.clone(), bonsai_contract, bonsai_class, client).await?;
-    let class_update = fetch_class_update(&provider, &state_update, overrides, block_number, client).await?;
+        fetch_state_update(provider, block_number, overrides.clone(), bonsai_contract, bonsai_class, client).await?;
+    let class_update = fetch_class_update(provider, &state_update, overrides, block_number, client).await?;
 
     // Now send state_update, which moves it. This will be received
     // by QueryBlockConsensusDataProvider in deoxys/crates/node/src/service.rs
@@ -269,29 +269,22 @@ where
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    let block_hash = block_hash_substrate(client, block_number);
+    let block_hash = block_hash_substrate(client, block_number - 1);
     verify_l2(block_number, &state_update, overrides, bonsai_contract, bonsai_class, block_hash)?;
 
     Ok(state_update)
 }
 
-pub async fn fetch_genesis_state_update<B, C>(
+pub async fn fetch_genesis_state_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
-    block_number: u64,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
-    client: &C,
-) -> Result<StateUpdate, String>
-where
-    B: BlockT,
-    C: HeaderBackend<B>,
-{
+) -> Result<StateUpdate, String> {
     let state_update =
         provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
 
-    let block_hash = block_hash_substrate(client, block_number);
-    verify_l2(0, &state_update, overrides, bonsai_contract, bonsai_class, block_hash)?;
+    verify_l2(0, &state_update, overrides, bonsai_contract, bonsai_class, None)?;
 
     Ok(state_update)
 }
@@ -355,7 +348,7 @@ where
     client
         .hash(UniqueSaturatedInto::unique_saturated_into(block_number))
         .unwrap()
-        .map(|hash| H256::from_str(&hash.to_string()).unwrap())
+        .map(|hash| H256::from_slice(hash.as_bits::<Msb0>().to_bitvec().as_raw_slice()))
 }
 
 /// Downloads a class definition from the Starknet sequencer. Note that because

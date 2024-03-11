@@ -70,6 +70,7 @@ use blockifier_state_adapter::BlockifierStateAdapter;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
+use itertools::Itertools;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::{Block as StarknetBlock, Header as StarknetHeader};
 use mp_contract::ContractAbi;
@@ -217,12 +218,21 @@ pub mod pallet {
         match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
             Ok(state_update) => {
                 for (contract_address, storage_diffs) in state_update.state_diff.storage_diffs {
-                    let storage: Vec<(StorageKey, StarkFelt)> = storage_diffs
+                    let contract_address = ContractAddress(contract_address.into());
+
+                    // Previous storage has to be persisted. Since we have no way of using hashmaps
+                    // in a no-std environment, we are currently joining previous and current
+                    // storage updates and filtering out duplicates
+                    // TODO: find a more performant way to do this.
+                    let storage_old = <StorageView<T>>::get(contract_address);
+                    let storage_new: Vec<(StorageKey, StarkFelt)> = storage_diffs
                         .into_iter()
                         .map(|StorageDiffWrapper { key, value }| (StorageKey::from(key), StarkFelt::from(value)))
                         .collect();
+                    let storage: Vec<(StorageKey, StarkFelt)> =
+                        storage_new.into_iter().chain(storage_old.into_iter()).unique_by(|(key, _)| *key).collect();
 
-                    <StorageView<T>>::insert(ContractAddress(contract_address.into()), storage);
+                    <StorageView<T>>::insert(contract_address, storage);
                 }
 
                 // nonces stored for accessing on `starknet_getNonce` RPC call.
@@ -1008,7 +1018,7 @@ impl<T: Config> Pallet<T> {
         ensure!(ContractClassHashes::<T>::contains_key(contract_address), Error::<T>::ContractNotFound);
 
         match Self::storage(contract_address).iter().find(|(storage_key, _)| key == *storage_key) {
-            Some((_, value)) => Ok(value.clone()),
+            Some((_, value)) => Ok(*value),
             None => Err(DispatchError::CannotLookup),
         }
     }
@@ -1016,7 +1026,6 @@ impl<T: Config> Pallet<T> {
     /// Returns a storage keys and values of a given contract
     pub fn get_storage_from(contract_address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
         let changes = Self::storage(contract_address);
-        println!("Changes: {:?}", changes);
         Ok(changes)
     }
 

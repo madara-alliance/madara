@@ -33,7 +33,7 @@ where
 {
     fn count_state_changes(&self) -> StateChangesCount {
         let keys = self.storage_update.keys();
-        let n_contract_updated = BTreeSet::from_iter(keys.clone().map(|contract_address| contract_address)).len();
+        let n_contract_updated = BTreeSet::from_iter(keys.clone()).len();
         StateChangesCount {
             n_modified_contracts: n_contract_updated,
             n_storage_updates: keys.len(),

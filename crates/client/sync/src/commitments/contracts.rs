@@ -1,19 +1,22 @@
-use std::sync::Arc;
-
+use bitvec::order::Msb0;
+use bitvec::vec::BitVec;
 use bitvec::view::BitView;
-use blockifier::state::cached_state::CommitmentStateDiff;
 use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
-use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
+use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig, BonsaiStorageError};
+use indexmap::IndexMap;
 use mc_db::BonsaiDbError;
 use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
+use mp_storage::StarknetStorageSchemaVersion::Undefined;
 use sp_core::H256;
 use sp_runtime::generic::{Block, Header};
 use sp_runtime::traits::BlakeTwo256;
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ContractAddress;
+use starknet_api::hash::StarkFelt;
+use starknet_api::state::StorageKey;
 use starknet_types_core::hash::Pedersen;
 
 #[derive(Debug)]
@@ -37,33 +40,49 @@ pub struct ContractLeafParams {
 ///
 /// The storage root hash.
 pub fn update_storage_trie(
+    overrides: &OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>,
     contract_address: &ContractAddress,
-    commitment_state_diff: &CommitmentStateDiff,
-    _overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    _substrate_block_hash: Option<H256>,
-) -> Result<Felt252Wrapper, BonsaiDbError> {
-    // println!("CONTRACT ADDRESS: {:?}", contract_address);
+    storage_updates: &IndexMap<StorageKey, StarkFelt>,
+    maybe_block_hash: Option<H256>,
+) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
+    // Contract storage bonsai db is stored in-memory
     let config = BonsaiStorageConfig::default();
     let bonsai_db = HashMapDb::<BasicId>::default();
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    // TODO: insert OLD storage changes
-
-    // Insert new storage changes
-    if let Some(updates) = commitment_state_diff.storage_updates.get(contract_address) {
-        for (storage_key, storage_value) in updates {
-            let key = Felt252Wrapper::from(storage_key.0.0).0.to_bytes_be().view_bits()[5..].to_owned();
-            let value = Felt252Wrapper::from(*storage_value);
-            bonsai_storage.insert(&key, &value.into()).expect("Failed to insert storage update into trie");
+    // Inserts old storage changes
+    let db = overrides.for_schema_version(&Undefined);
+    if let Some(hash) = maybe_block_hash {
+        if let Some(storage) = db.get_storage_from(hash, *contract_address) {
+            storage.into_iter().map(convert_storage).for_each(|(key, value)| {
+                if value != Felt252Wrapper::ZERO {
+                    bonsai_storage.insert(&key, &value.into()).expect("Failed to insert storage update into trie");
+                }
+            });
         }
     }
+
+    // Insert new storage changes
+    storage_updates.into_iter().map(|(key, value)| convert_storage((*key, *value))).for_each(|(key, value)| {
+        if value != Felt252Wrapper::ZERO {
+            bonsai_storage.insert(&key, &value.into()).expect("Failed to insert storage update into trie");
+        }
+    });
 
     let mut id_builder = BasicIdBuilder::new();
     let id = id_builder.new_id();
     bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
     let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
     Ok(Felt252Wrapper::from(root_hash))
+}
+
+fn convert_storage(storage: (StorageKey, StarkFelt)) -> (BitVec<u8, Msb0>, Felt252Wrapper) {
+    let (storage_key, storage_value) = storage;
+    let key = Felt252Wrapper::from(storage_key.0.0).0.to_bytes_be().view_bits()[5..].to_owned();
+    let value = Felt252Wrapper::from(storage_value);
+
+    (key, value)
 }
 
 /// Calculates the contract state hash.

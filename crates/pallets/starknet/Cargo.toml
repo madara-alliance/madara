@@ -72,6 +72,7 @@ derive_more = { workspace = true }
 hashbrown = { workspace = true }
 hex = { workspace = true }
 indexmap = { workspace = true }
+itertools = { workspace = true }
 log = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true, optional = true, features = [

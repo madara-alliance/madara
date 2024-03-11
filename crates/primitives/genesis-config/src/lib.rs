@@ -96,19 +96,17 @@ pub mod convert {
             .collect()
     }
 
-    #[rustfmt::skip]
     fn convert_storage(genesis_diff: &StateDiff) -> Vec<(ContractAddress, Vec<(StorageKey, StorageValue)>)> {
-        genesis_diff.storage_diffs.iter().map(|(contract_address, storage)| {
-            (
-                HexFelt(contract_address.clone()),
-                storage.iter().map(|StorageDiff {key, value}| (
-                    HexFelt(key.clone()),
-                    HexFelt(value.clone()),
-                ))
-                .collect()
-            )
-        })
-        .collect()
+        genesis_diff
+            .storage_diffs
+            .iter()
+            .map(|(contract_address, storage)| {
+                (
+                    HexFelt(*contract_address),
+                    storage.iter().map(|StorageDiff { key, value }| (HexFelt(*key), HexFelt(*value))).collect(),
+                )
+            })
+            .collect()
     }
 }
 

@@ -223,7 +223,7 @@ fn override_dev_environment(cmd: &mut ExtendedRunCmd) {
 fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
     // Set the blockchain network to 'starknet'
     cmd.base.shared_params.chain = Some("starknet".to_string());
-    cmd.base.shared_params.base_path = Some(PathBuf::from("../db_deoxys"));
+    cmd.base.shared_params.base_path = Some(PathBuf::from("/tmp/deoxys"));
 
     // Assign a random pokemon name at each startup
     cmd.base.name = Some(

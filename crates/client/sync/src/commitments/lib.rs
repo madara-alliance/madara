@@ -15,6 +15,7 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::poseidon::PoseidonHasher;
 use mp_hashers::HasherT;
+use mp_storage::StarknetStorageSchemaVersion::Undefined;
 use mp_transactions::Transaction;
 use sp_core::H256;
 use sp_runtime::generic::{Block, Header};
@@ -198,11 +199,11 @@ fn contract_trie_root<B: BlockT>(
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     mut bonsai_contract: MutexGuard<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>,
     block_number: u64,
-    substrate_block_hash: Option<H256>,
+    maybe_block_hash: Option<H256>,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
-    for (contract_address, class_hash) in csd.address_to_class_hash.iter() {
+    for (contract_address, updates) in csd.storage_updates.iter() {
         let class_commitment_leaf_hash =
-            class_commitment_leaf_hash(csd, overrides.clone(), contract_address, class_hash, substrate_block_hash)?;
+            contract_state_leaf_hash(csd, overrides.as_ref(), contract_address, updates, maybe_block_hash)?;
 
         let key = key(contract_address.0.0);
         bonsai_contract.insert(&key, &class_commitment_leaf_hash.into())?;
@@ -212,19 +213,41 @@ fn contract_trie_root<B: BlockT>(
     Ok(bonsai_contract.root_hash()?.into())
 }
 
-fn class_commitment_leaf_hash(
+fn contract_state_leaf_hash(
     csd: &CommitmentStateDiff,
-    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>,
     contract_address: &ContractAddress,
-    class_hash: &ClassHash,
-    substrate_block_hash: Option<H256>,
+    storage_updates: &IndexMap<StorageKey, StarkFelt>,
+    maybe_block_hash: Option<H256>,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
-    let storage_root = update_storage_trie(contract_address, csd, overrides, substrate_block_hash)?;
-    let nonce = csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::ZERO.into()).clone();
+    let storage_root = update_storage_trie(overrides, contract_address, storage_updates, maybe_block_hash)?;
 
-    let contract_leaf_params =
-        ContractLeafParams { class_hash: class_hash.clone().into(), storage_root, nonce: nonce.into() };
+    let nonce =
+        Felt252Wrapper::from(*csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::ZERO.into()));
+
+    let class_hash = class_hash(csd, overrides, contract_address, maybe_block_hash);
+    let contract_leaf_params = ContractLeafParams { class_hash, storage_root, nonce };
     Ok(calculate_contract_state_leaf_hash::<PedersenHasher>(contract_leaf_params))
+}
+
+fn class_hash(
+    csd: &CommitmentStateDiff,
+    overrides: &OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>,
+    contract_address: &ContractAddress,
+    maybe_block_hash: Option<H256>,
+) -> Felt252Wrapper {
+    let class_hash = match csd.address_to_class_hash.get(contract_address) {
+        Some(class_hash) => *class_hash,
+        None => match maybe_block_hash {
+            Some(block_hash) => overrides
+                .for_schema_version(&Undefined)
+                .contract_class_hash_by_address(block_hash, *contract_address)
+                .unwrap(),
+            None => unreachable!(),
+        },
+    };
+
+    Felt252Wrapper::from(class_hash)
 }
 
 /// Calculates the class trie root

@@ -962,7 +962,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=oss#f4b992c5a2de01d3306e7f80c8833ac4fa8c4c84"
+source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=oss#e4de114749720ade65b0ecf905fd4cf0fa450fce"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -7305,6 +7305,7 @@ dependencies = [
  "hex",
  "hexlit",
  "indexmap 2.0.0-pre",
+ "itertools 0.12.1",
  "lazy_static",
  "log",
  "mp-block",
