@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix(root): got state root to work (does not support class root yet)
 - refactor(substrate_hash): Substrate hash is now retrieved via rpc client in
   `l2.rs`
 - fix(worflows): fix toolchain and cache issue
