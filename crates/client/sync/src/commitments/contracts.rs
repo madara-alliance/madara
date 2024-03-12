@@ -110,7 +110,6 @@ pub fn calculate_contract_state_leaf_hash<H: HasherT>(contract_leaf_params: Cont
 
 #[cfg(test)]
 mod tests {
-    use indexmap::IndexMap;
     use mp_felt::Felt252Wrapper;
     use mp_hashers::pedersen::PedersenHasher;
 
