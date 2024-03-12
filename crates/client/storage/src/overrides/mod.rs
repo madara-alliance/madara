@@ -65,11 +65,7 @@ pub trait StorageOverride<B: BlockT>: Send + Sync {
     ) -> Option<StarkFelt>;
 
     /// get storage keys and values from a specific contract address
-    fn get_storage_from(
-        &self,
-        block_hash: B::Hash,
-        address: ContractAddress,
-    ) -> Option<Vec<(StorageKey, StarkFelt)>>;
+    fn get_storage_from(&self, block_hash: B::Hash, address: ContractAddress) -> Option<Vec<(StorageKey, StarkFelt)>>;
 
     /// Return the class hash at the provided address for the provided block.
     fn contract_class_hash_by_address(&self, block_hash: B::Hash, address: ContractAddress) -> Option<ClassHash>;
@@ -128,7 +124,8 @@ where
     /// * `key` - The storage key to fetch the value for
     ///
     /// # Returns
-    /// * `Some(storage_value)` - The storage value for the provided contract address and storage key
+    /// * `Some(storage_value)` - The storage value for the provided contract address and storage
+    ///   key
     fn get_storage_by_storage_key(
         &self,
         block_hash: <B as BlockT>::Hash,
