@@ -53,14 +53,13 @@ impl From<Felt252Wrapper> for HexFelt {
 pub type ClassHash = HexFelt;
 pub type ContractAddress = HexFelt;
 pub type StorageKey = HexFelt;
-pub type ContractStorageKey = (ContractAddress, StorageKey);
 pub type StorageValue = HexFelt;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct GenesisData {
     pub contracts: Vec<(ContractAddress, ClassHash)>,
     pub sierra_class_hash_to_casm_class_hash: Vec<(ClassHash, ClassHash)>,
-    pub storage: Vec<(ContractStorageKey, StorageValue)>,
+    pub storage: Vec<(ContractAddress, Vec<(StorageKey, StorageValue)>)>,
     pub fee_token_address: ContractAddress,
 }
 
@@ -97,22 +96,17 @@ pub mod convert {
             .collect()
     }
 
-    #[rustfmt::skip]
-    fn convert_storage(genesis_diff: &StateDiff) -> Vec<(ContractStorageKey, StorageValue)> {
-        genesis_diff.storage_diffs.iter().fold(vec![], |mut acc, diff| {
-            acc.extend(
-                diff.1
-                    .iter()
-                    .map(|StorageDiff { key, value }| (
-                        (
-                            HexFelt(*diff.0), 
-                            HexFelt(*key)
-                        ), 
-                        HexFelt(*value))
-                    )
-                );
-            acc
-        })
+    fn convert_storage(genesis_diff: &StateDiff) -> Vec<(ContractAddress, Vec<(StorageKey, StorageValue)>)> {
+        genesis_diff
+            .storage_diffs
+            .iter()
+            .map(|(contract_address, storage)| {
+                (
+                    HexFelt(*contract_address),
+                    storage.iter().map(|StorageDiff { key, value }| (HexFelt(*key), HexFelt(*value))).collect(),
+                )
+            })
+            .collect()
     }
 }
 

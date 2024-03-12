@@ -962,7 +962,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/antiyro/bonsai-trie.git?branch=oss#1b9b3f14dfcf96fd872634f2127b218b9ed26c2e"
+source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=oss#e4de114749720ade65b0ecf905fd4cf0fa450fce"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -5917,6 +5917,7 @@ dependencies = [
  "sp-core",
  "sp-database",
  "sp-runtime",
+ "starknet-types-core",
  "starknet_api",
  "thiserror",
  "uuid 1.6.1",
@@ -7295,6 +7296,7 @@ dependencies = [
  "hex",
  "hexlit",
  "indexmap 2.0.0-pre",
+ "itertools 0.12.1",
  "lazy_static",
  "log",
  "mp-block",
@@ -11301,7 +11303,7 @@ dependencies = [
 [[package]]
 name = "starknet-types-core"
 version = "0.0.9"
-source = "git+https://github.com/starknet-io/types-rs?branch=main#eae04aa3e6a3716982ce39ec7ba87a47698096dc"
+source = "git+https://github.com/starknet-io/types-rs.git?branch=main#eae04aa3e6a3716982ce39ec7ba87a47698096dc"
 dependencies = [
  "bitvec",
  "lambdaworks-crypto",

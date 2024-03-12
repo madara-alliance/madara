@@ -1,17 +1,12 @@
-use std::sync::Arc;
-
 use bitvec::prelude::*;
 use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use mc_db::bonsai_db::BonsaiDb;
-use mc_db::BonsaiDbError;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::Transaction;
-use sp_runtime::traits::Block as BlockT;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
@@ -55,51 +50,6 @@ where
         FieldElement::from(transaction.compute_hash::<H>(chain_id, false, Some(block_number))),
         signature_hash,
     )
-}
-
-/// Calculate the transaction commitment in storage using BonsaiDb (which is less efficient for this
-/// usecase).
-///
-/// # Arguments
-///
-/// * `transactions` - The transactions of the block
-/// * `chain_id` - The current chain id
-/// * `block_number` - The current block number
-/// * `bonsai_db` - The bonsai database responsible to compute the tries
-///
-/// # Returns
-///
-/// The transaction commitment as `Felt252Wrapper`.
-#[deprecated = "use `memory_transaction_commitment` instead"]
-pub fn transaction_commitment<B: BlockT>(
-    transactions: &[Transaction],
-    chain_id: Felt252Wrapper,
-    block_number: u64,
-    bonsai_db: &Arc<BonsaiDb<B>>,
-) -> Result<Felt252Wrapper, BonsaiDbError> {
-    let config = BonsaiStorageConfig::default();
-    let mut bonsai_storage =
-        BonsaiStorage::<_, _, Pedersen>::new(bonsai_db.as_ref(), config).expect("Failed to create bonsai storage");
-
-    let mut id_builder = BasicIdBuilder::new();
-
-    let zero = id_builder.new_id();
-    bonsai_storage.commit(zero).expect("Failed to commit to bonsai storage");
-
-    for (i, tx) in transactions.iter().enumerate() {
-        let tx_hash = calculate_transaction_hash_with_signature::<PedersenHasher>(tx, chain_id, block_number);
-        let key = BitVec::from_vec(i.to_be_bytes().to_vec());
-        let value = Felt::from(Felt252Wrapper::from(tx_hash));
-        bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
-    }
-
-    let id = id_builder.new_id();
-    bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-
-    let root_hash = bonsai_storage.root_hash().expect("Failed to get root hash");
-    bonsai_storage.revert_to(zero).unwrap();
-
-    Ok(Felt252Wrapper::from(root_hash))
 }
 
 /// Calculate the transaction commitment in memory using HashMapDb (which is more efficient for this

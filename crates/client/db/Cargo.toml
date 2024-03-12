@@ -29,6 +29,10 @@ sc-client-db = { workspace = true, default-features = true }
 sp-core = { workspace = true, default-features = true }
 sp-database = { workspace = true, default-features = true }
 sp-runtime = { workspace = true, default-features = true }
+starknet-types-core = { workspace = true, default-features = false, features = [
+  "hash",
+  "parity-scale-codec",
+] }
 starknet_api = { workspace = true, default-features = true, features = [
   "parity-scale-codec",
 ] }

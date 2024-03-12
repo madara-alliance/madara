@@ -1,14 +1,10 @@
-use std::sync::Arc;
-
 use bitvec::vec::BitVec;
 use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use mc_db::bonsai_db::BonsaiDb;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
-use sp_runtime::traits::Block as BlockT;
 use starknet_api::transaction::Event;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
@@ -44,50 +40,6 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
     );
     let from_address = FieldElement::from(Felt252Wrapper::from(event.from_address.0.0));
     H::compute_hash_on_elements(&[from_address, keys_hash, data_hash])
-}
-
-/// Calculate the event commitment in storage using BonsaiDb (which is less efficient for this
-/// usecase).
-///
-/// # Arguments
-///
-/// * `events` - The events of the block
-/// * `bonsai_db` - The bonsai database responsible to compute the tries
-///
-/// # Returns
-///
-/// The event commitment as `Felt252Wrapper`.
-#[deprecated = "use `memory_event_commitment` instead"]
-pub fn event_commitment<B: BlockT>(events: &[Event], bonsai_db: &Arc<BonsaiDb<B>>) -> Result<Felt252Wrapper, String> {
-    if events.is_empty() {
-        return Ok(Felt252Wrapper::ZERO);
-    }
-
-    let config = BonsaiStorageConfig::default();
-    let bonsai_db = bonsai_db.as_ref();
-    let mut bonsai_storage =
-        BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
-
-    let mut id_builder = BasicIdBuilder::new();
-
-    let zero = id_builder.new_id();
-    bonsai_storage.commit(zero).expect("Failed to commit to bonsai storage");
-
-    for (i, event) in events.iter().enumerate() {
-        let event_hash = calculate_event_hash::<PedersenHasher>(event);
-        let key = BitVec::from_vec(i.to_be_bytes().to_vec());
-        let value = Felt::from(Felt252Wrapper::from(event_hash));
-        bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
-    }
-
-    let id = id_builder.new_id();
-    bonsai_storage.commit(id).map_err(|_| "Failed to commit to bonsai storage")?;
-
-    // restores the Bonsai Trie to it's previous state
-    let root_hash = bonsai_storage.root_hash().map_err(|_| "Failed to get root hash")?;
-    bonsai_storage.revert_to(zero).unwrap();
-
-    Ok(Felt252Wrapper::from(root_hash))
 }
 
 /// Calculate the event commitment in memory using HashMapDb (which is more efficient for this

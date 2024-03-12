@@ -230,39 +230,6 @@ where
 
         Ok(rpc_state_diff)
     }
-
-    #[allow(dead_code)]
-    #[allow(dead_code)]
-    fn try_txn_hash_from_cache(
-        &self,
-        tx_index: usize,
-        cached_transactions: &Option<Vec<StarkHash>>,
-        transactions: &[mp_transactions::Transaction],
-        chain_id: Felt252Wrapper,
-        block_number: Option<u64>,
-    ) -> Result<Felt252Wrapper, StarknetRpcApiError> {
-        if let Some(txn_hashes) = &cached_transactions {
-            let txn_hash = (&txn_hashes
-                .get(tx_index)
-                .ok_or_else(|| {
-                    error!("Failed to retrieve transaction hash from cache, invalid index {}", tx_index);
-                    StarknetRpcApiError::InternalServerError
-                })?
-                .0)
-                .try_into()
-                .map_err(|_| {
-                    error!("Failed to convert transaction hash");
-                    StarknetRpcApiError::InternalServerError
-                })?;
-            Ok(txn_hash)
-        } else {
-            let transaction = &transactions.get(tx_index).ok_or_else(|| {
-                error!("Failed to retrieve transaction hash from starknet txs, invalid index {}", tx_index);
-                StarknetRpcApiError::InternalServerError
-            })?;
-            Ok(transaction.compute_hash::<H>(chain_id, false, block_number))
-        }
-    }
 }
 
 #[async_trait]
