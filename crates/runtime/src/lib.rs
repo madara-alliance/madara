@@ -241,6 +241,10 @@ impl_runtime_apis! {
             Starknet::get_storage_at(address, key)
         }
 
+        fn get_storage_from(address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
+            Starknet::get_storage_from(address)
+        }
+
         fn call(address: ContractAddress, function_selector: EntryPointSelector, calldata: Calldata) -> Result<Vec<Felt252Wrapper>, DispatchError> {
             Starknet::call_contract(address, function_selector, calldata)
         }

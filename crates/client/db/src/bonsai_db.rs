@@ -1,10 +1,11 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use bonsai_trie::id::Id;
-use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, DatabaseKey};
+use bonsai_trie::id::{BasicId, Id};
+use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, BonsaiStorageConfig, DatabaseKey};
 use kvdb::{DBTransaction, KeyValueDB};
 use sp_runtime::traits::Block as BlockT;
+use starknet_types_core::hash::{Pedersen, Poseidon};
 
 use crate::error::BonsaiDbError;
 
@@ -12,7 +13,6 @@ use crate::error::BonsaiDbError;
 pub enum TrieColumn {
     Class,
     Contract,
-    Storage,
 }
 
 #[derive(Debug)]
@@ -20,6 +20,25 @@ pub enum KeyType {
     Trie,
     Flat,
     TrieLog,
+}
+
+pub struct BonsaiConfigs<B: BlockT> {
+    pub contract: BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>,
+    pub class: BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>,
+}
+
+impl<B: BlockT> BonsaiConfigs<B> {
+    pub fn new(contract: BonsaiDb<B>, class: BonsaiDb<B>) -> Self {
+        let config = BonsaiStorageConfig::default();
+
+        let contract =
+            BonsaiStorage::<_, _, Pedersen>::new(contract, config.clone()).expect("Failed to create bonsai storage");
+
+        let class =
+            BonsaiStorage::<_, _, Poseidon>::new(class, config.clone()).expect("Failed to create bonsai storage");
+
+        Self { contract, class }
+    }
 }
 
 impl TrieColumn {
@@ -34,11 +53,6 @@ impl TrieColumn {
                 KeyType::Trie => crate::columns::TRIE_BONSAI_CONTRACTS,
                 KeyType::Flat => crate::columns::FLAT_BONSAI_CONTRACTS,
                 KeyType::TrieLog => crate::columns::LOG_BONSAI_CONTRACTS,
-            },
-            TrieColumn::Storage => match key_type {
-                KeyType::Trie => crate::columns::TRIE_BONSAI_STORAGE,
-                KeyType::Flat => crate::columns::FLAT_BONSAI_STORAGE,
-                KeyType::TrieLog => crate::columns::LOG_BONSAI_STORAGE,
             },
         }
     }
@@ -62,7 +76,7 @@ pub fn key_type(key: &DatabaseKey) -> KeyType {
     }
 }
 
-impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
+impl<B: BlockT> BonsaiDatabase for BonsaiDb<B> {
     type Batch = DBTransaction;
     type DatabaseError = BonsaiDbError;
 
@@ -86,8 +100,7 @@ impl<B: BlockT> BonsaiDatabase for &BonsaiDb<B> {
         value: &[u8],
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        // println!("Key and keytype: {:?} {:?}", self.current_column, key_type(key));
-        let key_type = key_type(key);
+        let key_type: KeyType = key_type(key);
         let column = self.current_column.to_index(key_type);
         let key_slice = key.as_slice();
         let previous_value = self.db.get(column, key_slice)?;
@@ -227,7 +240,7 @@ impl BonsaiDatabase for TransactionWrapper {
 }
 
 /// This implementation is a stub to mute any error but is is currently not used.
-impl<B: BlockT, ID: Id> BonsaiPersistentDatabase<ID> for &BonsaiDb<B> {
+impl<B: BlockT, ID: Id> BonsaiPersistentDatabase<ID> for BonsaiDb<B> {
     type Transaction = TransactionWrapper;
     type DatabaseError = BonsaiDbError;
 

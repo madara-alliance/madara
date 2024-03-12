@@ -12,6 +12,7 @@ use crate::{DbError, DbHash};
 /// The mapping to write in db
 #[derive(Debug)]
 pub struct MappingCommitment<B: BlockT> {
+    pub block_number: u64,
     pub block_hash: B::Hash,
     pub starknet_block_hash: StarkHash,
     pub starknet_transaction_hashes: Vec<StarkHash>,
@@ -106,6 +107,12 @@ impl<B: BlockT> MappingDb<B> {
                 &commitment.starknet_block_hash.encode(),
                 &commitment.starknet_transaction_hashes.encode(),
             );
+
+            transaction.set(
+                crate::columns::STARKNET_BLOCK_HASHES_CACHE,
+                &commitment.block_number.encode(),
+                &commitment.starknet_block_hash.encode(),
+            );
         }
 
         self.db.commit(transaction)?;
@@ -153,6 +160,35 @@ impl<B: BlockT> MappingDb<B> {
 
         match self.db.get(crate::columns::STARKNET_TRANSACTION_HASHES_CACHE, &starknet_block_hash.encode()) {
             Some(raw) => Ok(Some(Vec::<StarkHash>::decode(&mut &raw[..])?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Returns the cached block hash of a given block number.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_number` - the block number to search for.
+    ///
+    /// # Returns
+    ///
+    /// The block hash of a given block number.
+    ///
+    /// This function may return `None` for two separate reasons:
+    ///
+    /// - The cache is disabled.
+    /// - The provided `starknet_hash` is not present in the cache.
+    pub fn cached_block_hash_from_block_number(
+        &self,
+        starknet_block_number: u64,
+    ) -> Result<Option<StarkHash>, DbError> {
+        if !self.cache_more_things {
+            // The cache is not enabled, no need to even touch the database.
+            return Ok(None);
+        }
+
+        match self.db.get(crate::columns::STARKNET_BLOCK_HASHES_CACHE, &starknet_block_number.encode()) {
+            Some(raw) => Ok(Some(<StarkHash>::decode(&mut &raw[..])?)),
             None => Ok(None),
         }
     }

@@ -82,6 +82,23 @@ where
         }
     }
 
+    fn get_storage_from(
+        &self,
+        block_hash: <B as BlockT>::Hash,
+        address: ContractAddress,
+    ) -> Option<Vec<(StarknetStorageKey, StarkFelt)>> {
+        let storage_storage_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_STORAGE);
+        let storage = self.query_storage::<Vec<(StarknetStorageKey, StarkFelt)>>(
+            block_hash,
+            &StorageKey(storage_key_build(storage_storage_prefix, &self.encode_storage_key(&address))),
+        );
+
+        match storage {
+            Some(storage) => Some(storage),
+            None => Some(Default::default()),
+        }
+    }
+
     fn contract_class_by_address(
         &self,
         block_hash: <B as BlockT>::Hash,

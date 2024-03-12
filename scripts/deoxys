@@ -37,6 +37,8 @@ lint(){
     then
         exit 1
     fi
+    echo
+    cargo fmt
     npx @taplo/cli@0.5.2 fmt --config ./taplo/taplo.toml
     npx prettier --write .
 }
@@ -64,6 +66,7 @@ case $ACTION in
             exit 1
         fi
         clear_db
+        echo
         start_deoxys "$2"
         ;;
     lint)

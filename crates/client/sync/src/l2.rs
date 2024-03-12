@@ -1,11 +1,14 @@
 //! Contains the code required to fetch data from the feeder efficiently.
-use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
+use bitvec::order::Msb0;
+use bitvec::view::AsBits;
+use bonsai_trie::id::BasicId;
+use bonsai_trie::BonsaiStorage;
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use mc_db::BonsaiDbs;
+use mc_db::bonsai_db::BonsaiDb;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
@@ -25,6 +28,7 @@ use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
 use starknet_providers::{Provider, SequencerGatewayProvider};
+use starknet_types_core::hash::{Pedersen, Poseidon};
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinSet;
 
@@ -91,31 +95,39 @@ pub struct SenderConfig {
 /// Spawns workers to fetch blocks and state updates from the feeder.
 pub async fn sync<B, C>(
     mut sender_config: SenderConfig,
-    config: FetchConfig,
-    start_at: u64,
-    backend: Arc<mc_db::Backend<B>>,
+    fetch_config: FetchConfig,
+    first_block: u64,
+    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     client: Arc<C>,
 ) where
     B: BlockT,
     C: HeaderBackend<B>,
 {
-    update_config(&config);
+    update_config(&fetch_config);
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
-    let provider =
-        SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
-    let bonsai_dbs = BonsaiDbs {
-        contract: Arc::clone(backend.bonsai_contract()),
-        class: Arc::clone(backend.bonsai_class()),
-        storage: Arc::clone(backend.bonsai_storage()),
-    };
-    let mut current_block_number = start_at;
+    let provider = SequencerGatewayProvider::new(
+        fetch_config.gateway.clone(),
+        fetch_config.feeder_gateway.clone(),
+        fetch_config.chain_id,
+    );
+    let mut current_block_number = first_block;
     let mut last_block_hash = None;
     let mut got_block = false;
     let mut got_state_update = false;
     let mut last_update_highest_block = tokio::time::Instant::now() - Duration::from_secs(20);
-    if current_block_number == 0 {
-        let _ = fetch_genesis_state_update(&provider, bonsai_dbs.clone()).await;
+
+    // TODO: move this somewhere else
+    if current_block_number == 1 {
+        let _ = fetch_genesis_state_update(
+            &provider,
+            Arc::clone(overrides),
+            Arc::clone(bonsai_contract),
+            Arc::clone(bonsai_class),
+        )
+        .await;
     }
+
     loop {
         if last_update_highest_block.elapsed() > Duration::from_secs(20) {
             last_update_highest_block = tokio::time::Instant::now();
@@ -128,12 +140,13 @@ pub async fn sync<B, C>(
                 let block = fetch_block(&provider, block_sender, current_block_number);
                 let state_update = fetch_state_and_class_update(
                     &provider,
+                    current_block_number,
                     Arc::clone(overrides),
+                    Arc::clone(bonsai_contract),
+                    Arc::clone(bonsai_class),
                     state_update_sender,
                     class_sender,
-                    Arc::clone(&client),
-                    current_block_number,
-                    bonsai_dbs.clone(),
+                    client.as_ref(),
                 );
                 tokio::join!(block, state_update)
             }
@@ -142,12 +155,13 @@ pub async fn sync<B, C>(
                 Ok(()),
                 fetch_state_and_class_update(
                     &provider,
+                    current_block_number,
                     Arc::clone(overrides),
+                    Arc::clone(bonsai_contract),
+                    Arc::clone(bonsai_class),
                     state_update_sender,
                     class_sender,
-                    Arc::clone(&client),
-                    current_block_number,
-                    bonsai_dbs.clone(),
+                    client.as_ref(),
                 )
                 .await,
             ),
@@ -202,21 +216,24 @@ pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block,
     Ok(crate::convert::block(block).await)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn fetch_state_and_class_update<B, C>(
     provider: &SequencerGatewayProvider,
+    block_number: u64,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     state_update_sender: &Sender<StateUpdateWrapper>,
     class_sender: &Sender<ClassUpdateWrapper>,
-    client: Arc<C>,
-    block_number: u64,
-    bonsai_dbs: BonsaiDbs<B>,
+    client: &C,
 ) -> Result<(), String>
 where
     B: BlockT,
     C: HeaderBackend<B>,
 {
-    let state_update = fetch_state_update(provider, block_number, bonsai_dbs).await?;
-    let class_update = fetch_class_update(provider, &state_update, overrides, client, block_number).await?;
+    let state_update =
+        fetch_state_update(provider, block_number, overrides.clone(), bonsai_contract, bonsai_class, client).await?;
+    let class_update = fetch_class_update(provider, &state_update, overrides, block_number, client).await?;
 
     // Now send state_update, which moves it. This will be received
     // by QueryBlockConsensusDataProvider in deoxys/crates/node/src/service.rs
@@ -235,29 +252,39 @@ where
 }
 
 /// retrieves state update from Starknet sequencer
-async fn fetch_state_update<B: BlockT>(
+async fn fetch_state_update<B, C>(
     provider: &SequencerGatewayProvider,
     block_number: u64,
-    bonsai_dbs: BonsaiDbs<B>,
-) -> Result<StateUpdate, String> {
+    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
+    client: &C,
+) -> Result<StateUpdate, String>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
     let state_update = provider
         .get_state_update(BlockId::Number(block_number))
         .await
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
-    verify_l2(block_number, &state_update, bonsai_dbs).await?;
+    let block_hash = block_hash_substrate(client, block_number - 1);
+    verify_l2(block_number, &state_update, overrides, bonsai_contract, bonsai_class, block_hash)?;
 
     Ok(state_update)
 }
 
-async fn fetch_genesis_state_update<B: BlockT>(
+pub async fn fetch_genesis_state_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
-    bonsai_dbs: BonsaiDbs<B>,
+    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
 ) -> Result<StateUpdate, String> {
     let state_update =
         provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
 
-    verify_l2(0, &state_update, bonsai_dbs).await?;
+    verify_l2(0, &state_update, overrides, bonsai_contract, bonsai_class, None)?;
 
     Ok(state_update)
 }
@@ -267,15 +294,16 @@ async fn fetch_class_update<B, C>(
     provider: &SequencerGatewayProvider,
     state_update: &StateUpdate,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    client: Arc<C>,
     block_number: u64,
+    client: &C,
 ) -> Result<Vec<ContractClassData>, String>
 where
     B: BlockT,
     C: HeaderBackend<B>,
 {
+    // defaults to downloading ALL classes if a substrate block hash could not be determined
     let missing_classes = match block_hash_substrate(client, block_number) {
-        Some(block_hash) => fetch_missing_classes(state_update, overrides, block_hash),
+        Some(block_hash_substrate) => fetch_missing_classes(state_update, overrides, block_hash_substrate),
         None => aggregate_classes(state_update),
     };
 
@@ -312,7 +340,7 @@ fn block_hash_madara(state_update: &StateUpdate) -> FieldElement {
 }
 
 /// Retrieves Substrate block hash from rpc client
-fn block_hash_substrate<B, C>(client: Arc<C>, block_number: u64) -> Option<H256>
+fn block_hash_substrate<B, C>(client: &C, block_number: u64) -> Option<H256>
 where
     B: BlockT,
     C: HeaderBackend<B>,
@@ -320,7 +348,7 @@ where
     client
         .hash(UniqueSaturatedInto::unique_saturated_into(block_number))
         .unwrap()
-        .map(|hash| H256::from_str(&hash.to_string()).unwrap())
+        .map(|hash| H256::from_slice(hash.as_bits::<Msb0>().to_bitvec().as_raw_slice()))
 }
 
 /// Downloads a class definition from the Starknet sequencer. Note that because
@@ -425,19 +453,19 @@ pub fn update_l2(state_update: L2StateUpdate) {
 }
 
 /// Verify and update the L2 state according to the latest state update
-pub async fn verify_l2<B: BlockT>(
+pub fn verify_l2<B: BlockT>(
     block_number: u64,
     state_update: &StateUpdate,
-    bonsai_dbs: BonsaiDbs<B>,
+    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
+    substrate_block_hash: Option<H256>,
 ) -> Result<(), String> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
 
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
-
-    // Main l2 sync bottleneck HERE!
     let state_root =
-        update_state_root(csd, bonsai_dbs).await.map_err(|e| format!("Failed to update state root: {e}"))?;
-
+        update_state_root(csd, overrides, bonsai_contract, bonsai_class, block_number, substrate_block_hash);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
     update_l2(L2StateUpdate {

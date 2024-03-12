@@ -1,8 +1,5 @@
 [package]
-authors = [
-  "Kasar <@kasarLabs>",
-  "KSS <@keep-starknet-strange>",
-]
+authors = ["Kasar <@kasarLabs>", "KSS <@keep-starknet-strange>"]
 build = "build.rs"
 description = "Deoxys node."
 edition.workspace = true

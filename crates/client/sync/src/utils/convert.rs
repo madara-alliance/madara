@@ -25,7 +25,9 @@ pub async fn block(block: p::Block) -> mp_block::Block {
     let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number).await;
 
     let protocol_version = starknet_version(&block.starknet_version);
-    let l1_gas_price = resource_price(block.eth_l1_gas_price);
+    // TODO calculate gas_price when starknet-rs supports v0.13.1
+    // let l1_gas_price = resource_price(block.eth_l1_gas_price);
+    let l1_gas_price = resource_price(FieldElement::ZERO);
     let extra_data = block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be()));
 
     let header = mp_block::Header {
@@ -210,7 +212,10 @@ async fn commitments(
 fn chain_id() -> mp_felt::Felt252Wrapper {
     match get_config() {
         Ok(config) => config.chain_id.into(),
-        Err(_) => FieldElement::from_byte_slice_be(b"").unwrap().into(),
+        Err(e) => {
+            log::error!("Failed to get chain id: {}", e);
+            FieldElement::from_byte_slice_be(b"").unwrap().into()
+        }
     }
 }
 

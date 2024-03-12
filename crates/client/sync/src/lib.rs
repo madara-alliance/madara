@@ -40,7 +40,14 @@ pub mod starknet_sync_worker {
 
         let _ = tokio::join!(
             l1::sync(l1_url.clone()),
-            l2::sync(sender_config, fetch_config.clone(), first_block, backend, client)
+            l2::sync(
+                sender_config,
+                fetch_config.clone(),
+                first_block,
+                backend.bonsai_contract(),
+                backend.bonsai_class(),
+                client,
+            )
         );
     }
 }
