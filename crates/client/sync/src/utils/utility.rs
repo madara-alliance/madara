@@ -5,7 +5,7 @@ use std::sync::RwLock;
 use std::thread::sleep;
 use std::time::Duration;
 
-use ethers::types::I256;
+use ethers::types::{I256, U256};
 use lazy_static::lazy_static;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -181,24 +181,21 @@ pub fn format_address(address: &str) -> String {
     }
 }
 
-pub fn event_to_l1_state_update(log_state_update: LogStateUpdate) -> Result<L1StateUpdate, &'static str> {
-    let block_number_u64 = if log_state_update.block_number >= I256::from(0) {
+pub fn u256_to_starkfelt(u256: U256) -> Result<StarkFelt, &'static str> {
+    let mut bytes = [0u8; 32];
+    u256.to_big_endian(&mut bytes);
+    StarkFelt::new(bytes).map_err(|_| "Failed to convert U256 to StarkFelt")
+}
+
+pub fn convert_log_state_update(log_state_update: LogStateUpdate) -> Result<L1StateUpdate, &'static str> {
+    let block_number = if log_state_update.block_number >= I256::zero() {
         log_state_update.block_number.low_u64()
     } else {
         return Err("Block number is negative");
     };
 
-    let global_root_u128 = log_state_update.global_root.low_u128();
-    let block_hash_u128 = log_state_update.block_hash.low_u128();
+    let global_root = u256_to_starkfelt(log_state_update.global_root)?;
+    let block_hash = u256_to_starkfelt(log_state_update.block_hash)?;
 
-    if global_root_u128 != log_state_update.global_root.low_u128()
-        || block_hash_u128 != log_state_update.block_hash.low_u128()
-    {
-        return Err("Conversion from U256 to u128 resulted in data loss");
-    }
-
-    let global_root = StarkFelt::from(global_root_u128);
-    let block_hash = StarkFelt::from(block_hash_u128);
-
-    Ok(L1StateUpdate { block_number: block_number_u64, global_root, block_hash })
+    Ok(L1StateUpdate { block_number, global_root, block_hash })
 }
