@@ -56,6 +56,7 @@ pub fn update_storage_trie(
     if let Some(hash) = maybe_block_hash {
         if let Some(storage) = db.get_storage_from(hash, *contract_address) {
             storage.into_iter().map(convert_storage).for_each(|(key, value)| {
+                // TODO: check if this has been fixed in Bonsai lib
                 if value != Felt252Wrapper::ZERO {
                     bonsai_storage.insert(&key, &value.into()).expect("Failed to insert storage update into trie");
                 }
