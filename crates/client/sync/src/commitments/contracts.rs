@@ -114,7 +114,7 @@ mod tests {
     use mp_felt::Felt252Wrapper;
     use mp_hashers::pedersen::PedersenHasher;
 
-    use super::{calculate_contract_state_leaf_hash, memory_update_storage_trier};
+    use super::calculate_contract_state_leaf_hash;
 
     #[test]
     fn test_contract_leaf_hash() {
