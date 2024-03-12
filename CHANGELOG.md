@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix l1 thread to reflect correct state_root, block_number, block_hash
 - refactor(substrate_hash): Substrate hash is now retrieved via rpc client in
   `l2.rs`
 - fix(worflows): fix toolchain and cache issue

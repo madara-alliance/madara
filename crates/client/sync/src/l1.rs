@@ -6,19 +6,19 @@ use anyhow::Result;
 use ethers::contract::{abigen, EthEvent};
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::types::transaction::eip2718::TypedTransaction;
-use ethers::types::{Address, BlockNumber as EthBlockNumber, Filter, TransactionRequest, I256, U64};
+use ethers::types::{Address, BlockNumber as EthBlockNumber, Filter, TransactionRequest, I256, U256, U64};
 use ethers::utils::hex::decode;
 use futures::stream::StreamExt;
 use lazy_static::lazy_static;
 use mp_felt::Felt252Wrapper;
-use primitive_types::{H256, U256};
+use primitive_types::H256;
 use reqwest::Url;
 use serde::Deserialize;
 use serde_json::Value;
 use starknet_api::hash::StarkHash;
 
 use crate::l2::STARKNET_STATE_UPDATE;
-use crate::utility::{event_to_l1_state_update, get_config, get_state_update_at};
+use crate::utility::{convert_log_state_update, get_config, get_state_update_at};
 use crate::utils::constant::LOG_STATE_UPDTATE_TOPIC;
 
 lazy_static! {
@@ -41,7 +41,6 @@ pub struct L1StateUpdate {
 /// Starknet core LogStateUpdate event
 #[derive(Clone, Debug, EthEvent, Deserialize)]
 pub struct LogStateUpdate {
-    #[ethevent(indexed)]
     pub global_root: U256,
     pub block_number: I256,
     pub block_hash: U256,
@@ -170,10 +169,8 @@ impl EthereumClient {
         while let Some(event_result) = event_stream.next().await {
             match event_result {
                 Ok(log) => {
-                    println!("Log event in log format: {:?}", log.clone());
                     let format_event =
-                        event_to_l1_state_update(log.clone()).expect("Failed to format event into an L1StateUpdate");
-                    println!("LogStateUpdate event: {:?}, format event: {:?}", log, format_event.clone());
+                        convert_log_state_update(log.clone()).expect("Failed to format event into an L1StateUpdate");
                     update_l1(format_event);
                 }
                 Err(e) => println!("Error while listening for events: {:?}", e),
