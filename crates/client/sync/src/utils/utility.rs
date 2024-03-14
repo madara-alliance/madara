@@ -12,9 +12,10 @@ use rand::thread_rng;
 use reqwest::header;
 use serde_json::{json, Value};
 use starknet_api::hash::StarkFelt;
+use starknet_ff::FieldElement;
 
 use crate::l1::{L1StateUpdate, LogStateUpdate};
-use crate::l2::{FetchConfig, L2StateUpdate};
+use crate::l2::{FetchConfig, L2StateUpdate, STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER};
 
 // TODO: find a better place to store this
 lazy_static! {
@@ -198,4 +199,10 @@ pub fn convert_log_state_update(log_state_update: LogStateUpdate) -> Result<L1St
     let block_hash = u256_to_starkfelt(log_state_update.block_hash)?;
 
     Ok(L1StateUpdate { block_number, global_root, block_hash })
+}
+
+pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
+    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
+        .read()
+        .expect("Failed to acquire read lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
 }

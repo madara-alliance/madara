@@ -55,7 +55,7 @@ lazy_static! {
 
 lazy_static! {
     /// Shared latest block number and hash of chain, using a RwLock to allow for concurrent reads and exclusive writes
-    static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: RwLock<(FieldElement, u64)> = RwLock::new((FieldElement::default(), 0));
+    pub static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: RwLock<(FieldElement, u64)> = RwLock::new((FieldElement::default(), 0));
 }
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
@@ -489,10 +489,4 @@ async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider)
     *highest_block_hash_and_number = (hash, number);
 
     Ok(())
-}
-
-pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
-    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
-        .read()
-        .expect("Failed to acquire read lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
 }

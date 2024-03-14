@@ -35,7 +35,11 @@ pub struct ContractLeafParams {
 ///
 /// # Arguments
 ///
-///
+/// * `overrides` - The storage overrides.
+/// * `contract_address` - The contract address.
+/// * `storage_updates` - The storage updates.
+/// * `maybe_block_hash` - The block hash.
+/// 
 /// # Returns
 ///
 /// The storage root hash.
