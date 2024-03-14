@@ -1,10 +1,19 @@
 //! Converts types from [`starknet_providers`] to madara's expected types.
 
+use std::collections::HashMap;
+
 use mp_fee::ResourcePrice;
 use mp_felt::Felt252Wrapper;
 use starknet_api::hash::StarkFelt;
+use starknet_core::types::{
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem,
+    StateDiff as StateDiffCore, StateUpdate as StateUpdateCore, StorageEntry,
+};
 use starknet_ff::FieldElement;
-use starknet_providers::sequencer::models as p;
+use starknet_providers::sequencer::models::state_update::{
+    DeclaredContract, DeployedContract, StateDiff as StateDiffProvider, StorageDiff as StorageDiffProvider,
+};
+use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
 
 use crate::commitments::lib::calculate_commitments;
 use crate::utility::get_config;
@@ -225,4 +234,73 @@ fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFe
 
 fn contract_address(field_element: starknet_ff::FieldElement) -> starknet_api::api_core::ContractAddress {
     starknet_api::api_core::ContractAddress(starknet_api::api_core::PatriciaKey(felt(field_element)))
+}
+
+pub fn state_update(state_update: StateUpdateProvider) -> StateUpdateCore {
+    // TODO: make sure this does not crash the node!!!
+    let block_hash = state_update.block_hash.expect("Failed to retrieve state update block hash");
+    let new_root = state_update.new_root.expect("Failed to retrieve state update new root");
+    let old_root = state_update.old_root;
+    let state_diff = state_diff(state_update.state_diff);
+
+    StateUpdateCore { block_hash, old_root, new_root, state_diff }
+}
+
+fn state_diff(state_diff: StateDiffProvider) -> StateDiffCore {
+    let storage_diffs = storage_diffs(state_diff.storage_diffs);
+    let deprecated_declared_classes = state_diff.old_declared_contracts;
+    let declared_classes = declared_classes(state_diff.declared_classes);
+    let deployed_contracts = deployed_contracts(state_diff.deployed_contracts);
+    let replaced_classes = replaced_classes(state_diff.replaced_classes);
+    let nonces = nonces(state_diff.nonces);
+
+    StateDiffCore {
+        storage_diffs,
+        deprecated_declared_classes,
+        declared_classes,
+        deployed_contracts,
+        replaced_classes,
+        nonces,
+    }
+}
+
+fn storage_diffs(storage_diffs: HashMap<FieldElement, Vec<StorageDiffProvider>>) -> Vec<ContractStorageDiffItem> {
+    storage_diffs
+        .into_iter()
+        .map(|(address, entries)| ContractStorageDiffItem { address, storage_entries: storage_entries(entries) })
+        .collect()
+}
+
+fn storage_entries(storage_entries: Vec<StorageDiffProvider>) -> Vec<StorageEntry> {
+    storage_entries.into_iter().map(|StorageDiffProvider { key, value }| StorageEntry { key, value }).collect()
+}
+
+fn declared_classes(declared_classes: Vec<DeclaredContract>) -> Vec<DeclaredClassItem> {
+    declared_classes
+        .into_iter()
+        .map(|DeclaredContract { class_hash, compiled_class_hash }| DeclaredClassItem {
+            class_hash,
+            compiled_class_hash,
+        })
+        .collect()
+}
+
+fn deployed_contracts(deplyed_contracts: Vec<DeployedContract>) -> Vec<DeployedContractItem> {
+    deplyed_contracts
+        .into_iter()
+        .map(|DeployedContract { address, class_hash }| DeployedContractItem { address, class_hash })
+        .collect()
+}
+
+fn replaced_classes(replaced_classes: Vec<DeployedContract>) -> Vec<ReplacedClassItem> {
+    replaced_classes
+        .into_iter()
+        .map(|DeployedContract { address, class_hash }| ReplacedClassItem { contract_address: address, class_hash })
+        .collect()
+}
+
+fn nonces(nonces: HashMap<FieldElement, FieldElement>) -> Vec<NonceUpdate> {
+    // TODO: make sure the order is `contract_address` -> `nonce`
+    // and not `nonce` -> `contract_address`
+    nonces.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect()
 }
