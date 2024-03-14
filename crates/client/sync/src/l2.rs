@@ -169,8 +169,8 @@ pub async fn sync<B, C>(
     let fetch_stream =
         (first_block..).map(|block_n| fetch_block_and_updates(block_n, &provider, overrides, client.as_ref()));
     // Have 10 fetches in parallel at once, using futures Buffered
-    let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
-    let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(1);
+    let mut fetch_stream = stream::iter(fetch_stream).buffered(5);
+    let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(5);
 
     tokio::join!(
         // fetch blocks and updates in parallel
@@ -188,8 +188,24 @@ pub async fn sync<B, C>(
 
                 let block_hash = block_hash_substrate(client.as_ref(), block_n - 1);
 
-                verify_l2(block_n, &state_update, overrides, bonsai_contract, bonsai_class, block_hash)
-                    .expect("verifying block");
+                let state_update = {
+                    let overrides = Arc::clone(&overrides);
+                    let bonsai_contract = Arc::clone(&bonsai_contract);
+                    let bonsai_class = Arc::clone(&bonsai_class);
+                    let state_update = Arc::new(state_update);
+                    let state_update_1 = Arc::clone(&state_update);
+                    
+                    // verify_l2 takes a long time, we don't want to starve the event loop
+                    tokio::task::spawn_blocking(move || {
+                        verify_l2(block_n, &state_update, &overrides, &bonsai_contract, &bonsai_class, block_hash)
+                            .expect("verifying block");
+                    })
+                    .await
+                    .expect("verification task panicked");
+
+                    // hack because tokio tasks need to be 'static
+                    Arc::try_unwrap(state_update_1).expect("arc should not be aliased")
+                };
 
                 tokio::join!(
                     async {
