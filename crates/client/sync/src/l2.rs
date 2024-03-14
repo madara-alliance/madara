@@ -119,7 +119,7 @@ where
     const MAX_RETRY: usize = 15;
     for _ in 0..MAX_RETRY {
         log::debug!("fetch_block_and_updates {}", block_n);
-        let block = fetch_block(&provider, block_n);
+        let block = fetch_block(provider, block_n);
         let state_update = fetch_state_and_class_update(provider, block_n, overrides, client);
         let (block, state_update) = tokio::join!(block, state_update);
         log::debug!("fetch_block_and_updates: done {block_n}");
@@ -180,7 +180,7 @@ pub async fn sync<B, C>(
             while let Some(val) = pin!(fetch_stream.next()).await {
                 fetch_stream_sender.send(val).await.expect("receiver is closed")
             }
-            
+
         } => {},
         // apply blocks and updates sequentially
         _ = async {
@@ -196,12 +196,12 @@ pub async fn sync<B, C>(
                 let block_hash = block_hash_substrate(client.as_ref(), block_n - 1);
 
                 let state_update = {
-                    let overrides = Arc::clone(&overrides);
-                    let bonsai_contract = Arc::clone(&bonsai_contract);
-                    let bonsai_class = Arc::clone(&bonsai_class);
+                    let overrides = Arc::clone(overrides);
+                    let bonsai_contract = Arc::clone(bonsai_contract);
+                    let bonsai_class = Arc::clone(bonsai_class);
                     let state_update = Arc::new(state_update);
                     let state_update_1 = Arc::clone(&state_update);
-                    
+
                     // verify_l2 takes a long time, we don't want to starve the event loop
                     tokio::task::spawn_blocking(move || {
                         verify_l2(block_n, &state_update, &overrides, &bonsai_contract, &bonsai_class, block_hash)
@@ -306,13 +306,13 @@ where
     // defaults to downloading ALL classes if a substrate block hash could not be determined
     let missing_classes = match block_hash_substrate(client, block_number) {
         Some(block_hash_substrate) => fetch_missing_classes(state_update, overrides, block_hash_substrate),
-        None => aggregate_classes(&state_update),
+        None => aggregate_classes(state_update),
     };
 
     let arc_provider = Arc::new(provider.clone());
     let mut task_set = missing_classes.into_iter().fold(JoinSet::new(), |mut set, class_hash| {
         let provider = Arc::clone(&arc_provider);
-        let state_update = Arc::clone(&state_update);
+        let state_update = Arc::clone(state_update);
         let class_hash = *class_hash;
         set.spawn(async move { download_class(class_hash, block_hash_madara(&state_update), &provider).await });
         set
@@ -440,8 +440,7 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
 
 /// Update the L2 state with the latest data
 pub fn update_l2(state_update: L2StateUpdate) {
-    let mut last_state_update =
-        STARKNET_STATE_UPDATE.lock().expect("Failed to acquire lock on STARKNET_STATE_UPDATE");
+    let mut last_state_update = STARKNET_STATE_UPDATE.lock().expect("Failed to acquire lock on STARKNET_STATE_UPDATE");
     *last_state_update = state_update.clone();
 }
 
