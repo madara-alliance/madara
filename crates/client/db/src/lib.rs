@@ -132,6 +132,7 @@ pub struct Backend<B: BlockT> {
     sierra_classes: Arc<SierraClassesDb>,
     l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_contract_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
 }
 
@@ -172,8 +173,9 @@ impl<B: BlockT> Backend<B> {
         let spdb: Arc<dyn Database<DbHash>> = db.1;
 
         let contract = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Contract };
+        let contract_storage = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::ContractStorage };
         let class = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class };
-        let config = BonsaiConfigs::new(contract, class);
+        let config = BonsaiConfigs::new(contract, contract_storage, class);
 
         Ok(Self {
             mapping: Arc::new(MappingDb::new(spdb.clone(), cache_more_things)),
@@ -183,6 +185,7 @@ impl<B: BlockT> Backend<B> {
             sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
             l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
             bonsai_contract: Arc::new(Mutex::new(config.contract)),
+            bonsai_contract_storage: Arc::new(Mutex::new(config.contract_storage)),
             bonsai_class: Arc::new(Mutex::new(config.class)),
         })
     }
@@ -214,6 +217,10 @@ impl<B: BlockT> Backend<B> {
 
     pub fn bonsai_contract(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>> {
         &self.bonsai_contract
+    }
+
+    pub fn bonsai_contract_storage(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>> {
+        &self.bonsai_contract_storage
     }
 
     pub fn bonsai_class(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>> {

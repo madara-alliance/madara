@@ -61,6 +61,7 @@ pub async fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper,
     let bonsai_db = HashMapDb::<BasicId>::default();
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
+    let identifier = "0xevent".as_bytes();
 
     // event hashes are computed in parallel
     let mut task_set = JoinSet::new();
@@ -73,7 +74,7 @@ pub async fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper,
         let (i, event_hash) = res.map_err(|e| format!("Failed to retrieve event hash: {e}"))?;
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
         let value = Felt::from(Felt252Wrapper::from(event_hash));
-        bonsai_storage.insert(key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
+        bonsai_storage.insert(&identifier, key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
     }
 
     // Note that committing changes still has the greatest performance hit
@@ -87,7 +88,7 @@ pub async fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper,
     // run in a blocking-safe thread to avoid starving the thread pool
     let root_hash = spawn_blocking(move || {
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        bonsai_storage.root_hash().expect("Failed to get root hash")
+        bonsai_storage.root_hash(&identifier).expect("Failed to get root hash")
     })
     .await
     .map_err(|e| format!("Failed to computed event root hash: {e}"))?;

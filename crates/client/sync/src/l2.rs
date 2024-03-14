@@ -98,6 +98,7 @@ pub async fn sync<B, C>(
     fetch_config: FetchConfig,
     first_block: u64,
     bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     client: Arc<C>,
 ) where
@@ -123,6 +124,7 @@ pub async fn sync<B, C>(
             &provider,
             Arc::clone(overrides),
             Arc::clone(bonsai_contract),
+            Arc::clone(bonsai_contract_storage),
             Arc::clone(bonsai_class),
         )
         .await;
@@ -143,6 +145,7 @@ pub async fn sync<B, C>(
                     current_block_number,
                     Arc::clone(overrides),
                     Arc::clone(bonsai_contract),
+                    Arc::clone(bonsai_contract_storage),
                     Arc::clone(bonsai_class),
                     state_update_sender,
                     class_sender,
@@ -158,6 +161,7 @@ pub async fn sync<B, C>(
                     current_block_number,
                     Arc::clone(overrides),
                     Arc::clone(bonsai_contract),
+                    Arc::clone(bonsai_contract_storage),
                     Arc::clone(bonsai_class),
                     state_update_sender,
                     class_sender,
@@ -222,6 +226,7 @@ async fn fetch_state_and_class_update<B, C>(
     block_number: u64,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_contract_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     state_update_sender: &Sender<StateUpdateWrapper>,
     class_sender: &Sender<ClassUpdateWrapper>,
@@ -232,7 +237,7 @@ where
     C: HeaderBackend<B>,
 {
     let state_update =
-        fetch_state_update(provider, block_number, overrides.clone(), bonsai_contract, bonsai_class, client).await?;
+        fetch_state_update(provider, block_number, overrides.clone(), bonsai_contract, bonsai_contract_storage, bonsai_class, client).await?;
     let class_update = fetch_class_update(provider, &state_update, overrides, block_number, client).await?;
 
     // Now send state_update, which moves it. This will be received
@@ -257,6 +262,7 @@ async fn fetch_state_update<B, C>(
     block_number: u64,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_contract_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     client: &C,
 ) -> Result<StateUpdate, String>
@@ -270,7 +276,7 @@ where
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
     let block_hash = block_hash_substrate(client, block_number - 1);
-    verify_l2(block_number, &state_update, overrides, bonsai_contract, bonsai_class, block_hash)?;
+    verify_l2(block_number, &state_update, overrides, bonsai_contract, bonsai_contract_storage, bonsai_class, block_hash)?;
 
     Ok(state_update)
 }
@@ -279,12 +285,13 @@ pub async fn fetch_genesis_state_update<B: BlockT>(
     provider: &SequencerGatewayProvider,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_contract_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
 ) -> Result<StateUpdate, String> {
     let state_update =
         provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
 
-    verify_l2(0, &state_update, overrides, bonsai_contract, bonsai_class, None)?;
+    verify_l2(0, &state_update, overrides, bonsai_contract, bonsai_contract_storage, bonsai_class, None)?;
 
     Ok(state_update)
 }
@@ -458,6 +465,7 @@ pub fn verify_l2<B: BlockT>(
     state_update: &StateUpdate,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_contract_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     substrate_block_hash: Option<H256>,
 ) -> Result<(), String> {
@@ -465,7 +473,8 @@ pub fn verify_l2<B: BlockT>(
 
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
     let state_root =
-        update_state_root(csd, overrides, bonsai_contract, bonsai_class, block_number, substrate_block_hash);
+        update_state_root(csd, overrides, bonsai_contract, bonsai_contract_storage, bonsai_class, block_number, substrate_block_hash);
+    println!("state root: {:?}", state_root);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
     update_l2(L2StateUpdate {
