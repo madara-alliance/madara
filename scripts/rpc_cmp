@@ -126,6 +126,18 @@ get_block_with_tx(){
     ]" > "$output"
 }
 
+get_block_with_tx_hashes(){
+    local provider=$1
+    local block_number=$2
+    local output=$3
+
+    rpc_call "$provider" "starknet_getBlockWithTxHashes" "[
+        {
+            \"block_number\": $block_number
+        }
+    ]" > "$output"
+}
+
 # ================= #
 #      PROGRAM      #
 # ================= #
@@ -170,6 +182,12 @@ case $COMMAND in
         validate_args $# 1
         get_block_with_tx "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
         get_block_with_tx "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
+        ;;
+    getBlockWithTxHashes)
+        echo "🧪 Testing starknet_getBlockWithTxHashes"
+        validate_args $# 1
+        get_block_with_tx_hashes "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
+        get_block_with_tx_hashes "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
         ;;
     *)
         echo "Invalid argument: $COMMAND"

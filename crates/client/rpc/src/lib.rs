@@ -25,7 +25,6 @@ pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
 use mc_storage::OverrideHandle;
 use mc_sync::l2::get_highest_block_hash_and_number;
 use mc_sync::utility::get_config;
-use mp_block::BlockStatus;
 use mp_contract::class::ContractClassWrapper;
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use mp_hashers::HasherT;
@@ -51,19 +50,22 @@ use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkHash;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{
-    BlockHashAndNumber, BlockId, BlockTag, BlockWithTxs, BroadcastedDeclareTransaction,
-    BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass,
-    DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt,
-    DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResources,
-    ExecutionResult, FeeEstimate, FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt,
-    InvokeTransactionResult, L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+    BlockHashAndNumber, BlockId, BlockTag, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
+    BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionReceipt,
+    DeclareTransactionResult, DeployAccountTransactionReceipt, DeployAccountTransactionResult,
+    DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResources, ExecutionResult, FeeEstimate,
+    FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt, InvokeTransactionResult,
+    L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
     MaybePendingTransactionReceipt, MsgFromL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
     TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
-use crate::pending::get_block::{get_block_with_tx_hashes_l1, get_block_with_tx_hashes_l2};
+use crate::pending::get_block::{
+    get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
+    get_block_with_txs_pending,
+};
 use crate::types::RpcEventFilter;
 use crate::utils::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
@@ -835,8 +837,8 @@ where
         })?;
 
         match block_id {
-            BlockId::Tag(BlockTag::Pending) => get_block_with_tx_hashes_l2::<H>(chain_id),
-            _ => get_block_with_tx_hashes_l1(self, chain_id, substrate_block_hash),
+            BlockId::Tag(BlockTag::Pending) => get_block_with_tx_hashes_pending::<H>(chain_id),
+            _ => get_block_with_tx_hashes_finalized(self, chain_id, substrate_block_hash),
         }
     }
 
@@ -1071,59 +1073,16 @@ where
     /// transactions. In case the specified block is not found, returns a `StarknetRpcApiError` with
     /// `BlockNotFound`.
     fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
+        let chain_id = self.chain_id()?;
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("Block not found: '{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
 
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)?;
-
-        let block_hash = starknet_block.header().hash::<H>();
-        let starknet_version = starknet_block.header().protocol_version;
-
-        let actual_status = if starknet_block.header().block_number
-            <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
-        {
-            BlockStatus::AcceptedOnL1.into()
-        } else {
-            BlockStatus::AcceptedOnL2.into()
-        };
-
-        let chain_id = self.chain_id()?;
-        let chain_id = Felt252Wrapper(chain_id.0);
-
-        let opt_cached_transaction_hashes =
-            self.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into());
-        let mut transactions = Vec::with_capacity(starknet_block.transactions().len());
-        for (index, tx) in starknet_block.transactions().iter().enumerate() {
-            let tx_hash = if let Some(cached_tx_hashes) = opt_cached_transaction_hashes.as_ref() {
-                cached_tx_hashes.get(index).map(|&h| FieldElement::from(Felt252Wrapper::from(h))).ok_or(
-                    CallError::Failed(anyhow::anyhow!(
-                        "Number of cached tx hashes does not match the number of transactions in block with hash {:?}",
-                        block_hash
-                    )),
-                )?
-            } else {
-                tx.compute_hash::<H>(chain_id.0.into(), false, Some(starknet_block.header().block_number)).0
-            };
-
-            transactions.push(to_starknet_core_tx(tx.clone(), tx_hash));
+        match block_id {
+            BlockId::Tag(BlockTag::Pending) => get_block_with_txs_pending::<H>(chain_id),
+            _ => get_block_with_txs_finalized(self, chain_id, substrate_block_hash),
         }
-
-        let block_with_txs = BlockWithTxs {
-            status: actual_status,
-            block_hash: block_hash.into(),
-            parent_hash: Felt252Wrapper::from(starknet_block.header().parent_block_hash).into(),
-            block_number: starknet_block.header().block_number,
-            new_root: Felt252Wrapper::from(starknet_block.header().global_state_root).into(),
-            timestamp: starknet_block.header().block_timestamp,
-            sequencer_address: Felt252Wrapper::from(starknet_block.header().sequencer_address).into(),
-            transactions,
-            l1_gas_price: starknet_block.header().l1_gas_price.into(),
-            starknet_version: starknet_version.from_utf8().expect("starknet version should be a valid utf8 string"),
-        };
-
-        Ok(MaybePendingBlockWithTxs::Block(block_with_txs))
     }
 
     /// Get the information about the result of executing the requested block.
