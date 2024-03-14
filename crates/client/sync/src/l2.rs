@@ -24,7 +24,7 @@ use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_api::hash::StarkHash;
-use starknet_core::types::BlockId as BlockIdCore;
+use starknet_core::types::{BlockId as BlockIdCore, StarknetError};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
@@ -110,7 +110,7 @@ async fn fetch_block_and_updates<B, C>(
     provider: &SequencerGatewayProvider,
     overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     client: &C,
-) -> Result<(u64, p::Block, StateUpdate, Vec<ContractClassData>), L2SyncError>
+) -> Result<(p::Block, StateUpdate, Vec<ContractClassData>), L2SyncError>
 where
     B: BlockT,
     C: HeaderBackend<B>,
@@ -132,7 +132,7 @@ where
         }
         let (block, (state_update, class_update)) = (block?, state_update?);
 
-        return Ok((block_n, block, state_update, class_update));
+        return Ok((block, state_update, class_update));
     }
 
     Err(L2SyncError::FetchRetryLimit)
@@ -169,22 +169,29 @@ pub async fn sync<B, C>(
     let fetch_stream =
         (first_block..).map(|block_n| fetch_block_and_updates(block_n, &provider, overrides, client.as_ref()));
     // Have 10 fetches in parallel at once, using futures Buffered
-    let mut fetch_stream = stream::iter(fetch_stream).buffered(5);
-    let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(5);
+    let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
+    let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(10);
 
-    tokio::join!(
+    tokio::select!(
         // fetch blocks and updates in parallel
-        async {
+        _ = async {
             // FIXME: make it cleaner by replacing this with tokio_util::sync::PollSender to make the channel a
             // Sink and have the fetch Stream pipe into it
             while let Some(val) = pin!(fetch_stream.next()).await {
                 fetch_stream_sender.send(val).await.expect("receiver is closed")
             }
-        },
+            
+        } => {},
         // apply blocks and updates sequentially
-        async {
+        _ = async {
+            let mut block_n = first_block;
             while let Some(val) = pin!(fetch_stream_receiver.recv()).await {
-                let (block_n, block, state_update, class_update) = val.expect("fetching block");
+                if matches!(val, Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))) {
+                    // found the tip of the blockchain :)
+                    break;
+                }
+
+                let (block, state_update, class_update) = val.expect("fetching block");
 
                 let block_hash = block_hash_substrate(client.as_ref(), block_n - 1);
 
@@ -229,10 +236,14 @@ pub async fn sync<B, C>(
                     }
                 );
 
-                create_block(command_sink, &mut last_block_hash).await.expect("creating block")
+                create_block(command_sink, &mut last_block_hash).await.expect("creating block");
+
+                block_n += 1;
             }
-        }
+        } => {},
     );
+
+    log::debug!("L2 sync finished :)");
 }
 
 async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -> Result<p::Block, L2SyncError> {
@@ -429,11 +440,9 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
 
 /// Update the L2 state with the latest data
 pub fn update_l2(state_update: L2StateUpdate) {
-    {
-        let mut last_state_update =
-            STARKNET_STATE_UPDATE.lock().expect("Failed to acquire lock on STARKNET_STATE_UPDATE");
-        *last_state_update = state_update.clone();
-    }
+    let mut last_state_update =
+        STARKNET_STATE_UPDATE.lock().expect("Failed to acquire lock on STARKNET_STATE_UPDATE");
+    *last_state_update = state_update.clone();
 }
 
 /// Verify and update the L2 state according to the latest state update
@@ -459,6 +468,8 @@ pub fn verify_l2<B: BlockT>(
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
     log::debug!("update_state_root {} -- block_hash: {block_hash:?}, state_root: {state_root:?}", block_number);
 
+    set_highest_block_hash_and_number(block_hash, block_number);
+
     update_l2(L2StateUpdate {
         block_number,
         global_root: state_root.into(),
@@ -468,18 +479,11 @@ pub fn verify_l2<B: BlockT>(
     Ok(())
 }
 
-async fn update_highest_block_hash_and_number(client: &SequencerGatewayProvider) -> Result<(), String> {
-    let block = client.get_block(BlockId::Latest).await.map_err(|e| format!("failed to get block: {e}"))?;
-
-    let hash = block.block_hash.ok_or("block hash not found")?;
-    let number = block.block_number.ok_or("block number not found")?;
-
+fn set_highest_block_hash_and_number(hash: FieldElement, number: u64) {
     let mut highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
         .write()
         .expect("Failed to acquire write lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER");
     *highest_block_hash_and_number = (hash, number);
-
-    Ok(())
 }
 
 pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
