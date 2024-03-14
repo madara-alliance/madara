@@ -6,6 +6,7 @@ mod constants;
 mod errors;
 mod events;
 mod madara_backend_client;
+mod pending;
 mod trace_api;
 mod types;
 mod utils;
@@ -50,7 +51,7 @@ use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkHash;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{
-    BlockHashAndNumber, BlockId, BlockTag, BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTransaction,
+    BlockHashAndNumber, BlockId, BlockTag, BlockWithTxs, BroadcastedDeclareTransaction,
     BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass,
     DeclareTransactionReceipt, DeclareTransactionResult, DeployAccountTransactionReceipt,
     DeployAccountTransactionResult, DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResources,
@@ -62,6 +63,7 @@ use starknet_core::types::{
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
+use crate::pending::get_block::{get_block_with_tx_hashes_l1, get_block_with_tx_hashes_l2};
 use crate::types::RpcEventFilter;
 use crate::utils::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
@@ -826,61 +828,16 @@ where
     /// a pending block with transaction hashes, depending on the state of the requested block.
     /// In case the block is not found, returns a `StarknetRpcApiError` with `BlockNotFound`.
     fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes> {
+        let chain_id = self.chain_id()?;
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
 
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)?;
-
-        let chain_id = self.chain_id()?;
-        let starknet_version = starknet_block.header().protocol_version;
-        let l1_gas_price = starknet_block.header().l1_gas_price;
-        let block_hash = starknet_block.header().hash::<H>();
-
-        let actual_status = if starknet_block.header().block_number
-            <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
-        {
-            BlockStatus::AcceptedOnL1.into()
-        } else {
-            BlockStatus::AcceptedOnL2.into()
-        };
-
-        let transaction_hashes = if let Some(tx_hashes) = self.get_cached_transaction_hashes(block_hash.into()) {
-            let mut v = Vec::with_capacity(tx_hashes.len());
-            for tx_hash in tx_hashes {
-                v.push(FieldElement::from(Felt252Wrapper::from(tx_hash)));
-            }
-            v
-        } else {
-            starknet_block
-                .transactions_hashes::<H>(chain_id.0.into(), Some(starknet_block.header().block_number))
-                .map(FieldElement::from)
-                .collect()
-        };
-        let block_status: BlockStatus = if starknet_block.header().block_number
-            <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number
-        {
-            BlockStatus::AcceptedOnL1
-        } else {
-            BlockStatus::AcceptedOnL2
-        };
-
-        let parent_blockhash = starknet_block.header().parent_block_hash;
-        let block_with_tx_hashes = BlockWithTxHashes {
-            transactions: transaction_hashes,
-            status: actual_status,
-            block_hash: block_hash.into(),
-            parent_hash: Felt252Wrapper::from(parent_blockhash).into(),
-            block_number: starknet_block.header().block_number,
-            new_root: Felt252Wrapper::from(starknet_block.header().global_state_root).into(),
-            timestamp: starknet_block.header().block_timestamp,
-            sequencer_address: Felt252Wrapper::from(starknet_block.header().sequencer_address).into(),
-            l1_gas_price: starknet_block.header().l1_gas_price.into(),
-            starknet_version: starknet_version.from_utf8().expect("starknet version should be a valid utf8 string"),
-        };
-
-        Ok(MaybePendingBlockWithTxHashes::Block(block_with_tx_hashes))
+        match block_id {
+            BlockId::Tag(BlockTag::Pending) => get_block_with_tx_hashes_l2::<H>(chain_id),
+            _ => get_block_with_tx_hashes_l1(self, chain_id, substrate_block_hash),
+        }
     }
 
     /// Get the nonce associated with the given address in the given block.
