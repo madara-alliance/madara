@@ -204,9 +204,11 @@ fn contract_trie_root<B: BlockT>(
     block_number: u64,
     maybe_block_hash: Option<H256>,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
-    let identifier = vec![];
+    let identifier = "0xcontract".as_bytes();
+    bonsai_contract.init_tree(&identifier)?;
 
     // First we insert the contract storage changes
+    // TODO: @cchudant parallelize this loop
     for (contract_address, updates) in csd.storage_updates.iter() {
         update_storage_trie(contract_address, updates, &bonsai_contract_storage);
     }
@@ -215,6 +217,7 @@ fn contract_trie_root<B: BlockT>(
     bonsai_contract_storage.lock().unwrap().commit(BasicId::new(block_number))?;
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
+    // TODO: @cchudant parallelize this loop
     for contract_address in csd.storage_updates.iter() {
         let class_commitment_leaf_hash =
             contract_state_leaf_hash(csd, &overrides, contract_address.0, maybe_block_hash, &bonsai_contract_storage)?;
@@ -236,6 +239,7 @@ fn contract_state_leaf_hash<B: BlockT>(
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
     let identifier = contract_address.0.0.0.as_bytes_ref();
     let storage_root = bonsai_contract_storage.lock().unwrap().root_hash(&identifier).expect("Failed to get root hash").into();
+    println!("{:?}, storage_root: {:?}", contract_address, storage_root);
 
     let nonce =
         Felt252Wrapper::from(*csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::ZERO.into()));
@@ -281,9 +285,10 @@ fn class_trie_root<B: BlockT>(
     mut bonsai_class: MutexGuard<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>,
     block_number: u64,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
-    let identifier = vec![];
+    let identifier = "0xclass".as_bytes();
     bonsai_class.init_tree(&identifier)?;
 
+    // TODO: @cchudant parallelize this loop
     for (class_hash, compiled_class_hash) in csd.class_hash_to_compiled_class_hash.iter() {
         let class_commitment_leaf_hash =
             calculate_class_commitment_leaf_hash::<PoseidonHasher>(Felt252Wrapper::from(compiled_class_hash.0));
@@ -304,6 +309,6 @@ fn class_trie_root<B: BlockT>(
 /// # Returns
 ///
 /// Storage key
-fn key(felt: StarkFelt) -> BitVec<u8, Msb0> {
+pub fn key(felt: StarkFelt) -> BitVec<u8, Msb0> {
     felt.0.view_bits()[5..].to_owned()
 }
