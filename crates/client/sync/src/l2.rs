@@ -24,10 +24,10 @@ use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_api::hash::StarkHash;
-use starknet_core::types::{BlockId as BlockIdCore, StateUpdate as StateUpdateCore};
+use starknet_core::types::{BlockId as BlockIdCore, PendingStateUpdate};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
-use starknet_providers::sequencer::models::{BlockId, StateUpdate as StateUpdateProvider};
+use starknet_providers::sequencer::models::{BlockId, StateUpdate};
 use starknet_providers::{Provider, SequencerGatewayProvider};
 use starknet_types_core::hash::{Pedersen, Poseidon};
 use tokio::sync::mpsc::Sender;
@@ -65,7 +65,7 @@ lazy_static! {
 
 lazy_static! {
     /// Shared pending state update, using RwLock to allow for concurrent reads and exclusive writes
-    static ref STARKNET_PENDING_STATE_UPDATE: RwLock<Option<StateUpdateCore>> = RwLock::new(None);
+    static ref STARKNET_PENDING_STATE_UPDATE: RwLock<Option<PendingStateUpdate>> = RwLock::new(None);
 }
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
@@ -268,7 +268,7 @@ async fn fetch_state_update<B, C>(
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     client: &C,
-) -> Result<StateUpdateProvider, String>
+) -> Result<StateUpdate, String>
 where
     B: BlockT,
     C: HeaderBackend<B>,
@@ -289,7 +289,7 @@ pub async fn fetch_genesis_state_update<B: BlockT>(
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
-) -> Result<StateUpdateProvider, String> {
+) -> Result<StateUpdate, String> {
     let state_update =
         provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
 
@@ -301,7 +301,7 @@ pub async fn fetch_genesis_state_update<B: BlockT>(
 /// retrieves class updates from Starknet sequencer
 async fn fetch_class_update<B, C>(
     provider: &SequencerGatewayProvider,
-    state_update: &StateUpdateProvider,
+    state_update: &StateUpdate,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_number: u64,
     client: &C,
@@ -344,7 +344,7 @@ where
 }
 
 /// Retrieves Madara block hash from state update
-fn block_hash_madara(state_update: &StateUpdateProvider) -> FieldElement {
+fn block_hash_madara(state_update: &StateUpdate) -> FieldElement {
     state_update.block_hash.unwrap()
 }
 
@@ -382,7 +382,7 @@ async fn download_class(
 /// Filters out class declarations in the Starknet sequencer state update
 /// and retains only those which are not stored in the local Substrate db.
 fn fetch_missing_classes(
-    state_update: &StateUpdateProvider,
+    state_update: &StateUpdate,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_hash_substrate: H256,
 ) -> Vec<&FieldElement> {
@@ -396,7 +396,7 @@ fn fetch_missing_classes(
 
 /// Retrieves all class hashes from state update. This includes newly deployed
 /// contract class hashes, Sierra class hashes and Cairo class hashes
-fn aggregate_classes(state_update: &StateUpdateProvider) -> Vec<&FieldElement> {
+fn aggregate_classes(state_update: &StateUpdate) -> Vec<&FieldElement> {
     std::iter::empty()
         .chain(
             state_update
@@ -464,7 +464,7 @@ pub fn update_l2(state_update: L2StateUpdate) {
 /// Verify and update the L2 state according to the latest state update
 pub fn verify_l2<B: BlockT>(
     block_number: u64,
-    state_update: &StateUpdateProvider,
+    state_update: &StateUpdate,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
@@ -534,6 +534,6 @@ pub fn get_pending_block() -> Option<mp_block::Block> {
     STARKNET_PENDING_BLOCK.read().expect("Failed to acquire read lock on STARKNET_PENDING_BLOCK").clone()
 }
 
-pub fn get_pending_state_update() -> Option<StateUpdateCore> {
+pub fn get_pending_state_update() -> Option<PendingStateUpdate> {
     STARKNET_PENDING_STATE_UPDATE.read().expect("Failed to acquire read lock on STARKNET_PENDING_BLOCK").clone()
 }

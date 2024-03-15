@@ -6,8 +6,8 @@ use mp_fee::ResourcePrice;
 use mp_felt::Felt252Wrapper;
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem,
-    StateDiff as StateDiffCore, StateUpdate as StateUpdateCore, StorageEntry,
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, PendingStateUpdate,
+    ReplacedClassItem, StateDiff as StateDiffCore, StorageEntry,
 };
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::state_update::{
@@ -236,14 +236,12 @@ fn contract_address(field_element: starknet_ff::FieldElement) -> starknet_api::a
     starknet_api::api_core::ContractAddress(starknet_api::api_core::PatriciaKey(felt(field_element)))
 }
 
-pub fn state_update(state_update: StateUpdateProvider) -> StateUpdateCore {
-    // TODO: make sure this does not crash the node!!!
-    let block_hash = state_update.block_hash.expect("Failed to retrieve state update block hash");
-    let new_root = state_update.new_root.expect("Failed to retrieve state update new root");
+pub fn state_update(state_update: StateUpdateProvider) -> PendingStateUpdate {
     let old_root = state_update.old_root;
     let state_diff = state_diff(state_update.state_diff);
 
-    StateUpdateCore { block_hash, old_root, new_root, state_diff }
+    // StateUpdateCore { block_hash, old_root, new_root, state_diff }
+    PendingStateUpdate { old_root, state_diff }
 }
 
 fn state_diff(state_diff: StateDiffProvider) -> StateDiffCore {

@@ -34,6 +34,7 @@ use mp_transactions::{
     DeclareTransaction, Transaction as TransactionMp, TransactionStatus, UserOrL1HandlerTransaction, UserTransaction,
 };
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
+use pending::get_state_update::{get_state_update_finalized, get_state_update_pending};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sc_network_sync::SyncingService;
@@ -55,8 +56,8 @@ use starknet_core::types::{
     DeclareTransactionResult, DeployAccountTransactionReceipt, DeployAccountTransactionResult,
     DeployTransactionReceipt, EventFilterWithPage, EventsPage, ExecutionResources, ExecutionResult, FeeEstimate,
     FieldElement, FunctionCall, Hash256, InvokeTransactionReceipt, InvokeTransactionResult,
-    L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
-    MaybePendingTransactionReceipt, MsgFromL1, StateDiff, StateUpdate, SyncStatus, SyncStatusType, Transaction,
+    L1HandlerTransactionReceipt, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
+    MaybePendingTransactionReceipt, MsgFromL1, StateDiff, SyncStatus, SyncStatusType, Transaction,
     TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
@@ -1103,44 +1104,16 @@ where
     /// the state of the network as a result of the block's execution. This can include a confirmed
     /// state update or a pending state update. If the block is not found, returns a
     /// `StarknetRpcApiError` with `BlockNotFound`.
-    fn get_state_update(&self, block_id: BlockId) -> RpcResult<StateUpdate> {
+    fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate> {
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
 
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)?;
-
-        let old_root = if starknet_block.header().block_number > 0 {
-            let parent_block_hash =
-                (TryInto::<FieldElement>::try_into(Felt252Wrapper::from(starknet_block.header().parent_block_hash)))
-                    .unwrap();
-            let substrate_parent_block_hash =
-                self.substrate_block_hash_from_starknet_block(BlockId::Hash(parent_block_hash)).map_err(|e| {
-                    error!("'{e}'");
-                    StarknetRpcApiError::BlockNotFound
-                })?;
-
-            let parent_block = get_block_by_block_hash(self.client.as_ref(), substrate_parent_block_hash)?;
-
-            Felt252Wrapper::from(self.backend.temporary_global_state_root_getter()).into()
-        } else {
-            FieldElement::default()
-        };
-
-        let starknet_block_hash = BlockHash(starknet_block.header().hash::<H>().into());
-
-        let state_diff = self.get_state_diff(&starknet_block_hash).map_err(|e| {
-            error!("Failed to get state diff. Starknet block hash: {starknet_block_hash}, error: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-        Ok(StateUpdate {
-            block_hash: starknet_block.header().hash::<H>().into(),
-            new_root: Felt252Wrapper::from(starknet_block.header().global_state_root).into(),
-            old_root,
-            state_diff,
-        })
+        match block_id {
+            BlockId::Tag(BlockTag::Pending) => get_state_update_pending(),
+            _ => get_state_update_finalized(self, substrate_block_hash),
+        }
     }
 
     /// Returns all events matching the given filter.
