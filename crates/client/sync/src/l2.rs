@@ -252,8 +252,9 @@ async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -> Re
     Ok(block)
 }
 
-// FIXME: I don't know why this is required by the CLI,, this is not used within the sync
-// procedure.
+// FIXME: This is an artefact of an older version of the code when this was used to retrieve the
+// head of the chain during initialization, but is since no longer used.
+
 pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<mp_block::Block, String> {
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
