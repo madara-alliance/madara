@@ -25,7 +25,7 @@ use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_api::hash::StarkHash;
-use starknet_core::types::{BlockId as BlockIdCore, StarknetError, PendingStateUpdate};
+use starknet_core::types::{BlockId as BlockIdCore, PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
@@ -125,8 +125,10 @@ where
     B: BlockT,
     C: HeaderBackend<B>,
 {
+    // TODO: handle this properly in a separate part of the tokio select,
+    // or just with a proper timing mechanism
     if let Err(e) = update_starknet_data(provider, client).await {
-        eprintln!("Failed to update highest block hash and number: {}", e);
+        log::error!("Failed to update highest block hash and number: {}", e);
     }
 
     // retry loop
@@ -480,8 +482,6 @@ pub fn verify_l2<B: BlockT>(
     );
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
     log::debug!("update_state_root {} -- block_hash: {block_hash:?}, state_root: {state_root:?}", block_number);
-
-    set_highest_block_hash_and_number(block_hash, block_number);
 
     update_l2(L2StateUpdate {
         block_number,
