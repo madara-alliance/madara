@@ -19,8 +19,6 @@ pub fn render_l1_logs(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             frame.render_widget(Paragraph::new(logs), area.inner(&Margin::new(1, 1)));
         }
-    } else {
-        render_nolog_error(frame, area, "The L1 Logging channel is currently empty");
     }
 }
 
@@ -36,12 +34,10 @@ pub fn render_l2_logs(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             frame.render_widget(Paragraph::new(logs), area.inner(&Margin::new(1, 1)));
         }
-    } else {
-        render_nolog_error(frame, area, "The L2 Logging channel is currently empty")
     }
 }
 
-fn render_nolog_error(frame: &mut Frame, area: Rect, message: &str) {
+fn _render_nolog_error(frame: &mut Frame, area: Rect, message: &str) {
     let bad_popup = Paragraph::new(message).wrap(Wrap { trim: true }).style(Style::new().yellow()).block(
         Block::new()
             .title("No logs received")
@@ -51,6 +47,6 @@ fn render_nolog_error(frame: &mut Frame, area: Rect, message: &str) {
     );
     frame.render_widget(
         bad_popup.style(Style::new().yellow().add_modifier(Modifier::RAPID_BLINK)),
-        area.inner(&Margin::new(6, 6)),
+        area,
     );
 }

@@ -21,6 +21,7 @@ pub fn ui(app: &App, frame: &mut Frame) {
         .title_style(Color::Magenta)
         .title_alignment(Alignment::Center);
     frame.render_widget(outline, frame.size());
+
     let node0 = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -28,37 +29,26 @@ pub fn ui(app: &App, frame: &mut Frame) {
 
     let left = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(vec![Constraint::Ratio(1, 3); 3])
+        .constraints(vec![Constraint::Percentage(40), Constraint::Percentage(30), Constraint::Percentage(30)])
         .split(node0[0]);
     let right = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(vec![Constraint::Ratio(2, 5), Constraint::Ratio(2, 5), Constraint::Ratio(1, 5)])
+        .constraints(vec![Constraint::Ratio(1, 3), Constraint::Ratio(1, 3), Constraint::Ratio(1, 3)])
         .split(node0[1]);
 
-    let cpu_area = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(vec![Constraint::Percentage(90), Constraint::Percentage(10)])
-        .split(right[0].inner(&Margin::new(1, 1)));
-    let memory_area = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(vec![Constraint::Percentage(90), Constraint::Percentage(10)])
-        .split(right[1].inner(&Margin::new(1, 1)));
-
     render_zone(frame, right[0], "CPU");
-    render_cpu_gauge(frame, app, cpu_area[1].inner(&Margin::new(5, 0)));
-    render_cpu_graph(frame, app, cpu_area[0]);
+    render_cpu(frame, app, right[0].inner(&Margin::new(1, 1)));
 
-    render_zone(frame, right[1], "RAM");
-    render_memory_gauge(frame, app, memory_area[1].inner(&Margin::new(5, 0)));
-    render_memory_graph(frame, app, memory_area[0]);
+    render_zone(frame, right[1], "Memory");
+    render_memory(frame, app, right[1].inner(&Margin::new(1, 1)));
 
     render_zone(frame, right[2], "Storage");
     render_storage(frame, app, right[2].inner(&Margin::new(1, 1)));
 
     render_zone(frame, left[2], "Network");
     render_network_graph(frame, app, left[2]);
-    render_l2_logs(frame, app, left[1]);
-    render_l1_logs(frame, app, left[0]);
+    render_l2_logs(frame, app, left[0]);
+    render_l1_logs(frame, app, left[1]);
 }
 
 pub fn startup() -> Result<()> {

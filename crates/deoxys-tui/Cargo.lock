@@ -488,6 +488,7 @@ dependencies = [
  "du",
  "humansize",
  "ratatui",
+ "splines",
  "starknet",
  "sysinfo",
  "tokio",
@@ -1733,6 +1734,12 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+
+[[package]]
+name = "splines"
+version = "4.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "228c4551e53c672e86439509545dd7ffcb966b6876c58b108e433a30e6117101"
 
 [[package]]
 name = "stability"

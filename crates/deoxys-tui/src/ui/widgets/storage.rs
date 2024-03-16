@@ -30,7 +30,7 @@ pub fn render_storage_gauge(frame: &mut Frame, app: &App, area: Rect) {
 pub fn render_storage(frame: &mut Frame, app: &App, area: Rect) {
     let zones = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(vec![Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+        .constraints(vec![Constraint::Ratio(3, 4), Constraint::Ratio(1, 4)])
         .split(area);
     render_storage_gauge(frame, app, zones[1]);
     render_storage_data(frame, app, zones[0]);
