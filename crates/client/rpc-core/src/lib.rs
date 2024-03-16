@@ -26,7 +26,7 @@ use starknet_core::types::{
 };
 
 #[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Felt(#[serde_as(as = "UfeHex")] pub FieldElement);
 
 /// Starknet write rpc interface.
