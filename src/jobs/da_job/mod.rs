@@ -20,7 +20,7 @@ impl Job for DaJob {
             internal_id,
             job_type: JobType::DataSubmission,
             status: JobStatus::Created,
-            external_id: String::new(),
+            external_id: String::new().into(),
             metadata: HashMap::new(),
             version: 0,
         })
@@ -49,7 +49,7 @@ impl Job for DaJob {
     }
 
     async fn verify_job(&self, config: &Config, job: &JobItem) -> Result<JobVerificationStatus> {
-        Ok(config.da_client().verify_inclusion(job.external_id.as_str()).await?)
+        Ok(config.da_client().verify_inclusion(job.external_id.unwrap_string()?).await?)
     }
 
     fn max_process_attempts(&self) -> u64 {
