@@ -4415,7 +4415,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite 0.2.13",
- "socket2 0.4.10",
+ "socket2 0.5.5",
  "tokio",
  "tower-service",
  "tracing",
@@ -6120,6 +6120,7 @@ dependencies = [
  "starknet-providers",
  "starknet-types-core",
  "starknet_api",
+ "thiserror",
  "tokio",
  "tokio-tungstenite",
  "url",
@@ -12336,7 +12337,7 @@ checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
  "digest 0.10.7",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 

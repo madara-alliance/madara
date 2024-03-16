@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::result::Result as StdResult;
 
 use madara_runtime::SealingMode;
-use mc_sync::l2::fetch_genesis_block;
+use mc_sync::l2::fetch_apply_genesis_block;
 use mc_sync::utility::update_config;
 use mc_sync::utils::constant::starknet_core_address;
 use reqwest::Url;
@@ -185,7 +185,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
         let mut fetch_block_config = cli.run.network.block_fetch_config();
-        let genesis_block = fetch_genesis_block(fetch_block_config.clone()).await.unwrap();
+        let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
         fetch_block_config.sound = cli.run.sound;
 
         update_config(&fetch_block_config);

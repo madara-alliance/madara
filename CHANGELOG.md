@@ -3,6 +3,7 @@ git # Deoxys Changelog
 ## Next release
 
 - feat(pending): added support for pending blocks in RPC requests
+- perf(l2 sync): parallel fetching of blocks, classes, state updates
 - fix l1 thread to reflect correct state_root, block_number, block_hash
 - fix: remove gas_price and update starknet-rs from fork (temporary fix)
 - fix(root): got state root to work (does not support class root yet)

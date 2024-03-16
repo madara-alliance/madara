@@ -1,12 +1,13 @@
 //! Contains the code required to fetch data from the feeder efficiently.
+use std::pin::pin;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
 
 use bitvec::order::Msb0;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
+use futures::{stream, StreamExt};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use mc_db::bonsai_db::BonsaiDb;
@@ -24,17 +25,29 @@ use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_api::hash::StarkHash;
-use starknet_core::types::{BlockId as BlockIdCore, PendingStateUpdate};
+use starknet_core::types::{BlockId as BlockIdCore, StarknetError, PendingStateUpdate};
 use starknet_ff::FieldElement;
+use starknet_providers::sequencer::models as p;
 use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
-use starknet_providers::{Provider, SequencerGatewayProvider};
+use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use starknet_types_core::hash::{Pedersen, Poseidon};
+use thiserror::Error;
+use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinSet;
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
 use crate::CommandSink;
+
+// TODO: add more error variants, which are more explicit
+#[derive(Error, Debug)]
+pub enum L2SyncError {
+    #[error("provider error")]
+    Provider(#[from] ProviderError),
+    #[error("fetch retry limit exceeded")]
+    FetchRetryLimit,
+}
 
 /// Contains the Starknet verified state on L2
 #[derive(Debug, Clone, Deserialize)]
@@ -102,6 +115,43 @@ pub struct SenderConfig {
     pub overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
 }
 
+async fn fetch_block_and_updates<B, C>(
+    block_n: u64,
+    provider: &SequencerGatewayProvider,
+    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    client: &C,
+) -> Result<(p::Block, StateUpdate, Vec<ContractClassData>), L2SyncError>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
+    if let Err(e) = update_starknet_data(provider, client).await {
+        eprintln!("Failed to update highest block hash and number: {}", e);
+    }
+
+    // retry loop
+    const MAX_RETRY: usize = 15;
+    for _ in 0..MAX_RETRY {
+        log::debug!("fetch_block_and_updates {}", block_n);
+        let block = fetch_block(provider, block_n);
+        let state_update = fetch_state_and_class_update(provider, block_n, overrides, client);
+        let (block, state_update) = tokio::join!(block, state_update);
+        log::debug!("fetch_block_and_updates: done {block_n}");
+
+        if matches!(
+            block.as_ref().err().or(state_update.as_ref().err()),
+            Some(L2SyncError::Provider(ProviderError::RateLimited))
+        ) {
+            continue; // retry api call
+        }
+        let (block, (state_update, class_update)) = (block?, state_update?);
+
+        return Ok((block, state_update, class_update));
+    }
+
+    Err(L2SyncError::FetchRetryLimit)
+}
+
 /// Spawns workers to fetch blocks and state updates from the feeder.
 pub async fn sync<B, C>(
     mut sender_config: SenderConfig,
@@ -120,105 +170,105 @@ pub async fn sync<B, C>(
         fetch_config.feeder_gateway.clone(),
         fetch_config.chain_id,
     );
-    let mut current_block_number = first_block;
     let mut last_block_hash = None;
-    let mut got_block = false;
-    let mut got_state_update = false;
-    let mut last_update_highest_block = tokio::time::Instant::now() - Duration::from_secs(20);
 
     // TODO: move this somewhere else
-    if current_block_number == 1 {
-        let _ = fetch_genesis_state_update(
-            &provider,
-            Arc::clone(overrides),
-            Arc::clone(bonsai_contract),
-            Arc::clone(bonsai_class),
-        )
-        .await;
+    if first_block == 1 {
+        let state_update =
+            provider.get_state_update(BlockId::Number(0)).await.expect("getting state update for genesis block");
+        verify_l2(0, &state_update, overrides, bonsai_contract, bonsai_class, None).expect("verifying genesis block");
     }
 
-    loop {
-        if last_update_highest_block.elapsed() > Duration::from_secs(1) {
-            last_update_highest_block = tokio::time::Instant::now();
-            if let Err(e) = update_starknet_data(&provider, client.as_ref()).await {
-                eprintln!("Failed to update highest block hash and number: {}", e);
+    let fetch_stream =
+        (first_block..).map(|block_n| fetch_block_and_updates(block_n, &provider, overrides, client.as_ref()));
+    // Have 10 fetches in parallel at once, using futures Buffered
+    let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
+    let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(10);
+
+    tokio::select!(
+        // fetch blocks and updates in parallel
+        _ = async {
+            // FIXME: make it cleaner by replacing this with tokio_util::sync::PollSender to make the channel a
+            // Sink and have the fetch Stream pipe into it
+            while let Some(val) = pin!(fetch_stream.next()).await {
+                fetch_stream_sender.send(val).await.expect("receiver is closed")
             }
-        }
-        let (block, state_update) = match (got_block, got_state_update) {
-            (false, false) => {
-                let block = fetch_block(&provider, block_sender, current_block_number);
-                let state_update = fetch_state_and_class_update(
-                    &provider,
-                    current_block_number,
-                    Arc::clone(overrides),
-                    Arc::clone(bonsai_contract),
-                    Arc::clone(bonsai_class),
-                    state_update_sender,
-                    class_sender,
-                    client.as_ref(),
+
+        } => {},
+        // apply blocks and updates sequentially
+        _ = async {
+            let mut block_n = first_block;
+            while let Some(val) = pin!(fetch_stream_receiver.recv()).await {
+                if matches!(val, Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))) {
+                    // found the tip of the blockchain :)
+                    break;
+                }
+
+                let (block, state_update, class_update) = val.expect("fetching block");
+
+                let block_hash = block_hash_substrate(client.as_ref(), block_n - 1);
+
+                let state_update = {
+                    let overrides = Arc::clone(overrides);
+                    let bonsai_contract = Arc::clone(bonsai_contract);
+                    let bonsai_class = Arc::clone(bonsai_class);
+                    let state_update = Arc::new(state_update);
+                    let state_update_1 = Arc::clone(&state_update);
+
+                    // verify_l2 takes a long time, we don't want to starve the event loop
+                    tokio::task::spawn_blocking(move || {
+                        verify_l2(block_n, &state_update, &overrides, &bonsai_contract, &bonsai_class, block_hash)
+                            .expect("verifying block");
+                    })
+                    .await
+                    .expect("verification task panicked");
+
+                    // hack because tokio tasks need to be 'static
+                    Arc::try_unwrap(state_update_1).expect("arc should not be aliased")
+                };
+
+                tokio::join!(
+                    async {
+                        let block_conv = crate::convert::block(block).await;
+                        block_sender.send(block_conv).await.expect("block reciever channel is closed");
+                    },
+                    async {
+                        // Now send state_update, which moves it. This will be received
+                        // by QueryBlockConsensusDataProvider in deoxys/crates/node/src/service.rs
+                        state_update_sender
+                            .send(StateUpdateWrapper::from(state_update))
+                            .await
+                            .expect("state updater is not running");
+                    },
+                    async {
+                        // do the same to class update
+                        class_sender
+                            .send(ClassUpdateWrapper(class_update))
+                            .await
+                            .expect("class updater is not running");
+                    }
                 );
-                tokio::join!(block, state_update)
-            }
-            (false, true) => (fetch_block(&provider, block_sender, current_block_number).await, Ok(())),
-            (true, false) => (
-                Ok(()),
-                fetch_state_and_class_update(
-                    &provider,
-                    current_block_number,
-                    Arc::clone(overrides),
-                    Arc::clone(bonsai_contract),
-                    Arc::clone(bonsai_class),
-                    state_update_sender,
-                    class_sender,
-                    client.as_ref(),
-                )
-                .await,
-            ),
-            (true, true) => unreachable!(),
-        };
 
-        got_block = got_block || block.is_ok();
-        got_state_update = got_state_update || state_update.is_ok();
+                create_block(command_sink, &mut last_block_hash).await.expect("creating block");
 
-        match (block, state_update) {
-            (Ok(()), Ok(())) => match create_block(command_sink, &mut last_block_hash).await {
-                Ok(()) => {
-                    current_block_number += 1;
-                    got_block = false;
-                    got_state_update = false;
-                }
-                Err(e) => {
-                    eprintln!("Failed to create block: {}", e);
-                    return;
-                }
-            },
-            (Err(a), Ok(())) => {
-                eprintln!("Failed to fetch block {}: {}", current_block_number, a);
-                tokio::time::sleep(Duration::from_secs(10)).await;
+                block_n += 1;
             }
-            (_, Err(b)) => {
-                eprintln!("Failed to fetch state update {}: {}", current_block_number, b);
-                tokio::time::sleep(Duration::from_secs(10)).await;
-            }
-        }
-    }
+        } => {},
+    );
+
+    log::debug!("L2 sync finished :)");
 }
 
-async fn fetch_block(
-    client: &SequencerGatewayProvider,
-    block_sender: &Sender<mp_block::Block>,
-    block_number: u64,
-) -> Result<(), String> {
-    let block =
-        client.get_block(BlockId::Number(block_number)).await.map_err(|e| format!("failed to get block: {e}"))?;
+async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -> Result<p::Block, L2SyncError> {
+    let block = client.get_block(BlockId::Number(block_number)).await?;
 
-    let block_conv = crate::convert::block(block).await;
-    block_sender.send(block_conv).await.map_err(|e| format!("failed to dispatch block: {e}"))?;
-
-    Ok(())
+    Ok(block)
 }
 
-pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block, String> {
+// FIXME: This is an artefact of an older version of the code when this was used to retrieve the
+// head of the chain during initialization, but is since no longer used.
+
+pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<mp_block::Block, String> {
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
@@ -229,71 +279,28 @@ pub async fn fetch_genesis_block(config: FetchConfig) -> Result<mp_block::Block,
 async fn fetch_state_and_class_update<B, C>(
     provider: &SequencerGatewayProvider,
     block_number: u64,
-    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
-    state_update_sender: &Sender<StateUpdateWrapper>,
-    class_sender: &Sender<ClassUpdateWrapper>,
+    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     client: &C,
-) -> Result<(), String>
+) -> Result<(StateUpdate, Vec<ContractClassData>), L2SyncError>
 where
     B: BlockT,
     C: HeaderBackend<B>,
 {
-    let state_update =
-        fetch_state_update(provider, block_number, overrides.clone(), bonsai_contract, bonsai_class, client).await?;
+    // Children tasks need StateUpdate as an Arc, because of task spawn 'static requirement
+    // We make an Arc, and then unwrap the StateUpdate out of the Arc
+    let state_update = Arc::new(fetch_state_update(provider, block_number).await?);
     let class_update = fetch_class_update(provider, &state_update, overrides, block_number, client).await?;
+    let state_update = Arc::try_unwrap(state_update).expect("arc should not be aliased");
 
-    // Now send state_update, which moves it. This will be received
-    // by QueryBlockConsensusDataProvider in deoxys/crates/node/src/service.rs
-    state_update_sender
-        .send(StateUpdateWrapper::from(state_update))
-        .await
-        .map_err(|e| format!("failed to dispatch state update: {e}"))?;
-
-    // do the same to class update
-    class_sender
-        .send(ClassUpdateWrapper(class_update))
-        .await
-        .map_err(|e| format!("failed to dispatch class update: {e}"))?;
-
-    Ok(())
+    Ok((state_update, class_update))
 }
 
 /// retrieves state update from Starknet sequencer
-async fn fetch_state_update<B, C>(
+async fn fetch_state_update(
     provider: &SequencerGatewayProvider,
     block_number: u64,
-    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
-    client: &C,
-) -> Result<StateUpdate, String>
-where
-    B: BlockT,
-    C: HeaderBackend<B>,
-{
-    let state_update = provider
-        .get_state_update(BlockId::Number(block_number))
-        .await
-        .map_err(|e| format!("failed to get state update: {e}"))?;
-
-    let block_hash = block_hash_substrate(client, block_number - 1);
-    verify_l2(block_number, &state_update, overrides, bonsai_contract, bonsai_class, block_hash)?;
-
-    Ok(state_update)
-}
-
-pub async fn fetch_genesis_state_update<B: BlockT>(
-    provider: &SequencerGatewayProvider,
-    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
-) -> Result<StateUpdate, String> {
-    let state_update =
-        provider.get_state_update(BlockId::Number(0)).await.map_err(|e| format!("failed to get state update: {e}"))?;
-
-    verify_l2(0, &state_update, overrides, bonsai_contract, bonsai_class, None)?;
+) -> Result<StateUpdate, L2SyncError> {
+    let state_update = provider.get_state_update(BlockId::Number(block_number)).await?;
 
     Ok(state_update)
 }
@@ -301,11 +308,11 @@ pub async fn fetch_genesis_state_update<B: BlockT>(
 /// retrieves class updates from Starknet sequencer
 async fn fetch_class_update<B, C>(
     provider: &SequencerGatewayProvider,
-    state_update: &StateUpdate,
-    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    state_update: &Arc<StateUpdate>,
+    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_number: u64,
     client: &C,
-) -> Result<Vec<ContractClassData>, String>
+) -> Result<Vec<ContractClassData>, L2SyncError>
 where
     B: BlockT,
     C: HeaderBackend<B>,
@@ -318,26 +325,19 @@ where
 
     let arc_provider = Arc::new(provider.clone());
     let mut task_set = missing_classes.into_iter().fold(JoinSet::new(), |mut set, class_hash| {
-        set.spawn(download_class(*class_hash, block_hash_madara(state_update), Arc::clone(&arc_provider)));
+        let provider = Arc::clone(&arc_provider);
+        let state_update = Arc::clone(state_update);
+        let class_hash = *class_hash;
+        set.spawn(async move { download_class(class_hash, block_hash_madara(&state_update), &provider).await });
         set
     });
 
     // WARNING: all class downloads will abort if even a single class fails to download.
     let mut classes = vec![];
     while let Some(res) = task_set.join_next().await {
-        match res {
-            Ok(result) => match result {
-                Ok(contract) => classes.push(contract),
-                Err(e) => {
-                    task_set.abort_all();
-                    return Err(e.to_string());
-                }
-            },
-            Err(e) => {
-                task_set.abort_all();
-                return Err(e.to_string());
-            }
-        }
+        classes.push(res.expect("Join error")?);
+        // No need to `abort_all()` the `task_set` in cast of errors, as dropping the `task_set`
+        // will abort all the tasks.
     }
 
     Ok(classes)
@@ -365,8 +365,8 @@ where
 async fn download_class(
     class_hash: FieldElement,
     block_hash: FieldElement,
-    provider: Arc<SequencerGatewayProvider>,
-) -> anyhow::Result<ContractClassData> {
+    provider: &SequencerGatewayProvider,
+) -> Result<ContractClassData, L2SyncError> {
     // log::info!("💾 Downloading class {class_hash:#x}");
     let core_class = provider.get_class(BlockIdCore::Hash(block_hash), class_hash).await?;
 
@@ -375,22 +375,22 @@ async fn download_class(
     Ok(ContractClassData {
         // TODO: find a less roundabout way of converting from a Felt252Wrapper
         hash: ClassHash(Felt252Wrapper::from(class_hash).into()),
-        contract_class: ContractClassWrapper::try_from(core_class)?,
+        // TODO: remove this expect when ContractClassWrapper::try_from does proper error handling using
+        // thiserror
+        contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
     })
 }
 
 /// Filters out class declarations in the Starknet sequencer state update
 /// and retains only those which are not stored in the local Substrate db.
-fn fetch_missing_classes(
-    state_update: &StateUpdate,
-    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+fn fetch_missing_classes<'a>(
+    state_update: &'a StateUpdate,
+    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_hash_substrate: H256,
-) -> Vec<&FieldElement> {
+) -> Vec<&'a FieldElement> {
     aggregate_classes(state_update)
         .into_iter()
-        .filter(|class_hash| {
-            is_missing_class(Arc::clone(&overrides), block_hash_substrate, Felt252Wrapper::from(**class_hash))
-        })
+        .filter(|class_hash| is_missing_class(overrides, block_hash_substrate, Felt252Wrapper::from(**class_hash)))
         .collect()
 }
 
@@ -421,7 +421,7 @@ fn aggregate_classes(state_update: &StateUpdate) -> Vec<&FieldElement> {
 /// Since a change in class definition will result in a change in class hash,
 /// this means we only need to check for class hashes in the db.
 fn is_missing_class(
-    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_hash_substrate: H256,
     class_hash: Felt252Wrapper,
 ) -> bool {
@@ -454,28 +454,34 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
 
 /// Update the L2 state with the latest data
 pub fn update_l2(state_update: L2StateUpdate) {
-    {
-        let mut last_state_update =
-            STARKNET_STATE_UPDATE.lock().expect("Failed to acquire lock on STARKNET_STATE_UPDATE");
-        *last_state_update = state_update.clone();
-    }
+    let mut last_state_update = STARKNET_STATE_UPDATE.lock().expect("Failed to acquire lock on STARKNET_STATE_UPDATE");
+    *last_state_update = state_update.clone();
 }
 
 /// Verify and update the L2 state according to the latest state update
 pub fn verify_l2<B: BlockT>(
     block_number: u64,
     state_update: &StateUpdate,
-    overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
+    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     substrate_block_hash: Option<H256>,
-) -> Result<(), String> {
+) -> Result<(), L2SyncError> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
 
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
-    let state_root =
-        update_state_root(csd, overrides, bonsai_contract, bonsai_class, block_number, substrate_block_hash);
+    let state_root = update_state_root(
+        csd,
+        Arc::clone(overrides),
+        Arc::clone(bonsai_contract),
+        Arc::clone(bonsai_class),
+        block_number,
+        substrate_block_hash,
+    );
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
+    log::debug!("update_state_root {} -- block_hash: {block_hash:?}, state_root: {state_root:?}", block_number);
+
+    set_highest_block_hash_and_number(block_hash, block_number);
 
     update_l2(L2StateUpdate {
         block_number,
