@@ -27,7 +27,6 @@ members = [
   "crates/primitives/storage",
   "crates/primitives/transactions",
   "crates/runtime",
-  "crates/deoxys-tui",
 ]
 resolver = "2"
 # All previous except for `starknet-rpc-test` and `starknet-e2e-test`
@@ -56,7 +55,6 @@ default-members = [
   "crates/primitives/storage",
   "crates/primitives/transactions",
   "crates/runtime",
-  "crates/deoxys-tui",
 ]
 
 [profile.dev]
