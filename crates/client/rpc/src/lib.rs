@@ -61,7 +61,7 @@ use crate::pending::get_block::{
     get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
     get_block_with_txs_pending,
 };
-use crate::pending::get_transaction_receipt::get_transaction_receipt_finalized;
+use crate::pending::get_transaction_receipt::{get_transaction_receipt_finalized, get_transaction_receipt_pending};
 use crate::types::RpcEventFilter;
 
 /// A Starknet RPC server for Madara
@@ -1288,7 +1288,15 @@ where
             Some(substrate_block_hash) => {
                 get_transaction_receipt_finalized(self, chain_id, substrate_block_hash, transaction_hash)
             }
-            None => todo!("pending"),
+            None => {
+                let substrate_block_hash =
+                    self.substrate_block_hash_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
+                        error!("'{e}'");
+                        StarknetRpcApiError::BlockNotFound
+                    })?;
+
+                get_transaction_receipt_pending(self, chain_id, substrate_block_hash, transaction_hash)
+            }
         }
     }
 }

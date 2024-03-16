@@ -114,6 +114,16 @@ get_storage_at(){
     ]" > "$output"
 }
 
+get_transaction_receipt(){
+    local provider=$1
+    local transaction=$2
+    local output=$3
+
+    rpc_call "$provider" "starknet_getTransactionReceipt" "[
+        \"$transaction\",
+    ]" > "$output"
+}
+
 get_block_with_tx(){
     local provider=$1
     local block_number=$2
@@ -176,6 +186,12 @@ case $COMMAND in
         validate_args $# 2
         get_class_hash_at "$PROVIDER_DEOXYS" "$1" "$2" "$OUTPUT_DEOXYS"
         get_class_hash_at "$PROVIDER_PATHFINDER" "$1" "$2" "$OUTPUT_PATHFINDER"
+        ;;
+    getTransactionReceipt)
+        echo "🧪 Testing starknet_getTransactionReceipt"
+        validate_args $# 1
+        get_transaction_receipt "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
+        get_transaction_receipt "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
         ;;
     getBlockWithTxs)
         echo "🧪 Testing starknet_getBlockWithTxs"
