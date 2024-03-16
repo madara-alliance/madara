@@ -75,6 +75,7 @@ pub async fn memory_transaction_commitment(
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
     let identifier = "0xtransaction".as_bytes();
 
+    // TODO @cchudant clean this parallelism
     // transaction hashes are computed in parallel
     let mut task_set = JoinSet::new();
     transactions.iter().cloned().enumerate().for_each(|(i, tx)| {

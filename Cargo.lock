@@ -962,7 +962,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/antiyro/bonsai-trie.git?branch=oss#a0c7f20d0c76f7fe75a00709173855667536d35d"
+source = "git+https://github.com/antiyro/bonsai-trie.git?branch=oss#7d2c1c87b282be0332afa694488b18e3acd9b5de"
 dependencies = [
  "bitvec",
  "derive_more",

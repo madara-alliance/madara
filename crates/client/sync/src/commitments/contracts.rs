@@ -93,12 +93,11 @@ pub fn calculate_contract_state_leaf_hash<H: HasherT>(contract_leaf_params: Cont
 
 #[cfg(test)]
 mod tests {
-    use blockifier::execution::contract_address;
     use bonsai_trie::{databases::HashMapDb, id::{BasicId, BasicIdBuilder}, BonsaiStorage, BonsaiStorageConfig};
     use mp_felt::Felt252Wrapper;
     use mp_hashers::pedersen::PedersenHasher;
     use starknet_api::hash::StarkFelt;
-    use starknet_types_core::{felt::Felt, hash::Pedersen};
+    use starknet_types_core::hash::Pedersen;
 
     use crate::commitments::lib::key as keyer;
 
@@ -202,6 +201,127 @@ mod tests {
 
         println!("Expected: 0x072E79A6F71E3E63D7DE40EDF4322A22E64388D4D5BFE817C1271C78028B73BF\nFound: {:?}", Felt252Wrapper::from(root_hash));
         assert_eq!(Felt252Wrapper::from(root_hash), Felt252Wrapper::from_hex_be("0x072E79A6F71E3E63D7DE40EDF4322A22E64388D4D5BFE817C1271C78028B73BF").unwrap());
+
+    }
+
+    #[test]
+    fn test_undefined_zero() {
+        let config = BonsaiStorageConfig::default();
+        let bonsai_db = HashMapDb::<BasicId>::default();
+        let mut bonsai_storage =
+            BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
+        let identifier = "0x056e4fed965fccd7fb01fcadd827470338f35ced62275328929d0d725b5707ba".as_bytes();
+
+        // Insert Block 3 storage changes for contract `0x4d56b8ac0ed905936da10323328cba5def12957a2936920f043d8bf6a1e902d`
+        let block_3 = [
+            ("0x67c2665fbdd32ded72c0665f9658c05a5f9233c8de2002b3eba8ae046174efd", "0x2221def5413ed3e128051d5dff3ec816dbfb9db4454b98f4aa47804cb7a13d2"),
+            ("0x5", "0x66"),
+            ("0x101c2b102c8eb6bf091f5debcf97d8edde85983e23f9778e9cabbe0b5a4f997", "0x99a58a9612fe930f39c4c399b6be14e8bb7c8229d06eab8d0a3a97877a6667"),
+            ("0x1aabd3b2e12959bab2c4ab530c1d8f0e675e0dc5ab29d1f10b7f1a154cabef9", "0x41d4ae0ba9013f2f6e1551b62a9c9187053727e0e65217be97eae8922d5b2df"),
+            ("0x1aabd3b2e12959bab2c4ab530c1d8f0e675e0dc5ab29d1f10b7f1a154cabefa", "0x6eda96627bd3de7af5b4f932ff1e858bd396c897229d64b6dd3f0f936f0ea17"),
+        ];
+
+        for (key_hex, value_hex) in block_3.iter() {
+            let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
+            let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
+            bonsai_storage.insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .expect("Failed to insert storage update into trie");
+        }
+
+        let mut id_builder = BasicIdBuilder::new();
+        let id = id_builder.new_id();
+        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+
+        println!("Expected: 0x0297DE74ABD178CAF7EA2F1AE1B4588CA7433B1B11A98172B6F56E3E02739FD0\nFound: {:?}", Felt252Wrapper::from(root_hash));
+        assert_eq!(Felt252Wrapper::from(root_hash), Felt252Wrapper::from_hex_be("0x0297DE74ABD178CAF7EA2F1AE1B4588CA7433B1B11A98172B6F56E3E02739FD0").unwrap());
+
+        // Insert Block 4 storage changes for contract `0x4d56b8ac0ed905936da10323328cba5def12957a2936920f043d8bf6a1e902d`
+        let block_4 = [
+            ("0x3c14ddc99b06b00340bffd81ef1c4e10f74b800a911ee22c22bb28e4b516da5", "0x7e5"),
+            ("0x5", "0x64"),
+            ("0x5201dd2a5f567a653e9a2b7a62816919d0d695d1e2f39d516f9befda30da720", "0x29ed6ea046ebe50aaacb9cd6477ac368644c8f4242ee0687d31f6c2ac20c146"),
+            ("0x5b3856459ac954d3fd24d85924d978263709880e3ee4cafdfe0b7c95ee6b26a", "0x4c90411b3376d5230a88496e58acf58c19431d52b89f1ab91924075f4b35ac1"),
+            ("0x5b3856459ac954d3fd24d85924d978263709880e3ee4cafdfe0b7c95ee6b26b", "0x72a56d83fab34872a880dd35d936117a084b928fb9d47306abb2558472633c"),
+            ("0x6a93bcb89fc1f31fa544377c7de6de1dd3e726e1951abc95c4984995e84ad0d", "0x7c7"),
+            ("0x6f8cf54aaec1f42d5f3868d597fcd7393da888264dc5a6e93c7bd528b6d6fee", "0x7c7"),
+            ("0x6b30a5f1341c0c949f847afe7f761a6ea8cdc3337baa20e68a2891f62389052", "0x7e5"),
+            ("0x6b3b4780013c33cdca6799e8aa3ef922b64f5a2d356573b33693d81504deccf", "0x7e5"),
+            ("0x6f649e057570e0f3cc710d260c2067297542f8e18407a7e75008808e12e6099", "0x61395ebfa1746f9449711a7e361254ddb90f642861807b7e5e05276c11033ec"),
+            ("0x6f649e057570e0f3cc710d260c2067297542f8e18407a7e75008808e12e609a", "0x304d0ec8cc0ea6faf0f7ad67903bcffc6bc4474d25f93e1c961b239370b8c07"),
+        ];
+
+        for (key_hex, value_hex) in block_4.iter() {
+            let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
+            let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
+            bonsai_storage.insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .expect("Failed to insert storage update into trie");
+        }
+
+        let id = id_builder.new_id();
+        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+
+        println!("Expected: 0x07A4CA1440AF3858CEB11386BA7E2A0FC553BB73E741043218845D820009BCCB\nFound: {:?}", Felt252Wrapper::from(root_hash));
+        assert_eq!(Felt252Wrapper::from(root_hash), Felt252Wrapper::from_hex_be("0x07A4CA1440AF3858CEB11386BA7E2A0FC553BB73E741043218845D820009BCCB").unwrap());
+
+        // Insert Block 5 storage changes for contract `0x4d56b8ac0ed905936da10323328cba5def12957a2936920f043d8bf6a1e902d`
+        let block_5 = [
+            ("0x272cd29c23c7fd72ef13352ac037c6fabfee4c03056ea413c326be6501b4f31", "0x7c7"),
+            ("0x2bb6a7dd9cbb9cec8fdad9c0557bd539683f7ea65d4f14d41fe4d72311775e3", "0x7e5"),
+        ];
+
+        for (key_hex, value_hex) in block_5.iter() {
+            let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
+            let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
+            bonsai_storage.insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .expect("Failed to insert storage update into trie");
+        }
+
+        let id = id_builder.new_id();
+        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+
+        println!("Expected: 0x002363DCD04D065C6B50A4D46F930EBC91AC7F4B15DCF1B0A8D0165B0BA0F143\nFound: {:?}", Felt252Wrapper::from(root_hash));
+        assert_eq!(Felt252Wrapper::from(root_hash), Felt252Wrapper::from_hex_be("0x002363DCD04D065C6B50A4D46F930EBC91AC7F4B15DCF1B0A8D0165B0BA0F143").unwrap());
+
+        // Insert Block 6 storage changes for contract `0x4d56b8ac0ed905936da10323328cba5def12957a2936920f043d8bf6a1e902d`
+        let block_6 = [
+            ("0x5", "0x22b"),
+        ];
+
+        for (key_hex, value_hex) in block_6.iter() {
+            let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
+            let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
+            bonsai_storage.insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .expect("Failed to insert storage update into trie");
+        }
+
+        let id = id_builder.new_id();
+        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+
+        println!("Expected: 0x00C656C01BB43291BEA976CEACE3AFE89A5621045E3B6F23E4BCFFFBB4B66832\nFound: {:?}", Felt252Wrapper::from(root_hash));
+        assert_eq!(Felt252Wrapper::from(root_hash), Felt252Wrapper::from_hex_be("0x00C656C01BB43291BEA976CEACE3AFE89A5621045E3B6F23E4BCFFFBB4B66832").unwrap());
+
+        // Insert Block 6 storage changes for contract `0x4d56b8ac0ed905936da10323328cba5def12957a2936920f043d8bf6a1e902d`
+        let block_7 = [
+            ("0x5", "0x0"),
+        ];
+
+        for (key_hex, value_hex) in block_7.iter() {
+            let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
+            let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
+            bonsai_storage.insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .expect("Failed to insert storage update into trie");
+        }
+
+        let id = id_builder.new_id();
+        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+
+        println!("Expected: 0x032C61E78534A30DD005DB4B9136AA64893CC2F6E10C4535DD6F29BFB2ADC726\nFound: {:?}", Felt252Wrapper::from(root_hash));
+        assert_eq!(Felt252Wrapper::from(root_hash), Felt252Wrapper::from_hex_be("0x032C61E78534A30DD005DB4B9136AA64893CC2F6E10C4535DD6F29BFB2ADC726").unwrap());
 
     }
 }
