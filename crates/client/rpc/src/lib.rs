@@ -6,7 +6,7 @@ mod constants;
 mod errors;
 mod events;
 mod madara_backend_client;
-mod pending;
+mod rpc_methods;
 mod trace_api;
 mod types;
 mod utils;
@@ -31,7 +31,7 @@ use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_transactions::{TransactionStatus, UserTransaction};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
-use pending::get_state_update::{get_state_update_finalized, get_state_update_pending};
+use rpc_methods::get_state_update::{get_state_update_finalized, get_state_update_pending};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sc_network_sync::SyncingService;
@@ -57,11 +57,11 @@ use starknet_core::types::{
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
-use crate::pending::get_block::{
+use crate::rpc_methods::get_block::{
     get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
     get_block_with_txs_pending,
 };
-use crate::pending::get_transaction_receipt::{get_transaction_receipt_finalized, get_transaction_receipt_pending};
+use crate::rpc_methods::get_transaction_receipt::{get_transaction_receipt_finalized, get_transaction_receipt_pending};
 use crate::types::RpcEventFilter;
 
 /// A Starknet RPC server for Madara

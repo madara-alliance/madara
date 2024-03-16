@@ -19,7 +19,6 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::api_core::ClassHash;
-use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
     BlockId, DeclareTransactionReceipt, DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult,
     FieldElement, Hash256, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MaybePendingTransactionReceipt,
@@ -30,6 +29,7 @@ use starknet_core::types::{
 use crate::errors::StarknetRpcApiError;
 use crate::utils::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
+    tx_hash_compute, tx_hash_retrieve,
 };
 use crate::Starknet;
 
@@ -552,24 +552,4 @@ where
 		})?;
 
     Ok(execution_infos)
-}
-
-// TODO: refactor this into a `utils.rs`
-fn tx_hash_retrieve(tx_hashes: Vec<StarkFelt>) -> Vec<FieldElement> {
-    let mut v = Vec::with_capacity(tx_hashes.len());
-    for tx_hash in tx_hashes {
-        v.push(FieldElement::from(Felt252Wrapper::from(tx_hash)));
-    }
-    v
-}
-
-// TODO: refactor this into a `utils.rs`
-fn tx_hash_compute<H>(block: &mp_block::Block, chain_id: Felt) -> Vec<FieldElement>
-where
-    H: HasherT + Send + Sync + 'static,
-{
-    block
-        .transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number))
-        .map(FieldElement::from)
-        .collect()
 }

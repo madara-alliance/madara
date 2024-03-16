@@ -516,10 +516,9 @@ where
             Some(crate::convert::state_update(state_update));
     }
 
-    let mut highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
+    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
         .write()
-        .expect("Failed to acquire write lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER");
-    *highest_block_hash_and_number = (hash_current, number);
+        .expect("Failed to acquire write lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER") = (hash_current, number);
 
     Ok(())
 }
