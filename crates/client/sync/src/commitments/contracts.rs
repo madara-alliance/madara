@@ -210,7 +210,7 @@ mod tests {
         let bonsai_db = HashMapDb::<BasicId>::default();
         let mut bonsai_storage =
             BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
-        let identifier = "0x056e4fed965fccd7fb01fcadd827470338f35ced62275328929d0d725b5707ba".as_bytes();
+        let identifier = "0x4d56b8ac0ed905936da10323328cba5def12957a2936920f043d8bf6a1e902d".as_bytes();
 
         // Insert Block 3 storage changes for contract `0x4d56b8ac0ed905936da10323328cba5def12957a2936920f043d8bf6a1e902d`
         let block_3 = [
@@ -323,6 +323,82 @@ mod tests {
         println!("Expected: 0x032C61E78534A30DD005DB4B9136AA64893CC2F6E10C4535DD6F29BFB2ADC726\nFound: {:?}", Felt252Wrapper::from(root_hash));
         assert_eq!(Felt252Wrapper::from(root_hash), Felt252Wrapper::from_hex_be("0x032C61E78534A30DD005DB4B9136AA64893CC2F6E10C4535DD6F29BFB2ADC726").unwrap());
 
+    }
+
+    #[test]
+    fn test_undefined_zero_2() {
+        let config = BonsaiStorageConfig::default();
+        let bonsai_db = HashMapDb::<BasicId>::default();
+        let mut bonsai_storage =
+            BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
+        let identifier = "0x421203c58e1b4a6c3675be26cfaa18d2b6b42695ca206be1f08ce29f7f1bc7c".as_bytes();
+
+        // Insert Block 5 storage changes for contract `0x421203c58e1b4a6c3675be26cfaa18d2b6b42695ca206be1f08ce29f7f1bc7c`
+        let block_5 = [
+            ("0x2bb6a7dd9cbb9cec8fdad9c0557bd539683f7ea65d4f14d41fe4d72311775e3", "0x7c7"),
+            ("0x584d53558c6731da8923f60f2d182027312ffa4e811e7eddc6401232d33400e", "0x29bc2bad472c81f00b7873d7d27a68d63dc9ebd3a3661e2b4c3d6c90d732454"),
+            ("0x6c27ff92eab8802ca5141a60a5699e5075725d5526752c5fb368c12582af00c", "0x645a108cc9b963369b91cad8a8b5c2ce774b79e871368d301d518012925abc6"),
+            ("0x5", "0x66"),
+            ("0x744f7d93c67c2ac6fbcdf632d530cebdbffa112d0cfacce28ed5773babfba60", "0x2a49283d206395239d0c1d505a8ba2f446419e58a1fd40caccf796e810759d5"),
+            ("0x11f391c712bb4996774106b93766bc49f8bdb29b416cae0da0d981752c1a28b", "0x43f3925b460d387343381e31e2f9299100609bc833f289bfd67316a0a06ce40"),
+            ("0x11f391c712bb4996774106b93766bc49f8bdb29b416cae0da0d981752c1a28c", "0x2b72713e2fc2dec7cfe8e7c428f02728a031f17f876bb50841d4ee3eb12834"),
+            ("0x66631ce6af4e11972e05bed46e9b20a5480ffea4ae2a4d95e1d71fb37f25c0", "0x1329ffd6765c348b5e7195b777241cf5eb84e438c0f5fa3acb5800ada846332"),
+        ];
+
+        for (key_hex, value_hex) in block_5.iter() {
+            let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
+            let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
+            bonsai_storage.insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .expect("Failed to insert storage update into trie");
+        }
+
+        let mut id_builder = BasicIdBuilder::new();
+        let id = id_builder.new_id();
+        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+    
+        println!("Expected: 0x03846F4AE281ADBCC68518766579DB77C27EF31955E9FC3183C397C2731A7627\nFound: {:?}", Felt252Wrapper::from(root_hash));
+        assert_eq!(Felt252Wrapper::from(root_hash), Felt252Wrapper::from_hex_be("0x03846F4AE281ADBCC68518766579DB77C27EF31955E9FC3183C397C2731A7627").unwrap());
+
+        // Insert Block 6 storage changes for contract `0x421203c58e1b4a6c3675be26cfaa18d2b6b42695ca206be1f08ce29f7f1bc7c`
+        let block_6 = [
+            ("0x591192c633e49a7e6ca0aae77da4e9a1df2c6db51cabb3cc929280a44745635", "0x1b3479bec749469312a35a2001dc8cfaf38723c0a8763e01ad2abaefb2214e5"),
+            ("0x58bfc110ce09fc2bcff40dbb4887bfb32f5156f2195e8f6ea22e15784c01768", "0x71cc8515287a6f5d8b81675bc7e41ca1fcd75afcc60984701033f0cdd05acd"),
+            ("0x58bfc110ce09fc2bcff40dbb4887bfb32f5156f2195e8f6ea22e15784c01769", "0x6a8a49d797b80ef2be0ec8a72f71dccb655c07297f95e022a26a65787c3199c"),
+        ];
+
+        for (key_hex, value_hex) in block_6.iter() {
+            let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
+            let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
+            bonsai_storage.insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .expect("Failed to insert storage update into trie");
+        }
+
+        let id = id_builder.new_id();
+        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+
+        println!("Expected: 0x06E02FE529D3CBDCC5324D0981F991E777DAFC3F0C24E7CB56CE3D379BE9B510\nFound: {:?}", Felt252Wrapper::from(root_hash));
+        assert_eq!(Felt252Wrapper::from(root_hash), Felt252Wrapper::from_hex_be("0x06E02FE529D3CBDCC5324D0981F991E777DAFC3F0C24E7CB56CE3D379BE9B510").unwrap());
+
+        // Insert Block 6 storage changes for contract `0x421203c58e1b4a6c3675be26cfaa18d2b6b42695ca206be1f08ce29f7f1bc7c`
+        let block_7 = [
+            ("0x5", "0x0"),
+        ];
+
+        for (key_hex, value_hex) in block_7.iter() {
+            let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
+            let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
+            bonsai_storage.insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .expect("Failed to insert storage update into trie");
+        }
+
+        let id = id_builder.new_id();
+        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+
+        println!("Expected: 0x0528E360EA90E94F670451A76A7698900F0F7C1F2E88583F8B0162D486BF7947\nFound: {:?}", Felt252Wrapper::from(root_hash));
+        assert_eq!(Felt252Wrapper::from(root_hash), Felt252Wrapper::from_hex_be("0x0528E360EA90E94F670451A76A7698900F0F7C1F2E88583F8B0162D486BF7947").unwrap());
     }
 }
 
