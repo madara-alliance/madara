@@ -239,7 +239,7 @@ fn contract_state_leaf_hash<B: BlockT>(
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
     let identifier = contract_address.0.0.0.as_bytes_ref();
     let storage_root = bonsai_contract_storage.lock().unwrap().root_hash(&identifier).expect("Failed to get root hash").into();
-    println!("{:?}, storage_root: {:?}", contract_address, storage_root);
+    // println!("{:?}, storage_root: {:?}", contract_address, storage_root);
 
     let nonce =
         Felt252Wrapper::from(*csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::ZERO.into()));
