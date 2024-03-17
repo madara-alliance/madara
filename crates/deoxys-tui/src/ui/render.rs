@@ -3,7 +3,7 @@ use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin};
 use ratatui::prelude::Frame;
-use ratatui::style::Color;
+use ratatui::style::{Color, Stylize};
 use ratatui::widgets::{Block, Borders};
 
 use crate::app::App;
@@ -19,6 +19,7 @@ pub fn ui(app: &App, frame: &mut Frame) {
         .borders(Borders::ALL)
         .title(" Deoxys-TUI v0.1.0 (Press q to quit) ")
         .title_style(Color::Magenta)
+        //.bg(Color::Rgb(0, 0, 15))
         .title_alignment(Alignment::Center);
     frame.render_widget(outline, frame.size());
 

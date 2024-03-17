@@ -117,7 +117,7 @@ mc-sync = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true }
 url = { workspace = true }
-deoxys-tui = { optional = true, path = "../deoxys-tui"}
+deoxys-tui = { optional = true, path = "../deoxys-tui" }
 
 [build-dependencies]
 substrate-build-script-utils = { workspace = true }

@@ -27,7 +27,7 @@ fn render_cpu_graph(frame: &mut Frame, app: &App, area: Rect) {
     let datasets = vec![
         Dataset::default().name("CPU").marker(Marker::Braille).style(Style::default().fg(Color::Cyan)).data(&serie),
     ];
-    let chart = Chart::new(datasets)
+    let chart = Chart::new(datasets)//.bg(Color::Rgb(0, 0, 15))
         .x_axis(Axis::default().title("t").style(Style::default().fg(Color::Gray)).labels(vec![]).bounds([0., 100.]))
         .y_axis(
             Axis::default()
