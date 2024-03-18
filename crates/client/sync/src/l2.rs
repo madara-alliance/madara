@@ -1,5 +1,6 @@
 //! Contains the code required to fetch data from the feeder efficiently.
 use std::pin::pin;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 
 use bitvec::order::Msb0;
@@ -24,7 +25,7 @@ use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_api::hash::StarkHash;
-use starknet_core::types::{BlockId as BlockIdCore, StarknetError};
+use starknet_core::types::{BlockId as BlockIdCore, PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
 use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
@@ -35,9 +36,9 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinSet;
+use tokio::time::{Duration, Instant};
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
-use crate::utility::update_config;
 use crate::CommandSink;
 
 // TODO: add more error variants, which are more explicit
@@ -69,6 +70,16 @@ lazy_static! {
 lazy_static! {
     /// Shared latest block number and hash of chain, using a RwLock to allow for concurrent reads and exclusive writes
     static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: RwLock<(FieldElement, u64)> = RwLock::new((FieldElement::default(), 0));
+}
+
+lazy_static! {
+    /// Shared pending block data, using a RwLock to allow for concurrent reads and exclusive writes
+    static ref STARKNET_PENDING_BLOCK: RwLock<Option<mp_block::Block>> = RwLock::new(None);
+}
+
+lazy_static! {
+    /// Shared pending state update, using RwLock to allow for concurrent reads and exclusive writes
+    static ref STARKNET_PENDING_STATE_UPDATE: RwLock<Option<PendingStateUpdate>> = RwLock::new(None);
 }
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
@@ -150,7 +161,6 @@ pub async fn sync<B, C>(
     B: BlockT,
     C: HeaderBackend<B>,
 {
-    update_config(&fetch_config);
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
     let provider = SequencerGatewayProvider::new(
         fetch_config.gateway.clone(),
@@ -172,15 +182,24 @@ pub async fn sync<B, C>(
     let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
     let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(10);
 
+    let mut instant = Instant::now();
+
     tokio::select!(
         // fetch blocks and updates in parallel
         _ = async {
             // FIXME: make it cleaner by replacing this with tokio_util::sync::PollSender to make the channel a
             // Sink and have the fetch Stream pipe into it
             while let Some(val) = pin!(fetch_stream.next()).await {
-                fetch_stream_sender.send(val).await.expect("receiver is closed")
-            }
+                fetch_stream_sender.send(val).await.expect("receiver is closed");
 
+                // tries to update the pending starknet block every 2s
+                if instant.elapsed() >= Duration::from_secs(2) {
+                    if let Err(e) = update_starknet_data(&provider, client.as_ref()).await {
+                        log::error!("Failed to update highest block hash and number: {}", e);
+                    }
+                    instant = Instant::now();
+                }
+            }
         } => {},
         // apply blocks and updates sequentially
         _ = async {
@@ -468,8 +487,6 @@ pub fn verify_l2<B: BlockT>(
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
     log::debug!("update_state_root {} -- block_hash: {block_hash:?}, state_root: {state_root:?}", block_number);
 
-    set_highest_block_hash_and_number(block_hash, block_number);
-
     update_l2(L2StateUpdate {
         block_number,
         global_root: state_root.into(),
@@ -479,15 +496,53 @@ pub fn verify_l2<B: BlockT>(
     Ok(())
 }
 
-fn set_highest_block_hash_and_number(hash: FieldElement, number: u64) {
-    let mut highest_block_hash_and_number = STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
+async fn update_starknet_data<B, C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
+    let block = provider.get_block(BlockId::Pending).await.map_err(|e| format!("Failed to get pending block: {e}"))?;
+
+    let hash_best = client.info().best_hash;
+    let hash_current = block.parent_block_hash;
+    // Well howdy, seems like we can't convert a B::Hash to a FieldElement pa'tner,
+    // fancy this instead? 🤠🔫
+    let tmp = <B as BlockT>::Hash::from_str(&hash_current.to_string()).unwrap_or(Default::default());
+    let number = block.block_number.ok_or("block number not found")? - 1;
+
+    // all blocks have been synchronized, can store pending data
+    if hash_best == tmp {
+        let state_update = provider
+            .get_state_update(BlockId::Pending)
+            .await
+            .map_err(|e| format!("Failed to get pending state update: {e}"))?;
+
+        // Speaking about type conversion hell: 🔥
+        *STARKNET_PENDING_BLOCK.write().expect("Failed to acquire write lock on STARKNET_PENDING_BLOCK") =
+            Some(crate::convert::block(block).await);
+
+        // This type conversion is evil and should not be necessary
+        *STARKNET_PENDING_STATE_UPDATE.write().expect("Failed to aquire write lock on STARKNET_PENDING_STATE_UPDATE") =
+            Some(crate::convert::state_update(state_update));
+    }
+
+    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
         .write()
-        .expect("Failed to acquire write lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER");
-    *highest_block_hash_and_number = (hash, number);
+        .expect("Failed to acquire write lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER") = (hash_current, number);
+
+    Ok(())
 }
 
 pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
     *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
         .read()
         .expect("Failed to acquire read lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
+}
+
+pub fn get_pending_block() -> Option<mp_block::Block> {
+    STARKNET_PENDING_BLOCK.read().expect("Failed to acquire read lock on STARKNET_PENDING_BLOCK").clone()
+}
+
+pub fn get_pending_state_update() -> Option<PendingStateUpdate> {
+    STARKNET_PENDING_STATE_UPDATE.read().expect("Failed to acquire read lock on STARKNET_PENDING_BLOCK").clone()
 }
