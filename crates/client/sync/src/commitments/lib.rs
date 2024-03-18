@@ -17,7 +17,6 @@ use mp_hashers::poseidon::PoseidonHasher;
 use mp_hashers::HasherT;
 use mp_storage::StarknetStorageSchemaVersion::Undefined;
 use mp_transactions::Transaction;
-use sp_core::hexdisplay::AsBytesRef;
 use sp_core::H256;
 use sp_runtime::generic::{Block, Header};
 use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
