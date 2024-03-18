@@ -36,6 +36,7 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinSet;
+use tokio::time::{Duration, Instant};
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
 use crate::CommandSink;
@@ -125,12 +126,6 @@ where
     B: BlockT,
     C: HeaderBackend<B>,
 {
-    // TODO: handle this properly in a separate part of the tokio select,
-    // or just with a proper timing mechanism
-    if let Err(e) = update_starknet_data(provider, client).await {
-        log::error!("Failed to update highest block hash and number: {}", e);
-    }
-
     // retry loop
     const MAX_RETRY: usize = 15;
     for _ in 0..MAX_RETRY {
@@ -187,15 +182,24 @@ pub async fn sync<B, C>(
     let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
     let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(10);
 
+    let mut instant = Instant::now();
+
     tokio::select!(
         // fetch blocks and updates in parallel
         _ = async {
             // FIXME: make it cleaner by replacing this with tokio_util::sync::PollSender to make the channel a
             // Sink and have the fetch Stream pipe into it
             while let Some(val) = pin!(fetch_stream.next()).await {
-                fetch_stream_sender.send(val).await.expect("receiver is closed")
-            }
+                fetch_stream_sender.send(val).await.expect("receiver is closed");
 
+                // tries to update the pending starknet block every 2s
+                if instant.elapsed() >= Duration::from_secs(2) {
+                    if let Err(e) = update_starknet_data(&provider, client.as_ref()).await {
+                        log::error!("Failed to update highest block hash and number: {}", e);
+                    }
+                    instant = Instant::now();
+                }
+            }
         } => {},
         // apply blocks and updates sequentially
         _ = async {
