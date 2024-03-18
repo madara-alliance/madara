@@ -211,7 +211,7 @@ fn contract_trie_root<B: BlockT>(
     maybe_block_hash: Option<H256>,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
     let identifier = "0xcontract".as_bytes();
-    bonsai_contract.init_tree(&identifier)?;
+    bonsai_contract.init_tree(identifier)?;
 
     // First we insert the contract storage changes
     // TODO: @cchudant parallelize this loop
@@ -229,11 +229,11 @@ fn contract_trie_root<B: BlockT>(
             contract_state_leaf_hash(csd, &overrides, contract_address.0, maybe_block_hash, &bonsai_contract_storage)?;
 
         let key = key(contract_address.0.0.0);
-        bonsai_contract.insert(&identifier, &key, &class_commitment_leaf_hash.into())?;
+        bonsai_contract.insert(identifier, &key, &class_commitment_leaf_hash.into())?;
     }
 
     bonsai_contract.commit(BasicId::new(block_number))?;
-    Ok(bonsai_contract.root_hash(&identifier)?.into())
+    Ok(bonsai_contract.root_hash(identifier)?.into())
 }
 
 fn contract_state_leaf_hash<B: BlockT>(
@@ -245,7 +245,7 @@ fn contract_state_leaf_hash<B: BlockT>(
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
     let identifier = contract_address.0.0.0.as_bytes_ref();
     let storage_root =
-        bonsai_contract_storage.lock().unwrap().root_hash(&identifier).expect("Failed to get root hash").into();
+        bonsai_contract_storage.lock().unwrap().root_hash(identifier).expect("Failed to get root hash").into();
 
     let nonce =
         Felt252Wrapper::from(*csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::ZERO.into()));
@@ -292,18 +292,18 @@ fn class_trie_root<B: BlockT>(
     block_number: u64,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
     let identifier = "0xclass".as_bytes();
-    bonsai_class.init_tree(&identifier)?;
+    bonsai_class.init_tree(identifier)?;
 
     // TODO: @cchudant parallelize this loop
     for (class_hash, compiled_class_hash) in csd.class_hash_to_compiled_class_hash.iter() {
         let class_commitment_leaf_hash =
             calculate_class_commitment_leaf_hash::<PoseidonHasher>(Felt252Wrapper::from(compiled_class_hash.0));
         let key = key(class_hash.0);
-        bonsai_class.insert(&identifier, key.as_bitslice(), &class_commitment_leaf_hash.into())?;
+        bonsai_class.insert(identifier, key.as_bitslice(), &class_commitment_leaf_hash.into())?;
     }
 
     bonsai_class.commit(BasicId::new(block_number))?;
-    Ok(bonsai_class.root_hash(&identifier)?.into())
+    Ok(bonsai_class.root_hash(identifier)?.into())
 }
 
 /// Compute the bonsai storage key

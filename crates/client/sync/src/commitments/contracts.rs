@@ -43,11 +43,11 @@ pub fn update_storage_trie<B: BlockT>(
 ) {
     let mut bonsai_storage = bonsai_contract_storage.lock().unwrap();
     let identifier = contract_address.0.0.0.as_bytes_ref();
-    bonsai_storage.init_tree(&identifier).expect("Failed to init tree");
+    bonsai_storage.init_tree(identifier).expect("Failed to init tree");
 
     // Insert new storage changes
     storage_updates.into_iter().map(|(key, value)| convert_storage((*key, *value))).for_each(|(key, value)| {
-        bonsai_storage.insert(&identifier, &key, &value.into()).expect("Failed to insert storage update into trie");
+        bonsai_storage.insert(identifier, &key, &value.into()).expect("Failed to insert storage update into trie");
     });
 }
 
@@ -155,14 +155,14 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let mut id_builder = BasicIdBuilder::new();
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x069064A05C14A9A2B4ED81C479C14D30872A9AE9CE2DEA8E4B4509542C2DCC1F\nFound: {:?}",
@@ -195,13 +195,13 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x0112998A41A3A2C720E758F82D184E4C39E9382620F12076B52C516D14622E57\nFound: {:?}",
@@ -220,13 +220,13 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x072E79A6F71E3E63D7DE40EDF4322A22E64388D4D5BFE817C1271C78028B73BF\nFound: {:?}",
@@ -272,14 +272,14 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let mut id_builder = BasicIdBuilder::new();
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x0297DE74ABD178CAF7EA2F1AE1B4588CA7433B1B11A98172B6F56E3E02739FD0\nFound: {:?}",
@@ -325,13 +325,13 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x07A4CA1440AF3858CEB11386BA7E2A0FC553BB73E741043218845D820009BCCB\nFound: {:?}",
@@ -353,13 +353,13 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x002363DCD04D065C6B50A4D46F930EBC91AC7F4B15DCF1B0A8D0165B0BA0F143\nFound: {:?}",
@@ -378,13 +378,13 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x00C656C01BB43291BEA976CEACE3AFE89A5621045E3B6F23E4BCFFFBB4B66832\nFound: {:?}",
@@ -403,13 +403,13 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x032C61E78534A30DD005DB4B9136AA64893CC2F6E10C4535DD6F29BFB2ADC726\nFound: {:?}",
@@ -464,14 +464,14 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let mut id_builder = BasicIdBuilder::new();
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x03846F4AE281ADBCC68518766579DB77C27EF31955E9FC3183C397C2731A7627\nFound: {:?}",
@@ -503,13 +503,13 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x06E02FE529D3CBDCC5324D0981F991E777DAFC3F0C24E7CB56CE3D379BE9B510\nFound: {:?}",
@@ -528,13 +528,13 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x0528E360EA90E94F670451A76A7698900F0F7C1F2E88583F8B0162D486BF7947\nFound: {:?}",
@@ -568,14 +568,14 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let mut id_builder = BasicIdBuilder::new();
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x010AA5D1D36847AE64BA074B3A878BFD1A9AEAA952F6777C727EEA6AE6B2C99F\nFound: {:?}",
@@ -594,13 +594,13 @@ mod tests {
             let key: StarkFelt = Felt252Wrapper::from_hex_be(key_hex).unwrap().into();
             let value = Felt252Wrapper::from_hex_be(value_hex).unwrap();
             bonsai_storage
-                .insert(&identifier, keyer(key).as_bitslice(), &value.into())
+                .insert(identifier, keyer(key).as_bitslice(), &value.into())
                 .expect("Failed to insert storage update into trie");
         }
 
         let id = id_builder.new_id();
         bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        let root_hash = bonsai_storage.root_hash(&identifier).expect("Failed to get root hash");
+        let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
         println!(
             "Expected: 0x00072F7E2EC1A2F05342503B49AECD83E14884AE374A8570F2F6F7B868CF94AE\nFound: {:?}",
