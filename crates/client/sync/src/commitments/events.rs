@@ -53,6 +53,7 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
 ///
 /// The event commitment as `Felt252Wrapper`.
 pub async fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, String> {
+    // TODO @cchudant refacto/optimise this function
     if events.is_empty() {
         return Ok(Felt252Wrapper::ZERO);
     }
@@ -63,7 +64,6 @@ pub async fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper,
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
     let identifier = "0xevent".as_bytes();
 
-    // TODO @cchudant clean this parallelism
     // event hashes are computed in parallel
     let mut task_set = JoinSet::new();
     events.iter().cloned().enumerate().for_each(|(i, event)| {

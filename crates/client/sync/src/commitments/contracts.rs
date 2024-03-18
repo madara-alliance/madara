@@ -47,9 +47,7 @@ pub fn update_storage_trie<B: BlockT>(
 
     // Insert new storage changes
     storage_updates.into_iter().map(|(key, value)| convert_storage((*key, *value))).for_each(|(key, value)| {
-        // if value != Felt252Wrapper::ZERO {
         bonsai_storage.insert(&identifier, &key, &value.into()).expect("Failed to insert storage update into trie");
-        // }
     });
 }
 

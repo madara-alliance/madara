@@ -69,13 +69,13 @@ pub async fn memory_transaction_commitment(
     chain_id: Felt252Wrapper,
     block_number: u64,
 ) -> Result<Felt252Wrapper, String> {
+    // TODO @cchudant refacto/optimise this function
     let config = BonsaiStorageConfig::default();
     let bonsai_db = HashMapDb::<BasicId>::default();
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
     let identifier = "0xtransaction".as_bytes();
 
-    // TODO @cchudant clean this parallelism
     // transaction hashes are computed in parallel
     let mut task_set = JoinSet::new();
     transactions.iter().cloned().enumerate().for_each(|(i, tx)| {
@@ -92,11 +92,6 @@ pub async fn memory_transaction_commitment(
         bonsai_storage.insert(&identifier, key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
     }
 
-    // Note that committing changes still has the greatest performance hit
-    // as this is where the root hash is calculated. Due to the Merkle structure
-    // of Bonsai Tries, this results in a trie size that grows very rapidly with
-    // each new insertion. It seems that the only vector of optimization here
-    // would be to optimize the tree traversal and hash computation.
     let mut id_builder = BasicIdBuilder::new();
     let id = id_builder.new_id();
 
