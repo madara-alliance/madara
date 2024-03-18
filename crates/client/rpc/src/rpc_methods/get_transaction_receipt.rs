@@ -529,27 +529,32 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
+    let (last, prev) = match transactions.split_last() {
+        Some((last, prev)) => (vec![last.clone()], prev.to_vec()),
+        None => (transactions, vec![]),
+    };
+
     let execution_infos = client
-		.client
-		.runtime_api()
-		.re_execute_transactions(previous_block_hash, vec![], transactions.clone())
-		.map_err(|e| {
-			log::error!("Failed to execute runtime API call: {e}");
-			StarknetRpcApiError::InternalServerError
-		})?
-		.map_err(|e| {
-			log::error!("Failed to reexecute the transactions: {e:?}");
-			StarknetRpcApiError::InternalServerError
-		})?
-		.map_err(|_| {
-			log::error!("One of the transaction failed during it's reexecution");
-			StarknetRpcApiError::InternalServerError
-		})?
-		.pop() // get only the last transaction execution info
-		.ok_or_else(|| {
-			log::error!("No execution info returned for the last transaction");
-			StarknetRpcApiError::InternalServerError
-		})?;
+        .client
+        .runtime_api()
+        .re_execute_transactions(previous_block_hash, prev, last)
+        .map_err(|e| {
+            log::error!("Failed to execute runtime API call: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?
+        .map_err(|e| {
+            log::error!("Failed to reexecute the transactions: {e:?}");
+            StarknetRpcApiError::InternalServerError
+        })?
+        .map_err(|_| {
+            log::error!("One of the transaction failed during it's reexecution");
+            StarknetRpcApiError::InternalServerError
+        })?
+        .pop()
+        .ok_or_else(|| {
+            log::error!("No execution info returned for the last transaction");
+            StarknetRpcApiError::InternalServerError
+        })?;
 
     Ok(execution_infos)
 }
