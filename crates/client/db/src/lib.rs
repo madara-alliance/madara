@@ -173,7 +173,8 @@ impl<B: BlockT> Backend<B> {
         let spdb: Arc<dyn Database<DbHash>> = db.1;
 
         let contract = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Contract };
-        let contract_storage = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::ContractStorage };
+        let contract_storage =
+            BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::ContractStorage };
         let class = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class };
         let config = BonsaiConfigs::new(contract, contract_storage, class);
 

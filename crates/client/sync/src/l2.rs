@@ -236,8 +236,16 @@ where
     B: BlockT,
     C: HeaderBackend<B>,
 {
-    let state_update =
-        fetch_state_update(provider, block_number, overrides.clone(), bonsai_contract, bonsai_contract_storage, bonsai_class, client).await?;
+    let state_update = fetch_state_update(
+        provider,
+        block_number,
+        overrides.clone(),
+        bonsai_contract,
+        bonsai_contract_storage,
+        bonsai_class,
+        client,
+    )
+    .await?;
     let class_update = fetch_class_update(provider, &state_update, overrides, block_number, client).await?;
 
     // Now send state_update, which moves it. This will be received
@@ -276,7 +284,15 @@ where
         .map_err(|e| format!("failed to get state update: {e}"))?;
 
     let block_hash = block_hash_substrate(client, block_number - 1);
-    verify_l2(block_number, &state_update, overrides, bonsai_contract, bonsai_contract_storage, bonsai_class, block_hash)?;
+    verify_l2(
+        block_number,
+        &state_update,
+        overrides,
+        bonsai_contract,
+        bonsai_contract_storage,
+        bonsai_class,
+        block_hash,
+    )?;
 
     Ok(state_update)
 }
@@ -472,8 +488,15 @@ pub fn verify_l2<B: BlockT>(
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
 
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
-    let state_root =
-        update_state_root(csd, overrides, bonsai_contract, bonsai_contract_storage, bonsai_class, block_number, substrate_block_hash);
+    let state_root = update_state_root(
+        csd,
+        overrides,
+        bonsai_contract,
+        bonsai_contract_storage,
+        bonsai_class,
+        block_number,
+        substrate_block_hash,
+    );
     println!("state root: {:?}", state_root);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 

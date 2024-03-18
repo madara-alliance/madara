@@ -173,9 +173,15 @@ pub fn update_state_root<B: BlockT>(
     substrate_block_hash: Option<H256>,
 ) -> Felt252Wrapper {
     // Update contract and its storage tries
-    let contract_trie_root =
-        contract_trie_root(&csd, overrides, bonsai_contract.lock().unwrap(), bonsai_contract_storage, block_number, substrate_block_hash)
-            .expect("Failed to compute contract root");
+    let contract_trie_root = contract_trie_root(
+        &csd,
+        overrides,
+        bonsai_contract.lock().unwrap(),
+        bonsai_contract_storage,
+        block_number,
+        substrate_block_hash,
+    )
+    .expect("Failed to compute contract root");
 
     // Update class trie
     let class_trie_root =
@@ -238,8 +244,8 @@ fn contract_state_leaf_hash<B: BlockT>(
     bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
     let identifier = contract_address.0.0.0.as_bytes_ref();
-    let storage_root = bonsai_contract_storage.lock().unwrap().root_hash(&identifier).expect("Failed to get root hash").into();
-    // println!("{:?}, storage_root: {:?}", contract_address, storage_root);
+    let storage_root =
+        bonsai_contract_storage.lock().unwrap().root_hash(&identifier).expect("Failed to get root hash").into();
 
     let nonce =
         Felt252Wrapper::from(*csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::ZERO.into()));

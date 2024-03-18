@@ -36,8 +36,8 @@ impl<B: BlockT> BonsaiConfigs<B> {
         let contract =
             BonsaiStorage::<_, _, Pedersen>::new(contract, config.clone()).expect("Failed to create bonsai storage");
 
-        let contract_storage =
-            BonsaiStorage::<_, _, Pedersen>::new(contract_storage, config.clone()).expect("Failed to create bonsai storage");
+        let contract_storage = BonsaiStorage::<_, _, Pedersen>::new(contract_storage, config.clone())
+            .expect("Failed to create bonsai storage");
 
         let class =
             BonsaiStorage::<_, _, Poseidon>::new(class, config.clone()).expect("Failed to create bonsai storage");

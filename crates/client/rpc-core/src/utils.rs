@@ -159,8 +159,7 @@ where
     let header =
         client.header(block_hash).ok().flatten().ok_or_else(|| anyhow::Error::msg("Failed to retrieve header"))?;
     let digest = header.digest();
-    let block = mp_block::Block::default();
-    // let block = find_starknet_block(digest)?;
+    let block = find_starknet_block(digest)?;
     Ok(block)
 }
 
