@@ -485,7 +485,7 @@ pub fn verify_l2<B: BlockT>(
         block_number,
         substrate_block_hash,
     );
-    println!("state_root: {state_root:?}");
+    log::debug!("state_root: {state_root:?}");
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
     log::debug!("update_state_root {} -- block_hash: {block_hash:?}, state_root: {state_root:?}", block_number);
 

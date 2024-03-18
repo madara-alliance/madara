@@ -12,6 +12,8 @@ use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 use tokio::task::{spawn_blocking, JoinSet};
 
+use crate::utils::constant::bonsai_identifier;
+
 /// Compute the combined hash of the transaction hash and the signature.
 ///
 /// Since the transaction hash doesn't take the signature values as its input
@@ -74,7 +76,7 @@ pub async fn memory_transaction_commitment(
     let bonsai_db = HashMapDb::<BasicId>::default();
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
-    let identifier = "0xtransaction".as_bytes();
+    let identifier = bonsai_identifier::TRANSACTION;
 
     // transaction hashes are computed in parallel
     let mut task_set = JoinSet::new();

@@ -30,10 +30,11 @@ use starknet_types_core::hash::{Pedersen, Poseidon};
 use tokio::join;
 
 use super::classes::calculate_class_commitment_leaf_hash;
-use super::contracts::{update_storage_trie, ContractLeafParams};
+use super::contracts::{identifier, update_storage_trie, ContractLeafParams};
 use super::events::memory_event_commitment;
 use super::transactions::memory_transaction_commitment;
 use crate::commitments::contracts::calculate_contract_state_leaf_hash;
+use crate::utils::constant::bonsai_identifier;
 
 /// Calculate the transaction and event commitment.
 ///
@@ -210,7 +211,7 @@ fn contract_trie_root<B: BlockT>(
     block_number: u64,
     maybe_block_hash: Option<H256>,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
-    let identifier = "0xcontract".as_bytes();
+    let identifier = bonsai_identifier::CONTRACT;
     bonsai_contract.init_tree(identifier)?;
 
     // First we insert the contract storage changes
@@ -243,7 +244,7 @@ fn contract_state_leaf_hash<B: BlockT>(
     maybe_block_hash: Option<H256>,
     bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
-    let identifier = contract_address.0.0.0.as_bytes_ref();
+    let identifier = identifier(contract_address);
     let storage_root =
         bonsai_contract_storage.lock().unwrap().root_hash(identifier).expect("Failed to get root hash").into();
 
@@ -291,7 +292,7 @@ fn class_trie_root<B: BlockT>(
     mut bonsai_class: MutexGuard<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>,
     block_number: u64,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
-    let identifier = "0xclass".as_bytes();
+    let identifier = bonsai_identifier::CLASS;
     bonsai_class.init_tree(identifier)?;
 
     // TODO: @cchudant parallelize this loop

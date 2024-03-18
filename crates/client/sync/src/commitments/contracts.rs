@@ -42,7 +42,7 @@ pub fn update_storage_trie<B: BlockT>(
     bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
 ) {
     let mut bonsai_storage = bonsai_contract_storage.lock().unwrap();
-    let identifier = contract_address.0.0.0.as_bytes_ref();
+    let identifier = identifier(contract_address);
     bonsai_storage.init_tree(identifier).expect("Failed to init tree");
 
     // Insert new storage changes
@@ -80,6 +80,10 @@ pub fn calculate_contract_state_leaf_hash<H: HasherT>(contract_leaf_params: Cont
     let contract_state_hash = H::hash_elements(contract_state_hash, CONTRACT_STATE_HASH_VERSION.0);
 
     contract_state_hash.into()
+}
+
+pub fn identifier(contract_address: &ContractAddress) -> &[u8] {
+    contract_address.0.0.0.as_bytes_ref()
 }
 
 #[cfg(test)]

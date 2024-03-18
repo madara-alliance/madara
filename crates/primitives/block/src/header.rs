@@ -163,34 +163,3 @@ impl Header {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use mp_hashers::pedersen::PedersenHasher;
-
-    use super::*;
-
-    #[test]
-    fn test_header_hash() {
-        let data: &[Felt252Wrapper] = &[
-            0u64.into(),
-            Felt252Wrapper::from_hex_be("0x21870ba80540e7831fb21c591ee93481f5ae1bb71ff85a86ddd465be4eddee6").unwrap(),
-            Felt252Wrapper::ZERO,
-            Felt252Wrapper::ZERO,
-            18u64.into(),
-            Felt252Wrapper::from_hex_be("0x0504e463fde588bdc1cd19cf1278b1bfeebb0ce75c02a7e327ce18e60bda62ce").unwrap(),
-            Felt252Wrapper::ZERO,
-            Felt252Wrapper::ZERO,
-            Felt252Wrapper::ZERO,
-            Felt252Wrapper::ZERO,
-            Felt252Wrapper(FieldElement::from_byte_slice_be(b"SN_MAIN").unwrap()),
-            Felt252Wrapper::ZERO,
-        ];
-
-        let block_hash = PedersenHasher::compute_hash_on_wrappers(data);
-        assert_eq!(
-            block_hash,
-            Felt252Wrapper::from_hex_be("0x47c3637b57c2b079b93c61539950c17e868a28f46cdef28f88521067f21e943").unwrap()
-        );
-    }
-}

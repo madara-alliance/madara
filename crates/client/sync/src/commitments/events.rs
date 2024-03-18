@@ -11,6 +11,8 @@ use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 use tokio::task::{spawn_blocking, JoinSet};
 
+use crate::utils::constant::bonsai_identifier;
+
 /// Calculate the hash of the event.
 ///
 /// # Arguments
@@ -62,7 +64,7 @@ pub async fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper,
     let bonsai_db = HashMapDb::<BasicId>::default();
     let mut bonsai_storage =
         BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
-    let identifier = "0xevent".as_bytes();
+    let identifier = bonsai_identifier::EVENT;
 
     // event hashes are computed in parallel
     let mut task_set = JoinSet::new();

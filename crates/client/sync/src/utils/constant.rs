@@ -9,3 +9,10 @@ pub mod starknet_core_address {
 }
 
 pub const LOG_STATE_UPDTATE_TOPIC: &str = "0xd342ddf7a308dec111745b00315c14b7efb2bdae570a6856e088ed0c65a3576c";
+
+pub mod bonsai_identifier {
+    pub const CONTRACT: &[u8] = "0xcontract".as_bytes();
+    pub const CLASS: &[u8] = "0xclass".as_bytes();
+    pub const TRANSACTION: &[u8] = "0xtransaction".as_bytes();
+    pub const EVENT: &[u8] = "0xevent".as_bytes();
+}
