@@ -155,6 +155,7 @@ pub async fn sync<B, C>(
     fetch_config: FetchConfig,
     first_block: u64,
     bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     client: Arc<C>,
 ) where
@@ -173,7 +174,8 @@ pub async fn sync<B, C>(
     if first_block == 1 {
         let state_update =
             provider.get_state_update(BlockId::Number(0)).await.expect("getting state update for genesis block");
-        verify_l2(0, &state_update, overrides, bonsai_contract, bonsai_class, None).expect("verifying genesis block");
+        verify_l2(0, &state_update, overrides, bonsai_contract, bonsai_contract_storage, bonsai_class, None)
+            .expect("verifying genesis block");
     }
 
     let fetch_stream =
@@ -206,7 +208,6 @@ pub async fn sync<B, C>(
             let mut block_n = first_block;
             while let Some(val) = pin!(fetch_stream_receiver.recv()).await {
                 if matches!(val, Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))) {
-                    // found the tip of the blockchain :)
                     break;
                 }
 
@@ -217,19 +218,18 @@ pub async fn sync<B, C>(
                 let state_update = {
                     let overrides = Arc::clone(overrides);
                     let bonsai_contract = Arc::clone(bonsai_contract);
+                    let bonsai_contract_storage = Arc::clone(bonsai_contract_storage);
                     let bonsai_class = Arc::clone(bonsai_class);
                     let state_update = Arc::new(state_update);
                     let state_update_1 = Arc::clone(&state_update);
 
-                    // verify_l2 takes a long time, we don't want to starve the event loop
                     tokio::task::spawn_blocking(move || {
-                        verify_l2(block_n, &state_update, &overrides, &bonsai_contract, &bonsai_class, block_hash)
+                        verify_l2(block_n, &state_update, &overrides, &bonsai_contract, &bonsai_contract_storage, &bonsai_class, block_hash)
                             .expect("verifying block");
                     })
                     .await
                     .expect("verification task panicked");
 
-                    // hack because tokio tasks need to be 'static
                     Arc::try_unwrap(state_update_1).expect("arc should not be aliased")
                 };
 
@@ -256,7 +256,6 @@ pub async fn sync<B, C>(
                 );
 
                 create_block(command_sink, &mut last_block_hash).await.expect("creating block");
-
                 block_n += 1;
             }
         } => {},
@@ -470,6 +469,7 @@ pub fn verify_l2<B: BlockT>(
     state_update: &StateUpdate,
     overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     substrate_block_hash: Option<H256>,
 ) -> Result<(), L2SyncError> {
@@ -480,10 +480,12 @@ pub fn verify_l2<B: BlockT>(
         csd,
         Arc::clone(overrides),
         Arc::clone(bonsai_contract),
+        Arc::clone(bonsai_contract_storage),
         Arc::clone(bonsai_class),
         block_number,
         substrate_block_hash,
     );
+    log::debug!("state_root: {state_root:?}");
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
     log::debug!("update_state_root {} -- block_hash: {block_hash:?}, state_root: {state_root:?}", block_number);
 

@@ -13,6 +13,7 @@ use crate::error::BonsaiDbError;
 pub enum TrieColumn {
     Class,
     Contract,
+    ContractStorage,
 }
 
 #[derive(Debug)]
@@ -24,20 +25,24 @@ pub enum KeyType {
 
 pub struct BonsaiConfigs<B: BlockT> {
     pub contract: BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>,
+    pub contract_storage: BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>,
     pub class: BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>,
 }
 
 impl<B: BlockT> BonsaiConfigs<B> {
-    pub fn new(contract: BonsaiDb<B>, class: BonsaiDb<B>) -> Self {
+    pub fn new(contract: BonsaiDb<B>, contract_storage: BonsaiDb<B>, class: BonsaiDb<B>) -> Self {
         let config = BonsaiStorageConfig::default();
 
         let contract =
             BonsaiStorage::<_, _, Pedersen>::new(contract, config.clone()).expect("Failed to create bonsai storage");
 
+        let contract_storage = BonsaiStorage::<_, _, Pedersen>::new(contract_storage, config.clone())
+            .expect("Failed to create bonsai storage");
+
         let class =
             BonsaiStorage::<_, _, Poseidon>::new(class, config.clone()).expect("Failed to create bonsai storage");
 
-        Self { contract, class }
+        Self { contract, contract_storage, class }
     }
 }
 
@@ -50,6 +55,11 @@ impl TrieColumn {
                 KeyType::TrieLog => crate::columns::LOG_BONSAI_CLASSES,
             },
             TrieColumn::Contract => match key_type {
+                KeyType::Trie => crate::columns::TRIE_BONSAI_CONTRACTS,
+                KeyType::Flat => crate::columns::FLAT_BONSAI_CONTRACTS,
+                KeyType::TrieLog => crate::columns::LOG_BONSAI_CONTRACTS,
+            },
+            TrieColumn::ContractStorage => match key_type {
                 KeyType::Trie => crate::columns::TRIE_BONSAI_CONTRACTS,
                 KeyType::Flat => crate::columns::FLAT_BONSAI_CONTRACTS,
                 KeyType::TrieLog => crate::columns::LOG_BONSAI_CONTRACTS,

@@ -159,10 +159,6 @@ impl Header {
                 self.parent_block_hash.into(),
             ];
 
-            // for (i, item) in data.iter().enumerate() {
-            //     frame_support::log::info!("data[{}]: {:?}", i, item);
-            // }
-
             H::compute_hash_on_wrappers(data)
         }
     }

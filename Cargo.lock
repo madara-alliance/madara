@@ -962,7 +962,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=oss#e4de114749720ade65b0ecf905fd4cf0fa450fce"
+source = "git+https://github.com/antiyro/bonsai-trie.git?branch=oss#29aa2794d478912fc494aaae109e0b05f418b0cc"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -7033,7 +7033,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
 dependencies = [
- "proc-macro-crate 2.0.0",
+ "proc-macro-crate 1.1.3",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
