@@ -138,17 +138,23 @@ pub trait GetBlockWithTxHashes {
     fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes>;
 }
 
-/// Starknet read rpc interface.
 #[rpc(server, namespace = "starknet")]
-pub trait StarknetReadRpcApi {
+pub trait GetNonce {
     /// Get the nonce associated with the given address at the given block
     #[method(name = "getNonce")]
     fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait GetBlockWithTxs{
     /// Get block information with full transactions given the block id
     #[method(name = "getBlockWithTxs")]
     fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs>;
+}
 
+/// Starknet read rpc interface.
+#[rpc(server, namespace = "starknet")]
+pub trait StarknetReadRpcApi {
     /// Get the chain id
     #[method(name = "chainId")]
     fn chain_id(&self) -> RpcResult<Felt>;

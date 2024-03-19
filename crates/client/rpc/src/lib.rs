@@ -45,7 +45,7 @@ use starknet_api::hash::StarkHash;
 use starknet_core::types::{
     BlockId, BlockTag, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, DeclareTransactionResult, DeployAccountTransactionResult,
-    EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, InvokeTransactionResult, MaybePendingBlockWithTxs,
+    EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, InvokeTransactionResult,
     MaybePendingStateUpdate, MaybePendingTransactionReceipt, MsgFromL1, StateDiff, Transaction,
 };
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
@@ -351,42 +351,6 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    /// Get the nonce associated with the given address in the given block.
-    ///
-    /// ### Arguments
-    ///
-    /// * `block_id` - The hash of the requested block, or number (height) of the requested block,
-    ///   or a block tag. This parameter specifies the block in which the nonce is to be checked.
-    /// * `contract_address` - The address of the contract whose nonce we're seeking. This is the
-    ///   unique identifier of the contract in the Starknet network.
-    ///
-    /// ### Returns
-    ///
-    /// Returns the contract's nonce at the requested state. The nonce is returned as a
-    /// `FieldElement`, representing the current state of the contract in terms of transactions
-    /// count or other contract-specific operations. In case of errors, such as
-    /// `BLOCK_NOT_FOUND` or `CONTRACT_NOT_FOUND`, returns a `StarknetRpcApiError` indicating the
-    /// specific issue.
-    fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
-        let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-            error!("'{e}'");
-            StarknetRpcApiError::BlockNotFound
-        })?;
-
-        let contract_address = Felt252Wrapper(contract_address).into();
-
-        let nonce = self
-            .overrides
-            .for_block_hash(self.client.as_ref(), substrate_block_hash)
-            .nonce(substrate_block_hash, contract_address)
-            .ok_or_else(|| {
-                error!("Failed to get nonce at '{contract_address:?}'");
-                StarknetRpcApiError::ContractNotFound
-            })?;
-
-        Ok(Felt(Felt252Wrapper::from(nonce).into()))
-    }
-
     /// Return the currently configured chain id.
     ///
     /// This function provides the chain id for the network that the node is connected to. The chain
@@ -561,37 +525,6 @@ where
         };
 
         Ok(to_starknet_core_tx(transaction.clone(), transaction_hash))
-    }
-
-    /// Get block information with full transactions given the block id.
-    ///
-    /// This function retrieves detailed information about a specific block in the StarkNet network,
-    /// including all transactions contained within that block. The block is identified using its
-    /// unique block id, which can be the block's hash, its number (height), or a block tag.
-    ///
-    /// ### Arguments
-    ///
-    /// * `block_id` - The hash of the requested block, or number (height) of the requested block,
-    ///   or a block tag. This parameter is used to specify the block from which to retrieve
-    ///   information and transactions.
-    ///
-    /// ### Returns
-    ///
-    /// Returns detailed block information along with full transactions. Depending on the state of
-    /// the block, this can include either a confirmed block or a pending block with its
-    /// transactions. In case the specified block is not found, returns a `StarknetRpcApiError` with
-    /// `BlockNotFound`.
-    fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
-        let chain_id = self.chain_id()?;
-        let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-            error!("Block not found: '{e}'");
-            StarknetRpcApiError::BlockNotFound
-        })?;
-
-        match block_id {
-            BlockId::Tag(BlockTag::Pending) => get_block_with_txs_pending::<H>(chain_id),
-            _ => get_block_with_txs_finalized(self, chain_id, substrate_block_hash),
-        }
     }
 
     /// Get the information about the result of executing the requested block.

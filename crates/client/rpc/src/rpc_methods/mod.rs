@@ -11,6 +11,8 @@ pub mod get_state_update;
 pub mod get_storage_at;
 pub mod get_transaction_receipt;
 pub mod get_transaction_status;
+pub mod get_nonce;
+pub mod get_block_with_txs;
 pub mod spec_version;
 pub mod syncing;
 pub mod tools;
