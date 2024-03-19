@@ -1,3 +1,11 @@
+pub mod tools;
+pub mod block_number;
+pub mod spec_version;
+pub mod block_hash_and_number;
+pub mod get_block_transaction_count;
+pub mod get_transaction_status;
+pub mod get_storage_at;
+pub mod call;
 pub mod get_block;
 pub mod get_state_update;
 pub mod get_transaction_receipt;

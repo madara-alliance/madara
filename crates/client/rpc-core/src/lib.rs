@@ -54,37 +54,57 @@ pub trait StarknetWriteRpcApi {
     ) -> RpcResult<DeclareTransactionResult>;
 }
 
-/// Starknet read rpc interface.
-#[rpc(server, namespace = "starknet")]
-pub trait StarknetReadRpcApi {
-    /// Get the Version of the StarkNet JSON-RPC Specification Being Used
-    #[method(name = "specVersion")]
-    fn spec_version(&self) -> RpcResult<String>;
 
+#[rpc(server, namespace = "starknet")]
+pub trait BlockNumber {
     /// Get the most recent accepted block number
     #[method(name = "blockNumber")]
     fn block_number(&self) -> RpcResult<u64>;
+}
 
-    /// Get the most recent accepted block hash and number
+#[rpc(server, namespace = "starknet")]
+pub trait SpecVersion {
+    /// Get the Version of the StarkNet JSON-RPC Specification Being Used
+    #[method(name = "specVersion")]
+    fn spec_version(&self) -> RpcResult<String>;
+}
+#[rpc(server, namespace = "starknet")]
+pub trait BlockHashAndNumber {
+    // Get the most recent accepted block hash and number
     #[method(name = "blockHashAndNumber")]
     fn block_hash_and_number(&self) -> RpcResult<BlockHashAndNumber>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait GetBlockTransactionCount {
     /// Get the number of transactions in a block given a block id
     #[method(name = "getBlockTransactionCount")]
     fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait GetTransactionStatus {
     /// Gets the Transaction Status, Including Mempool Status and Execution Details
     #[method(name = "getTransactionStatus")]
     fn get_transaction_status(&self, transaction_hash: FieldElement) -> RpcResult<TransactionStatus>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait GetStroageAt {
     /// Get the value of the storage at the given address and key, at the given block id
     #[method(name = "getStorageAt")]
     fn get_storage_at(&self, contract_address: FieldElement, key: FieldElement, block_id: BlockId) -> RpcResult<Felt>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait Call {
     /// Call a contract function at a given block id
     #[method(name = "call")]
     fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<String>>;
-
+}
+/// Starknet read rpc interface.
+#[rpc(server, namespace = "starknet")]
+pub trait StarknetReadRpcApi {
     /// Get the contract class at a given contract address for a given block id
     #[method(name = "getClassAt")]
     fn get_class_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<ContractClass>;

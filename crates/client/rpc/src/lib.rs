@@ -29,7 +29,7 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
-use mp_transactions::{TransactionStatus, UserTransaction};
+use mp_transactions::UserTransaction;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use rpc_methods::get_state_update::{get_state_update_finalized, get_state_update_pending};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -42,17 +42,14 @@ use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
-use sp_runtime::DispatchError;
 use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkHash;
-use starknet_api::transaction::Calldata;
 use starknet_core::types::{
-    BlockHashAndNumber, BlockId, BlockTag, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
+    BlockId, BlockTag, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
-    DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
+    DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement,
     InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
     MaybePendingTransactionReceipt, MsgFromL1, StateDiff, SyncStatus, SyncStatusType, Transaction,
-    TransactionExecutionStatus, TransactionFinalityStatus,
 };
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 
@@ -357,257 +354,6 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    /// Returns the Version of the StarkNet JSON-RPC Specification Being Used
-    ///
-    /// This method provides the version of the StarkNet JSON-RPC specification that the node is
-    /// currently using. The version is returned as a semantic versioning (SemVer) string.
-    ///
-    /// # Arguments
-    ///
-    /// This method does not take any arguments.
-    ///
-    /// # Returns
-    ///
-    /// * `spec_version` - A string representing the SemVer of the StarkNet JSON-RPC specification
-    ///   being used.
-    fn spec_version(&self) -> RpcResult<String> {
-        self.current_spec_version()
-    }
-
-    /// Get the Most Recent Accepted Block Number
-    ///
-    /// ### Arguments
-    ///
-    /// This function does not take any arguments.
-    ///
-    /// ### Returns
-    ///
-    /// * `block_number` - The latest block number of the current network.
-    fn block_number(&self) -> RpcResult<u64> {
-        self.current_block_number()
-    }
-
-    /// Get the Most Recent Accepted Block Hash and Number
-    ///
-    /// ### Arguments
-    ///
-    /// This function does not take any arguments.
-    ///
-    /// ### Returns
-    ///
-    /// * `block_hash_and_number` - A tuple containing the latest block hash and number of the
-    ///   current network.
-    fn block_hash_and_number(&self) -> RpcResult<BlockHashAndNumber> {
-        let block_number = self.current_block_number()?;
-        let block_hash = self.current_block_hash().map_err(|e| {
-            error!("Failed to retrieve the current block hash: {}", e);
-            StarknetRpcApiError::NoBlocks
-        })?;
-
-        Ok(BlockHashAndNumber {
-            block_hash: FieldElement::from_byte_slice_be(block_hash.as_bytes()).unwrap(),
-            block_number,
-        })
-    }
-
-    /// Get the Number of Transactions in a Given Block
-    ///
-    /// ### Arguments
-    ///
-    /// * `block_id` - The identifier of the requested block. This can be the hash of the block, the
-    ///   block's number (height), or a specific block tag.
-    ///
-    /// ### Returns
-    ///
-    /// * `transaction_count` - The number of transactions in the specified block.
-    ///
-    /// ### Errors
-    ///
-    /// This function may return a `BLOCK_NOT_FOUND` error if the specified block does not exist in
-    /// the blockchain.
-    fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128> {
-        let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-            error!("'{e}'");
-            StarknetRpcApiError::BlockNotFound
-        })?;
-
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)?;
-
-        Ok(starknet_block.header().transaction_count)
-    }
-
-    /// Gets the Transaction Status, Including Mempool Status and Execution Details
-    ///
-    /// This method retrieves the status of a specified transaction. It provides information on
-    /// whether the transaction is still in the mempool, has been executed, or dropped from the
-    /// mempool. The status includes both finality status and execution status of the
-    /// transaction.
-    ///
-    /// ### Arguments
-    ///
-    /// * `transaction_hash` - The hash of the transaction for which the status is requested.
-    ///
-    /// ### Returns
-    ///
-    /// * `transaction_status` - An object containing the transaction status details:
-    ///   - `finality_status`: The finality status of the transaction, indicating whether it is
-    ///     confirmed, pending, or rejected.
-    ///   - `execution_status`: The execution status of the transaction, providing details on the
-    ///     execution outcome if the transaction has been processed.
-    fn get_transaction_status(&self, transaction_hash: FieldElement) -> RpcResult<TransactionStatus> {
-        let substrate_block_hash = self
-            .backend
-            .mapping()
-            .block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
-            .map_err(|e| {
-                error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
-                StarknetRpcApiError::TxnHashNotFound
-            })?
-            .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)?;
-
-        let chain_id = self.chain_id()?.0.into();
-
-        let starknet_tx =
-            if let Some(tx_hashes) = self.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into()) {
-                tx_hashes
-                    .into_iter()
-                    .zip(starknet_block.transactions())
-                    .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
-                    .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash))
-            } else {
-                starknet_block
-                    .transactions()
-                    .iter()
-                    .find(|tx| {
-                        tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0
-                            == transaction_hash
-                    })
-                    .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
-            };
-
-        let execution_status = {
-            let revert_error = self
-                .client
-                .runtime_api()
-                .get_tx_execution_outcome(substrate_block_hash, Felt252Wrapper(transaction_hash).into())
-                .map_err(|e| {
-                    error!(
-                        "Failed to get transaction execution outcome. Substrate block hash: {substrate_block_hash}, \
-                         transaction hash: {transaction_hash}, error: {e}"
-                    );
-                    StarknetRpcApiError::InternalServerError
-                })?;
-
-            if revert_error.is_none() {
-                TransactionExecutionStatus::Succeeded
-            } else {
-                TransactionExecutionStatus::Reverted
-            }
-        };
-
-        Ok(TransactionStatus { finality_status: TransactionFinalityStatus::AcceptedOnL2, execution_status })
-    }
-
-    /// Get the value of the storage at the given address and key.
-    ///
-    /// This function retrieves the value stored in a specified contract's storage, identified by a
-    /// contract address and a storage key, within a specified block in the current network.
-    ///
-    /// ### Arguments
-    ///
-    /// * `contract_address` - The address of the contract to read from. This parameter identifies
-    ///   the contract whose storage is being queried.
-    /// * `key` - The key to the storage value for the given contract. This parameter specifies the
-    ///   particular storage slot to be queried.
-    /// * `block_id` - The hash of the requested block, or number (height) of the requested block,
-    ///   or a block tag. This parameter defines the state of the blockchain at which the storage
-    ///   value is to be read.
-    ///
-    /// ### Returns
-    ///
-    /// Returns the value at the given key for the given contract, represented as a `FieldElement`.
-    /// If no value is found at the specified storage key, returns 0.
-    ///
-    /// ### Errors
-    ///
-    /// This function may return errors in the following cases:
-    ///
-    /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
-    /// * `CONTRACT_NOT_FOUND` - If the specified contract does not exist or is not deployed at the
-    ///   given `contract_address` in the specified block.
-    /// * `STORAGE_KEY_NOT_FOUND` - If the specified storage key does not exist within the given
-    ///   contract.
-    fn get_storage_at(&self, contract_address: FieldElement, key: FieldElement, block_id: BlockId) -> RpcResult<Felt> {
-        let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-            error!("'{e}'");
-            StarknetRpcApiError::BlockNotFound
-        })?;
-
-        let contract_address = Felt252Wrapper(contract_address).into();
-        let key = Felt252Wrapper(key).into();
-
-        let value = self
-            .overrides
-            .for_block_hash(self.client.as_ref(), substrate_block_hash)
-            .get_storage_by_storage_key(substrate_block_hash, contract_address, key)
-            .ok_or_else(|| {
-                error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}'");
-                StarknetRpcApiError::ContractNotFound
-            })?;
-
-        Ok(Felt(Felt252Wrapper::from(value).into()))
-    }
-
-    /// Call a Function in a Contract Without Creating a Transaction
-    ///
-    /// ### Arguments
-    ///
-    /// * `request` - The details of the function call to be made. This includes information such as
-    ///   the contract address, function signature, and arguments.
-    /// * `block_id` - The identifier of the block used to reference the state or call the
-    ///   transaction on. This can be the hash of the block, its number (height), or a specific
-    ///   block tag.
-    ///
-    /// ### Returns
-    ///
-    /// * `result` - The function's return value, as defined in the Cairo output. This is an array
-    ///   of field elements (`Felt`).
-    ///
-    /// ### Errors
-    ///
-    /// This method may return the following errors:
-    /// * `CONTRACT_NOT_FOUND` - If the specified contract address does not exist.
-    /// * `CONTRACT_ERROR` - If there is an error with the contract or the function call.
-    /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
-    fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<String>> {
-        let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-            error!("'{e}'");
-            StarknetRpcApiError::BlockNotFound
-        })?;
-
-        let runtime_api = self.client.runtime_api();
-
-        let calldata = Calldata(Arc::new(request.calldata.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()));
-
-        let result = runtime_api
-            .call(
-                substrate_block_hash,
-                Felt252Wrapper(request.contract_address).into(),
-                Felt252Wrapper(request.entry_point_selector).into(),
-                calldata,
-            )
-            .map_err(|e| {
-                error!("Request parameters error: {e}");
-                StarknetRpcApiError::InternalServerError
-            })?;
-
-        let result = convert_error(self.client.clone(), substrate_block_hash, result)?;
-
-        Ok(result.iter().map(|x| format!("{:#x}", x.0)).collect())
-    }
-
     /// Get the Contract Class Definition at a Given Address in a Specific Block
     ///
     /// ### Arguments
@@ -1298,24 +1044,5 @@ where
                 get_transaction_receipt_pending(self, chain_id, substrate_block_hash, transaction_hash)
             }
         }
-    }
-}
-
-fn convert_error<C, B, T>(
-    client: Arc<C>,
-    best_block_hash: <B as BlockT>::Hash,
-    call_result: Result<T, DispatchError>,
-) -> Result<T, StarknetRpcApiError>
-where
-    B: BlockT,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-{
-    match call_result {
-        Ok(val) => Ok(val),
-        Err(e) => match client.runtime_api().convert_error(best_block_hash, e) {
-            Ok(starknet_error) => Err(starknet_error.into()),
-            Err(_) => Err(StarknetRpcApiError::InternalServerError),
-        },
     }
 }
