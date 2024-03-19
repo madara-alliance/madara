@@ -15,14 +15,12 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 # Madara primitives
 mp-block = { workspace = true }
-mp-chain-id = { workspace = true }
 mp-contract = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-fee = { workspace = true }
 mp-felt = { workspace = true, features = ["parity-scale-codec", "serde"] }
 mp-genesis-config = { workspace = true, default-features = false }
 mp-hashers = { workspace = true }
-mp-program-hash = { workspace = true }
 mp-sequencer-address = { workspace = true, features = ["parity-scale-codec"] }
 mp-simulations = { workspace = true, features = [
   "parity-scale-codec",
@@ -48,8 +46,6 @@ starknet_api = { workspace = true, features = [
 frame-benchmarking = { workspace = true, optional = true }
 frame-support = { workspace = true }
 frame-system = { workspace = true }
-# Substrate Client
-sc-cli = { workspace = true, optional = true }
 # Substrate primitives
 sp-api = { workspace = true }
 sp-arithmetic = { workspace = true }
@@ -82,13 +78,8 @@ serde_with = { workspace = true }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
-hexlit = "0.5.5"
 lazy_static = "1.4.0"
-pallet-timestamp = { workspace = true }
-pretty_assertions = { workspace = true }
-project-root = "0.2.2"
 starknet-ff = { workspace = true }
-test-case = "3.1.0"
 
 [features]
 default = ["std"]
@@ -98,8 +89,6 @@ std = [
   "frame-benchmarking?/std",
   "frame-support/std",
   "frame-system/std",
-  "pallet-timestamp/std",
-  "sc-cli",
   "scale-info/std",
   "sp-inherents/std",
   "sp-io/std",

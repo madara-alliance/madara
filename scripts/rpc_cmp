@@ -114,12 +114,34 @@ get_storage_at(){
     ]" > "$output"
 }
 
+get_transaction_receipt(){
+    local provider=$1
+    local transaction=$2
+    local output=$3
+
+    rpc_call "$provider" "starknet_getTransactionReceipt" "[
+        \"$transaction\",
+    ]" > "$output"
+}
+
 get_block_with_tx(){
     local provider=$1
     local block_number=$2
     local output=$3
 
     rpc_call "$provider" "starknet_getBlockWithTxs" "[
+        {
+            \"block_number\": $block_number
+        }
+    ]" > "$output"
+}
+
+get_block_with_tx_hashes(){
+    local provider=$1
+    local block_number=$2
+    local output=$3
+
+    rpc_call "$provider" "starknet_getBlockWithTxHashes" "[
         {
             \"block_number\": $block_number
         }
@@ -165,11 +187,23 @@ case $COMMAND in
         get_class_hash_at "$PROVIDER_DEOXYS" "$1" "$2" "$OUTPUT_DEOXYS"
         get_class_hash_at "$PROVIDER_PATHFINDER" "$1" "$2" "$OUTPUT_PATHFINDER"
         ;;
+    getTransactionReceipt)
+        echo "🧪 Testing starknet_getTransactionReceipt"
+        validate_args $# 1
+        get_transaction_receipt "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
+        get_transaction_receipt "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
+        ;;
     getBlockWithTxs)
         echo "🧪 Testing starknet_getBlockWithTxs"
         validate_args $# 1
         get_block_with_tx "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
         get_block_with_tx "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
+        ;;
+    getBlockWithTxHashes)
+        echo "🧪 Testing starknet_getBlockWithTxHashes"
+        validate_args $# 1
+        get_block_with_tx_hashes "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
+        get_block_with_tx_hashes "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
         ;;
     *)
         echo "Invalid argument: $COMMAND"

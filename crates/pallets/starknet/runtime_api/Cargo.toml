@@ -27,7 +27,6 @@ blockifier = { workspace = true, features = [
   "scale-info",
 ] }
 hashbrown = { workspace = true }
-starknet-core = { workspace = true }
 starknet_api = { workspace = true, features = [
   "parity-scale-codec",
   "scale-info",
@@ -53,6 +52,5 @@ std = [
   "sp-api/std",
   "sp-arithmetic/std",
   "sp-runtime/std",
-  "starknet-core/std",
   "starknet_api/std",
 ]

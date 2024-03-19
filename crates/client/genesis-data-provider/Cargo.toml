@@ -10,7 +10,5 @@ anyhow = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true }
 log = { workspace = true, default-features = true }
 mp-genesis-config = { workspace = true, default-features = true }
-pallet-starknet = { workspace = true, default-features = true }
-serde = { workspace = true, default-features = true }
 serde_json = { workspace = true, default-features = true }
 thiserror = { workspace = true }

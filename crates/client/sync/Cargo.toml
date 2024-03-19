@@ -22,30 +22,23 @@ ethers = { workspace = true }
 lazy_static = "1.4.0"
 reqwest = "0.11"
 serde_json = "1"
-tokio-tungstenite = "0.20.1"
 
 
 blockifier = { workspace = true, default-features = false, features = [
   "testing",
 ] }
-crossbeam-skiplist = { workspace = true }
-env_logger = "0.10.0"
 futures = { workspace = true, default-features = true }
 hex = "0.4"
 indexmap = { workspace = true }
 itertools = { workspace = true }
 log = { version = "0.4.14" }
-mockito = { workspace = true }
-primitive-types = { version = "0.12.2" }
+primitive-types = { workspace = true }
 rand = { version = "0.8.5" }
 rodio = { version = "0.17", optional = true }
 serde = { workspace = true, default-features = true }
 tokio = { workspace = true, features = ["macros", "parking_lot", "test-util"] }
 url = { workspace = true }
-validator = { workspace = true, features = ["derive"] }
 
-madara-runtime = { workspace = true }
-parity-scale-codec = { workspace = true, features = ["derive"] }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true, default-features = false, features = [
   "alloc",
@@ -55,8 +48,6 @@ starknet-providers = { workspace = true }
 starknet_api = { workspace = true, default-features = false }
 
 sc-consensus-manual-seal.workspace = true
-sc-executor = { workspace = true }
-sc-service = { workspace = true }
 sp-blockchain = { workspace = true, default-features = true }
 sp-core = { workspace = true, features = ["std"] }
 sp-runtime = { workspace = true }
@@ -64,7 +55,6 @@ sp-runtime = { workspace = true }
 bitvec = "1.0.1"
 bonsai-trie = { workspace = true }
 mc-db = { workspace = true }
-mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
 mp-block = { workspace = true }
 mp-contract = { workspace = true }
@@ -77,6 +67,7 @@ starknet-types-core = { workspace = true, default-features = false, features = [
   "hash",
   "parity-scale-codec",
 ] }
+thiserror.workspace = true
 
 [dev-dependencies]
 # test_utils = { path = "./test_utils" }

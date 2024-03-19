@@ -25,8 +25,8 @@ pub async fn reorg(block: StarknetBlock) -> bool {
             new_lsbh = get_highest_block_hash_and_number().0;
         }
         // 3. Revert the state commitment tries to the correct block number
-        return true;
+        true
     } else {
-        return false;
+        false
     }
 }

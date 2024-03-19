@@ -46,6 +46,7 @@ pub mod starknet_sync_worker {
                 fetch_config.clone(),
                 first_block,
                 backend.bonsai_contract(),
+                backend.bonsai_contract_storage(),
                 backend.bonsai_class(),
                 client,
             )

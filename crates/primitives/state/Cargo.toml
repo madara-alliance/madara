@@ -12,7 +12,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 blockifier = { workspace = true }
-mp-felt = { workspace = true }
 starknet_api = { workspace = true }
 
 # Optional dependencies
@@ -24,7 +23,6 @@ serde_with = { workspace = true, optional = true }
 [features]
 default = ["std"]
 std = [
-  "mp-felt/std",
   "starknet_api/std",
   "blockifier/std",
   "serde?/std",
@@ -35,7 +33,6 @@ std = [
 parity-scale-codec = [
   "dep:parity-scale-codec",
   "starknet_api/parity-scale-codec",
-  "mp-felt/parity-scale-codec",
 ]
-serde = ["dep:serde", "dep:serde_with", "mp-felt/serde"]
-scale-info = ["dep:scale-info", "starknet_api/scale-info", "mp-felt/scale-info"]
+serde = ["dep:serde", "dep:serde_with"]
+scale-info = ["dep:scale-info", "starknet_api/scale-info"]
