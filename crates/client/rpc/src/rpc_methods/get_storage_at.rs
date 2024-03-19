@@ -1,22 +1,24 @@
 use jsonrpsee::core::{async_trait, RpcResult};
-use mc_genesis_data_provider::GenesisProvider;
-use crate::errors::StarknetRpcApiError;
-use mp_felt::Felt252Wrapper;
 use log::error;
+use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 use mc_rpc_core::GetStroageAtServer;
-pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+pub use mc_rpc_core::{
+    BlockNumberServer, Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
+};
+use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sc_transaction_pool_api::TransactionPool;
 use sc_transaction_pool::ChainApi;
+use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_core::types::{FieldElement, BlockId};
 use sp_runtime::traits::Block as BlockT;
-pub use mc_rpc_core::BlockNumberServer;
+use starknet_core::types::{BlockId, FieldElement};
+
+use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
 #[async_trait]
@@ -82,5 +84,4 @@ where
 
         Ok(Felt(Felt252Wrapper::from(value).into()))
     }
-
 }

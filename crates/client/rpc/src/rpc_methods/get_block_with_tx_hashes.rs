@@ -2,7 +2,7 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-use mc_rpc_core::GetBlockTransactionCountServer;
+use mc_rpc_core::GetBlockWithTxHashesServer;
 pub use mc_rpc_core::{
     BlockNumberServer, Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
 };
@@ -15,14 +15,14 @@ use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
-use starknet_core::types::BlockId;
+use starknet_core::types::{BlockId, BlockTag, MaybePendingBlockWithTxHashes};
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
+use crate::{get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, Starknet};
 
 #[async_trait]
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> GetBlockTransactionCountServer for Starknet<A, B, BE, G, C, P, H>
+impl<A, B, BE, G, C, P, H> GetBlockWithTxHashesServer for Starknet<A, B, BE, G, C, P, H>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,
@@ -34,29 +34,28 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    /// Get the Number of Transactions in a Given Block
+    /// Get block information with transaction hashes given the block id.
     ///
     /// ### Arguments
     ///
-    /// * `block_id` - The identifier of the requested block. This can be the hash of the block, the
-    ///   block's number (height), or a specific block tag.
+    /// * `block_id` - The hash of the requested block, or number (height) of the requested block,
+    ///   or a block tag.
     ///
     /// ### Returns
     ///
-    /// * `transaction_count` - The number of transactions in the specified block.
-    ///
-    /// ### Errors
-    ///
-    /// This function may return a `BLOCK_NOT_FOUND` error if the specified block does not exist in
-    /// the blockchain.
-    fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128> {
+    /// Returns block information with transaction hashes. This includes either a confirmed block or
+    /// a pending block with transaction hashes, depending on the state of the requested block.
+    /// In case the block is not found, returns a `StarknetRpcApiError` with `BlockNotFound`.
+    fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes> {
+        let chain_id = self.chain_id()?;
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
 
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)?;
-
-        Ok(starknet_block.header().transaction_count)
+        match block_id {
+            BlockId::Tag(BlockTag::Pending) => get_block_with_tx_hashes_pending::<H>(chain_id),
+            _ => get_block_with_tx_hashes_finalized(self, chain_id, substrate_block_hash),
+        }
     }
 }

@@ -54,7 +54,6 @@ pub trait StarknetWriteRpcApi {
     ) -> RpcResult<DeclareTransactionResult>;
 }
 
-
 #[rpc(server, namespace = "starknet")]
 pub trait BlockNumber {
     /// Get the most recent accepted block number
@@ -102,30 +101,46 @@ pub trait Call {
     #[method(name = "call")]
     fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<String>>;
 }
-/// Starknet read rpc interface.
+
 #[rpc(server, namespace = "starknet")]
-pub trait StarknetReadRpcApi {
+pub trait GetClassAt {
     /// Get the contract class at a given contract address for a given block id
     #[method(name = "getClassAt")]
     fn get_class_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<ContractClass>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait GetClassHashAt {
     /// Get the contract class hash in the given block for the contract deployed at the given
     /// address
     #[method(name = "getClassHashAt")]
     fn get_class_hash_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait Syncing {
     /// Get an object about the sync status, or false if the node is not syncing
     #[method(name = "syncing")]
     async fn syncing(&self) -> RpcResult<SyncStatusType>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait GetClass {
     /// Get the contract class definition in the given block associated with the given hash
     #[method(name = "getClass")]
     fn get_class(&self, block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait GetBlockWithTxHashes {
     /// Get block information with transaction hashes given the block id
     #[method(name = "getBlockWithTxHashes")]
     fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes>;
+}
 
+/// Starknet read rpc interface.
+#[rpc(server, namespace = "starknet")]
+pub trait StarknetReadRpcApi {
     /// Get the nonce associated with the given address at the given block
     #[method(name = "getNonce")]
     fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt>;
