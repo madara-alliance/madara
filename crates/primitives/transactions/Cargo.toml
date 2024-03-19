@@ -13,7 +13,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 blockifier = { workspace = true }
 derive_more = { workspace = true, features = ["from"] }
-frame-support = { workspace = true }
 lazy_static = { workspace = true }
 log = { workspace = true }
 mp-fee = { workspace = true }
@@ -44,7 +43,7 @@ scale-info = { workspace = true, features = ["derive"], optional = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 
 [dev-dependencies]
-assert_matches = "1.5.0"
+assert_matches = { workspace = true }
 
 [features]
 default = ["std"]

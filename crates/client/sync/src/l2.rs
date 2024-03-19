@@ -69,7 +69,7 @@ lazy_static! {
 
 lazy_static! {
     /// Shared latest block number and hash of chain, using a RwLock to allow for concurrent reads and exclusive writes
-    static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: RwLock<(FieldElement, u64)> = RwLock::new((FieldElement::default(), 0));
+    pub static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: RwLock<(FieldElement, u64)> = RwLock::new((FieldElement::default(), 0));
 }
 
 lazy_static! {
