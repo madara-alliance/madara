@@ -77,8 +77,8 @@ serde_json = { workspace = true }
 serde_with = { workspace = true }
 
 [dev-dependencies]
-assert_matches = "1.5.0"
-lazy_static = "1.4.0"
+assert_matches = { workspace = true }
+lazy_static = { workspace = true }
 starknet-ff = { workspace = true }
 
 [features]

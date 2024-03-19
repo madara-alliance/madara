@@ -200,6 +200,9 @@ substrate-test-runtime-client = { git = "https://github.com/massalabs/polkadot-s
 prometheus-endpoint = { package = "substrate-prometheus-endpoint", version = "0.10.0-dev", git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 substrate-build-script-utils = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 substrate-wasm-builder = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
+parity-scale-codec = { version = "3.2.2", default-features = false, features = [
+  "std",
+] }
 
 # Substrate Frame pallet
 pallet-aura = { default-features = true, git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
@@ -243,7 +246,7 @@ mc-mapping-sync = { path = "crates/client/mapping-sync" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-rpc-core = { path = "crates/client/rpc-core" }
 mc-storage = { path = "crates/client/storage" }
-mc-deoxys = { path = "crates/client/deoxys" }
+mc-sync = { path = "crates/client/sync" }
 
 # Madara runtime
 madara-runtime = { path = "crates/runtime" }
@@ -294,61 +297,27 @@ cairo-lang-utils = { git = "https://github.com/keep-starknet-strange/cairo.git",
 # Ethers: using the same versions as in Anvil
 ethers = { git = "https://github.com/gakonst/ethers-rs" }
 
-# Zaun
-starknet-core-contract-client = { git = "https://github.com/keep-starknet-strange/zaun" }
-zaun-sandbox = { git = "https://github.com/keep-starknet-strange/zaun", package = "sandbox" }
-
 # Other third party dependencies
 anyhow = "1.0.75"
 assert = "0.0.4"
 assert_matches = "1.5.0"
-async-lock = "3.1.0"
-async-stream = "0.3.3"
 async-trait = "0.1.74"
-axum = "0.6.12"
-base64 = "0.13.0"
-bitvec = { version = "1", default-features = false, features = ["std"] }
-byteorder = "1.4.3"
-camelpaste = "0.1.0"
-chrono = "0.4.26"
+bitvec = { version = "1.0.1", default-features = false, features = ["std"] }
 clap = { version = "4.4.8", default-features = false, features = ["std"] }
-const_format = "0.2.30"
 derive_more = { version = "0.99.17", default-features = false }
-enum-iterator = "1.4.1"
 flate2 = "1.0.28"
 futures = { version = "0.3.29", default-features = false, features = ["std"] }
-futures-channel = "0.3.21"
 futures-timer = { version = "3.0.2", default-features = false }
-futures-util = "0.3.21"
 hashbrown = "0.14.2"
 hex = { version = "0.4.3", default-features = false, features = ["std"] }
-http = "0.2.8"
-hyper = "0.14"
 indexmap = { git = "https://github.com/bluss/indexmap", rev = "ca5f848e10c31e80aeaad0720d14aa2f6dd6cfb1", default-features = false, features = [
   "std",
 ] }
-insta = "1.29.0"
-integer-encoding = "3.0.4"
 itertools = "0.12.1"
 jsonrpsee = { version = "0.16.3", default-features = false }
-jsonschema = "0.17.0"
 lazy_static = { version = "1.4.0", default-features = false }
-libmdbx = "0.3.5"
-mc-sync = { path = "crates/client/sync" }
-linked-hash-map = { version = "0.5.6", default-features = false, features = [
-  "std",
-] }
 log = { version = "0.4.20", default-features = false, features = ["std"] }
-metrics = "0.21.0"
-mockall = "0.11.2"
-mockito = "0.31.0"
 num-bigint = "0.4.4"
-num-traits = "0.2.17"
-once_cell = "1.17.1"
-openssl = { version = "0.10", features = ["vendored"] }
-parity-scale-codec = { version = "3.2.2", default-features = false, features = [
-  "std",
-] }
 phf = { version = "0.11", default-features = false, features = ["std"] }
 pretty_assertions = "1.4.0"
 primitive-types = "0.12.2"
