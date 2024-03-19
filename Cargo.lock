@@ -6514,21 +6514,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mp-snos-output"
-version = "0.1.0"
-dependencies = [
- "assert_matches",
- "hex",
- "mp-messages",
- "mp-transactions",
- "parity-scale-codec",
- "pretty_assertions",
- "scale-info",
- "sp-core",
- "starknet_api",
-]
-
-[[package]]
 name = "mp-state"
 version = "0.1.0"
 dependencies = [
@@ -7310,7 +7295,6 @@ dependencies = [
  "mp-program-hash",
  "mp-sequencer-address",
  "mp-simulations",
- "mp-snos-output",
  "mp-state",
  "mp-storage",
  "mp-transactions",
@@ -7347,7 +7331,6 @@ dependencies = [
  "mp-contract",
  "mp-felt",
  "mp-simulations",
- "mp-snos-output",
  "mp-transactions",
  "parity-scale-codec",
  "scale-info",
