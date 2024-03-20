@@ -172,20 +172,23 @@ pub struct ExtendedRunCmd {
 pub fn run_node(mut cli: Cli) -> Result<()> {
     #[cfg(feature = "tui")]
     {
+        modify_substrate_sources();
         if cli.run.tui {
             std::thread::spawn(move || {
                 tokio::runtime::Runtime::new()
                     .unwrap()
                     .block_on(async { deoxys_tui::run("/tmp/deoxys").await.unwrap() });
-                std::process::exit(1)
+                std::process::exit(0)
             });
         }
+        //std::thread::sleep(Duration::from_secs(5));
     }
     if cli.run.base.shared_params.dev {
         override_dev_environment(&mut cli.run);
     } else if cli.run.deoxys {
         deoxys_environment(&mut cli.run);
     }
+
     let runner = cli.create_runner(&cli.run.base)?;
 
     // TODO: verify that the l1_endpoint is valid
