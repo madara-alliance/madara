@@ -22,3 +22,4 @@ pub mod get_transaction_status;
 pub mod spec_version;
 pub mod syncing;
 pub mod tools;
+pub mod trace;

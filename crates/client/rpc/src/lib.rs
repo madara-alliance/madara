@@ -7,7 +7,6 @@ mod errors;
 mod events;
 mod madara_backend_client;
 mod rpc_methods;
-mod trace_api;
 mod types;
 mod utils;
 
@@ -47,6 +46,7 @@ pub use rpc_methods::get_transaction_receipt::GetTransactionReceiptServer;
 pub use rpc_methods::get_transaction_status::GetTransactionStatusServer;
 pub use rpc_methods::spec_version::SpecVersionServer;
 pub use rpc_methods::syncing::SyncingServer;
+pub use rpc_methods::trace::simulate_transactions::SimulateTransactionsServer;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sc_network_sync::SyncingService;

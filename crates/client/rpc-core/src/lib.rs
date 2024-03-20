@@ -215,15 +215,9 @@ pub trait GetTransactionReceipt {
     ) -> RpcResult<MaybePendingTransactionReceipt>;
 }
 
-/// Starknet read rpc interface.
-// #[rpc(server, namespace = "starknet")]
-// pub trait StarknetReadRpcApi {
-
-// }
-
-/// Starknet trace rpc interface.
+/// Starknet trace rpc interface. 
 #[rpc(server, namespace = "starknet")]
-pub trait StarknetTraceRpcApi {
+pub trait SimulateTransactions {
     /// Returns the execution trace of a transaction by simulating it in the runtime.
     #[method(name = "simulateTransactions")]
     async fn simulate_transactions(
@@ -232,7 +226,10 @@ pub trait StarknetTraceRpcApi {
         transactions: Vec<BroadcastedTransaction>,
         simulation_flags: Vec<SimulationFlag>,
     ) -> RpcResult<Vec<SimulatedTransaction>>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait StarknetTraceRpcApi {
     #[method(name = "traceBlockTransactions")]
     /// Returns the execution traces of all transactions included in the given block
     async fn trace_block_transactions(&self, block_id: BlockId) -> RpcResult<Vec<TransactionTraceWithHash>>;
