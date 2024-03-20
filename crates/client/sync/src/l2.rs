@@ -98,6 +98,8 @@ pub struct FetchConfig {
     pub sound: bool,
     /// The L1 contract core address
     pub l1_core_address: H160,
+    /// Whether to check the root of the state update
+    pub verify: bool,
 }
 
 /// The configuration of the senders responsible for sending blocks and state
@@ -216,21 +218,25 @@ pub async fn sync<B, C>(
                 let block_hash = block_hash_substrate(client.as_ref(), block_n - 1);
 
                 let state_update = {
-                    let overrides = Arc::clone(overrides);
-                    let bonsai_contract = Arc::clone(bonsai_contract);
-                    let bonsai_contract_storage = Arc::clone(bonsai_contract_storage);
-                    let bonsai_class = Arc::clone(bonsai_class);
-                    let state_update = Arc::new(state_update);
-                    let state_update_1 = Arc::clone(&state_update);
+                    if fetch_config.verify {
+                        let overrides = Arc::clone(overrides);
+                        let bonsai_contract = Arc::clone(bonsai_contract);
+                        let bonsai_contract_storage = Arc::clone(bonsai_contract_storage);
+                        let bonsai_class = Arc::clone(bonsai_class);
+                        let state_update = Arc::new(state_update);
+                        let state_update_1 = Arc::clone(&state_update);
 
-                    tokio::task::spawn_blocking(move || {
-                        verify_l2(block_n, &state_update, &overrides, &bonsai_contract, &bonsai_contract_storage, &bonsai_class, block_hash)
-                            .expect("verifying block");
-                    })
-                    .await
-                    .expect("verification task panicked");
+                        tokio::task::spawn_blocking(move || {
+                            verify_l2(block_n, &state_update, &overrides, &bonsai_contract, &bonsai_contract_storage, &bonsai_class, block_hash)
+                                .expect("verifying block");
+                        })
+                        .await
+                        .expect("verification task panicked");
 
-                    Arc::try_unwrap(state_update_1).expect("arc should not be aliased")
+                        Arc::try_unwrap(state_update_1).expect("arc should not be aliased")
+                    } else {
+                        state_update
+                    }
                 };
 
                 tokio::join!(
