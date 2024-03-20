@@ -172,7 +172,7 @@ pub struct ExtendedRunCmd {
 pub fn run_node(mut cli: Cli) -> Result<()> {
     #[cfg(feature = "tui")]
     {
-        modify_substrate_sources();
+        deoxys_tui::modify_substrate_sources();
         if cli.run.tui {
             std::thread::spawn(move || {
                 tokio::runtime::Runtime::new()

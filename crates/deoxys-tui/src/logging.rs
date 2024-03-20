@@ -49,6 +49,7 @@ pub fn modify_substrate_sources() {
         .current_dir(crate_dir)
         .output()
         .expect("Failed to setup TUI");
+        println!("TUI configuration finished, you can now re-build Deoxys");
         std::process::exit(0);
     }
 }
