@@ -28,7 +28,6 @@ starknet_api = { workspace = true }
 
 # Optionals
 anyhow = { workspace = true, optional = true }
-mp-convert = { workspace = true, optional = true }
 parity-scale-codec = { workspace = true, features = [
   "derive",
 ], optional = true }
@@ -66,7 +65,6 @@ std = [
   "starknet_api/std",
   # Optionals
   "anyhow",
-  "mp-convert/std",
   "parity-scale-codec?/std",
   "scale-info?/std",
   "starknet-providers",

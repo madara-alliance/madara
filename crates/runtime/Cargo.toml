@@ -32,7 +32,6 @@ sp-version = { workspace = true }
 frame-executive = { workspace = true }
 frame-support = { workspace = true }
 frame-system = { workspace = true }
-frame-try-runtime = { workspace = true, optional = true }
 pallet-aura = { workspace = true }
 pallet-grandpa = { workspace = true }
 pallet-timestamp = { workspace = true }
@@ -68,9 +67,6 @@ starknet-core = { workspace = true }
 starknet-ff = { workspace = true }
 starknet_api = { workspace = true }
 
-[build-dependencies]
-substrate-wasm-builder = { workspace = true }
-
 [features]
 default = ["std"]
 disable-transaction-fee = []
@@ -96,8 +92,6 @@ std = [
   "frame-system-benchmarking?/std",
   "frame-system-rpc-runtime-api/std",
   "frame-system/std",
-  "frame-try-runtime/std",
-  "frame-try-runtime?/std",
   # Frame pallets dependencies
   "pallet-aura/std",
   "pallet-grandpa/std",
@@ -124,7 +118,6 @@ try-runtime = [
   "frame-executive/try-runtime",
   "frame-support/try-runtime",
   "frame-system/try-runtime",
-  "frame-try-runtime/try-runtime",
   "pallet-aura/try-runtime",
   "pallet-grandpa/try-runtime",
   "pallet-timestamp/try-runtime",
