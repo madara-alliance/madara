@@ -101,8 +101,6 @@ parity-scale-codec = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true }
 url = { workspace = true }
 deoxys-tui = { optional = true, path = "../deoxys-tui" }
-tracing-subscriber.workspace = true
-tracing.workspace = true
 
 [build-dependencies]
 substrate-build-script-utils = { workspace = true }
