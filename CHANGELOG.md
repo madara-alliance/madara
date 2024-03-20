@@ -3,6 +3,10 @@ git # Deoxys Changelog
 ## Next release
 
 - feat: add an optional TUI dashboard
+- feat(self-hosted): host our own runner
+- fix(deps): Removed unused dependencies
+- feat(multi-trie): Added support for persistent storage tries
+- feat(pending): added support for pending blocks in RPC requests
 - perf(l2 sync): parallel fetching of blocks, classes, state updates
 - fix l1 thread to reflect correct state_root, block_number, block_hash
 - fix: remove gas_price and update starknet-rs from fork (temporary fix)

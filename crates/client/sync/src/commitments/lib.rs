@@ -29,10 +29,11 @@ use starknet_types_core::hash::{Pedersen, Poseidon};
 use tokio::join;
 
 use super::classes::calculate_class_commitment_leaf_hash;
-use super::contracts::{update_storage_trie, ContractLeafParams};
+use super::contracts::{identifier, update_storage_trie, ContractLeafParams};
 use super::events::memory_event_commitment;
 use super::transactions::memory_transaction_commitment;
 use crate::commitments::contracts::calculate_contract_state_leaf_hash;
+use crate::utils::constant::bonsai_identifier;
 
 /// Calculate the transaction and event commitment.
 ///
@@ -166,14 +167,21 @@ pub fn update_state_root<B: BlockT>(
     csd: CommitmentStateDiff,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_contract_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
     block_number: u64,
     substrate_block_hash: Option<H256>,
 ) -> Felt252Wrapper {
     // Update contract and its storage tries
-    let contract_trie_root =
-        contract_trie_root(&csd, overrides, bonsai_contract.lock().unwrap(), block_number, substrate_block_hash)
-            .expect("Failed to compute contract root");
+    let contract_trie_root = contract_trie_root(
+        &csd,
+        overrides,
+        bonsai_contract.lock().unwrap(),
+        bonsai_contract_storage,
+        block_number,
+        substrate_block_hash,
+    )
+    .expect("Failed to compute contract root");
 
     // Update class trie
     let class_trie_root =
@@ -198,29 +206,46 @@ fn contract_trie_root<B: BlockT>(
     csd: &CommitmentStateDiff,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     mut bonsai_contract: MutexGuard<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>,
+    bonsai_contract_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
     block_number: u64,
     maybe_block_hash: Option<H256>,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
-    for (contract_address, updates) in csd.storage_updates.iter() {
-        let class_commitment_leaf_hash =
-            contract_state_leaf_hash(csd, overrides.as_ref(), contract_address, updates, maybe_block_hash)?;
+    let identifier = bonsai_identifier::CONTRACT;
+    bonsai_contract.init_tree(identifier)?;
 
-        let key = key(contract_address.0.0);
-        bonsai_contract.insert(&key, &class_commitment_leaf_hash.into())?;
+    // First we insert the contract storage changes
+    // TODO: @cchudant parallelize this loop
+    for (contract_address, updates) in csd.storage_updates.iter() {
+        update_storage_trie(contract_address, updates, &bonsai_contract_storage);
+    }
+
+    // Then we commit them
+    bonsai_contract_storage.lock().unwrap().commit(BasicId::new(block_number))?;
+
+    // Then we compute the leaf hashes retrieving the corresponding storage root
+    // TODO: @cchudant parallelize this loop
+    for contract_address in csd.storage_updates.iter() {
+        let class_commitment_leaf_hash =
+            contract_state_leaf_hash(csd, &overrides, contract_address.0, maybe_block_hash, &bonsai_contract_storage)?;
+
+        let key = key(contract_address.0.0.0);
+        bonsai_contract.insert(identifier, &key, &class_commitment_leaf_hash.into())?;
     }
 
     bonsai_contract.commit(BasicId::new(block_number))?;
-    Ok(bonsai_contract.root_hash()?.into())
+    Ok(bonsai_contract.root_hash(identifier)?.into())
 }
 
-fn contract_state_leaf_hash(
+fn contract_state_leaf_hash<B: BlockT>(
     csd: &CommitmentStateDiff,
     overrides: &OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>,
     contract_address: &ContractAddress,
-    storage_updates: &IndexMap<StorageKey, StarkFelt>,
     maybe_block_hash: Option<H256>,
+    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
-    let storage_root = update_storage_trie(overrides, contract_address, storage_updates, maybe_block_hash)?;
+    let identifier = identifier(contract_address);
+    let storage_root =
+        bonsai_contract_storage.lock().unwrap().root_hash(identifier).expect("Failed to get root hash").into();
 
     let nonce =
         Felt252Wrapper::from(*csd.address_to_nonce.get(contract_address).unwrap_or(&Felt252Wrapper::ZERO.into()));
@@ -266,15 +291,19 @@ fn class_trie_root<B: BlockT>(
     mut bonsai_class: MutexGuard<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>,
     block_number: u64,
 ) -> Result<Felt252Wrapper, BonsaiStorageError<BonsaiDbError>> {
+    let identifier = bonsai_identifier::CLASS;
+    bonsai_class.init_tree(identifier)?;
+
+    // TODO: @cchudant parallelize this loop
     for (class_hash, compiled_class_hash) in csd.class_hash_to_compiled_class_hash.iter() {
         let class_commitment_leaf_hash =
             calculate_class_commitment_leaf_hash::<PoseidonHasher>(Felt252Wrapper::from(compiled_class_hash.0));
         let key = key(class_hash.0);
-        bonsai_class.insert(key.as_bitslice(), &class_commitment_leaf_hash.into())?;
+        bonsai_class.insert(identifier, key.as_bitslice(), &class_commitment_leaf_hash.into())?;
     }
 
     bonsai_class.commit(BasicId::new(block_number))?;
-    Ok(bonsai_class.root_hash()?.into())
+    Ok(bonsai_class.root_hash(identifier)?.into())
 }
 
 /// Compute the bonsai storage key
@@ -286,6 +315,6 @@ fn class_trie_root<B: BlockT>(
 /// # Returns
 ///
 /// Storage key
-fn key(felt: StarkFelt) -> BitVec<u8, Msb0> {
+pub fn key(felt: StarkFelt) -> BitVec<u8, Msb0> {
     felt.0.view_bits()[5..].to_owned()
 }

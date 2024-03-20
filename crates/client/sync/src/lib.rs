@@ -8,6 +8,7 @@
 pub mod commitments;
 pub mod l1;
 pub mod l2;
+pub mod reorgs;
 pub mod types;
 pub mod utils;
 
@@ -45,6 +46,7 @@ pub mod starknet_sync_worker {
                 fetch_config.clone(),
                 first_block,
                 backend.bonsai_contract(),
+                backend.bonsai_contract_storage(),
                 backend.bonsai_class(),
                 client,
             )

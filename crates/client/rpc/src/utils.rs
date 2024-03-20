@@ -1,6 +1,11 @@
 use blockifier::execution::entry_point::CallInfo;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
-use starknet_core::types::{Event, ExecutionResources, FieldElement, MsgToL1};
+use mc_sync::l1::ETHEREUM_STATE_UPDATE;
+use mp_felt::Felt252Wrapper;
+use mp_hashers::HasherT;
+use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
+use starknet_api::hash::StarkFelt;
+use starknet_core::types::{BlockStatus, Event, ExecutionResources, FieldElement, MsgToL1, ResourcePrice, Transaction};
 
 pub fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> {
     let address = call_info.call.storage_address;
@@ -105,4 +110,58 @@ pub fn blockifier_to_starknet_rs_ordered_events(
                 .collect(),
         })
         .collect()
+}
+
+pub(crate) fn tx_hash_retrieve(tx_hashes: Vec<StarkFelt>) -> Vec<FieldElement> {
+    let mut v = Vec::with_capacity(tx_hashes.len());
+    for tx_hash in tx_hashes {
+        v.push(FieldElement::from(Felt252Wrapper::from(tx_hash)));
+    }
+    v
+}
+
+pub(crate) fn tx_hash_compute<H>(block: &mp_block::Block, chain_id: Felt) -> Vec<FieldElement>
+where
+    H: HasherT + Send + Sync + 'static,
+{
+    block
+        .transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number))
+        .map(FieldElement::from)
+        .collect()
+}
+
+pub(crate) fn tx_conv(txs: &[mp_transactions::Transaction], tx_hashes: Vec<FieldElement>) -> Vec<Transaction> {
+    txs.iter().zip(tx_hashes).map(|(tx, hash)| to_starknet_core_tx(tx.clone(), hash)).collect()
+}
+
+pub(crate) fn status(block_number: u64) -> BlockStatus {
+    if block_number <= ETHEREUM_STATE_UPDATE.lock().unwrap().block_number {
+        BlockStatus::AcceptedOnL1
+    } else {
+        BlockStatus::AcceptedOnL2
+    }
+}
+
+pub(crate) fn parent_hash(block: &mp_block::Block) -> FieldElement {
+    Felt252Wrapper::from(block.header().parent_block_hash).into()
+}
+
+pub(crate) fn new_root(block: &mp_block::Block) -> FieldElement {
+    Felt252Wrapper::from(block.header().global_state_root).into()
+}
+
+pub(crate) fn timestamp(block: &mp_block::Block) -> u64 {
+    block.header().block_timestamp
+}
+
+pub(crate) fn sequencer_address(block: &mp_block::Block) -> FieldElement {
+    Felt252Wrapper::from(block.header().sequencer_address).into()
+}
+
+pub(crate) fn l1_gas_price(block: &mp_block::Block) -> ResourcePrice {
+    block.header().l1_gas_price.into()
+}
+
+pub(crate) fn starknet_version(block: &mp_block::Block) -> String {
+    block.header().protocol_version.from_utf8().expect("starknet version should be a valid utf8 string")
 }
