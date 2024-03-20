@@ -20,11 +20,6 @@ jobs:
           target: wasm32-unknown-unknown
           profile: minimal
 
-      - name: Setup check deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler libasound2-dev
-
       - name: Check the project
         run: |
           cargo check --release --workspace
