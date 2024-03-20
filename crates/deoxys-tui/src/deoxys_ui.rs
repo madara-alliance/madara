@@ -8,9 +8,12 @@ use ratatui::prelude::{CrosstermBackend, Terminal};
 use tokio::sync::mpsc;
 
 use crate::app::App;
+use crate::logging::set_subscriber;
 use crate::ui::render;
 
-pub async fn run(storage_path: &str, logs_rx: mpsc::Receiver<String>) -> Result<()> {
+pub async fn run(storage_path: &str) -> Result<()> {
+    let (logs_tx, logs_rx) = mpsc::channel::<String>(1);
+    set_subscriber(logs_tx);
     let mut t = Terminal::new(CrosstermBackend::new(std::io::stdout()))?;
     let mut app = App::new(storage_path, logs_rx).unwrap();
 

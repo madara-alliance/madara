@@ -45,8 +45,5 @@ fn _render_nolog_error(frame: &mut Frame, area: Rect, message: &str) {
             .borders(Borders::ALL)
             .border_style(Style::new().red()),
     );
-    frame.render_widget(
-        bad_popup.style(Style::new().yellow().add_modifier(Modifier::RAPID_BLINK)),
-        area,
-    );
+    frame.render_widget(bad_popup.style(Style::new().yellow().add_modifier(Modifier::RAPID_BLINK)), area);
 }

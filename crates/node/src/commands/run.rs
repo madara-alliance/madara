@@ -10,9 +10,6 @@ use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use serde::{Deserialize, Serialize};
 use sp_core::H160;
 
-#[cfg(feature = "tui")]
-use tokio::sync::mpsc as tmpsc;
-
 use crate::cli::Cli;
 use crate::service;
 
@@ -176,16 +173,14 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
     #[cfg(feature = "tui")]
     {
         if cli.run.tui {
-            std::env::set_var("RUST_LOG", "OFF");
-            let (_tx, rx) = tmpsc::channel::<String>(1);
             std::thread::spawn(move || {
                 tokio::runtime::Runtime::new()
                     .unwrap()
-                    .block_on(async { deoxys_tui::run("/tmp/deoxys", rx).await.unwrap() });
+                    .block_on(async { deoxys_tui::run("/tmp/deoxys").await.unwrap() });
                 std::process::exit(1)
             });
         }
-}
+    }
     if cli.run.base.shared_params.dev {
         override_dev_environment(&mut cli.run);
     } else if cli.run.deoxys {

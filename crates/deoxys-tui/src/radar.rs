@@ -3,6 +3,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{self, Duration, SystemTime};
 
+use chrono::prelude::*;
 use starknet::core::types::SyncStatusType;
 use starknet::providers::jsonrpc::{self, HttpTransport};
 use starknet::providers::{Provider, Url};
@@ -106,9 +107,30 @@ impl Radar {
     }
     pub fn get_logs(&mut self) -> (Option<String>, Option<String>) {
         if let Ok(raw) = self.logs_antenna.try_recv() {
-            if raw.starts_with('🔃') { (Some(raw), None) } else { (None, Some(raw)) }
+            let re = regex::Regex::new(r"\x1B\[[0-9;]*m").unwrap();
+            let readable = re.replace_all(&raw, "").to_string();
+            if readable.contains('🔄') {
+                (Some(format_log(&readable)), None)
+            } else {
+                (None, Some(format_log(&readable)))
+            }
         } else {
             (None, None)
         }
     }
+}
+
+fn format_log(log: &str) -> String {
+    let parts: Vec<&str> = log.split_whitespace().collect();
+
+    if let Ok(timestamp) = parts[0].parse::<DateTime<Utc>>() {
+        let formatted_timestamp = timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
+
+        let message: Vec<&str> = parts.into_iter().skip(3).filter(|&part| part != "log:").collect();
+        let message_str = message.join(" ");
+
+        return format!("{}: {}", formatted_timestamp, message_str);
+    }
+
+    log.to_string()
 }

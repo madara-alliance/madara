@@ -27,7 +27,7 @@ pub fn render_network_graph(frame: &mut Frame, app: &App, area: Rect) {
         .marker(Marker::Braille)
         .style(Style::default().fg(Color::LightRed))
         .data(&tx_serie);
-    let chart = Chart::new(vec![tx_dataset, rx_dataset])//.bg(Color::Rgb(0, 0, 15))
+    let chart = Chart::new(vec![tx_dataset, rx_dataset])
         .x_axis(Axis::default().title("t").style(Style::default().fg(Color::Gray)).labels(vec![]).bounds([0., 100.]))
         .y_axis(
             Axis::default()
