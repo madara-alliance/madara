@@ -109,13 +109,6 @@ pub mod static_keys {
     pub const LAST_SYNCED_L1_EVENT_BLOCK: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
 }
 
-/// The Bonsai databases backend
-#[derive(Clone)]
-pub struct BonsaiDbs<B: BlockT> {
-    pub contract: Arc<BonsaiDb<B>>,
-    pub class: Arc<BonsaiDb<B>>,
-}
-
 /// The Madara client database backend
 ///
 /// Contains five distinct databases: `meta`, `mapping`, `messaging`, `da` and `bonsai``.
@@ -131,9 +124,9 @@ pub struct Backend<B: BlockT> {
     messaging: Arc<MessagingDb>,
     sierra_classes: Arc<SierraClassesDb>,
     l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
-    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_contract_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
+    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_contract_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
 }
 
 /// Returns the Starknet database directory.
@@ -172,10 +165,9 @@ impl<B: BlockT> Backend<B> {
         let kvdb: Arc<dyn KeyValueDB> = db.0;
         let spdb: Arc<dyn Database<DbHash>> = db.1;
 
-        let contract = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Contract };
-        let contract_storage =
-            BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::ContractStorage };
-        let class = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class };
+        let contract = BonsaiDb { db: kvdb.clone(), current_column: TrieColumn::Contract };
+        let contract_storage = BonsaiDb { db: kvdb.clone(), current_column: TrieColumn::ContractStorage };
+        let class = BonsaiDb { db: kvdb.clone(), current_column: TrieColumn::Class };
         let config = BonsaiConfigs::new(contract, contract_storage, class);
 
         Ok(Self {
@@ -216,15 +208,15 @@ impl<B: BlockT> Backend<B> {
         &self.sierra_classes
     }
 
-    pub fn bonsai_contract(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>> {
+    pub fn bonsai_contract(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>> {
         &self.bonsai_contract
     }
 
-    pub fn bonsai_contract_storage(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>> {
+    pub fn bonsai_contract_storage(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>> {
         &self.bonsai_contract_storage
     }
 
-    pub fn bonsai_class(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>> {
+    pub fn bonsai_class(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>> {
         &self.bonsai_class
     }
 

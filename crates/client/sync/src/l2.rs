@@ -154,9 +154,9 @@ pub async fn sync<B, C>(
     mut sender_config: SenderConfig,
     fetch_config: FetchConfig,
     first_block: u64,
-    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
+    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
     client: Arc<C>,
 ) where
     B: BlockT,
@@ -464,13 +464,13 @@ pub fn update_l2(state_update: L2StateUpdate) {
 }
 
 /// Verify and update the L2 state according to the latest state update
-pub fn verify_l2<B: BlockT>(
+pub fn verify_l2(
     block_number: u64,
     state_update: &StateUpdate,
     overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
+    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
     substrate_block_hash: Option<H256>,
 ) -> Result<(), L2SyncError> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
