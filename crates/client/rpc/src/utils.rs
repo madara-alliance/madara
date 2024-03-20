@@ -1,5 +1,5 @@
 use blockifier::execution::entry_point::CallInfo;
-pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+pub use mc_rpc_core::{Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;

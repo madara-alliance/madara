@@ -2,9 +2,7 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 use mc_rpc_core::SyncingServer;
-pub use mc_rpc_core::{
-    BlockNumberServer, Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
-};
+pub use mc_rpc_core::{BlockNumberServer, Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mc_sync::l2::get_highest_block_hash_and_number;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};

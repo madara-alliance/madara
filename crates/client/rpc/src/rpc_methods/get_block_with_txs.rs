@@ -2,10 +2,8 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-use mc_rpc_core::GetBlockWithTxsServer;
-pub use mc_rpc_core::{
-    BlockNumberServer, Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
-};
+pub use mc_rpc_core::{Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer, GetBlockWithTxsServer};
+use mc_rpc_core::ChainIdServer;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -63,5 +61,5 @@ where
             BlockId::Tag(BlockTag::Pending) => get_block_with_txs_pending::<H>(chain_id),
             _ => get_block_with_txs_finalized(self, chain_id, substrate_block_hash),
         }
-    } 
+    }
 }

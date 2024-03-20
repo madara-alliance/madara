@@ -2,7 +2,8 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-pub use mc_rpc_core::{BlockHashAndNumberServer, Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+pub use mc_rpc_core::{ChainIdServer, Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+use mc_sync::utility::get_config;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -12,14 +13,13 @@ use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
-use starknet_core::types::{BlockHashAndNumber, FieldElement};
 
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
 #[async_trait]
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> BlockHashAndNumberServer for Starknet<A, B, BE, G, C, P, H>
+impl<A, B, BE, G, C, P, H> ChainIdServer for Starknet<A, B, BE, G, C, P, H>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,
@@ -31,7 +31,11 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    /// Get the Most Recent Accepted Block Hash and Number
+    /// Return the currently configured chain id.
+    ///
+    /// This function provides the chain id for the network that the node is connected to. The chain
+    /// id is a unique identifier that distinguishes between different networks, such as mainnet or
+    /// testnet.
     ///
     /// ### Arguments
     ///
@@ -39,18 +43,17 @@ where
     ///
     /// ### Returns
     ///
-    /// * `block_hash_and_number` - A tuple containing the latest block hash and number of the
-    ///   current network.
-    fn block_hash_and_number(&self) -> RpcResult<BlockHashAndNumber> {
-        let block_number = self.current_block_number()?;
-        let block_hash = self.current_block_hash().map_err(|e| {
-            error!("Failed to retrieve the current block hash: {}", e);
-            StarknetRpcApiError::NoBlocks
-        })?;
+    /// Returns the chain id this node is connected to. The chain id is returned as a specific type,
+    /// defined by the Starknet protocol, indicating the particular network.
+    fn chain_id(&self) -> RpcResult<Felt> {
+        let best_block_hash = self.client.info().best_hash;
+        let chain_id = get_config()
+            .map_err(|e| {
+                error!("Failed to get config: {e}");
+                StarknetRpcApiError::InternalServerError
+            })?
+            .chain_id;
 
-        Ok(BlockHashAndNumber {
-            block_hash: FieldElement::from_byte_slice_be(block_hash.as_bytes()).unwrap(),
-            block_number,
-        })
+        Ok(Felt(chain_id))
     }
 }

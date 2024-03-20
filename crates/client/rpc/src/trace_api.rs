@@ -8,7 +8,7 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
-use mc_rpc_core::{StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
+use mc_rpc_core::{ChainIdServer, StarknetTraceRpcApiServer};
 use mc_storage::StorageOverride;
 use mp_block::Block;
 use mp_felt::Felt252Wrapper;

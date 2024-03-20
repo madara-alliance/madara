@@ -1,10 +1,11 @@
 use blockifier::execution::contract_class::{ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf};
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::error::Error;
-use jsonrpsee::core::RpcResult;
+use jsonrpsee::core::{async_trait, RpcResult};
+use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
-use mc_rpc_core::Felt;
+use mc_rpc_core::{ChainIdServer, Felt, GetTransactionReceiptServer};
 use mc_sync::l2::get_pending_block;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -20,7 +21,7 @@ use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::api_core::ClassHash;
 use starknet_core::types::{
-    BlockId, DeclareTransactionReceipt, DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult,
+    BlockId, BlockTag, DeclareTransactionReceipt, DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult,
     FieldElement, Hash256, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MaybePendingTransactionReceipt,
     PendingDeclareTransactionReceipt, PendingDeployAccountTransactionReceipt, PendingInvokeTransactionReceipt,
     PendingL1HandlerTransactionReceipt, PendingTransactionReceipt, TransactionFinalityStatus, TransactionReceipt,
@@ -557,4 +558,72 @@ where
         })?;
 
     Ok(execution_infos)
+}
+
+#[async_trait]
+#[allow(unused_variables)]
+impl<A, B, BE, G, C, P, H> GetTransactionReceiptServer for Starknet<A, B, BE, G, C, P, H>
+where
+    A: ChainApi<Block = B> + 'static,
+    B: BlockT,
+    P: TransactionPool<Block = B> + 'static,
+    BE: Backend<B> + 'static,
+    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
+    C: ProvideRuntimeApi<B>,
+    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    G: GenesisProvider + Send + Sync + 'static,
+    H: HasherT + Send + Sync + 'static,
+{
+    /// Get the transaction receipt by the transaction hash.
+    ///
+    /// This function retrieves the transaction receipt for a specific transaction identified by its
+    /// hash. The transaction receipt includes information about the execution status of the
+    /// transaction, events generated during its execution, and other relevant details.
+    ///
+    /// ### Arguments
+    ///
+    /// * `transaction_hash` - The hash of the requested transaction. This parameter specifies the
+    ///   transaction for which the receipt is requested.
+    ///
+    /// ### Returns
+    ///
+    /// Returns a transaction receipt, which can be one of two types:
+    /// - `TransactionReceipt` if the transaction has been processed and has a receipt.
+    /// - `PendingTransactionReceipt` if the transaction is pending and the receipt is not yet
+    ///   available.
+    ///
+    /// ### Errors
+    ///
+    /// The function may return a `TXN_HASH_NOT_FOUND` error if the specified transaction hash is
+    /// not found.
+    async fn get_transaction_receipt(
+        &self,
+        transaction_hash: FieldElement,
+    ) -> RpcResult<MaybePendingTransactionReceipt> {
+        let substrate_block_hash = self
+            .backend
+            .mapping()
+            .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
+            .map_err(|e| {
+                log::error!("Failed to retrieve substrate block hash: {e}");
+                StarknetRpcApiError::InternalServerError
+            })?;
+
+        let chain_id = self.chain_id()?;
+
+        match substrate_block_hash {
+            Some(substrate_block_hash) => {
+                get_transaction_receipt_finalized(self, chain_id, substrate_block_hash, transaction_hash)
+            }
+            None => {
+                let substrate_block_hash =
+                    self.substrate_block_hash_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
+                        error!("'{e}'");
+                        StarknetRpcApiError::BlockNotFound
+                    })?;
+
+                get_transaction_receipt_pending(self, chain_id, substrate_block_hash, transaction_hash)
+            }
+        }
+    }
 }

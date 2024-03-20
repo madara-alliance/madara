@@ -3,9 +3,7 @@ use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 use mc_rpc_core::GetStroageAtServer;
-pub use mc_rpc_core::{
-    BlockNumberServer, Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
-};
+pub use mc_rpc_core::{BlockNumberServer, Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};

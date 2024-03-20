@@ -146,19 +146,21 @@ pub trait GetNonce {
 }
 
 #[rpc(server, namespace = "starknet")]
-pub trait GetBlockWithTxs{
+pub trait GetBlockWithTxs {
     /// Get block information with full transactions given the block id
     #[method(name = "getBlockWithTxs")]
     fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs>;
 }
 
-/// Starknet read rpc interface.
 #[rpc(server, namespace = "starknet")]
-pub trait StarknetReadRpcApi {
+pub trait ChainId {
     /// Get the chain id
     #[method(name = "chainId")]
     fn chain_id(&self) -> RpcResult<Felt>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait EstimateFee {
     /// Estimate the fee associated with transaction
     #[method(name = "estimateFee")]
     async fn estimate_fee(
@@ -166,27 +168,45 @@ pub trait StarknetReadRpcApi {
         request: Vec<BroadcastedTransaction>,
         block_id: BlockId,
     ) -> RpcResult<Vec<FeeEstimate>>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait EstimateMessageFee {
     /// Estimate the L2 fee of a message sent on L1
     #[method(name = "estimateMessageFee")]
     async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<FeeEstimate>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait GetTransactionByBlockIdAndIndex {
     /// Get the details of a transaction by a given block id and index
     #[method(name = "getTransactionByBlockIdAndIndex")]
     fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<Transaction>;
+}
 
-    /// Get the information about the result of executing the requested block
-    #[method(name = "getStateUpdate")]
-    fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate>;
-
+#[rpc(server, namespace = "starknet")]
+pub trait GetEvents {
     /// Returns all events matching the given filter
     #[method(name = "getEvents")]
     async fn get_events(&self, filter: EventFilterWithPage) -> RpcResult<EventsPage>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait GetTransactionByHash {
     /// Returns the information about a transaction by transaction hash.
     #[method(name = "getTransactionByHash")]
     fn get_transaction_by_hash(&self, transaction_hash: FieldElement) -> RpcResult<Transaction>;
+}
 
+#[rpc(server, namespace = "starknet")]
+pub trait GetStateUpdate {
+    /// Get the information about the result of executing the requested block
+    #[method(name = "getStateUpdate")]
+    fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate>;
+}
+
+#[rpc(server, namespace = "starknet")]
+pub trait GetTransactionReceipt {
     /// Returns the receipt of a transaction by transaction hash.
     #[method(name = "getTransactionReceipt")]
     async fn get_transaction_receipt(
@@ -194,6 +214,12 @@ pub trait StarknetReadRpcApi {
         transaction_hash: FieldElement,
     ) -> RpcResult<MaybePendingTransactionReceipt>;
 }
+
+/// Starknet read rpc interface.
+// #[rpc(server, namespace = "starknet")]
+// pub trait StarknetReadRpcApi {
+
+// }
 
 /// Starknet trace rpc interface.
 #[rpc(server, namespace = "starknet")]
