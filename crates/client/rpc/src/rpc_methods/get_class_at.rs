@@ -2,7 +2,7 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-pub use mc_rpc_core::{Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer, GetClassAtServer};
+pub use mc_rpc_core::{Felt, GetClassAtServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mp_contract::class::ContractClassWrapper;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;

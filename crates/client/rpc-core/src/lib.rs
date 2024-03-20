@@ -89,7 +89,7 @@ pub trait GetTransactionStatus {
 }
 
 #[rpc(server, namespace = "starknet")]
-pub trait GetStroageAt {
+pub trait GetStorageAt {
     /// Get the value of the storage at the given address and key, at the given block id
     #[method(name = "getStorageAt")]
     fn get_storage_at(&self, contract_address: FieldElement, key: FieldElement, block_id: BlockId) -> RpcResult<Felt>;

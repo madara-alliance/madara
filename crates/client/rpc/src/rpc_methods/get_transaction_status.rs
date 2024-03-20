@@ -2,8 +2,9 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-use mc_rpc_core::GetTransactionStatusServer;
-pub use mc_rpc_core::{BlockNumberServer, ChainIdServer, Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+pub use mc_rpc_core::{
+    ChainIdServer, Felt, GetTransactionStatusServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
+};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;

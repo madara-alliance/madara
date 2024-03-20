@@ -2,8 +2,7 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-use mc_rpc_core::GetStroageAtServer;
-pub use mc_rpc_core::{BlockNumberServer, Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+pub use mc_rpc_core::{Felt, GetStorageAtServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -21,7 +20,7 @@ use crate::Starknet;
 
 #[async_trait]
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> GetStroageAtServer for Starknet<A, B, BE, G, C, P, H>
+impl<A, B, BE, G, C, P, H> GetStorageAtServer for Starknet<A, B, BE, G, C, P, H>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,

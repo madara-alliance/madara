@@ -3,7 +3,7 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
-use mc_rpc_core::GetStateUpdateServer;
+pub use mc_rpc_core::GetStateUpdateServer;
 use mc_sync::l2::get_pending_state_update;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
