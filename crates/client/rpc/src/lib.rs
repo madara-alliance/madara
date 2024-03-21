@@ -19,6 +19,7 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
 use madara_runtime::opaque::{DBlockT, DHashT, DHeaderT};
+use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
@@ -69,7 +70,6 @@ use crate::types::RpcEventFilter;
 #[allow(dead_code)]
 pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
     client: Arc<C>,
-    backend: Arc<mc_db::Backend<DBlockT>>,
     overrides: Arc<OverrideHandle<DBlockT>>,
     #[allow(dead_code)]
     pool: Arc<P>,
@@ -97,7 +97,6 @@ pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
 impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
     pub fn new(
         client: Arc<C>,
-        backend: Arc<mc_db::Backend<DBlockT>>,
         overrides: Arc<OverrideHandle<DBlockT>>,
         pool: Arc<P>,
         graph: Arc<Pool<A>>,
@@ -105,17 +104,7 @@ impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
         starting_block: <DHeaderT as HeaderT>::Number,
         genesis_provider: Arc<G>,
     ) -> Self {
-        Self {
-            client,
-            backend,
-            overrides,
-            pool,
-            graph,
-            sync_service,
-            starting_block,
-            genesis_provider,
-            _marker: PhantomData,
-        }
+        Self { client, overrides, pool, graph, sync_service, starting_block, genesis_provider, _marker: PhantomData }
     }
 }
 
@@ -157,13 +146,11 @@ where
     /// Returns the substrate block hash corresponding to the given Starknet block id
     fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<DHashT, StarknetRpcApiError> {
         match block_id {
-            BlockId::Hash(h) => {
-                madara_backend_client::load_hash(self.client.as_ref(), &self.backend, Felt252Wrapper::from(h).into())
-                    .map_err(|e| {
-                        error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
-                        StarknetRpcApiError::BlockNotFound
-                    })?
-            }
+            BlockId::Hash(h) => madara_backend_client::load_hash(self.client.as_ref(), Felt252Wrapper::from(h).into())
+                .map_err(|e| {
+                    error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
+                    StarknetRpcApiError::BlockNotFound
+                })?,
             BlockId::Number(n) => self
                 .client
                 .hash(UniqueSaturatedInto::unique_saturated_into(n))
@@ -204,7 +191,7 @@ where
     ///
     /// * `block_hash` - The hash of the block containing the transactions (starknet block).
     fn get_cached_transaction_hashes(&self, block_hash: StarkHash) -> Option<Vec<StarkHash>> {
-        self.backend.mapping().cached_transaction_hashes_from_block_hash(block_hash).unwrap_or_else(|err| {
+        DeoxysBackend::mapping().cached_transaction_hashes_from_block_hash(block_hash).unwrap_or_else(|err| {
             error!("Failed to read from cache: {err}");
             None
         })
@@ -216,7 +203,7 @@ where
     ///
     /// * `starknet_block_hash` - The hash of the block containing the state diff (starknet block).
     fn get_state_diff(&self, starknet_block_hash: &APIBlockHash) -> Result<StateDiff, StarknetRpcApiError> {
-        let state_diff = self.backend.da().state_diff(starknet_block_hash).map_err(|e| {
+        let state_diff = DeoxysBackend::da().state_diff(starknet_block_hash).map_err(|e| {
             error!("Failed to retrieve state diff from cache for block with hash {}: {e}", starknet_block_hash);
             StarknetRpcApiError::InternalServerError
         })?;
@@ -451,9 +438,7 @@ where
     ///   - `execution_status`: The execution status of the transaction, providing details on the
     ///     execution outcome if the transaction has been processed.
     fn get_transaction_status(&self, transaction_hash: FieldElement) -> RpcResult<TransactionStatus> {
-        let substrate_block_hash = self
-            .backend
-            .mapping()
+        let substrate_block_hash = DeoxysBackend::mapping()
             .block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
             .map_err(|e| {
                 error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
@@ -1204,9 +1189,7 @@ where
     /// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
     ///   system's capacity.
     fn get_transaction_by_hash(&self, transaction_hash: FieldElement) -> RpcResult<Transaction> {
-        let substrate_block_hash_from_db = self
-            .backend
-            .mapping()
+        let substrate_block_hash_from_db = DeoxysBackend::mapping()
             .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
             .map_err(|e| {
                 error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
@@ -1269,9 +1252,7 @@ where
         &self,
         transaction_hash: FieldElement,
     ) -> RpcResult<MaybePendingTransactionReceipt> {
-        let substrate_block_hash = self
-            .backend
-            .mapping()
+        let substrate_block_hash = DeoxysBackend::mapping()
             .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
             .map_err(|e| {
                 log::error!("Failed to retrieve substrate block hash: {e}");

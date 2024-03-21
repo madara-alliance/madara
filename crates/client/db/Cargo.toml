@@ -30,6 +30,7 @@ sp-runtime = { workspace = true, default-features = true }
 madara-runtime = { workspace = true }
 
 # Starknet crates
+bonsai-trie = { workspace = true }
 starknet-types-core = { workspace = true, default-features = false, features = [
   "hash",
   "parity-scale-codec",
@@ -37,15 +38,14 @@ starknet-types-core = { workspace = true, default-features = false, features = [
 starknet_api = { workspace = true, default-features = true, features = [
   "parity-scale-codec",
 ] }
-bonsai-trie = { workspace = true }
 
 # Other crates
-log = { workspace = true, default-features = true }
-thiserror = { workspace = true }
-uuid = "1.4.1"
 ethers = { workspace = true }
 kvdb = "0.13.0"
 kvdb-rocksdb = { version = "0.19.0", optional = true }
+log = { workspace = true, default-features = true }
+thiserror = { workspace = true }
+uuid = "1.4.1"
 
 [features]
 default = ["kvdb-rocksdb", "parity-db"]

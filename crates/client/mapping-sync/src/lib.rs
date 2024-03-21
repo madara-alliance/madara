@@ -36,7 +36,6 @@ pub struct MappingSyncWorker<C, BE, H> {
 
     client: Arc<C>,
     substrate_backend: Arc<BE>,
-    madara_backend: Arc<mc_db::Backend<DBlockT>>,
     hasher: PhantomData<H>,
 
     have_next: bool,
@@ -53,7 +52,6 @@ impl<C, BE, H> MappingSyncWorker<C, BE, H> {
         timeout: Duration,
         client: Arc<C>,
         substrate_backend: Arc<BE>,
-        frontier_backend: Arc<mc_db::Backend<DBlockT>>,
         retry_times: usize,
         sync_from: <DHeaderT as HeaderT>::Number,
     ) -> Self {
@@ -64,7 +62,6 @@ impl<C, BE, H> MappingSyncWorker<C, BE, H> {
 
             client,
             substrate_backend,
-            madara_backend: frontier_backend,
             hasher: PhantomData,
 
             have_next: true,
@@ -117,7 +114,6 @@ where
             match sync_blocks::sync_blocks::<_, _, H>(
                 self.client.as_ref(),
                 self.substrate_backend.as_ref(),
-                self.madara_backend.as_ref(),
                 self.retry_times,
                 self.sync_from,
             ) {

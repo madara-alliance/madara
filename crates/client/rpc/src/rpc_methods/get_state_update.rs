@@ -2,6 +2,7 @@ use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use madara_runtime::opaque::{DBlockT, DHashT};
+use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_sync::l2::get_pending_state_update;
@@ -41,7 +42,7 @@ where
     let new_root = Felt252Wrapper::from(starknet_block.header().global_state_root).into();
 
     let old_root = if starknet_block.header().block_number > 0 {
-        Felt252Wrapper::from(server.backend.temporary_global_state_root_getter()).into()
+        Felt252Wrapper::from(DeoxysBackend::temporary_global_state_root_getter()).into()
     } else {
         FieldElement::default()
     };

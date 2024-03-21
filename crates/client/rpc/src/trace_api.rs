@@ -7,6 +7,7 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use madara_runtime::opaque::{DBlockT, DHashT};
+use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::{StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
@@ -167,9 +168,7 @@ where
     }
 
     async fn trace_transaction(&self, transaction_hash: FieldElement) -> RpcResult<TransactionTraceWithHash> {
-        let substrate_block_hash = self
-            .backend
-            .mapping()
+        let substrate_block_hash = DeoxysBackend::mapping()
             .block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
             .map_err(|e| {
                 error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
@@ -567,9 +566,7 @@ where
                     Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx.clone(), contract_class)))
                 }
                 DeclareTransaction::V2(_tx) => {
-                    let contract_class = starknet
-                        .backend
-                        .sierra_classes()
+                    let contract_class = DeoxysBackend::sierra_classes()
                         .get_sierra_class(class_hash)
                         .map_err(|e| {
                             error!("Failed to fetch sierra class with hash {class_hash}: {e}");
@@ -595,8 +592,8 @@ where
         }
         Transaction::L1Handler(handle_l1_message_tx) => {
             let tx_hash = handle_l1_message_tx.compute_hash::<H>(chain_id, false, Some(block_number));
-            let paid_fee =
-                starknet.backend.l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(tx_hash.into()).map_err(|e| {
+            let paid_fee: starknet_api::transaction::Fee =
+                DeoxysBackend::l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(tx_hash.into()).map_err(|e| {
                     error!("Failed to retrieve fee paid on l1 for tx with hash `{tx_hash:?}`: {e}");
                     StarknetRpcApiError::InternalServerError
                 })?;

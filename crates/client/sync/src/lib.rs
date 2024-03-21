@@ -20,6 +20,7 @@ type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc:
 pub mod starknet_sync_worker {
     use std::sync::Arc;
 
+    use mc_db::DeoxysBackend;
     use reqwest::Url;
     use sp_blockchain::HeaderBackend;
 
@@ -30,7 +31,6 @@ pub mod starknet_sync_worker {
         sender_config: SenderConfig,
         rpc_port: u16,
         l1_url: Url,
-        backend: Arc<mc_db::Backend<DBlockT>>,
         client: Arc<C>,
     ) where
         C: HeaderBackend<DBlockT>,
@@ -43,9 +43,9 @@ pub mod starknet_sync_worker {
                 sender_config,
                 fetch_config.clone(),
                 first_block,
-                backend.bonsai_contract(),
-                backend.bonsai_contract_storage(),
-                backend.bonsai_class(),
+                DeoxysBackend::bonsai_contract(),
+                DeoxysBackend::bonsai_storage(),
+                DeoxysBackend::bonsai_class(),
                 client,
             )
         );

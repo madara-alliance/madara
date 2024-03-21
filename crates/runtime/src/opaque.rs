@@ -24,13 +24,14 @@ use sp_std::prelude::*;
 
 use super::*;
 use crate::{Aura, BlockNumber, Grandpa};
-/// Opaque block header type.
+
+// Deoxys block header type
 pub type DHeaderT = generic::Header<BlockNumber, BlakeTwo256>;
-/// Opaque block type.
+/// Deoxys block type.
 pub type DBlockT = generic::Block<Header, UncheckedExtrinsic>;
-/// Opaque block hash type.
+/// Deoxys block hash type.
 pub type DHashT = H256;
-/// Opaque block identifier type.
+/// Deoxys block identifier type.
 pub type BlockId = generic::BlockId<DBlockT>;
 
 impl_opaque_keys! {

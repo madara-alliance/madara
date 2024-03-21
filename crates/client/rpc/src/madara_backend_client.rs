@@ -1,5 +1,5 @@
 use madara_runtime::opaque::{DBlockT, DHashT};
-use mc_db::DbError;
+use mc_db::{DbError, DeoxysBackend};
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_block::Block as MadaraBlock;
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -10,11 +10,11 @@ use starknet_api::hash::StarkHash;
 
 use crate::errors::StarknetRpcApiError;
 
-pub fn load_hash<C>(client: &C, backend: &mc_db::Backend<DBlockT>, hash: StarkHash) -> Result<Option<DHashT>, DbError>
+pub fn load_hash<C>(client: &C, hash: StarkHash) -> Result<Option<DHashT>, DbError>
 where
     C: HeaderBackend<DBlockT> + 'static,
 {
-    let substrate_hashes = backend.mapping().block_hash(hash)?;
+    let substrate_hashes = DeoxysBackend::mapping().block_hash(hash)?;
 
     if let Some(substrate_hashes) = substrate_hashes {
         for substrate_hash in substrate_hashes {

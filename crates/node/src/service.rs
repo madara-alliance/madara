@@ -11,6 +11,7 @@ use futures::future::BoxFuture;
 use futures::prelude::*;
 use madara_runtime::opaque::DBlockT;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
+use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
@@ -177,7 +178,7 @@ where
         telemetry.as_ref().map(|x| x.handle()),
     )?;
 
-    let madara_backend = Arc::new(MadaraBackend::open(&config.database, &db_config_dir(config), cache_more_things)?);
+    let deoxys_backend = DeoxysBackend::open(&config.database, &db_config_dir(config), cache_more_things)?;
 
     let (import_queue, block_import) = build_import_queue(
         client.clone(),
@@ -185,7 +186,8 @@ where
         &task_manager,
         telemetry.as_ref().map(|x| x.handle()),
         grandpa_block_import,
-        madara_backend.clone(),
+        // TODO: use `DeoxysBackend` import instead
+        Arc::clone(deoxys_backend),
     )?;
 
     Ok(sc_service::PartialComponents {
@@ -196,7 +198,7 @@ where
         keystore_container,
         select_chain,
         transaction_pool,
-        other: (block_import, grandpa_link, telemetry, madara_backend),
+        other: (block_import, grandpa_link, telemetry, Arc::clone(deoxys_backend)),
     })
 }
 
@@ -415,7 +417,6 @@ pub fn new_full(
             Duration::new(6, 0),
             client.clone(),
             backend.clone(),
-            madara_backend.clone(),
             3,
             0,
         )
@@ -437,7 +438,7 @@ pub fn new_full(
     task_manager.spawn_essential_handle().spawn(
         "starknet-sync-worker",
         Some("madara"),
-        starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend, Arc::clone(&client)),
+        starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, Arc::clone(&client)),
     );
 
     if role.is_authority() {

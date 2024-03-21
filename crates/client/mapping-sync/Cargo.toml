@@ -17,6 +17,7 @@ anyhow = { workspace = true, default-features = true }
 futures = { workspace = true, default-features = true }
 futures-timer = "3.0.2"
 log = { workspace = true, default-features = true }
+madara-runtime = { workspace = true }
 mc-db = { workspace = true }
 mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
@@ -33,4 +34,3 @@ sp-blockchain = { workspace = true }
 sp-core = { workspace = true }
 sp-runtime = { workspace = true }
 tokio = { workspace = true }
-madara-runtime = { workspace = true }
