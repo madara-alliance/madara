@@ -46,7 +46,6 @@ pub use rpc_methods::get_transaction_receipt::GetTransactionReceiptServer;
 pub use rpc_methods::get_transaction_status::GetTransactionStatusServer;
 pub use rpc_methods::spec_version::SpecVersionServer;
 pub use rpc_methods::syncing::SyncingServer;
-pub use rpc_methods::trace::simulate_transactions::SimulateTransactionsServer;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sc_network_sync::SyncingService;
@@ -235,116 +234,116 @@ where
     }
 }
 
-#[async_trait]
-impl<A, B, BE, G, C, P, H> StarknetWriteRpcApiServer for Starknet<A, B, BE, G, C, P, H>
-where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-    G: GenesisProvider + Send + Sync + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    /// Submit a new declare transaction to be added to the chain
-    ///
-    /// # Arguments
-    ///
-    /// * `declare_transaction` - the declare transaction to be added to the chain
-    ///
-    /// # Returns
-    ///
-    /// * `declare_transaction_result` - the result of the declare transaction
-    async fn add_declare_transaction(
-        &self,
-        declare_transaction: BroadcastedDeclareTransaction,
-    ) -> RpcResult<DeclareTransactionResult> {
-        let config = get_config().map_err(|e| {
-            error!("Failed to get config: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-        let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
+// #[async_trait]
+// impl<A, B, BE, G, C, P, H> StarknetWriteRpcApiServer for Starknet<A, B, BE, G, C, P, H>
+// where
+//     A: ChainApi<Block = B> + 'static,
+//     B: BlockT,
+//     P: TransactionPool<Block = B> + 'static,
+//     BE: Backend<B> + 'static,
+//     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
+//     C: ProvideRuntimeApi<B>,
+//     C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+//     G: GenesisProvider + Send + Sync + 'static,
+//     H: HasherT + Send + Sync + 'static,
+// {
+//     /// Submit a new declare transaction to be added to the chain
+//     ///
+//     /// # Arguments
+//     ///
+//     /// * `declare_transaction` - the declare transaction to be added to the chain
+//     ///
+//     /// # Returns
+//     ///
+//     /// * `declare_transaction_result` - the result of the declare transaction
+//     async fn add_declare_transaction(
+//         &self,
+//         declare_transaction: BroadcastedDeclareTransaction,
+//     ) -> RpcResult<DeclareTransactionResult> {
+//         let config = get_config().map_err(|e| {
+//             error!("Failed to get config: {e}");
+//             StarknetRpcApiError::InternalServerError
+//         })?;
+//         let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
-        let sequencer_response = match sequencer.add_declare_transaction(declare_transaction).await {
-            Ok(response) => response,
-            Err(ProviderError::StarknetError(e)) => {
-                return Err(StarknetRpcApiError::from(e).into());
-            }
-            Err(e) => {
-                error!("Failed to add invoke transaction to sequencer: {e}");
-                return Err(StarknetRpcApiError::InternalServerError.into());
-            }
-        };
+//         let sequencer_response = match sequencer.add_declare_transaction(declare_transaction).await {
+//             Ok(response) => response,
+//             Err(ProviderError::StarknetError(e)) => {
+//                 return Err(StarknetRpcApiError::from(e).into());
+//             }
+//             Err(e) => {
+//                 error!("Failed to add invoke transaction to sequencer: {e}");
+//                 return Err(StarknetRpcApiError::InternalServerError.into());
+//             }
+//         };
 
-        Ok(sequencer_response)
-    }
+//         Ok(sequencer_response)
+//     }
 
-    /// Add an Invoke Transaction to invoke a contract function
-    ///
-    /// # Arguments
-    ///
-    /// * `invoke tx` - <https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#invoke_transaction>
-    ///
-    /// # Returns
-    ///
-    /// * `transaction_hash` - transaction hash corresponding to the invocation
-    async fn add_invoke_transaction(
-        &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-    ) -> RpcResult<InvokeTransactionResult> {
-        let config = get_config().map_err(|e| {
-            error!("Failed to get config: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-        let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
+//     /// Add an Invoke Transaction to invoke a contract function
+//     ///
+//     /// # Arguments
+//     ///
+//     /// * `invoke tx` - <https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#invoke_transaction>
+//     ///
+//     /// # Returns
+//     ///
+//     /// * `transaction_hash` - transaction hash corresponding to the invocation
+//     async fn add_invoke_transaction(
+//         &self,
+//         invoke_transaction: BroadcastedInvokeTransaction,
+//     ) -> RpcResult<InvokeTransactionResult> {
+//         let config = get_config().map_err(|e| {
+//             error!("Failed to get config: {e}");
+//             StarknetRpcApiError::InternalServerError
+//         })?;
+//         let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
-        let sequencer_response = match sequencer.add_invoke_transaction(invoke_transaction).await {
-            Ok(response) => response,
-            Err(ProviderError::StarknetError(e)) => {
-                return Err(StarknetRpcApiError::from(e).into());
-            }
-            Err(e) => {
-                error!("Failed to add invoke transaction to sequencer: {e}");
-                return Err(StarknetRpcApiError::InternalServerError.into());
-            }
-        };
+//         let sequencer_response = match sequencer.add_invoke_transaction(invoke_transaction).await {
+//             Ok(response) => response,
+//             Err(ProviderError::StarknetError(e)) => {
+//                 return Err(StarknetRpcApiError::from(e).into());
+//             }
+//             Err(e) => {
+//                 error!("Failed to add invoke transaction to sequencer: {e}");
+//                 return Err(StarknetRpcApiError::InternalServerError.into());
+//             }
+//         };
 
-        Ok(sequencer_response)
-    }
+//         Ok(sequencer_response)
+//     }
 
-    /// Add an Deploy Account Transaction
-    ///
-    /// # Arguments
-    ///
-    /// * `deploy account transaction` - <https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#deploy_account_transaction>
-    ///
-    /// # Returns
-    ///
-    /// * `transaction_hash` - transaction hash corresponding to the invocation
-    /// * `contract_address` - address of the deployed contract account
-    async fn add_deploy_account_transaction(
-        &self,
-        deploy_account_transaction: BroadcastedDeployAccountTransaction,
-    ) -> RpcResult<DeployAccountTransactionResult> {
-        let config = get_config().map_err(|e| {
-            error!("Failed to get config: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-        let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
+//     /// Add an Deploy Account Transaction
+//     ///
+//     /// # Arguments
+//     ///
+//     /// * `deploy account transaction` - <https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#deploy_account_transaction>
+//     ///
+//     /// # Returns
+//     ///
+//     /// * `transaction_hash` - transaction hash corresponding to the invocation
+//     /// * `contract_address` - address of the deployed contract account
+//     async fn add_deploy_account_transaction(
+//         &self,
+//         deploy_account_transaction: BroadcastedDeployAccountTransaction,
+//     ) -> RpcResult<DeployAccountTransactionResult> {
+//         let config = get_config().map_err(|e| {
+//             error!("Failed to get config: {e}");
+//             StarknetRpcApiError::InternalServerError
+//         })?;
+//         let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
 
-        let sequencer_response = match sequencer.add_deploy_account_transaction(deploy_account_transaction).await {
-            Ok(response) => response,
-            Err(ProviderError::StarknetError(e)) => {
-                return Err(StarknetRpcApiError::from(e).into());
-            }
-            Err(e) => {
-                error!("Failed to add invoke transaction to sequencer: {e}");
-                return Err(StarknetRpcApiError::InternalServerError.into());
-            }
-        };
+//         let sequencer_response = match sequencer.add_deploy_account_transaction(deploy_account_transaction).await {
+//             Ok(response) => response,
+//             Err(ProviderError::StarknetError(e)) => {
+//                 return Err(StarknetRpcApiError::from(e).into());
+//             }
+//             Err(e) => {
+//                 error!("Failed to add invoke transaction to sequencer: {e}");
+//                 return Err(StarknetRpcApiError::InternalServerError.into());
+//             }
+//         };
 
-        Ok(sequencer_response)
-    }
-}
+//         Ok(sequencer_response)
+//     }
+// }
