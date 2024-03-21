@@ -14,16 +14,14 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use errors::StarknetRpcApiError;
-use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::core::RpcResult;
 use log::error;
-use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
-use mc_sync::utility::get_config;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
+use pallet_starknet_runtime_api::StarknetRuntimeApi;
 pub use rpc_methods::block_hash_and_number::BlockHashAndNumberServer;
 pub use rpc_methods::block_number::BlockNumberServer;
 pub use rpc_methods::call::CallServer;
@@ -46,11 +44,8 @@ pub use rpc_methods::get_transaction_receipt::GetTransactionReceiptServer;
 pub use rpc_methods::get_transaction_status::GetTransactionStatusServer;
 pub use rpc_methods::spec_version::SpecVersionServer;
 pub use rpc_methods::syncing::SyncingServer;
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
 use sc_network_sync::SyncingService;
 use sc_transaction_pool::{ChainApi, Pool};
-use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
@@ -59,10 +54,8 @@ use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkHash;
 use starknet_core::types::{
-    BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
-    DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult, StateDiff,
+    BlockId, StateDiff,
 };
-use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 
 use crate::rpc_methods::get_block::{
     get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
