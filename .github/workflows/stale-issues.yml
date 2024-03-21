@@ -8,7 +8,7 @@ on:
 jobs:
   stale:
     name: 🧹 Clean up stale issues and PRs
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: 🚀 Run stale
         uses: actions/stale@v3
