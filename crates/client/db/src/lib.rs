@@ -119,7 +119,7 @@ pub mod static_keys {
 /// `bonsai` is used to store the commitment tries.
 pub struct Backend<B: BlockT> {
     meta: Arc<MetaDb<B>>,
-    mapping: Arc<MappingDb<B>>,
+    mapping: Arc<MappingDb>,
     da: Arc<DaDb>,
     messaging: Arc<MessagingDb>,
     sierra_classes: Arc<SierraClassesDb>,
@@ -184,7 +184,7 @@ impl<B: BlockT> Backend<B> {
     }
 
     /// Return the mapping database manager
-    pub fn mapping(&self) -> &Arc<MappingDb<B>> {
+    pub fn mapping(&self) -> &Arc<MappingDb> {
         &self.mapping
     }
 

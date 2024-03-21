@@ -10,6 +10,7 @@ use bonsai_trie::BonsaiStorage;
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use madara_runtime::opaque::{Block, BlockHash};
 use mc_db::bonsai_db::BonsaiDb;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
@@ -20,7 +21,7 @@ use reqwest::Url;
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::{H160, H256};
-use sp_runtime::generic::{Block, Header};
+use sp_runtime::generic::{Block as RuntimeBlock, Header};
 use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
@@ -113,18 +114,17 @@ pub struct SenderConfig {
     /// should be created.
     pub command_sink: CommandSink,
     // Storage overrides for accessing stored classes
-    pub overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    pub overrides: Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
 }
 
-async fn fetch_block_and_updates<B, C>(
+async fn fetch_block_and_updates<C>(
     block_n: u64,
     provider: &SequencerGatewayProvider,
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     client: &C,
 ) -> Result<(p::Block, StateUpdate, Vec<ContractClassData>), L2SyncError>
 where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<Block>,
 {
     // retry loop
     const MAX_RETRY: usize = 15;
@@ -150,7 +150,7 @@ where
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-pub async fn sync<B, C>(
+pub async fn sync<C>(
     mut sender_config: SenderConfig,
     fetch_config: FetchConfig,
     first_block: u64,
@@ -159,8 +159,7 @@ pub async fn sync<B, C>(
     bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
     client: Arc<C>,
 ) where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<Block>,
 {
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
     let provider = SequencerGatewayProvider::new(
@@ -281,15 +280,14 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<mp_block::
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn fetch_state_and_class_update<B, C>(
+async fn fetch_state_and_class_update<C>(
     provider: &SequencerGatewayProvider,
     block_number: u64,
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     client: &C,
 ) -> Result<(StateUpdate, Vec<ContractClassData>), L2SyncError>
 where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<Block>,
 {
     // Children tasks need StateUpdate as an Arc, because of task spawn 'static requirement
     // We make an Arc, and then unwrap the StateUpdate out of the Arc
@@ -311,16 +309,15 @@ async fn fetch_state_update(
 }
 
 /// retrieves class updates from Starknet sequencer
-async fn fetch_class_update<B, C>(
+async fn fetch_class_update<C>(
     provider: &SequencerGatewayProvider,
     state_update: &Arc<StateUpdate>,
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_number: u64,
     client: &C,
 ) -> Result<Vec<ContractClassData>, L2SyncError>
 where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<Block>,
 {
     // defaults to downloading ALL classes if a substrate block hash could not be determined
     let missing_classes = match block_hash_substrate(client, block_number) {
@@ -354,10 +351,9 @@ fn block_hash_madara(state_update: &StateUpdate) -> FieldElement {
 }
 
 /// Retrieves Substrate block hash from rpc client
-fn block_hash_substrate<B, C>(client: &C, block_number: u64) -> Option<H256>
+fn block_hash_substrate<C>(client: &C, block_number: u64) -> Option<H256>
 where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<Block>,
 {
     client
         .hash(UniqueSaturatedInto::unique_saturated_into(block_number))
@@ -390,7 +386,7 @@ async fn download_class(
 /// and retains only those which are not stored in the local Substrate db.
 fn fetch_missing_classes<'a>(
     state_update: &'a StateUpdate,
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_hash_substrate: H256,
 ) -> Vec<&'a FieldElement> {
     aggregate_classes(state_update)
@@ -426,7 +422,7 @@ fn aggregate_classes(state_update: &StateUpdate) -> Vec<&FieldElement> {
 /// Since a change in class definition will result in a change in class hash,
 /// this means we only need to check for class hashes in the db.
 fn is_missing_class(
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_hash_substrate: H256,
     class_hash: Felt252Wrapper,
 ) -> bool {
@@ -467,7 +463,7 @@ pub fn update_l2(state_update: L2StateUpdate) {
 pub fn verify_l2(
     block_number: u64,
     state_update: &StateUpdate,
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
     bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
     bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
@@ -498,10 +494,9 @@ pub fn verify_l2(
     Ok(())
 }
 
-async fn update_starknet_data<B, C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
+async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
 where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<Block>,
 {
     let block = provider.get_block(BlockId::Pending).await.map_err(|e| format!("Failed to get pending block: {e}"))?;
 
@@ -509,7 +504,7 @@ where
     let hash_current = block.parent_block_hash;
     // Well howdy, seems like we can't convert a B::Hash to a FieldElement pa'tner,
     // fancy this instead? 🤠🔫
-    let tmp = <B as BlockT>::Hash::from_str(&hash_current.to_string()).unwrap_or(Default::default());
+    let tmp = BlockHash::from_str(&hash_current.to_string()).unwrap_or(Default::default());
     let number = block.block_number.ok_or("block number not found")? - 1;
 
     // all blocks have been synchronized, can store pending data

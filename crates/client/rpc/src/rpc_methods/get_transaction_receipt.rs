@@ -2,6 +2,7 @@ use blockifier::execution::contract_class::{ContractClass as ContractClassBf, Co
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
+use madara_runtime::opaque::{Block, BlockHash, Header};
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::Felt;
@@ -33,20 +34,19 @@ use crate::utils::{
 };
 use crate::Starknet;
 
-pub(crate) fn get_transaction_receipt_finalized<A, B, BE, G, C, P, H>(
-    client: &Starknet<A, B, BE, G, C, P, H>,
+pub(crate) fn get_transaction_receipt_finalized<A, BE, G, C, P, H>(
+    client: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
-    substrate_block_hash: B::Hash,
+    substrate_block_hash: BlockHash,
     transaction_hash: FieldElement,
 ) -> RpcResult<MaybePendingTransactionReceipt>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -179,20 +179,19 @@ where
     Ok(MaybePendingTransactionReceipt::Receipt(receipt))
 }
 
-pub(crate) fn get_transaction_receipt_pending<A, B, BE, G, C, P, H>(
-    client: &Starknet<A, B, BE, G, C, P, H>,
+pub(crate) fn get_transaction_receipt_pending<A, BE, G, C, P, H>(
+    client: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
-    substrate_block_hash: B::Hash,
+    substrate_block_hash: BlockHash,
     transaction_hash: FieldElement,
 ) -> RpcResult<MaybePendingTransactionReceipt>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -307,18 +306,17 @@ where
     Ok(MaybePendingTransactionReceipt::PendingReceipt(receipt))
 }
 
-fn previous_block_hash<A, B, BE, G, C, P, H>(
-    client: &Starknet<A, B, BE, G, C, P, H>,
+fn previous_block_hash<A, BE, G, C, P, H>(
+    client: &Starknet<A, BE, G, C, P, H>,
     block_number: u64,
-) -> RpcResult<B::Hash>
+) -> RpcResult<BlockHash>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -331,22 +329,21 @@ where
     Ok(previous_block_hash)
 }
 
-fn transactions<A, B, BE, G, C, P, H>(
-    client: &Starknet<A, B, BE, G, C, P, H>,
-    substrate_block_hash: B::Hash,
+fn transactions<A, BE, G, C, P, H>(
+    client: &Starknet<A, BE, G, C, P, H>,
+    substrate_block_hash: BlockHash,
     chain_id: Felt,
     block: &mp_block::Block,
     block_number: u64,
     tx_index: usize,
 ) -> RpcResult<Vec<UserOrL1HandlerTransaction>>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -383,19 +380,18 @@ fn tx_deploy_account(tx: mp_transactions::DeployAccountTransaction) -> RpcResult
     Ok(UserOrL1HandlerTransaction::User(UserTransaction::DeployAccount(tx)))
 }
 
-fn tx_declare<A, B, BE, G, C, P, H>(
-    client: &Starknet<A, B, BE, G, C, P, H>,
-    substrate_block_hash: B::Hash,
+fn tx_declare<A, BE, G, C, P, H>(
+    client: &Starknet<A, BE, G, C, P, H>,
+    substrate_block_hash: BlockHash,
     declare_tx: mp_transactions::DeclareTransaction,
 ) -> RpcResult<UserOrL1HandlerTransaction>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -409,20 +405,19 @@ where
     }
 }
 
-fn tx_declare_v0v1<A, B, BE, G, C, P, H>(
-    client: &Starknet<A, B, BE, G, C, P, H>,
-    substrate_block_hash: B::Hash,
+fn tx_declare_v0v1<A, BE, G, C, P, H>(
+    client: &Starknet<A, BE, G, C, P, H>,
+    substrate_block_hash: BlockHash,
     declare_tx: mp_transactions::DeclareTransaction,
     class_hash: ClassHash,
 ) -> RpcResult<UserOrL1HandlerTransaction>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -438,19 +433,18 @@ where
     Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx, contract_class)))
 }
 
-fn tx_declare_v2<A, B, BE, G, C, P, H>(
-    client: &Starknet<A, B, BE, G, C, P, H>,
+fn tx_declare_v2<A, BE, G, C, P, H>(
+    client: &Starknet<A, BE, G, C, P, H>,
     declare_tx: mp_transactions::DeclareTransaction,
     class_hash: ClassHash,
 ) -> RpcResult<UserOrL1HandlerTransaction>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -485,20 +479,19 @@ where
     Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx, contract_class)))
 }
 
-fn tx_l1_handler<A, B, BE, G, C, P, H>(
-    client: &Starknet<A, B, BE, G, C, P, H>,
+fn tx_l1_handler<A, BE, G, C, P, H>(
+    client: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
     block_number: u64,
     l1_handler: mp_transactions::HandleL1MessageTransaction,
 ) -> RpcResult<UserOrL1HandlerTransaction>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -513,19 +506,18 @@ where
     Ok(UserOrL1HandlerTransaction::L1Handler(l1_handler, paid_fee))
 }
 
-fn execution_infos<A, B, BE, G, C, P, H>(
-    client: &Starknet<A, B, BE, G, C, P, H>,
-    previous_block_hash: B::Hash,
+fn execution_infos<A, BE, G, C, P, H>(
+    client: &Starknet<A, BE, G, C, P, H>,
+    previous_block_hash: BlockHash,
     transactions: Vec<UserOrL1HandlerTransaction>,
 ) -> RpcResult<TransactionExecutionInfo>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {

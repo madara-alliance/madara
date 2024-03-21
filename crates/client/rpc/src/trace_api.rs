@@ -6,11 +6,12 @@ use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
+use madara_runtime::opaque::{Block, BlockHash, Header};
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::{StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mc_storage::StorageOverride;
-use mp_block::Block;
+use mp_block::Block as MadaraBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
@@ -37,16 +38,15 @@ use crate::Starknet;
 
 #[async_trait]
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> StarknetTraceRpcApiServer for Starknet<A, B, BE, G, C, P, H>
+impl<A, BE, G, C, P, H> StarknetTraceRpcApiServer for Starknet<A, BE, G, C, P, H>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    BE: Backend<B> + 'static,
+    A: ChainApi<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
     G: GenesisProvider + Send + Sync + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-    P: TransactionPool<Block = B> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
+    P: TransactionPool<Block = Block> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     async fn simulate_transactions(
@@ -497,19 +497,18 @@ fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
     Ok(results)
 }
 
-fn map_transaction_to_user_transaction<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
-    starknet_block: Block,
-    substrate_block_hash: B::Hash,
+fn map_transaction_to_user_transaction<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
+    starknet_block: MadaraBlock,
+    substrate_block_hash: BlockHash,
     chain_id: Felt252Wrapper,
     target_transaction_hash: Option<Felt252Wrapper>,
 ) -> Result<(Vec<UserOrL1HandlerTransaction>, Vec<UserOrL1HandlerTransaction>), StarknetRpcApiError>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
+    A: ChainApi<Block = Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
     H: HasherT + Send + Sync + 'static,
-    BE: Backend<B> + 'static,
+    BE: Backend<Block> + 'static,
 {
     let mut transactions = Vec::new();
     let mut transaction_to_trace = Vec::new();
@@ -531,19 +530,18 @@ where
     Ok((transactions, transaction_to_trace))
 }
 
-fn convert_transaction<A, B, BE, G, C, P, H>(
+fn convert_transaction<A, BE, G, C, P, H>(
     tx: &Transaction,
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
-    substrate_block_hash: B::Hash,
+    starknet: &Starknet<A, BE, G, C, P, H>,
+    substrate_block_hash: BlockHash,
     chain_id: Felt252Wrapper,
     block_number: u64,
 ) -> Result<UserOrL1HandlerTransaction, StarknetRpcApiError>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
+    A: ChainApi<Block = Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
     H: HasherT + Send + Sync + 'static,
-    BE: Backend<B> + 'static,
+    BE: Backend<Block> + 'static,
 {
     match tx {
         Transaction::Invoke(invoke_tx) => {
@@ -609,18 +607,17 @@ where
     }
 }
 
-fn get_previous_block_substrate_hash<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
-    substrate_block_hash: B::Hash,
-) -> Result<B::Hash, StarknetRpcApiError>
+fn get_previous_block_substrate_hash<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
+    substrate_block_hash: BlockHash,
+) -> Result<BlockHash, StarknetRpcApiError>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     H: HasherT + Send + Sync + 'static,
-    BE: Backend<B> + 'static,
+    BE: Backend<Block> + 'static,
 {
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
         error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");

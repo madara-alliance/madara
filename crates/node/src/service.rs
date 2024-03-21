@@ -410,7 +410,7 @@ pub fn new_full(
     task_manager.spawn_essential_handle().spawn(
         "mc-mapping-sync-worker",
         Some(MADARA_TASK_GROUP),
-        MappingSyncWorker::<_, _, _, StarknetHasher>::new(
+        MappingSyncWorker::<_, _, StarknetHasher>::new(
             client.import_notification_stream(),
             Duration::new(6, 0),
             client.clone(),

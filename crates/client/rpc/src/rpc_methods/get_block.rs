@@ -1,5 +1,6 @@
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
+use madara_runtime::opaque::{Block, BlockHash, Header};
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::Felt;
@@ -24,19 +25,18 @@ use crate::utils::{
 };
 use crate::Starknet;
 
-pub(crate) fn get_block_with_tx_hashes_finalized<A, B, BE, G, C, P, H>(
-    server: &Starknet<A, B, BE, G, C, P, H>,
+pub(crate) fn get_block_with_tx_hashes_finalized<A, BE, G, C, P, H>(
+    server: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
-    substrate_block_hash: B::Hash,
+    substrate_block_hash: BlockHash,
 ) -> RpcResult<MaybePendingBlockWithTxHashes>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -100,19 +100,18 @@ where
     Ok(MaybePendingBlockWithTxHashes::PendingBlock(block_with_tx_hashes))
 }
 
-pub(crate) fn get_block_with_txs_finalized<A, B, BE, G, C, P, H>(
-    server: &Starknet<A, B, BE, G, C, P, H>,
+pub(crate) fn get_block_with_txs_finalized<A, BE, G, C, P, H>(
+    server: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
-    substrate_block_hash: B::Hash,
+    substrate_block_hash: BlockHash,
 ) -> RpcResult<MaybePendingBlockWithTxs>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {

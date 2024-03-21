@@ -20,6 +20,7 @@ pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
 use sp_runtime::{generic, impl_opaque_keys};
 pub use sp_runtime::{Perbill, Permill};
 use sp_std::prelude::*;
+use sp_runtime::traits::Block as BlockT;
 
 use super::*;
 use crate::{Aura, BlockNumber, Grandpa};
@@ -27,6 +28,8 @@ use crate::{Aura, BlockNumber, Grandpa};
 pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
 /// Opaque block type.
 pub type Block = generic::Block<Header, UncheckedExtrinsic>;
+/// Opaque block hash type.
+pub type BlockHash = <generic::Block<Header, UncheckedExtrinsic> as BlockT>::Hash;
 /// Opaque block identifier type.
 pub type BlockId = generic::BlockId<Block>;
 

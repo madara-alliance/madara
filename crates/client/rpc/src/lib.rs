@@ -18,6 +18,7 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
+use madara_runtime::opaque::{Block, BlockHash, Header};
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
@@ -43,7 +44,7 @@ use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use sp_runtime::DispatchError;
-use starknet_api::block::BlockHash;
+use starknet_api::block::BlockHash as APIBlockHash;
 use starknet_api::hash::StarkHash;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{
@@ -66,19 +67,19 @@ use crate::types::RpcEventFilter;
 
 /// A Starknet RPC server for Madara
 #[allow(dead_code)]
-pub struct Starknet<A: ChainApi, B: BlockT, BE, G, C, P, H> {
+pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
     client: Arc<C>,
-    backend: Arc<mc_db::Backend<B>>,
-    overrides: Arc<OverrideHandle<B>>,
+    backend: Arc<mc_db::Backend<Block>>,
+    overrides: Arc<OverrideHandle<Block>>,
     #[allow(dead_code)]
     pool: Arc<P>,
     #[allow(dead_code)]
     graph: Arc<Pool<A>>,
-    sync_service: Arc<SyncingService<B>>,
-    starting_block: <<B>::Header as HeaderT>::Number,
+    sync_service: Arc<SyncingService<Block>>,
+    starting_block: <Header as HeaderT>::Number,
     #[allow(dead_code)]
     genesis_provider: Arc<G>,
-    _marker: PhantomData<(B, BE, H)>,
+    _marker: PhantomData<(Block, BE, H)>,
 }
 
 /// Constructor for A Starknet RPC server for Madara
@@ -93,15 +94,15 @@ pub struct Starknet<A: ChainApi, B: BlockT, BE, G, C, P, H> {
 // # Returns
 // * `Self` - The actual Starknet struct
 #[allow(clippy::too_many_arguments)]
-impl<A: ChainApi, B: BlockT, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H> {
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
     pub fn new(
         client: Arc<C>,
-        backend: Arc<mc_db::Backend<B>>,
-        overrides: Arc<OverrideHandle<B>>,
+        backend: Arc<mc_db::Backend<Block>>,
+        overrides: Arc<OverrideHandle<Block>>,
         pool: Arc<P>,
         graph: Arc<Pool<A>>,
-        sync_service: Arc<SyncingService<B>>,
-        starting_block: <<B>::Header as HeaderT>::Number,
+        sync_service: Arc<SyncingService<Block>>,
+        starting_block: <Header as HeaderT>::Number,
         genesis_provider: Arc<G>,
     ) -> Self {
         Self {
@@ -118,32 +119,29 @@ impl<A: ChainApi, B: BlockT, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H> {
     }
 }
 
-impl<A: ChainApi, B, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H>
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
 where
-    B: BlockT,
-    C: HeaderBackend<B> + 'static,
+    C: HeaderBackend<Block> + 'static,
 {
     pub fn current_block_number(&self) -> RpcResult<u64> {
         Ok(UniqueSaturatedInto::<u64>::unique_saturated_into(self.client.info().best_number))
     }
 }
 
-impl<A: ChainApi, B, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H>
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
 where
-    B: BlockT,
-    C: HeaderBackend<B> + 'static,
+    C: HeaderBackend<Block> + 'static,
 {
     pub fn current_spec_version(&self) -> RpcResult<String> {
         Ok("0.5.1".to_string())
     }
 }
 
-impl<A: ChainApi, B, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H>
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
 where
-    B: BlockT,
-    C: HeaderBackend<B> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B>,
+    C: HeaderBackend<Block> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block>,
     H: HasherT + Send + Sync + 'static,
 {
     pub fn current_block_hash(&self) -> Result<H256, StarknetRpcApiError> {
@@ -157,7 +155,7 @@ where
     }
 
     /// Returns the substrate block hash corresponding to the given Starknet block id
-    fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<B::Hash, StarknetRpcApiError> {
+    fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<BlockHash, StarknetRpcApiError> {
         match block_id {
             BlockId::Hash(h) => {
                 madara_backend_client::load_hash(self.client.as_ref(), &self.backend, Felt252Wrapper::from(h).into())
@@ -217,7 +215,7 @@ where
     /// # Arguments
     ///
     /// * `starknet_block_hash` - The hash of the block containing the state diff (starknet block).
-    fn get_state_diff(&self, starknet_block_hash: &BlockHash) -> Result<StateDiff, StarknetRpcApiError> {
+    fn get_state_diff(&self, starknet_block_hash: &APIBlockHash) -> Result<StateDiff, StarknetRpcApiError> {
         let state_diff = self.backend.da().state_diff(starknet_block_hash).map_err(|e| {
             error!("Failed to retrieve state diff from cache for block with hash {}: {e}", starknet_block_hash);
             StarknetRpcApiError::InternalServerError
@@ -230,15 +228,14 @@ where
 }
 
 #[async_trait]
-impl<A, B, BE, G, C, P, H> StarknetWriteRpcApiServer for Starknet<A, B, BE, G, C, P, H>
+impl<A, BE, G, C, P, H> StarknetWriteRpcApiServer for Starknet<A, BE, G, C, P, H>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -345,15 +342,14 @@ where
 
 #[async_trait]
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> StarknetReadRpcApiServer for Starknet<A, B, BE, G, C, P, H>
+impl<A, BE, G, C, P, H> StarknetReadRpcApiServer for Starknet<A, BE, G, C, P, H>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = Block> + 'static,
+    P: TransactionPool<Block = Block> + 'static,
+    BE: Backend<Block> + 'static,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -1301,15 +1297,14 @@ where
     }
 }
 
-fn convert_error<C, B, T>(
+fn convert_error<C, T>(
     client: Arc<C>,
-    best_block_hash: <B as BlockT>::Hash,
+    best_block_hash: BlockHash,
     call_result: Result<T, DispatchError>,
 ) -> Result<T, StarknetRpcApiError>
 where
-    B: BlockT,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
 {
     match call_result {
         Ok(val) => Ok(val),

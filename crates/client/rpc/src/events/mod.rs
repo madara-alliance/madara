@@ -1,5 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
+use madara_runtime::opaque::{Block, BlockHash, Header};
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -17,13 +18,12 @@ use crate::errors::StarknetRpcApiError;
 use crate::types::{ContinuationToken, RpcEventFilter};
 use crate::Starknet;
 
-impl<A: ChainApi, B, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H>
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
 where
-    B: BlockT,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-    BE: Backend<B>,
+    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
+    C: ProvideRuntimeApi<Block>,
+    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
+    BE: Backend<Block>,
     H: HasherT + Send + Sync + 'static,
 {
     /// Helper function to get Starknet block details

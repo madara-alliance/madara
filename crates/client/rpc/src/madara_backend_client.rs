@@ -1,6 +1,7 @@
+use madara_runtime::opaque::{Block, BlockHash, Header};
 use mc_db::DbError;
 use mc_rpc_core::utils::get_block_by_block_hash;
-use mp_block::Block;
+use mp_block::Block as MadaraBlock;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_api::BlockId;
 use sp_blockchain::HeaderBackend;
@@ -9,20 +10,15 @@ use starknet_api::hash::StarkHash;
 
 use crate::errors::StarknetRpcApiError;
 
-pub fn load_hash<B: BlockT, C>(
-    client: &C,
-    backend: &mc_db::Backend<B>,
-    hash: StarkHash,
-) -> Result<Option<B::Hash>, DbError>
+pub fn load_hash<C>(client: &C, backend: &mc_db::Backend<Block>, hash: StarkHash) -> Result<Option<BlockHash>, DbError>
 where
-    B: BlockT,
-    C: HeaderBackend<B> + 'static,
+    C: HeaderBackend<Block> + 'static,
 {
     let substrate_hashes = backend.mapping().block_hash(hash)?;
 
     if let Some(substrate_hashes) = substrate_hashes {
         for substrate_hash in substrate_hashes {
-            if is_canon::<B, C>(client, substrate_hash) {
+            if is_canon::<C>(client, substrate_hash) {
                 return Ok(Some(substrate_hash));
             }
         }
@@ -31,10 +27,9 @@ where
     Ok(None)
 }
 
-pub fn is_canon<B: BlockT, C>(client: &C, target_hash: B::Hash) -> bool
+pub fn is_canon<C>(client: &C, target_hash: BlockHash) -> bool
 where
-    B: BlockT,
-    C: HeaderBackend<B> + 'static,
+    C: HeaderBackend<Block> + 'static,
 {
     if let Ok(Some(number)) = client.number(target_hash) {
         if let Ok(Some(hash)) = client.hash(number) {
@@ -56,7 +51,7 @@ where
 pub fn starknet_block_from_substrate_hash<B: BlockT, C, BE>(
     client: &C,
     target_number: <<B>::Header as HeaderT>::Number,
-) -> Result<Block, StarknetRpcApiError>
+) -> Result<MadaraBlock, StarknetRpcApiError>
 where
     B: BlockT,
     BE: Backend<B> + 'static,
