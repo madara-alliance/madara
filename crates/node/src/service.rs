@@ -439,29 +439,30 @@ pub fn new_full(
         Some("madara"),
         starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend, Arc::clone(&client)),
     );
+    
+    if !sealing.is_default() {
+        run_manual_seal_authorship(
+            block_receiver,
+            state_update_receiver,
+            class_receiver,
+            sealing,
+            client,
+            transaction_pool,
+            select_chain,
+            block_import,
+            &task_manager,
+            prometheus_registry.as_ref(),
+            commands_stream,
+            telemetry,
+        )?;
 
+        network_starter.start_network();
+
+        return Ok(task_manager);
+    }
+    
     if role.is_authority() {
         // manual-seal authorship
-        if !sealing.is_default() {
-            run_manual_seal_authorship(
-                block_receiver,
-                state_update_receiver,
-                class_receiver,
-                sealing,
-                client,
-                transaction_pool,
-                select_chain,
-                block_import,
-                &task_manager,
-                prometheus_registry.as_ref(),
-                commands_stream,
-                telemetry,
-            )?;
-
-            network_starter.start_network();
-
-            return Ok(task_manager);
-        }
 
         let proposer_factory = ProposerFactory::new(
             task_manager.spawn_handle(),

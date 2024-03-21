@@ -253,8 +253,7 @@ fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
     // Define telemetry endpoints at starknodes.com
     cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://starknodes.com/submit/".to_string(), 0)];
 
-    // Enables authoring and manual sealing for custom block production
-    cmd.base.force_authoring = true;
-    cmd.base.alice = true;
+    // Enables manual sealing for custom block production
+    cmd.base.no_grandpa = true;
     cmd.sealing = Some(Sealing::Manual);
 }
