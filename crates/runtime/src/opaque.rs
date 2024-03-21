@@ -9,7 +9,8 @@ pub use frame_system::Call as SystemCall;
 /// Import the Starknet pallet.
 pub use pallet_starknet;
 pub use pallet_timestamp::Call as TimestampCall;
-use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
+use sp_core::H256;
+use sp_runtime::traits::BlakeTwo256;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
@@ -28,7 +29,7 @@ pub type DHeaderT = generic::Header<BlockNumber, BlakeTwo256>;
 /// Opaque block type.
 pub type Block = generic::Block<Header, UncheckedExtrinsic>;
 /// Opaque block hash type.
-pub type BlockHash = <generic::Block<Header, UncheckedExtrinsic> as BlockT>::Hash;
+pub type DHashT = H256;
 /// Opaque block identifier type.
 pub type BlockId = generic::BlockId<Block>;
 

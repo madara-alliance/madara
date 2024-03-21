@@ -12,7 +12,7 @@ pub mod types;
 pub mod utils;
 
 pub use l2::{FetchConfig, SenderConfig};
-pub use madara_runtime::opaque::{Block, BlockHash};
+pub use madara_runtime::opaque::{Block, DHashT};
 pub use utils::{convert, m, utility};
 
 type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc::EngineCommand<sp_core::H256>>;

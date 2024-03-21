@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use madara_runtime::opaque::{Block, BlockHash};
+use madara_runtime::opaque::{Block, DHashT};
 // Substrate
 use parity_scale_codec::{Decode, Encode};
 use sp_database::Database;
@@ -33,7 +33,7 @@ impl MappingDb {
     }
 
     /// Check if the given block hash has already been processed
-    pub fn is_synced(&self, block_hash: &BlockHash) -> Result<bool, DbError> {
+    pub fn is_synced(&self, block_hash: &DHashT) -> Result<bool, DbError> {
         match self.db.get(crate::columns::SYNCED_MAPPING, &block_hash.encode()) {
             Some(raw) => Ok(bool::decode(&mut &raw[..])?),
             None => Ok(false),
@@ -44,15 +44,15 @@ impl MappingDb {
     ///
     /// Under some circumstances it can return multiples blocks hashes, meaning that the result has
     /// to be checked against the actual blockchain state in order to find the good one.
-    pub fn block_hash(&self, starknet_block_hash: StarkHash) -> Result<Option<Vec<BlockHash>>, DbError> {
+    pub fn block_hash(&self, starknet_block_hash: StarkHash) -> Result<Option<Vec<DHashT>>, DbError> {
         match self.db.get(crate::columns::BLOCK_MAPPING, &starknet_block_hash.encode()) {
-            Some(raw) => Ok(Some(Vec::<BlockHash>::decode(&mut &raw[..])?)),
+            Some(raw) => Ok(Some(Vec::<DHashT>::decode(&mut &raw[..])?)),
             None => Ok(None),
         }
     }
 
     /// Register that a Substrate block has been seen, without it containing a Starknet one
-    pub fn write_none(&self, block_hash: BlockHash) -> Result<(), DbError> {
+    pub fn write_none(&self, block_hash: DHashT) -> Result<(), DbError> {
         let _lock = self.write_lock.lock();
 
         let mut transaction = sp_database::Transaction::new();
@@ -127,9 +127,9 @@ impl MappingDb {
     /// * `transaction_hash` - the transaction hash to search for. H256 is used here because it's a
     ///   native type of substrate, and we are sure it's SCALE encoding is optimized and will not
     ///   change.
-    pub fn block_hash_from_transaction_hash(&self, transaction_hash: StarkHash) -> Result<Option<BlockHash>, DbError> {
+    pub fn block_hash_from_transaction_hash(&self, transaction_hash: StarkHash) -> Result<Option<DHashT>, DbError> {
         match self.db.get(crate::columns::TRANSACTION_MAPPING, &transaction_hash.encode()) {
-            Some(raw) => Ok(Some(<BlockHash>::decode(&mut &raw[..])?)),
+            Some(raw) => Ok(Some(<DHashT>::decode(&mut &raw[..])?)),
             None => Ok(None),
         }
     }

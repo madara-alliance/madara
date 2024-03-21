@@ -18,7 +18,7 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
-use madara_runtime::opaque::{Block, BlockHash, DHeaderT};
+use madara_runtime::opaque::{Block, DHashT, DHeaderT};
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
@@ -155,7 +155,7 @@ where
     }
 
     /// Returns the substrate block hash corresponding to the given Starknet block id
-    fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<BlockHash, StarknetRpcApiError> {
+    fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<DHashT, StarknetRpcApiError> {
         match block_id {
             BlockId::Hash(h) => {
                 madara_backend_client::load_hash(self.client.as_ref(), &self.backend, Felt252Wrapper::from(h).into())
@@ -1299,7 +1299,7 @@ where
 
 fn convert_error<C, T>(
     client: Arc<C>,
-    best_block_hash: BlockHash,
+    best_block_hash: DHashT,
     call_result: Result<T, DispatchError>,
 ) -> Result<T, StarknetRpcApiError>
 where

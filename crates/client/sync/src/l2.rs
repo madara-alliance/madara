@@ -10,7 +10,7 @@ use bonsai_trie::BonsaiStorage;
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use madara_runtime::opaque::{Block, BlockHash};
+use madara_runtime::opaque::{Block, DHashT};
 use mc_db::bonsai_db::BonsaiDb;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
@@ -504,7 +504,7 @@ where
     let hash_current = block.parent_block_hash;
     // Well howdy, seems like we can't convert a B::Hash to a FieldElement pa'tner,
     // fancy this instead? 🤠🔫
-    let tmp = BlockHash::from_str(&hash_current.to_string()).unwrap_or(Default::default());
+    let tmp = DHashT::from_str(&hash_current.to_string()).unwrap_or(Default::default());
     let number = block.block_number.ok_or("block number not found")? - 1;
 
     // all blocks have been synchronized, can store pending data

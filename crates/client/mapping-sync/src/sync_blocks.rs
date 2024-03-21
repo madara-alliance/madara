@@ -1,4 +1,4 @@
-use madara_runtime::opaque::{Block, BlockHash, DHeaderT};
+use madara_runtime::opaque::{Block, DHashT, DHeaderT};
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_digest_log::{find_starknet_block, FindLogError};
 use mp_hashers::HasherT;
@@ -179,7 +179,7 @@ where
 fn fetch_header<BE>(
     substrate_backend: &BE,
     madara_backend: &mc_db::Backend<Block>,
-    checking_tip: BlockHash,
+    checking_tip: DHashT,
     sync_from: <DHeaderT as HeaderT>::Number,
 ) -> anyhow::Result<Option<DHeaderT>>
 where

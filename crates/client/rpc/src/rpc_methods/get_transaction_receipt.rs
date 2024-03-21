@@ -2,7 +2,7 @@ use blockifier::execution::contract_class::{ContractClass as ContractClassBf, Co
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
-use madara_runtime::opaque::{Block, BlockHash};
+use madara_runtime::opaque::{Block, DHashT};
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::Felt;
@@ -36,7 +36,7 @@ use crate::Starknet;
 pub(crate) fn get_transaction_receipt_finalized<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
-    substrate_block_hash: BlockHash,
+    substrate_block_hash: DHashT,
     transaction_hash: FieldElement,
 ) -> RpcResult<MaybePendingTransactionReceipt>
 where
@@ -181,7 +181,7 @@ where
 pub(crate) fn get_transaction_receipt_pending<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
-    substrate_block_hash: BlockHash,
+    substrate_block_hash: DHashT,
     transaction_hash: FieldElement,
 ) -> RpcResult<MaybePendingTransactionReceipt>
 where
@@ -305,10 +305,7 @@ where
     Ok(MaybePendingTransactionReceipt::PendingReceipt(receipt))
 }
 
-fn previous_block_hash<A, BE, G, C, P, H>(
-    client: &Starknet<A, BE, G, C, P, H>,
-    block_number: u64,
-) -> RpcResult<BlockHash>
+fn previous_block_hash<A, BE, G, C, P, H>(client: &Starknet<A, BE, G, C, P, H>, block_number: u64) -> RpcResult<DHashT>
 where
     A: ChainApi<Block = Block> + 'static,
     P: TransactionPool<Block = Block> + 'static,
@@ -330,7 +327,7 @@ where
 
 fn transactions<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: BlockHash,
+    substrate_block_hash: DHashT,
     chain_id: Felt,
     block: &mp_block::Block,
     block_number: u64,
@@ -381,7 +378,7 @@ fn tx_deploy_account(tx: mp_transactions::DeployAccountTransaction) -> RpcResult
 
 fn tx_declare<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: BlockHash,
+    substrate_block_hash: DHashT,
     declare_tx: mp_transactions::DeclareTransaction,
 ) -> RpcResult<UserOrL1HandlerTransaction>
 where
@@ -406,7 +403,7 @@ where
 
 fn tx_declare_v0v1<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: BlockHash,
+    substrate_block_hash: DHashT,
     declare_tx: mp_transactions::DeclareTransaction,
     class_hash: ClassHash,
 ) -> RpcResult<UserOrL1HandlerTransaction>
@@ -507,7 +504,7 @@ where
 
 fn execution_infos<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
-    previous_block_hash: BlockHash,
+    previous_block_hash: DHashT,
     transactions: Vec<UserOrL1HandlerTransaction>,
 ) -> RpcResult<TransactionExecutionInfo>
 where

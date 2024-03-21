@@ -1,4 +1,4 @@
-use madara_runtime::opaque::{Block, BlockHash};
+use madara_runtime::opaque::{Block, DHashT};
 use mc_db::DbError;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_block::Block as MadaraBlock;
@@ -10,7 +10,7 @@ use starknet_api::hash::StarkHash;
 
 use crate::errors::StarknetRpcApiError;
 
-pub fn load_hash<C>(client: &C, backend: &mc_db::Backend<Block>, hash: StarkHash) -> Result<Option<BlockHash>, DbError>
+pub fn load_hash<C>(client: &C, backend: &mc_db::Backend<Block>, hash: StarkHash) -> Result<Option<DHashT>, DbError>
 where
     C: HeaderBackend<Block> + 'static,
 {
@@ -27,7 +27,7 @@ where
     Ok(None)
 }
 
-pub fn is_canon<C>(client: &C, target_hash: BlockHash) -> bool
+pub fn is_canon<C>(client: &C, target_hash: DHashT) -> bool
 where
     C: HeaderBackend<Block> + 'static,
 {

@@ -1,6 +1,6 @@
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
-use madara_runtime::opaque::{Block, BlockHash};
+use madara_runtime::opaque::{Block, DHashT};
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::Felt;
@@ -27,7 +27,7 @@ use crate::Starknet;
 pub(crate) fn get_block_with_tx_hashes_finalized<A, BE, G, C, P, H>(
     server: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
-    substrate_block_hash: BlockHash,
+    substrate_block_hash: DHashT,
 ) -> RpcResult<MaybePendingBlockWithTxHashes>
 where
     A: ChainApi<Block = Block> + 'static,
@@ -102,7 +102,7 @@ where
 pub(crate) fn get_block_with_txs_finalized<A, BE, G, C, P, H>(
     server: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
-    substrate_block_hash: BlockHash,
+    substrate_block_hash: DHashT,
 ) -> RpcResult<MaybePendingBlockWithTxs>
 where
     A: ChainApi<Block = Block> + 'static,

@@ -6,7 +6,7 @@ use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
-use madara_runtime::opaque::{Block, BlockHash};
+use madara_runtime::opaque::{Block, DHashT};
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::{StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
@@ -500,7 +500,7 @@ fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
 fn map_transaction_to_user_transaction<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
     starknet_block: MadaraBlock,
-    substrate_block_hash: BlockHash,
+    substrate_block_hash: DHashT,
     chain_id: Felt252Wrapper,
     target_transaction_hash: Option<Felt252Wrapper>,
 ) -> Result<(Vec<UserOrL1HandlerTransaction>, Vec<UserOrL1HandlerTransaction>), StarknetRpcApiError>
@@ -533,7 +533,7 @@ where
 fn convert_transaction<A, BE, G, C, P, H>(
     tx: &Transaction,
     starknet: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: BlockHash,
+    substrate_block_hash: DHashT,
     chain_id: Felt252Wrapper,
     block_number: u64,
 ) -> Result<UserOrL1HandlerTransaction, StarknetRpcApiError>
@@ -609,8 +609,8 @@ where
 
 fn get_previous_block_substrate_hash<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: BlockHash,
-) -> Result<BlockHash, StarknetRpcApiError>
+    substrate_block_hash: DHashT,
+) -> Result<DHashT, StarknetRpcApiError>
 where
     A: ChainApi<Block = Block> + 'static,
     C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,

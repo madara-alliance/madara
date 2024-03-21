@@ -1,7 +1,7 @@
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use log::error;
-use madara_runtime::opaque::{Block, BlockHash};
+use madara_runtime::opaque::{Block, DHashT};
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_sync::l2::get_pending_state_update;
@@ -22,7 +22,7 @@ use crate::Starknet;
 
 pub(crate) fn get_state_update_finalized<A, BE, G, C, P, H>(
     server: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: BlockHash,
+    substrate_block_hash: DHashT,
 ) -> RpcResult<MaybePendingStateUpdate>
 where
     A: ChainApi<Block = Block> + 'static,
