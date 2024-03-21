@@ -181,7 +181,6 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
                 std::process::exit(0)
             });
         }
-        //std::thread::sleep(Duration::from_secs(5));
     }
     if cli.run.base.shared_params.dev {
         override_dev_environment(&mut cli.run);

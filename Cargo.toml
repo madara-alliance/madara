@@ -180,7 +180,7 @@ sc-network-sync = { git = "https://github.com/massalabs/polkadot-sdk", branch = 
 sc-basic-authorship = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 sc-block-builder = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
-sc-cli = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std"}
+sc-cli = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
 sc-client-api = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 sc-consensus-aura = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
@@ -255,7 +255,7 @@ mc-sync = { path = "crates/client/sync" }
 madara-runtime = { path = "crates/runtime" }
 
 # TUI Dashboard
-deoxys-tui = {path = "crates/deoxys-tui"}
+deoxys-tui = { path = "crates/deoxys-tui" }
 
 # Starknet dependencies
 # Cairo Virtual Machine

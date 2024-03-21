@@ -96,11 +96,11 @@ mp-sequencer-address = { workspace = true, features = ["client"] }
 try-runtime-cli = { optional = true, git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
 #Deoxys
+deoxys-tui = { optional = true, path = "../deoxys-tui" }
 mc-sync = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true }
 url = { workspace = true }
-deoxys-tui = { optional = true, path = "../deoxys-tui" }
 
 [build-dependencies]
 substrate-build-script-utils = { workspace = true }
@@ -121,4 +121,3 @@ try-runtime = ["madara-runtime/try-runtime", "try-runtime-cli/try-runtime"]
 # This is the way to run a sharingan chain
 sharingan = []
 tui = ["deoxys-tui"]
-
