@@ -2,7 +2,7 @@ use blockifier::execution::contract_class::{ContractClass as ContractClassBf, Co
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
-use madara_runtime::opaque::{Block, BlockHash, Header};
+use madara_runtime::opaque::{Block, BlockHash};
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::Felt;
@@ -18,7 +18,6 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_api::api_core::ClassHash;
 use starknet_core::types::{
     BlockId, DeclareTransactionReceipt, DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult,

@@ -1,4 +1,4 @@
-use madara_runtime::opaque::{Block, BlockHash, Header};
+use madara_runtime::opaque::{Block, BlockHash, DHeaderT};
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_digest_log::{find_starknet_block, FindLogError};
 use mp_hashers::HasherT;
@@ -7,9 +7,9 @@ use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{Backend as _, HeaderBackend};
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT, Zero};
+use sp_runtime::traits::Header as HeaderT;
 
-fn sync_block<C, BE, H>(client: &C, backend: &mc_db::Backend<Block>, header: &Header) -> anyhow::Result<()>
+fn sync_block<C, BE, H>(client: &C, backend: &mc_db::Backend<Block>, header: &DHeaderT) -> anyhow::Result<()>
 where
     // TODO: refactor this!
     C: HeaderBackend<Block> + StorageProvider<Block, BE>,
@@ -72,7 +72,7 @@ where
     }
 }
 
-fn sync_genesis_block<C, H>(_client: &C, backend: &mc_db::Backend<Block>, header: &Header) -> anyhow::Result<()>
+fn sync_genesis_block<C, H>(_client: &C, backend: &mc_db::Backend<Block>, header: &DHeaderT) -> anyhow::Result<()>
 where
     C: HeaderBackend<Block>,
     H: HasherT,
@@ -103,7 +103,7 @@ fn sync_one_block<C, BE, H>(
     client: &C,
     substrate_backend: &BE,
     madara_backend: &mc_db::Backend<Block>,
-    sync_from: <Header as HeaderT>::Number,
+    sync_from: <DHeaderT as HeaderT>::Number,
 ) -> anyhow::Result<bool>
 where
     C: ProvideRuntimeApi<Block>,
@@ -158,7 +158,7 @@ pub fn sync_blocks<C, BE, H>(
     substrate_backend: &BE,
     madara_backend: &mc_db::Backend<Block>,
     limit: usize,
-    sync_from: <Header as HeaderT>::Number,
+    sync_from: <DHeaderT as HeaderT>::Number,
 ) -> anyhow::Result<bool>
 where
     C: ProvideRuntimeApi<Block>,
@@ -180,8 +180,8 @@ fn fetch_header<BE>(
     substrate_backend: &BE,
     madara_backend: &mc_db::Backend<Block>,
     checking_tip: BlockHash,
-    sync_from: <Header as HeaderT>::Number,
-) -> anyhow::Result<Option<Header>>
+    sync_from: <DHeaderT as HeaderT>::Number,
+) -> anyhow::Result<Option<DHeaderT>>
 where
     BE: HeaderBackend<Block>,
 {

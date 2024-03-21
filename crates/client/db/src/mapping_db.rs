@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
 use madara_runtime::opaque::{Block, BlockHash};

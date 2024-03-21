@@ -1,6 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
-use madara_runtime::opaque::{Block, BlockHash, Header};
+use madara_runtime::opaque::Block;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -10,7 +10,6 @@ use sc_client_api::BlockBackend;
 use sc_transaction_pool::ChainApi;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{BlockId, EmittedEvent, EventsPage};
 use starknet_ff::FieldElement;
 

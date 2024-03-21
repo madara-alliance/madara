@@ -6,7 +6,7 @@ use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
-use madara_runtime::opaque::{Block, BlockHash, Header};
+use madara_runtime::opaque::{Block, BlockHash};
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::{StarknetReadRpcApiServer, StarknetTraceRpcApiServer};

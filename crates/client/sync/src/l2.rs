@@ -22,7 +22,7 @@ use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::{H160, H256};
 use sp_runtime::generic::{Block as RuntimeBlock, Header};
-use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
+use sp_runtime::traits::{BlakeTwo256, UniqueSaturatedInto};
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_api::hash::StarkHash;

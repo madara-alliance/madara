@@ -1,4 +1,4 @@
-use madara_runtime::opaque::{Block, BlockHash, Header};
+use madara_runtime::opaque::{Block, BlockHash};
 use mc_db::DbError;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_block::Block as MadaraBlock;

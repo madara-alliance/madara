@@ -18,7 +18,7 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
-use madara_runtime::opaque::{Block, BlockHash, Header};
+use madara_runtime::opaque::{Block, BlockHash, DHeaderT};
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
@@ -42,7 +42,7 @@ use sp_api::ProvideRuntimeApi;
 use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
+use sp_runtime::traits::Header as HeaderT;
 use sp_runtime::DispatchError;
 use starknet_api::block::BlockHash as APIBlockHash;
 use starknet_api::hash::StarkHash;
@@ -76,7 +76,7 @@ pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
     #[allow(dead_code)]
     graph: Arc<Pool<A>>,
     sync_service: Arc<SyncingService<Block>>,
-    starting_block: <Header as HeaderT>::Number,
+    starting_block: <DHeaderT as HeaderT>::Number,
     #[allow(dead_code)]
     genesis_provider: Arc<G>,
     _marker: PhantomData<(Block, BE, H)>,
@@ -102,7 +102,7 @@ impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
         pool: Arc<P>,
         graph: Arc<Pool<A>>,
         sync_service: Arc<SyncingService<Block>>,
-        starting_block: <Header as HeaderT>::Number,
+        starting_block: <DHeaderT as HeaderT>::Number,
         genesis_provider: Arc<G>,
     ) -> Self {
         Self {

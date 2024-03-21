@@ -19,14 +19,14 @@ use futures::prelude::*;
 use futures::task::{Context, Poll};
 use futures_timer::Delay;
 use log::debug;
-use madara_runtime::opaque::{Block, BlockHash, Header};
+use madara_runtime::opaque::{Block, DHeaderT};
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::client::ImportNotifications;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
+use sp_runtime::traits::Header as HeaderT;
 
 /// The worker in charge of syncing the Madara db when it receive a new Substrate block
 pub struct MappingSyncWorker<C, BE, H> {
@@ -41,7 +41,7 @@ pub struct MappingSyncWorker<C, BE, H> {
 
     have_next: bool,
     retry_times: usize,
-    sync_from: <Header as HeaderT>::Number,
+    sync_from: <DHeaderT as HeaderT>::Number,
 }
 
 impl<C, BE, H> Unpin for MappingSyncWorker<C, BE, H> {}
@@ -55,7 +55,7 @@ impl<C, BE, H> MappingSyncWorker<C, BE, H> {
         substrate_backend: Arc<BE>,
         frontier_backend: Arc<mc_db::Backend<Block>>,
         retry_times: usize,
-        sync_from: <Header as HeaderT>::Number,
+        sync_from: <DHeaderT as HeaderT>::Number,
     ) -> Self {
         Self {
             import_notifications,
