@@ -440,6 +440,7 @@ pub fn new_full(
         starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend, Arc::clone(&client)),
     );
     
+    // manual-seal authorship
     if !sealing.is_default() {
         run_manual_seal_authorship(
             block_receiver,
@@ -462,8 +463,6 @@ pub fn new_full(
     }
     
     if role.is_authority() {
-        // manual-seal authorship
-
         let proposer_factory = ProposerFactory::new(
             task_manager.spawn_handle(),
             client.clone(),
