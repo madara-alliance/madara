@@ -27,11 +27,11 @@ use crate::{Aura, BlockNumber, Grandpa};
 /// Opaque block header type.
 pub type DHeaderT = generic::Header<BlockNumber, BlakeTwo256>;
 /// Opaque block type.
-pub type Block = generic::Block<Header, UncheckedExtrinsic>;
+pub type DBlockT = generic::Block<Header, UncheckedExtrinsic>;
 /// Opaque block hash type.
 pub type DHashT = H256;
 /// Opaque block identifier type.
-pub type BlockId = generic::BlockId<Block>;
+pub type BlockId = generic::BlockId<DBlockT>;
 
 impl_opaque_keys! {
     pub struct SessionKeys {

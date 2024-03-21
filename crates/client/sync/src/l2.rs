@@ -10,7 +10,7 @@ use bonsai_trie::BonsaiStorage;
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use madara_runtime::opaque::{Block, DHashT};
+use madara_runtime::opaque::{DBlockT, DHashT};
 use mc_db::bonsai_db::BonsaiDb;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
@@ -124,7 +124,7 @@ async fn fetch_block_and_updates<C>(
     client: &C,
 ) -> Result<(p::Block, StateUpdate, Vec<ContractClassData>), L2SyncError>
 where
-    C: HeaderBackend<Block>,
+    C: HeaderBackend<DBlockT>,
 {
     // retry loop
     const MAX_RETRY: usize = 15;
@@ -159,7 +159,7 @@ pub async fn sync<C>(
     bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
     client: Arc<C>,
 ) where
-    C: HeaderBackend<Block>,
+    C: HeaderBackend<DBlockT>,
 {
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
     let provider = SequencerGatewayProvider::new(
@@ -287,7 +287,7 @@ async fn fetch_state_and_class_update<C>(
     client: &C,
 ) -> Result<(StateUpdate, Vec<ContractClassData>), L2SyncError>
 where
-    C: HeaderBackend<Block>,
+    C: HeaderBackend<DBlockT>,
 {
     // Children tasks need StateUpdate as an Arc, because of task spawn 'static requirement
     // We make an Arc, and then unwrap the StateUpdate out of the Arc
@@ -317,7 +317,7 @@ async fn fetch_class_update<C>(
     client: &C,
 ) -> Result<Vec<ContractClassData>, L2SyncError>
 where
-    C: HeaderBackend<Block>,
+    C: HeaderBackend<DBlockT>,
 {
     // defaults to downloading ALL classes if a substrate block hash could not be determined
     let missing_classes = match block_hash_substrate(client, block_number) {
@@ -353,7 +353,7 @@ fn block_hash_madara(state_update: &StateUpdate) -> FieldElement {
 /// Retrieves Substrate block hash from rpc client
 fn block_hash_substrate<C>(client: &C, block_number: u64) -> Option<H256>
 where
-    C: HeaderBackend<Block>,
+    C: HeaderBackend<DBlockT>,
 {
     client
         .hash(UniqueSaturatedInto::unique_saturated_into(block_number))
@@ -496,7 +496,7 @@ pub fn verify_l2(
 
 async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
 where
-    C: HeaderBackend<Block>,
+    C: HeaderBackend<DBlockT>,
 {
     let block = provider.get_block(BlockId::Pending).await.map_err(|e| format!("Failed to get pending block: {e}"))?;
 

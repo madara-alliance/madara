@@ -19,7 +19,7 @@ use futures::prelude::*;
 use futures::task::{Context, Poll};
 use futures_timer::Delay;
 use log::debug;
-use madara_runtime::opaque::{Block, DHeaderT};
+use madara_runtime::opaque::{DBlockT, DHeaderT};
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -30,13 +30,13 @@ use sp_runtime::traits::Header as HeaderT;
 
 /// The worker in charge of syncing the Madara db when it receive a new Substrate block
 pub struct MappingSyncWorker<C, BE, H> {
-    import_notifications: ImportNotifications<Block>,
+    import_notifications: ImportNotifications<DBlockT>,
     timeout: Duration,
     inner_delay: Option<Delay>,
 
     client: Arc<C>,
     substrate_backend: Arc<BE>,
-    madara_backend: Arc<mc_db::Backend<Block>>,
+    madara_backend: Arc<mc_db::Backend<DBlockT>>,
     hasher: PhantomData<H>,
 
     have_next: bool,
@@ -49,11 +49,11 @@ impl<C, BE, H> Unpin for MappingSyncWorker<C, BE, H> {}
 #[allow(clippy::too_many_arguments)]
 impl<C, BE, H> MappingSyncWorker<C, BE, H> {
     pub fn new(
-        import_notifications: ImportNotifications<Block>,
+        import_notifications: ImportNotifications<DBlockT>,
         timeout: Duration,
         client: Arc<C>,
         substrate_backend: Arc<BE>,
-        frontier_backend: Arc<mc_db::Backend<Block>>,
+        frontier_backend: Arc<mc_db::Backend<DBlockT>>,
         retry_times: usize,
         sync_from: <DHeaderT as HeaderT>::Number,
     ) -> Self {
@@ -76,10 +76,10 @@ impl<C, BE, H> MappingSyncWorker<C, BE, H> {
 
 impl<C, BE, H> Stream for MappingSyncWorker<C, BE, H>
 where
-    C: ProvideRuntimeApi<Block>,
-    C::Api: StarknetRuntimeApi<Block>,
-    C: HeaderBackend<Block> + StorageProvider<Block, BE>,
-    BE: Backend<Block>,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
+    C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
+    BE: Backend<DBlockT>,
     H: HasherT,
 {
     type Item = ();

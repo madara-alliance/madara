@@ -1,4 +1,4 @@
-use madara_runtime::opaque::{Block, DHashT, DHeaderT};
+use madara_runtime::opaque::{DBlockT, DHashT, DHeaderT};
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_digest_log::{find_starknet_block, FindLogError};
 use mp_hashers::HasherT;
@@ -9,13 +9,13 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{Backend as _, HeaderBackend};
 use sp_runtime::traits::Header as HeaderT;
 
-fn sync_block<C, BE, H>(client: &C, backend: &mc_db::Backend<Block>, header: &DHeaderT) -> anyhow::Result<()>
+fn sync_block<C, BE, H>(client: &C, backend: &mc_db::Backend<DBlockT>, header: &DHeaderT) -> anyhow::Result<()>
 where
     // TODO: refactor this!
-    C: HeaderBackend<Block> + StorageProvider<Block, BE>,
-    C: ProvideRuntimeApi<Block>,
-    C::Api: StarknetRuntimeApi<Block>,
-    BE: Backend<Block>,
+    C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
+    BE: Backend<DBlockT>,
     H: HasherT,
 {
     // Before storing the new block in the Madara backend database, we want to make sure that the
@@ -72,9 +72,9 @@ where
     }
 }
 
-fn sync_genesis_block<C, H>(_client: &C, backend: &mc_db::Backend<Block>, header: &DHeaderT) -> anyhow::Result<()>
+fn sync_genesis_block<C, H>(_client: &C, backend: &mc_db::Backend<DBlockT>, header: &DHeaderT) -> anyhow::Result<()>
 where
-    C: HeaderBackend<Block>,
+    C: HeaderBackend<DBlockT>,
     H: HasherT,
 {
     let substrate_block_hash = header.hash();
@@ -87,7 +87,7 @@ where
         Err(FindLogError::MultipleLogs) => return Err(anyhow::anyhow!("Multiple logs found")),
     };
     let block_hash = block.header().hash::<H>();
-    let mapping_commitment = mc_db::MappingCommitment::<Block> {
+    let mapping_commitment = mc_db::MappingCommitment::<DBlockT> {
         block_number: block.header().block_number,
         block_hash: substrate_block_hash,
         starknet_block_hash: block_hash.into(),
@@ -102,14 +102,14 @@ where
 fn sync_one_block<C, BE, H>(
     client: &C,
     substrate_backend: &BE,
-    madara_backend: &mc_db::Backend<Block>,
+    madara_backend: &mc_db::Backend<DBlockT>,
     sync_from: <DHeaderT as HeaderT>::Number,
 ) -> anyhow::Result<bool>
 where
-    C: ProvideRuntimeApi<Block>,
-    C::Api: StarknetRuntimeApi<Block>,
-    C: HeaderBackend<Block> + StorageProvider<Block, BE>,
-    BE: Backend<Block>,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
+    C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
+    BE: Backend<DBlockT>,
     H: HasherT,
 {
     let mut current_syncing_tips = madara_backend.meta().current_syncing_tips()?;
@@ -156,15 +156,15 @@ where
 pub fn sync_blocks<C, BE, H>(
     client: &C,
     substrate_backend: &BE,
-    madara_backend: &mc_db::Backend<Block>,
+    madara_backend: &mc_db::Backend<DBlockT>,
     limit: usize,
     sync_from: <DHeaderT as HeaderT>::Number,
 ) -> anyhow::Result<bool>
 where
-    C: ProvideRuntimeApi<Block>,
-    C::Api: StarknetRuntimeApi<Block>,
-    C: HeaderBackend<Block> + StorageProvider<Block, BE>,
-    BE: Backend<Block>,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
+    C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
+    BE: Backend<DBlockT>,
     H: HasherT,
 {
     let mut synced_any = false;
@@ -178,12 +178,12 @@ where
 
 fn fetch_header<BE>(
     substrate_backend: &BE,
-    madara_backend: &mc_db::Backend<Block>,
+    madara_backend: &mc_db::Backend<DBlockT>,
     checking_tip: DHashT,
     sync_from: <DHeaderT as HeaderT>::Number,
 ) -> anyhow::Result<Option<DHeaderT>>
 where
-    BE: HeaderBackend<Block>,
+    BE: HeaderBackend<DBlockT>,
 {
     if madara_backend.mapping().is_synced(&checking_tip)? {
         return Ok(None);

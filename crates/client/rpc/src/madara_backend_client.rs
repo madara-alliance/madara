@@ -1,4 +1,4 @@
-use madara_runtime::opaque::{Block, DHashT};
+use madara_runtime::opaque::{DBlockT, DHashT};
 use mc_db::DbError;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_block::Block as MadaraBlock;
@@ -10,9 +10,9 @@ use starknet_api::hash::StarkHash;
 
 use crate::errors::StarknetRpcApiError;
 
-pub fn load_hash<C>(client: &C, backend: &mc_db::Backend<Block>, hash: StarkHash) -> Result<Option<DHashT>, DbError>
+pub fn load_hash<C>(client: &C, backend: &mc_db::Backend<DBlockT>, hash: StarkHash) -> Result<Option<DHashT>, DbError>
 where
-    C: HeaderBackend<Block> + 'static,
+    C: HeaderBackend<DBlockT> + 'static,
 {
     let substrate_hashes = backend.mapping().block_hash(hash)?;
 
@@ -29,7 +29,7 @@ where
 
 pub fn is_canon<C>(client: &C, target_hash: DHashT) -> bool
 where
-    C: HeaderBackend<Block> + 'static,
+    C: HeaderBackend<DBlockT> + 'static,
 {
     if let Ok(Some(number)) = client.number(target_hash) {
         if let Ok(Some(hash)) = client.hash(number) {

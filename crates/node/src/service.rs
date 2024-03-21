@@ -9,7 +9,7 @@ use futures::channel::mpsc;
 use futures::future;
 use futures::future::BoxFuture;
 use futures::prelude::*;
-use madara_runtime::opaque::Block;
+use madara_runtime::opaque::DBlockT;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
@@ -70,12 +70,12 @@ impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
     }
 }
 
-pub type FullClient = sc_service::TFullClient<Block, RuntimeApi, NativeElseWasmExecutor<ExecutorDispatch>>;
-type FullBackend = sc_service::TFullBackend<Block>;
-type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
+pub type FullClient = sc_service::TFullClient<DBlockT, RuntimeApi, NativeElseWasmExecutor<ExecutorDispatch>>;
+type FullBackend = sc_service::TFullBackend<DBlockT>;
+type FullSelectChain = sc_consensus::LongestChain<FullBackend, DBlockT>;
 
-type BasicImportQueue = sc_consensus::DefaultImportQueue<Block>;
-type BoxBlockImport = sc_consensus::BoxBlockImport<Block>;
+type BasicImportQueue = sc_consensus::DefaultImportQueue<DBlockT>;
+type BoxBlockImport = sc_consensus::BoxBlockImport<DBlockT>;
 
 /// The minimum period of blocks on which justifications will be
 /// imported and generated.
@@ -92,11 +92,11 @@ pub fn new_partial<BIQ>(
         FullClient,
         FullBackend,
         FullSelectChain,
-        sc_consensus::DefaultImportQueue<Block>,
-        sc_transaction_pool::FullPool<Block, FullClient>,
+        sc_consensus::DefaultImportQueue<DBlockT>,
+        sc_transaction_pool::FullPool<DBlockT, FullClient>,
         (
             BoxBlockImport,
-            sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
+            sc_consensus_grandpa::LinkHalf<DBlockT, FullClient, FullSelectChain>,
             Option<Telemetry>,
             Arc<MadaraBackend>,
         ),
@@ -104,14 +104,14 @@ pub fn new_partial<BIQ>(
     ServiceError,
 >
 where
-    RuntimeApi: ConstructRuntimeApi<Block, FullClient>,
+    RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
     RuntimeApi: Send + Sync + 'static,
     BIQ: FnOnce(
         Arc<FullClient>,
         &Configuration,
         &TaskManager,
         Option<TelemetryHandle>,
-        GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
+        GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
         Arc<MadaraBackend>,
     ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>,
 {
@@ -130,7 +130,7 @@ where
 
     let backend = new_db_backend(config.db_config())?;
 
-    let genesis_block_builder = MadaraGenesisBlockBuilder::<Block, _, _>::new(
+    let genesis_block_builder = MadaraGenesisBlockBuilder::<DBlockT, _, _>::new(
         config.chain_spec.as_storage_builder(),
         true,
         backend.clone(),
@@ -140,10 +140,10 @@ where
     .unwrap();
 
     let (client, backend, keystore_container, task_manager) = sc_service::new_full_parts_with_genesis_builder::<
-        Block,
+        DBlockT,
         RuntimeApi,
         _,
-        MadaraGenesisBlockBuilder<Block, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
+        MadaraGenesisBlockBuilder<DBlockT, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
     >(
         config,
         telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
@@ -206,11 +206,11 @@ pub fn build_aura_grandpa_import_queue(
     config: &Configuration,
     task_manager: &TaskManager,
     telemetry: Option<TelemetryHandle>,
-    grandpa_block_import: GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
+    grandpa_block_import: GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
     _madara_backend: Arc<MadaraBackend>,
 ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>
 where
-    RuntimeApi: ConstructRuntimeApi<Block, FullClient>,
+    RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
     RuntimeApi: Send + Sync + 'static,
 {
     let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
@@ -247,11 +247,11 @@ pub fn build_manual_seal_import_queue(
     config: &Configuration,
     task_manager: &TaskManager,
     _telemetry: Option<TelemetryHandle>,
-    _grandpa_block_import: GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
+    _grandpa_block_import: GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
     _madara_backend: Arc<MadaraBackend>,
 ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>
 where
-    RuntimeApi: ConstructRuntimeApi<Block, FullClient>,
+    RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
     RuntimeApi: Send + Sync + 'static,
 {
     Ok((
@@ -577,7 +577,7 @@ fn run_manual_seal_authorship(
     class_receiver: tokio::sync::mpsc::Receiver<ClassUpdateWrapper>,
     sealing: SealingMode,
     client: Arc<FullClient>,
-    transaction_pool: Arc<FullPool<Block, FullClient>>,
+    transaction_pool: Arc<FullPool<DBlockT, FullClient>>,
     select_chain: FullSelectChain,
     block_import: BoxBlockImport,
     task_manager: &TaskManager,
@@ -586,7 +586,7 @@ fn run_manual_seal_authorship(
     telemetry: Option<Telemetry>,
 ) -> Result<(), ServiceError>
 where
-    RuntimeApi: ConstructRuntimeApi<Block, FullClient>,
+    RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
     RuntimeApi: Send + Sync + 'static,
 {
     let proposer_factory = ProposerFactory::new(
@@ -727,7 +727,7 @@ where
 }
 
 type ChainOpsResult =
-    Result<(Arc<FullClient>, Arc<FullBackend>, BasicQueue<Block>, TaskManager, Arc<MadaraBackend>), ServiceError>;
+    Result<(Arc<FullClient>, Arc<FullBackend>, BasicQueue<DBlockT>, TaskManager, Arc<MadaraBackend>), ServiceError>;
 
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;

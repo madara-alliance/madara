@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use madara_runtime::opaque::{Block, DHashT};
+use madara_runtime::opaque::{DBlockT, DHashT};
 // Substrate
 use parity_scale_codec::{Decode, Encode};
 use sp_database::Database;
@@ -65,7 +65,7 @@ impl MappingDb {
     }
 
     /// Register that a Substate block has been seen and map it to the Statknet block it contains
-    pub fn write_hashes(&self, commitment: MappingCommitment<Block>) -> Result<(), DbError> {
+    pub fn write_hashes(&self, commitment: MappingCommitment<DBlockT>) -> Result<(), DbError> {
         let _lock = self.write_lock.lock();
 
         let mut transaction = sp_database::Transaction::new();

@@ -1,7 +1,7 @@
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use log::error;
-use madara_runtime::opaque::{Block, DHashT};
+use madara_runtime::opaque::{DBlockT, DHashT};
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_sync::l2::get_pending_state_update;
@@ -25,12 +25,12 @@ pub(crate) fn get_state_update_finalized<A, BE, G, C, P, H>(
     substrate_block_hash: DHashT,
 ) -> RpcResult<MaybePendingStateUpdate>
 where
-    A: ChainApi<Block = Block> + 'static,
-    P: TransactionPool<Block = Block> + 'static,
-    BE: Backend<Block> + 'static,
-    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
-    C: ProvideRuntimeApi<Block>,
-    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
+    A: ChainApi<Block = DBlockT> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -60,12 +60,12 @@ pub(crate) fn get_state_update_pending() -> RpcResult<MaybePendingStateUpdate> {
 
 fn state_diff<A, BE, G, C, P, H>(block: &mp_block::Block, server: &Starknet<A, BE, G, C, P, H>) -> RpcResult<StateDiff>
 where
-    A: ChainApi<Block = Block> + 'static,
-    P: TransactionPool<Block = Block> + 'static,
-    BE: Backend<Block> + 'static,
-    C: HeaderBackend<Block> + BlockBackend<Block> + StorageProvider<Block, BE> + 'static,
-    C: ProvideRuntimeApi<Block>,
-    C::Api: StarknetRuntimeApi<Block> + ConvertTransactionRuntimeApi<Block>,
+    A: ChainApi<Block = DBlockT> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {

@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use futures::channel::mpsc;
 use jsonrpsee::RpcModule;
-use madara_runtime::opaque::Block;
+use madara_runtime::opaque::DBlockT;
 use madara_runtime::{AccountId, Hash, Index, StarknetHasher};
 use mc_genesis_data_provider::GenesisProvider;
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
@@ -36,7 +36,7 @@ pub struct FullDeps<A: ChainApi, C, G: GenesisProvider, P> {
     /// Manual seal command sink
     pub command_sink: Option<mpsc::Sender<EngineCommand<Hash>>>,
     /// Starknet dependencies
-    pub starknet: StarknetDeps<C, G, Block>,
+    pub starknet: StarknetDeps<C, G, DBlockT>,
 }
 
 /// Instantiate all full RPC extensions.
@@ -44,21 +44,21 @@ pub fn create_full<A, C, G, P, BE>(
     deps: FullDeps<A, C, G, P>,
 ) -> Result<RpcModule<()>, Box<dyn std::error::Error + Send + Sync>>
 where
-    A: ChainApi<Block = Block> + 'static,
-    C: ProvideRuntimeApi<Block>,
-    C: HeaderBackend<Block>
-        + BlockBackend<Block>
-        + HeaderMetadata<Block, Error = BlockChainError>
-        + StorageProvider<Block, BE>
+    A: ChainApi<Block = DBlockT> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C: HeaderBackend<DBlockT>
+        + BlockBackend<DBlockT>
+        + HeaderMetadata<DBlockT, Error = BlockChainError>
+        + StorageProvider<DBlockT, BE>
         + 'static,
     C: Send + Sync + 'static,
-    C::Api: substrate_frame_rpc_system::AccountNonceApi<Block, AccountId, Index>,
-    C::Api: BlockBuilder<Block>,
-    C::Api: pallet_starknet_runtime_api::StarknetRuntimeApi<Block>
-        + pallet_starknet_runtime_api::ConvertTransactionRuntimeApi<Block>,
+    C::Api: substrate_frame_rpc_system::AccountNonceApi<DBlockT, AccountId, Index>,
+    C::Api: BlockBuilder<DBlockT>,
+    C::Api: pallet_starknet_runtime_api::StarknetRuntimeApi<DBlockT>
+        + pallet_starknet_runtime_api::ConvertTransactionRuntimeApi<DBlockT>,
     G: GenesisProvider + Send + Sync + 'static,
-    P: TransactionPool<Block = Block> + 'static,
-    BE: Backend<Block> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
 {
     use mc_rpc::{Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
     use sc_consensus_manual_seal::rpc::{ManualSeal, ManualSealApiServer};
