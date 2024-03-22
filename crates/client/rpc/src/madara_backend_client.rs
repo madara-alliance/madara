@@ -1,4 +1,4 @@
-use madara_runtime::opaque::{DBlockT, DHashT};
+use deoxys_runtime::opaque::{DBlockT, DHashT};
 use mc_db::{DbError, DeoxysBackend};
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_block::DeoxysBlock;

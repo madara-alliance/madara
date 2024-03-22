@@ -2508,6 +2508,7 @@ dependencies = [
  "bincode 1.3.3",
  "blockifier",
  "clap",
+ "deoxys-runtime",
  "ethers",
  "frame-benchmarking",
  "frame-benchmarking-cli",
@@ -2517,7 +2518,6 @@ dependencies = [
  "jsonrpsee",
  "lazy_static",
  "log",
- "madara-runtime",
  "mc-db",
  "mc-genesis-data-provider",
  "mc-mapping-sync",
@@ -2579,6 +2579,52 @@ dependencies = [
  "tokio",
  "try-runtime-cli",
  "url",
+]
+
+[[package]]
+name = "deoxys-runtime"
+version = "0.1.0"
+dependencies = [
+ "blockifier",
+ "frame-benchmarking",
+ "frame-executive",
+ "frame-support",
+ "frame-system",
+ "frame-system-benchmarking",
+ "frame-system-rpc-runtime-api",
+ "frame-try-runtime",
+ "mp-block",
+ "mp-chain-id",
+ "mp-contract",
+ "mp-fee",
+ "mp-felt",
+ "mp-hashers",
+ "mp-program-hash",
+ "mp-simulations",
+ "mp-transactions",
+ "pallet-aura",
+ "pallet-grandpa",
+ "pallet-starknet",
+ "pallet-starknet-runtime-api",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-api",
+ "sp-block-builder",
+ "sp-consensus-aura",
+ "sp-core",
+ "sp-inherents",
+ "sp-offchain",
+ "sp-runtime",
+ "sp-session",
+ "sp-std",
+ "sp-transaction-pool",
+ "sp-version",
+ "starknet-core",
+ "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
+ "starknet_api",
+ "substrate-wasm-builder",
 ]
 
 [[package]]
@@ -5811,52 +5857,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "madara-runtime"
-version = "0.1.0"
-dependencies = [
- "blockifier",
- "frame-benchmarking",
- "frame-executive",
- "frame-support",
- "frame-system",
- "frame-system-benchmarking",
- "frame-system-rpc-runtime-api",
- "frame-try-runtime",
- "mp-block",
- "mp-chain-id",
- "mp-contract",
- "mp-fee",
- "mp-felt",
- "mp-hashers",
- "mp-program-hash",
- "mp-simulations",
- "mp-transactions",
- "pallet-aura",
- "pallet-grandpa",
- "pallet-starknet",
- "pallet-starknet-runtime-api",
- "pallet-timestamp",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sp-api",
- "sp-block-builder",
- "sp-consensus-aura",
- "sp-core",
- "sp-inherents",
- "sp-offchain",
- "sp-runtime",
- "sp-session",
- "sp-std",
- "sp-transaction-pool",
- "sp-version",
- "starknet-core",
- "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
- "starknet_api",
- "substrate-wasm-builder",
-]
-
-[[package]]
 name = "maplit"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5907,11 +5907,11 @@ name = "mc-db"
 version = "0.1.0"
 dependencies = [
  "bonsai-trie",
+ "deoxys-runtime",
  "ethers",
  "kvdb",
  "kvdb-rocksdb",
  "log",
- "madara-runtime",
  "parity-db",
  "parity-scale-codec",
  "sc-client-db",
@@ -5943,10 +5943,10 @@ name = "mc-mapping-sync"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "deoxys-runtime",
  "futures",
  "futures-timer",
  "log",
- "madara-runtime",
  "mc-db",
  "mc-rpc-core",
  "mc-storage",
@@ -5971,6 +5971,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "blockifier",
+ "deoxys-runtime",
  "frame-support",
  "frame-system",
  "hex",
@@ -5978,7 +5979,6 @@ dependencies = [
  "itertools 0.12.1",
  "jsonrpsee",
  "log",
- "madara-runtime",
  "mc-db",
  "mc-genesis-data-provider",
  "mc-rpc-core",
@@ -6057,9 +6057,9 @@ name = "mc-storage"
 version = "0.1.0"
 dependencies = [
  "blockifier",
+ "deoxys-runtime",
  "frame-support",
  "frame-system",
- "madara-runtime",
  "mp-contract",
  "mp-storage",
  "pallet-starknet",
@@ -6085,6 +6085,7 @@ dependencies = [
  "blockifier",
  "bonsai-trie",
  "crossbeam-skiplist",
+ "deoxys-runtime",
  "env_logger",
  "ethers",
  "futures",
@@ -6093,7 +6094,6 @@ dependencies = [
  "itertools 0.12.1",
  "lazy_static",
  "log",
- "madara-runtime",
  "mc-db",
  "mc-rpc-core",
  "mc-storage",

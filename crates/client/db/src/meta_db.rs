@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use madara_runtime::opaque::DHashT;
+use deoxys_runtime::opaque::DHashT;
 // Substrate
 use parity_scale_codec::{Decode, Encode};
 use sp_database::Database;

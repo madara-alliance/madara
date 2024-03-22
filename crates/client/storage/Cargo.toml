@@ -17,7 +17,7 @@ version.workspace = true
 blockifier = { workspace = true, features = ["std"] }
 frame-support = { workspace = true, features = ["std"] }
 frame-system = { workspace = true, features = ["std"] }
-madara-runtime = { workspace = true, features = ["std"] }
+deoxys-runtime = { workspace = true, features = ["std"] }
 mp-contract = { workspace = true, features = ["std"] }
 mp-storage = { workspace = true, features = ["std"] }
 pallet-starknet = { workspace = true, features = ["std"] }

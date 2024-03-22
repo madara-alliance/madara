@@ -8,10 +8,10 @@
 mod starknet;
 use std::sync::Arc;
 
+use deoxys_runtime::opaque::DBlockT;
+use deoxys_runtime::{AccountId, Hash, Index, StarknetHasher};
 use futures::channel::mpsc;
 use jsonrpsee::RpcModule;
-use madara_runtime::opaque::DBlockT;
-use madara_runtime::{AccountId, Hash, Index, StarknetHasher};
 use mc_genesis_data_provider::GenesisProvider;
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_consensus_manual_seal::rpc::EngineCommand;

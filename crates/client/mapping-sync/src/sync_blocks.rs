@@ -1,4 +1,4 @@
-use madara_runtime::opaque::{DBlockT, DHashT, DHeaderT};
+use deoxys_runtime::opaque::{DBlockT, DHashT, DHeaderT};
 use mc_db::DeoxysBackend;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_digest_log::{find_starknet_block, FindLogError};

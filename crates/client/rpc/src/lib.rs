@@ -14,11 +14,11 @@ mod utils;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use deoxys_runtime::opaque::{DBlockT, DHashT, DHeaderT};
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
-use madara_runtime::opaque::{DBlockT, DHashT, DHeaderT};
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;

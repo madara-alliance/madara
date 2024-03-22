@@ -249,7 +249,7 @@ mc-storage = { path = "crates/client/storage" }
 mc-deoxys = { path = "crates/client/deoxys" }
 
 # Madara runtime
-madara-runtime = { path = "crates/runtime" }
+deoxys-runtime = { path = "crates/runtime" }
 
 # Starknet dependencies
 # Cairo Virtual Machine

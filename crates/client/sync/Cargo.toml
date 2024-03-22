@@ -44,7 +44,7 @@ tokio = { workspace = true, features = ["macros", "parking_lot", "test-util"] }
 url = { workspace = true }
 validator = { workspace = true, features = ["derive"] }
 
-madara-runtime = { workspace = true }
+deoxys-runtime = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true, default-features = false, features = [

@@ -5,12 +5,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use deoxys_runtime::opaque::DBlockT;
+use deoxys_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use futures::channel::mpsc;
 use futures::future;
 use futures::future::BoxFuture;
 use futures::prelude::*;
-use madara_runtime::opaque::DBlockT;
-use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
@@ -64,11 +64,11 @@ impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
     type ExtendHostFunctions = ();
 
     fn dispatch(method: &str, data: &[u8]) -> Option<Vec<u8>> {
-        madara_runtime::api::dispatch(method, data)
+        deoxys_runtime::api::dispatch(method, data)
     }
 
     fn native_version() -> sc_executor::NativeVersion {
-        madara_runtime::native_version()
+        deoxys_runtime::native_version()
     }
 }
 
@@ -612,7 +612,7 @@ where
             inherent_data: &mut sp_inherents::InherentData,
         ) -> Result<(), sp_inherents::Error> {
             TIMESTAMP.with(|x| {
-                *x.borrow_mut() += madara_runtime::SLOT_DURATION;
+                *x.borrow_mut() += deoxys_runtime::SLOT_DURATION;
                 inherent_data.put_data(sp_timestamp::INHERENT_IDENTIFIER, &*x.borrow())
             })
         }
