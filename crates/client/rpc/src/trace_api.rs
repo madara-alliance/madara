@@ -12,7 +12,7 @@ use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::{StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mc_storage::StorageOverride;
-use mp_block::Block as MadaraBlock;
+use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
@@ -498,7 +498,7 @@ fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
 
 fn map_transaction_to_user_transaction<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
-    starknet_block: MadaraBlock,
+    starknet_block: DeoxysBlock,
     substrate_block_hash: DHashT,
     chain_id: Felt252Wrapper,
     target_transaction_hash: Option<Felt252Wrapper>,

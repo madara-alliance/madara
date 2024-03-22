@@ -17,6 +17,7 @@ use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
 use mc_sync::starknet_sync_worker;
 use mp_block::state_update::StateUpdateWrapper;
+use mp_block::DeoxysBlock;
 use mp_contract::class::ClassUpdateWrapper;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
@@ -87,7 +88,7 @@ pub fn new_partial<BIQ>(
     config: &Configuration,
     build_import_queue: BIQ,
     cache_more_things: bool,
-    genesis_block: mp_block::Block,
+    genesis_block: DeoxysBlock,
 ) -> Result<
     sc_service::PartialComponents<
         FullClient,
@@ -278,7 +279,7 @@ pub fn new_full(
     l1_url: Url,
     cache_more_things: bool,
     fetch_config: mc_sync::FetchConfig,
-    genesis_block: mp_block::Block,
+    genesis_block: DeoxysBlock,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
@@ -423,7 +424,7 @@ pub fn new_full(
         .for_each(|()| future::ready(())),
     );
 
-    let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<mp_block::Block>(100);
+    let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<DeoxysBlock>(100);
     let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StateUpdateWrapper>(100);
     let (class_sender, class_receiver) = tokio::sync::mpsc::channel::<ClassUpdateWrapper>(100);
 
@@ -573,7 +574,7 @@ pub fn new_full(
 
 #[allow(clippy::too_many_arguments)]
 fn run_manual_seal_authorship(
-    block_receiver: tokio::sync::mpsc::Receiver<mp_block::Block>,
+    block_receiver: tokio::sync::mpsc::Receiver<DeoxysBlock>,
     state_update_receiver: tokio::sync::mpsc::Receiver<StateUpdateWrapper>,
     class_receiver: tokio::sync::mpsc::Receiver<ClassUpdateWrapper>,
     sealing: SealingMode,
@@ -635,7 +636,7 @@ where
         _client: Arc<C>,
 
         /// The receiver that we're using to receive blocks.
-        block_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<mp_block::Block>>,
+        block_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<DeoxysBlock>>,
 
         /// The receiver that we're using to receive commitment state diffs.
         state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StateUpdateWrapper>>,
@@ -733,6 +734,6 @@ type ChainOpsResult =
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things, mp_block::Block::default())?;
+        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things, DeoxysBlock::default())?;
     Ok((client, backend, import_queue, task_manager, other.3))
 }

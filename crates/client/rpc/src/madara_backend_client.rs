@@ -1,7 +1,7 @@
 use madara_runtime::opaque::{DBlockT, DHashT};
 use mc_db::{DbError, DeoxysBackend};
 use mc_rpc_core::utils::get_block_by_block_hash;
-use mp_block::Block as MadaraBlock;
+use mp_block::DeoxysBlock;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_api::BlockId;
 use sp_blockchain::HeaderBackend;
@@ -51,7 +51,7 @@ where
 pub fn starknet_block_from_substrate_hash<B: BlockT, C, BE>(
     client: &C,
     target_number: <<B>::Header as HeaderT>::Number,
-) -> Result<MadaraBlock, StarknetRpcApiError>
+) -> Result<DeoxysBlock, StarknetRpcApiError>
 where
     B: BlockT,
     BE: Backend<B> + 'static,

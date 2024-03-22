@@ -14,6 +14,7 @@ use madara_runtime::opaque::{DBlockT, DHashT};
 use mc_db::bonsai_db::BonsaiDb;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
+use mp_block::DeoxysBlock;
 use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
 use mp_felt::Felt252Wrapper;
 use mp_storage::StarknetStorageSchemaVersion;
@@ -75,7 +76,7 @@ lazy_static! {
 
 lazy_static! {
     /// Shared pending block data, using a RwLock to allow for concurrent reads and exclusive writes
-    static ref STARKNET_PENDING_BLOCK: RwLock<Option<mp_block::Block>> = RwLock::new(None);
+    static ref STARKNET_PENDING_BLOCK: RwLock<Option<DeoxysBlock>> = RwLock::new(None);
 }
 
 lazy_static! {
@@ -105,7 +106,7 @@ pub struct FetchConfig {
 /// updates from the feeder.
 pub struct SenderConfig {
     /// Sender for dispatching fetched blocks.
-    pub block_sender: Sender<mp_block::Block>,
+    pub block_sender: Sender<DeoxysBlock>,
     /// Sender for dispatching fetched state updates.
     pub state_update_sender: Sender<StateUpdateWrapper>,
     /// Sender for dispatching fetched class hashes.
@@ -272,7 +273,7 @@ async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -> Re
 // FIXME: This is an artefact of an older version of the code when this was used to retrieve the
 // head of the chain during initialization, but is since no longer used.
 
-pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<mp_block::Block, String> {
+pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBlock, String> {
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
@@ -536,7 +537,7 @@ pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
         .expect("Failed to acquire read lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
 }
 
-pub fn get_pending_block() -> Option<mp_block::Block> {
+pub fn get_pending_block() -> Option<DeoxysBlock> {
     STARKNET_PENDING_BLOCK.read().expect("Failed to acquire read lock on STARKNET_PENDING_BLOCK").clone()
 }
 

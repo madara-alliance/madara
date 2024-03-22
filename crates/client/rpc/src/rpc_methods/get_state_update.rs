@@ -6,6 +6,7 @@ use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_sync::l2::get_pending_state_update;
+use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -59,7 +60,7 @@ pub(crate) fn get_state_update_pending() -> RpcResult<MaybePendingStateUpdate> {
     }
 }
 
-fn state_diff<A, BE, G, C, P, H>(block: &mp_block::Block, server: &Starknet<A, BE, G, C, P, H>) -> RpcResult<StateDiff>
+fn state_diff<A, BE, G, C, P, H>(block: &DeoxysBlock, server: &Starknet<A, BE, G, C, P, H>) -> RpcResult<StateDiff>
 where
     A: ChainApi<Block = DBlockT> + 'static,
     P: TransactionPool<Block = DBlockT> + 'static,

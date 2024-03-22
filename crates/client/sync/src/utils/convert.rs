@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use mp_block::DeoxysBlock;
 use mp_fee::ResourcePrice;
 use mp_felt::Felt252Wrapper;
 use starknet_api::hash::StarkFelt;
@@ -18,7 +19,7 @@ use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdat
 use crate::commitments::lib::calculate_commitments;
 use crate::utility::get_config;
 
-pub async fn block(block: p::Block) -> mp_block::Block {
+pub async fn block(block: p::Block) -> DeoxysBlock {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
@@ -62,7 +63,7 @@ pub async fn block(block: p::Block) -> mp_block::Block {
         .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
         .collect();
 
-    mp_block::Block::new(header, transactions, ordered_events)
+    DeoxysBlock::new(header, transactions, ordered_events)
 }
 
 fn transactions(txs: Vec<p::TransactionType>) -> Vec<mp_transactions::Transaction> {

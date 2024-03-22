@@ -8,6 +8,7 @@ use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::Felt;
 use mc_sync::l2::get_pending_block;
+use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -330,7 +331,7 @@ fn transactions<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     substrate_block_hash: DHashT,
     chain_id: Felt,
-    block: &mp_block::Block,
+    block: &DeoxysBlock,
     block_number: u64,
     tx_index: usize,
 ) -> RpcResult<Vec<UserOrL1HandlerTransaction>>
