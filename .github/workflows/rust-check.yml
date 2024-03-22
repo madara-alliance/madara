@@ -7,7 +7,7 @@ on:
 
 jobs:
   rust_check:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
@@ -19,11 +19,6 @@ jobs:
           components: rustfmt, clippy
           target: wasm32-unknown-unknown
           profile: minimal
-
-      - name: Setup check deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler libasound2-dev
 
       - name: Check the project
         run: |

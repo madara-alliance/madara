@@ -2,6 +2,8 @@ git # Deoxys Changelog
 
 ## Next release
 
+- feat(self-hosted): host our own runner
+- fix(deps): Removed unused dependencies
 - feat(multi-trie): Added support for persistent storage tries
 - feat(pending): added support for pending blocks in RPC requests
 - perf(l2 sync): parallel fetching of blocks, classes, state updates

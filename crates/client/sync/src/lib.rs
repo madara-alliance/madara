@@ -8,6 +8,7 @@
 pub mod commitments;
 pub mod l1;
 pub mod l2;
+pub mod reorgs;
 pub mod types;
 pub mod utils;
 
