@@ -2,7 +2,7 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{ChainIdServer, StarknetTraceRpcApiServer};
+pub use mc_rpc_core::{StarknetTraceRpcApiServer, StarknetReadRpcApiServer};
 use mc_storage::StorageOverride;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;

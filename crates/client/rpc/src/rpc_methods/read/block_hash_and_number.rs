@@ -1,8 +1,8 @@
-use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-pub use mc_rpc_core::{BlockHashAndNumberServer, Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -17,9 +17,21 @@ use starknet_core::types::{BlockHashAndNumber, FieldElement};
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
-#[async_trait]
+
+/// Get the Most Recent Accepted Block Hash and Number
+///
+/// ### Arguments
+///
+/// This function does not take any arguments.
+///
+/// ### Returns
+///
+/// * `block_hash_and_number` - A tuple containing the latest block hash and number of the
+///   current network.
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> BlockHashAndNumberServer for Starknet<A, B, BE, G, C, P, H>
+pub fn block_hash_and_number<A, B, BE, G, C, P, H>(
+    starknet: &Starknet<A, B, BE, G, C, P, H>,
+) -> RpcResult<BlockHashAndNumber>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,
@@ -31,19 +43,8 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    /// Get the Most Recent Accepted Block Hash and Number
-    ///
-    /// ### Arguments
-    ///
-    /// This function does not take any arguments.
-    ///
-    /// ### Returns
-    ///
-    /// * `block_hash_and_number` - A tuple containing the latest block hash and number of the
-    ///   current network.
-    fn block_hash_and_number(&self) -> RpcResult<BlockHashAndNumber> {
-        let block_number = self.current_block_number()?;
-        let block_hash = self.current_block_hash().map_err(|e| {
+        let block_number = starknet.current_block_number()?;
+        let block_hash = starknet.current_block_hash().map_err(|e| {
             error!("Failed to retrieve the current block hash: {}", e);
             StarknetRpcApiError::NoBlocks
         })?;
@@ -52,5 +53,4 @@ where
             block_hash: FieldElement::from_byte_slice_be(block_hash.as_bytes()).unwrap(),
             block_number,
         })
-    }
 }

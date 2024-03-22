@@ -1,8 +1,8 @@
-use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-pub use mc_rpc_core::{Felt, GetBlockTransactionCountServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+pub use mc_rpc_core::{Felt, StarknetTraceRpcApiServer, StarknetReadRpcApiServer};
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -17,9 +17,27 @@ use starknet_core::types::BlockId;
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
-#[async_trait]
+
+/// Get the Number of Transactions in a Given Block
+///
+/// ### Arguments
+///
+/// * `block_id` - The identifier of the requested block. This can be the hash of the block, the
+///   block's number (height), or a specific block tag.
+///
+/// ### Returns
+///
+/// * `transaction_count` - The number of transactions in the specified block.
+///
+/// ### Errors
+///
+/// This function may return a `BLOCK_NOT_FOUND` error if the specified block does not exist in
+/// the blockchain.
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> GetBlockTransactionCountServer for Starknet<A, B, BE, G, C, P, H>
+pub fn get_block_transaction_count<A, B, BE, G, C, P, H>(
+    starknet: &Starknet<A, B, BE, G, C, P, H>,
+    block_id: BlockId
+) -> RpcResult<u128>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,
@@ -31,29 +49,14 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    /// Get the Number of Transactions in a Given Block
-    ///
-    /// ### Arguments
-    ///
-    /// * `block_id` - The identifier of the requested block. This can be the hash of the block, the
-    ///   block's number (height), or a specific block tag.
-    ///
-    /// ### Returns
-    ///
-    /// * `transaction_count` - The number of transactions in the specified block.
-    ///
-    /// ### Errors
-    ///
-    /// This function may return a `BLOCK_NOT_FOUND` error if the specified block does not exist in
-    /// the blockchain.
-    fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128> {
-        let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
+    
+        let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
 
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)?;
+        let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
 
         Ok(starknet_block.header().transaction_count)
-    }
+    
 }

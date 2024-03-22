@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 pub use mc_rpc_core::utils::*;
-pub use mc_rpc_core::{BlockNumberServer, Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+pub use mc_rpc_core::{Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sp_api::ProvideRuntimeApi;
 use sp_runtime::traits::Block as BlockT;

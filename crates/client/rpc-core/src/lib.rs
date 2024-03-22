@@ -55,30 +55,59 @@ pub trait StarknetWriteRpcApi {
 }
 
 #[rpc(server, namespace = "starknet")]
-pub trait BlockNumber {
-    /// Get the most recent accepted block number
-    #[method(name = "blockNumber")]
-    fn block_number(&self) -> RpcResult<u64>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait SpecVersion {
+pub trait StarknetReadRpcApi {
     /// Get the Version of the StarkNet JSON-RPC Specification Being Used
     #[method(name = "specVersion")]
     fn spec_version(&self) -> RpcResult<String>;
-}
-#[rpc(server, namespace = "starknet")]
-pub trait BlockHashAndNumber {
+
+    /// Get the most recent accepted block number
+    #[method(name = "blockNumber")]
+    fn block_number(&self) -> RpcResult<u64>;
+
     // Get the most recent accepted block hash and number
     #[method(name = "blockHashAndNumber")]
     fn block_hash_and_number(&self) -> RpcResult<BlockHashAndNumber>;
-}
 
-#[rpc(server, namespace = "starknet")]
-pub trait GetBlockTransactionCount {
+    /// Call a contract function at a given block id
+    #[method(name = "call")]
+    fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<String>>;
+
+    /// Get the chain id
+    #[method(name = "chainId")]
+    fn chain_id(&self) -> RpcResult<Felt>;
+
     /// Get the number of transactions in a block given a block id
     #[method(name = "getBlockTransactionCount")]
     fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128>;
+
+    /// Estimate the fee associated with transaction
+    #[method(name = "estimateFee")]
+    async fn estimate_fee(
+        &self,
+        request: Vec<BroadcastedTransaction>,
+        block_id: BlockId,
+    ) -> RpcResult<Vec<FeeEstimate>>;
+
+    /// Estimate the L2 fee of a message sent on L1
+    #[method(name = "estimateMessageFee")]
+    async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<FeeEstimate>;
+
+    /// Get block information with transaction hashes given the block id
+    #[method(name = "getBlockWithTxHashes")]
+    fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes>;
+
+    /// Get block information with full transactions given the block id
+    #[method(name = "getBlockWithTxs")]
+    fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs>;
+
+    /// Get the contract class at a given contract address for a given block id
+    #[method(name = "getClassAt")]
+    fn get_class_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<ContractClass>;
+
+    /// Get the contract class hash in the given block for the contract deployed at the given
+    /// address
+    #[method(name = "getClassHashAt")]
+    fn get_class_hash_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt>;
 }
 
 #[rpc(server, namespace = "starknet")]
@@ -96,28 +125,6 @@ pub trait GetStorageAt {
 }
 
 #[rpc(server, namespace = "starknet")]
-pub trait Call {
-    /// Call a contract function at a given block id
-    #[method(name = "call")]
-    fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<String>>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait GetClassAt {
-    /// Get the contract class at a given contract address for a given block id
-    #[method(name = "getClassAt")]
-    fn get_class_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<ContractClass>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait GetClassHashAt {
-    /// Get the contract class hash in the given block for the contract deployed at the given
-    /// address
-    #[method(name = "getClassHashAt")]
-    fn get_class_hash_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt>;
-}
-
-#[rpc(server, namespace = "starknet")]
 pub trait Syncing {
     /// Get an object about the sync status, or false if the node is not syncing
     #[method(name = "syncing")]
@@ -132,49 +139,10 @@ pub trait GetClass {
 }
 
 #[rpc(server, namespace = "starknet")]
-pub trait GetBlockWithTxHashes {
-    /// Get block information with transaction hashes given the block id
-    #[method(name = "getBlockWithTxHashes")]
-    fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes>;
-}
-
-#[rpc(server, namespace = "starknet")]
 pub trait GetNonce {
     /// Get the nonce associated with the given address at the given block
     #[method(name = "getNonce")]
     fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait GetBlockWithTxs {
-    /// Get block information with full transactions given the block id
-    #[method(name = "getBlockWithTxs")]
-    fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait ChainId {
-    /// Get the chain id
-    #[method(name = "chainId")]
-    fn chain_id(&self) -> RpcResult<Felt>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait EstimateFee {
-    /// Estimate the fee associated with transaction
-    #[method(name = "estimateFee")]
-    async fn estimate_fee(
-        &self,
-        request: Vec<BroadcastedTransaction>,
-        block_id: BlockId,
-    ) -> RpcResult<Vec<FeeEstimate>>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait EstimateMessageFee {
-    /// Estimate the L2 fee of a message sent on L1
-    #[method(name = "estimateMessageFee")]
-    async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<FeeEstimate>;
 }
 
 #[rpc(server, namespace = "starknet")]

@@ -5,7 +5,7 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
-pub use mc_rpc_core::{ChainIdServer, Felt, GetTransactionReceiptServer};
+pub use mc_rpc_core::{Felt, GetTransactionReceiptServer, StarknetReadRpcApiServer};
 use mc_sync::l2::get_pending_block;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;

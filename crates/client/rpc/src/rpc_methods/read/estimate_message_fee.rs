@@ -1,9 +1,8 @@
-use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-use mc_rpc_core::ChainIdServer;
-pub use mc_rpc_core::{EstimateMessageFeeServer, Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+pub use mc_rpc_core::{Felt, StarknetTraceRpcApiServer, StarknetReadRpcApiServer};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -19,9 +18,27 @@ use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
-#[async_trait]
+/// Estimate the L2 fee of a message sent on L1
+///
+/// # Arguments
+///
+/// * `message` - the message to estimate
+/// * `block_id` - hash, number (height), or tag of the requested block
+///
+/// # Returns
+///
+/// * `FeeEstimate` - the fee estimation (gas consumed, gas price, overall fee, unit)
+///
+/// # Errors
+///
+/// BlockNotFound : If the specified block does not exist.
+/// ContractNotFound : If the specified contract address does not exist.
+/// ContractError : If there is an error with the contract.
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> EstimateMessageFeeServer for Starknet<A, B, BE, G, C, P, H>
+pub async fn estimate_message_fee<A, B, BE, G, C, P, H>(
+    starknet: &Starknet<A, B, BE, G, C, P, H>,
+    message: MsgFromL1,
+    block_id: BlockId) -> RpcResult<FeeEstimate>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,
@@ -33,35 +50,18 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    /// Estimate the L2 fee of a message sent on L1
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - the message to estimate
-    /// * `block_id` - hash, number (height), or tag of the requested block
-    ///
-    /// # Returns
-    ///
-    /// * `FeeEstimate` - the fee estimation (gas consumed, gas price, overall fee, unit)
-    ///
-    /// # Errors
-    ///
-    /// BlockNotFound : If the specified block does not exist.
-    /// ContractNotFound : If the specified contract address does not exist.
-    /// ContractError : If there is an error with the contract.
-    async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<FeeEstimate> {
-        let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
+        let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+        let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
 
         let message = message.try_into().map_err(|e| {
             error!("Failed to convert MsgFromL1 to UserTransaction: {e}");
             StarknetRpcApiError::InternalServerError
         })?;
 
-        let fee_estimate = self
+        let fee_estimate = starknet
             .client
             .runtime_api()
             .estimate_message_fee(substrate_block_hash, message)
@@ -81,5 +81,4 @@ where
         };
 
         Ok(estimate)
-    }
 }

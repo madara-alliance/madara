@@ -1,7 +1,7 @@
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{ChainIdServer, StarknetTraceRpcApiServer};
+pub use mc_rpc_core::{StarknetTraceRpcApiServer, StarknetReadRpcApiServer};
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};

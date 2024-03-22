@@ -2,8 +2,7 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-use mc_rpc_core::ChainIdServer;
-pub use mc_rpc_core::{EstimateFeeServer, Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+pub use mc_rpc_core::{Felt, StarknetTraceRpcApiServer, StarknetReadRpcApiServer};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::UserTransaction;
@@ -20,9 +19,22 @@ use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate};
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
-#[async_trait]
+/// Estimate the fee associated with transaction
+///
+/// # Arguments
+///
+/// * `request` - starknet transaction request
+/// * `block_id` - hash of the requested block, number (height), or tag
+///
+/// # Returns
+///
+/// * `fee_estimate` - fee estimate in gwei
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> EstimateFeeServer for Starknet<A, B, BE, G, C, P, H>
+pub async fn estimate_fee<A, B, BE, G, C, P, H> (
+    starknet: &Starknet<A, B, BE, G, C, P, H>,
+    request: Vec<BroadcastedTransaction>,
+    block_id: BlockId,
+) -> RpcResult<Vec<FeeEstimate>>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,
@@ -34,27 +46,12 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    /// Estimate the fee associated with transaction
-    ///
-    /// # Arguments
-    ///
-    /// * `request` - starknet transaction request
-    /// * `block_id` - hash of the requested block, number (height), or tag
-    ///
-    /// # Returns
-    ///
-    /// * `fee_estimate` - fee estimate in gwei
-    async fn estimate_fee(
-        &self,
-        request: Vec<BroadcastedTransaction>,
-        block_id: BlockId,
-    ) -> RpcResult<Vec<FeeEstimate>> {
-        let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
+        let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
-        let best_block_hash = self.client.info().best_hash;
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+        let best_block_hash = starknet.client.info().best_hash;
+        let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
 
         let transactions =
             request.into_iter().map(|tx| tx.try_into()).collect::<Result<Vec<UserTransaction>, _>>().map_err(|e| {
@@ -62,7 +59,7 @@ where
                 StarknetRpcApiError::InternalServerError
             })?;
 
-        let fee_estimates = self
+        let fee_estimates = starknet
             .client
             .runtime_api()
             .estimate_fee(substrate_block_hash, transactions)
@@ -82,5 +79,4 @@ where
             .collect();
 
         Ok(estimates)
-    }
 }

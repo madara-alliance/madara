@@ -3,7 +3,7 @@ use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{
-    ChainIdServer, Felt, GetTransactionStatusServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
+    Felt, GetTransactionStatusServer, StarknetTraceRpcApiServer, StarknetReadRpcApiServer,
 };
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;

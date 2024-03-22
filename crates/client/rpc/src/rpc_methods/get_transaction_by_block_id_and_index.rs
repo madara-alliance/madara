@@ -3,9 +3,8 @@ use jsonrpsee::types::error::CallError;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-use mc_rpc_core::ChainIdServer;
 pub use mc_rpc_core::{
-    Felt, GetTransactionByBlockIdAndIndexServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
+    Felt, GetTransactionByBlockIdAndIndexServer, StarknetTraceRpcApiServer, StarknetReadRpcApiServer,
 };
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
