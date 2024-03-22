@@ -119,15 +119,7 @@ impl NetworkType {
         let feeder_gateway = format!("{uri}/feeder_gateway").parse().unwrap();
         let l1_core_address = self.l1_core_address();
 
-        FetchConfig {
-            gateway,
-            feeder_gateway,
-            chain_id,
-            workers: 5,
-            sound: false,
-            l1_core_address,
-            verify: true,
-        }
+        FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false, l1_core_address, verify: true }
     }
 }
 

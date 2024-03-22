@@ -1,6 +1,7 @@
 //! Contains the code required to fetch data from the network efficiently.
 use std::sync::Arc;
 
+use itertools::Itertools;
 use mc_storage::OverrideHandle;
 use mp_contract::class::{ContractClassData, ContractClassWrapper};
 use mp_felt::Felt252Wrapper;
@@ -13,13 +14,12 @@ use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_core::types::BlockId as BlockIdCore;
 use starknet_ff::FieldElement;
-use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
 use starknet_providers::sequencer::models as p;
+use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use tokio::task::JoinSet;
 use tokio::time::Duration;
-use itertools::Itertools;
 use url::Url;
 
 use crate::l2::L2SyncError;

@@ -6,9 +6,9 @@
 // use reqwest::Url;
 
 pub mod commitments;
+pub mod fetch;
 pub mod l1;
 pub mod l2;
-pub mod fetch;
 pub mod reorgs;
 pub mod types;
 pub mod utils;
@@ -26,7 +26,6 @@ pub mod starknet_sync_worker {
     use sp_runtime::traits::Block as BlockT;
 
     use self::fetch::fetch::FetchConfig;
-
     use super::*;
 
     pub async fn sync<B, C>(

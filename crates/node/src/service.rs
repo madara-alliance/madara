@@ -14,8 +14,8 @@ use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
-use mc_sync::starknet_sync_worker;
 use mc_sync::fetch::fetch::FetchConfig;
+use mc_sync::starknet_sync_worker;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::ClassUpdateWrapper;
 use mp_sequencer_address::{
@@ -440,7 +440,7 @@ pub fn new_full(
         Some("madara"),
         starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend, Arc::clone(&client)),
     );
-    
+
     // manual-seal authorship
     if !sealing.is_default() {
         run_manual_seal_authorship(
@@ -462,7 +462,7 @@ pub fn new_full(
 
         return Ok(task_manager);
     }
-    
+
     if role.is_authority() {
         let proposer_factory = ProposerFactory::new(
             task_manager.spawn_handle(),
@@ -637,7 +637,7 @@ where
         /// The receiver that we're using to receive blocks.
         block_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<mp_block::Block>>,
 
-        /// The receiver that we're using to receive commitment state diffs.
+        /// The receiver that we're using to receive state updates.
         state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StateUpdateWrapper>>,
 
         /// The receiver that we're using to receive class updates.

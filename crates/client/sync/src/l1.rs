@@ -1,6 +1,6 @@
 //! Contains the necessaries to perform an L1 verification of the state
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use ethers::contract::{abigen, EthEvent};
@@ -23,7 +23,7 @@ use crate::utils::constant::LOG_STATE_UPDTATE_TOPIC;
 
 lazy_static! {
     /// Shared latest L2 state update verified on L1
-    pub static ref ETHEREUM_STATE_UPDATE: Arc<Mutex<L1StateUpdate>> = Arc::new(Mutex::new(L1StateUpdate {
+    pub static ref ETHEREUM_STATE_UPDATE: Arc<RwLock<L1StateUpdate>> = Arc::new(RwLock::new(L1StateUpdate {
         block_number: u64::default(),
         global_root: StarkHash::default(),
         block_hash: StarkHash::default(),
@@ -192,14 +192,15 @@ pub fn update_l1(state_update: L1StateUpdate) {
 
     {
         let last_state_update = ETHEREUM_STATE_UPDATE.clone();
-        let mut new_state_update = last_state_update.lock().unwrap();
+        let mut new_state_update =
+            last_state_update.write().expect("Failed to acquire write lock on ETHEREUM_STATE_UPDATE");
         *new_state_update = state_update.clone();
     }
 }
 
 /// Verify the L1 state with the latest data
 pub async fn verify_l1(state_update: L1StateUpdate, rpc_port: u16) -> Result<(), String> {
-    let starknet_state_block_number = STARKNET_STATE_UPDATE.lock().map_err(|e| e.to_string())?.block_number;
+    let starknet_state_block_number = STARKNET_STATE_UPDATE.read().map_err(|e| e.to_string())?.block_number;
 
     // Check if the node reached the latest verified state on Ethereum
     if state_update.block_number > starknet_state_block_number {

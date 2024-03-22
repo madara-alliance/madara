@@ -31,6 +31,7 @@ use tokio::time::{Duration, Instant};
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
 use crate::fetch::fetch::{fetch_block_and_updates, FetchConfig};
+use crate::l1::ETHEREUM_STATE_UPDATE;
 use crate::utility::block_hash_substrate;
 use crate::CommandSink;
 
@@ -51,9 +52,27 @@ pub struct L2StateUpdate {
     pub block_hash: StarkHash,
 }
 
+/// The current syncing status:
+///
+/// - SyncVerifiedState: the node is syncing AcceptedOnL1 blocks
+/// - SyncUnverifiedState: the node is syncing AcceptedOnL2 blocks
+/// - SyncPendingState: the node is fully synced and now syncing Pending blocks
+///
+/// This is used to determine the current state of the syncing process
+pub enum SyncStatus {
+    SyncVerifiedState,
+    SyncUnverifiedState,
+    SyncPendingState,
+}
+
+lazy_static! {
+    /// Shared current syncing status, either verified, unverified or pending
+    pub static ref SYNC_STATUS: RwLock<SyncStatus> = RwLock::new(SyncStatus::SyncVerifiedState);
+}
+
 lazy_static! {
     /// Shared latest L2 state update verified on L2
-    pub static ref STARKNET_STATE_UPDATE: Mutex<L2StateUpdate> = Mutex::new(L2StateUpdate {
+    pub static ref STARKNET_STATE_UPDATE: RwLock<L2StateUpdate> = RwLock::new(L2StateUpdate {
         block_number: u64::default(),
         global_root: StarkHash::default(),
         block_hash: StarkHash::default(),
@@ -247,8 +266,16 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
 
 /// Update the L2 state with the latest data
 pub fn update_l2(state_update: L2StateUpdate) {
-    let mut last_state_update = STARKNET_STATE_UPDATE.lock().expect("Failed to acquire lock on STARKNET_STATE_UPDATE");
-    *last_state_update = state_update.clone();
+    let mut last_l2_state_update =
+        STARKNET_STATE_UPDATE.write().expect("Failed to acquire write lock on STARKNET_STATE_UPDATE");
+    *last_l2_state_update = state_update.clone();
+
+    let last_l1_state_update =
+        ETHEREUM_STATE_UPDATE.read().expect("Failed to acquire read lock on ETHEREUM_STATE_UPDATE");
+    if state_update.block_number >= last_l1_state_update.block_number {
+        let mut sync_status = SYNC_STATUS.write().expect("Failed to acquire write lock on SYNC_STATUS");
+        *sync_status = SyncStatus::SyncUnverifiedState;
+    }
 }
 
 /// Verify and update the L2 state according to the latest state update
@@ -317,4 +344,3 @@ where
 
     Ok(())
 }
-
