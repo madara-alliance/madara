@@ -1,11 +1,11 @@
 use blockifier::execution::contract_class::{ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf};
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::error::Error;
-use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::utils::get_block_by_block_hash;
-pub use mc_rpc_core::{Felt, GetTransactionReceiptServer, StarknetReadRpcApiServer};
+pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer};
 use mc_sync::l2::get_pending_block;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -560,9 +560,33 @@ where
     Ok(execution_infos)
 }
 
-#[async_trait]
+/// Get the transaction receipt by the transaction hash.
+///
+/// This function retrieves the transaction receipt for a specific transaction identified by its
+/// hash. The transaction receipt includes information about the execution status of the
+/// transaction, events generated during its execution, and other relevant details.
+///
+/// ### Arguments
+///
+/// * `transaction_hash` - The hash of the requested transaction. This parameter specifies the
+///   transaction for which the receipt is requested.
+///
+/// ### Returns
+///
+/// Returns a transaction receipt, which can be one of two types:
+/// - `TransactionReceipt` if the transaction has been processed and has a receipt.
+/// - `PendingTransactionReceipt` if the transaction is pending and the receipt is not yet
+///   available.
+///
+/// ### Errors
+///
+/// The function may return a `TXN_HASH_NOT_FOUND` error if the specified transaction hash is
+/// not found.
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> GetTransactionReceiptServer for Starknet<A, B, BE, G, C, P, H>
+pub async fn get_transaction_receipt<A, B, BE, G, C, P, H>(
+    starknet: &Starknet<A, B, BE, G, C, P, H>,
+    transaction_hash: FieldElement,
+) -> RpcResult<MaybePendingTransactionReceipt>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,
@@ -574,33 +598,7 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    /// Get the transaction receipt by the transaction hash.
-    ///
-    /// This function retrieves the transaction receipt for a specific transaction identified by its
-    /// hash. The transaction receipt includes information about the execution status of the
-    /// transaction, events generated during its execution, and other relevant details.
-    ///
-    /// ### Arguments
-    ///
-    /// * `transaction_hash` - The hash of the requested transaction. This parameter specifies the
-    ///   transaction for which the receipt is requested.
-    ///
-    /// ### Returns
-    ///
-    /// Returns a transaction receipt, which can be one of two types:
-    /// - `TransactionReceipt` if the transaction has been processed and has a receipt.
-    /// - `PendingTransactionReceipt` if the transaction is pending and the receipt is not yet
-    ///   available.
-    ///
-    /// ### Errors
-    ///
-    /// The function may return a `TXN_HASH_NOT_FOUND` error if the specified transaction hash is
-    /// not found.
-    async fn get_transaction_receipt(
-        &self,
-        transaction_hash: FieldElement,
-    ) -> RpcResult<MaybePendingTransactionReceipt> {
-        let substrate_block_hash = self
+        let substrate_block_hash = starknet
             .backend
             .mapping()
             .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
@@ -609,21 +607,20 @@ where
                 StarknetRpcApiError::InternalServerError
             })?;
 
-        let chain_id = self.chain_id()?;
+        let chain_id = starknet.chain_id()?;
 
         match substrate_block_hash {
             Some(substrate_block_hash) => {
-                get_transaction_receipt_finalized(self, chain_id, substrate_block_hash, transaction_hash)
+                get_transaction_receipt_finalized(starknet, chain_id, substrate_block_hash, transaction_hash)
             }
             None => {
                 let substrate_block_hash =
-                    self.substrate_block_hash_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
+                starknet.substrate_block_hash_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
                         error!("'{e}'");
                         StarknetRpcApiError::BlockNotFound
                     })?;
 
-                get_transaction_receipt_pending(self, chain_id, substrate_block_hash, transaction_hash)
+                get_transaction_receipt_pending(starknet, chain_id, substrate_block_hash, transaction_hash)
             }
         }
-    }
 }

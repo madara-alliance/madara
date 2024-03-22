@@ -1,54 +1,24 @@
-use std::marker::PhantomData;
-use std::sync::Arc;
-
 use jsonrpsee::core::{async_trait, RpcResult};
-use jsonrpsee::types::error::CallError;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
-use mc_storage::OverrideHandle;
-use mc_sync::utility::get_config;
-use mp_contract::class::ContractClassWrapper;
-use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
-use mp_transactions::{TransactionStatus, UserTransaction};
+use mp_transactions::TransactionStatus;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sc_network_sync::SyncingService;
-use sc_transaction_pool::{ChainApi, Pool};
+use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
-use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
-use sp_core::H256;
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
-use sp_runtime::DispatchError;
-use starknet_api::block::BlockHash;
-use starknet_api::hash::StarkHash;
-use starknet_api::transaction::Calldata;
+use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{
-    BlockHashAndNumber, BlockId, BlockTag, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
-    BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
-    DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
-    InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MaybePendingTransactionReceipt, MsgFromL1, StateDiff, SyncStatus, SyncStatusType, Transaction,
-    TransactionExecutionStatus, TransactionFinalityStatus,
+    BlockHashAndNumber, BlockId, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
+    MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
+    MaybePendingTransactionReceipt, MsgFromL1, SyncStatusType, Transaction,
 };
-use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
-
-use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
-use crate::rpc_methods::get_block::{
-    get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
-    get_block_with_txs_pending,
-};
-use crate::rpc_methods::get_transaction_receipt::{get_transaction_receipt_finalized, get_transaction_receipt_pending};
-use crate::types::RpcEventFilter;
 use crate::Starknet;
-use super::block_hash_and_number::{self, block_hash_and_number};
+use super::block_hash_and_number::*;
 use super::call::*;
 use super::chain_id::*;
 use super::get_block_transaction_count::*;
@@ -58,6 +28,16 @@ use super::get_block_with_tx_hashes::*;
 use super::get_block_with_txs::*;
 use super::get_class_at::*;
 use super::get_class_hash_at::*;
+use super::get_class::*;
+use super::get_events::*;
+use super::get_nonce::*;
+use super::get_storage_at::*;
+use super::get_transaction_by_block_id_and_index::*;
+use super::get_transaction_by_hash::*;
+use super::get_transaction_receipt::*;
+use super::get_transaction_status::*;
+use super::syncing::*;
+use super::get_state_update::*;
 
 #[async_trait]
 #[allow(unused_variables)]
@@ -119,5 +99,45 @@ where
 
     fn get_class_hash_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
         get_class_hash_at(self, block_id, contract_address)
+    }
+
+    fn get_class(&self, block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass> {
+        get_class(self, block_id, class_hash)
+    }
+
+    async fn get_events(&self, filter: EventFilterWithPage) -> RpcResult<EventsPage> {
+        get_events(self, filter).await
+    }
+
+    fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
+        get_nonce(self, block_id, contract_address)
+    }
+
+    fn get_storage_at(&self, contract_address: FieldElement, key: FieldElement, block_id: BlockId) -> RpcResult<Felt> {
+        get_storage_at(self, contract_address, key, block_id)
+    }
+
+    fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<Transaction> {
+        get_transaction_by_block_id_and_index(self, block_id, index)
+    }
+
+    fn get_transaction_by_hash(&self, transaction_hash: FieldElement) -> RpcResult<Transaction> {
+        get_transaction_by_hash(self, transaction_hash)
+    }
+
+    async fn get_transaction_receipt(&self, transaction_hash: FieldElement) -> RpcResult<MaybePendingTransactionReceipt> {
+        get_transaction_receipt(self, transaction_hash).await
+    }
+
+    fn get_transaction_status(&self, transaction_hash: FieldElement) -> RpcResult<TransactionStatus> {
+        get_transaction_status(self, transaction_hash)
+    }
+
+    async fn syncing(&self) -> RpcResult<SyncStatusType> {
+        syncing(self).await
+    }
+
+    fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate> {
+        get_state_update(self, block_id)
     }
 }

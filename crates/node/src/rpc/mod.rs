@@ -61,10 +61,8 @@ where
     BE: Backend<Block> + 'static,
 {
     use mc_rpc::{
-        GetClassServer, GetEventsServer, GetNonceServer, GetStateUpdateServer,
-        GetStorageAtServer, GetTransactionByBlockIdAndIndexServer, GetTransactionByHashServer,
-        GetTransactionReceiptServer, GetTransactionStatusServer, Starknet, StarknetReadRpcApiServer,
-        StarknetTraceRpcApiServer, StarknetWriteRpcApiServer, SyncingServer,
+        Starknet, StarknetReadRpcApiServer,
+        StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
     };
     use sc_consensus_manual_seal::rpc::{ManualSeal, ManualSealApiServer};
     use substrate_frame_rpc_system::{System, SystemApiServer};
@@ -74,108 +72,6 @@ where
 
     module.merge(System::new(client.clone(), pool.clone(), deny_unsafe).into_rpc())?;
     module.merge(StarknetReadRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, _,StarknetHasher>::new(     
-        client.clone(),
-        starknet_params.madara_backend.clone(),
-        starknet_params.overrides.clone(),
-        pool.clone(),
-        graph.clone(),
-        starknet_params.sync_service.clone(),
-        starknet_params.starting_block,
-        starknet_params.genesis_provider.clone(),
-    )))?;
-    module.merge(GetClassServer::into_rpc(Starknet::<_, _, _, _, _, _, StarknetHasher>::new(
-        client.clone(),
-        starknet_params.madara_backend.clone(),
-        starknet_params.overrides.clone(),
-        pool.clone(),
-        graph.clone(),
-        starknet_params.sync_service.clone(),
-        starknet_params.starting_block,
-        starknet_params.genesis_provider.clone(),
-    )))?;
-    module.merge(GetEventsServer::into_rpc(Starknet::<_, _, _, _, _, _, StarknetHasher>::new(
-        client.clone(),
-        starknet_params.madara_backend.clone(),
-        starknet_params.overrides.clone(),
-        pool.clone(),
-        graph.clone(),
-        starknet_params.sync_service.clone(),
-        starknet_params.starting_block,
-        starknet_params.genesis_provider.clone(),
-    )))?;
-    module.merge(GetNonceServer::into_rpc(Starknet::<_, _, _, _, _, _, StarknetHasher>::new(
-        client.clone(),
-        starknet_params.madara_backend.clone(),
-        starknet_params.overrides.clone(),
-        pool.clone(),
-        graph.clone(),
-        starknet_params.sync_service.clone(),
-        starknet_params.starting_block,
-        starknet_params.genesis_provider.clone(),
-    )))?;
-    module.merge(GetStateUpdateServer::into_rpc(Starknet::<_, _, _, _, _, _, StarknetHasher>::new(
-        client.clone(),
-        starknet_params.madara_backend.clone(),
-        starknet_params.overrides.clone(),
-        pool.clone(),
-        graph.clone(),
-        starknet_params.sync_service.clone(),
-        starknet_params.starting_block,
-        starknet_params.genesis_provider.clone(),
-    )))?;
-    module.merge(GetStorageAtServer::into_rpc(Starknet::<_, _, _, _, _, _, StarknetHasher>::new(
-        client.clone(),
-        starknet_params.madara_backend.clone(),
-        starknet_params.overrides.clone(),
-        pool.clone(),
-        graph.clone(),
-        starknet_params.sync_service.clone(),
-        starknet_params.starting_block,
-        starknet_params.genesis_provider.clone(),
-    )))?;
-    module.merge(GetTransactionByBlockIdAndIndexServer::into_rpc(
-        Starknet::<_, _, _, _, _, _, StarknetHasher>::new(
-            client.clone(),
-            starknet_params.madara_backend.clone(),
-            starknet_params.overrides.clone(),
-            pool.clone(),
-            graph.clone(),
-            starknet_params.sync_service.clone(),
-            starknet_params.starting_block,
-            starknet_params.genesis_provider.clone(),
-        ),
-    ))?;
-    module.merge(GetTransactionByHashServer::into_rpc(Starknet::<_, _, _, _, _, _, StarknetHasher>::new(
-        client.clone(),
-        starknet_params.madara_backend.clone(),
-        starknet_params.overrides.clone(),
-        pool.clone(),
-        graph.clone(),
-        starknet_params.sync_service.clone(),
-        starknet_params.starting_block,
-        starknet_params.genesis_provider.clone(),
-    )))?;
-    module.merge(GetTransactionReceiptServer::into_rpc(Starknet::<_, _, _, _, _, _, StarknetHasher>::new(
-        client.clone(),
-        starknet_params.madara_backend.clone(),
-        starknet_params.overrides.clone(),
-        pool.clone(),
-        graph.clone(),
-        starknet_params.sync_service.clone(),
-        starknet_params.starting_block,
-        starknet_params.genesis_provider.clone(),
-    )))?;
-    module.merge(GetTransactionStatusServer::into_rpc(Starknet::<_, _, _, _, _, _, StarknetHasher>::new(
-        client.clone(),
-        starknet_params.madara_backend.clone(),
-        starknet_params.overrides.clone(),
-        pool.clone(),
-        graph.clone(),
-        starknet_params.sync_service.clone(),
-        starknet_params.starting_block,
-        starknet_params.genesis_provider.clone(),
-    )))?;
-    module.merge(SyncingServer::into_rpc(Starknet::<_, _, _, _, _, _, StarknetHasher>::new(
         client.clone(),
         starknet_params.madara_backend.clone(),
         starknet_params.overrides.clone(),

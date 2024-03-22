@@ -108,79 +108,49 @@ pub trait StarknetReadRpcApi {
     /// address
     #[method(name = "getClassHashAt")]
     fn get_class_hash_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt>;
-}
 
-#[rpc(server, namespace = "starknet")]
-pub trait GetTransactionStatus {
-    /// Gets the Transaction Status, Including Mempool Status and Execution Details
-    #[method(name = "getTransactionStatus")]
-    fn get_transaction_status(&self, transaction_hash: FieldElement) -> RpcResult<TransactionStatus>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait GetStorageAt {
-    /// Get the value of the storage at the given address and key, at the given block id
-    #[method(name = "getStorageAt")]
-    fn get_storage_at(&self, contract_address: FieldElement, key: FieldElement, block_id: BlockId) -> RpcResult<Felt>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait Syncing {
-    /// Get an object about the sync status, or false if the node is not syncing
-    #[method(name = "syncing")]
-    async fn syncing(&self) -> RpcResult<SyncStatusType>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait GetClass {
     /// Get the contract class definition in the given block associated with the given hash
     #[method(name = "getClass")]
     fn get_class(&self, block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass>;
-}
 
-#[rpc(server, namespace = "starknet")]
-pub trait GetNonce {
-    /// Get the nonce associated with the given address at the given block
-    #[method(name = "getNonce")]
-    fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait GetTransactionByBlockIdAndIndex {
-    /// Get the details of a transaction by a given block id and index
-    #[method(name = "getTransactionByBlockIdAndIndex")]
-    fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<Transaction>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait GetEvents {
     /// Returns all events matching the given filter
     #[method(name = "getEvents")]
     async fn get_events(&self, filter: EventFilterWithPage) -> RpcResult<EventsPage>;
-}
 
-#[rpc(server, namespace = "starknet")]
-pub trait GetTransactionByHash {
+    /// Get the nonce associated with the given address at the given block
+    #[method(name = "getNonce")]
+    fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt>;
+
+    /// Get the value of the storage at the given address and key, at the given block id
+    #[method(name = "getStorageAt")]
+    fn get_storage_at(&self, contract_address: FieldElement, key: FieldElement, block_id: BlockId) -> RpcResult<Felt>;
+
+    /// Get the details of a transaction by a given block id and index
+    #[method(name = "getTransactionByBlockIdAndIndex")]
+    fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<Transaction>;
+
     /// Returns the information about a transaction by transaction hash.
     #[method(name = "getTransactionByHash")]
     fn get_transaction_by_hash(&self, transaction_hash: FieldElement) -> RpcResult<Transaction>;
-}
 
-#[rpc(server, namespace = "starknet")]
-pub trait GetStateUpdate {
-    /// Get the information about the result of executing the requested block
-    #[method(name = "getStateUpdate")]
-    fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate>;
-}
-
-#[rpc(server, namespace = "starknet")]
-pub trait GetTransactionReceipt {
     /// Returns the receipt of a transaction by transaction hash.
     #[method(name = "getTransactionReceipt")]
     async fn get_transaction_receipt(
         &self,
         transaction_hash: FieldElement,
     ) -> RpcResult<MaybePendingTransactionReceipt>;
+
+    /// Gets the Transaction Status, Including Mempool Status and Execution Details
+    #[method(name = "getTransactionStatus")]
+    fn get_transaction_status(&self, transaction_hash: FieldElement) -> RpcResult<TransactionStatus>;
+
+    /// Get an object about the sync status, or false if the node is not syncing
+    #[method(name = "syncing")]
+    async fn syncing(&self) -> RpcResult<SyncStatusType>;
+
+    /// Get the information about the result of executing the requested block
+    #[method(name = "getStateUpdate")]
+    fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate>;
 }
 
 #[rpc(server, namespace = "starknet")]

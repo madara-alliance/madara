@@ -1,14 +1,4 @@
 pub mod get_block;
-pub mod get_class;
-pub mod get_events;
-pub mod get_nonce;
-pub mod get_state_update;
-pub mod get_storage_at;
-pub mod get_transaction_by_block_id_and_index;
-pub mod get_transaction_by_hash;
-pub mod get_transaction_receipt;
-pub mod get_transaction_status;
-pub mod syncing;
 pub mod read;
 pub mod trace;
 pub mod write;

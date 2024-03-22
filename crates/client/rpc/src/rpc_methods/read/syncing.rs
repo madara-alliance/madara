@@ -1,7 +1,7 @@
-use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
-pub use mc_rpc_core::{Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer, SyncingServer};
+pub use mc_rpc_core::{Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer, StarknetReadRpcApiServer};
 use mc_sync::l2::get_highest_block_hash_and_number;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -15,12 +15,26 @@ use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{SyncStatus, SyncStatusType};
 
-use super::super::madara_backend_client;
+use crate::madara_backend_client;
 use crate::Starknet;
 
-#[async_trait]
+/// Returns an object about the sync status, or false if the node is not synching
+///
+/// ### Arguments
+///
+/// This function does not take any arguments.
+///
+/// ### Returns
+///
+/// * `Syncing` - An Enum that can either be a `mc_rpc_core::SyncStatus` struct representing the
+///   sync status, or a `Boolean` (`false`) indicating that the node is not currently
+///   synchronizing.
+///
+/// This is an asynchronous function due to its reliance on `sync_service.best_seen_block()`,
+/// which potentially involves network communication and processing to determine the best block
+/// seen by the sync service.
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> SyncingServer for Starknet<A, B, BE, G, C, P, H>
+pub async fn syncing<A, B, BE, G, C, P, H>(starknet: &Starknet<A, B, BE, G, C, P, H>) -> RpcResult<SyncStatusType>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,
@@ -32,45 +46,29 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    /// Returns an object about the sync status, or false if the node is not synching
-    ///
-    /// ### Arguments
-    ///
-    /// This function does not take any arguments.
-    ///
-    /// ### Returns
-    ///
-    /// * `Syncing` - An Enum that can either be a `mc_rpc_core::SyncStatus` struct representing the
-    ///   sync status, or a `Boolean` (`false`) indicating that the node is not currently
-    ///   synchronizing.
-    ///
-    /// This is an asynchronous function due to its reliance on `sync_service.best_seen_block()`,
-    /// which potentially involves network communication and processing to determine the best block
-    /// seen by the sync service.
-    async fn syncing(&self) -> RpcResult<SyncStatusType> {
-        // obtain best seen (highest) block number
-        match self.sync_service.best_seen_block().await {
+    // obtain best seen (highest) block number
+        match starknet.sync_service.best_seen_block().await {
             Ok(best_seen_block) => {
-                let best_number = self.client.info().best_number;
+                let best_number = starknet.client.info().best_number;
                 let highest_number = best_seen_block.unwrap_or(best_number);
 
                 // get a starknet block from the starting substrate block number
                 let starting_block = madara_backend_client::starknet_block_from_substrate_hash(
-                    self.client.as_ref(),
-                    self.starting_block,
+                    starknet.client.as_ref(),
+                    starknet.starting_block,
                 );
 
                 // get a starknet block from the current substrate block number
                 let current_block =
-                    madara_backend_client::starknet_block_from_substrate_hash(self.client.as_ref(), best_number);
+                    madara_backend_client::starknet_block_from_substrate_hash(starknet.client.as_ref(), best_number);
 
                 // get a starknet block from the highest substrate block number
                 let highest_block =
-                    madara_backend_client::starknet_block_from_substrate_hash(self.client.as_ref(), highest_number);
+                    madara_backend_client::starknet_block_from_substrate_hash(starknet.client.as_ref(), highest_number);
 
                 if starting_block.is_ok() && current_block.is_ok() && highest_block.is_ok() {
                     // Convert block numbers and hashes to the respective type required by the `syncing` endpoint.
-                    let starting_block_num = UniqueSaturatedInto::<u64>::unique_saturated_into(self.starting_block);
+                    let starting_block_num = UniqueSaturatedInto::<u64>::unique_saturated_into(starknet.starting_block);
                     let starting_block_hash = starting_block?.header().hash::<H>().0;
 
                     let current_block_num = UniqueSaturatedInto::<u64>::unique_saturated_into(best_number);
@@ -102,5 +100,4 @@ where
                 Ok(SyncStatusType::NotSyncing)
             }
         }
-    }
 }

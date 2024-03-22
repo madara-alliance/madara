@@ -1,9 +1,9 @@
-use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{
-    Felt, GetTransactionStatusServer, StarknetTraceRpcApiServer, StarknetReadRpcApiServer,
+    Felt, StarknetTraceRpcApiServer, StarknetReadRpcApiServer,
 };
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -23,9 +23,28 @@ use starknet_core::types::{FieldElement, TransactionExecutionStatus, Transaction
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
-#[async_trait]
+/// Gets the Transaction Status, Including Mempool Status and Execution Details
+///
+/// This method retrieves the status of a specified transaction. It provides information on
+/// whether the transaction is still in the mempool, has been executed, or dropped from the
+/// mempool. The status includes both finality status and execution status of the
+/// transaction.
+///
+/// ### Arguments
+///
+/// * `transaction_hash` - The hash of the transaction for which the status is requested.
+///
+/// ### Returns
+///
+/// * `transaction_status` - An object containing the transaction status details:
+///   - `finality_status`: The finality status of the transaction, indicating whether it is
+///     confirmed, pending, or rejected.
+///   - `execution_status`: The execution status of the transaction, providing details on the
+///     execution outcome if the transaction has been processed.
 #[allow(unused_variables)]
-impl<A, B, BE, G, C, P, H> GetTransactionStatusServer for Starknet<A, B, BE, G, C, P, H>
+pub fn get_transaction_status<A, B, BE, G, C, P, H>(
+    starknet: &Starknet<A, B, BE, G, C, P, H>, 
+    transaction_hash: FieldElement) -> RpcResult<TransactionStatus>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,
@@ -37,26 +56,7 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    /// Gets the Transaction Status, Including Mempool Status and Execution Details
-    ///
-    /// This method retrieves the status of a specified transaction. It provides information on
-    /// whether the transaction is still in the mempool, has been executed, or dropped from the
-    /// mempool. The status includes both finality status and execution status of the
-    /// transaction.
-    ///
-    /// ### Arguments
-    ///
-    /// * `transaction_hash` - The hash of the transaction for which the status is requested.
-    ///
-    /// ### Returns
-    ///
-    /// * `transaction_status` - An object containing the transaction status details:
-    ///   - `finality_status`: The finality status of the transaction, indicating whether it is
-    ///     confirmed, pending, or rejected.
-    ///   - `execution_status`: The execution status of the transaction, providing details on the
-    ///     execution outcome if the transaction has been processed.
-    fn get_transaction_status(&self, transaction_hash: FieldElement) -> RpcResult<TransactionStatus> {
-        let substrate_block_hash = self
+        let substrate_block_hash = starknet
             .backend
             .mapping()
             .block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
@@ -66,12 +66,12 @@ where
             })?
             .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)?;
+        let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
 
-        let chain_id = self.chain_id()?.0.into();
+        let chain_id = starknet.chain_id()?.0.into();
 
         let starknet_tx =
-            if let Some(tx_hashes) = self.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into()) {
+            if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into()) {
                 tx_hashes
                     .into_iter()
                     .zip(starknet_block.transactions())
@@ -89,7 +89,7 @@ where
             };
 
         let execution_status = {
-            let revert_error = self
+            let revert_error = starknet
                 .client
                 .runtime_api()
                 .get_tx_execution_outcome(substrate_block_hash, Felt252Wrapper(transaction_hash).into())
@@ -109,5 +109,5 @@ where
         };
 
         Ok(TransactionStatus { finality_status: TransactionFinalityStatus::AcceptedOnL2, execution_status })
-    }
+
 }
