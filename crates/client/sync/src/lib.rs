@@ -6,12 +6,14 @@
 // use reqwest::Url;
 
 pub mod commitments;
+pub mod fetch;
 pub mod l1;
 pub mod l2;
+pub mod reorgs;
 pub mod types;
 pub mod utils;
 
-pub use l2::{FetchConfig, SenderConfig};
+pub use l2::SenderConfig;
 pub use utils::{convert, m, utility};
 
 type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc::EngineCommand<sp_core::H256>>;
@@ -23,6 +25,7 @@ pub mod starknet_sync_worker {
     use sp_blockchain::HeaderBackend;
     use sp_runtime::traits::Block as BlockT;
 
+    use self::fetch::fetchers::FetchConfig;
     use super::*;
 
     pub async fn sync<B, C>(

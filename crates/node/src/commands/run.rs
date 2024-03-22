@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::result::Result as StdResult;
 
 use madara_runtime::SealingMode;
-use mc_sync::l2::fetch_apply_genesis_block;
+use mc_sync::fetch::fetchers::{fetch_apply_genesis_block, FetchConfig};
 use mc_sync::utility::update_config;
 use mc_sync::utils::constant::starknet_core_address;
 use reqwest::Url;
@@ -111,7 +111,7 @@ impl NetworkType {
         }
     }
 
-    pub fn block_fetch_config(&self) -> mc_sync::FetchConfig {
+    pub fn block_fetch_config(&self) -> FetchConfig {
         let uri = self.uri();
         let chain_id = self.chain_id();
 
@@ -119,7 +119,7 @@ impl NetworkType {
         let feeder_gateway = format!("{uri}/feeder_gateway").parse().unwrap();
         let l1_core_address = self.l1_core_address();
 
-        mc_sync::FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false, l1_core_address }
+        FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false, l1_core_address, verify: true }
     }
 }
 
@@ -159,9 +159,14 @@ pub struct ExtendedRunCmd {
     /// This wrap a specific deoxys environment for a node quick start.
     #[clap(long)]
     pub deoxys: bool,
+
     /// Configuration for L1 Messages (Syncing) Worker
     #[clap(flatten)]
     pub l1_messages_worker: L1Messages,
+
+    /// Disable root verification
+    #[clap(long)]
+    pub disable_root: bool,
 }
 
 pub fn run_node(mut cli: Cli) -> Result<()> {
@@ -186,6 +191,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         let cache = cli.run.cache;
         let mut fetch_block_config = cli.run.network.block_fetch_config();
         fetch_block_config.sound = cli.run.sound;
+        fetch_block_config.verify = !cli.run.disable_root;
 
         update_config(&fetch_block_config);
         log::debug!("Using fetch block config: {:?}", fetch_block_config);
@@ -224,23 +230,22 @@ fn override_dev_environment(cmd: &mut ExtendedRunCmd) {
 fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
     // Set the blockchain network to 'starknet'
     cmd.base.shared_params.chain = Some("starknet".to_string());
-    cmd.base.shared_params.base_path = Some(PathBuf::from("/tmp/deoxys"));
+    cmd.base.shared_params.base_path.get_or_insert_with(|| PathBuf::from("/tmp/deoxys"));
 
     // Assign a random pokemon name at each startup
-    cmd.base.name = Some(
+    cmd.base.name.get_or_insert_with(|| {
         tokio::runtime::Runtime::new().unwrap().block_on(mc_sync::utility::get_random_pokemon_name()).unwrap_or_else(
             |e| {
                 log::warn!("Failed to get random pokemon name: {}", e);
                 "gimmighoul".to_string()
             },
-        ),
-    );
+        )
+    });
 
     // Define telemetry endpoints at starknodes.com
     cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://starknodes.com/submit/".to_string(), 0)];
 
-    // Enables authoring and manual sealing for custom block production
-    cmd.base.force_authoring = true;
-    cmd.base.alice = true;
+    // Enables manual sealing for custom block production
+    cmd.base.no_grandpa = true;
     cmd.sealing = Some(Sealing::Manual);
 }

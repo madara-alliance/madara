@@ -155,7 +155,7 @@ pub(crate) fn tx_conv(txs: &[mp_transactions::Transaction], tx_hashes: Vec<Field
 }
 
 pub(crate) fn status(block_number: u64) -> BlockStatus {
-    if block_number <= ETHEREUM_STATE_UPDATE.lock().unwrap().block_number {
+    if block_number <= ETHEREUM_STATE_UPDATE.read().unwrap().block_number {
         BlockStatus::AcceptedOnL1
     } else {
         BlockStatus::AcceptedOnL2
