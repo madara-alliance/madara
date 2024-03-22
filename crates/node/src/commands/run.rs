@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::result::Result as StdResult;
 
 use madara_runtime::SealingMode;
-use mc_sync::fetch::fetch::{fetch_apply_genesis_block, FetchConfig};
+use mc_sync::fetch::fetchers::{fetch_apply_genesis_block, FetchConfig};
 use mc_sync::utility::update_config;
 use mc_sync::utils::constant::starknet_core_address;
 use reqwest::Url;

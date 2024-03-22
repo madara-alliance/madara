@@ -30,7 +30,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::{Duration, Instant};
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
-use crate::fetch::fetch::{fetch_block_and_updates, FetchConfig};
+use crate::fetch::fetchers::{fetch_block_and_updates, FetchConfig};
 use crate::l1::ETHEREUM_STATE_UPDATE;
 use crate::utility::block_hash_substrate;
 use crate::CommandSink;

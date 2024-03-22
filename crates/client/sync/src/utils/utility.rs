@@ -20,7 +20,7 @@ use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::StateUpdate;
 
-use crate::fetch::fetch::FetchConfig;
+use crate::fetch::fetchers::FetchConfig;
 use crate::l1::{L1StateUpdate, LogStateUpdate};
 use crate::l2::{L2StateUpdate, STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER};
 

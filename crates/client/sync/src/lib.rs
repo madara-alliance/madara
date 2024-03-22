@@ -25,7 +25,7 @@ pub mod starknet_sync_worker {
     use sp_blockchain::HeaderBackend;
     use sp_runtime::traits::Block as BlockT;
 
-    use self::fetch::fetch::FetchConfig;
+    use self::fetch::fetchers::FetchConfig;
     use super::*;
 
     pub async fn sync<B, C>(

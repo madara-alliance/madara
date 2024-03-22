@@ -14,7 +14,7 @@ use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
-use mc_sync::fetch::fetch::FetchConfig;
+use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::starknet_sync_worker;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::ClassUpdateWrapper;
