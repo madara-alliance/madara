@@ -15,6 +15,7 @@ use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
 use mc_sync::starknet_sync_worker;
+use mc_sync::fetch::fetch::FetchConfig;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::ClassUpdateWrapper;
 use mp_sequencer_address::{
@@ -275,7 +276,7 @@ pub fn new_full(
     rpc_port: u16,
     l1_url: Url,
     cache_more_things: bool,
-    fetch_config: mc_sync::FetchConfig,
+    fetch_config: FetchConfig,
     genesis_block: mp_block::Block,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =

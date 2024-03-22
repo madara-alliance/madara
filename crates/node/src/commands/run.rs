@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::result::Result as StdResult;
 
 use madara_runtime::SealingMode;
-use mc_sync::l2::fetch_apply_genesis_block;
+use mc_sync::fetch::fetch::{fetch_apply_genesis_block, FetchConfig};
 use mc_sync::utility::update_config;
 use mc_sync::utils::constant::starknet_core_address;
 use reqwest::Url;
@@ -111,7 +111,7 @@ impl NetworkType {
         }
     }
 
-    pub fn block_fetch_config(&self) -> mc_sync::FetchConfig {
+    pub fn block_fetch_config(&self) -> FetchConfig {
         let uri = self.uri();
         let chain_id = self.chain_id();
 
@@ -119,7 +119,7 @@ impl NetworkType {
         let feeder_gateway = format!("{uri}/feeder_gateway").parse().unwrap();
         let l1_core_address = self.l1_core_address();
 
-        mc_sync::FetchConfig {
+        FetchConfig {
             gateway,
             feeder_gateway,
             chain_id,
