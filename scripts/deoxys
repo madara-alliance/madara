@@ -43,6 +43,12 @@ lint(){
     npx prettier --write .
 }
 
+check(){
+    echo "🔒 Checking code..."
+    cargo fmt -- --check
+    cargo clippy --workspace --tests --no-deps -- -D warnings
+}
+
 ACTION=$1
 
 case $ACTION in
@@ -71,6 +77,13 @@ case $ACTION in
         ;;
     lint)
         lint
+        ;;
+    check)
+        check
+        ;;
+    ready)
+        lint
+        check
         ;;
     help)
         echo "Usage: $0 [start|reset|reboot|lint|help] [KEY for start/reboot]"
