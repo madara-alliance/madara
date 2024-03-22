@@ -65,6 +65,8 @@ mp-hashers = { workspace = true, default-features = true }
 mp-simulations = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
 serde_json = { workspace = true, default-features = true }
+serde = { workspace = true, default-features = true }
+serde_with = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, default-features = true, features = ["time"] }
 num-bigint = { workspace = true }

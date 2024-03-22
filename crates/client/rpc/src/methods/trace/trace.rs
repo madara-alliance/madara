@@ -6,7 +6,6 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mc_storage::StorageOverride;
 use mp_block::Block;
 use mp_felt::Felt252Wrapper;
@@ -31,6 +30,7 @@ use super::lib::*;
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
 use crate::Starknet;
+use crate::StarknetReadRpcApiServer;
 
 #[allow(unused_variables)]
 pub async fn trace_block_transactions<A, B, BE, G, C, P, H>(

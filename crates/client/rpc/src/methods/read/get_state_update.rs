@@ -2,7 +2,6 @@ use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::StarknetReadRpcApiServer;
 use mc_sync::l2::get_pending_state_update;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;

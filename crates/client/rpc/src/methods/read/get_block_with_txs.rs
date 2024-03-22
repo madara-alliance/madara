@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -14,6 +13,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{BlockId, BlockTag, MaybePendingBlockWithTxs};
 
 use crate::errors::StarknetRpcApiError;
+use crate::StarknetReadRpcApiServer;
 use crate::{get_block_with_txs_finalized, get_block_with_txs_pending, Starknet};
 
 /// Get block information with full transactions given the block id.

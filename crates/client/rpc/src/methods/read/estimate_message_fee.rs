@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -16,6 +15,7 @@ use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
+use crate::StarknetReadRpcApiServer;
 
 /// Estimate the L2 fee of a message sent on L1
 ///

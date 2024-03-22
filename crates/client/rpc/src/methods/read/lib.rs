@@ -1,6 +1,5 @@
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mp_hashers::HasherT;
 use mp_transactions::TransactionStatus;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -17,6 +16,7 @@ use starknet_core::types::{
     MaybePendingTransactionReceipt, MsgFromL1, SyncStatusType, Transaction,
 };
 
+use crate::{Felt, StarknetReadRpcApiServer};
 use super::block_hash_and_number::*;
 use super::call::*;
 use super::chain_id::*;

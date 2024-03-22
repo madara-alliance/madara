@@ -4,7 +4,6 @@ use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer};
 use mc_sync::l2::get_pending_block;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -32,6 +31,7 @@ use crate::utils::{
     get_block_by_block_hash, tx_hash_compute, tx_hash_retrieve,
 };
 use crate::Starknet;
+use crate::{Felt, StarknetReadRpcApiServer};
 
 pub(crate) fn get_transaction_receipt_finalized<A, B, BE, G, C, P, H>(
     client: &Starknet<A, B, BE, G, C, P, H>,

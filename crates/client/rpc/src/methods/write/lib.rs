@@ -1,6 +1,5 @@
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{Felt, StarknetWriteRpcApiServer};
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -19,6 +18,7 @@ use super::add_declare_transaction::*;
 use super::add_deploy_account_transaction::*;
 use super::add_invoke_transaction::*;
 use crate::Starknet;
+use crate::StarknetWriteRpcApiServer;
 
 #[async_trait]
 impl<A, B, BE, G, C, P, H> StarknetWriteRpcApiServer for Starknet<A, B, BE, G, C, P, H>

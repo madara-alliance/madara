@@ -5,7 +5,6 @@ use anyhow::{anyhow, Result};
 use blockifier::execution::contract_class::ContractClass as BlockifierContractClass;
 use blockifier::execution::entry_point::CallInfo;
 use cairo_lang_casm_contract_class::{CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints};
-pub use mc_rpc_core::{Felt, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
 use mp_block::Block as StarknetBlock;
 use mp_digest_log::find_starknet_block;
@@ -25,6 +24,8 @@ use starknet_core::types::{
     FromByteArrayError, LegacyContractEntryPoint, LegacyEntryPointsByType, MsgToL1, NonceUpdate, ReplacedClassItem,
     ResourcePrice, StateDiff, StorageEntry, Transaction,
 };
+
+use crate::Felt;
 
 pub fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> {
     let address = call_info.call.storage_address;

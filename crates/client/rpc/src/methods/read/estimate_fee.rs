@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::UserTransaction;
@@ -17,6 +16,7 @@ use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate};
 
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
+use crate::StarknetReadRpcApiServer;
 
 /// Estimate the fee associated with transaction
 ///

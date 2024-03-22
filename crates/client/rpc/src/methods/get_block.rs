@@ -1,7 +1,7 @@
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_rpc_core::Felt;
+use crate::Felt;
 use mc_sync::l2::get_pending_block;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};

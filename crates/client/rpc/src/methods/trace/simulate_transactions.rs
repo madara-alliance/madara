@@ -2,7 +2,6 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mc_storage::StorageOverride;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -21,6 +20,7 @@ use super::lib::ConvertCallInfoToExecuteInvocationError;
 use crate::errors::StarknetRpcApiError;
 use crate::methods::trace::trace::tx_execution_infos_to_tx_trace;
 use crate::Starknet;
+use crate::StarknetReadRpcApiServer;
 
 #[allow(unused_variables)]
 pub async fn simulate_transactions<A, B, BE, G, C, P, H>(

@@ -2,7 +2,6 @@ use jsonrpsee::core::RpcResult;
 use jsonrpsee::types::error::CallError;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -20,6 +19,7 @@ use starknet_core::types::{BlockId, FieldElement, Transaction};
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
 use crate::Starknet;
+use crate::StarknetReadRpcApiServer;
 
 /// Get the details of a transaction by a given block id and index.
 ///

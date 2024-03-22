@@ -2,7 +2,6 @@ use blockifier::transaction::errors::TransactionExecutionError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::{StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
@@ -21,6 +20,7 @@ use super::simulate_transactions::*;
 use super::trace::*;
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
+use crate::StarknetTraceRpcApiServer;
 
 #[async_trait]
 impl<A, B, BE, G, C, P, H> StarknetTraceRpcApiServer for Starknet<A, B, BE, G, C, P, H>
