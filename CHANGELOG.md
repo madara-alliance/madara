@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix(sync): Cleaned mc-sync isolating fetch process + added shared SyncStatus
 - feat(self-hosted): host our own runner
 - fix(deps): Removed unused dependencies
 - feat(multi-trie): Added support for persistent storage tries
