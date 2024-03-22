@@ -6,7 +6,7 @@ mod constants;
 mod errors;
 mod events;
 mod madara_backend_client;
-mod rpc_methods;
+mod methods;
 mod types;
 mod utils;
 
@@ -31,11 +31,9 @@ use sp_core::H256;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkHash;
-use starknet_core::types::{
-    BlockId, StateDiff,
-};
+use starknet_core::types::{BlockId, StateDiff};
 
-use crate::rpc_methods::get_block::{
+use crate::methods::get_block::{
     get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
     get_block_with_txs_pending,
 };

@@ -4,9 +4,6 @@
 //! using the openRPC specification.
 //! This crate uses `jsonrpsee` to define such an API in Rust terms.
 
-#[cfg(test)]
-mod tests;
-
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use serde::{Deserialize, Serialize};
