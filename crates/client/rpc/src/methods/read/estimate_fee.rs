@@ -15,8 +15,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate};
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
-use crate::StarknetReadRpcApiServer;
+use crate::{Starknet, StarknetReadRpcApiServer};
 
 /// Estimate the fee associated with transaction
 ///

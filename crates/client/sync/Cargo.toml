@@ -64,7 +64,6 @@ sp-runtime = { workspace = true }
 bitvec = "1.0.1"
 bonsai-trie = { workspace = true }
 mc-db = { workspace = true }
-mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
 mp-block = { workspace = true }
 mp-contract = { workspace = true }

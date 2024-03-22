@@ -14,8 +14,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{BlockId, FieldElement};
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
-use crate::Felt;
+use crate::{Felt, Starknet};
 
 /// Get the contract class hash in the given block for the contract deployed at the given
 /// address

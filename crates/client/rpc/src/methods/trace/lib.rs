@@ -17,10 +17,9 @@ use starknet_ff::FieldElement;
 use thiserror::Error;
 
 use super::simulate_transactions::*;
-use super::trace::*;
+use super::trace_implementation::*;
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
-use crate::StarknetTraceRpcApiServer;
+use crate::{Starknet, StarknetTraceRpcApiServer};
 
 #[async_trait]
 impl<A, B, BE, G, C, P, H> StarknetTraceRpcApiServer for Starknet<A, B, BE, G, C, P, H>

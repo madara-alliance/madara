@@ -30,8 +30,7 @@ use crate::utils::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
     get_block_by_block_hash, tx_hash_compute, tx_hash_retrieve,
 };
-use crate::Starknet;
-use crate::{Felt, StarknetReadRpcApiServer};
+use crate::{Felt, Starknet, StarknetReadRpcApiServer};
 
 pub(crate) fn get_transaction_receipt_finalized<A, B, BE, G, C, P, H>(
     client: &Starknet<A, B, BE, G, C, P, H>,

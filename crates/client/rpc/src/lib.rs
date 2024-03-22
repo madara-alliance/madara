@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
+use jsonrpsee::proc_macros::rpc;
 use log::error;
 use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
@@ -22,6 +23,8 @@ use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_network_sync::SyncingService;
 use sc_transaction_pool::{ChainApi, Pool};
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use sp_api::ProvideRuntimeApi;
 use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
@@ -29,12 +32,15 @@ use sp_core::H256;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkHash;
-use starknet_core::types::{BlockId, StateDiff, BlockHashAndNumber, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
+use starknet_core::serde::unsigned_field_element::UfeHex;
+use starknet_core::types::{
+    BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
     InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MaybePendingTransactionReceipt, MsgFromL1, SimulatedTransaction, SimulationFlag, SyncStatusType, Transaction,
-    TransactionTraceWithHash,};
+    MaybePendingTransactionReceipt, MsgFromL1, SimulatedTransaction, SimulationFlag, StateDiff, SyncStatusType,
+    Transaction, TransactionStatus, TransactionTraceWithHash,
+};
 
 use crate::methods::get_block::{
     get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
@@ -42,20 +48,11 @@ use crate::methods::get_block::{
 };
 use crate::utils::*;
 
-use jsonrpsee::proc_macros::rpc;
-use mp_transactions::TransactionStatus;
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use starknet_core::serde::unsigned_field_element::UfeHex;
-
-
-
 // Starknet RPC API trait and types
 //
 // Starkware maintains [a description of the Starknet API](https://github.com/starkware-libs/starknet-specs/blob/master/api/starknet_api_openrpc.json)
 // using the openRPC specification.
 // This crate uses `jsonrpsee` to define such an API in Rust terms.
-
 
 #[serde_as]
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -204,38 +201,6 @@ pub trait StarknetTraceRpcApi {
     /// Returns the execution trace of a transaction
     async fn trace_transaction(&self, transaction_hash: FieldElement) -> RpcResult<TransactionTraceWithHash>;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /// A Starknet RPC server for Madara
 #[allow(dead_code)]

@@ -17,8 +17,7 @@ use starknet_core::types::{
 use super::add_declare_transaction::*;
 use super::add_deploy_account_transaction::*;
 use super::add_invoke_transaction::*;
-use crate::Starknet;
-use crate::StarknetWriteRpcApiServer;
+use crate::{Starknet, StarknetWriteRpcApiServer};
 
 #[async_trait]
 impl<A, B, BE, G, C, P, H> StarknetWriteRpcApiServer for Starknet<A, B, BE, G, C, P, H>

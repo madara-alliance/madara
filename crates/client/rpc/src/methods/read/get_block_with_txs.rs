@@ -13,8 +13,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{BlockId, BlockTag, MaybePendingBlockWithTxs};
 
 use crate::errors::StarknetRpcApiError;
-use crate::StarknetReadRpcApiServer;
-use crate::{get_block_with_txs_finalized, get_block_with_txs_pending, Starknet};
+use crate::{get_block_with_txs_finalized, get_block_with_txs_pending, Starknet, StarknetReadRpcApiServer};
 
 /// Get block information with full transactions given the block id.
 ///

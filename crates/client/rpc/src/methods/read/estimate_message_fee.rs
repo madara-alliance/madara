@@ -14,8 +14,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
-use crate::StarknetReadRpcApiServer;
+use crate::{Starknet, StarknetReadRpcApiServer};
 
 /// Estimate the L2 fee of a message sent on L1
 ///

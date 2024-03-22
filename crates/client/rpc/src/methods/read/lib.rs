@@ -1,7 +1,6 @@
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
-use mp_transactions::TransactionStatus;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -13,10 +12,9 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate,
     FieldElement, FunctionCall, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MaybePendingTransactionReceipt, MsgFromL1, SyncStatusType, Transaction,
+    MaybePendingTransactionReceipt, MsgFromL1, SyncStatusType, Transaction, TransactionStatus,
 };
 
-use crate::{Felt, StarknetReadRpcApiServer};
 use super::block_hash_and_number::*;
 use super::call::*;
 use super::chain_id::*;
@@ -37,7 +35,7 @@ use super::get_transaction_by_hash::*;
 use super::get_transaction_receipt::*;
 use super::get_transaction_status::*;
 use super::syncing::*;
-use crate::Starknet;
+use crate::{Felt, Starknet, StarknetReadRpcApiServer};
 
 #[async_trait]
 #[allow(unused_variables)]

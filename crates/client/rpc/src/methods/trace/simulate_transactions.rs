@@ -17,10 +17,9 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, SimulatedTransaction, SimulationFlag};
 
 use super::lib::ConvertCallInfoToExecuteInvocationError;
+use super::trace_implementation::tx_execution_infos_to_tx_trace;
 use crate::errors::StarknetRpcApiError;
-use crate::methods::trace::trace::tx_execution_infos_to_tx_trace;
-use crate::Starknet;
-use crate::StarknetReadRpcApiServer;
+use crate::{Starknet, StarknetReadRpcApiServer};
 
 #[allow(unused_variables)]
 pub async fn simulate_transactions<A, B, BE, G, C, P, H>(

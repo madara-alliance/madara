@@ -13,8 +13,7 @@ use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
-use crate::Felt;
+use crate::{Felt, Starknet};
 
 /// Return the currently configured chain id.
 ///

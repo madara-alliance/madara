@@ -17,8 +17,7 @@ use starknet_core::types::{FieldElement, Transaction};
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
-use crate::Starknet;
-use crate::StarknetReadRpcApiServer;
+use crate::{Starknet, StarknetReadRpcApiServer};
 
 /// Get the details and status of a submitted transaction.
 ///

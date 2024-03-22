@@ -5,7 +5,6 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
-use mp_transactions::TransactionStatus;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -14,12 +13,11 @@ use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
-use starknet_core::types::{FieldElement, TransactionExecutionStatus, TransactionFinalityStatus};
+use starknet_core::types::{FieldElement, TransactionExecutionStatus, TransactionStatus};
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
-use crate::Starknet;
-use crate::StarknetReadRpcApiServer;
+use crate::{Starknet, StarknetReadRpcApiServer};
 
 /// Gets the Transaction Status, Including Mempool Status and Execution Details
 ///
@@ -107,5 +105,5 @@ where
         }
     };
 
-    Ok(TransactionStatus { finality_status: TransactionFinalityStatus::AcceptedOnL2, execution_status })
+    Ok(TransactionStatus::AcceptedOnL2(execution_status))
 }

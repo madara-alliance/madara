@@ -1,7 +1,6 @@
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
-use crate::Felt;
 use mc_sync::l2::get_pending_block;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -21,7 +20,7 @@ use crate::utils::{
     get_block_by_block_hash, l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, status,
     timestamp, tx_conv, tx_hash_compute, tx_hash_retrieve,
 };
-use crate::Starknet;
+use crate::{Felt, Starknet};
 
 pub(crate) fn get_block_with_tx_hashes_finalized<A, B, BE, G, C, P, H>(
     server: &Starknet<A, B, BE, G, C, P, H>,

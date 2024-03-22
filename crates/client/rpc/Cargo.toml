@@ -23,7 +23,6 @@ pallet-starknet = { workspace = true, default-features = true }
 pallet-starknet-runtime-api = { workspace = true, default-features = true }
 # Madara client
 mc-db = { workspace = true }
-mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
 mc-sync = { workspace = true }
 # Substate primitives
@@ -47,6 +46,8 @@ starknet-providers = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 # Others
 anyhow = { workspace = true }
+cairo-lang-casm-contract-class = { workspace = true }
+flate2 = { workspace = true }
 hex = { workspace = true, default-features = true }
 indexmap = { workspace = true, default-features = true }
 itertools = { workspace = true }
@@ -64,14 +65,12 @@ mp-felt = { workspace = true, default-features = true }
 mp-hashers = { workspace = true, default-features = true }
 mp-simulations = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
-serde_json = { workspace = true, default-features = true }
+num-bigint = { workspace = true }
 serde = { workspace = true, default-features = true }
+serde_json = { workspace = true, default-features = true }
 serde_with = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, default-features = true, features = ["time"] }
-num-bigint = { workspace = true }
-cairo-lang-casm-contract-class = { workspace = true }
-flate2 = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

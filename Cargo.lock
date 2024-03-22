@@ -1570,7 +1570,6 @@ dependencies = [
  "hex",
  "keccak",
  "lazy_static",
- "mimalloc",
  "nom",
  "num-bigint",
  "num-integer",
@@ -5137,16 +5136,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ec2a862134d2a7d32d7983ddcdd1c4923530833c9f2ea1a44fc5fa473989058"
 
 [[package]]
-name = "libmimalloc-sys"
-version = "0.1.35"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3979b5c37ece694f1f5e51e7ecc871fdb0f517ed04ee45f88d15d6d553cb9664"
-dependencies = [
- "cc",
- "libc",
-]
-
-[[package]]
 name = "libp2p"
 version = "0.51.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5947,7 +5936,6 @@ dependencies = [
  "log",
  "mc-db",
  "mc-rpc",
- "mc-rpc-core",
  "mc-storage",
  "mc-sync",
  "mp-digest-log",
@@ -5981,7 +5969,6 @@ dependencies = [
  "log",
  "mc-db",
  "mc-genesis-data-provider",
- "mc-rpc-core",
  "mc-storage",
  "mc-sync",
  "mp-block",
@@ -6016,44 +6003,6 @@ dependencies = [
  "starknet_api",
  "thiserror",
  "tokio",
-]
-
-[[package]]
-name = "mc-rpc-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "assert_matches",
- "blockifier",
- "cairo-lang-casm",
- "cairo-lang-casm-contract-class",
- "cairo-lang-starknet",
- "cairo-lang-utils",
- "cairo-vm",
- "flate2",
- "frame-support",
- "hex",
- "indexmap 2.0.0-pre",
- "jsonrpsee",
- "mp-block",
- "mp-digest-log",
- "mp-felt",
- "mp-genesis-config",
- "mp-simulations",
- "mp-transactions",
- "num-bigint",
- "pallet-starknet",
- "serde",
- "serde_json",
- "serde_with",
- "sp-api",
- "sp-blockchain",
- "sp-core",
- "sp-runtime",
- "starknet-core",
- "starknet-providers",
- "starknet_api",
- "thiserror",
 ]
 
 [[package]]
@@ -6099,7 +6048,6 @@ dependencies = [
  "log",
  "madara-runtime",
  "mc-db",
- "mc-rpc-core",
  "mc-storage",
  "mockito",
  "mp-block",
@@ -6208,15 +6156,6 @@ dependencies = [
  "keccak",
  "rand_core 0.6.4",
  "zeroize",
-]
-
-[[package]]
-name = "mimalloc"
-version = "0.1.39"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa01922b5ea280a911e323e4d2fd24b7fe5cc4042e0d2cda3c40775cdc4bdc9c"
-dependencies = [
- "libmimalloc-sys",
 ]
 
 [[package]]
