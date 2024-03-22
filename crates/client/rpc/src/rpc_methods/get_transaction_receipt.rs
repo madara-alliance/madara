@@ -87,7 +87,7 @@ where
 
     let actual_fee = execution_infos.actual_fee.0.into();
 
-    let finality_status = if block_number <= mc_sync::l1::ETHEREUM_STATE_UPDATE.lock().unwrap().block_number {
+    let finality_status = if block_number <= mc_sync::l1::ETHEREUM_STATE_UPDATE.read().unwrap().block_number {
         TransactionFinalityStatus::AcceptedOnL1
     } else {
         TransactionFinalityStatus::AcceptedOnL2

@@ -5,17 +5,24 @@ use std::sync::RwLock;
 use std::thread::sleep;
 use std::time::Duration;
 
+use bitvec::order::Msb0;
+use bitvec::view::AsBits;
 use ethers::types::{I256, U256};
 use lazy_static::lazy_static;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use reqwest::header;
 use serde_json::{json, Value};
+use sp_blockchain::HeaderBackend;
+use sp_core::H256;
+use sp_runtime::traits::{Block as BlockT, UniqueSaturatedInto};
 use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
+use starknet_providers::sequencer::models::StateUpdate;
 
+use crate::fetch::fetchers::FetchConfig;
 use crate::l1::{L1StateUpdate, LogStateUpdate};
-use crate::l2::{FetchConfig, L2StateUpdate, STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER};
+use crate::l2::{L2StateUpdate, STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER};
 
 // TODO: find a better place to store this
 lazy_static! {
@@ -205,4 +212,21 @@ pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
     *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
         .read()
         .expect("Failed to acquire read lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
+}
+
+/// Retrieves Deoxys block hash from state update
+pub fn block_hash_deoxys(state_update: &StateUpdate) -> FieldElement {
+    state_update.block_hash.unwrap()
+}
+
+/// Retrieves Substrate block hash from rpc client
+pub fn block_hash_substrate<B, C>(client: &C, block_number: u64) -> Option<H256>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
+    client
+        .hash(UniqueSaturatedInto::unique_saturated_into(block_number))
+        .unwrap()
+        .map(|hash| H256::from_slice(hash.as_bits::<Msb0>().to_bitvec().as_raw_slice()))
 }

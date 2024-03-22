@@ -14,6 +14,7 @@ use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
+use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::starknet_sync_worker;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_contract::class::ClassUpdateWrapper;
@@ -275,7 +276,7 @@ pub fn new_full(
     rpc_port: u16,
     l1_url: Url,
     cache_more_things: bool,
-    fetch_config: mc_sync::FetchConfig,
+    fetch_config: FetchConfig,
     genesis_block: mp_block::Block,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
@@ -440,29 +441,29 @@ pub fn new_full(
         starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend, Arc::clone(&client)),
     );
 
+    // manual-seal authorship
+    if !sealing.is_default() {
+        run_manual_seal_authorship(
+            block_receiver,
+            state_update_receiver,
+            class_receiver,
+            sealing,
+            client,
+            transaction_pool,
+            select_chain,
+            block_import,
+            &task_manager,
+            prometheus_registry.as_ref(),
+            commands_stream,
+            telemetry,
+        )?;
+
+        network_starter.start_network();
+
+        return Ok(task_manager);
+    }
+
     if role.is_authority() {
-        // manual-seal authorship
-        if !sealing.is_default() {
-            run_manual_seal_authorship(
-                block_receiver,
-                state_update_receiver,
-                class_receiver,
-                sealing,
-                client,
-                transaction_pool,
-                select_chain,
-                block_import,
-                &task_manager,
-                prometheus_registry.as_ref(),
-                commands_stream,
-                telemetry,
-            )?;
-
-            network_starter.start_network();
-
-            return Ok(task_manager);
-        }
-
         let proposer_factory = ProposerFactory::new(
             task_manager.spawn_handle(),
             client.clone(),
@@ -636,7 +637,7 @@ where
         /// The receiver that we're using to receive blocks.
         block_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<mp_block::Block>>,
 
-        /// The receiver that we're using to receive commitment state diffs.
+        /// The receiver that we're using to receive state updates.
         state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StateUpdateWrapper>>,
 
         /// The receiver that we're using to receive class updates.
