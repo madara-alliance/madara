@@ -155,7 +155,7 @@ impl DeoxysBackend {
     ) -> Result<&'static Arc<DeoxysBackend>, String> {
         BACKEND_SINGLETON
             .set(Arc::new(Self::init(database, db_config_dir, cache_more_things).unwrap()))
-            .map_err(|_| format!("Backend already initialized"))?;
+            .map_err(|_| "Backend already initialized")?;
 
         Ok(BACKEND_SINGLETON.get().unwrap())
     }
