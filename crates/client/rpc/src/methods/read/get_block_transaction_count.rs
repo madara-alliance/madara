@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -15,6 +14,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::BlockId;
 
 use crate::errors::StarknetRpcApiError;
+use crate::utils::get_block_by_block_hash;
 use crate::Starknet;
 
 /// Get the Number of Transactions in a Given Block

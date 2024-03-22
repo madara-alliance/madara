@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetWriteRpcApiServer};
 use mc_sync::utility::get_config;
 use mp_hashers::HasherT;

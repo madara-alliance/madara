@@ -1,4 +1,4 @@
-use mc_rpc_core::utils::get_block_by_block_hash;
+use mc_rpc::utils::get_block_by_block_hash;
 use mp_digest_log::{find_starknet_block, FindLogError};
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;

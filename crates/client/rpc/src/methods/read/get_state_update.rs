@@ -2,7 +2,6 @@ use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_rpc_core::utils::get_block_by_block_hash;
 pub use mc_rpc_core::StarknetReadRpcApiServer;
 use mc_sync::l2::get_pending_state_update;
 use mp_felt::Felt252Wrapper;
@@ -19,6 +18,7 @@ use starknet_api::block::BlockHash;
 use starknet_core::types::{BlockId, BlockTag, FieldElement, MaybePendingStateUpdate, StateDiff, StateUpdate};
 
 use crate::errors::StarknetRpcApiError;
+use crate::utils::get_block_by_block_hash;
 use crate::Starknet;
 
 pub(crate) fn get_state_update_finalized<A, B, BE, G, C, P, H>(

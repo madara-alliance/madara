@@ -6,7 +6,6 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_rpc_core::utils::get_block_by_block_hash;
 pub use mc_rpc_core::{StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mc_storage::StorageOverride;
 use mp_block::Block;
@@ -30,6 +29,7 @@ use starknet_ff::FieldElement;
 
 use super::lib::*;
 use crate::errors::StarknetRpcApiError;
+use crate::utils::get_block_by_block_hash;
 use crate::Starknet;
 
 #[allow(unused_variables)]

@@ -1,7 +1,6 @@
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_rpc_core::utils::get_block_by_block_hash;
 use mc_rpc_core::Felt;
 use mc_sync::l2::get_pending_block;
 use mp_hashers::HasherT;
@@ -19,8 +18,8 @@ use starknet_core::types::{
 };
 
 use crate::utils::{
-    l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, status, timestamp, tx_conv,
-    tx_hash_compute, tx_hash_retrieve,
+    get_block_by_block_hash, l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, status,
+    timestamp, tx_conv, tx_hash_compute, tx_hash_retrieve,
 };
 use crate::Starknet;
 

@@ -1,6 +1,5 @@
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mc_sync::l2::get_highest_block_hash_and_number;
 use mp_hashers::HasherT;

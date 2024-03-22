@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -19,6 +18,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{FieldElement, TransactionExecutionStatus, TransactionFinalityStatus};
 
 use crate::errors::StarknetRpcApiError;
+use crate::utils::get_block_by_block_hash;
 use crate::Starknet;
 
 /// Gets the Transaction Status, Including Mempool Status and Execution Details

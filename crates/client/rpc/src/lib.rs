@@ -8,7 +8,7 @@ mod events;
 mod madara_backend_client;
 mod methods;
 mod types;
-mod utils;
+pub mod utils;
 
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -16,7 +16,6 @@ use std::sync::Arc;
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use log::error;
-pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
@@ -37,6 +36,7 @@ use crate::methods::get_block::{
     get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
     get_block_with_txs_pending,
 };
+use crate::utils::*;
 
 /// A Starknet RPC server for Madara
 #[allow(dead_code)]

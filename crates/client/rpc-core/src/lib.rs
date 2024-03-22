@@ -6,12 +6,9 @@
 
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
+use mp_transactions::TransactionStatus;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-
-pub mod utils;
-
-use mp_transactions::TransactionStatus;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,

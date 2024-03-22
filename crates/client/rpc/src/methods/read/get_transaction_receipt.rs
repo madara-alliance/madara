@@ -4,7 +4,6 @@ use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_rpc_core::utils::get_block_by_block_hash;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer};
 use mc_sync::l2::get_pending_block;
 use mp_felt::Felt252Wrapper;
@@ -30,7 +29,7 @@ use starknet_core::types::{
 use crate::errors::StarknetRpcApiError;
 use crate::utils::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
-    tx_hash_compute, tx_hash_retrieve,
+    get_block_by_block_hash, tx_hash_compute, tx_hash_retrieve,
 };
 use crate::Starknet;
 

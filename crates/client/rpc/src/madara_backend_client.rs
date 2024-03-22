@@ -1,5 +1,4 @@
 use mc_db::DbError;
-use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_block::Block;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_api::BlockId;
@@ -8,6 +7,7 @@ use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use starknet_api::hash::StarkHash;
 
 use crate::errors::StarknetRpcApiError;
+use crate::utils::get_block_by_block_hash;
 
 pub fn load_hash<B: BlockT, C>(
     client: &C,

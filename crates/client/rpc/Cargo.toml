@@ -58,6 +58,7 @@ log = { workspace = true, default-features = true }
 mp-block = { workspace = true, default-features = true }
 mp-contract = { workspace = true, default-features = true }
 mp-convert = { workspace = true, default-features = true }
+mp-digest-log = { workspace = true }
 mp-fee = { workspace = true, default-features = true }
 mp-felt = { workspace = true, default-features = true }
 mp-hashers = { workspace = true, default-features = true }
@@ -66,6 +67,9 @@ mp-transactions = { workspace = true, features = ["client"] }
 serde_json = { workspace = true, default-features = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, default-features = true, features = ["time"] }
+num-bigint = { workspace = true }
+cairo-lang-casm-contract-class = { workspace = true }
+flate2 = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

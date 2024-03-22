@@ -1,6 +1,5 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
-use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -15,6 +14,7 @@ use starknet_ff::FieldElement;
 
 use crate::errors::StarknetRpcApiError;
 use crate::types::{ContinuationToken, RpcEventFilter};
+use crate::utils::get_block_by_block_hash;
 use crate::Starknet;
 
 impl<A: ChainApi, B, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H>
