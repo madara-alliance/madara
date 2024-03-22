@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- refactor(generic): reduced runtime dependence on generics
 - feat(self-hosted): host our own runner
 - fix(deps): Removed unused dependencies
 - feat(multi-trie): Added support for persistent storage tries
