@@ -25,12 +25,11 @@ use crate::Starknet;
 ///
 /// * `block_hash_and_number` - A tuple containing the latest block hash and number of the current
 ///   network.
-pub fn block_hash_and_number<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub fn block_hash_and_number<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
 ) -> RpcResult<BlockHashAndNumber>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

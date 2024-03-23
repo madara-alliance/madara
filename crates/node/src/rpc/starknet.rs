@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mc_db::Backend;
+use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_storage::OverrideHandle;
 use sc_network_sync::SyncingService;
@@ -12,7 +12,7 @@ pub struct StarknetDeps<C, G: GenesisProvider, B: BlockT> {
     /// The client instance to use.
     pub client: Arc<C>,
     /// Madara Backend.
-    pub madara_backend: Arc<Backend<B>>,
+    pub madara_backend: Arc<DeoxysBackend>,
     /// Starknet data access overrides.
     pub overrides: Arc<OverrideHandle<B>>,
     /// The Substrate client sync service.

@@ -32,14 +32,13 @@ use crate::{Felt, Starknet};
 /// count or other contract-specific operations. In case of errors, such as
 /// `BLOCK_NOT_FOUND` or `CONTRACT_NOT_FOUND`, returns a `StarknetRpcApiError` indicating the
 /// specific issue.
-pub fn get_nonce<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub fn get_nonce<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     block_id: BlockId,
     contract_address: FieldElement,
 ) -> RpcResult<Felt>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

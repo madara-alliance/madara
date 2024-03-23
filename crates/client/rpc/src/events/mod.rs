@@ -1,3 +1,4 @@
+use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mp_felt::Felt252Wrapper;
@@ -8,7 +9,6 @@ use sc_client_api::BlockBackend;
 use sc_transaction_pool::ChainApi;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{BlockId, EmittedEvent, EventsPage};
 use starknet_ff::FieldElement;
 
@@ -17,13 +17,12 @@ use crate::types::{ContinuationToken, RpcEventFilter};
 use crate::utils::get_block_by_block_hash;
 use crate::Starknet;
 
-impl<A: ChainApi, B, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H>
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
 where
-    B: BlockT,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-    BE: Backend<B>,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+    BE: Backend<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     /// Helper function to get Starknet block details

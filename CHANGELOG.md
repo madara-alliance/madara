@@ -2,7 +2,8 @@ git # Deoxys Changelog
 
 ## Next release
 
-- refacto: rpc methods and removed rpc-core
+- refactor: rpc methods and removed rpc-core
+- refactor(generic): reduced runtime dependence on generics
 - fix(sync): Cleaned mc-sync isolating fetch process + added shared SyncStatus
 - feat(self-hosted): host our own runner
 - fix(deps): Removed unused dependencies

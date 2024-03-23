@@ -46,13 +46,12 @@ use crate::{Starknet, StarknetReadRpcApiServer};
 /// - `BLOCK_NOT_FOUND` if the specified block is not found.
 /// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
 ///   system's capacity.
-pub fn get_transaction_by_hash<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub fn get_transaction_by_hash<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     transaction_hash: FieldElement,
 ) -> RpcResult<Transaction>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

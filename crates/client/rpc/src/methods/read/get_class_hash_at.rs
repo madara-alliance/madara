@@ -28,14 +28,13 @@ use crate::{Felt, Starknet};
 /// ### Returns
 ///
 /// * `class_hash` - The class hash of the given contract
-pub fn get_class_hash_at<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub fn get_class_hash_at<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     block_id: BlockId,
     contract_address: FieldElement,
 ) -> RpcResult<Felt>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

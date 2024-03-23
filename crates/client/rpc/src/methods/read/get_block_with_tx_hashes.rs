@@ -27,13 +27,12 @@ use crate::{get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending
 /// Returns block information with transaction hashes. This includes either a confirmed block or
 /// a pending block with transaction hashes, depending on the state of the requested block.
 /// In case the block is not found, returns a `StarknetRpcApiError` with `BlockNotFound`.
-pub fn get_block_with_tx_hashes<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub fn get_block_with_tx_hashes<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     block_id: BlockId,
 ) -> RpcResult<MaybePendingBlockWithTxHashes>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

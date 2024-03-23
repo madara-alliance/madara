@@ -37,13 +37,12 @@ use crate::{Starknet, StarknetReadRpcApiServer};
 ///     confirmed, pending, or rejected.
 ///   - `execution_status`: The execution status of the transaction, providing details on the
 ///     execution outcome if the transaction has been processed.
-pub fn get_transaction_status<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub fn get_transaction_status<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     transaction_hash: FieldElement,
 ) -> RpcResult<TransactionStatus>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

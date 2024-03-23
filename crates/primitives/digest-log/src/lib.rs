@@ -20,7 +20,7 @@ mod error;
 mod tests;
 
 pub use error::FindLogError;
-use mp_block::Block as StarknetBlock;
+use mp_block::DeoxysBlock;
 use parity_scale_codec::{Decode, Encode};
 use sp_runtime::generic::{Digest, OpaqueDigestItemId};
 use sp_runtime::ConsensusEngineId;
@@ -38,11 +38,11 @@ pub const CLASS_ENGINE_ID: ConsensusEngineId = [b'c', b'l', b'a', b'z'];
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Eq)]
 pub enum Log {
     #[codec(index = 0)]
-    Block(StarknetBlock),
+    Block(DeoxysBlock),
 }
 
-/// Return the wrapped [StarknetBlock] contained in a given [Digest]
-pub fn find_starknet_block(digest: &Digest) -> Result<StarknetBlock, FindLogError> {
+/// Return the wrapped [DeoxysBlock] contained in a given [Digest]
+pub fn find_starknet_block(digest: &Digest) -> Result<DeoxysBlock, FindLogError> {
     find_log(digest).map(|log| match log {
         Log::Block(b) => b,
     })

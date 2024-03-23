@@ -1,3 +1,4 @@
+use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
@@ -10,7 +11,6 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{
     BlockWithTxHashes, BlockWithTxs, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, PendingBlockWithTxHashes,
     PendingBlockWithTxs,
@@ -22,19 +22,18 @@ use crate::utils::{
 };
 use crate::{Felt, Starknet};
 
-pub(crate) fn get_block_with_tx_hashes_finalized<A, B, BE, G, C, P, H>(
-    server: &Starknet<A, B, BE, G, C, P, H>,
+pub(crate) fn get_block_with_tx_hashes_finalized<A, BE, G, C, P, H>(
+    server: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
-    substrate_block_hash: B::Hash,
+    substrate_block_hash: DHashT,
 ) -> RpcResult<MaybePendingBlockWithTxHashes>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = DBlockT> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
@@ -98,19 +97,18 @@ where
     Ok(MaybePendingBlockWithTxHashes::PendingBlock(block_with_tx_hashes))
 }
 
-pub(crate) fn get_block_with_txs_finalized<A, B, BE, G, C, P, H>(
-    server: &Starknet<A, B, BE, G, C, P, H>,
+pub(crate) fn get_block_with_txs_finalized<A, BE, G, C, P, H>(
+    server: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
-    substrate_block_hash: B::Hash,
+    substrate_block_hash: DHashT,
 ) -> RpcResult<MaybePendingBlockWithTxs>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = DBlockT> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {

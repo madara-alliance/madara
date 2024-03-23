@@ -38,14 +38,13 @@ use crate::{Arc, Starknet};
 /// * `CONTRACT_NOT_FOUND` - If the specified contract address does not exist.
 /// * `CONTRACT_ERROR` - If there is an error with the contract or the function call.
 /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
-pub fn call<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub fn call<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     request: FunctionCall,
     block_id: BlockId,
 ) -> RpcResult<Vec<String>>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

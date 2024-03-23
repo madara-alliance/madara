@@ -31,14 +31,13 @@ use crate::Starknet;
 /// BlockNotFound : If the specified block does not exist.
 /// ContractNotFound : If the specified contract address does not exist.
 /// ContractError : If there is an error with the contract.
-pub async fn estimate_message_fee<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub async fn estimate_message_fee<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     message: MsgFromL1,
     block_id: BlockId,
 ) -> RpcResult<FeeEstimate>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

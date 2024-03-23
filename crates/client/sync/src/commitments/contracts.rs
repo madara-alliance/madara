@@ -10,7 +10,6 @@ use mc_db::bonsai_db::BonsaiDb;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use sp_core::hexdisplay::AsBytesRef;
-use sp_runtime::traits::Block as BlockT;
 use starknet_api::api_core::ContractAddress;
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -40,10 +39,10 @@ pub struct ContractLeafParams {
 /// # Returns
 ///
 /// The storage root hash.
-pub fn update_storage_trie<B: BlockT>(
+pub fn update_storage_trie(
     contract_address: &ContractAddress,
     storage_updates: &IndexMap<StorageKey, StarkFelt>,
-    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
+    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
 ) {
     let mut bonsai_storage = bonsai_contract_storage.lock().unwrap();
     let identifier = identifier(contract_address);

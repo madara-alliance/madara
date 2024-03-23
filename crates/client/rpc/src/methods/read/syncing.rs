@@ -29,10 +29,9 @@ use crate::{madara_backend_client, Starknet};
 /// This is an asynchronous function due to its reliance on `sync_service.best_seen_block()`,
 /// which potentially involves network communication and processing to determine the best block
 /// seen by the sync service.
-pub async fn syncing<A, B, BE, G, C, P, H>(starknet: &Starknet<A, B, BE, G, C, P, H>) -> RpcResult<SyncStatusType>
+pub async fn syncing<A, BE, G, C, P, H>(starknet: &Starknet<A, BE, G, C, P, H>) -> RpcResult<SyncStatusType>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

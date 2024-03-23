@@ -29,10 +29,9 @@ use crate::{Felt, Starknet};
 ///
 /// Returns the chain id this node is connected to. The chain id is returned as a specific type,
 /// defined by the Starknet protocol, indicating the particular network.
-pub fn chain_id<A, B, BE, G, C, P, H>(_starknet: &Starknet<A, B, BE, G, C, P, H>) -> RpcResult<Felt>
+pub fn chain_id<A, BE, G, C, P, H>(_starknet: &Starknet<A, BE, G, C, P, H>) -> RpcResult<Felt>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

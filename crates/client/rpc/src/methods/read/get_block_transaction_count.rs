@@ -31,13 +31,12 @@ use crate::Starknet;
 ///
 /// This function may return a `BLOCK_NOT_FOUND` error if the specified block does not exist in
 /// the blockchain.
-pub fn get_block_transaction_count<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub fn get_block_transaction_count<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     block_id: BlockId,
 ) -> RpcResult<u128>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

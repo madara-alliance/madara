@@ -45,15 +45,14 @@ use crate::{Felt, Starknet};
 ///   given `contract_address` in the specified block.
 /// * `STORAGE_KEY_NOT_FOUND` - If the specified storage key does not exist within the given
 ///   contract.
-pub fn get_storage_at<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub fn get_storage_at<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     contract_address: FieldElement,
     key: FieldElement,
     block_id: BlockId,
 ) -> RpcResult<Felt>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

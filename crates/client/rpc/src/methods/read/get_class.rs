@@ -29,14 +29,13 @@ use crate::Starknet;
 ///
 /// Returns the contract class definition if found. In case of an error, returns a
 /// `StarknetRpcApiError` indicating either `BlockNotFound` or `ClassHashNotFound`.
-pub fn get_class<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub fn get_class<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     block_id: BlockId,
     class_hash: FieldElement,
 ) -> RpcResult<ContractClass>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

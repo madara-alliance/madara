@@ -6,8 +6,8 @@ use blockifier::execution::contract_class::ContractClass as BlockifierContractCl
 use blockifier::execution::entry_point::CallInfo;
 use cairo_lang_casm_contract_class::{CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints};
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
-use mp_block::Block as StarknetBlock;
 use mp_digest_log::find_starknet_block;
+use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
@@ -140,7 +140,7 @@ pub(crate) fn tx_hash_retrieve(tx_hashes: Vec<StarkFelt>) -> Vec<FieldElement> {
     v
 }
 
-pub(crate) fn tx_hash_compute<H>(block: &mp_block::Block, chain_id: Felt) -> Vec<FieldElement>
+pub(crate) fn tx_hash_compute<H>(block: &DeoxysBlock, chain_id: Felt) -> Vec<FieldElement>
 where
     H: HasherT + Send + Sync + 'static,
 {
@@ -162,27 +162,27 @@ pub(crate) fn status(block_number: u64) -> BlockStatus {
     }
 }
 
-pub(crate) fn parent_hash(block: &mp_block::Block) -> FieldElement {
+pub(crate) fn parent_hash(block: &DeoxysBlock) -> FieldElement {
     Felt252Wrapper::from(block.header().parent_block_hash).into()
 }
 
-pub(crate) fn new_root(block: &mp_block::Block) -> FieldElement {
+pub(crate) fn new_root(block: &DeoxysBlock) -> FieldElement {
     Felt252Wrapper::from(block.header().global_state_root).into()
 }
 
-pub(crate) fn timestamp(block: &mp_block::Block) -> u64 {
+pub(crate) fn timestamp(block: &DeoxysBlock) -> u64 {
     block.header().block_timestamp
 }
 
-pub(crate) fn sequencer_address(block: &mp_block::Block) -> FieldElement {
+pub(crate) fn sequencer_address(block: &DeoxysBlock) -> FieldElement {
     Felt252Wrapper::from(block.header().sequencer_address).into()
 }
 
-pub(crate) fn l1_gas_price(block: &mp_block::Block) -> ResourcePrice {
+pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
     block.header().l1_gas_price.into()
 }
 
-pub(crate) fn starknet_version(block: &mp_block::Block) -> String {
+pub(crate) fn starknet_version(block: &DeoxysBlock) -> String {
     block.header().protocol_version.from_utf8().expect("starknet version should be a valid utf8 string")
 }
 
@@ -318,7 +318,7 @@ fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryP
 }
 
 /// Returns the current Starknet block from the block header's digest
-pub fn get_block_by_block_hash<B, C>(client: &C, block_hash: <B as BlockT>::Hash) -> Result<StarknetBlock>
+pub fn get_block_by_block_hash<B, C>(client: &C, block_hash: <B as BlockT>::Hash) -> Result<DeoxysBlock>
 where
     B: BlockT,
     C: HeaderBackend<B>,

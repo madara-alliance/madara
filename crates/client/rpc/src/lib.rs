@@ -13,11 +13,13 @@ pub mod utils;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use deoxys_runtime::opaque::{DBlockT, DHashT, DHeaderT};
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use log::error;
 use mc_storage::OverrideHandle;
+use mc_db::DeoxysBackend;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
@@ -29,8 +31,8 @@ use sp_api::ProvideRuntimeApi;
 use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
-use starknet_api::block::BlockHash;
+use sp_runtime::traits::Header as HeaderT;
+use starknet_api::block::BlockHash as APIBlockHash;
 use starknet_api::hash::StarkHash;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_core::types::{
@@ -204,19 +206,18 @@ pub trait StarknetTraceRpcApi {
 
 /// A Starknet RPC server for Madara
 #[allow(dead_code)]
-pub struct Starknet<A: ChainApi, B: BlockT, BE, G, C, P, H> {
+pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
     client: Arc<C>,
-    backend: Arc<mc_db::Backend<B>>,
-    overrides: Arc<OverrideHandle<B>>,
+    overrides: Arc<OverrideHandle<DBlockT>>,
     #[allow(dead_code)]
     pool: Arc<P>,
     #[allow(dead_code)]
     graph: Arc<Pool<A>>,
-    sync_service: Arc<SyncingService<B>>,
-    starting_block: <<B>::Header as HeaderT>::Number,
+    sync_service: Arc<SyncingService<DBlockT>>,
+    starting_block: <DHeaderT as HeaderT>::Number,
     #[allow(dead_code)]
     genesis_provider: Arc<G>,
-    _marker: PhantomData<(B, BE, H)>,
+    _marker: PhantomData<(DBlockT, BE, H)>,
 }
 
 /// Constructor for A Starknet RPC server for Madara
@@ -231,57 +232,43 @@ pub struct Starknet<A: ChainApi, B: BlockT, BE, G, C, P, H> {
 // # Returns
 // * `Self` - The actual Starknet struct
 #[allow(clippy::too_many_arguments)]
-impl<A: ChainApi, B: BlockT, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H> {
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
     pub fn new(
         client: Arc<C>,
-        backend: Arc<mc_db::Backend<B>>,
-        overrides: Arc<OverrideHandle<B>>,
+        overrides: Arc<OverrideHandle<DBlockT>>,
         pool: Arc<P>,
         graph: Arc<Pool<A>>,
-        sync_service: Arc<SyncingService<B>>,
-        starting_block: <<B>::Header as HeaderT>::Number,
+        sync_service: Arc<SyncingService<DBlockT>>,
+        starting_block: <DHeaderT as HeaderT>::Number,
         genesis_provider: Arc<G>,
     ) -> Self {
-        Self {
-            client,
-            backend,
-            overrides,
-            pool,
-            graph,
-            sync_service,
-            starting_block,
-            genesis_provider,
-            _marker: PhantomData,
-        }
+        Self { client, overrides, pool, graph, sync_service, starting_block, genesis_provider, _marker: PhantomData }
     }
 }
 
-impl<A: ChainApi, B, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H>
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
 where
-    B: BlockT,
-    C: HeaderBackend<B> + 'static,
+    C: HeaderBackend<DBlockT> + 'static,
 {
     pub fn current_block_number(&self) -> RpcResult<u64> {
         Ok(UniqueSaturatedInto::<u64>::unique_saturated_into(self.client.info().best_number))
     }
 }
 
-impl<A: ChainApi, B, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H>
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
 where
-    B: BlockT,
-    C: HeaderBackend<B> + 'static,
+    C: HeaderBackend<DBlockT> + 'static,
 {
     pub fn current_spec_version(&self) -> RpcResult<String> {
         Ok("0.5.1".to_string())
     }
 }
 
-impl<A: ChainApi, B, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H>
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
 where
-    B: BlockT,
-    C: HeaderBackend<B> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B>,
+    C: HeaderBackend<DBlockT> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     pub fn current_block_hash(&self) -> Result<H256, StarknetRpcApiError> {
@@ -295,15 +282,13 @@ where
     }
 
     /// Returns the substrate block hash corresponding to the given Starknet block id
-    fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<B::Hash, StarknetRpcApiError> {
+    fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<DHashT, StarknetRpcApiError> {
         match block_id {
-            BlockId::Hash(h) => {
-                madara_backend_client::load_hash(self.client.as_ref(), &self.backend, Felt252Wrapper::from(h).into())
-                    .map_err(|e| {
-                        error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
-                        StarknetRpcApiError::BlockNotFound
-                    })?
-            }
+            BlockId::Hash(h) => madara_backend_client::load_hash(self.client.as_ref(), Felt252Wrapper::from(h).into())
+                .map_err(|e| {
+                    error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
+                    StarknetRpcApiError::BlockNotFound
+                })?,
             BlockId::Number(n) => self
                 .client
                 .hash(UniqueSaturatedInto::unique_saturated_into(n))
@@ -344,7 +329,7 @@ where
     ///
     /// * `block_hash` - The hash of the block containing the transactions (starknet block).
     fn get_cached_transaction_hashes(&self, block_hash: StarkHash) -> Option<Vec<StarkHash>> {
-        self.backend.mapping().cached_transaction_hashes_from_block_hash(block_hash).unwrap_or_else(|err| {
+        DeoxysBackend::mapping().cached_transaction_hashes_from_block_hash(block_hash).unwrap_or_else(|err| {
             error!("Failed to read from cache: {err}");
             None
         })
@@ -355,8 +340,8 @@ where
     /// # Arguments
     ///
     /// * `starknet_block_hash` - The hash of the block containing the state diff (starknet block).
-    fn get_state_diff(&self, starknet_block_hash: &BlockHash) -> Result<StateDiff, StarknetRpcApiError> {
-        let state_diff = self.backend.da().state_diff(starknet_block_hash).map_err(|e| {
+    fn get_state_diff(&self, starknet_block_hash: &APIBlockHash) -> Result<StateDiff, StarknetRpcApiError> {
+        let state_diff = DeoxysBackend::da().state_diff(starknet_block_hash).map_err(|e| {
             error!("Failed to retrieve state diff from cache for block with hash {}: {e}", starknet_block_hash);
             StarknetRpcApiError::InternalServerError
         })?;

@@ -38,10 +38,9 @@ use super::syncing::*;
 use crate::{Felt, Starknet, StarknetReadRpcApiServer};
 
 #[async_trait]
-impl<A, B, BE, G, C, P, H> StarknetReadRpcApiServer for Starknet<A, B, BE, G, C, P, H>
+impl<A, BE, G, C, P, H> StarknetReadRpcApiServer for Starknet<A, BE, G, C, P, H>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

@@ -38,13 +38,12 @@ use crate::Starknet;
 /// block in which they occurred, and the transaction that triggered them. In case of
 /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
 /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
-pub async fn get_events<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub async fn get_events<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     filter: EventFilterWithPage,
 ) -> RpcResult<EventsPage>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

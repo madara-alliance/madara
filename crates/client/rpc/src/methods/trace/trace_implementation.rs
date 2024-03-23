@@ -3,11 +3,13 @@ use std::collections::HashMap;
 use blockifier::execution::contract_class::{ContractClass, ContractClassV1};
 use blockifier::execution::entry_point::CallInfo;
 use blockifier::transaction::objects::TransactionExecutionInfo;
+use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::RpcResult;
 use log::error;
+use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_storage::StorageOverride;
-use mp_block::Block;
+use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -31,19 +33,18 @@ use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
 use crate::{Starknet, StarknetReadRpcApiServer};
 
-pub async fn trace_block_transactions<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub async fn trace_block_transactions<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     block_id: BlockId,
 ) -> RpcResult<Vec<TransactionTraceWithHash>>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    BE: Backend<B> + 'static,
+    A: ChainApi<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
     G: GenesisProvider + Send + Sync + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-    P: TransactionPool<Block = B> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+    P: TransactionPool<Block = DBlockT> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
@@ -183,25 +184,6 @@ where
 
     Ok(tx_trace)
 }
-
-// #[derive(Error, Debug)]
-// pub enum ConvertCallInfoToExecuteInvocationError {
-//     #[error("One of the simulated transaction failed")]
-//     TransactionExecutionFailed,
-//     #[error(transparent)]
-//     GetFunctionInvocation(#[from] TryFuntionInvocationFromCallInfoError),
-// }
-
-// impl From<ConvertCallInfoToExecuteInvocationError> for StarknetRpcApiError {
-//     fn from(err: ConvertCallInfoToExecuteInvocationError) -> Self {
-//         match err {
-//             ConvertCallInfoToExecuteInvocationError::TransactionExecutionFailed =>
-// StarknetRpcApiError::ContractError,
-// ConvertCallInfoToExecuteInvocationError::GetFunctionInvocation(_) => {
-// StarknetRpcApiError::InternalServerError             }
-//         }
-//     }
-// }
 
 pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core::types::OrderedMessage> {
     call_info
@@ -411,19 +393,18 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
     Ok(tx_trace)
 }
 
-fn map_transaction_to_user_transaction<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
-    starknet_block: Block,
+fn map_transaction_to_user_transaction<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
+    starknet_block: DeoxysBlock,
     substrate_block_hash: B::Hash,
     chain_id: Felt252Wrapper,
     target_transaction_hash: Option<Felt252Wrapper>,
 ) -> Result<(Vec<UserOrL1HandlerTransaction>, Vec<UserOrL1HandlerTransaction>), StarknetRpcApiError>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
+    A: ChainApi<Block = DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     H: HasherT + Send + Sync + 'static,
-    BE: Backend<B> + 'static,
+    BE: Backend<DBlockT> + 'static,
 {
     let mut transactions = Vec::new();
     let mut transaction_to_trace = Vec::new();
@@ -445,19 +426,18 @@ where
     Ok((transactions, transaction_to_trace))
 }
 
-fn convert_transaction<A, B, BE, G, C, P, H>(
+fn convert_transaction<A, BE, G, C, P, H>(
     tx: &Transaction,
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
-    substrate_block_hash: B::Hash,
+    starknet: &Starknet<A, BE, G, C, P, H>,
+    substrate_block_hash: DHashT,
     chain_id: Felt252Wrapper,
     block_number: u64,
 ) -> Result<UserOrL1HandlerTransaction, StarknetRpcApiError>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
+    A: ChainApi<Block = DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     H: HasherT + Send + Sync + 'static,
-    BE: Backend<B> + 'static,
+    BE: Backend<DBlockT> + 'static,
 {
     match tx {
         Transaction::Invoke(invoke_tx) => {
@@ -483,9 +463,7 @@ where
                     Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx.clone(), contract_class)))
                 }
                 DeclareTransaction::V2(_tx) => {
-                    let contract_class = starknet
-                        .backend
-                        .sierra_classes()
+                    let contract_class = DeoxysBackend::sierra_classes()
                         .get_sierra_class(class_hash)
                         .map_err(|e| {
                             error!("Failed to fetch sierra class with hash {class_hash}: {e}");
@@ -511,8 +489,8 @@ where
         }
         Transaction::L1Handler(handle_l1_message_tx) => {
             let tx_hash = handle_l1_message_tx.compute_hash::<H>(chain_id, false, Some(block_number));
-            let paid_fee =
-                starknet.backend.l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(tx_hash.into()).map_err(|e| {
+            let paid_fee: starknet_api::transaction::Fee =
+                DeoxysBackend::l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(tx_hash.into()).map_err(|e| {
                     error!("Failed to retrieve fee paid on l1 for tx with hash `{tx_hash:?}`: {e}");
                     StarknetRpcApiError::InternalServerError
                 })?;
@@ -523,18 +501,17 @@ where
     }
 }
 
-fn get_previous_block_substrate_hash<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
-    substrate_block_hash: B::Hash,
-) -> Result<B::Hash, StarknetRpcApiError>
+fn get_previous_block_substrate_hash<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
+    substrate_block_hash: DHashT,
+) -> Result<DHashT, StarknetRpcApiError>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
-    BE: Backend<B> + 'static,
+    BE: Backend<DBlockT> + 'static,
 {
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
         error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");

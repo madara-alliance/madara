@@ -31,9 +31,8 @@ pub mod bonsai_db;
 mod l1_handler_tx_fee;
 mod meta_db;
 
-use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use bonsai_db::{BonsaiConfigs, BonsaiDb, TrieColumn};
 use da_db::DaDb;
@@ -43,7 +42,6 @@ use messaging_db::MessagingDb;
 use meta_db::MetaDb;
 use sc_client_db::DatabaseSource;
 use sp_database::Database;
-use sp_runtime::traits::Block as BlockT;
 
 const DB_HASH_LEN: usize = 32;
 /// Hash type that this backend uses for the database.
@@ -109,43 +107,60 @@ pub mod static_keys {
     pub const LAST_SYNCED_L1_EVENT_BLOCK: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
 }
 
-/// The Bonsai databases backend
-#[derive(Clone)]
-pub struct BonsaiDbs<B: BlockT> {
-    pub contract: Arc<BonsaiDb<B>>,
-    pub class: Arc<BonsaiDb<B>>,
-}
-
-/// The Madara client database backend
-///
-/// Contains five distinct databases: `meta`, `mapping`, `messaging`, `da` and `bonsai``.
-/// `mapping` is used to map Starknet blocks to Substrate ones.
-/// `meta` is used to store data about the current state of the chain
-/// `messaging` is used to store data regarding l1 messagings.
-/// `da` is used to store the data availaiblity facts that need to be written to the L1.
-/// `bonsai` is used to store the commitment tries.
-pub struct Backend<B: BlockT> {
-    meta: Arc<MetaDb<B>>,
-    mapping: Arc<MappingDb<B>>,
-    da: Arc<DaDb>,
-    messaging: Arc<MessagingDb>,
-    sierra_classes: Arc<SierraClassesDb>,
-    l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
-    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_contract_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
-}
-
 /// Returns the Starknet database directory.
 pub fn starknet_database_dir(db_config_dir: &Path, db_path: &str) -> PathBuf {
     db_config_dir.join("starknet").join(db_path)
 }
 
-impl<B: BlockT> Backend<B> {
-    /// Open the database
+/// Deoxys client database backend singleton.
+///
+/// New instance returned upon first creation only and should only be passed to Substrate
+/// functions. Use the static functions defined below to access individual backend databases
+/// instead.
+///
+/// * `meta`: stores data aboud the current state of the chain.
+/// * `mapping`: maps Starknet blocks to Substrate blocks.
+/// * `da`: store Data Availability info that needs to be written to the Ethereum L1.
+/// * `messaging`: Stores Ethereum L1 messaging data.
+/// * `sierra_classes`: @antyro what is this for?
+/// * `l1_handler_paid_fee`: @antyro what is this for?
+/// * `bonsai_contract`: Bezu-bonsai trie used to compute the contract root.
+/// * `bonsai_storage`: Bezu-bonsai trie used to compute the storage root for each contract.
+/// * `bonsai_class`: Bezu-bonsai trie used to compute the class root.
+pub struct DeoxysBackend {
+    meta: Arc<MetaDb>,
+    mapping: Arc<MappingDb>,
+    da: Arc<DaDb>,
+    messaging: Arc<MessagingDb>,
+    sierra_classes: Arc<SierraClassesDb>,
+    l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
+    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
+}
+
+// Singleton backing instance for `DeoxysBackend`
+static BACKEND_SINGLETON: OnceLock<Arc<DeoxysBackend>> = OnceLock::new();
+
+// TODO: add neogen to comment this :)
+impl DeoxysBackend {
+    /// Initializes a local database, returning a singleton backend instance.
     ///
-    /// The database will be created at db_config_dir.join(<db_type_name>)
-    pub fn open(database: &DatabaseSource, db_config_dir: &Path, cache_more_things: bool) -> Result<Self, String> {
+    /// This backend should only be used to pass to substrate functions. Use the static functions
+    /// defined below to access static fields instead.
+    pub fn open(
+        database: &DatabaseSource,
+        db_config_dir: &Path,
+        cache_more_things: bool,
+    ) -> Result<&'static Arc<DeoxysBackend>, String> {
+        BACKEND_SINGLETON
+            .set(Arc::new(Self::init(database, db_config_dir, cache_more_things).unwrap()))
+            .map_err(|_| "Backend already initialized")?;
+
+        Ok(BACKEND_SINGLETON.get().unwrap())
+    }
+
+    fn init(database: &DatabaseSource, db_config_dir: &Path, cache_more_things: bool) -> Result<Self, String> {
         Self::new(
             &DatabaseSettings {
                 source: match database {
@@ -172,71 +187,70 @@ impl<B: BlockT> Backend<B> {
         let kvdb: Arc<dyn KeyValueDB> = db.0;
         let spdb: Arc<dyn Database<DbHash>> = db.1;
 
-        let contract = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Contract };
-        let contract_storage =
-            BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::ContractStorage };
-        let class = BonsaiDb { db: kvdb.clone(), _marker: PhantomData, current_column: TrieColumn::Class };
+        let contract = BonsaiDb { db: kvdb.clone(), current_column: TrieColumn::Contract };
+        let contract_storage = BonsaiDb { db: kvdb.clone(), current_column: TrieColumn::ContractStorage };
+        let class = BonsaiDb { db: kvdb.clone(), current_column: TrieColumn::Class };
         let config = BonsaiConfigs::new(contract, contract_storage, class);
 
         Ok(Self {
             mapping: Arc::new(MappingDb::new(spdb.clone(), cache_more_things)),
-            meta: Arc::new(MetaDb { db: spdb.clone(), _marker: PhantomData }),
+            meta: Arc::new(MetaDb { db: spdb.clone() }),
             da: Arc::new(DaDb { db: spdb.clone() }),
             messaging: Arc::new(MessagingDb { db: spdb.clone() }),
             sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
             l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
             bonsai_contract: Arc::new(Mutex::new(config.contract)),
-            bonsai_contract_storage: Arc::new(Mutex::new(config.contract_storage)),
+            bonsai_storage: Arc::new(Mutex::new(config.contract_storage)),
             bonsai_class: Arc::new(Mutex::new(config.class)),
         })
     }
 
     /// Return the mapping database manager
-    pub fn mapping(&self) -> &Arc<MappingDb<B>> {
-        &self.mapping
+    pub fn mapping() -> &'static Arc<MappingDb> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.mapping).expect("Backend not initialized")
     }
 
     /// Return the meta database manager
-    pub fn meta(&self) -> &Arc<MetaDb<B>> {
-        &self.meta
+    pub fn meta() -> &'static Arc<MetaDb> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.meta).expect("Backend not initialized")
     }
 
     /// Return the da database manager
-    pub fn da(&self) -> &Arc<DaDb> {
-        &self.da
+    pub fn da() -> &'static Arc<DaDb> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.da).expect("Backend not initialized")
     }
 
     /// Return the da database manager
-    pub fn messaging(&self) -> &Arc<MessagingDb> {
-        &self.messaging
+    pub fn messaging() -> &'static Arc<MessagingDb> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.messaging).expect("Backend not initialized")
     }
 
     /// Return the sierra classes database manager
-    pub fn sierra_classes(&self) -> &Arc<SierraClassesDb> {
-        &self.sierra_classes
+    pub fn sierra_classes() -> &'static Arc<SierraClassesDb> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.sierra_classes).expect("Backend not initialized")
     }
 
-    pub fn bonsai_contract(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>> {
-        &self.bonsai_contract
+    pub fn bonsai_contract() -> &'static Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_contract).expect("Backend not initialized")
     }
 
-    pub fn bonsai_contract_storage(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>> {
-        &self.bonsai_contract_storage
+    pub fn bonsai_storage() -> &'static Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_storage).expect("Backend not initialized")
     }
 
-    pub fn bonsai_class(&self) -> &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>> {
-        &self.bonsai_class
+    pub fn bonsai_class() -> &'static Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_class).expect("Backend not initialized")
     }
 
     /// Return l1 handler tx paid fee database manager
-    pub fn l1_handler_paid_fee(&self) -> &Arc<L1HandlerTxFeeDb> {
-        &self.l1_handler_paid_fee
+    pub fn l1_handler_paid_fee() -> &'static Arc<L1HandlerTxFeeDb> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.l1_handler_paid_fee).expect("Backend not initialized")
     }
 
     /// In the future, we will compute the block global state root asynchronously in the client,
     /// using the Starknet-Bonzai-trie.
     /// That what replaces it for now :)
-    pub fn temporary_global_state_root_getter(&self) -> StarkHash {
+    pub fn temporary_global_state_root_getter() -> StarkHash {
         Default::default()
     }
 }

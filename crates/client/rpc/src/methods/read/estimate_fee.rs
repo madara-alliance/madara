@@ -26,14 +26,13 @@ use crate::Starknet;
 /// # Returns
 ///
 /// * `fee_estimate` - fee estimate in gwei
-pub async fn estimate_fee<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub async fn estimate_fee<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     request: Vec<BroadcastedTransaction>,
     block_id: BlockId,
 ) -> RpcResult<Vec<FeeEstimate>>
 where
     A: ChainApi<Block = B> + 'static,
-    B: BlockT,
     P: TransactionPool<Block = B> + 'static,
     BE: Backend<B> + 'static,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,

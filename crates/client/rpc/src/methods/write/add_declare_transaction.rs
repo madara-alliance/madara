@@ -26,18 +26,17 @@ use crate::Starknet;
 /// # Returns
 ///
 /// * `declare_transaction_result` - the result of the declare transaction
-pub async fn add_declare_transaction<A, B, BE, G, C, P, H>(
-    _starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub async fn add_declare_transaction<A, BE, G, C, P, H>(
+    _starknet: &Starknet<A, BE, G, C, P, H>,
     declare_transaction: BroadcastedDeclareTransaction,
 ) -> RpcResult<DeclareTransactionResult>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = DBlockT> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<B> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {

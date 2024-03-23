@@ -22,16 +22,15 @@ use crate::errors::StarknetRpcApiError;
 use crate::{Starknet, StarknetTraceRpcApiServer};
 
 #[async_trait]
-impl<A, B, BE, G, C, P, H> StarknetTraceRpcApiServer for Starknet<A, B, BE, G, C, P, H>
+impl<A, BE, G, C, P, H> StarknetTraceRpcApiServer for Starknet<A, BE, G, C, P, H>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    BE: Backend<B> + 'static,
+    A: ChainApi<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
     G: GenesisProvider + Send + Sync + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-    P: TransactionPool<Block = B> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+    P: TransactionPool<Block = DBlockT> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     async fn simulate_transactions(
