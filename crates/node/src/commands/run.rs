@@ -13,42 +13,6 @@ use sp_core::H160;
 use crate::cli::Cli;
 use crate::service;
 
-#[derive(Debug, Clone, clap::Args)]
-#[group(multiple = true)]
-pub struct L1MessagesParams {
-    /// Ethereum Provider (Node) Url
-    #[clap(
-        long,
-        value_hint=clap::ValueHint::Url,
-        conflicts_with="l1_messages_config",
-        requires="l1_contract_address",
-    )]
-    pub provider_url: Option<String>,
-
-    /// L1 Contract Address
-    #[clap(
-        long,
-        value_hint=clap::ValueHint::Other,
-        conflicts_with="l1_messages_config",
-        requires="provider_url",
-    )]
-    pub l1_contract_address: Option<String>,
-}
-
-#[derive(Debug, Clone, clap::Args)]
-pub struct L1Messages {
-    /// Path to configuration file for Ethereum Core Contract Events Listener
-    #[clap(
-        long,
-        conflicts_with_all=["provider_url", "l1_contract_address"],
-        value_hint=clap::ValueHint::FilePath,
-    )]
-    pub l1_messages_config: Option<PathBuf>,
-
-    #[clap(flatten)]
-    pub config_params: L1MessagesParams,
-}
-
 /// Available Sealing methods.
 #[derive(Debug, Copy, Clone, clap::ValueEnum, Default, Serialize, Deserialize)]
 pub enum Sealing {
@@ -72,7 +36,7 @@ impl From<Sealing> for SealingMode {
     }
 }
 
-/// A possible network type.
+/// Starknet network types.
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum NetworkType {
     /// The main network (mainnet).
@@ -83,9 +47,7 @@ pub enum NetworkType {
     Integration,
 }
 
-/// Test network is on Sepolia,
-/// Goerli is the deprecated test network for StarkNet and it is not supported after the 11th of
-/// april 2024.
+/// Starknet network configuration.
 impl NetworkType {
     pub fn uri(&self) -> &'static str {
         match self {
@@ -160,10 +122,6 @@ pub struct ExtendedRunCmd {
     #[clap(long)]
     pub deoxys: bool,
 
-    /// Configuration for L1 Messages (Syncing) Worker
-    #[clap(flatten)]
-    pub l1_messages_worker: L1Messages,
-  
     /// Disable root verification
     #[clap(long)]
     pub disable_root: bool,
@@ -255,7 +213,7 @@ fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
         tokio::runtime::Runtime::new().unwrap().block_on(mc_sync::utility::get_random_pokemon_name()).unwrap_or_else(
             |e| {
                 log::warn!("Failed to get random pokemon name: {}", e);
-                "gimmighoul".to_string()
+                "deoxys".to_string()
             },
         )
     });
