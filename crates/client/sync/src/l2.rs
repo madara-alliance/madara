@@ -5,18 +5,20 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
+use deoxys_runtime::opaque::{DBlockT, DHashT};
 use futures::{stream, StreamExt};
 use lazy_static::lazy_static;
 use mc_db::bonsai_db::BonsaiDb;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
+use mp_block::DeoxysBlock;
 use mp_contract::class::ClassUpdateWrapper;
 use mp_felt::Felt252Wrapper;
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use sp_runtime::generic::{Block, Header};
-use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
+use sp_runtime::generic::{Block as RuntimeBlock, Header};
+use sp_runtime::traits::BlakeTwo256;
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::hash::StarkHash;
 use starknet_core::types::{PendingStateUpdate, StarknetError};
@@ -86,7 +88,7 @@ lazy_static! {
 
 lazy_static! {
     /// Shared pending block data, using a RwLock to allow for concurrent reads and exclusive writes
-    static ref STARKNET_PENDING_BLOCK: RwLock<Option<mp_block::Block>> = RwLock::new(None);
+    static ref STARKNET_PENDING_BLOCK: RwLock<Option<DeoxysBlock>> = RwLock::new(None);
 }
 
 lazy_static! {
@@ -100,7 +102,7 @@ pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
         .expect("Failed to acquire read lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
 }
 
-pub fn get_pending_block() -> Option<mp_block::Block> {
+pub fn get_pending_block() -> Option<DeoxysBlock> {
     STARKNET_PENDING_BLOCK.read().expect("Failed to acquire read lock on STARKNET_PENDING_BLOCK").clone()
 }
 
@@ -112,7 +114,7 @@ pub fn get_pending_state_update() -> Option<PendingStateUpdate> {
 /// updates from the feeder.
 pub struct SenderConfig {
     /// Sender for dispatching fetched blocks.
-    pub block_sender: Sender<mp_block::Block>,
+    pub block_sender: Sender<DeoxysBlock>,
     /// Sender for dispatching fetched state updates.
     pub state_update_sender: Sender<StateUpdateWrapper>,
     /// Sender for dispatching fetched class hashes.
@@ -121,21 +123,20 @@ pub struct SenderConfig {
     /// should be created.
     pub command_sink: CommandSink,
     // Storage overrides for accessing stored classes
-    pub overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    pub overrides: Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-pub async fn sync<B, C>(
+pub async fn sync<C>(
     mut sender_config: SenderConfig,
     fetch_config: FetchConfig,
     first_block: u64,
-    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
+    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
     client: Arc<C>,
 ) where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<DBlockT>,
 {
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
     let provider = SequencerGatewayProvider::new(
@@ -279,13 +280,13 @@ pub fn update_l2(state_update: L2StateUpdate) {
 }
 
 /// Verify and update the L2 state according to the latest state update
-pub fn verify_l2<B: BlockT>(
+pub fn verify_l2(
     block_number: u64,
     state_update: &StateUpdate,
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>>>,
-    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
     substrate_block_hash: Option<H256>,
 ) -> Result<(), L2SyncError> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
@@ -313,16 +314,15 @@ pub fn verify_l2<B: BlockT>(
     Ok(())
 }
 
-async fn update_starknet_data<B, C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
+async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
 where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<DBlockT>,
 {
     let block = provider.get_block(BlockId::Pending).await.map_err(|e| format!("Failed to get pending block: {e}"))?;
 
     let hash_best = client.info().best_hash;
     let hash_current = block.parent_block_hash;
-    let tmp = <B as BlockT>::Hash::from_str(&hash_current.to_string()).unwrap_or(Default::default());
+    let tmp = DHashT::from_str(&hash_current.to_string()).unwrap_or(Default::default());
     let number = block.block_number.ok_or("block number not found")? - 1;
 
     if hash_best == tmp {

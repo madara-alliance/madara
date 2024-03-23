@@ -6,7 +6,7 @@ use super::*;
 #[test]
 fn log_is_found() {
     let mut digest = Digest::default();
-    let block = StarknetBlock::default();
+    let block = DeoxysBlock::default();
 
     digest.push(DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(block.clone()).encode()));
 
@@ -18,7 +18,7 @@ fn log_is_found() {
 #[test]
 fn multiple_logs() {
     let mut digest = Digest::default();
-    let block = StarknetBlock::default();
+    let block = DeoxysBlock::default();
 
     digest.push(DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(block.clone()).encode()));
     digest.push(DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(block).encode()));
@@ -40,7 +40,7 @@ fn no_logs() {
 #[test]
 fn other_consensus_engine_id() {
     let mut digest = Digest::default();
-    let block = StarknetBlock::default();
+    let block = DeoxysBlock::default();
 
     digest.push(DigestItem::Consensus([b'o', b't', b'h', b'r'], Log::Block(block).encode()));
 

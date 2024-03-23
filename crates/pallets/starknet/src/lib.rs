@@ -72,7 +72,7 @@ use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
 use itertools::Itertools;
 use mp_block::state_update::StateUpdateWrapper;
-use mp_block::{Block as StarknetBlock, Header as StarknetHeader};
+use mp_block::{DeoxysBlock, Header as StarknetHeader};
 use mp_contract::ContractAbi;
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_fee::{ResourcePrice, INITIAL_GAS};
@@ -1035,11 +1035,11 @@ impl<T: Config> Pallet<T> {
     ///
     /// * `block_number` - The block number.
     fn store_block(block_number: u64) {
-        let block: StarknetBlock;
+        let block: DeoxysBlock;
         if !frame_system::Pallet::<T>::digest().logs().is_empty() {
             match &frame_system::Pallet::<T>::digest().logs()[0] {
                 DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, encoded_data) => {
-                    block = match StarknetBlock::decode(&mut encoded_data.as_slice()) {
+                    block = match DeoxysBlock::decode(&mut encoded_data.as_slice()) {
                         Ok(b) => b,
                         Err(e) => {
                             log!(error, "Failed to decode block: {:?}", e);
@@ -1078,7 +1078,7 @@ impl<T: Config> Pallet<T> {
 
             let ordered_events = vec![];
 
-            let block = StarknetBlock::new(
+            let block = DeoxysBlock::new(
                 StarknetHeader::new(
                     parent_block_hash.into(),
                     block_number,

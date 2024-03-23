@@ -13,6 +13,7 @@ pub mod reorgs;
 pub mod types;
 pub mod utils;
 
+pub use deoxys_runtime::opaque::{DBlockT, DHashT};
 pub use l2::SenderConfig;
 pub use utils::{convert, m, utility};
 
@@ -21,23 +22,21 @@ type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc:
 pub mod starknet_sync_worker {
     use std::sync::Arc;
 
+    use mc_db::DeoxysBackend;
     use reqwest::Url;
     use sp_blockchain::HeaderBackend;
-    use sp_runtime::traits::Block as BlockT;
 
     use self::fetch::fetchers::FetchConfig;
     use super::*;
 
-    pub async fn sync<B, C>(
+    pub async fn sync<C>(
         fetch_config: FetchConfig,
         sender_config: SenderConfig,
         rpc_port: u16,
         l1_url: Url,
-        backend: Arc<mc_db::Backend<B>>,
         client: Arc<C>,
     ) where
-        B: BlockT,
-        C: HeaderBackend<B>,
+        C: HeaderBackend<DBlockT>,
     {
         let first_block = utility::get_last_synced_block(rpc_port).await + 1;
 
@@ -47,9 +46,9 @@ pub mod starknet_sync_worker {
                 sender_config,
                 fetch_config.clone(),
                 first_block,
-                backend.bonsai_contract(),
-                backend.bonsai_contract_storage(),
-                backend.bonsai_class(),
+                DeoxysBackend::bonsai_contract(),
+                DeoxysBackend::bonsai_storage(),
+                DeoxysBackend::bonsai_class(),
                 client,
             )
         );

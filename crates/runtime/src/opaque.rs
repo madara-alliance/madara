@@ -9,6 +9,7 @@ pub use frame_system::Call as SystemCall;
 /// Import the Starknet pallet.
 pub use pallet_starknet;
 pub use pallet_timestamp::Call as TimestampCall;
+use sp_core::H256;
 use sp_runtime::traits::BlakeTwo256;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
@@ -23,12 +24,15 @@ use sp_std::prelude::*;
 
 use super::*;
 use crate::{Aura, BlockNumber, Grandpa};
-/// Opaque block header type.
-pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
-/// Opaque block type.
-pub type Block = generic::Block<Header, UncheckedExtrinsic>;
-/// Opaque block identifier type.
-pub type BlockId = generic::BlockId<Block>;
+
+// Deoxys block header type
+pub type DHeaderT = generic::Header<BlockNumber, BlakeTwo256>;
+/// Deoxys block type.
+pub type DBlockT = generic::Block<Header, UncheckedExtrinsic>;
+/// Deoxys block hash type.
+pub type DHashT = H256;
+/// Deoxys block identifier type.
+pub type BlockId = generic::BlockId<DBlockT>;
 
 impl_opaque_keys! {
     pub struct SessionKeys {
