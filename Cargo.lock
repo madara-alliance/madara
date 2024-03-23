@@ -2462,8 +2462,8 @@ dependencies = [
  "async-trait",
  "blockifier",
  "clap",
- "deoxys-tui",
  "deoxys-runtime",
+ "deoxys-tui",
  "frame-benchmarking",
  "frame-benchmarking-cli",
  "frame-system",
@@ -2528,22 +2528,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "deoxys-tui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "crossterm",
- "du",
- "humansize",
- "ratatui",
- "regex",
- "splines",
- "starknet",
- "sysinfo",
- "tokio",
- "tracing",
- "tracing-subscriber 0.3.18",
 name = "deoxys-runtime"
 version = "0.1.0"
 dependencies = [
@@ -2582,9 +2566,28 @@ dependencies = [
  "sp-std",
  "sp-transaction-pool",
  "sp-version",
- "starknet-core",
+ "starknet-core 0.8.0",
  "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
  "starknet_api",
+]
+
+[[package]]
+name = "deoxys-tui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "crossterm",
+ "du",
+ "humansize",
+ "ratatui",
+ "regex",
+ "splines",
+ "starknet",
+ "sysinfo",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.18",
 ]
 
 [[package]]
