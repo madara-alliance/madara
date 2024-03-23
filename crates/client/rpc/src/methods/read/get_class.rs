@@ -29,7 +29,6 @@ use crate::Starknet;
 ///
 /// Returns the contract class definition if found. In case of an error, returns a
 /// `StarknetRpcApiError` indicating either `BlockNotFound` or `ClassHashNotFound`.
-#[allow(unused_variables)]
 pub fn get_class<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     block_id: BlockId,

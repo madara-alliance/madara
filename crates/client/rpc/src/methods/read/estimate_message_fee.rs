@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -14,7 +13,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 
 use crate::errors::StarknetRpcApiError;
-use crate::{Starknet, StarknetReadRpcApiServer};
+use crate::Starknet;
 
 /// Estimate the L2 fee of a message sent on L1
 ///
@@ -32,7 +31,6 @@ use crate::{Starknet, StarknetReadRpcApiServer};
 /// BlockNotFound : If the specified block does not exist.
 /// ContractNotFound : If the specified contract address does not exist.
 /// ContractError : If there is an error with the contract.
-#[allow(unused_variables)]
 pub async fn estimate_message_fee<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     message: MsgFromL1,
@@ -53,7 +51,6 @@ where
         error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
-    let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
 
     let message = message.try_into().map_err(|e| {
         error!("Failed to convert MsgFromL1 to UserTransaction: {e}");

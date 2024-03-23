@@ -29,8 +29,7 @@ use crate::{Felt, Starknet};
 ///
 /// Returns the chain id this node is connected to. The chain id is returned as a specific type,
 /// defined by the Starknet protocol, indicating the particular network.
-#[allow(unused_variables)]
-pub fn chain_id<A, B, BE, G, C, P, H>(starknet: &Starknet<A, B, BE, G, C, P, H>) -> RpcResult<Felt>
+pub fn chain_id<A, B, BE, G, C, P, H>(_starknet: &Starknet<A, B, BE, G, C, P, H>) -> RpcResult<Felt>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,
@@ -42,7 +41,6 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let best_block_hash = starknet.client.info().best_hash;
     let chain_id = get_config()
         .map_err(|e| {
             error!("Failed to get config: {e}");

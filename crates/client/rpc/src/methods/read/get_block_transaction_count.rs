@@ -31,7 +31,6 @@ use crate::Starknet;
 ///
 /// This function may return a `BLOCK_NOT_FOUND` error if the specified block does not exist in
 /// the blockchain.
-#[allow(unused_variables)]
 pub fn get_block_transaction_count<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     block_id: BlockId,

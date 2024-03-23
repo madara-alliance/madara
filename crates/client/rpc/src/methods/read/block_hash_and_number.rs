@@ -25,7 +25,6 @@ use crate::Starknet;
 ///
 /// * `block_hash_and_number` - A tuple containing the latest block hash and number of the current
 ///   network.
-#[allow(unused_variables)]
 pub fn block_hash_and_number<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
 ) -> RpcResult<BlockHashAndNumber>

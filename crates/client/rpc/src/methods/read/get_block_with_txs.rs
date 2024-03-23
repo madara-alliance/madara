@@ -33,7 +33,6 @@ use crate::{get_block_with_txs_finalized, get_block_with_txs_pending, Starknet, 
 /// the block, this can include either a confirmed block or a pending block with its
 /// transactions. In case the specified block is not found, returns a `StarknetRpcApiError` with
 /// `BlockNotFound`.
-#[allow(unused_variables)]
 pub fn get_block_with_txs<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     block_id: BlockId,

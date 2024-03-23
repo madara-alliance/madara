@@ -45,7 +45,6 @@ use crate::{Felt, Starknet};
 ///   given `contract_address` in the specified block.
 /// * `STORAGE_KEY_NOT_FOUND` - If the specified storage key does not exist within the given
 ///   contract.
-#[allow(unused_variables)]
 pub fn get_storage_at<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     contract_address: FieldElement,

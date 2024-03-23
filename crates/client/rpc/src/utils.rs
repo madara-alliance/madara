@@ -276,7 +276,7 @@ pub fn to_rpc_state_diff(thin_state_diff: ThinStateDiff) -> StateDiff {
 }
 
 /// Returns a compressed vector of bytes
-pub(crate) fn compress(data: &[u8]) -> Result<Vec<u8>> {
+fn compress(data: &[u8]) -> Result<Vec<u8>> {
     let mut gzip_encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     // 2023-08-22: JSON serialization is already done in Blockifier
     // https://github.com/keep-starknet-strange/blockifier/blob/no_std-support-7578442/crates/blockifier/src/execution/contract_class.rs#L129
@@ -288,7 +288,7 @@ pub(crate) fn compress(data: &[u8]) -> Result<Vec<u8>> {
 
 /// Returns a [Result<LegacyEntryPointsByType>] (starknet-rs type) from a [HashMap<EntryPointType,
 /// Vec<EntryPoint>>]
-pub fn to_legacy_entry_points_by_type(
+fn to_legacy_entry_points_by_type(
     entries: &HashMap<EntryPointType, Vec<EntryPoint>>,
 ) -> Result<LegacyEntryPointsByType> {
     fn collect_entry_points(
@@ -311,7 +311,7 @@ pub fn to_legacy_entry_points_by_type(
 }
 
 /// Returns a [LegacyContractEntryPoint] (starknet-rs) from a [EntryPoint] (starknet-api)
-pub fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryPoint, FromByteArrayError> {
+fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryPoint, FromByteArrayError> {
     let selector = FieldElement::from_bytes_be(&entry_point.selector.0.0)?;
     let offset = entry_point.offset.0 as u64;
     Ok(LegacyContractEntryPoint { selector, offset })
@@ -337,7 +337,7 @@ pub fn get_casm_cotract_class_hash(casm_contract_class: &CasmContractClass) -> F
 }
 
 /// Converts a [CasmContractClass] to a [CompiledClass]
-pub fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractClass) -> CompiledClass {
+fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractClass) -> CompiledClass {
     CompiledClass {
         prime: casm_contract_class.prime.to_string(),
         compiler_version: casm_contract_class.compiler_version.clone(),
@@ -349,7 +349,7 @@ pub fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractC
 }
 
 /// Converts a [CasmContractEntryPoints] to a [CompiledClassEntrypointList]
-pub fn casm_entry_points_to_compiled_entry_points(value: &CasmContractEntryPoints) -> CompiledClassEntrypointList {
+fn casm_entry_points_to_compiled_entry_points(value: &CasmContractEntryPoints) -> CompiledClassEntrypointList {
     CompiledClassEntrypointList {
         external: value.external.iter().map(casm_entry_point_to_compiled_entry_point).collect(),
         l1_handler: value.l1_handler.iter().map(casm_entry_point_to_compiled_entry_point).collect(),
@@ -358,7 +358,7 @@ pub fn casm_entry_points_to_compiled_entry_points(value: &CasmContractEntryPoint
 }
 
 /// Converts a [CasmContractEntryPoint] to a [CompiledClassEntrypoint]
-pub fn casm_entry_point_to_compiled_entry_point(value: &CasmContractEntryPoint) -> CompiledClassEntrypoint {
+fn casm_entry_point_to_compiled_entry_point(value: &CasmContractEntryPoint) -> CompiledClassEntrypoint {
     CompiledClassEntrypoint {
         selector: biguint_to_field_element(&value.selector),
         offset: value.offset.try_into().unwrap(),
@@ -367,7 +367,7 @@ pub fn casm_entry_point_to_compiled_entry_point(value: &CasmContractEntryPoint) 
 }
 
 /// Converts a [BigUint] to a [FieldElement]
-pub fn biguint_to_field_element(value: &BigUint) -> FieldElement {
+fn biguint_to_field_element(value: &BigUint) -> FieldElement {
     let bytes = value.to_bytes_be();
     FieldElement::from_byte_slice_be(bytes.as_slice()).unwrap()
 }

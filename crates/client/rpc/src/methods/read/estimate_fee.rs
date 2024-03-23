@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::UserTransaction;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -15,7 +14,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate};
 
 use crate::errors::StarknetRpcApiError;
-use crate::{Starknet, StarknetReadRpcApiServer};
+use crate::Starknet;
 
 /// Estimate the fee associated with transaction
 ///
@@ -27,7 +26,6 @@ use crate::{Starknet, StarknetReadRpcApiServer};
 /// # Returns
 ///
 /// * `fee_estimate` - fee estimate in gwei
-#[allow(unused_variables)]
 pub async fn estimate_fee<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     request: Vec<BroadcastedTransaction>,
@@ -48,8 +46,6 @@ where
         error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
-    let best_block_hash = starknet.client.info().best_hash;
-    let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
 
     let transactions =
         request.into_iter().map(|tx| tx.try_into()).collect::<Result<Vec<UserTransaction>, _>>().map_err(|e| {

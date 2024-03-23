@@ -37,7 +37,6 @@ use crate::{Starknet, StarknetReadRpcApiServer};
 ///     confirmed, pending, or rejected.
 ///   - `execution_status`: The execution status of the transaction, providing details on the
 ///     execution outcome if the transaction has been processed.
-#[allow(unused_variables)]
 pub fn get_transaction_status<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     transaction_hash: FieldElement,
@@ -67,7 +66,7 @@ where
 
     let chain_id = starknet.chain_id()?.0.into();
 
-    let starknet_tx = if let Some(tx_hashes) =
+    let _starknet_tx = if let Some(tx_hashes) =
         starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into())
     {
         tx_hashes

@@ -40,7 +40,6 @@ use crate::{Starknet, StarknetReadRpcApiServer};
 /// transaction details are returned as a type conforming to the StarkNet protocol. In case of
 /// errors like `BLOCK_NOT_FOUND` or `INVALID_TXN_INDEX`, returns a `StarknetRpcApiError`
 /// indicating the specific issue.
-#[allow(unused_variables)]
 pub fn get_transaction_by_block_id_and_index<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     block_id: BlockId,

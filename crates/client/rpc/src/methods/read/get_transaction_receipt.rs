@@ -32,7 +32,7 @@ use crate::utils::{
 };
 use crate::{Felt, Starknet, StarknetReadRpcApiServer};
 
-pub(crate) fn get_transaction_receipt_finalized<A, B, BE, G, C, P, H>(
+fn get_transaction_receipt_finalized<A, B, BE, G, C, P, H>(
     client: &Starknet<A, B, BE, G, C, P, H>,
     chain_id: Felt,
     substrate_block_hash: B::Hash,
@@ -178,7 +178,7 @@ where
     Ok(MaybePendingTransactionReceipt::Receipt(receipt))
 }
 
-pub(crate) fn get_transaction_receipt_pending<A, B, BE, G, C, P, H>(
+fn get_transaction_receipt_pending<A, B, BE, G, C, P, H>(
     client: &Starknet<A, B, BE, G, C, P, H>,
     chain_id: Felt,
     substrate_block_hash: B::Hash,
@@ -580,7 +580,6 @@ where
 ///
 /// The function may return a `TXN_HASH_NOT_FOUND` error if the specified transaction hash is
 /// not found.
-#[allow(unused_variables)]
 pub async fn get_transaction_receipt<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     transaction_hash: FieldElement,

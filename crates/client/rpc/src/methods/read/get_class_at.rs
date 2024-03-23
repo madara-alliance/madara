@@ -36,7 +36,6 @@ use crate::Starknet;
 /// This method may return the following errors:
 /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
 /// * `CONTRACT_NOT_FOUND` - If the specified contract address does not exist.
-#[allow(unused_variables)]
 pub fn get_class_at<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     block_id: BlockId,

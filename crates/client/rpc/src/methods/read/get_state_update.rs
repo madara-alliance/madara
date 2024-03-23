@@ -20,7 +20,7 @@ use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
 use crate::Starknet;
 
-pub(crate) fn get_state_update_finalized<A, B, BE, G, C, P, H>(
+fn get_state_update_finalized<A, B, BE, G, C, P, H>(
     server: &Starknet<A, B, BE, G, C, P, H>,
     substrate_block_hash: B::Hash,
 ) -> RpcResult<MaybePendingStateUpdate>
@@ -52,7 +52,7 @@ where
     Ok(MaybePendingStateUpdate::Update(StateUpdate { block_hash, old_root, new_root, state_diff }))
 }
 
-pub(crate) fn get_state_update_pending() -> RpcResult<MaybePendingStateUpdate> {
+fn get_state_update_pending() -> RpcResult<MaybePendingStateUpdate> {
     match get_pending_state_update() {
         Some(state_update) => Ok(MaybePendingStateUpdate::PendingUpdate(state_update)),
         None => Err(Error::Custom("Failed to retrieve pending state update, node not yet synchronized".to_string())),
@@ -100,7 +100,6 @@ where
 /// the state of the network as a result of the block's execution. This can include a confirmed
 /// state update or a pending state update. If the block is not found, returns a
 /// `StarknetRpcApiError` with `BlockNotFound`.
-#[allow(unused_variables)]
 pub fn get_state_update<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     block_id: BlockId,

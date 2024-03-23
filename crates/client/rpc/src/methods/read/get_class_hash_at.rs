@@ -28,7 +28,6 @@ use crate::{Felt, Starknet};
 /// ### Returns
 ///
 /// * `class_hash` - The class hash of the given contract
-#[allow(unused_variables)]
 pub fn get_class_hash_at<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     block_id: BlockId,

@@ -31,7 +31,6 @@ use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
 use crate::{Starknet, StarknetReadRpcApiServer};
 
-#[allow(unused_variables)]
 pub async fn trace_block_transactions<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     block_id: BlockId,

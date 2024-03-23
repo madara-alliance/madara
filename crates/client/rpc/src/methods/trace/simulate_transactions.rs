@@ -3,7 +3,6 @@ use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_storage::StorageOverride;
-use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
 use mp_transactions::TxType;
@@ -19,9 +18,8 @@ use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, Simulat
 use super::lib::ConvertCallInfoToExecuteInvocationError;
 use super::trace_implementation::tx_execution_infos_to_tx_trace;
 use crate::errors::StarknetRpcApiError;
-use crate::{Starknet, StarknetReadRpcApiServer};
+use crate::Starknet;
 
-#[allow(unused_variables)]
 pub async fn simulate_transactions<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     block_id: BlockId,
@@ -40,9 +38,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash =
-        starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| StarknetRpcApiError::BlockNotFound)?;
-    let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
-    let best_block_hash = starknet.client.info().best_hash;
+        starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|_e| StarknetRpcApiError::BlockNotFound)?;
 
     let tx_type_and_tx_iterator = transactions.into_iter().map(|tx| match tx {
         BroadcastedTransaction::Invoke(invoke_tx) => invoke_tx.try_into().map(|tx| (TxType::Invoke, tx)),
@@ -115,79 +111,3 @@ fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
 
     Ok(results)
 }
-
-// fn try_get_function_invocation_from_call_info(
-//     call_info: &CallInfo,
-// ) -> Result<starknet_core::types::FunctionInvocation, TryFuntionInvocationFromCallInfoError> {
-//   let messages = collect_call_info_ordered_messages(call_info); let events =
-//   blockifier_to_starknet_rs_ordered_events(&call_info.execution.events);
-
-//     let inner_calls =
-//         call_info.inner_calls.iter().map(try_get_function_invocation_from_call_info).
-// collect::<Result<_, _>>()?;
-
-//     call_info.get_sorted_l2_to_l1_payloads_length()?;
-
-//     let entry_point_type = match call_info.call.entry_point_type {
-//         starknet_api::deprecated_contract_class::EntryPointType::Constructor => {
-//             starknet_core::types::EntryPointType::Constructor
-//         }
-//         starknet_api::deprecated_contract_class::EntryPointType::External => {
-//             starknet_core::types::EntryPointType::External
-//         }
-//         starknet_api::deprecated_contract_class::EntryPointType::L1Handler => {
-//             starknet_core::types::EntryPointType::L1Handler
-//         }
-//     };
-
-//     let call_type = match call_info.call.call_type {
-//         blockifier::execution::entry_point::CallType::Call =>
-// starknet_core::types::CallType::Call,
-//         blockifier::execution::entry_point::CallType::Delegate =>
-// starknet_core::types::CallType::Delegate,     };
-
-//     // The class hash in the call_info is computed during execution and will be set here.
-//     let class_hash =
-// FieldElement::from(Felt252Wrapper::from(call_info.call.class_hash.expect("Class hash should be
-// computed after execution").0));
-
-//     Ok(starknet_core::types::FunctionInvocation {
-//         contract_address:
-// FieldElement::from(Felt252Wrapper::from(call_info.call.storage_address.0.0)),
-//         entry_point_selector:
-// FieldElement::from(Felt252Wrapper::from(call_info.call.entry_point_selector.0)),
-//         calldata: call_info.call.calldata.0.iter()
-//             .map(|x| FieldElement::from(Felt252Wrapper::from(*x)))
-//             .collect(),
-//         caller_address:
-// FieldElement::from(Felt252Wrapper::from(call_info.call.caller_address.0.0)),         class_hash,
-//         entry_point_type,
-//         call_type,
-//         result: call_info.execution.retdata.0.iter()
-//             .map(|x| FieldElement::from(Felt252Wrapper::from(*x)))
-//             .collect(),
-//         calls: inner_calls,
-//         events,
-//         messages,
-//     })
-
-// }
-
-// #[derive(Error, Debug)]
-// pub enum ConvertCallInfoToExecuteInvocationError {
-//     #[error("One of the simulated transaction failed")]
-//     TransactionExecutionFailed,
-//     #[error(transparent)]
-//     GetFunctionInvocation(#[from] TryFuntionInvocationFromCallInfoError),
-// }
-
-// impl From<ConvertCallInfoToExecuteInvocationError> for StarknetRpcApiError {
-//     fn from(err: ConvertCallInfoToExecuteInvocationError) -> Self {
-//         match err {
-//             ConvertCallInfoToExecuteInvocationError::TransactionExecutionFailed =>
-// StarknetRpcApiError::ContractError,
-// ConvertCallInfoToExecuteInvocationError::GetFunctionInvocation(_) => {
-// StarknetRpcApiError::InternalServerError             }
-//         }
-//     }
-// }

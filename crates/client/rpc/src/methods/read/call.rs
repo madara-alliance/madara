@@ -38,8 +38,6 @@ use crate::{Arc, Starknet};
 /// * `CONTRACT_NOT_FOUND` - If the specified contract address does not exist.
 /// * `CONTRACT_ERROR` - If there is an error with the contract or the function call.
 /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
-#[allow(unused_variables)]
-
 pub fn call<A, B, BE, G, C, P, H>(
     starknet: &Starknet<A, B, BE, G, C, P, H>,
     request: FunctionCall,
