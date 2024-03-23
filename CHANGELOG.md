@@ -3,6 +3,7 @@ git # Deoxys Changelog
 ## Next release
 
 - refactor: rpc methods and removed rpc-core
+- feat(bonsai): Bumped bonsai lib to latest opti
 - refactor(generic): reduced runtime dependence on generics
 - fix(sync): Cleaned mc-sync isolating fetch process + added shared SyncStatus
 - feat(self-hosted): host our own runner
