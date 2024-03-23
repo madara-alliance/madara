@@ -19,4 +19,3 @@ pub mod get_transaction_receipt;
 pub mod get_transaction_status;
 pub mod lib;
 pub mod syncing;
-pub mod tools;

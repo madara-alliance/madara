@@ -1,4 +1,5 @@
 use blockifier::transaction::objects::TransactionExecutionInfo;
+use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;

@@ -110,24 +110,21 @@ where
     Ok(traces)
 }
 
-pub async fn trace_transaction<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub async fn trace_transaction<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     transaction_hash: FieldElement,
 ) -> RpcResult<TransactionTraceWithHash>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    BE: Backend<B> + 'static,
+    A: ChainApi<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
     G: GenesisProvider + Send + Sync + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-    P: TransactionPool<Block = B> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+    P: TransactionPool<Block = DBlockT> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let substrate_block_hash = starknet
-        .backend
-        .mapping()
+    let substrate_block_hash = DeoxysBackend::mapping()
         .block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
         .map_err(|e| {
             error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
@@ -396,7 +393,7 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
 fn map_transaction_to_user_transaction<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
     starknet_block: DeoxysBlock,
-    substrate_block_hash: B::Hash,
+    substrate_block_hash: DHashT,
     chain_id: Felt252Wrapper,
     target_transaction_hash: Option<Felt252Wrapper>,
 ) -> Result<(Vec<UserOrL1HandlerTransaction>, Vec<UserOrL1HandlerTransaction>), StarknetRpcApiError>

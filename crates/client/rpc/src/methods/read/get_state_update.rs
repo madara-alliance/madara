@@ -15,9 +15,8 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
-use starknet_core::types::{BlockId, BlockTag, FieldElement, MaybePendingStateUpdate, StateDiff, StateUpdate};
 use starknet_api::block::BlockHash as APIBlockHash;
+use starknet_core::types::{BlockId, BlockTag, FieldElement, MaybePendingStateUpdate, StateDiff, StateUpdate};
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
@@ -98,18 +97,17 @@ where
 /// the state of the network as a result of the block's execution. This can include a confirmed
 /// state update or a pending state update. If the block is not found, returns a
 /// `StarknetRpcApiError` with `BlockNotFound`.
-pub fn get_state_update<A, B, BE, G, C, P, H>(
-    starknet: &Starknet<A, B, BE, G, C, P, H>,
+pub fn get_state_update<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
     block_id: BlockId,
 ) -> RpcResult<MaybePendingStateUpdate>
 where
-    A: ChainApi<Block = B> + 'static,
-    B: BlockT,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = DBlockT> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {

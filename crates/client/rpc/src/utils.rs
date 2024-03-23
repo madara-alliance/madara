@@ -1,19 +1,23 @@
 use std::collections::HashMap;
 use std::io::Write;
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use blockifier::execution::contract_class::ContractClass as BlockifierContractClass;
 use blockifier::execution::entry_point::CallInfo;
 use cairo_lang_casm_contract_class::{CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints};
+use deoxys_runtime::opaque::{DBlockT, DHashT};
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
-use mp_digest_log::find_starknet_block;
 use mp_block::DeoxysBlock;
+use mp_digest_log::find_starknet_block;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use num_bigint::BigUint;
-use sp_api::{BlockT, HeaderT};
+use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
+use sp_api::{BlockT, HeaderT, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
+use sp_runtime::DispatchError;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::ThinStateDiff;
@@ -25,6 +29,7 @@ use starknet_core::types::{
     ResourcePrice, StateDiff, StorageEntry, Transaction,
 };
 
+use crate::errors::StarknetRpcApiError;
 use crate::Felt;
 
 pub fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> {
@@ -370,4 +375,22 @@ fn casm_entry_point_to_compiled_entry_point(value: &CasmContractEntryPoint) -> C
 fn biguint_to_field_element(value: &BigUint) -> FieldElement {
     let bytes = value.to_bytes_be();
     FieldElement::from_byte_slice_be(bytes.as_slice()).unwrap()
+}
+
+pub fn convert_error<C, T>(
+    client: Arc<C>,
+    best_block_hash: DHashT,
+    call_result: Result<T, DispatchError>,
+) -> Result<T, StarknetRpcApiError>
+where
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+{
+    match call_result {
+        Ok(val) => Ok(val),
+        Err(e) => match client.runtime_api().convert_error(best_block_hash, e) {
+            Ok(starknet_error) => Err(starknet_error.into()),
+            Err(_) => Err(StarknetRpcApiError::InternalServerError),
+        },
+    }
 }

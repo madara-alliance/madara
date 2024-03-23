@@ -1,3 +1,4 @@
+use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
@@ -10,7 +11,6 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{BroadcastedDeployAccountTransaction, DeployAccountTransactionResult};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 

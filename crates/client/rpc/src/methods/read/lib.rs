@@ -1,3 +1,4 @@
+use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
@@ -8,7 +9,6 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate,
     FieldElement, FunctionCall, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
@@ -40,12 +40,12 @@ use crate::{Felt, Starknet, StarknetReadRpcApiServer};
 #[async_trait]
 impl<A, BE, G, C, P, H> StarknetReadRpcApiServer for Starknet<A, BE, G, C, P, H>
 where
-    A: ChainApi<Block = B> + 'static,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = DBlockT> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {

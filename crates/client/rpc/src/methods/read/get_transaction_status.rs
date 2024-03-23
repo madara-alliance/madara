@@ -1,5 +1,7 @@
+use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use log::error;
+use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -12,7 +14,6 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{FieldElement, TransactionExecutionStatus, TransactionStatus};
 
 use crate::errors::StarknetRpcApiError;
@@ -42,18 +43,16 @@ pub fn get_transaction_status<A, BE, G, C, P, H>(
     transaction_hash: FieldElement,
 ) -> RpcResult<TransactionStatus>
 where
-    A: ChainApi<Block = B> + 'static,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = DBlockT> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let substrate_block_hash = starknet
-        .backend
-        .mapping()
+    let substrate_block_hash = DeoxysBackend::mapping()
         .block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
         .map_err(|e| {
             error!("Failed to get transaction's substrate block hash from mapping_db: {e}");

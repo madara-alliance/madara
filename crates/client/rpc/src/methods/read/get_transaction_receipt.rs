@@ -34,8 +34,8 @@ use crate::utils::{
 };
 use crate::{Felt, Starknet, StarknetReadRpcApiServer};
 
-fn get_transaction_receipt_finalized<A, B, BE, G, C, P, H>(
-    client: &Starknet<A, B, BE, G, C, P, H>,
+fn get_transaction_receipt_finalized<A, BE, G, C, P, H>(
+    client: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
     substrate_block_hash: DHashT,
     transaction_hash: FieldElement,
@@ -554,18 +554,16 @@ pub async fn get_transaction_receipt<A, BE, G, C, P, H>(
     transaction_hash: FieldElement,
 ) -> RpcResult<MaybePendingTransactionReceipt>
 where
-    A: ChainApi<Block = B> + 'static,
-    P: TransactionPool<Block = B> + 'static,
-    BE: Backend<B> + 'static,
-    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    A: ChainApi<Block = DBlockT> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let substrate_block_hash = starknet
-        .backend
-        .mapping()
+    let substrate_block_hash = DeoxysBackend::mapping()
         .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
         .map_err(|e| {
             log::error!("Failed to retrieve substrate block hash: {e}");

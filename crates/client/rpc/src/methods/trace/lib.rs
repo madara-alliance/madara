@@ -1,4 +1,5 @@
 use blockifier::transaction::errors::TransactionExecutionError;
+use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
@@ -9,7 +10,6 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, SimulatedTransaction, SimulationFlag, TransactionTraceWithHash,
 };
