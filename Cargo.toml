@@ -252,7 +252,7 @@ mc-storage = { path = "crates/client/storage" }
 mc-sync = { path = "crates/client/sync" }
 
 # Madara runtime
-madara-runtime = { path = "crates/runtime" }
+deoxys-runtime = { path = "crates/runtime" }
 
 # TUI Dashboard
 deoxys-tui = { path = "crates/deoxys-tui" }

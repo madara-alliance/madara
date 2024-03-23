@@ -4,7 +4,7 @@ use std::io::Write;
 use anyhow::{anyhow, Result};
 use blockifier::execution::contract_class::ContractClass as BlockifierContractClass;
 use cairo_lang_casm_contract_class::{CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints};
-use mp_block::Block as StarknetBlock;
+use mp_block::DeoxysBlock;
 use mp_digest_log::find_starknet_block;
 use mp_felt::Felt252Wrapper;
 use num_bigint::BigUint;
@@ -151,7 +151,7 @@ fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryP
 }
 
 /// Returns the current Starknet block from the block header's digest
-pub fn get_block_by_block_hash<B, C>(client: &C, block_hash: <B as BlockT>::Hash) -> Result<StarknetBlock>
+pub fn get_block_by_block_hash<B, C>(client: &C, block_hash: <B as BlockT>::Hash) -> Result<DeoxysBlock>
 where
     B: BlockT,
     C: HeaderBackend<B>,

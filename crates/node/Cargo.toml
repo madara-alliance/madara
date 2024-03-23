@@ -72,7 +72,9 @@ frame-benchmarking = { workspace = true }
 frame-benchmarking-cli = { workspace = true }
 
 # Starknet
-madara-runtime = { workspace = true }
+blockifier = { workspace = true }
+deoxys-runtime = { workspace = true }
+hex = { workspace = true }
 mc-db = { workspace = true }
 mc-mapping-sync = { workspace = true }
 mc-rpc = { workspace = true }
@@ -111,12 +113,12 @@ default = []
 runtime-benchmarks = [
   "frame-benchmarking-cli/runtime-benchmarks",
   "frame-benchmarking/runtime-benchmarks",
-  "madara-runtime/runtime-benchmarks",
+  "deoxys-runtime/runtime-benchmarks",
 ]
 # Enable features that allow the runtime to be tried and debugged. Name might be subject to change
 # in the near future.
-disable-transaction-fee = ["madara-runtime/disable-transaction-fee"]
-try-runtime = ["madara-runtime/try-runtime", "try-runtime-cli/try-runtime"]
+disable-transaction-fee = ["deoxys-runtime/disable-transaction-fee"]
+try-runtime = ["deoxys-runtime/try-runtime", "try-runtime-cli/try-runtime"]
 # Load sharingan chain-specs during the compilation
 # This is the way to run a sharingan chain
 sharingan = []

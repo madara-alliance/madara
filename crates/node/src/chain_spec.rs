@@ -1,4 +1,4 @@
-use madara_runtime::{AuraConfig, GrandpaConfig, RuntimeGenesisConfig, SealingMode, SystemConfig, WASM_BINARY};
+use deoxys_runtime::{AuraConfig, GrandpaConfig, RuntimeGenesisConfig, SealingMode, SystemConfig, WASM_BINARY};
 use pallet_starknet::genesis_loader::GenesisData;
 use pallet_starknet::GenesisConfig;
 use sc_service::ChainType;
@@ -39,7 +39,7 @@ pub struct DevGenesisExt {
 impl sp_runtime::BuildStorage for DevGenesisExt {
     fn assimilate_storage(&self, storage: &mut Storage) -> Result<(), String> {
         BasicExternalities::execute_with_storage(storage, || {
-            madara_runtime::Sealing::set(&self.sealing);
+            deoxys_runtime::Sealing::set(&self.sealing);
         });
         self.genesis_config.assimilate_storage(storage)
     }

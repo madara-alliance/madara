@@ -50,7 +50,7 @@ pub enum BlockId {
 /// Starknet block definition.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-pub struct Block {
+pub struct DeoxysBlock {
     /// The block header.
     header: Header,
     /// The block transactions.
@@ -59,7 +59,7 @@ pub struct Block {
     events: BlockEvents,
 }
 
-impl Block {
+impl DeoxysBlock {
     /// Creates a new block.
     ///
     /// # Arguments
