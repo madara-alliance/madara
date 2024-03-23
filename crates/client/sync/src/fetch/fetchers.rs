@@ -1,15 +1,18 @@
 //! Contains the code required to fetch data from the network efficiently.
+use core::time::Duration;
 use std::sync::Arc;
 
+use deoxys_runtime::opaque::DBlockT;
 use itertools::Itertools;
 use mc_storage::OverrideHandle;
+use mp_block::DeoxysBlock;
 use mp_contract::class::{ContractClassData, ContractClassWrapper};
 use mp_felt::Felt252Wrapper;
 use mp_storage::StarknetStorageSchemaVersion;
 use sp_blockchain::HeaderBackend;
 use sp_core::{H160, H256};
-use sp_runtime::generic::{Block, Header};
-use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
+use sp_runtime::generic::{Block as RuntimeBlock, Header};
+use sp_runtime::traits::BlakeTwo256;
 use sp_runtime::OpaqueExtrinsic;
 use starknet_api::api_core::ClassHash;
 use starknet_core::types::BlockId as BlockIdCore;
@@ -19,7 +22,6 @@ use starknet_providers::sequencer::models::state_update::{DeclaredContract, Depl
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use tokio::task::JoinSet;
-use tokio::time::Duration;
 use url::Url;
 
 use crate::l2::L2SyncError;
@@ -51,15 +53,14 @@ pub async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -
     Ok(block)
 }
 
-pub async fn fetch_block_and_updates<B, C>(
+pub async fn fetch_block_and_updates<C>(
     block_n: u64,
     provider: &SequencerGatewayProvider,
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     client: &C,
 ) -> Result<(p::Block, StateUpdate, Vec<ContractClassData>), L2SyncError>
 where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<DBlockT>,
 {
     const MAX_RETRY: u32 = 15;
     let mut attempt = 0;
@@ -91,7 +92,7 @@ where
     }
 }
 
-pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<mp_block::Block, String> {
+pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBlock, String> {
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
@@ -99,15 +100,14 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<mp_block::
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn fetch_state_and_class_update<B, C>(
+async fn fetch_state_and_class_update<C>(
     provider: &SequencerGatewayProvider,
     block_number: u64,
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     client: &C,
 ) -> Result<(StateUpdate, Vec<ContractClassData>), L2SyncError>
 where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<DBlockT>,
 {
     // Children tasks need StateUpdate as an Arc, because of task spawn 'static requirement
     // We make an Arc, and then unwrap the StateUpdate out of the Arc
@@ -129,16 +129,15 @@ async fn fetch_state_update(
 }
 
 /// retrieves class updates from Starknet sequencer
-async fn fetch_class_update<B, C>(
+async fn fetch_class_update<C>(
     provider: &SequencerGatewayProvider,
     state_update: &Arc<StateUpdate>,
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_number: u64,
     client: &C,
 ) -> Result<Vec<ContractClassData>, L2SyncError>
 where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<DBlockT>,
 {
     // defaults to downloading ALL classes if a substrate block hash could not be determined
     let missing_classes = match block_hash_substrate(client, block_number) {
@@ -191,7 +190,7 @@ async fn fetch_class(
 /// and retains only those which are not stored in the local Substrate db.
 fn fetch_missing_classes<'a>(
     state_update: &'a StateUpdate,
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_hash_substrate: H256,
 ) -> Vec<&'a FieldElement> {
     aggregate_classes(state_update)
@@ -227,7 +226,7 @@ fn aggregate_classes(state_update: &StateUpdate) -> Vec<&FieldElement> {
 /// Since a change in class definition will result in a change in class hash,
 /// this means we only need to check for class hashes in the db.
 fn is_missing_class(
-    overrides: &Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     block_hash_substrate: H256,
     class_hash: Felt252Wrapper,
 ) -> bool {

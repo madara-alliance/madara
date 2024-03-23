@@ -1,10 +1,8 @@
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 use bonsai_trie::id::{BasicId, Id};
 use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, BonsaiStorageConfig, DatabaseKey};
 use kvdb::{DBTransaction, KeyValueDB};
-use sp_runtime::traits::Block as BlockT;
 use starknet_types_core::hash::{Pedersen, Poseidon};
 
 use crate::error::BonsaiDbError;
@@ -23,14 +21,14 @@ pub enum KeyType {
     TrieLog,
 }
 
-pub struct BonsaiConfigs<B: BlockT> {
-    pub contract: BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>,
-    pub contract_storage: BonsaiStorage<BasicId, BonsaiDb<B>, Pedersen>,
-    pub class: BonsaiStorage<BasicId, BonsaiDb<B>, Poseidon>,
+pub struct BonsaiConfigs {
+    pub contract: BonsaiStorage<BasicId, BonsaiDb, Pedersen>,
+    pub contract_storage: BonsaiStorage<BasicId, BonsaiDb, Pedersen>,
+    pub class: BonsaiStorage<BasicId, BonsaiDb, Poseidon>,
 }
 
-impl<B: BlockT> BonsaiConfigs<B> {
-    pub fn new(contract: BonsaiDb<B>, contract_storage: BonsaiDb<B>, class: BonsaiDb<B>) -> Self {
+impl BonsaiConfigs {
+    pub fn new(contract: BonsaiDb, contract_storage: BonsaiDb, class: BonsaiDb) -> Self {
         let config = BonsaiStorageConfig::default();
 
         let contract =
@@ -69,11 +67,9 @@ impl TrieColumn {
 }
 
 /// Represents a Bonsai database instance parameterized by a block type.
-pub struct BonsaiDb<B: BlockT> {
+pub struct BonsaiDb {
     /// Database interface for key-value operations.
     pub(crate) db: Arc<dyn KeyValueDB>,
-    /// PhantomData to mark the block type used.
-    pub(crate) _marker: PhantomData<B>,
     /// Set current column to give trie context
     pub(crate) current_column: TrieColumn,
 }
@@ -86,7 +82,7 @@ pub fn key_type(key: &DatabaseKey) -> KeyType {
     }
 }
 
-impl<B: BlockT> BonsaiDatabase for BonsaiDb<B> {
+impl BonsaiDatabase for BonsaiDb {
     type Batch = DBTransaction;
     type DatabaseError = BonsaiDbError;
 
@@ -250,7 +246,7 @@ impl BonsaiDatabase for TransactionWrapper {
 }
 
 /// This implementation is a stub to mute any error but is is currently not used.
-impl<B: BlockT, ID: Id> BonsaiPersistentDatabase<ID> for BonsaiDb<B> {
+impl<ID: Id> BonsaiPersistentDatabase<ID> for BonsaiDb {
     type Transaction = TransactionWrapper;
     type DatabaseError = BonsaiDbError;
 

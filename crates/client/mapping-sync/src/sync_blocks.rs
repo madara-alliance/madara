@@ -1,3 +1,5 @@
+use deoxys_runtime::opaque::{DBlockT, DHashT, DHeaderT};
+use mc_db::DeoxysBackend;
 use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_digest_log::{find_starknet_block, FindLogError};
 use mp_hashers::HasherT;
@@ -6,14 +8,15 @@ use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{Backend as _, HeaderBackend};
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT, Zero};
+use sp_runtime::traits::Header as HeaderT;
 
-fn sync_block<B: BlockT, C, BE, H>(client: &C, backend: &mc_db::Backend<B>, header: &B::Header) -> anyhow::Result<()>
+fn sync_block<C, BE, H>(client: &C, header: &DHeaderT) -> anyhow::Result<()>
 where
-    C: HeaderBackend<B> + StorageProvider<B, BE>,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B>,
-    BE: Backend<B>,
+    // TODO: refactor this!
+    C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
+    BE: Backend<DBlockT>,
     H: HasherT,
 {
     // Before storing the new block in the Madara backend database, we want to make sure that the
@@ -57,27 +60,24 @@ where
                                 .collect(),
                         };
 
-                        backend.mapping().write_hashes(mapping_commitment).map_err(|e| anyhow::anyhow!(e))
+                        DeoxysBackend::mapping().write_hashes(mapping_commitment).map_err(|e| anyhow::anyhow!(e))
                     }
                 }
                 // If there is not Starknet block in this Substrate block, we write it in the db
-                Err(_) => backend.mapping().write_none(substrate_block_hash).map_err(|e| anyhow::anyhow!(e)),
+                Err(_) => DeoxysBackend::mapping().write_none(substrate_block_hash).map_err(|e| anyhow::anyhow!(e)),
             }
         }
         // If there is not Starknet block in this Substrate block, we write it in the db
-        Err(FindLogError::NotLog) => backend.mapping().write_none(substrate_block_hash).map_err(|e| anyhow::anyhow!(e)),
+        Err(FindLogError::NotLog) => {
+            DeoxysBackend::mapping().write_none(substrate_block_hash).map_err(|e| anyhow::anyhow!(e))
+        }
         Err(FindLogError::MultipleLogs) => Err(anyhow::anyhow!("Multiple logs found")),
     }
 }
 
-fn sync_genesis_block<B: BlockT, C, H>(
-    _client: &C,
-    backend: &mc_db::Backend<B>,
-    header: &B::Header,
-) -> anyhow::Result<()>
+fn sync_genesis_block<C, H>(_client: &C, header: &DHeaderT) -> anyhow::Result<()>
 where
-    C: HeaderBackend<B>,
-    B: BlockT,
+    C: HeaderBackend<DBlockT>,
     H: HasherT,
 {
     let substrate_block_hash = header.hash();
@@ -85,37 +85,36 @@ where
     let block = match find_starknet_block(header.digest()) {
         Ok(block) => block,
         Err(FindLogError::NotLog) => {
-            return backend.mapping().write_none(substrate_block_hash).map_err(|e| anyhow::anyhow!(e));
+            return DeoxysBackend::mapping().write_none(substrate_block_hash).map_err(|e| anyhow::anyhow!(e));
         }
         Err(FindLogError::MultipleLogs) => return Err(anyhow::anyhow!("Multiple logs found")),
     };
     let block_hash = block.header().hash::<H>();
-    let mapping_commitment = mc_db::MappingCommitment::<B> {
+    let mapping_commitment = mc_db::MappingCommitment::<DBlockT> {
         block_number: block.header().block_number,
         block_hash: substrate_block_hash,
         starknet_block_hash: block_hash.into(),
         starknet_transaction_hashes: Vec::new(),
     };
 
-    backend.mapping().write_hashes(mapping_commitment)?;
+    DeoxysBackend::mapping().write_hashes(mapping_commitment)?;
 
     Ok(())
 }
 
-fn sync_one_block<B: BlockT, C, BE, H>(
+fn sync_one_block<C, BE, H>(
     client: &C,
     substrate_backend: &BE,
-    madara_backend: &mc_db::Backend<B>,
-    sync_from: <B::Header as HeaderT>::Number,
+    sync_from: <DHeaderT as HeaderT>::Number,
 ) -> anyhow::Result<bool>
 where
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B>,
-    C: HeaderBackend<B> + StorageProvider<B, BE>,
-    BE: Backend<B>,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
+    C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
+    BE: Backend<DBlockT>,
     H: HasherT,
 {
-    let mut current_syncing_tips = madara_backend.meta().current_syncing_tips()?;
+    let mut current_syncing_tips = DeoxysBackend::meta().current_syncing_tips()?;
 
     if current_syncing_tips.is_empty() {
         let mut leaves = substrate_backend.blockchain().leaves()?;
@@ -127,9 +126,7 @@ where
 
     let mut operating_header = None;
     while let Some(checking_tip) = current_syncing_tips.pop() {
-        if let Some(checking_header) =
-            fetch_header(substrate_backend.blockchain(), madara_backend, checking_tip, sync_from)?
-        {
+        if let Some(checking_header) = fetch_header(substrate_backend.blockchain(), checking_tip, sync_from)? {
             operating_header = Some(checking_header);
             break;
         }
@@ -137,58 +134,56 @@ where
     let operating_header = match operating_header {
         Some(operating_header) => operating_header,
         None => {
-            madara_backend.meta().write_current_syncing_tips(current_syncing_tips)?;
+            DeoxysBackend::meta().write_current_syncing_tips(current_syncing_tips)?;
             return Ok(false);
         }
     };
 
-    if operating_header.number() == &Zero::zero() {
-        sync_genesis_block::<_, _, H>(client, madara_backend, &operating_header)?;
+    if *operating_header.number() == 0 {
+        sync_genesis_block::<_, H>(client, &operating_header)?;
 
-        madara_backend.meta().write_current_syncing_tips(current_syncing_tips)?;
+        DeoxysBackend::meta().write_current_syncing_tips(current_syncing_tips)?;
         Ok(true)
     } else {
-        sync_block::<_, _, _, H>(client, madara_backend, &operating_header)?;
+        sync_block::<_, _, H>(client, &operating_header)?;
 
         current_syncing_tips.push(*operating_header.parent_hash());
-        madara_backend.meta().write_current_syncing_tips(current_syncing_tips)?;
+        DeoxysBackend::meta().write_current_syncing_tips(current_syncing_tips)?;
         Ok(true)
     }
 }
 
-pub fn sync_blocks<B: BlockT, C, BE, H>(
+pub fn sync_blocks<C, BE, H>(
     client: &C,
     substrate_backend: &BE,
-    madara_backend: &mc_db::Backend<B>,
     limit: usize,
-    sync_from: <B::Header as HeaderT>::Number,
+    sync_from: <DHeaderT as HeaderT>::Number,
 ) -> anyhow::Result<bool>
 where
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B>,
-    C: HeaderBackend<B> + StorageProvider<B, BE>,
-    BE: Backend<B>,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
+    C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
+    BE: Backend<DBlockT>,
     H: HasherT,
 {
     let mut synced_any = false;
 
     for _ in 0..limit {
-        synced_any = synced_any || sync_one_block::<_, _, _, H>(client, substrate_backend, madara_backend, sync_from)?;
+        synced_any = synced_any || sync_one_block::<_, _, H>(client, substrate_backend, sync_from)?;
     }
 
     Ok(synced_any)
 }
 
-fn fetch_header<B: BlockT, BE>(
+fn fetch_header<BE>(
     substrate_backend: &BE,
-    madara_backend: &mc_db::Backend<B>,
-    checking_tip: B::Hash,
-    sync_from: <B::Header as HeaderT>::Number,
-) -> anyhow::Result<Option<B::Header>>
+    checking_tip: DHashT,
+    sync_from: <DHeaderT as HeaderT>::Number,
+) -> anyhow::Result<Option<DHeaderT>>
 where
-    BE: HeaderBackend<B>,
+    BE: HeaderBackend<DBlockT>,
 {
-    if madara_backend.mapping().is_synced(&checking_tip)? {
+    if DeoxysBackend::mapping().is_synced(&checking_tip)? {
         return Ok(None);
     }
 

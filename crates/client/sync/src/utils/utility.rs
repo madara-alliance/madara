@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use bitvec::order::Msb0;
 use bitvec::view::AsBits;
+use deoxys_runtime::opaque::DBlockT;
 use ethers::types::{I256, U256};
 use lazy_static::lazy_static;
 use rand::seq::SliceRandom;
@@ -15,7 +16,7 @@ use reqwest::header;
 use serde_json::{json, Value};
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use sp_runtime::traits::{Block as BlockT, UniqueSaturatedInto};
+use sp_runtime::traits::UniqueSaturatedInto;
 use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::StateUpdate;
@@ -220,10 +221,9 @@ pub fn block_hash_deoxys(state_update: &StateUpdate) -> FieldElement {
 }
 
 /// Retrieves Substrate block hash from rpc client
-pub fn block_hash_substrate<B, C>(client: &C, block_number: u64) -> Option<H256>
+pub fn block_hash_substrate<C>(client: &C, block_number: u64) -> Option<H256>
 where
-    B: BlockT,
-    C: HeaderBackend<B>,
+    C: HeaderBackend<DBlockT>,
 {
     client
         .hash(UniqueSaturatedInto::unique_saturated_into(block_number))

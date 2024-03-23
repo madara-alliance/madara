@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use mp_block::DeoxysBlock;
 use mp_digest_log::{Log, MADARA_ENGINE_ID};
 use sc_client_api::backend::Backend;
 use sc_client_api::BlockImportOperation;
@@ -18,7 +19,7 @@ pub struct MadaraGenesisBlockBuilder<Block: BlockT, B, E> {
     backend: Arc<B>,
     executor: E,
     _phantom: PhantomData<Block>,
-    genesis_block: mp_block::Block,
+    genesis_block: DeoxysBlock,
 }
 
 impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> MadaraGenesisBlockBuilder<Block, B, E> {
@@ -28,7 +29,7 @@ impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> MadaraGenesisBlockBu
         commit_genesis_state: bool,
         backend: Arc<B>,
         executor: E,
-        genesis_block: mp_block::Block,
+        genesis_block: DeoxysBlock,
     ) -> sp_blockchain::Result<Self> {
         let genesis_storage = build_genesis_storage.build_storage().map_err(sp_blockchain::Error::Storage)?;
         Ok(Self {
@@ -63,7 +64,7 @@ impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> BuildGenesisBlock<Bl
 fn construct_genesis_block<Block: BlockT>(
     state_root: Block::Hash,
     state_version: StateVersion,
-    genesis_block: mp_block::Block,
+    genesis_block: DeoxysBlock,
 ) -> Block {
     let extrinsics_root =
         <<<Block as BlockT>::Header as HeaderT>::Hashing as HashT>::trie_root(Vec::new(), state_version);

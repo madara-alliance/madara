@@ -5,18 +5,20 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use deoxys_runtime::opaque::DBlockT;
+use deoxys_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use futures::channel::mpsc;
 use futures::future;
 use futures::future::BoxFuture;
 use futures::prelude::*;
-use madara_runtime::opaque::Block;
-use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
+use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
 use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::starknet_sync_worker;
 use mp_block::state_update::StateUpdateWrapper;
+use mp_block::DeoxysBlock;
 use mp_contract::class::ClassUpdateWrapper;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
@@ -63,20 +65,20 @@ impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
     type ExtendHostFunctions = ();
 
     fn dispatch(method: &str, data: &[u8]) -> Option<Vec<u8>> {
-        madara_runtime::api::dispatch(method, data)
+        deoxys_runtime::api::dispatch(method, data)
     }
 
     fn native_version() -> sc_executor::NativeVersion {
-        madara_runtime::native_version()
+        deoxys_runtime::native_version()
     }
 }
 
-pub type FullClient = sc_service::TFullClient<Block, RuntimeApi, NativeElseWasmExecutor<ExecutorDispatch>>;
-type FullBackend = sc_service::TFullBackend<Block>;
-type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
+pub type FullClient = sc_service::TFullClient<DBlockT, RuntimeApi, NativeElseWasmExecutor<ExecutorDispatch>>;
+type FullBackend = sc_service::TFullBackend<DBlockT>;
+type FullSelectChain = sc_consensus::LongestChain<FullBackend, DBlockT>;
 
-type BasicImportQueue = sc_consensus::DefaultImportQueue<Block>;
-type BoxBlockImport = sc_consensus::BoxBlockImport<Block>;
+type BasicImportQueue = sc_consensus::DefaultImportQueue<DBlockT>;
+type BoxBlockImport = sc_consensus::BoxBlockImport<DBlockT>;
 
 /// The minimum period of blocks on which justifications will be
 /// imported and generated.
@@ -87,17 +89,17 @@ pub fn new_partial<BIQ>(
     config: &Configuration,
     build_import_queue: BIQ,
     cache_more_things: bool,
-    genesis_block: mp_block::Block,
+    genesis_block: DeoxysBlock,
 ) -> Result<
     sc_service::PartialComponents<
         FullClient,
         FullBackend,
         FullSelectChain,
-        sc_consensus::DefaultImportQueue<Block>,
-        sc_transaction_pool::FullPool<Block, FullClient>,
+        sc_consensus::DefaultImportQueue<DBlockT>,
+        sc_transaction_pool::FullPool<DBlockT, FullClient>,
         (
             BoxBlockImport,
-            sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
+            sc_consensus_grandpa::LinkHalf<DBlockT, FullClient, FullSelectChain>,
             Option<Telemetry>,
             Arc<MadaraBackend>,
         ),
@@ -105,14 +107,14 @@ pub fn new_partial<BIQ>(
     ServiceError,
 >
 where
-    RuntimeApi: ConstructRuntimeApi<Block, FullClient>,
+    RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
     RuntimeApi: Send + Sync + 'static,
     BIQ: FnOnce(
         Arc<FullClient>,
         &Configuration,
         &TaskManager,
         Option<TelemetryHandle>,
-        GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
+        GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
         Arc<MadaraBackend>,
     ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>,
 {
@@ -131,7 +133,7 @@ where
 
     let backend = new_db_backend(config.db_config())?;
 
-    let genesis_block_builder = MadaraGenesisBlockBuilder::<Block, _, _>::new(
+    let genesis_block_builder = MadaraGenesisBlockBuilder::<DBlockT, _, _>::new(
         config.chain_spec.as_storage_builder(),
         true,
         backend.clone(),
@@ -141,10 +143,10 @@ where
     .unwrap();
 
     let (client, backend, keystore_container, task_manager) = sc_service::new_full_parts_with_genesis_builder::<
-        Block,
+        DBlockT,
         RuntimeApi,
         _,
-        MadaraGenesisBlockBuilder<Block, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
+        MadaraGenesisBlockBuilder<DBlockT, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
     >(
         config,
         telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
@@ -178,7 +180,7 @@ where
         telemetry.as_ref().map(|x| x.handle()),
     )?;
 
-    let madara_backend = Arc::new(MadaraBackend::open(&config.database, &db_config_dir(config), cache_more_things)?);
+    let deoxys_backend = DeoxysBackend::open(&config.database, &db_config_dir(config), cache_more_things)?;
 
     let (import_queue, block_import) = build_import_queue(
         client.clone(),
@@ -186,7 +188,8 @@ where
         &task_manager,
         telemetry.as_ref().map(|x| x.handle()),
         grandpa_block_import,
-        madara_backend.clone(),
+        // TODO: use `DeoxysBackend` import instead
+        Arc::clone(deoxys_backend),
     )?;
 
     Ok(sc_service::PartialComponents {
@@ -197,7 +200,7 @@ where
         keystore_container,
         select_chain,
         transaction_pool,
-        other: (block_import, grandpa_link, telemetry, madara_backend),
+        other: (block_import, grandpa_link, telemetry, Arc::clone(deoxys_backend)),
     })
 }
 
@@ -207,11 +210,11 @@ pub fn build_aura_grandpa_import_queue(
     config: &Configuration,
     task_manager: &TaskManager,
     telemetry: Option<TelemetryHandle>,
-    grandpa_block_import: GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
+    grandpa_block_import: GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
     _madara_backend: Arc<MadaraBackend>,
 ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>
 where
-    RuntimeApi: ConstructRuntimeApi<Block, FullClient>,
+    RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
     RuntimeApi: Send + Sync + 'static,
 {
     let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
@@ -248,11 +251,11 @@ pub fn build_manual_seal_import_queue(
     config: &Configuration,
     task_manager: &TaskManager,
     _telemetry: Option<TelemetryHandle>,
-    _grandpa_block_import: GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
+    _grandpa_block_import: GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
     _madara_backend: Arc<MadaraBackend>,
 ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>
 where
-    RuntimeApi: ConstructRuntimeApi<Block, FullClient>,
+    RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
     RuntimeApi: Send + Sync + 'static,
 {
     Ok((
@@ -277,7 +280,7 @@ pub fn new_full(
     l1_url: Url,
     cache_more_things: bool,
     fetch_config: FetchConfig,
-    genesis_block: mp_block::Block,
+    genesis_block: DeoxysBlock,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
@@ -411,19 +414,18 @@ pub fn new_full(
     task_manager.spawn_essential_handle().spawn(
         "mc-mapping-sync-worker",
         Some(MADARA_TASK_GROUP),
-        MappingSyncWorker::<_, _, _, StarknetHasher>::new(
+        MappingSyncWorker::<_, _, StarknetHasher>::new(
             client.import_notification_stream(),
             Duration::new(6, 0),
             client.clone(),
             backend.clone(),
-            madara_backend.clone(),
             3,
             0,
         )
         .for_each(|()| future::ready(())),
     );
 
-    let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<mp_block::Block>(100);
+    let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<DeoxysBlock>(100);
     let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StateUpdateWrapper>(100);
     let (class_sender, class_receiver) = tokio::sync::mpsc::channel::<ClassUpdateWrapper>(100);
 
@@ -438,7 +440,7 @@ pub fn new_full(
     task_manager.spawn_essential_handle().spawn(
         "starknet-sync-worker",
         Some("madara"),
-        starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, madara_backend, Arc::clone(&client)),
+        starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, Arc::clone(&client)),
     );
 
     // manual-seal authorship
@@ -573,12 +575,12 @@ pub fn new_full(
 
 #[allow(clippy::too_many_arguments)]
 fn run_manual_seal_authorship(
-    block_receiver: tokio::sync::mpsc::Receiver<mp_block::Block>,
+    block_receiver: tokio::sync::mpsc::Receiver<DeoxysBlock>,
     state_update_receiver: tokio::sync::mpsc::Receiver<StateUpdateWrapper>,
     class_receiver: tokio::sync::mpsc::Receiver<ClassUpdateWrapper>,
     sealing: SealingMode,
     client: Arc<FullClient>,
-    transaction_pool: Arc<FullPool<Block, FullClient>>,
+    transaction_pool: Arc<FullPool<DBlockT, FullClient>>,
     select_chain: FullSelectChain,
     block_import: BoxBlockImport,
     task_manager: &TaskManager,
@@ -587,7 +589,7 @@ fn run_manual_seal_authorship(
     telemetry: Option<Telemetry>,
 ) -> Result<(), ServiceError>
 where
-    RuntimeApi: ConstructRuntimeApi<Block, FullClient>,
+    RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
     RuntimeApi: Send + Sync + 'static,
 {
     let proposer_factory = ProposerFactory::new(
@@ -611,7 +613,7 @@ where
             inherent_data: &mut sp_inherents::InherentData,
         ) -> Result<(), sp_inherents::Error> {
             TIMESTAMP.with(|x| {
-                *x.borrow_mut() += madara_runtime::SLOT_DURATION;
+                *x.borrow_mut() += deoxys_runtime::SLOT_DURATION;
                 inherent_data.put_data(sp_timestamp::INHERENT_IDENTIFIER, &*x.borrow())
             })
         }
@@ -635,7 +637,7 @@ where
         _client: Arc<C>,
 
         /// The receiver that we're using to receive blocks.
-        block_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<mp_block::Block>>,
+        block_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<DeoxysBlock>>,
 
         /// The receiver that we're using to receive state updates.
         state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StateUpdateWrapper>>,
@@ -728,11 +730,11 @@ where
 }
 
 type ChainOpsResult =
-    Result<(Arc<FullClient>, Arc<FullBackend>, BasicQueue<Block>, TaskManager, Arc<MadaraBackend>), ServiceError>;
+    Result<(Arc<FullClient>, Arc<FullBackend>, BasicQueue<DBlockT>, TaskManager, Arc<MadaraBackend>), ServiceError>;
 
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things, mp_block::Block::default())?;
+        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things, DeoxysBlock::default())?;
     Ok((client, backend, import_queue, task_manager, other.3))
 }
