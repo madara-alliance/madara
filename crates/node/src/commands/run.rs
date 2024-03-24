@@ -125,14 +125,32 @@ pub struct ExtendedRunCmd {
     /// Disable root verification
     #[clap(long)]
     pub disable_root: bool,
+
+    /// A flag to run the TUI dashboard
+    #[cfg(feature = "tui")]
+    #[clap(long)]
+    pub tui: bool,
 }
 
 pub fn run_node(mut cli: Cli) -> Result<()> {
+    #[cfg(feature = "tui")]
+    {
+        deoxys_tui::modify_substrate_sources();
+        if cli.run.tui {
+            std::thread::spawn(move || {
+                tokio::runtime::Runtime::new()
+                    .unwrap()
+                    .block_on(async { deoxys_tui::run("/tmp/deoxys").await.unwrap() });
+                std::process::exit(0)
+            });
+        }
+    }
     if cli.run.base.shared_params.dev {
         override_dev_environment(&mut cli.run);
     } else if cli.run.deoxys {
         deoxys_environment(&mut cli.run);
     }
+
     let runner = cli.create_runner(&cli.run.base)?;
 
     // TODO: verify that the l1_endpoint is valid
