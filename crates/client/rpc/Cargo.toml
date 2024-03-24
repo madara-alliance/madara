@@ -26,7 +26,6 @@ pallet-starknet-runtime-api = { workspace = true, default-features = true }
 
 # Madara client
 mc-db = { workspace = true }
-mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
 mc-sync = { workspace = true }
 
@@ -49,6 +48,10 @@ starknet-providers = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 # Others
 anyhow = { workspace = true }
+cairo-lang-casm-contract-class = { workspace = true }
+flate2 = { workspace = true }
+hex = { workspace = true, default-features = true }
+indexmap = { workspace = true, default-features = true }
 itertools = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
@@ -57,10 +60,17 @@ jsonrpsee = { workspace = true, default-features = true, features = [
 log = { workspace = true, default-features = true }
 mp-block = { workspace = true, default-features = true }
 mp-contract = { workspace = true, default-features = true }
+mp-convert = { workspace = true, default-features = true }
+mp-digest-log = { workspace = true }
+mp-fee = { workspace = true, default-features = true }
 mp-felt = { workspace = true, default-features = true }
 mp-hashers = { workspace = true, default-features = true }
 mp-simulations = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
+num-bigint = { workspace = true }
+serde = { workspace = true, default-features = true }
+serde_json = { workspace = true, default-features = true }
+serde_with = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

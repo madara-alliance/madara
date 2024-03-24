@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- refactor: rpc methods and removed rpc-core
 - feat: add an optional TUI dashboard
 - feat(bonsai): Bumped bonsai lib to latest opti
 - refactor(generic): reduced runtime dependence on generics

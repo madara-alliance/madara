@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use mc_db::{DbError, DeoxysBackend};
-use mc_rpc_core::utils::get_block_by_block_hash;
 use mp_block::DeoxysBlock;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_api::BlockId;
@@ -9,6 +8,7 @@ use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use starknet_api::hash::StarkHash;
 
 use crate::errors::StarknetRpcApiError;
+use crate::utils::get_block_by_block_hash;
 
 pub fn load_hash<C>(client: &C, hash: StarkHash) -> Result<Option<DHashT>, DbError>
 where

@@ -2,20 +2,16 @@ use std::collections::HashMap;
 
 use blockifier::execution::contract_class::{ContractClass, ContractClassV1};
 use blockifier::execution::entry_point::CallInfo;
-use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
-use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_rpc_core::utils::get_block_by_block_hash;
-use mc_rpc_core::{StarknetReadRpcApiServer, StarknetTraceRpcApiServer};
 use mc_storage::StorageOverride;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::{DeclareTransaction, Transaction, TxType, UserOrL1HandlerTransaction, UserTransaction};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -27,19 +23,20 @@ use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::api_core::{ClassHash, ContractAddress};
 use starknet_core::types::{
-    BlockId, BroadcastedTransaction, DeclareTransactionTrace, DeployAccountTransactionTrace, ExecuteInvocation,
-    FeeEstimate, InvokeTransactionTrace, L1HandlerTransactionTrace, RevertedInvocation, SimulatedTransaction,
-    SimulationFlag, TransactionTrace, TransactionTraceWithHash,
+    BlockId, DeclareTransactionTrace, DeployAccountTransactionTrace, ExecuteInvocation, InvokeTransactionTrace,
+    L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace, TransactionTraceWithHash,
 };
 use starknet_ff::FieldElement;
-use thiserror::Error;
 
+use super::lib::*;
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
+use crate::utils::get_block_by_block_hash;
+use crate::{Starknet, StarknetReadRpcApiServer};
 
-#[async_trait]
-#[allow(unused_variables)]
-impl<A, BE, G, C, P, H> StarknetTraceRpcApiServer for Starknet<A, BE, G, C, P, H>
+pub async fn trace_block_transactions<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
+    block_id: BlockId,
+) -> RpcResult<Vec<TransactionTraceWithHash>>
 where
     A: ChainApi<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
@@ -50,203 +47,142 @@ where
     P: TransactionPool<Block = DBlockT> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    async fn simulate_transactions(
-        &self,
-        block_id: BlockId,
-        transactions: Vec<BroadcastedTransaction>,
-        simulation_flags: Vec<SimulationFlag>,
-    ) -> RpcResult<Vec<SimulatedTransaction>> {
-        let substrate_block_hash =
-            self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| StarknetRpcApiError::BlockNotFound)?;
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-        let best_block_hash = self.client.info().best_hash;
+    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
+        error!("Block not found: '{e}'");
+        StarknetRpcApiError::BlockNotFound
+    })?;
 
-        let tx_type_and_tx_iterator = transactions.into_iter().map(|tx| match tx {
-            BroadcastedTransaction::Invoke(invoke_tx) => invoke_tx.try_into().map(|tx| (TxType::Invoke, tx)),
-            BroadcastedTransaction::Declare(declare_tx) => declare_tx.try_into().map(|tx| (TxType::Declare, tx)),
-            BroadcastedTransaction::DeployAccount(deploy_account_tx) => {
-                deploy_account_tx.try_into().map(|tx| (TxType::DeployAccount, tx))
-            }
-        });
-        let (tx_types, user_transactions) =
-            itertools::process_results(tx_type_and_tx_iterator, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>()).map_err(
-                |e| {
-                    error!("Failed to convert BroadcastedTransaction to UserTransaction: {e}");
-                    StarknetRpcApiError::InternalServerError
-                },
-            )?;
+    let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
+        error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
+        StarknetRpcApiError::InternalServerError
+    })?;
+    let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
+    let block_number = starknet_block.header().block_number;
 
-        let simulation_flags = SimulationFlags::from(simulation_flags);
+    let (block_transactions, empty_transactions) =
+        map_transaction_to_user_transaction(starknet, starknet_block, substrate_block_hash, chain_id, None)?;
 
-        let res = self
-            .client
-            .runtime_api()
-            .simulate_transactions(substrate_block_hash, user_transactions, simulation_flags)
-            .map_err(|e| {
-                error!("Request parameters error: {e}");
-                StarknetRpcApiError::InternalServerError
-            })?
-            .map_err(|e| {
-                error!("Failed to call function: {:#?}", e);
-                StarknetRpcApiError::ContractError
-            })?;
+    let previous_block_substrate_hash = get_previous_block_substrate_hash(starknet, substrate_block_hash)?;
 
-        let storage_override = self.overrides.for_block_hash(self.client.as_ref(), substrate_block_hash);
-        let simulated_transactions =
-            tx_execution_infos_to_simulated_transactions(&**storage_override, substrate_block_hash, tx_types, res)
-                .map_err(StarknetRpcApiError::from)?;
-
-        Ok(simulated_transactions)
-    }
-
-    async fn trace_block_transactions(&self, block_id: BlockId) -> RpcResult<Vec<TransactionTraceWithHash>> {
-        let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-            error!("Block not found: '{e}'");
-            StarknetRpcApiError::BlockNotFound
-        })?;
-
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).map_err(|e| {
-            error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
+    let execution_infos = starknet
+        .client
+        .runtime_api()
+        .re_execute_transactions(previous_block_substrate_hash, empty_transactions.clone(), block_transactions.clone())
+        .map_err(|e| {
+            error!("Failed to execute runtime API call: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?
+        .map_err(|e| {
+            error!("Failed to reexecute the block transactions: {e:?}");
+            StarknetRpcApiError::InternalServerError
+        })?
+        .map_err(|_| {
+            error!(
+                "One of the transaction failed during it's reexecution. This should not happen, as the block has \
+                 already been executed successfully in the past. There is a bug somewhere."
+            );
             StarknetRpcApiError::InternalServerError
         })?;
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-        let block_number = starknet_block.header().block_number;
 
-        let (block_transactions, empty_transactions) =
-            map_transaction_to_user_transaction(self, starknet_block, substrate_block_hash, chain_id, None)?;
+    let storage_override = starknet.overrides.for_block_hash(starknet.client.as_ref(), substrate_block_hash);
 
-        let previous_block_substrate_hash = get_previous_block_substrate_hash(self, substrate_block_hash)?;
-
-        let execution_infos = self
-            .client
-            .runtime_api()
-            .re_execute_transactions(
-                previous_block_substrate_hash,
-                empty_transactions.clone(),
-                block_transactions.clone(),
+    let traces = execution_infos
+        .into_iter()
+        .enumerate()
+        .map(|(tx_idx, tx_exec_info)| {
+            tx_execution_infos_to_tx_trace(
+                &**storage_override,
+                substrate_block_hash,
+                // Safe to unwrap coz re_execute returns exactly one ExecutionInfo for each tx
+                TxType::from(block_transactions.get(tx_idx).unwrap()),
+                &tx_exec_info,
             )
-            .map_err(|e| {
-                error!("Failed to execute runtime API call: {e}");
-                StarknetRpcApiError::InternalServerError
-            })?
-            .map_err(|e| {
-                error!("Failed to reexecute the block transactions: {e:?}");
-                StarknetRpcApiError::InternalServerError
-            })?
-            .map_err(|_| {
-                error!(
-                    "One of the transaction failed during it's reexecution. This should not happen, as the block has \
-                     already been executed successfully in the past. There is a bug somewhere."
-                );
-                StarknetRpcApiError::InternalServerError
-            })?;
-
-        let storage_override = self.overrides.for_block_hash(self.client.as_ref(), substrate_block_hash);
-
-        let traces = execution_infos
-            .into_iter()
-            .enumerate()
-            .map(|(tx_idx, tx_exec_info)| {
-                tx_execution_infos_to_tx_trace(
-                    &**storage_override,
-                    substrate_block_hash,
-                    // Safe to unwrap coz re_execute returns exactly one ExecutionInfo for each tx
-                    TxType::from(block_transactions.get(tx_idx).unwrap()),
-                    &tx_exec_info,
-                )
-                .map(|trace_root| TransactionTraceWithHash {
-                    transaction_hash: block_transactions[tx_idx]
-                        .compute_hash::<H>(chain_id, false, Some(block_number))
-                        .into(),
-                    trace_root,
-                })
+            .map(|trace_root| TransactionTraceWithHash {
+                transaction_hash: block_transactions[tx_idx]
+                    .compute_hash::<H>(chain_id, false, Some(block_number))
+                    .into(),
+                trace_root,
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(StarknetRpcApiError::from)?;
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StarknetRpcApiError::from)?;
 
-        Ok(traces)
-    }
-
-    async fn trace_transaction(&self, transaction_hash: FieldElement) -> RpcResult<TransactionTraceWithHash> {
-        let substrate_block_hash = DeoxysBackend::mapping()
-            .block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
-            .map_err(|e| {
-                error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
-                StarknetRpcApiError::TxnHashNotFound
-            })?
-            .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-
-        let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash)?;
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-        let transaction_hash_to_trace: Felt252Wrapper = transaction_hash.into();
-
-        let (txs_to_execute_before, tx_to_trace) = map_transaction_to_user_transaction(
-            self,
-            starknet_block,
-            substrate_block_hash,
-            chain_id,
-            Some(transaction_hash_to_trace),
-        )?;
-
-        let previous_block_substrate_hash = get_previous_block_substrate_hash(self, substrate_block_hash)?;
-
-        let execution_infos = self
-            .client
-            .runtime_api()
-            .re_execute_transactions(previous_block_substrate_hash, txs_to_execute_before.clone(), tx_to_trace.clone())
-            .map_err(|e| {
-                error!("Failed to execute runtime API call: {e}");
-                StarknetRpcApiError::InternalServerError
-            })?
-            .map_err(|e| {
-                error!("Failed to reexecute the block transactions: {e:?}");
-                StarknetRpcApiError::InternalServerError
-            })?
-            .map_err(|_| {
-                error!(
-                    "One of the transaction failed during it's reexecution. This should not happen, as the block has \
-                     already been executed successfully in the past. There is a bug somewhere."
-                );
-                StarknetRpcApiError::InternalServerError
-            })?;
-
-        let storage_override = self.overrides.for_block_hash(self.client.as_ref(), substrate_block_hash);
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-
-        let trace = tx_execution_infos_to_tx_trace(
-            &**storage_override,
-            substrate_block_hash,
-            TxType::from(tx_to_trace.get(0).unwrap()),
-            &execution_infos[0],
-        )
-        .unwrap();
-
-        let tx_trace = TransactionTraceWithHash { transaction_hash, trace_root: trace };
-
-        Ok(tx_trace)
-    }
+    Ok(traces)
 }
 
-#[derive(Error, Debug)]
-pub enum ConvertCallInfoToExecuteInvocationError {
-    #[error("One of the simulated transaction failed")]
-    TransactionExecutionFailed,
-    #[error(transparent)]
-    GetFunctionInvocation(#[from] TryFuntionInvocationFromCallInfoError),
+pub async fn trace_transaction<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
+    transaction_hash: FieldElement,
+) -> RpcResult<TransactionTraceWithHash>
+where
+    A: ChainApi<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
+    G: GenesisProvider + Send + Sync + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    H: HasherT + Send + Sync + 'static,
+{
+    let substrate_block_hash = DeoxysBackend::mapping()
+        .block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
+        .map_err(|e| {
+            error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
+            StarknetRpcApiError::TxnHashNotFound
+        })?
+        .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+
+    let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
+    let transaction_hash_to_trace: Felt252Wrapper = transaction_hash.into();
+
+    let (txs_to_execute_before, tx_to_trace) = map_transaction_to_user_transaction(
+        starknet,
+        starknet_block,
+        substrate_block_hash,
+        chain_id,
+        Some(transaction_hash_to_trace),
+    )?;
+
+    let previous_block_substrate_hash = get_previous_block_substrate_hash(starknet, substrate_block_hash)?;
+
+    let execution_infos = starknet
+        .client
+        .runtime_api()
+        .re_execute_transactions(previous_block_substrate_hash, txs_to_execute_before.clone(), tx_to_trace.clone())
+        .map_err(|e| {
+            error!("Failed to execute runtime API call: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?
+        .map_err(|e| {
+            error!("Failed to reexecute the block transactions: {e:?}");
+            StarknetRpcApiError::InternalServerError
+        })?
+        .map_err(|_| {
+            error!(
+                "One of the transaction failed during it's reexecution. This should not happen, as the block has \
+                 already been executed successfully in the past. There is a bug somewhere."
+            );
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+    let storage_override = starknet.overrides.for_block_hash(starknet.client.as_ref(), substrate_block_hash);
+    let _chain_id = Felt252Wrapper(starknet.chain_id()?.0);
+
+    let trace = tx_execution_infos_to_tx_trace(
+        &**storage_override,
+        substrate_block_hash,
+        TxType::from(tx_to_trace.get(0).unwrap()),
+        &execution_infos[0],
+    )
+    .unwrap();
+
+    let tx_trace = TransactionTraceWithHash { transaction_hash, trace_root: trace };
+
+    Ok(tx_trace)
 }
 
-impl From<ConvertCallInfoToExecuteInvocationError> for StarknetRpcApiError {
-    fn from(err: ConvertCallInfoToExecuteInvocationError) -> Self {
-        match err {
-            ConvertCallInfoToExecuteInvocationError::TransactionExecutionFailed => StarknetRpcApiError::ContractError,
-            ConvertCallInfoToExecuteInvocationError::GetFunctionInvocation(_) => {
-                StarknetRpcApiError::InternalServerError
-            }
-        }
-    }
-}
-
-fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core::types::OrderedMessage> {
+pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core::types::OrderedMessage> {
     call_info
         .execution
         .l2_to_l1_messages
@@ -291,14 +227,6 @@ fn blockifier_to_starknet_rs_ordered_events(
                 .collect(),
         })
         .collect()
-}
-
-#[derive(Error, Debug)]
-pub enum TryFuntionInvocationFromCallInfoError {
-    #[error(transparent)]
-    TransactionExecution(#[from] TransactionExecutionError),
-    #[error("No contract found at the Call contract_address")]
-    ContractNotFound,
 }
 
 fn try_get_funtion_invocation_from_call_info<B: BlockT>(
@@ -371,7 +299,7 @@ fn try_get_funtion_invocation_from_call_info<B: BlockT>(
     })
 }
 
-fn tx_execution_infos_to_tx_trace<B: BlockT>(
+pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
     storage_override: &dyn StorageOverride<B>,
     substrate_block_hash: B::Hash,
     tx_type: TxType,
@@ -460,40 +388,6 @@ fn tx_execution_infos_to_tx_trace<B: BlockT>(
     };
 
     Ok(tx_trace)
-}
-
-fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
-    storage_override: &dyn StorageOverride<B>,
-    substrate_block_hash: B::Hash,
-    tx_types: Vec<TxType>,
-    transaction_execution_results: Vec<
-        Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>,
-    >,
-) -> Result<Vec<SimulatedTransaction>, ConvertCallInfoToExecuteInvocationError> {
-    let mut results = vec![];
-    for (tx_type, res) in tx_types.into_iter().zip(transaction_execution_results.into_iter()) {
-        match res {
-            Ok(tx_exec_info) => {
-                let transaction_trace =
-                    tx_execution_infos_to_tx_trace(storage_override, substrate_block_hash, tx_type, &tx_exec_info)?;
-                let gas_consumed =
-                    tx_exec_info.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
-                let overall_fee = tx_exec_info.actual_fee.0 as u64;
-                // TODO: Shouldn't the gas price be taken from the block header instead?
-                let gas_price = if gas_consumed > 0 { overall_fee / gas_consumed } else { 0 };
-
-                results.push(SimulatedTransaction {
-                    transaction_trace,
-                    fee_estimation: FeeEstimate { gas_consumed, gas_price, overall_fee },
-                });
-            }
-            Err(_) => {
-                return Err(ConvertCallInfoToExecuteInvocationError::TransactionExecutionFailed);
-            }
-        }
-    }
-
-    Ok(results)
 }
 
 fn map_transaction_to_user_transaction<A, BE, G, C, P, H>(

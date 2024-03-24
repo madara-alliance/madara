@@ -5,7 +5,6 @@ members = [
   "crates/client/genesis-data-provider",
   "crates/client/mapping-sync",
   "crates/client/rpc",
-  "crates/client/rpc-core",
   "crates/client/storage",
   "crates/node",
   "crates/pallets/starknet",
@@ -35,7 +34,6 @@ default-members = [
   "crates/client/genesis-data-provider",
   "crates/client/mapping-sync",
   "crates/client/rpc",
-  "crates/client/rpc-core",
   "crates/client/storage",
   "crates/node",
   "crates/pallets/starknet",
@@ -249,7 +247,6 @@ mc-db = { path = "crates/client/db" }
 mc-genesis-data-provider = { path = "crates/client/genesis-data-provider" }
 mc-mapping-sync = { path = "crates/client/mapping-sync" }
 mc-rpc = { path = "crates/client/rpc" }
-mc-rpc-core = { path = "crates/client/rpc-core" }
 mc-storage = { path = "crates/client/storage" }
 mc-sync = { path = "crates/client/sync" }
 

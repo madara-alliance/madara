@@ -3,10 +3,9 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
+use log::error;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_rpc_core::utils::get_block_by_block_hash;
-use mc_rpc_core::Felt;
 use mc_sync::l2::get_pending_block;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
@@ -22,7 +21,7 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::api_core::ClassHash;
 use starknet_core::types::{
-    BlockId, DeclareTransactionReceipt, DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult,
+    BlockId, BlockTag, DeclareTransactionReceipt, DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult,
     FieldElement, Hash256, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MaybePendingTransactionReceipt,
     PendingDeclareTransactionReceipt, PendingDeployAccountTransactionReceipt, PendingInvokeTransactionReceipt,
     PendingL1HandlerTransactionReceipt, PendingTransactionReceipt, TransactionFinalityStatus, TransactionReceipt,
@@ -31,11 +30,11 @@ use starknet_core::types::{
 use crate::errors::StarknetRpcApiError;
 use crate::utils::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
-    tx_hash_compute, tx_hash_retrieve,
+    get_block_by_block_hash, tx_hash_compute, tx_hash_retrieve,
 };
-use crate::Starknet;
+use crate::{Felt, Starknet, StarknetReadRpcApiServer};
 
-pub(crate) fn get_transaction_receipt_finalized<A, BE, G, C, P, H>(
+fn get_transaction_receipt_finalized<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
     substrate_block_hash: DHashT,
@@ -180,7 +179,7 @@ where
     Ok(MaybePendingTransactionReceipt::Receipt(receipt))
 }
 
-pub(crate) fn get_transaction_receipt_pending<A, BE, G, C, P, H>(
+fn get_transaction_receipt_pending<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
     substrate_block_hash: DHashT,
@@ -526,4 +525,65 @@ where
         })?;
 
     Ok(execution_infos)
+}
+
+/// Get the transaction receipt by the transaction hash.
+///
+/// This function retrieves the transaction receipt for a specific transaction identified by its
+/// hash. The transaction receipt includes information about the execution status of the
+/// transaction, events generated during its execution, and other relevant details.
+///
+/// ### Arguments
+///
+/// * `transaction_hash` - The hash of the requested transaction. This parameter specifies the
+///   transaction for which the receipt is requested.
+///
+/// ### Returns
+///
+/// Returns a transaction receipt, which can be one of two types:
+/// - `TransactionReceipt` if the transaction has been processed and has a receipt.
+/// - `PendingTransactionReceipt` if the transaction is pending and the receipt is not yet
+///   available.
+///
+/// ### Errors
+///
+/// The function may return a `TXN_HASH_NOT_FOUND` error if the specified transaction hash is
+/// not found.
+pub async fn get_transaction_receipt<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
+    transaction_hash: FieldElement,
+) -> RpcResult<MaybePendingTransactionReceipt>
+where
+    A: ChainApi<Block = DBlockT> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+    G: GenesisProvider + Send + Sync + 'static,
+    H: HasherT + Send + Sync + 'static,
+{
+    let substrate_block_hash = DeoxysBackend::mapping()
+        .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
+        .map_err(|e| {
+            log::error!("Failed to retrieve substrate block hash: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+    let chain_id = starknet.chain_id()?;
+
+    match substrate_block_hash {
+        Some(substrate_block_hash) => {
+            get_transaction_receipt_finalized(starknet, chain_id, substrate_block_hash, transaction_hash)
+        }
+        None => {
+            let substrate_block_hash =
+                starknet.substrate_block_hash_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
+                    error!("'{e}'");
+                    StarknetRpcApiError::BlockNotFound
+                })?;
+
+            get_transaction_receipt_pending(starknet, chain_id, substrate_block_hash, transaction_hash)
+        }
+    }
 }
