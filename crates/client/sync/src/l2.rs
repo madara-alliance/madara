@@ -303,7 +303,7 @@ pub fn verify_l2(
     );
     log::debug!("state_root: {state_root:?}");
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
-    println!("update_state_root {} -- block_hash: {block_hash:?}, state_root: {state_root:?}", block_number);
+    log::info!("update_state_root {} -- block_hash: {block_hash:?}, state_root: {state_root:?}", block_number);
 
     update_l2(L2StateUpdate {
         block_number,
