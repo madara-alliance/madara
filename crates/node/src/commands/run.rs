@@ -125,8 +125,8 @@ pub struct ExtendedRunCmd {
     /// Disable root verification
     #[clap(long)]
     pub disable_root: bool,
-  
-     /// A flag to run the TUI dashboard
+
+    /// A flag to run the TUI dashboard
     #[cfg(feature = "tui")]
     #[clap(long)]
     pub tui: bool,
