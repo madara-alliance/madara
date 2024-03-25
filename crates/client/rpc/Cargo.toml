@@ -48,7 +48,6 @@ starknet-providers = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 # Others
 anyhow = { workspace = true }
-cairo-lang-casm-contract-class = { workspace = true }
 flate2 = { workspace = true }
 hex = { workspace = true, default-features = true }
 indexmap = { workspace = true, default-features = true }

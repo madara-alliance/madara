@@ -8,8 +8,8 @@ version.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 blockifier = { workspace = true }
-cairo-lang-casm-contract-class = { workspace = true }
 cairo-lang-starknet = { workspace = true }
+cairo-lang-starknet-classes = { workspace = true }
 cairo-lang-utils = { workspace = true }
 cairo-vm = { workspace = true }
 flate2 = { workspace = true }

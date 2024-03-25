@@ -34,9 +34,7 @@ starknet-types-core = { workspace = true, default-features = false, features = [
   "hash",
   "parity-scale-codec",
 ] }
-starknet_api = { workspace = true, default-features = true, features = [
-  "parity-scale-codec",
-] }
+starknet_api = { workspace = true, default-features = true }
 
 # Other crates
 ethers = { workspace = true }

@@ -6,11 +6,10 @@ use anyhow::anyhow;
 use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
 };
-use cairo_lang_casm_contract_class::CasmContractClass;
-use cairo_lang_starknet::contract_class::{
-    ContractClass as SierraContractClass, ContractEntryPoint, ContractEntryPoints,
-};
-use cairo_lang_starknet::contract_class_into_casm_contract_class::StarknetSierraCompilationError;
+use cairo_lang_starknet_classes::casm_contract_class::CasmContractClass;
+use cairo_lang_starknet_classes::contract_class::{ContractClass as SierraContractClass, ContractEntryPoint, ContractEntryPoints};
+
+use cairo_lang_starknet_classes::casm_contract_class::StarknetSierraCompilationError;
 use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
@@ -18,7 +17,7 @@ use flate2::write::GzEncoder;
 use indexmap::IndexMap;
 use mp_felt::Felt252Wrapper;
 use num_bigint::{BigInt, BigUint, Sign};
-use starknet_api::api_core::EntryPointSelector;
+use starknet_api::core::EntryPointSelector;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{

@@ -26,7 +26,6 @@ scale-info = { workspace = true, features = ["derive"], optional = true }
 [features]
 default = ["std"]
 parity-scale-codec = [
-  "blockifier/parity-scale-codec",
   "dep:parity-scale-codec",
   "starknet_api/parity-scale-codec",
 ]
@@ -36,8 +35,6 @@ scale-info = [
   "starknet_api/scale-info",
 ]
 std = [
-  "blockifier/std",
-  "starknet_api/std",
   # Optionals
   "anyhow/std",
   "mp-convert/std",

@@ -109,10 +109,8 @@ std = [
   "sp-transaction-pool/std",
   "sp-version/std",
   # 3rd party dependencies
-  "blockifier/std",
   "parity-scale-codec/std",
   "scale-info/std",
-  "starknet_api/std",
 ]
 try-runtime = [
   "frame-executive/try-runtime",
