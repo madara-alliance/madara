@@ -43,20 +43,14 @@ pub fn update_storage_trie(
     bonsai_contract_storage: &mut BonsaiStorage<BasicId, BonsaiDb, Pedersen>,
 ) {
     let identifier = identifier(contract_address);
-    let start = std::time::Instant::now();
     bonsai_contract_storage.init_tree(identifier).expect("Failed to init tree");
-    log::debug!("storage_updates bonsai_contract_storage.init_tree: {:?}", std::time::Instant::now() - start);
 
     // Insert new storage changes
     for (key, value) in storage_updates {
-        let start = std::time::Instant::now();
         let (key, value) = convert_storage(*key, *value);
-        log::debug!("storage_updates convert_storage: {:?}", std::time::Instant::now() - start);
-        let start = std::time::Instant::now();
         bonsai_contract_storage
             .insert(identifier, &key, &value.into())
             .expect("Failed to insert storage update into trie");
-        log::debug!("storage_updates bonsai_contract_storage.insert: {:?}", std::time::Instant::now() - start);
     }
 }
 

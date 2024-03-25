@@ -194,19 +194,13 @@ pub async fn sync<C>(
         } => {},
         // fetch blocks and updates in parallel
         _ = fetch_stream.for_each(|val| async {
-            log::debug!("fetch block new!");
-            let start = std::time::Instant::now();
             fetch_stream_sender.send(val).await.expect("receiver is closed");
-            log::debug!("fetch_stream_sender.send: {:?}", std::time::Instant::now() - start);
         }) => {},
         // apply blocks and updates sequentially
         _ = async {
             let mut block_n = first_block;
-            log::debug!("block_n {first_block}");
             while let Some(val) = pin!(fetch_stream_receiver.recv()).await {
-                log::debug!("some now");
                 if matches!(val, Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))) {
-                    log::debug!("found the last block");
                     break;
                 }
 
@@ -223,7 +217,6 @@ pub async fn sync<C>(
                     let state_update = Arc::new(state_update);
                     let state_update_1 = Arc::clone(&state_update);
 
-                    log::debug!("spawn_compute");
                     let block_conv = spawn_compute(move || {
                         let convert_block = |block| {
                             let start = std::time::Instant::now();
@@ -251,7 +244,6 @@ pub async fn sync<C>(
                 };
 
                 let block_sender = &*block_sender;
-                log::debug!("join");
                 tokio::join!(
                     async move {
                         block_sender.send(block_conv).await.expect("block reciever channel is closed");
@@ -277,7 +269,6 @@ pub async fn sync<C>(
                 create_block(command_sink, &mut last_block_hash).await.expect("creating block");
                 log::debug!("end create_block: {:?}", std::time::Instant::now() - start);
                 block_n += 1;
-                log::debug!("enddd");
             }
         } => {},
     );

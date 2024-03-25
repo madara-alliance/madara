@@ -221,21 +221,13 @@ fn contract_trie_root(
     let identifier = bonsai_identifier::CONTRACT;
     bonsai_contract.init_tree(identifier)?;
 
-    let start1 = std::time::Instant::now();
-
-    let start = std::time::Instant::now();
     // First we insert the contract storage changes
     for (contract_address, updates) in csd.storage_updates.iter() {
         update_storage_trie(contract_address, updates, bonsai_contract_storage);
     }
-    log::debug!("contract_trie_root update_storage_trie: {:?}", std::time::Instant::now() - start);
-
     // Then we commit them
-    let start = std::time::Instant::now();
     bonsai_contract_storage.commit(BasicId::new(block_number))?;
-    log::debug!("contract_trie_root bonsai_contract_storage.commit: {:?}", std::time::Instant::now() - start);
 
-    let start = std::time::Instant::now();
     // Then we compute the leaf hashes retrieving the corresponding storage root
     let bonsai_contract_storage = &*bonsai_contract_storage; // downgrade `&mut` to `&`
     let updates = csd
@@ -246,19 +238,13 @@ fn contract_trie_root(
             contract_state_leaf_hash(csd, &overrides, contract_address.0, maybe_block_hash, &bonsai_contract_storage)
         })
         .collect::<Result<Vec<_>, BonsaiStorageError<BonsaiDbError>>>()?;
-    log::debug!("contract_trie_root updates: {:?}", std::time::Instant::now() - start);
 
-    let start = std::time::Instant::now();
     for (contract_address, class_commitment_leaf_hash) in csd.storage_updates.iter().zip(updates) {
         let key = key(contract_address.0.0.0);
         bonsai_contract.insert(identifier, &key, &class_commitment_leaf_hash.into())?;
     }
-    log::debug!("contract_trie_root bonsai_contract.commit: {:?}", std::time::Instant::now() - start);
 
-    let start = std::time::Instant::now();
     bonsai_contract.commit(BasicId::new(block_number))?;
-    log::debug!("contract_trie_root bonsai_contract.commit: {:?}", std::time::Instant::now() - start);
-    log::debug!("contract_trie_root: {:?}", std::time::Instant::now() - start1);
     Ok(bonsai_contract.root_hash(identifier)?.into())
 }
 
