@@ -24,6 +24,7 @@ members = [
   "crates/primitives/state",
   "crates/primitives/storage",
   "crates/primitives/transactions",
+  "crates/primitives/types",
   "crates/runtime",
 ]
 resolver = "2"
@@ -51,6 +52,7 @@ default-members = [
   "crates/primitives/state",
   "crates/primitives/storage",
   "crates/primitives/transactions",
+  "crates/primitives/types",
   "crates/runtime",
 ]
 
@@ -241,6 +243,7 @@ mp-simulations = { path = "crates/primitives/simulations", default-features = fa
 mp-state = { path = "crates/primitives/state", default-features = false }
 mp-storage = { path = "crates/primitives/storage", default-features = false }
 mp-transactions = { path = "crates/primitives/transactions", default-features = false }
+mp-types = { path = "crates/primitives/types", default-features = false }
 
 # Madara client
 mc-db = { path = "crates/client/db" }

@@ -6422,6 +6422,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mp-types"
+version = "0.1.0"
+dependencies = [
+ "pallet-starknet",
+ "sp-core",
+ "sp-runtime",
+]
+
+[[package]]
 name = "multiaddr"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
