@@ -54,7 +54,8 @@ pub fn to_contract_class_cairo(
     contract_class: &ContractClassV0,
     abi: Option<Vec<LegacyContractAbiEntry>>,
 ) -> anyhow::Result<ContractClassCore> {
-    let entry_points_by_type = to_legacy_entry_points_by_type(&contract_class.entry_points_by_type)?;
+    let entry_points_by_type: HashMap<_, _> = contract_class.entry_points_by_type.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let entry_points_by_type = to_legacy_entry_points_by_type(&entry_points_by_type)?;
     let compressed_program = compress(&contract_class.program.to_bytes())?;
     Ok(ContractClassCore::Legacy(CompressedLegacyContractClass {
         program: compressed_program,

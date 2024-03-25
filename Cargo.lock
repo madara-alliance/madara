@@ -6512,6 +6512,7 @@ dependencies = [
  "indexmap 2.0.0-pre",
  "lazy_static",
  "log",
+ "mp-fee",
  "mp-felt",
  "mp-hashers",
  "mp-state",

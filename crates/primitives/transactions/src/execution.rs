@@ -5,18 +5,15 @@ use alloc::vec::Vec;
 
 use blockifier::abi::abi_utils::selector_from_name;
 use blockifier::abi::constants::{INITIAL_GAS_COST, TRANSACTION_GAS_COST};
-use blockifier::block_context::BlockContext;
-use blockifier::execution::entry_point::{
-    CallEntryPoint, CallInfo, CallType, EntryPointExecutionContext, ExecutionResources,
-};
+use blockifier::context::BlockContext;
+use blockifier::execution::call_info::CallInfo;
+use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
 use blockifier::state::state_api::State;
 use blockifier::transaction::constants::{
     VALIDATE_DECLARE_ENTRY_POINT_NAME, VALIDATE_DEPLOY_ENTRY_POINT_NAME, VALIDATE_ENTRY_POINT_NAME,
 };
 use blockifier::transaction::errors::TransactionExecutionError;
-use blockifier::transaction::objects::{
-    AccountTransactionContext, ResourcesMapping, TransactionExecutionInfo, TransactionExecutionResult,
-};
+use blockifier::transaction::objects::{ResourcesMapping, TransactionExecutionInfo, TransactionExecutionResult};
 use blockifier::transaction::transaction_types::TransactionType;
 use blockifier::transaction::transaction_utils::{update_remaining_gas, verify_no_calls_to_other_contracts};
 use blockifier::transaction::transactions::{
@@ -25,7 +22,7 @@ use blockifier::transaction::transactions::{
 use mp_fee::{calculate_tx_fee, charge_fee, compute_transaction_resources};
 use mp_felt::Felt252Wrapper;
 use mp_state::StateChanges;
-use starknet_api::api_core::{ContractAddress, EntryPointSelector, Nonce};
+use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{Calldata, Fee, TransactionSignature, TransactionVersion};

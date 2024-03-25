@@ -15,6 +15,7 @@ blockifier = { workspace = true }
 derive_more = { workspace = true, features = ["from"] }
 lazy_static = { workspace = true }
 log = { workspace = true }
+mp-fee = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-state = { workspace = true }
@@ -52,7 +53,7 @@ std = [
   "starknet-core/std",
   "mp-state/std",
   "mp-hashers/std",
-  "mp-felt/std",
+  "mp-felt/std",  
   # Optional
   "parity-scale-codec?/std",
   "scale-info?/std",
