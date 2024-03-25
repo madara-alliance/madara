@@ -70,6 +70,7 @@ starknet-types-core = { workspace = true, default-features = false, features = [
   "parity-scale-codec",
 ] }
 thiserror.workspace = true
+rayon = "1.10.0"
 
 [dev-dependencies]
 # test_utils = { path = "./test_utils" }

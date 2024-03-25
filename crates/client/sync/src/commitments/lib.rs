@@ -17,6 +17,7 @@ use mp_hashers::poseidon::PoseidonHasher;
 use mp_hashers::HasherT;
 use mp_storage::StarknetStorageSchemaVersion::Undefined;
 use mp_transactions::Transaction;
+use rayon::prelude::*;
 use sp_core::H256;
 use sp_runtime::generic::{Block, Header};
 use sp_runtime::traits::BlakeTwo256;
@@ -214,20 +215,24 @@ fn contract_trie_root(
     bonsai_contract.init_tree(identifier)?;
 
     // First we insert the contract storage changes
-    // TODO: @cchudant parallelize this loop
-    for (contract_address, updates) in csd.storage_updates.iter() {
-        update_storage_trie(contract_address, updates, &bonsai_contract_storage);
-    }
+    csd.storage_updates.iter().par_bridge().for_each(|(contract_address, updates)| {
+        update_storage_trie(contract_address, updates, &bonsai_contract_storage)
+    });
 
     // Then we commit them
     bonsai_contract_storage.lock().unwrap().commit(BasicId::new(block_number))?;
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
-    // TODO: @cchudant parallelize this loop
-    for contract_address in csd.storage_updates.iter() {
-        let class_commitment_leaf_hash =
-            contract_state_leaf_hash(csd, &overrides, contract_address.0, maybe_block_hash, &bonsai_contract_storage)?;
+    let updates = csd
+        .storage_updates
+        .iter()
+        .par_bridge()
+        .map(|contract_address| {
+            contract_state_leaf_hash(csd, &overrides, contract_address.0, maybe_block_hash, &bonsai_contract_storage)
+        })
+        .collect::<Result<Vec<_>, BonsaiStorageError<BonsaiDbError>>>()?;
 
+    for (contract_address, class_commitment_leaf_hash) in csd.storage_updates.iter().zip(updates) {
         let key = key(contract_address.0.0.0);
         bonsai_contract.insert(identifier, &key, &class_commitment_leaf_hash.into())?;
     }
@@ -294,10 +299,15 @@ fn class_trie_root(
     let identifier = bonsai_identifier::CLASS;
     bonsai_class.init_tree(identifier)?;
 
-    // TODO: @cchudant parallelize this loop
-    for (class_hash, compiled_class_hash) in csd.class_hash_to_compiled_class_hash.iter() {
-        let class_commitment_leaf_hash =
-            calculate_class_commitment_leaf_hash::<PoseidonHasher>(Felt252Wrapper::from(compiled_class_hash.0));
+    let updates = csd
+        .class_hash_to_compiled_class_hash
+        .values()
+        .par_bridge()
+        .map(|compiled_class_hash| {
+            calculate_class_commitment_leaf_hash::<PoseidonHasher>(Felt252Wrapper::from(compiled_class_hash.0))
+        })
+        .collect::<Vec<_>>();
+    for (class_hash, class_commitment_leaf_hash) in csd.class_hash_to_compiled_class_hash.keys().zip(updates) {
         let key = key(class_hash.0);
         bonsai_class.insert(identifier, key.as_bitslice(), &class_commitment_leaf_hash.into())?;
     }
