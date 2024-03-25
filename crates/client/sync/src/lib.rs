@@ -36,7 +36,7 @@ pub mod starknet_sync_worker {
         l1_url: Url,
         client: Arc<C>,
     ) where
-        C: HeaderBackend<DBlockT>,
+        C: HeaderBackend<DBlockT> + 'static,
     {
         let first_block = utility::get_last_synced_block(rpc_port).await + 1;
 

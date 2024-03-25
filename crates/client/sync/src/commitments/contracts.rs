@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::BitView;
@@ -42,20 +40,27 @@ pub struct ContractLeafParams {
 pub fn update_storage_trie(
     contract_address: &ContractAddress,
     storage_updates: &IndexMap<StorageKey, StarkFelt>,
-    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_contract_storage: &mut BonsaiStorage<BasicId, BonsaiDb, Pedersen>,
 ) {
-    let mut bonsai_storage = bonsai_contract_storage.lock().unwrap();
     let identifier = identifier(contract_address);
-    bonsai_storage.init_tree(identifier).expect("Failed to init tree");
+    let start = std::time::Instant::now();
+    bonsai_contract_storage.init_tree(identifier).expect("Failed to init tree");
+    log::debug!("storage_updates bonsai_contract_storage.init_tree: {:?}", std::time::Instant::now() - start);
 
     // Insert new storage changes
-    storage_updates.into_iter().map(|(key, value)| convert_storage((*key, *value))).for_each(|(key, value)| {
-        bonsai_storage.insert(identifier, &key, &value.into()).expect("Failed to insert storage update into trie");
-    });
+    for (key, value) in storage_updates {
+        let start = std::time::Instant::now();
+        let (key, value) = convert_storage(*key, *value);
+        log::debug!("storage_updates convert_storage: {:?}", std::time::Instant::now() - start);
+        let start = std::time::Instant::now();
+        bonsai_contract_storage
+            .insert(identifier, &key, &value.into())
+            .expect("Failed to insert storage update into trie");
+        log::debug!("storage_updates bonsai_contract_storage.insert: {:?}", std::time::Instant::now() - start);
+    }
 }
 
-fn convert_storage(storage: (StorageKey, StarkFelt)) -> (BitVec<u8, Msb0>, Felt252Wrapper) {
-    let (storage_key, storage_value) = storage;
+fn convert_storage(storage_key: StorageKey, storage_value: StarkFelt) -> (BitVec<u8, Msb0>, Felt252Wrapper) {
     let key = Felt252Wrapper::from(storage_key.0.0).0.to_bytes_be().view_bits()[5..].to_owned();
     let value = Felt252Wrapper::from(storage_value);
 

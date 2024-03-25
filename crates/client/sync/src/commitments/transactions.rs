@@ -10,7 +10,7 @@ use mp_transactions::Transaction;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
-use tokio::task::{spawn_blocking, JoinSet};
+use rayon::prelude::*;
 
 use crate::utils::constant::bonsai_identifier;
 
@@ -66,7 +66,7 @@ where
 /// # Returns
 ///
 /// The transaction commitment as `Felt252Wrapper`.
-pub async fn memory_transaction_commitment(
+pub fn memory_transaction_commitment(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
@@ -79,16 +79,12 @@ pub async fn memory_transaction_commitment(
     let identifier = bonsai_identifier::TRANSACTION;
 
     // transaction hashes are computed in parallel
-    let mut task_set = JoinSet::new();
-    transactions.iter().cloned().enumerate().for_each(|(i, tx)| {
-        task_set.spawn(async move {
-            (i, calculate_transaction_hash_with_signature::<PedersenHasher>(&tx, chain_id, block_number))
-        });
-    });
+    let txs = transactions.par_iter().map(|tx| {
+        calculate_transaction_hash_with_signature::<PedersenHasher>(&tx, chain_id, block_number)
+    }).collect::<Vec<_>>();
 
     // once transaction hashes have finished computing, they are inserted into the local Bonsai db
-    while let Some(res) = task_set.join_next().await {
-        let (i, tx_hash) = res.map_err(|e| format!("Failed to retrieve transaction hash: {e}"))?;
+    for (i, tx_hash) in txs.into_iter().enumerate() {
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
         let value = Felt::from(Felt252Wrapper::from(tx_hash));
         bonsai_storage.insert(identifier, key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
@@ -97,13 +93,8 @@ pub async fn memory_transaction_commitment(
     let mut id_builder = BasicIdBuilder::new();
     let id = id_builder.new_id();
 
-    // run in a blocking-safe thread to avoid starving the thread pool
-    let root_hash = spawn_blocking(move || {
-        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        bonsai_storage.root_hash(identifier).expect("Failed to get root hash")
-    })
-    .await
-    .map_err(|e| format!("Failed to computed transaction root hash: {e}"))?;
+    bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+    let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
     Ok(Felt252Wrapper::from(root_hash))
 }

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
-use futures::{stream, StreamExt};
+use futures::prelude::*;
 use lazy_static::lazy_static;
 use mc_db::bonsai_db::BonsaiDb;
 use mc_storage::OverrideHandle;
@@ -29,13 +29,27 @@ use starknet_types_core::hash::{Pedersen, Poseidon};
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
-use tokio::time::{Duration, Instant};
+use tokio::time::Duration;
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
 use crate::fetch::fetchers::{fetch_block_and_updates, FetchConfig};
 use crate::l1::ETHEREUM_STATE_UPDATE;
 use crate::utility::block_hash_substrate;
 use crate::CommandSink;
+
+async fn spawn_compute<F, R>(func: F) -> R
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    rayon::spawn(move || {
+        let _result = tx.send(func());
+    });
+
+    rx.await.expect("tokio channel closed")
+}
 
 // TODO: add more error variants, which are more explicit
 #[derive(Error, Debug)]
@@ -136,14 +150,14 @@ pub async fn sync<C>(
     bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
     client: Arc<C>,
 ) where
-    C: HeaderBackend<DBlockT>,
+    C: HeaderBackend<DBlockT> + 'static,
 {
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
-    let provider = SequencerGatewayProvider::new(
+    let provider = Arc::new(SequencerGatewayProvider::new(
         fetch_config.gateway.clone(),
         fetch_config.feeder_gateway.clone(),
         fetch_config.chain_id,
-    );
+    ));
     let mut last_block_hash = None;
 
     // TODO: move this somewhere else
@@ -154,36 +168,45 @@ pub async fn sync<C>(
             .expect("verifying genesis block");
     }
 
-    let fetch_stream =
-        (first_block..).map(|block_n| fetch_block_and_updates(block_n, &provider, overrides, client.as_ref()));
+    let fetch_stream = (first_block..).map(|block_n| {
+        let provider = Arc::clone(&provider);
+        let overrides = Arc::clone(overrides);
+        let client = Arc::clone(&client);
+        async move {
+            tokio::spawn(fetch_block_and_updates(block_n, provider, overrides, client)).await.expect("tokio join error")
+        }
+    });
     // Have 10 fetches in parallel at once, using futures Buffered
-    let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
+    let fetch_stream = stream::iter(fetch_stream).buffered(10);
     let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(10);
 
-    let mut instant = Instant::now();
-
     tokio::select!(
-        // fetch blocks and updates in parallel
+        // update highest block hash and number
         _ = async {
-            // FIXME: make it cleaner by replacing this with tokio_util::sync::PollSender to make the channel a
-            // Sink and have the fetch Stream pipe into it
-            while let Some(val) = pin!(fetch_stream.next()).await {
-                fetch_stream_sender.send(val).await.expect("receiver is closed");
-
-                // tries to update the pending starknet block every 2s
-                if instant.elapsed() >= Duration::from_secs(2) {
-                    if let Err(e) = update_starknet_data(&provider, client.as_ref()).await {
-                        log::error!("Failed to update highest block hash and number: {}", e);
-                    }
-                    instant = Instant::now();
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                if let Err(e) = update_starknet_data(&provider, client.as_ref()).await {
+                    log::error!("Failed to update highest block hash and number: {}", e);
                 }
             }
         } => {},
+        // fetch blocks and updates in parallel
+        _ = fetch_stream.for_each(|val| async {
+            log::debug!("fetch block new!");
+            let start = std::time::Instant::now();
+            fetch_stream_sender.send(val).await.expect("receiver is closed");
+            log::debug!("fetch_stream_sender.send: {:?}", std::time::Instant::now() - start);
+        }) => {},
         // apply blocks and updates sequentially
         _ = async {
             let mut block_n = first_block;
+            log::debug!("block_n {first_block}");
             while let Some(val) = pin!(fetch_stream_receiver.recv()).await {
+                log::debug!("some now");
                 if matches!(val, Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))) {
+                    log::debug!("found the last block");
                     break;
                 }
 
@@ -191,31 +214,46 @@ pub async fn sync<C>(
 
                 let block_hash = block_hash_substrate(client.as_ref(), block_n - 1);
 
-                let state_update = {
-                    if fetch_config.verify {
-                        let overrides = Arc::clone(overrides);
-                        let bonsai_contract = Arc::clone(bonsai_contract);
-                        let bonsai_contract_storage = Arc::clone(bonsai_contract_storage);
-                        let bonsai_class = Arc::clone(bonsai_class);
-                        let state_update = Arc::new(state_update);
-                        let state_update_1 = Arc::clone(&state_update);
+                let (state_update, block_conv) = {
+                    let verify = fetch_config.verify;
+                    let overrides = Arc::clone(overrides);
+                    let bonsai_contract = Arc::clone(bonsai_contract);
+                    let bonsai_contract_storage = Arc::clone(bonsai_contract_storage);
+                    let bonsai_class = Arc::clone(bonsai_class);
+                    let state_update = Arc::new(state_update);
+                    let state_update_1 = Arc::clone(&state_update);
 
-                        tokio::task::spawn_blocking(move || {
+                    log::debug!("spawn_compute");
+                    let block_conv = spawn_compute(move || {
+                        let convert_block = |block| {
+                            let start = std::time::Instant::now();
+                            let block_conv = crate::convert::convert_block_sync(block);
+                            log::debug!("convert::convert_block_sync: {:?}", std::time::Instant::now() - start);
+                            block_conv
+                        };
+                        let ver_l2 = || {
+                            let start = std::time::Instant::now();
                             verify_l2(block_n, &state_update, &overrides, &bonsai_contract, &bonsai_contract_storage, &bonsai_class, block_hash)
                                 .expect("verifying block");
-                        })
-                        .await
-                        .expect("verification task panicked");
+                            log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
+                        };
 
-                        Arc::try_unwrap(state_update_1).expect("arc should not be aliased")
-                    } else {
-                        state_update
-                    }
+                        if verify {
+                            let (_, block_conv) = rayon::join(|| ver_l2(), || convert_block(block));
+                            block_conv
+                        } else {
+                            convert_block(block)
+                        }
+                    })
+                    .await;
+
+                    (Arc::try_unwrap(state_update_1).expect("arc should not be aliased"), block_conv)
                 };
 
+                let block_sender = &*block_sender;
+                log::debug!("join");
                 tokio::join!(
-                    async {
-                        let block_conv = crate::convert::block(block).await;
+                    async move {
                         block_sender.send(block_conv).await.expect("block reciever channel is closed");
                     },
                     async {
@@ -235,8 +273,11 @@ pub async fn sync<C>(
                     }
                 );
 
+                let start = std::time::Instant::now();
                 create_block(command_sink, &mut last_block_hash).await.expect("creating block");
+                log::debug!("end create_block: {:?}", std::time::Instant::now() - start);
                 block_n += 1;
+                log::debug!("enddd");
             }
         } => {},
     );
