@@ -6380,8 +6380,15 @@ name = "mp-fee"
 version = "0.1.0"
 dependencies = [
  "blockifier",
+ "cairo-vm",
  "frame-support",
+ "hashbrown 0.14.3",
+ "mp-state",
+ "serde_with",
+ "sp-arithmetic",
  "sp-core",
+ "starknet-core 0.8.0",
+ "starknet_api",
 ]
 
 [[package]]

@@ -164,6 +164,7 @@ impl InvokeTransactionV0 {
                 calldata: vec_of_felt_to_calldata(&self.calldata),
             }),
             tx_hash: transaction_hash.into(),
+            only_query: offset_version,
         }
     }
 
@@ -195,6 +196,7 @@ impl InvokeTransactionV1 {
                 sender_address: self.sender_address.into(),
             }),
             tx_hash: transaction_hash.into(),
+            only_query: offset_version,
         }
     }
 
@@ -234,22 +236,24 @@ impl DeployAccountTransaction {
             self.compute_hash_given_contract_address::<H>(chain_id.into(), account_address, offset_version).into();
         let contract_address: Felt252Wrapper = account_address.into();
 
+        let tx = sttx::DeployAccountTransaction::V1(sttx::DeployAccountTransactionV1 {
+            max_fee: sttx::Fee(self.max_fee),
+            signature: vec_of_felt_to_signature(&self.signature),
+            nonce: self.nonce.into(),
+            class_hash: self.class_hash.into(),
+            contract_address_salt: self.contract_address_salt.into(),
+            constructor_calldata: vec_of_felt_to_calldata(&self.constructor_calldata),
+        });
+
         btx::DeployAccountTransaction {
-            tx: sttx::DeployAccountTransaction {
-                max_fee: sttx::Fee(self.max_fee),
-                version: sttx::TransactionVersion(StarkFelt::from(1u128)),
-                signature: vec_of_felt_to_signature(&self.signature),
-                nonce: self.nonce.into(),
-                class_hash: self.class_hash.into(),
-                contract_address_salt: self.contract_address_salt.into(),
-                constructor_calldata: vec_of_felt_to_calldata(&self.constructor_calldata),
-            },
+            tx,
             tx_hash: transaction_hash.into(),
             contract_address: contract_address.into(),
+            only_query: offset_version,
         }
     }
 
-    pub fn from_starknet(inner: starknet_api::transaction::DeployAccountTransaction) -> Self {
+    pub fn from_starknet(inner: starknet_api::transaction::DeployAccountTransactionV1) -> Self { //TODO : Check if we can do one that works for both versions
         Self {
             max_fee: inner.max_fee.0,
             signature: inner.signature.0.iter().map(|felt| Felt252Wrapper::from(*felt)).collect(),

@@ -1,8 +1,8 @@
-//! Starknet fee logic
-#![cfg_attr(not(feature = "std"), no_std)]
+// //! Starknet fee logic
+// #![cfg_attr(not(feature = "std"), no_std)]
 
-#[doc(hidden)]
-pub extern crate alloc;
+// #[doc(hidden)]
+// pub extern crate alloc;
 
 // use alloc::vec;
 // use alloc::vec::Vec;
@@ -18,7 +18,10 @@ pub extern crate alloc;
 // use blockifier::transaction::objects::{ResourcesMapping, TransactionExecutionResult};
 // use blockifier::transaction::transaction_types::TransactionType;
 // use blockifier::transaction::transaction_utils::calculate_tx_resources;
+// use blockifier::transaction::transaction_execution::Transaction;
+// use blockifier::transaction::objects::CommonAccountFields;
 // use cairo_vm::vm::runners::cairo_runner::ExecutionResources;
+
 // #[cfg(not(feature = "std"))]
 // use hashbrown::HashMap;
 // use mp_state::StateChanges;
@@ -36,8 +39,8 @@ pub extern crate alloc;
 // /// Number of storage updates for the fee transfer tx.
 // pub const FEE_TRANSFER_N_STORAGE_CHANGES: u8 = 2; // Sender and sequencer balance update.
 // /// Number of storage updates to actually charge for the fee transfer tx.
-// pub const FEE_TRANSFER_N_STORAGE_CHANGES_TO_CHARGE: u8 = FEE_TRANSFER_N_STORAGE_CHANGES - 1; //
-// Exclude the sequencer balance update, since it's charged once throughout the batch.
+// pub const FEE_TRANSFER_N_STORAGE_CHANGES_TO_CHARGE: u8 = FEE_TRANSFER_N_STORAGE_CHANGES - 1; 
+// //Exclude the sequencer balance update, since it's charged once throughout the batch.
 
 // pub static VM_RESOURCE_FEE_COSTS: [(&str, FixedU128); 8] = [
 //     ("n_steps", FixedU128::from_inner(5_000_000_000_000_000)),
@@ -88,9 +91,8 @@ pub extern crate alloc;
 //   state.count_state_changes(); let non_optional_call_infos: Vec<&CallInfo> =
 //   vec![execute_call_info, validate_call_info].into_iter().flatten().collect();
 
-//     let l1_gas_usage = calculate_l1_gas_usage(&non_optional_call_infos, state_changes_count,
-// l1_handler_payload_size)?;     let actual_resources = calculate_tx_resources(execution_resources,
-// l1_gas_usage, tx_type)?;
+//   let l1_gas_usage = calculate_l1_gas_by_vm_usage(&non_optional_call_infos, state_changes_count, l1_handler_payload_size)?;
+//   let actual_resources = calculate_tx_resources(execution_resources, l1_gas_usage, tx_type)?;
 
 //     Ok(actual_resources)
 // }
@@ -99,14 +101,14 @@ pub extern crate alloc;
 // pub fn charge_fee<S: State + StateChanges>(
 //     state: &mut S,
 //     block_context: &BlockContext,
-//     account_tx_context: AccountTransactionContext,
+//     account_tx_context: CommonAccountFields,
 //     resources: &ResourcesMapping,
 //     disable_transaction_fee: bool,
 //     disable_fee_charge: bool,
 //     is_query: bool,
 // ) -> TransactionExecutionResult<(Fee, Option<CallInfo>)> { // disable_transaction_fee flag
-//   implies that transaction fees have // been disabled and so we return 0 as the fees if
-//   disable_transaction_fee { return Ok((Fee(0), None)); }
+//   //implies that transaction fees have  been disabled and so we return 0 as the fees if
+//   //disable_transaction_fee { return Ok((Fee(0), None)); }
 
 //     let actual_fee = calculate_tx_fee(resources, block_context)?;
 
@@ -211,10 +213,10 @@ pub extern crate alloc;
 //     _block_context: &BlockContext,
 //     vm_resource_usage: &ResourcesMapping,
 // ) -> TransactionExecutionResult<FixedU128> { let vm_resource_fee_costs: HashMap<&str, FixedU128>
-//   = HashMap::from(VM_RESOURCE_FEE_COSTS); // Check if keys in vm_resource_usage are a subset of
-//   keys in VM_RESOURCE_FEE_COSTS if vm_resource_usage.0.keys().any(|key|
-//   !vm_resource_fee_costs.contains_key(key.as_str())) { return
-//   Err(TransactionExecutionError::CairoResourcesNotContainedInFeeCosts); };
+//   = HashMap::from(VM_RESOURCE_FEE_COSTS); // Check if keys in vm_resource_usage are a subset ofkeys in VM_RESOURCE_FEE_COSTS 
+//   if vm_resource_usage.0.keys().any(|key| !vm_resource_fee_costs.contains_key(key.as_str())) {
+//     return Err(TransactionExecutionError::CairoResourcesNotContainedInFeeCosts);
+// };
 
 //     // Convert Cairo usage to L1 gas usage.
 //     let vm_l1_gas_usage = vm_resource_usage

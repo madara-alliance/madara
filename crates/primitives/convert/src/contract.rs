@@ -97,29 +97,29 @@ pub fn flattened_sierra_to_casm_contract_class(
 pub fn flattened_sierra_to_sierra_contract_class(
     flattened_sierra: Arc<FlattenedSierraClass>,
 ) -> starknet_api::state::ContractClass {
-    let mut entry_point_by_type =
+    let mut entry_points_by_type =
         IndexMap::<starknet_api::state::EntryPointType, Vec<starknet_api::state::EntryPoint>>::with_capacity(3);
     for sierra_entrypoint in flattened_sierra.entry_points_by_type.constructor.iter() {
-        entry_point_by_type
+        entry_points_by_type
             .entry(starknet_api::state::EntryPointType::Constructor)
             .or_default()
             .push(rpc_entry_point_to_starknet_api_entry_point(sierra_entrypoint));
     }
     for sierra_entrypoint in flattened_sierra.entry_points_by_type.external.iter() {
-        entry_point_by_type
+        entry_points_by_type
             .entry(starknet_api::state::EntryPointType::External)
             .or_default()
             .push(rpc_entry_point_to_starknet_api_entry_point(sierra_entrypoint));
     }
     for sierra_entrypoint in flattened_sierra.entry_points_by_type.l1_handler.iter() {
-        entry_point_by_type
+        entry_points_by_type
             .entry(starknet_api::state::EntryPointType::L1Handler)
             .or_default()
             .push(rpc_entry_point_to_starknet_api_entry_point(sierra_entrypoint));
     }
     starknet_api::state::ContractClass {
         sierra_program: flattened_sierra.sierra_program.iter().map(|f| Felt252Wrapper(*f).into()).collect(),
-        entry_point_by_type,
+        entry_points_by_type,
         abi: flattened_sierra.abi.clone(),
     }
 }
@@ -215,7 +215,7 @@ fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryP
 /// (starknet-rs)
 fn from_legacy_entry_point(entry_point: &LegacyContractEntryPoint) -> EntryPoint {
     let selector = EntryPointSelector(StarkFelt(entry_point.selector.to_bytes_be()));
-    let offset = EntryPointOffset(entry_point.offset as usize);
+    let offset = EntryPointOffset(entry_point.offset);
     EntryPoint { selector, offset }
 }
 
