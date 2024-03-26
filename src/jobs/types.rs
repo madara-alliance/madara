@@ -1,7 +1,68 @@
+use color_eyre::{eyre::eyre, Result};
 use mongodb::bson::serde_helpers::uuid_1_as_binary;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
+
+/// An external id.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum ExternalId {
+    /// A string.
+    String(Box<str>),
+    /// A number.
+    Number(usize),
+}
+
+impl From<String> for ExternalId {
+    #[inline]
+    fn from(value: String) -> Self {
+        ExternalId::String(value.into_boxed_str())
+    }
+}
+
+impl From<usize> for ExternalId {
+    #[inline]
+    fn from(value: usize) -> Self {
+        ExternalId::Number(value)
+    }
+}
+
+impl ExternalId {
+    /// Unwraps the external id as a string.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the provided external id not a string.
+    #[track_caller]
+    #[inline]
+    pub fn unwrap_string(&self) -> Result<&str> {
+        match self {
+            ExternalId::String(s) => Ok(s),
+            _ => Err(unwrap_external_id_failed("string", self)),
+        }
+    }
+
+    /// Unwraps the external id as a number.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the provided external id is not a number.
+    #[track_caller]
+    #[inline]
+    #[allow(dead_code)] // temporarily unused (until the other pull request uses it)
+    pub fn unwrap_number(&self) -> Result<usize> {
+        match self {
+            ExternalId::Number(n) => Ok(*n),
+            _ => Err(unwrap_external_id_failed("number", self)),
+        }
+    }
+}
+
+/// Returns an error indicating that the provided external id coulnd't be unwrapped.
+fn unwrap_external_id_failed(expected: &str, got: &ExternalId) -> color_eyre::eyre::Error {
+    eyre!("wrong ExternalId type: expected {}, got {:?}", expected, got)
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum JobType {
@@ -46,7 +107,7 @@ pub struct JobItem {
     pub status: JobStatus,
     /// external id to track the status of the job. for ex, txn hash for blob inclusion
     /// or job_id from SHARP
-    pub external_id: String,
+    pub external_id: ExternalId,
     /// additional field to store values related to the job
     pub metadata: HashMap<String, String>,
     /// helps to keep track of the version of the item for optimistic locking
