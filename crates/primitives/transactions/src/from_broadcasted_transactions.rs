@@ -1,5 +1,4 @@
 use alloc::sync::Arc;
-use std::collections::HashMap;
 
 use blockifier::execution::contract_class::{ContractClass, ContractClassV0, ContractClassV0Inner, ContractClassV1};
 use cairo_lang_starknet_classes::casm_contract_class::{

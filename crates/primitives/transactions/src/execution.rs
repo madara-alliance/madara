@@ -35,7 +35,7 @@ use mp_state::StateChanges;
 use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::StarkFelt;
-use starknet_api::transaction::{self, AccountDeploymentData, Calldata, ExecutionResources, Fee, TransactionSignature, TransactionVersion};
+use starknet_api::transaction::{self, AccountDeploymentData, Calldata, ExecutionResources, Fee, L1HandlerTransaction, TransactionSignature, TransactionVersion};
 
 use super::SIMULATE_TX_VERSION_OFFSET;
 
@@ -151,7 +151,7 @@ impl GetAccountTransactionContext for InvokeTransaction {
 }
 
 impl GetAccountTransactionContext for L1HandlerTransaction {
-    fn get_account_transaction_context(&self, offset_version: bool) ->  {
+    fn get_account_transaction_context(&self, offset_version: bool) -> L1 {
         let mut version = self.tx.version;
         if offset_version {
             version = version.apply_simulate_tx_version_offset();
@@ -427,7 +427,7 @@ pub trait Execute: Sized + GetAccountTransactionContext + GetTransactionCalldata
         account_tx_context: AccountTransaction,
         execution_config: &ExecutionConfig,
     ) -> TransactionExecutionResult<(Fee, Option<CallInfo>, ResourcesMapping)> {
-        let actual_resources = compute_transaction_resources(
+        let actual_resources = compute_transaction_resources( //this function does not exist anymore
             state,
             execute_call_info,
             validate_call_info,
