@@ -5,11 +5,11 @@ use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
+use rayon::prelude::*;
 use starknet_api::transaction::Event;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
-use rayon::prelude::*;
 
 use crate::utils::constant::bonsai_identifier;
 
@@ -67,9 +67,7 @@ pub fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, Strin
     let identifier = bonsai_identifier::EVENT;
 
     // event hashes are computed in parallel
-    let events = events.par_iter().map(|event| {
-        calculate_event_hash::<PedersenHasher>(event)
-    }).collect::<Vec<_>>();
+    let events = events.par_iter().map(|event| calculate_event_hash::<PedersenHasher>(event)).collect::<Vec<_>>();
 
     // once event hashes have finished computing, they are inserted into the local Bonsai db
     for (i, event_hash) in events.into_iter().enumerate() {

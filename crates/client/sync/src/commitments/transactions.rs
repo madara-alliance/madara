@@ -7,10 +7,10 @@ use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::Transaction;
+use rayon::prelude::*;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
-use rayon::prelude::*;
 
 use crate::utils::constant::bonsai_identifier;
 
@@ -79,9 +79,10 @@ pub fn memory_transaction_commitment(
     let identifier = bonsai_identifier::TRANSACTION;
 
     // transaction hashes are computed in parallel
-    let txs = transactions.par_iter().map(|tx| {
-        calculate_transaction_hash_with_signature::<PedersenHasher>(tx, chain_id, block_number)
-    }).collect::<Vec<_>>();
+    let txs = transactions
+        .par_iter()
+        .map(|tx| calculate_transaction_hash_with_signature::<PedersenHasher>(tx, chain_id, block_number))
+        .collect::<Vec<_>>();
 
     // once transaction hashes have finished computing, they are inserted into the local Bonsai db
     for (i, tx_hash) in txs.into_iter().enumerate() {
