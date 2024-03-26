@@ -80,7 +80,7 @@ pub fn memory_transaction_commitment(
 
     // transaction hashes are computed in parallel
     let txs = transactions.par_iter().map(|tx| {
-        calculate_transaction_hash_with_signature::<PedersenHasher>(&tx, chain_id, block_number)
+        calculate_transaction_hash_with_signature::<PedersenHasher>(tx, chain_id, block_number)
     }).collect::<Vec<_>>();
 
     // once transaction hashes have finished computing, they are inserted into the local Bonsai db

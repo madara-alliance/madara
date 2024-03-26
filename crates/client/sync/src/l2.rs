@@ -232,7 +232,7 @@ pub async fn sync<C>(
                         };
 
                         if verify {
-                            let (_, block_conv) = rayon::join(|| ver_l2(), || convert_block(block));
+                            let (_, block_conv) = rayon::join(ver_l2, || convert_block(block));
                             block_conv
                         } else {
                             convert_block(block)

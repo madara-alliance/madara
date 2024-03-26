@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- perf(l2 sync): parallelize commitment computation and refactor part of l2 io sync
 - refactor: rpc methods and removed rpc-core
 - feat: add an optional TUI dashboard
 - feat(bonsai): Bumped bonsai lib to latest opti
