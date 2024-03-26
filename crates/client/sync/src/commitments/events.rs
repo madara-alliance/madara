@@ -67,7 +67,7 @@ pub fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, Strin
     let identifier = bonsai_identifier::EVENT;
 
     // event hashes are computed in parallel
-    let events = events.par_iter().map(|event| calculate_event_hash::<PedersenHasher>(event)).collect::<Vec<_>>();
+    let events = events.par_iter().map(calculate_event_hash::<PedersenHasher>).collect::<Vec<_>>();
 
     // once event hashes have finished computing, they are inserted into the local Bonsai db
     for (i, event_hash) in events.into_iter().enumerate() {
