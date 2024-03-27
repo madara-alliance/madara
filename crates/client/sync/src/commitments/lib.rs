@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
+use lazy_static::lazy_static;
 use mc_db::storage::{DeoxysStorageError, StorageHandler};
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
@@ -11,6 +12,7 @@ use mp_hashers::poseidon::PoseidonHasher;
 use mp_hashers::HasherT;
 use mp_storage::StarknetStorageSchemaVersion::Undefined;
 use mp_transactions::Transaction;
+use rayon::prelude::*;
 use sp_core::H256;
 use sp_runtime::generic::{Block, Header};
 use sp_runtime::traits::BlakeTwo256;
@@ -21,7 +23,6 @@ use starknet_api::state::StorageKey;
 use starknet_api::transaction::Event;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
-use tokio::join;
 
 use super::events::memory_event_commitment;
 use super::transactions::memory_transaction_commitment;
@@ -38,15 +39,16 @@ use super::transactions::memory_transaction_commitment;
 /// # Returns
 ///
 /// The transaction and the event commitment as `Felt252Wrapper`.
-pub async fn calculate_commitments(
+pub fn calculate_commitments(
     transactions: &[Transaction],
     events: &[Event],
     chain_id: Felt252Wrapper,
     block_number: u64,
 ) -> (Felt252Wrapper, Felt252Wrapper) {
-    let (commitment_tx, commitment_event) =
-        join!(memory_transaction_commitment(transactions, chain_id, block_number), memory_event_commitment(events));
-
+    let (commitment_tx, commitment_event) = rayon::join(
+        || memory_transaction_commitment(transactions, chain_id, block_number),
+        || memory_event_commitment(events),
+    );
     (
         commitment_tx.expect("Failed to calculate transaction commitment"),
         commitment_event.expect("Failed to calculate event commitment"),
@@ -161,11 +163,13 @@ pub fn update_state_root(
     substrate_block_hash: Option<H256>,
 ) -> Felt252Wrapper {
     // Update contract and its storage tries
-    let contract_trie_root = contract_trie_root(&csd, overrides, block_number, substrate_block_hash)
-        .expect("Failed to compute contract root");
-
-    // Update class trie
-    let class_trie_root = class_trie_root(&csd, block_number).expect("Failed to compute class root");
+    let (contract_trie_root, class_trie_root) = rayon::join(
+        || {
+            contract_trie_root(&csd, overrides, block_number, substrate_block_hash)
+                .expect("Failed to compute contract root")
+        },
+        || class_trie_root(&csd, block_number).expect("Failed to compute class root"),
+    );
 
     calculate_state_root::<PoseidonHasher>(contract_trie_root, class_trie_root)
 }
@@ -195,8 +199,10 @@ fn contract_trie_root(
 
     // Tries need to be initialised before values are inserted
     handler_contract.init()?;
+    let start1 = std::time::Instant::now();
 
     // First we insert the contract storage changes
+    let start = std::time::Instant::now();
     for (contract_address, updates) in csd.storage_updates.iter() {
         handler_storage.init(contract_address)?;
 
@@ -204,21 +210,39 @@ fn contract_trie_root(
             handler_storage.insert(contract_address, key, *value)?;
         }
     }
+    log::debug!("contract_trie_root update_storage_trie: {:?}", std::time::Instant::now() - start);
 
     // Then we commit them
+    let start = std::time::Instant::now();
     handler_storage.commit(block_number)?;
+    log::debug!("contract_trie_root bonsai_contract_storage.commit: {:?}", std::time::Instant::now() - start);
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
-    for (contract_address, _) in csd.storage_updates.iter() {
-        let storage_root = handler_storage.root(contract_address)?;
-        let class_commitment_leaf_hash =
-            contract_state_leaf_hash(csd, &overrides, contract_address, storage_root, maybe_block_hash);
+    let start = std::time::Instant::now();
+    let updates = csd
+        .storage_updates
+        .iter()
+        .par_bridge()
+        .map(|(contract_address, _)| {
+            let storage_root = handler_storage.root(contract_address).unwrap();
+            let class_commitment_leaf_hash =
+                contract_state_leaf_hash(csd, &overrides, contract_address, storage_root, maybe_block_hash);
 
-        handler_contract.insert(contract_address, class_commitment_leaf_hash).unwrap();
-    }
+            (contract_address, class_commitment_leaf_hash)
+        })
+        .collect::<Vec<_>>();
+    log::debug!("contract_trie_root updates: {:?}", std::time::Instant::now() - start);
 
-    handler_contract.commit(block_number).unwrap();
-    Ok(handler_contract.root().unwrap().into())
+    let start = std::time::Instant::now();
+    handler_contract.update(updates)?;
+    log::debug!("contract_trie_root bonsai_contract.commit: {:?}", std::time::Instant::now() - start);
+
+    let start = std::time::Instant::now();
+    handler_contract.commit(block_number)?;
+    log::debug!("contract_trie_root bonsai_contract.commit: {:?}", std::time::Instant::now() - start);
+    log::debug!("contract_trie_root: {:?}", std::time::Instant::now() - start1);
+
+    Ok(handler_contract.root()?.into())
 }
 
 fn contract_state_leaf_hash(
@@ -263,6 +287,11 @@ fn class_hash(
     FieldElement::from_byte_slice_be(class_hash.0.bytes()).unwrap()
 }
 
+lazy_static! {
+    static ref CONTRACT_CLASS_HASH_VERSION: FieldElement =
+        FieldElement::from_byte_slice_be("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap();
+}
+
 /// Calculates the class trie root
 ///
 /// # Arguments
@@ -276,12 +305,23 @@ fn class_hash(
 /// The class root.
 fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
     let mut handler_class = StorageHandler::class();
+
+    let updates = csd
+        .class_hash_to_compiled_class_hash
+        .iter()
+        .par_bridge()
+        .map(|(class_hash, compiled_class_hash)| {
+            let compiled_class_hash = FieldElement::from_bytes_be(&compiled_class_hash.0.0).unwrap();
+
+            let hash = PoseidonHasher::hash_elements(*CONTRACT_CLASS_HASH_VERSION, compiled_class_hash);
+
+            (class_hash, hash)
+        })
+        .collect::<Vec<_>>();
+
     handler_class.init()?;
-
-    for (class_hash, compiled_class_hash) in csd.class_hash_to_compiled_class_hash.iter() {
-        handler_class.insert(class_hash, compiled_class_hash)?;
-    }
-
+    handler_class.update(updates)?;
     handler_class.commit(block_number)?;
+
     Ok(handler_class.root()?.into())
 }

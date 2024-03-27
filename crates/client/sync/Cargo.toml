@@ -66,6 +66,7 @@ mp-hashers = { workspace = true }
 mp-storage = { workspace = true, default-features = true }
 mp-transactions = { workspace = true, features = ["client"] }
 mp-types = { workspace = true }
+rayon = { workspace = true }
 starknet-types-core = { workspace = true, default-features = false, features = [
   "hash",
   "parity-scale-codec",

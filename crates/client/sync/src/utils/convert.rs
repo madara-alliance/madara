@@ -20,6 +20,10 @@ use crate::commitments::lib::calculate_commitments;
 use crate::utility::get_config;
 
 pub async fn block(block: p::Block) -> DeoxysBlock {
+    tokio::task::spawn_blocking(|| convert_block_sync(block)).await.expect("join error")
+}
+
+pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
@@ -32,7 +36,7 @@ pub async fn block(block: p::Block) -> DeoxysBlock {
     let transaction_count = transactions.len() as u128;
     let event_count = events.len() as u128;
 
-    let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number).await;
+    let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number);
 
     let protocol_version = starknet_version(&block.starknet_version);
     // TODO calculate gas_price when starknet-rs supports v0.13.1
@@ -207,14 +211,14 @@ fn event(event: &p::Event) -> starknet_api::transaction::Event {
     }
 }
 
-async fn commitments(
+fn commitments(
     transactions: &[mp_transactions::Transaction],
     events: &[starknet_api::transaction::Event],
     block_number: u64,
 ) -> (StarkFelt, StarkFelt) {
     let chain_id = chain_id();
 
-    let (commitment_tx, commitment_event) = calculate_commitments(transactions, events, chain_id, block_number).await;
+    let (commitment_tx, commitment_event) = calculate_commitments(transactions, events, chain_id, block_number);
 
     (commitment_tx.into(), commitment_event.into())
 }

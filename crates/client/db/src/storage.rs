@@ -6,11 +6,8 @@ use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
-use lazy_static::lazy_static;
-use mp_hashers::poseidon::PoseidonHasher;
-use mp_hashers::HasherT;
 use sp_core::hexdisplay::AsBytesRef;
-use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress};
+use starknet_api::api_core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_ff::FieldElement;
@@ -138,10 +135,14 @@ impl StorageHandler {
 }
 
 impl ContractTrieHandler {
-    pub fn insert(&mut self, key: &ContractAddress, value: Felt) -> Result<(), DeoxysStorageError> {
-        let key = conv_contract_key(key);
+    pub fn update(&mut self, updates: Vec<(&ContractAddress, Felt)>) -> Result<(), DeoxysStorageError> {
+        let mut lock = self.0.write().unwrap();
 
-        self.0.write().unwrap().insert(bonsai_identifier::CONTRACT, &key, &value).expect("show not fail lol");
+        for (key, value) in updates {
+            let key = conv_contract_key(key);
+            lock.insert(bonsai_identifier::CONTRACT, &key, &value)
+                .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
+        }
 
         Ok(())
     }
@@ -254,24 +255,16 @@ impl ContractStorageTrieHandler {
     }
 }
 
-lazy_static! {
-    static ref CONTRACT_CLASS_HASH_VERSION: FieldElement =
-        FieldElement::from_byte_slice_be("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap();
-}
-
 impl ClassTrieHandler {
-    pub fn insert(&mut self, key: &ClassHash, value: &CompiledClassHash) -> Result<(), DeoxysStorageError> {
-        let compiled_class_hash = conv_compiled_class_hash(value);
-        let hash = PoseidonHasher::hash_elements(*CONTRACT_CLASS_HASH_VERSION, compiled_class_hash);
+    pub fn update(&mut self, updates: Vec<(&ClassHash, FieldElement)>) -> Result<(), DeoxysStorageError> {
+        let mut lock = self.0.write().unwrap();
 
-        let key = conv_class_key(key);
-        let value = Felt::from_bytes_be(&hash.to_bytes_be());
-
-        self.0
-            .write()
-            .unwrap()
-            .insert(bonsai_identifier::CLASS, &key, &value)
-            .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
+        for (key, value) in updates {
+            let key = conv_class_key(key);
+            let value = Felt::from_bytes_be(&value.to_bytes_be());
+            lock.insert(bonsai_identifier::CLASS, &key, &value)
+                .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?;
+        }
 
         Ok(())
     }
@@ -338,8 +331,4 @@ fn conv_contract_value(value: StarkFelt) -> Felt {
 
 fn conv_class_key(key: &ClassHash) -> BitVec<u8, Msb0> {
     key.0.0.as_bits()[5..].to_owned()
-}
-
-fn conv_compiled_class_hash(compiled_class_hash: &CompiledClassHash) -> FieldElement {
-    FieldElement::from_bytes_be(&compiled_class_hash.0.0).unwrap()
 }

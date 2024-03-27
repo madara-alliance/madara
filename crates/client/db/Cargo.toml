@@ -31,7 +31,6 @@ mp-types = { workspace = true }
 mp-hashers = { workspace = true }
 
 # Starknet crates
-bonsai-trie = { workspace = true }
 starknet-types-core = { workspace = true, default-features = false, features = [
   "hash",
   "parity-scale-codec",
@@ -43,7 +42,10 @@ starknet-ff = { workspace = true, default-features = false, features = [
   "alloc",
   "serde",
 ] }
-
+blockifier = { workspace = true, default-features = false, features = [
+  "testing",
+] }
+bonsai-trie = { workspace = true }
 
 # Other crates
 ethers = { workspace = true }
@@ -55,6 +57,7 @@ uuid = "1.4.1"
 async-trait = { workspace = true }
 bitvec = { workspace = true }
 lazy_static = { workspace = true }
+rayon = { workspace = true }
 
 [features]
 default = ["kvdb-rocksdb", "parity-db"]

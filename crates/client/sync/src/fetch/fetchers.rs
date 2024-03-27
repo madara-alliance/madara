@@ -55,9 +55,9 @@ pub async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -
 
 pub async fn fetch_block_and_updates<C>(
     block_n: u64,
-    provider: &SequencerGatewayProvider,
-    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    client: &C,
+    provider: Arc<SequencerGatewayProvider>,
+    overrides: Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    client: Arc<C>,
 ) -> Result<(p::Block, StateUpdate, Vec<ContractClassData>), L2SyncError>
 where
     C: HeaderBackend<DBlockT>,
@@ -68,8 +68,8 @@ where
 
     loop {
         log::debug!("fetch_block_and_updates {}", block_n);
-        let block = fetch_block(provider, block_n);
-        let state_update = fetch_state_and_class_update(provider, block_n, overrides, client);
+        let block = fetch_block(&provider, block_n);
+        let state_update = fetch_state_and_class_update(&provider, block_n, &overrides, client.as_ref());
         let (block, state_update) = tokio::join!(block, state_update);
         log::debug!("fetch_block_and_updates: done {block_n}");
 

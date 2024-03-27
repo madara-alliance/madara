@@ -6,11 +6,11 @@ use mc_db::storage::bonsai_identifier;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
+use rayon::prelude::*;
 use starknet_api::transaction::Event;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
-use tokio::task::{spawn_blocking, JoinSet};
 
 /// Calculate the hash of the event.
 ///
@@ -53,7 +53,7 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
 /// # Returns
 ///
 /// The event commitment as `Felt252Wrapper`.
-pub async fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, String> {
+pub fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, String> {
     // TODO @cchudant refacto/optimise this function
     if events.is_empty() {
         return Ok(Felt252Wrapper::ZERO);
@@ -66,14 +66,10 @@ pub async fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper,
     let identifier = bonsai_identifier::EVENT;
 
     // event hashes are computed in parallel
-    let mut task_set = JoinSet::new();
-    events.iter().cloned().enumerate().for_each(|(i, event)| {
-        task_set.spawn(async move { (i, calculate_event_hash::<PedersenHasher>(&event)) });
-    });
+    let events = events.par_iter().map(calculate_event_hash::<PedersenHasher>).collect::<Vec<_>>();
 
     // once event hashes have finished computing, they are inserted into the local Bonsai db
-    while let Some(res) = task_set.join_next().await {
-        let (i, event_hash) = res.map_err(|e| format!("Failed to retrieve event hash: {e}"))?;
+    for (i, event_hash) in events.into_iter().enumerate() {
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
         let value = Felt::from(Felt252Wrapper::from(event_hash));
         bonsai_storage.insert(identifier, key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
@@ -88,12 +84,8 @@ pub async fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper,
     let id = id_builder.new_id();
 
     // run in a blocking-safe thread to avoid starving the thread pool
-    let root_hash = spawn_blocking(move || {
-        bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-        bonsai_storage.root_hash(identifier).expect("Failed to get root hash")
-    })
-    .await
-    .map_err(|e| format!("Failed to computed event root hash: {e}"))?;
+    bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+    let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
     Ok(Felt252Wrapper::from(root_hash))
 }
