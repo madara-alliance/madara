@@ -33,7 +33,7 @@ mod sierra_classes_db;
 pub mod storage;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use bonsai_db::{BonsaiConfigs, BonsaiDb, TrieColumn};
 use da_db::DaDb;
@@ -135,9 +135,9 @@ pub struct DeoxysBackend {
     messaging: Arc<MessagingDb>,
     sierra_classes: Arc<SierraClassesDb>,
     l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
-    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
-    bonsai_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
-    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
+    bonsai_contract: Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_storage: Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
+    bonsai_class: Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
 }
 
 // Singleton backing instance for `DeoxysBackend`
@@ -199,9 +199,9 @@ impl DeoxysBackend {
             messaging: Arc::new(MessagingDb { db: spdb.clone() }),
             sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
             l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
-            bonsai_contract: Arc::new(Mutex::new(config.contract)),
-            bonsai_storage: Arc::new(Mutex::new(config.contract_storage)),
-            bonsai_class: Arc::new(Mutex::new(config.class)),
+            bonsai_contract: Arc::new(RwLock::new(config.contract)),
+            bonsai_storage: Arc::new(RwLock::new(config.contract_storage)),
+            bonsai_class: Arc::new(RwLock::new(config.class)),
         })
     }
 
@@ -230,15 +230,15 @@ impl DeoxysBackend {
         BACKEND_SINGLETON.get().map(|backend| &backend.sierra_classes).expect("Backend not initialized")
     }
 
-    pub(crate) fn bonsai_contract() -> &'static Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>> {
+    pub(crate) fn bonsai_contract() -> &'static Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_contract).expect("Backend not initialized")
     }
 
-    pub(crate) fn bonsai_storage() -> &'static Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>> {
+    pub(crate) fn bonsai_storage() -> &'static Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_storage).expect("Backend not initialized")
     }
 
-    pub(crate) fn bonsai_class() -> &'static Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>> {
+    pub(crate) fn bonsai_class() -> &'static Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_class).expect("Backend not initialized")
     }
 

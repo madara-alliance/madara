@@ -1,5 +1,5 @@
 use std::fmt::Display;
-use std::sync::MutexGuard;
+use std::sync::{Arc, RwLock};
 
 use bitvec::prelude::Msb0;
 use bitvec::vec::BitVec;
@@ -33,8 +33,8 @@ pub struct StorageHandler;
 /// StorageHandler::contract().commit(12);
 /// ```
 ///
-/// Note that creating a new instance of `ContractTrieHandler` in this way implicitely acquires a
-/// lock onto the backend contract trie. To store this lock for further use, you can do:
+/// Note that creating a new instance of `ContractTrieHandler` in this way implicitely creates a new
+/// `Arc` onto the backend contract storage trie. To store this `Arc` for further use, you can do:
 ///
 /// ```
 /// let handler_contract = StorageHandler::contract();
@@ -42,9 +42,7 @@ pub struct StorageHandler;
 /// handler_contract.init();
 /// handler_contract.commit(12);
 /// ```
-///
-/// A `ContractTrieHandler` maintains ownership of this lock for the duration of its lifetime.
-pub struct ContractTrieHandler<'a>(MutexGuard<'a, BonsaiStorage<BasicId, BonsaiDb, Pedersen>>);
+pub struct ContractTrieHandler(Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>);
 
 /// Type safe storage handler for using the backend contract storage bonsai trie.
 ///
@@ -55,8 +53,8 @@ pub struct ContractTrieHandler<'a>(MutexGuard<'a, BonsaiStorage<BasicId, BonsaiD
 /// ```
 ///
 /// Note that creating a new instance of `ContractStorageTrieHandler` in this way implicitely
-/// acquires a lock onto the backend contract storage trie. To store this lock for further use, you
-/// can do:
+/// creates a new `Arc` onto the backend contract storage trie. To store this `Arc` for further use,
+/// you can do:
 ///
 /// ```
 /// let handler_contract = StorageHandler::contract_storage();
@@ -64,10 +62,7 @@ pub struct ContractTrieHandler<'a>(MutexGuard<'a, BonsaiStorage<BasicId, BonsaiD
 /// handler_contract.init(ContractAddress::from(0u64));
 /// handler_contract.commit(12);
 /// ```
-///
-/// A `ContractStorageTrieHandler` maintains ownership of this lock for the duration of its
-/// lifetime.
-pub struct ContractStorageTrieHandler<'a>(MutexGuard<'a, BonsaiStorage<BasicId, BonsaiDb, Pedersen>>);
+pub struct ContractStorageTrieHandler(Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>);
 
 /// Type safe storage handler for using the backend class bonsai trie.
 ///
@@ -77,8 +72,8 @@ pub struct ContractStorageTrieHandler<'a>(MutexGuard<'a, BonsaiStorage<BasicId, 
 /// StorageHandler::class().commit(12);
 /// ```
 ///
-/// Note that creating a new instance of `ClassTrieHandler` in this way implicitely
-/// acquires a lock onto the backend class trie. To store this lock for further use, you can do:
+/// Note that creating a new instance of `ClassTrieHandler` in this way implicitely creates a new
+/// `Arc` onto the backend contract storage trie. To store this `Arc` for further use, you can do:
 ///
 /// ```
 /// let handler_contract = StorageHandler::class();
@@ -86,9 +81,7 @@ pub struct ContractStorageTrieHandler<'a>(MutexGuard<'a, BonsaiStorage<BasicId, 
 /// handler_contract.init();
 /// handler_contract.commit(12);
 /// ```
-///
-/// A `ClassTrieHandler` maintains ownership of this lock for the duration of its lifetime.
-pub struct ClassTrieHandler<'a>(MutexGuard<'a, BonsaiStorage<BasicId, BonsaiDb, Poseidon>>);
+pub struct ClassTrieHandler(Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>);
 
 #[derive(Debug)]
 pub enum StorageType {
@@ -130,25 +123,25 @@ pub mod bonsai_identifier {
     pub const EVENT: &[u8] = "0xevent".as_bytes();
 }
 
-impl<'a> StorageHandler {
-    pub fn contract() -> ContractTrieHandler<'a> {
-        ContractTrieHandler(DeoxysBackend::bonsai_contract().lock().unwrap())
+impl StorageHandler {
+    pub fn contract() -> ContractTrieHandler {
+        ContractTrieHandler(Arc::clone(DeoxysBackend::bonsai_contract()))
     }
 
-    pub fn contract_storage() -> ContractStorageTrieHandler<'a> {
-        ContractStorageTrieHandler(DeoxysBackend::bonsai_storage().lock().unwrap())
+    pub fn contract_storage() -> ContractStorageTrieHandler {
+        ContractStorageTrieHandler(Arc::clone(DeoxysBackend::bonsai_storage()))
     }
 
-    pub fn class() -> ClassTrieHandler<'a> {
-        ClassTrieHandler(DeoxysBackend::bonsai_class().lock().unwrap())
+    pub fn class() -> ClassTrieHandler {
+        ClassTrieHandler(Arc::clone(DeoxysBackend::bonsai_class()))
     }
 }
 
-impl<'a> ContractTrieHandler<'a> {
+impl ContractTrieHandler {
     pub fn insert(&mut self, key: &ContractAddress, value: Felt) -> Result<(), DeoxysStorageError> {
         let key = conv_contract_key(key);
 
-        self.0.insert(bonsai_identifier::CONTRACT, &key, &value).expect("show not fail lol");
+        self.0.write().unwrap().insert(bonsai_identifier::CONTRACT, &key, &value).expect("show not fail lol");
 
         Ok(())
     }
@@ -158,6 +151,8 @@ impl<'a> ContractTrieHandler<'a> {
 
         let value = self
             .0
+            .read()
+            .unwrap()
             .get(bonsai_identifier::CONTRACT, &key)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))?;
 
@@ -166,6 +161,8 @@ impl<'a> ContractTrieHandler<'a> {
 
     pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
         self.0
+            .write()
+            .unwrap()
             .commit(BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::Contract))?;
 
@@ -174,6 +171,8 @@ impl<'a> ContractTrieHandler<'a> {
 
     pub fn init(&mut self) -> Result<(), DeoxysStorageError> {
         self.0
+            .write()
+            .unwrap()
             .init_tree(bonsai_identifier::CONTRACT)
             .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::Contract))?;
 
@@ -183,6 +182,8 @@ impl<'a> ContractTrieHandler<'a> {
     pub fn root(&self) -> Result<Felt, DeoxysStorageError> {
         let root_hash = self
             .0
+            .read()
+            .unwrap()
             .root_hash(bonsai_identifier::CONTRACT)
             .map_err(|_| DeoxysStorageError::TrieRootError(StorageType::Contract))?;
 
@@ -190,7 +191,7 @@ impl<'a> ContractTrieHandler<'a> {
     }
 }
 
-impl<'a> ContractStorageTrieHandler<'a> {
+impl ContractStorageTrieHandler {
     pub fn insert(
         &mut self,
         identifier: &ContractAddress,
@@ -201,7 +202,7 @@ impl<'a> ContractStorageTrieHandler<'a> {
         let key = conv_contract_storage_key(key);
         let value = conv_contract_value(value);
 
-        self.0.insert(identifier, &key, &value).unwrap();
+        self.0.write().unwrap().insert(identifier, &key, &value).unwrap();
         Ok(())
     }
 
@@ -211,6 +212,8 @@ impl<'a> ContractStorageTrieHandler<'a> {
 
         let value = self
             .0
+            .read()
+            .unwrap()
             .get(identifier, &key)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?;
 
@@ -219,6 +222,8 @@ impl<'a> ContractStorageTrieHandler<'a> {
 
     pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
         self.0
+            .write()
+            .unwrap()
             .commit(BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::ContractStorage))?;
 
@@ -227,7 +232,11 @@ impl<'a> ContractStorageTrieHandler<'a> {
 
     pub fn init(&mut self, identifier: &ContractAddress) -> Result<(), DeoxysStorageError> {
         let identifier = conv_contract_identifier(identifier);
-        self.0.init_tree(identifier).map_err(|_| DeoxysStorageError::TrieInitError(StorageType::ContractStorage))?;
+        self.0
+            .write()
+            .unwrap()
+            .init_tree(identifier)
+            .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::ContractStorage))?;
 
         Ok(())
     }
@@ -236,6 +245,8 @@ impl<'a> ContractStorageTrieHandler<'a> {
         let identifier = conv_contract_identifier(identifier);
         let root_hash = self
             .0
+            .read()
+            .unwrap()
             .root_hash(identifier)
             .map_err(|_| DeoxysStorageError::TrieRootError(StorageType::ContractStorage))?;
 
@@ -248,7 +259,7 @@ lazy_static! {
         FieldElement::from_byte_slice_be("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap();
 }
 
-impl<'a> ClassTrieHandler<'a> {
+impl ClassTrieHandler {
     pub fn insert(&mut self, key: &ClassHash, value: &CompiledClassHash) -> Result<(), DeoxysStorageError> {
         let compiled_class_hash = conv_compiled_class_hash(value);
         let hash = PoseidonHasher::hash_elements(*CONTRACT_CLASS_HASH_VERSION, compiled_class_hash);
@@ -257,6 +268,8 @@ impl<'a> ClassTrieHandler<'a> {
         let value = Felt::from_bytes_be(&hash.to_bytes_be());
 
         self.0
+            .write()
+            .unwrap()
             .insert(bonsai_identifier::CLASS, &key, &value)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
 
@@ -267,6 +280,8 @@ impl<'a> ClassTrieHandler<'a> {
         let key = conv_class_key(key);
         let value = self
             .0
+            .read()
+            .unwrap()
             .get(bonsai_identifier::CLASS, &key)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Class))?;
 
@@ -275,6 +290,8 @@ impl<'a> ClassTrieHandler<'a> {
 
     pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
         self.0
+            .write()
+            .unwrap()
             .commit(BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::Class))?;
 
@@ -283,6 +300,8 @@ impl<'a> ClassTrieHandler<'a> {
 
     pub fn init(&mut self) -> Result<(), DeoxysStorageError> {
         self.0
+            .write()
+            .unwrap()
             .init_tree(bonsai_identifier::CLASS)
             .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::Class))?;
 
@@ -292,6 +311,8 @@ impl<'a> ClassTrieHandler<'a> {
     pub fn root(&self) -> Result<Felt, DeoxysStorageError> {
         let root_hash = self
             .0
+            .read()
+            .unwrap()
             .root_hash(bonsai_identifier::CLASS)
             .map_err(|_| DeoxysStorageError::TrieRootError(StorageType::Class))?;
 
