@@ -1,3 +1,4 @@
+use mp_hashers::pedersen::PedersenHasher;
 use sp_core::H256;
 use sp_runtime::generic::{Block, BlockId, Header};
 use sp_runtime::traits::BlakeTwo256;
@@ -14,6 +15,9 @@ pub type DBlockT = Block<DHeaderT, OpaqueExtrinsic>;
 
 // Deoxys hash type
 pub type DHashT = H256;
+
+// Deoxys default hasher type
+pub type DHasherT = PedersenHasher;
 
 // Deoxys block identifier type
 pub type DBlockID = BlockId<DBlockT>;

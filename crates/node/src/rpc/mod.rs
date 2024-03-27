@@ -8,11 +8,12 @@
 mod starknet;
 use std::sync::Arc;
 
-use deoxys_runtime::{AccountId, Hash, Index, StarknetHasher};
 use futures::channel::mpsc;
 use jsonrpsee::RpcModule;
 use mc_genesis_data_provider::GenesisProvider;
-use mp_types::block::DBlockT;
+use mp_types::account::DAccountIdT;
+use mp_types::block::{DBlockT, DHashT, DHasherT};
+use mp_types::transactions::DTxIndexT;
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_consensus_manual_seal::rpc::EngineCommand;
 pub use sc_rpc_api::DenyUnsafe;
@@ -34,7 +35,7 @@ pub struct FullDeps<A: ChainApi, C, G: GenesisProvider, P> {
     /// Whether to deny unsafe calls
     pub deny_unsafe: DenyUnsafe,
     /// Manual seal command sink
-    pub command_sink: Option<mpsc::Sender<EngineCommand<Hash>>>,
+    pub command_sink: Option<mpsc::Sender<EngineCommand<DHashT>>>,
     /// Starknet dependencies
     pub starknet: StarknetDeps<C, G, DBlockT>,
 }
@@ -52,7 +53,7 @@ where
         + StorageProvider<DBlockT, BE>
         + 'static,
     C: Send + Sync + 'static,
-    C::Api: substrate_frame_rpc_system::AccountNonceApi<DBlockT, AccountId, Index>,
+    C::Api: substrate_frame_rpc_system::AccountNonceApi<DBlockT, DAccountIdT, DTxIndexT>,
     C::Api: BlockBuilder<DBlockT>,
     C::Api: pallet_starknet_runtime_api::StarknetRuntimeApi<DBlockT>
         + pallet_starknet_runtime_api::ConvertTransactionRuntimeApi<DBlockT>,
@@ -68,7 +69,7 @@ where
     let FullDeps { client, pool, deny_unsafe, starknet: starknet_params, command_sink, graph, .. } = deps;
 
     module.merge(System::new(client.clone(), pool.clone(), deny_unsafe).into_rpc())?;
-    module.merge(StarknetReadRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, StarknetHasher>::new(
+    module.merge(StarknetReadRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, DHasherT>::new(
         client.clone(),
         starknet_params.overrides.clone(),
         pool.clone(),
@@ -77,7 +78,7 @@ where
         starknet_params.starting_block,
         starknet_params.genesis_provider.clone(),
     )))?;
-    module.merge(StarknetWriteRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, StarknetHasher>::new(
+    module.merge(StarknetWriteRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, DHasherT>::new(
         client.clone(),
         starknet_params.overrides.clone(),
         pool.clone(),
@@ -86,7 +87,7 @@ where
         starknet_params.starting_block,
         starknet_params.genesis_provider.clone(),
     )))?;
-    module.merge(StarknetTraceRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, StarknetHasher>::new(
+    module.merge(StarknetTraceRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, DHasherT>::new(
         client,
         starknet_params.overrides,
         pool,

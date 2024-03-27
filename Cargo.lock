@@ -2549,6 +2549,7 @@ dependencies = [
  "mp-program-hash",
  "mp-simulations",
  "mp-transactions",
+ "mp-types",
  "pallet-aura",
  "pallet-grandpa",
  "pallet-starknet",
@@ -6438,6 +6439,7 @@ dependencies = [
 name = "mp-types"
 version = "0.1.0"
 dependencies = [
+ "mp-hashers",
  "sp-core",
  "sp-runtime",
 ]

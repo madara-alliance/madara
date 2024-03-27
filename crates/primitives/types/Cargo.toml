@@ -11,3 +11,6 @@ version.workspace = true
 # Substrate
 sp-runtime = { workspace = true }
 sp-core = { workspace = true }
+
+# Madara primitives
+mp-hashers = { workspace = true }
