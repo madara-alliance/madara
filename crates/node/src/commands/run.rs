@@ -174,16 +174,8 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
 
         let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
 
-        service::new_full(
-            config,
-            sealing,
-            cli.run.base.rpc_port.unwrap(),
-            l1_endpoint,
-            cache,
-            fetch_block_config,
-            genesis_block,
-        )
-        .map_err(sc_cli::Error::Service)
+        service::new_full(config, sealing, l1_endpoint, cache, fetch_block_config, genesis_block)
+            .map_err(sc_cli::Error::Service)
     })
 }
 
