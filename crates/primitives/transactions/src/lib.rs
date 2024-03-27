@@ -6,7 +6,6 @@ pub extern crate alloc;
 
 pub mod compute_hash;
 pub mod conversions;
-pub mod execution;
 #[cfg(feature = "client")]
 pub mod from_broadcasted_transactions;
 pub mod getters;

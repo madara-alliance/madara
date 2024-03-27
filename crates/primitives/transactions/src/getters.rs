@@ -5,8 +5,9 @@ use mp_felt::Felt252Wrapper;
 use super::{DeclareTransaction, DeployAccountTransaction, InvokeTransaction, Transaction, UserTransaction};
 use crate::{
     DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeployTransaction, HandleL1MessageTransaction,
-    InvokeTransactionV0, InvokeTransactionV1, UserOrL1HandlerTransaction,
+    InvokeTransactionV0, InvokeTransactionV1, UserOrL1HandlerTransaction, 
 };
+
 
 impl Transaction {
     pub fn signature(&self) -> Vec<Felt252Wrapper> {
@@ -147,7 +148,7 @@ impl DeployAccountTransaction {
     }
 
     pub fn account_address(&self) -> Felt252Wrapper {
-        Felt252Wrapper(self.get_account_address())
+        Felt252Wrapper(self.account_address().into())
     }
 
     pub fn class_hash(&self) -> &Felt252Wrapper {
@@ -169,7 +170,7 @@ impl DeployTransaction {
     }
 
     pub fn account_address(&self) -> Felt252Wrapper {
-        Felt252Wrapper(self.get_account_address())
+        Felt252Wrapper(self.account_address().into())
     }
 
     pub fn class_hash(&self) -> &Felt252Wrapper {
