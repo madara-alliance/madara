@@ -32,6 +32,7 @@
 // Ensure we're `no_std` when compiling for Wasm.
 #![allow(clippy::large_enum_variant)]
 
+use mc_db::storage::StorageHandler;
 /// Starknet pallet.
 /// Definition of the pallet's runtime storage items, events, errors, and dispatchable
 /// functions.
@@ -1014,11 +1015,12 @@ impl<T: Config> Pallet<T> {
 
     /// Get storage value at
     pub fn get_storage_at(contract_address: ContractAddress, key: StorageKey) -> Result<StarkFelt, DispatchError> {
-        // Get state
-        ensure!(ContractClassHashes::<T>::contains_key(contract_address), Error::<T>::ContractNotFound);
+        let query = StorageHandler::contract_storage()
+            .get(&contract_address, &key)
+            .map_err(|_| Error::<T>::ContractNotFound)?;
 
-        match Self::storage(contract_address).iter().find(|(storage_key, _)| key == *storage_key) {
-            Some((_, value)) => Ok(*value),
+        match query {
+            Some(value) => Ok(StarkFelt(value.to_bytes_be())),
             None => Err(DispatchError::CannotLookup),
         }
     }

@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use blockifier::execution::contract_class::ContractClass;
+use mc_db::storage::StorageHandler;
 use mp_contract::ContractAbi;
 use mp_storage::{
     PALLET_STARKNET, STARKNET_CONTRACT_ABI, STARKNET_CONTRACT_CLASS, STARKNET_CONTRACT_CLASS_HASH, STARKNET_NONCE,
@@ -58,28 +59,14 @@ where
 {
     fn get_storage_by_storage_key(
         &self,
+        // FIXME: support `block_hash`
         block_hash: <B as BlockT>::Hash,
         address: ContractAddress,
         key: StarknetStorageKey,
     ) -> Option<StarkFelt> {
-        let storage_storage_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_STORAGE);
-        let key = (address, key);
+        let query = StorageHandler::contract_storage().get(&address, &key).unwrap_or(None);
 
-        // check if contract exists
-        match self.contract_class_hash_by_address(block_hash, address) {
-            Some(_) => (),
-            None => return None,
-        }
-
-        let storage = self.query_storage::<StarkFelt>(
-            block_hash,
-            &StorageKey(storage_key_build(storage_storage_prefix, &self.encode_storage_key(&key))),
-        );
-
-        match storage {
-            Some(storage) => Some(storage),
-            None => Some(Default::default()),
-        }
+        query.map(|value| StarkFelt(value.to_bytes_be()))
     }
 
     fn get_storage_from(

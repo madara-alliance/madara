@@ -14,18 +14,30 @@ repository = "https://github.com/keep-starknet-strange/madara"
 version.workspace = true
 
 [dependencies]
-blockifier = { workspace = true, features = ["std"] }
-deoxys-runtime = { workspace = true, features = ["std"] }
-frame-support = { workspace = true, features = ["std"] }
-frame-system = { workspace = true, features = ["std"] }
+
+# Madara primitives
 mp-contract = { workspace = true, features = ["std"] }
 mp-storage = { workspace = true, features = ["std"] }
+mc-db = { workspace = true }
+
+# Runtime
+deoxys-runtime = { workspace = true, features = ["std"] }
+
+# Starknet crates
 pallet-starknet-runtime-api = { workspace = true, features = ["std"] }
-parity-scale-codec = { workspace = true, features = ["std"] }
+starknet_api = { workspace = true, features = ["std"] }
+blockifier = { workspace = true, features = ["std"] }
+
+# Substrate crates
 sc-client-api = { workspace = true }
 sp-api = { workspace = true, features = ["std"] }
 sp-blockchain = { workspace = true }
 sp-io = { workspace = true, features = ["std"] }
 sp-runtime = { workspace = true, features = ["std"] }
 sp-storage = { workspace = true, features = ["std"] }
-starknet_api = { workspace = true, features = ["std"] }
+frame-support = { workspace = true, features = ["std"] }
+frame-system = { workspace = true, features = ["std"] }
+parity-scale-codec = { workspace = true, features = ["std"] }
+
+# Utility crates
+log = { workspace = true }

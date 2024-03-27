@@ -5969,6 +5969,8 @@ dependencies = [
  "deoxys-runtime",
  "frame-support",
  "frame-system",
+ "log",
+ "mc-db",
  "mp-contract",
  "mp-storage",
  "pallet-starknet-runtime-api",
