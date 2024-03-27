@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use deoxys_runtime::opaque::DBlockT;
 use deoxys_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use futures::channel::mpsc;
 use futures::future;
@@ -23,6 +22,7 @@ use mp_contract::class::ClassUpdateWrapper;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
 };
+use mp_types::block::DBlockT;
 use parity_scale_codec::Encode;
 use prometheus_endpoint::Registry;
 use reqwest::Url;

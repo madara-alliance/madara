@@ -29,6 +29,7 @@ mp-simulations = { workspace = true, features = [
 mp-state = { workspace = true }
 mp-storage = { workspace = true, features = ["parity-scale-codec"] }
 mp-transactions = { workspace = true, features = ["scale-info"] }
+mc-db = { workspace = true }
 
 blockifier = { workspace = true, features = [
   "parity-scale-codec",

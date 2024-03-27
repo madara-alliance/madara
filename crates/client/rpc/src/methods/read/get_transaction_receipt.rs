@@ -1,6 +1,5 @@
 use blockifier::execution::contract_class::{ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf};
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use log::error;
@@ -12,6 +11,7 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::{DeclareTransaction, Transaction as TransactionMp, UserOrL1HandlerTransaction, UserTransaction};
+use mp_types::block::{DBlockT, DHashT};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;

@@ -1,6 +1,6 @@
 use sp_runtime::traits::{IdentifyAccount, Verify};
 
-use crate::DTxSignatureT;
+use crate::transactions::DTxSignatureT;
 
 /// Some way of identifying an account on the chain. We intentionally make it equivalent
 /// to the public key of our transaction signing scheme.

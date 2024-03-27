@@ -67,11 +67,13 @@ mp-felt = { workspace = true, default-features = true }
 mp-hashers = { workspace = true, default-features = true }
 mp-simulations = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
+mp-types = { workspace = true }
 num-bigint = { workspace = true }
 serde = { workspace = true, default-features = true }
 serde_json = { workspace = true, default-features = true }
 serde_with = { workspace = true }
 thiserror = { workspace = true }
+bitvec = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
