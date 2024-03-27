@@ -9,8 +9,8 @@ version.workspace = true
 [dependencies]
 
 # Substrate
-sp-runtime = { workspace = true }
 sp-core = { workspace = true }
+sp-runtime = { workspace = true }
 
 # Madara primitives
 mp-hashers = { workspace = true }

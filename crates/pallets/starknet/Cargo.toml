@@ -14,6 +14,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 # Madara primitives
+mc-db = { workspace = true }
 mp-block = { workspace = true }
 mp-contract = { workspace = true }
 mp-digest-log = { workspace = true }
@@ -29,7 +30,6 @@ mp-simulations = { workspace = true, features = [
 mp-state = { workspace = true }
 mp-storage = { workspace = true, features = ["parity-scale-codec"] }
 mp-transactions = { workspace = true, features = ["scale-info"] }
-mc-db = { workspace = true }
 
 blockifier = { workspace = true, features = [
   "parity-scale-codec",

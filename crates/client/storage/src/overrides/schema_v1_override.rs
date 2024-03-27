@@ -59,8 +59,9 @@ where
 {
     fn get_storage_by_storage_key(
         &self,
-        // FIXME: support `block_hash`
-        block_hash: <B as BlockT>::Hash,
+        // FIXME: handle block hash once the bonsai lib supports
+        // returning to previous commits in a non-destructive way
+        _block_hash: <B as BlockT>::Hash,
         address: ContractAddress,
         key: StarknetStorageKey,
     ) -> Option<StarkFelt> {
