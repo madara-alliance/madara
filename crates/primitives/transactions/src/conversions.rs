@@ -253,7 +253,8 @@ impl DeployAccountTransaction {
         }
     }
 
-    pub fn from_starknet(inner: starknet_api::transaction::DeployAccountTransactionV1) -> Self { //TODO : Check if we can do one that works for both versions
+    pub fn from_starknet(inner: starknet_api::transaction::DeployAccountTransactionV1) -> Self {
+        // TODO : Check if we can do one that works for both versions
         Self {
             max_fee: inner.max_fee.0,
             signature: inner.signature.0.iter().map(|felt| Felt252Wrapper::from(*felt)).collect(),

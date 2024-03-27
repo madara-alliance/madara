@@ -10,9 +10,9 @@
 
 // use crate::compute_hash::ComputeTransactionHash;
 // use crate::{
-//     DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeployAccountTransaction,
-//     HandleL1MessageTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, Transaction,
-//     UserTransaction,
+//     DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2,
+// DeployAccountTransaction,     HandleL1MessageTransaction, InvokeTransaction, InvokeTransactionV0,
+// InvokeTransactionV1, Transaction,     UserTransaction,
 // };
 
 // #[test]
@@ -44,7 +44,8 @@
 // fn test_deploy_account_tx_hash() {
 //     // Computed with `calculateDeployAccountTransactionHash` from the starknet.js
 //     let expected_tx_hash =
-//         Felt252Wrapper::from_hex_be("0x04cf7bf97d4f8ef73eb83d2e6fb8e5354c04f2121b9bd38510220eff3a07e9df").unwrap();
+//         Felt252Wrapper::from_hex_be("
+// 0x04cf7bf97d4f8ef73eb83d2e6fb8e5354c04f2121b9bd38510220eff3a07e9df").unwrap();
 
 //     let chain_id = Felt252Wrapper(FieldElement::from_byte_slice_be(b"SN_GOERLI").unwrap());
 
@@ -52,8 +53,8 @@
 //         max_fee: 1,
 //         signature: vec![],
 //         nonce: Felt252Wrapper::ZERO,
-//         constructor_calldata: vec![Felt252Wrapper::ONE, Felt252Wrapper::TWO, Felt252Wrapper::THREE],
-//         contract_address_salt: Felt252Wrapper::ZERO,
+//         constructor_calldata: vec![Felt252Wrapper::ONE, Felt252Wrapper::TWO,
+// Felt252Wrapper::THREE],         contract_address_salt: Felt252Wrapper::ZERO,
 //         class_hash: Felt252Wrapper::THREE,
 //         offset_version: false,
 //     };
@@ -75,7 +76,8 @@
 // fn test_declare_v0_tx_hash() {
 //     // Computed with `calculate_declare_transaction_hash` from the cairo lang package
 //     let expected_tx_hash =
-//         Felt252Wrapper::from_hex_be("0x052b849ca86ca1a1ce6ac7e069900a221b5741786bffe023804ef714f7bb46da").unwrap();
+//         Felt252Wrapper::from_hex_be("
+// 0x052b849ca86ca1a1ce6ac7e069900a221b5741786bffe023804ef714f7bb46da").unwrap();
 
 //     let chain_id = Felt252Wrapper(FieldElement::from_byte_slice_be(b"SN_GOERLI").unwrap());
 
@@ -99,16 +101,17 @@
 //     let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
 //     assert_eq!(tx_hash, expected_tx_hash);
 
-//     let user_transaction = UserTransaction::Declare(declare_v0_transaction, ContractClass::V0(Default::default()));
-//     let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
-//     assert_eq!(tx_hash, expected_tx_hash);
-// }
+//     let user_transaction = UserTransaction::Declare(declare_v0_transaction,
+// ContractClass::V0(Default::default()));     let tx_hash =
+// user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);     assert_eq!(tx_hash,
+// expected_tx_hash); }
 
 // #[test]
 // fn test_declare_v1_tx_hash() {
 //     // Computed with `calculate_declare_transaction_hash` from the cairo lang package
 //     let expected_tx_hash =
-//         Felt252Wrapper::from_hex_be("0x077f205d4855199564663dc9810c1edfcf97573393033dedc3f12dac740aac13").unwrap();
+//         Felt252Wrapper::from_hex_be("
+// 0x077f205d4855199564663dc9810c1edfcf97573393033dedc3f12dac740aac13").unwrap();
 
 //     let chain_id = Felt252Wrapper(FieldElement::from_byte_slice_be(b"SN_GOERLI").unwrap());
 
@@ -133,16 +136,17 @@
 //     let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
 //     assert_eq!(tx_hash, expected_tx_hash);
 
-//     let user_transaction = UserTransaction::Declare(declare_v1_transaction, ContractClass::V0(Default::default()));
-//     let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
-//     assert_eq!(tx_hash, expected_tx_hash);
-// }
+//     let user_transaction = UserTransaction::Declare(declare_v1_transaction,
+// ContractClass::V0(Default::default()));     let tx_hash =
+// user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);     assert_eq!(tx_hash,
+// expected_tx_hash); }
 
 // #[test]
 // fn test_declare_v2_tx_hash() {
 //     // Computed with `calculate_declare_transaction_hash` from the cairo lang package
 //     let expected_tx_hash =
-//         Felt252Wrapper::from_hex_be("0x7ca2d13e00a7249a7f61cf65c20a20f2870276d4db00d816e836eb2ca9029ae").unwrap();
+//         Felt252Wrapper::from_hex_be("
+// 0x7ca2d13e00a7249a7f61cf65c20a20f2870276d4db00d816e836eb2ca9029ae").unwrap();
 
 //     let chain_id = Felt252Wrapper(FieldElement::from_byte_slice_be(b"SN_GOERLI").unwrap());
 
@@ -168,16 +172,17 @@
 //     let tx_hash = generic_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
 //     assert_eq!(tx_hash, expected_tx_hash);
 
-//     let user_transaction = UserTransaction::Declare(declare_v2_transaction, ContractClass::V1(Default::default()));
-//     let tx_hash = user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);
-//     assert_eq!(tx_hash, expected_tx_hash);
-// }
+//     let user_transaction = UserTransaction::Declare(declare_v2_transaction,
+// ContractClass::V1(Default::default()));     let tx_hash =
+// user_transaction.compute_hash::<PedersenHasher>(chain_id, false, None);     assert_eq!(tx_hash,
+// expected_tx_hash); }
 
 // #[test]
 // fn test_invoke_tx_v0_hash() {
 //     // Computed with `calculate_transaction_hash_common` from the cairo lang package
 //     let expected_tx_hash =
-//         Felt252Wrapper::from_hex_be("0x0006a8aca140749156148fa84f432f7f7b7318c119d97dd1808848fc74d1a8a6").unwrap();
+//         Felt252Wrapper::from_hex_be("
+// 0x0006a8aca140749156148fa84f432f7f7b7318c119d97dd1808848fc74d1a8a6").unwrap();
 
 //     let chain_id = Felt252Wrapper(FieldElement::from_byte_slice_be(b"SN_GOERLI").unwrap());
 
@@ -210,7 +215,8 @@
 // fn test_invoke_tx_v1_hash() {
 //     // Computed with `calculate_transaction_hash_common` from the cairo lang package
 //     let expected_tx_hash =
-//         Felt252Wrapper::from_hex_be("0x062633b1f3d64708df3d0d44706b388f841ed4534346be6ad60336c8eb2f4b3e").unwrap();
+//         Felt252Wrapper::from_hex_be("
+// 0x062633b1f3d64708df3d0d44706b388f841ed4534346be6ad60336c8eb2f4b3e").unwrap();
 
 //     let chain_id = Felt252Wrapper(FieldElement::from_byte_slice_be(b"SN_GOERLI").unwrap());
 
@@ -244,7 +250,8 @@
 // fn test_handle_l1_message_tx_hash() {
 //     // Computed with `calculate_transaction_hash_common` from the cairo lang package
 //     let expected_tx_hash =
-//         Felt252Wrapper::from_hex_be("0x023f18bb43e61985fba987824a9b8fdea96276e38e34702c72de4250ba91f518").unwrap();
+//         Felt252Wrapper::from_hex_be("
+// 0x023f18bb43e61985fba987824a9b8fdea96276e38e34702c72de4250ba91f518").unwrap();
 
 //     let chain_id = Felt252Wrapper(FieldElement::from_byte_slice_be(b"SN_GOERLI").unwrap());
 
@@ -260,6 +267,6 @@
 //     assert_eq!(tx_hash, expected_tx_hash);
 
 //     let wrapped_transaction = Transaction::L1Handler(transaction.clone());
-//     let tx_hash = wrapped_transaction.compute_hash::<PedersenHasher>(chain_id, false, Some(854u64));
-//     assert_eq!(tx_hash, expected_tx_hash);
+//     let tx_hash = wrapped_transaction.compute_hash::<PedersenHasher>(chain_id, false,
+// Some(854u64));     assert_eq!(tx_hash, expected_tx_hash);
 // }

@@ -2,9 +2,6 @@ use alloc::vec::Vec;
 
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use starknet_core::crypto::compute_hash_on_elements;
-use starknet_crypto::FieldElement;
-
 use starknet_api::core::calculate_contract_address;
 use starknet_api::data_availability::DataAvailabilityMode;
 use starknet_api::transaction::{
@@ -13,6 +10,9 @@ use starknet_api::transaction::{
     InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Resource,
     ResourceBoundsMapping, TransactionHash,
 };
+use starknet_core::crypto::compute_hash_on_elements;
+use starknet_crypto::FieldElement;
+
 use super::SIMULATE_TX_VERSION_OFFSET;
 use crate::{DeployTransaction, UserOrL1HandlerTransaction, LEGACY_BLOCK_NUMBER};
 
@@ -36,7 +36,7 @@ pub trait ComputeTransactionHash {
 fn convert_calldata(calldata: Calldata) -> Vec<FieldElement> {
     calldata.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect()
 }
-    
+
 fn prepare_resource_bound_value(resource_bounds_mapping: &ResourceBoundsMapping, resource: Resource) -> FieldElement {
     let mut buffer = [0u8; 32];
     buffer[2..8].copy_from_slice(match resource {
@@ -47,11 +47,11 @@ fn prepare_resource_bound_value(resource_bounds_mapping: &ResourceBoundsMapping,
         buffer[8..16].copy_from_slice(&resource_bounds.max_amount.to_be_bytes());
         buffer[16..].copy_from_slice(&resource_bounds.max_price_per_unit.to_be_bytes());
     };
-    
+
     // Safe to unwrap because we left most significant bit of the buffer empty
     FieldElement::from_bytes_be(&buffer).unwrap()
 }
-    
+
 fn prepare_data_availability_modes(
     nonce_data_availability_mode: DataAvailabilityMode,
     fee_data_availability_mode: DataAvailabilityMode,
@@ -59,7 +59,7 @@ fn prepare_data_availability_modes(
     let mut buffer = [0u8; 32];
     buffer[64..96].copy_from_slice(&(nonce_data_availability_mode as u32).to_be_bytes());
     buffer[96..].copy_from_slice(&(fee_data_availability_mode as u32).to_be_bytes());
-    
+
     // Safe to unwrap because we left most significant bit of the buffer empty
     FieldElement::from_bytes_be(&buffer).unwrap()
 }
@@ -91,8 +91,14 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
             ]))
             .into()
         } else {
-            Felt252Wrapper(H::compute_hash_on_elements(&[prefix, sender_address, entrypoint_selector, calldata_hash, chain_id.into()])
-                ).into()
+            Felt252Wrapper(H::compute_hash_on_elements(&[
+                prefix,
+                sender_address,
+                entrypoint_selector,
+                calldata_hash,
+                chain_id.into(),
+            ]))
+            .into()
         }
     }
 }
@@ -127,7 +133,12 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
 }
 
 impl ComputeTransactionHash for InvokeTransactionV3 {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>) -> TransactionHash {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> TransactionHash {
         let prefix = FieldElement::from_byte_slice_be(INVOKE_PREFIX).unwrap();
         let version =
             if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::THREE } else { FieldElement::THREE };
@@ -182,7 +193,7 @@ impl ComputeTransactionHash for InvokeTransaction {
         }
     }
 }
-//TODO: Check this implem, Madara-wip do it using another way, a function insted of an implem
+// TODO: Check this implem, Madara-wip do it using another way, a function insted of an implem
 impl ComputeTransactionHash for DeclareTransactionV0V1 {
     fn compute_hash<H: HasherT>(
         &self,
@@ -196,8 +207,11 @@ impl ComputeTransactionHash for DeclareTransactionV0V1 {
         let entrypoint_selector = FieldElement::ZERO;
         let alignment_placeholder = compute_hash_on_elements(&[]);
         let max_fee = FieldElement::from(self.max_fee.0);
-        let nonce_or_class_hash: FieldElement =
-            if version == FieldElement::ZERO { Felt252Wrapper::from(self.class_hash).into() } else { Felt252Wrapper::from(self.nonce).into() };
+        let nonce_or_class_hash: FieldElement = if version == FieldElement::ZERO {
+            Felt252Wrapper::from(self.class_hash).into()
+        } else {
+            Felt252Wrapper::from(self.nonce).into()
+        };
         let class_or_nothing_hash = if version == FieldElement::ZERO {
             compute_hash_on_elements(&[])
         } else {
@@ -234,7 +248,6 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
         let nonce = Felt252Wrapper::from(self.nonce).into();
         let compiled_class_hash = Felt252Wrapper::from(self.compiled_class_hash).into();
 
-
         Felt252Wrapper(H::compute_hash_on_elements(&[
             prefix,
             version,
@@ -251,7 +264,12 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
 }
 
 impl ComputeTransactionHash for DeclareTransactionV3 {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>) -> TransactionHash {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> TransactionHash {
         let prefix = FieldElement::from_byte_slice_be(DECLARE_PREFIX).unwrap();
         let version =
             if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::THREE } else { FieldElement::THREE };
@@ -305,7 +323,12 @@ impl ComputeTransactionHash for DeclareTransaction {
 }
 
 impl ComputeTransactionHash for DeployAccountTransaction {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, block_number: Option<u64>) -> TransactionHash {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        block_number: Option<u64>,
+    ) -> TransactionHash {
         match self {
             DeployAccountTransaction::V1(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
             DeployAccountTransaction::V3(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
@@ -328,7 +351,12 @@ impl ComputeTransactionHash for DeployTransaction {
 }
 
 impl ComputeTransactionHash for DeployAccountTransactionV1 {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>) -> TransactionHash {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> TransactionHash {
         let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
 
         let contract_address = Felt252Wrapper::from(
@@ -367,7 +395,12 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
 }
 
 impl ComputeTransactionHash for DeployAccountTransactionV3 {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>) -> TransactionHash {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> TransactionHash {
         let prefix = FieldElement::from_byte_slice_be(DEPLOY_ACCOUNT_PREFIX).unwrap();
         let version =
             if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::THREE } else { FieldElement::THREE };
@@ -413,7 +446,12 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
 }
 
 impl ComputeTransactionHash for L1HandlerTransaction {
-    fn compute_hash<H: HasherT>(&self, chain_id: Felt252Wrapper, offset_version: bool, _block_number: Option<u64>) -> TransactionHash {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> TransactionHash {
         let prefix = FieldElement::from_byte_slice_be(L1_HANDLER_PREFIX).unwrap();
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { FieldElement::ZERO };
         let contract_address = Felt252Wrapper::from(self.contract_address).into();

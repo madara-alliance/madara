@@ -6,10 +6,10 @@ use anyhow::anyhow;
 use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
 };
-use cairo_lang_starknet_classes::casm_contract_class::CasmContractClass;
-use cairo_lang_starknet_classes::contract_class::{ContractClass as SierraContractClass, ContractEntryPoint, ContractEntryPoints};
-
-use cairo_lang_starknet_classes::casm_contract_class::StarknetSierraCompilationError;
+use cairo_lang_starknet_classes::casm_contract_class::{CasmContractClass, StarknetSierraCompilationError};
+use cairo_lang_starknet_classes::contract_class::{
+    ContractClass as SierraContractClass, ContractEntryPoint, ContractEntryPoints,
+};
 use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
@@ -54,7 +54,8 @@ pub fn to_contract_class_cairo(
     contract_class: &ContractClassV0,
     abi: Option<Vec<LegacyContractAbiEntry>>,
 ) -> anyhow::Result<ContractClassCore> {
-    let entry_points_by_type: HashMap<_, _> = contract_class.entry_points_by_type.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let entry_points_by_type: HashMap<_, _> =
+        contract_class.entry_points_by_type.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     let entry_points_by_type = to_legacy_entry_points_by_type(&entry_points_by_type)?;
     let compressed_program = compress(&contract_class.program.to_bytes())?;
     Ok(ContractClassCore::Legacy(CompressedLegacyContractClass {

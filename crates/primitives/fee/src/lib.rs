@@ -39,7 +39,7 @@
 // /// Number of storage updates for the fee transfer tx.
 // pub const FEE_TRANSFER_N_STORAGE_CHANGES: u8 = 2; // Sender and sequencer balance update.
 // /// Number of storage updates to actually charge for the fee transfer tx.
-// pub const FEE_TRANSFER_N_STORAGE_CHANGES_TO_CHARGE: u8 = FEE_TRANSFER_N_STORAGE_CHANGES - 1; 
+// pub const FEE_TRANSFER_N_STORAGE_CHANGES_TO_CHARGE: u8 = FEE_TRANSFER_N_STORAGE_CHANGES - 1;
 // //Exclude the sequencer balance update, since it's charged once throughout the batch.
 
 // pub static VM_RESOURCE_FEE_COSTS: [(&str, FixedU128); 8] = [
@@ -91,8 +91,9 @@
 //   state.count_state_changes(); let non_optional_call_infos: Vec<&CallInfo> =
 //   vec![execute_call_info, validate_call_info].into_iter().flatten().collect();
 
-//   let l1_gas_usage = calculate_l1_gas_by_vm_usage(&non_optional_call_infos, state_changes_count, l1_handler_payload_size)?;
-//   let actual_resources = calculate_tx_resources(execution_resources, l1_gas_usage, tx_type)?;
+//   let l1_gas_usage = calculate_l1_gas_by_vm_usage(&non_optional_call_infos, state_changes_count,
+// l1_handler_payload_size)?;   let actual_resources = calculate_tx_resources(execution_resources,
+// l1_gas_usage, tx_type)?;
 
 //     Ok(actual_resources)
 // }
@@ -213,9 +214,10 @@
 //     _block_context: &BlockContext,
 //     vm_resource_usage: &ResourcesMapping,
 // ) -> TransactionExecutionResult<FixedU128> { let vm_resource_fee_costs: HashMap<&str, FixedU128>
-//   = HashMap::from(VM_RESOURCE_FEE_COSTS); // Check if keys in vm_resource_usage are a subset ofkeys in VM_RESOURCE_FEE_COSTS 
-//   if vm_resource_usage.0.keys().any(|key| !vm_resource_fee_costs.contains_key(key.as_str())) {
-//     return Err(TransactionExecutionError::CairoResourcesNotContainedInFeeCosts);
+//   = HashMap::from(VM_RESOURCE_FEE_COSTS); // Check if keys in vm_resource_usage are a subset
+//   ofkeys in VM_RESOURCE_FEE_COSTS if vm_resource_usage.0.keys().any(|key|
+//   !vm_resource_fee_costs.contains_key(key.as_str())) { return
+//   Err(TransactionExecutionError::CairoResourcesNotContainedInFeeCosts);
 // };
 
 //     // Convert Cairo usage to L1 gas usage.
