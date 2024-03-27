@@ -5,7 +5,7 @@ use mp_fee::ResourcePrice;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use sp_core::U256;
-use starknet_api::api_core::{ChainId, ContractAddress};
+use starknet_api::core::{ChainId, ContractAddress};
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::hash::StarkHash;
 use starknet_api::stdlib::collections::HashMap;

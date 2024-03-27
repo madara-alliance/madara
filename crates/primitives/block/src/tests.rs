@@ -3,7 +3,7 @@ use core::convert::TryFrom;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
-use starknet_api::api_core::{ChainId, ContractAddress, PatriciaKey};
+use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::hash::{StarkFelt, StarkHash};
 

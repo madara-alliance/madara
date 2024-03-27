@@ -12,7 +12,6 @@ pub mod state_update;
 pub use header::*;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::Transaction;
 pub use ordered_events::*;
 
