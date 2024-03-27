@@ -3,6 +3,7 @@ git # Deoxys Changelog
 ## Next release
 
 - feat(storage): set up type-safe bonsai storage abstractions for usage in RPC
+- fix(latest): Retrieve latest synced block via internal client
 - perf(l2 sync): parallelize commitment computation and refactor part of l2 io sync
 - refactor: rpc methods and removed rpc-core
 - feat: add an optional TUI dashboard

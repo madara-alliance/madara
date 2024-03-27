@@ -31,15 +31,17 @@ pub mod starknet_sync_worker {
     pub async fn sync<C>(
         fetch_config: FetchConfig,
         sender_config: SenderConfig,
-        rpc_port: u16,
         l1_url: Url,
         client: Arc<C>,
+        starting_block: u32,
     ) where
         C: HeaderBackend<DBlockT> + 'static,
     {
-        let first_block = utility::get_last_synced_block(rpc_port).await + 1;
+        let starting_block = starting_block + 1;
 
-        let _ =
-            tokio::join!(l1::sync(l1_url.clone()), l2::sync(sender_config, fetch_config.clone(), first_block, client,));
+        let _ = tokio::join!(
+            l1::sync(l1_url.clone()),
+            l2::sync(sender_config, fetch_config.clone(), starting_block.into(), client)
+        );
     }
 }
