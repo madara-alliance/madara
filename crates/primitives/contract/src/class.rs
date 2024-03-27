@@ -3,7 +3,7 @@
 use blockifier::execution::contract_class::ContractClass as ContractClassBlockifier;
 #[cfg(feature = "parity-scale-codec")]
 use parity_scale_codec::{Decode, Encode};
-use starknet_api::api_core::ClassHash;
+use starknet_api::core::ClassHash;
 
 use crate::ContractAbi;
 

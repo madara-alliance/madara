@@ -92,7 +92,8 @@ pub fn flattened_sierra_to_casm_contract_class(
         ),
         abi: None, // we can convert the ABI but for now, to convert to Casm, the ABI isn't needed
     };
-    let casm_contract_class = sierra_contract_class.into_casm_contract_class(false)?;
+    //TODO : fix from_contract_class parameters here
+    let casm_contract_class = CasmContractClass::from_contract_class(sierra_contract_class, false, usize::MAX).unwrap();    
     Ok(casm_contract_class)
 }
 

@@ -1,7 +1,5 @@
 use alloc::vec::Vec;
 
-
-use blockifier::test_utils::invoke;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use starknet_api::core::calculate_contract_address;
@@ -347,9 +345,12 @@ impl ComputeTransactionHash for DeployTransaction {
         block_number: Option<u64>,
     ) -> TransactionHash {
         let chain_id = chain_id.into();
-        let contract_address = self.account_address();
+        let contract_address = self.account_address().into();
 
-        self.compute_hash_given_contract_address::<H>(chain_id, contract_address, is_query, block_number).into()
+        let constructor_calldata = self.constructor_calldata.clone();
+        let constructor_calldata_vec: Vec<FieldElement> = constructor_calldata.into_iter().map(|x| x.into()).collect();
+
+        compute_hash_given_contract_address::<H>(self.clone(), chain_id, contract_address, is_query, block_number, &constructor_calldata_vec)
     }
 }
 
@@ -498,22 +499,21 @@ impl ComputeTransactionHash for L1HandlerTransaction {
     }
 }
 
-
-impl ComputeTransactionHash for UserOrL1HandlerTransaction {
-    fn compute_hash<H: HasherT>(
-        &self,
-        chain_id: Felt252Wrapper,
-        offset_version: bool,
-        block_number: Option<u64>,
-    ) -> TransactionHash {
-        match self {
-            UserOrL1HandlerTransaction::User(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
-            UserOrL1HandlerTransaction::L1Handler(tx, _) => {
-                tx.compute_hash::<H>(chain_id, offset_version, block_number)
-            }
-        }
-    }
-}
+// impl ComputeTransactionHash for UserOrL1HandlerTransaction {
+//     fn compute_hash<H: HasherT>(
+//         &self,
+//         chain_id: Felt252Wrapper,
+//         offset_version: bool,
+//         block_number: Option<u64>,
+//     ) -> TransactionHash {
+//         match self {
+//             UserOrL1HandlerTransaction::User(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
+//             UserOrL1HandlerTransaction::L1Handler(tx, _) => {
+//                 tx.compute_hash::<H>(chain_id, offset_version, block_number)
+//             }
+//         }
+//     }
+// }
 
 pub fn compute_hash_given_contract_address<H: HasherT>(
     transaction: DeployTransaction,
@@ -521,10 +521,11 @@ pub fn compute_hash_given_contract_address<H: HasherT>(
     contract_address: FieldElement,
     _is_query: bool,
     block_number: Option<u64>,
-) -> Felt252Wrapper {
+    constructor_calldata: &[FieldElement],
+) -> TransactionHash {
     let prefix = FieldElement::from_byte_slice_be(DEPLOY_PREFIX).unwrap();
     let version = Felt252Wrapper::from(transaction.version.0).into();
-    let constructor_calldata = compute_hash_on_elements(&convert_calldata(&[transaction.constructor_calldata]));
+    let constructor_calldata = compute_hash_on_elements(constructor_calldata);
 
     let constructor = starknet_keccak(b"constructor");
 
@@ -538,8 +539,9 @@ pub fn compute_hash_given_contract_address<H: HasherT>(
             FieldElement::ZERO,
             chain_id,
         ]))
+        .into()
     } else {
-        Felt252Wrapper(H::compute_hash_on_elements(&[prefix, contract_address, constructor, constructor_calldata, chain_id]))
+        Felt252Wrapper(H::compute_hash_on_elements(&[prefix, contract_address, constructor, constructor_calldata, chain_id])).into()
     }
 }
 

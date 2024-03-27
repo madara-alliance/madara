@@ -19,7 +19,8 @@ use alloc::vec::Vec;
 use mp_contract::ContractAbi;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
 use sp_runtime::DispatchError;
-use starknet_api::api_core::{ChainId, ClassHash, ContractAddress, EntryPointSelector, Nonce};
+use blockifier::context::BlockContext;
+use starknet_api::core::{ChainId, ClassHash, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
@@ -120,7 +121,7 @@ sp_api::decl_runtime_apis! {
 }
 
 #[derive(Clone, Debug, parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
-pub struct BlockContext {
+
     pub chain_id: String,
     pub block_number: u64,
     pub block_timestamp: u64,
@@ -160,8 +161,8 @@ impl From<BlockContext> for blockifier::block_context::BlockContext {
     }
 }
 
-impl From<blockifier::block_context::BlockContext> for BlockContext {
-    fn from(value: blockifier::block_context::BlockContext) -> Self {
+impl From<block_context::BlockContext> for BlockContext {
+    fn from(value: block_context::BlockContext) -> Self {
         Self {
             chain_id: value.chain_id.0,
             block_number: value.block_number.0,
