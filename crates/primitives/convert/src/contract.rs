@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
 
+
 use anyhow::anyhow;
 use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
@@ -57,7 +58,7 @@ pub fn to_contract_class_cairo(
     let entry_points_by_type: HashMap<_, _> =
         contract_class.entry_points_by_type.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     let entry_points_by_type = to_legacy_entry_points_by_type(&entry_points_by_type)?;
-    let compressed_program = compress(&contract_class.program.to_bytes())?;
+    let compressed_program = compress(&contract_class.program.serialize()?)?;
     Ok(ContractClassCore::Legacy(CompressedLegacyContractClass {
         program: compressed_program,
         entry_points_by_type,
@@ -191,14 +192,14 @@ fn to_legacy_entry_points_by_type(
     Ok(LegacyEntryPointsByType { constructor, external, l1_handler })
 }
 
-/// Returns a [HashMap<EntryPointType, Vec<EntryPoint>>] from a
+/// Returns a [IndexMap<EntryPointType, Vec<EntryPoint>>] from a
 /// [LegacyEntryPointsByType]
-fn from_legacy_entry_points_by_type(entries: &LegacyEntryPointsByType) -> HashMap<EntryPointType, Vec<EntryPoint>> {
+fn from_legacy_entry_points_by_type(entries: &LegacyEntryPointsByType) -> IndexMap<EntryPointType, Vec<EntryPoint>> {
     core::iter::empty()
         .chain(entries.constructor.iter().map(|entry| (EntryPointType::Constructor, entry)))
         .chain(entries.external.iter().map(|entry| (EntryPointType::External, entry)))
         .chain(entries.l1_handler.iter().map(|entry| (EntryPointType::L1Handler, entry)))
-        .fold(HashMap::new(), |mut map, (entry_type, entry)| {
+        .fold(IndexMap::new(), |mut map, (entry_type, entry)| {
             map.entry(entry_type).or_default().push(from_legacy_entry_point(entry));
             map
         })

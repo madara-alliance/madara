@@ -1,5 +1,7 @@
 use alloc::vec::Vec;
 
+
+use blockifier::test_utils::invoke;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use starknet_api::core::calculate_contract_address;
@@ -12,6 +14,7 @@ use starknet_api::transaction::{
 };
 use starknet_core::crypto::compute_hash_on_elements;
 use starknet_crypto::FieldElement;
+use starknet_core::utils::starknet_keccak;
 
 use super::SIMULATE_TX_VERSION_OFFSET;
 use crate::{DeployTransaction, UserOrL1HandlerTransaction, LEGACY_BLOCK_NUMBER};
@@ -344,7 +347,7 @@ impl ComputeTransactionHash for DeployTransaction {
         block_number: Option<u64>,
     ) -> TransactionHash {
         let chain_id = chain_id.into();
-        let contract_address = self.get_account_address();
+        let contract_address = self.account_address();
 
         self.compute_hash_given_contract_address::<H>(chain_id, contract_address, is_query, block_number).into()
     }
@@ -450,27 +453,51 @@ impl ComputeTransactionHash for L1HandlerTransaction {
         &self,
         chain_id: Felt252Wrapper,
         offset_version: bool,
-        _block_number: Option<u64>,
+        block_number: Option<u64>,
     ) -> TransactionHash {
         let prefix = FieldElement::from_byte_slice_be(L1_HANDLER_PREFIX).unwrap();
+        let invoke_prefix = FieldElement::from_byte_slice_be(INVOKE_PREFIX).unwrap();
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { FieldElement::ZERO };
         let contract_address = Felt252Wrapper::from(self.contract_address).into();
         let entrypoint_selector = Felt252Wrapper::from(self.entry_point_selector).into();
         let calldata_hash = compute_hash_on_elements(&convert_calldata(self.calldata.clone()));
         let nonce = Felt252Wrapper::from(self.nonce).into();
 
-        Felt252Wrapper(H::compute_hash_on_elements(&[
-            prefix,
-            version,
-            contract_address,
-            entrypoint_selector,
-            calldata_hash,
-            chain_id.into(),
-            nonce,
-        ]))
-        .into()
+        if block_number > Some(LEGACY_BLOCK_NUMBER) && block_number.is_some() {
+            Felt252Wrapper(H::compute_hash_on_elements(&[
+                invoke_prefix,
+                contract_address,
+                entrypoint_selector,
+                calldata_hash,
+                chain_id.into(),
+            ]))
+            .into()
+        } else if block_number < Some(LEGACY_BLOCK_NUMBER) && block_number.is_some() {
+            Felt252Wrapper(H::compute_hash_on_elements(&[
+                prefix,
+                contract_address,
+                entrypoint_selector,
+                calldata_hash,
+                chain_id.into(),
+                nonce,
+            ]))
+            .into()
+        } else {
+            Felt252Wrapper(H::compute_hash_on_elements(&[
+                prefix,
+                version,
+                contract_address,
+                entrypoint_selector,
+                calldata_hash,
+                FieldElement::ZERO, //fees are set to 0 on l1 handlerTx
+                chain_id.into(),
+                nonce,
+            ]))
+            .into()
+        }
     }
 }
+
 
 impl ComputeTransactionHash for UserOrL1HandlerTransaction {
     fn compute_hash<H: HasherT>(
@@ -485,6 +512,34 @@ impl ComputeTransactionHash for UserOrL1HandlerTransaction {
                 tx.compute_hash::<H>(chain_id, offset_version, block_number)
             }
         }
+    }
+}
+
+pub fn compute_hash_given_contract_address<H: HasherT>(
+    transaction: DeployTransaction,
+    chain_id: FieldElement,
+    contract_address: FieldElement,
+    _is_query: bool,
+    block_number: Option<u64>,
+) -> Felt252Wrapper {
+    let prefix = FieldElement::from_byte_slice_be(DEPLOY_PREFIX).unwrap();
+    let version = Felt252Wrapper::from(transaction.version.0).into();
+    let constructor_calldata = compute_hash_on_elements(&convert_calldata(&[transaction.constructor_calldata]));
+
+    let constructor = starknet_keccak(b"constructor");
+
+    if block_number > Some(LEGACY_BLOCK_NUMBER) {
+        Felt252Wrapper(H::compute_hash_on_elements(&[
+            prefix,
+            version,
+            contract_address,
+            constructor,
+            constructor_calldata,
+            FieldElement::ZERO,
+            chain_id,
+        ]))
+    } else {
+        Felt252Wrapper(H::compute_hash_on_elements(&[prefix, contract_address, constructor, constructor_calldata, chain_id]))
     }
 }
 

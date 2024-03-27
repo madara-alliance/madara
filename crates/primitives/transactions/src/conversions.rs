@@ -1,47 +1,38 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use blockifier::execution::contract_class::{ClassInfo, ContractClass};
-use blockifier::transaction::objects::TransactionExecutionResult;
-use blockifier::transaction::transactions as btx;
 use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
-use starknet_api::core::Nonce;
-use starknet_api::hash::StarkFelt;
 use starknet_api::transaction as sttx;
-use starknet_api::transaction::{Fee, TransactionVersion};
-
-use super::compute_hash::ComputeTransactionHash;
 use super::{
-    DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeployAccountTransaction,
-    HandleL1MessageTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1,
+    DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeployAccountTransaction,
+    HandleL1MessageTransaction, InvokeTransactionV0, InvokeTransactionV1,
 };
 
 impl DeclareTransactionV0 {
-    fn try_into_executable<H: HasherT>(
-        &self,
-        chain_id: Felt252Wrapper,
-        contract_class: ContractClass,
-        offset_version: bool,
-    ) -> TransactionExecutionResult<btx::DeclareTransaction> {
-        let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // fn try_into_executable<H: HasherT>(
+    //     &self,
+    //     chain_id: Felt252Wrapper,
+    //     contract_class: ContractClass,
+    //     offset_version: bool,
+    // ) -> TransactionExecutionResult<btx::DeclareTransaction> {
+    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
 
-        // TODO: Stop using our custom types
-        // I pass fake values so it don't crash, but will result in unrealistic fees
-        let class_info = ClassInfo::new(&contract_class, 0, 0).unwrap();
+    //     // TODO: Stop using our custom types
+    //     // I pass fake values so it don't crash, but will result in unrealistic fees
+    //     let class_info = ClassInfo::new(&contract_class, 0, 0).unwrap();
 
-        btx::DeclareTransaction::new(
-            sttx::DeclareTransaction::V0(sttx::DeclareTransactionV0V1 {
-                max_fee: sttx::Fee(self.max_fee),
-                signature: vec_of_felt_to_signature(&self.signature),
-                nonce: self.nonce.into(),
-                class_hash: self.class_hash.into(),
-                sender_address: self.sender_address.into(),
-            }),
-            transaction_hash.into(),
-            class_info,
-        )
-    }
+    //     btx::DeclareTransaction::new(
+    //         sttx::DeclareTransaction::V0(sttx::DeclareTransactionV0V1 {
+    //             max_fee: sttx::Fee(self.max_fee),
+    //             signature: vec_of_felt_to_signature(&self.signature),
+    //             nonce: self.nonce.into(),
+    //             class_hash: self.class_hash.into(),
+    //             sender_address: self.sender_address.into(),
+    //         }),
+    //         transaction_hash.into(),
+    //         class_info,
+    //     )
+    // }
 
     pub fn from_starknet(inner: starknet_api::transaction::DeclareTransactionV0V1) -> Self {
         Self {
@@ -55,30 +46,30 @@ impl DeclareTransactionV0 {
 }
 
 impl DeclareTransactionV1 {
-    fn try_into_executable<H: HasherT>(
-        &self,
-        chain_id: Felt252Wrapper,
-        contract_class: ContractClass,
-        offset_version: bool,
-    ) -> TransactionExecutionResult<btx::DeclareTransaction> {
-        let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // fn try_into_executable<H: HasherT>(
+    //     &self,
+    //     chain_id: Felt252Wrapper,
+    //     contract_class: ContractClass,
+    //     offset_version: bool,
+    // ) -> TransactionExecutionResult<btx::DeclareTransaction> {
+    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
 
-        // TODO: Stop using our custom types
-        // I pass fake values so it don't crash, but will result in unrealistic fees
-        let class_info = ClassInfo::new(&contract_class, 0, 0).unwrap();
+    //     // TODO: Stop using our custom types
+    //     // I pass fake values so it don't crash, but will result in unrealistic fees
+    //     let class_info = ClassInfo::new(&contract_class, 0, 0).unwrap();
 
-        btx::DeclareTransaction::new(
-            sttx::DeclareTransaction::V1(sttx::DeclareTransactionV0V1 {
-                max_fee: sttx::Fee(self.max_fee),
-                signature: vec_of_felt_to_signature(&self.signature),
-                nonce: self.nonce.into(),
-                class_hash: self.class_hash.into(),
-                sender_address: self.sender_address.into(),
-            }),
-            transaction_hash.into(),
-            class_info,
-        )
-    }
+    //     btx::DeclareTransaction::new(
+    //         sttx::DeclareTransaction::V1(sttx::DeclareTransactionV0V1 {
+    //             max_fee: sttx::Fee(self.max_fee),
+    //             signature: vec_of_felt_to_signature(&self.signature),
+    //             nonce: self.nonce.into(),
+    //             class_hash: self.class_hash.into(),
+    //             sender_address: self.sender_address.into(),
+    //         }),
+    //         transaction_hash.into(),
+    //         class_info,
+    //     )
+    // }
 
     pub fn from_starknet(inner: starknet_api::transaction::DeclareTransactionV0V1) -> Self {
         Self {
@@ -93,31 +84,31 @@ impl DeclareTransactionV1 {
 }
 
 impl DeclareTransactionV2 {
-    fn try_into_executable<H: HasherT>(
-        &self,
-        chain_id: Felt252Wrapper,
-        contract_class: ContractClass,
-        offset_version: bool,
-    ) -> TransactionExecutionResult<btx::DeclareTransaction> {
-        let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // fn try_into_executable<H: HasherT>(
+    //     &self,
+    //     chain_id: Felt252Wrapper,
+    //     contract_class: ContractClass,
+    //     offset_version: bool,
+    // ) -> TransactionExecutionResult<btx::DeclareTransaction> {
+    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
 
-        // TODO: Stop using our custom types
-        // I pass fake values so it don't crash, but will result in unrealistic fees
-        let class_info = ClassInfo::new(&contract_class, 0, 0).unwrap();
+    //     // TODO: Stop using our custom types
+    //     // I pass fake values so it don't crash, but will result in unrealistic fees
+    //     let class_info = ClassInfo::new(&contract_class, 0, 0).unwrap();
 
-        btx::DeclareTransaction::new(
-            sttx::DeclareTransaction::V2(sttx::DeclareTransactionV2 {
-                max_fee: sttx::Fee(self.max_fee),
-                signature: vec_of_felt_to_signature(&self.signature),
-                nonce: self.nonce.into(),
-                class_hash: self.class_hash.into(),
-                compiled_class_hash: self.compiled_class_hash.into(),
-                sender_address: self.sender_address.into(),
-            }),
-            transaction_hash.into(),
-            class_info,
-        )
-    }
+    //     btx::DeclareTransaction::new(
+    //         sttx::DeclareTransaction::V2(sttx::DeclareTransactionV2 {
+    //             max_fee: sttx::Fee(self.max_fee),
+    //             signature: vec_of_felt_to_signature(&self.signature),
+    //             nonce: self.nonce.into(),
+    //             class_hash: self.class_hash.into(),
+    //             compiled_class_hash: self.compiled_class_hash.into(),
+    //             sender_address: self.sender_address.into(),
+    //         }),
+    //         transaction_hash.into(),
+    //         class_info,
+    //     )
+    // }
 
     pub fn from_starknet(inner: starknet_api::transaction::DeclareTransactionV2) -> Self {
         Self {
@@ -132,41 +123,41 @@ impl DeclareTransactionV2 {
     }
 }
 
-impl DeclareTransaction {
-    pub fn try_into_executable<H: HasherT>(
-        &self,
-        chain_id: Felt252Wrapper,
-        contract_class: ContractClass,
-        offset_version: bool,
-    ) -> TransactionExecutionResult<btx::DeclareTransaction> {
-        match self {
-            DeclareTransaction::V0(tx) => tx.try_into_executable::<H>(chain_id, contract_class, offset_version),
-            DeclareTransaction::V1(tx) => tx.try_into_executable::<H>(chain_id, contract_class, offset_version),
-            DeclareTransaction::V2(tx) => tx.try_into_executable::<H>(chain_id, contract_class, offset_version),
-        }
-    }
-}
+// impl DeclareTransaction {
+//     pub fn try_into_executable<H: HasherT>(
+//         &self,
+//         chain_id: Felt252Wrapper,
+//         contract_class: ContractClass,
+//         offset_version: bool,
+//     ) -> TransactionExecutionResult<btx::DeclareTransaction> {
+//         match self {
+//             DeclareTransaction::V0(tx) => tx.try_into_executable::<H>(chain_id, contract_class, offset_version),
+//             DeclareTransaction::V1(tx) => tx.try_into_executable::<H>(chain_id, contract_class, offset_version),
+//             DeclareTransaction::V2(tx) => tx.try_into_executable::<H>(chain_id, contract_class, offset_version),
+//         }
+//     }
+// }
 
 impl InvokeTransactionV0 {
-    pub fn into_executable<H: HasherT>(
-        &self,
-        chain_id: Felt252Wrapper,
-        offset_version: bool,
-    ) -> btx::InvokeTransaction {
-        let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // pub fn into_executable<H: HasherT>(
+    //     &self,
+    //     chain_id: Felt252Wrapper,
+    //     offset_version: bool,
+    // ) -> btx::InvokeTransaction {
+    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
 
-        btx::InvokeTransaction {
-            tx: sttx::InvokeTransaction::V0(sttx::InvokeTransactionV0 {
-                max_fee: sttx::Fee(self.max_fee),
-                signature: vec_of_felt_to_signature(&self.signature),
-                contract_address: self.contract_address.into(),
-                entry_point_selector: self.entry_point_selector.into(),
-                calldata: vec_of_felt_to_calldata(&self.calldata),
-            }),
-            tx_hash: transaction_hash.into(),
-            only_query: offset_version,
-        }
-    }
+    //     btx::InvokeTransaction {
+    //         tx: sttx::InvokeTransaction::V0(sttx::InvokeTransactionV0 {
+    //             max_fee: sttx::Fee(self.max_fee),
+    //             signature: vec_of_felt_to_signature(&self.signature),
+    //             contract_address: self.contract_address.into(),
+    //             entry_point_selector: self.entry_point_selector.into(),
+    //             calldata: vec_of_felt_to_calldata(&self.calldata),
+    //         }),
+    //         tx_hash: transaction_hash.into(),
+    //         only_query: offset_version,
+    //     }
+    // }
 
     pub fn from_starknet(inner: starknet_api::transaction::InvokeTransactionV0) -> Self {
         Self {
@@ -180,25 +171,25 @@ impl InvokeTransactionV0 {
 }
 
 impl InvokeTransactionV1 {
-    pub fn into_executable<H: HasherT>(
-        &self,
-        chain_id: Felt252Wrapper,
-        offset_version: bool,
-    ) -> btx::InvokeTransaction {
-        let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // pub fn into_executable<H: HasherT>(
+    //     &self,
+    //     chain_id: Felt252Wrapper,
+    //     offset_version: bool,
+    // ) -> btx::InvokeTransaction {
+    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
 
-        btx::InvokeTransaction {
-            tx: sttx::InvokeTransaction::V1(sttx::InvokeTransactionV1 {
-                max_fee: sttx::Fee(self.max_fee),
-                signature: vec_of_felt_to_signature(&self.signature),
-                nonce: self.nonce.into(),
-                calldata: vec_of_felt_to_calldata(&self.calldata),
-                sender_address: self.sender_address.into(),
-            }),
-            tx_hash: transaction_hash.into(),
-            only_query: offset_version,
-        }
-    }
+    //     btx::InvokeTransaction {
+    //         tx: sttx::InvokeTransaction::V1(sttx::InvokeTransactionV1 {
+    //             max_fee: sttx::Fee(self.max_fee),
+    //             signature: vec_of_felt_to_signature(&self.signature),
+    //             nonce: self.nonce.into(),
+    //             calldata: vec_of_felt_to_calldata(&self.calldata),
+    //             sender_address: self.sender_address.into(),
+    //         }),
+    //         tx_hash: transaction_hash.into(),
+    //         only_query: offset_version,
+    //     }
+    // }
 
     pub fn from_starknet(inner: starknet_api::transaction::InvokeTransactionV1) -> Self {
         Self {
@@ -212,46 +203,46 @@ impl InvokeTransactionV1 {
     }
 }
 
-impl InvokeTransaction {
-    pub fn into_executable<H: HasherT>(
-        &self,
-        chain_id: Felt252Wrapper,
-        offset_version: bool,
-    ) -> btx::InvokeTransaction {
-        match self {
-            InvokeTransaction::V0(tx) => tx.into_executable::<H>(chain_id, offset_version),
-            InvokeTransaction::V1(tx) => tx.into_executable::<H>(chain_id, offset_version),
-        }
-    }
-}
+// impl InvokeTransaction {
+//     pub fn into_executable<H: HasherT>(
+//         &self,
+//         chain_id: Felt252Wrapper,
+//         offset_version: bool,
+//     ) -> btx::InvokeTransaction {
+//         match self {
+//             InvokeTransaction::V0(tx) => tx.into_executable::<H>(chain_id, offset_version),
+//             InvokeTransaction::V1(tx) => tx.into_executable::<H>(chain_id, offset_version),
+//         }
+//     }
+// }
 
 impl DeployAccountTransaction {
-    pub fn into_executable<H: HasherT>(
-        &self,
-        chain_id: Felt252Wrapper,
-        offset_version: bool,
-    ) -> btx::DeployAccountTransaction {
-        let account_address = self.get_account_address();
-        let transaction_hash: Felt252Wrapper =
-            self.compute_hash_given_contract_address::<H>(chain_id.into(), account_address, offset_version).into();
-        let contract_address: Felt252Wrapper = account_address.into();
+    // pub fn into_executable<H: HasherT>(
+    //     &self,
+    //     chain_id: Felt252Wrapper,
+    //     offset_version: bool,
+    // ) -> btx::DeployAccountTransaction {
+    //     let account_address = self.get_account_address();
+    //     let transaction_hash: Felt252Wrapper =
+    //         self.compute_hash_given_contract_address::<H>(chain_id.into(), account_address, offset_version).into();
+    //     let contract_address: Felt252Wrapper = account_address.into();
 
-        let tx = sttx::DeployAccountTransaction::V1(sttx::DeployAccountTransactionV1 {
-            max_fee: sttx::Fee(self.max_fee),
-            signature: vec_of_felt_to_signature(&self.signature),
-            nonce: self.nonce.into(),
-            class_hash: self.class_hash.into(),
-            contract_address_salt: self.contract_address_salt.into(),
-            constructor_calldata: vec_of_felt_to_calldata(&self.constructor_calldata),
-        });
+    //     let tx = sttx::DeployAccountTransaction::V1(sttx::DeployAccountTransactionV1 {
+    //         max_fee: sttx::Fee(self.max_fee),
+    //         signature: vec_of_felt_to_signature(&self.signature),
+    //         nonce: self.nonce.into(),
+    //         class_hash: self.class_hash.into(),
+    //         contract_address_salt: self.contract_address_salt.into(),
+    //         constructor_calldata: vec_of_felt_to_calldata(&self.constructor_calldata),
+    //     });
 
-        btx::DeployAccountTransaction {
-            tx,
-            tx_hash: transaction_hash.into(),
-            contract_address: contract_address.into(),
-            only_query: offset_version,
-        }
-    }
+    //     btx::DeployAccountTransaction {
+    //         tx,
+    //         tx_hash: transaction_hash.into(),
+    //         contract_address: contract_address.into(),
+    //         only_query: offset_version,
+    //     }
+    // }
 
     pub fn from_starknet(inner: starknet_api::transaction::DeployAccountTransactionV1) -> Self {
         // TODO : Check if we can do one that works for both versions
@@ -268,24 +259,24 @@ impl DeployAccountTransaction {
 }
 
 impl HandleL1MessageTransaction {
-    pub fn into_executable<H: HasherT>(
-        &self,
-        chain_id: Felt252Wrapper,
-        paid_fee_on_l1: Fee,
-        offset_version: bool,
-    ) -> btx::L1HandlerTransaction {
-        let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // pub fn into_executable<H: HasherT>(
+    //     &self,
+    //     chain_id: Felt252Wrapper,
+    //     paid_fee_on_l1: Fee,
+    //     offset_version: bool,
+    // ) -> btx::L1HandlerTransaction {
+    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
 
-        let tx = sttx::L1HandlerTransaction {
-            version: TransactionVersion(StarkFelt::from(0u8)),
-            nonce: Nonce(StarkFelt::from(self.nonce)),
-            contract_address: self.contract_address.into(),
-            entry_point_selector: self.entry_point_selector.into(),
-            calldata: vec_of_felt_to_calldata(&self.calldata),
-        };
+    //     let tx = sttx::L1HandlerTransaction {
+    //         version: TransactionVersion(StarkFelt::from(0u8)),
+    //         nonce: Nonce(StarkFelt::from(self.nonce)),
+    //         contract_address: self.contract_address.into(),
+    //         entry_point_selector: self.entry_point_selector.into(),
+    //         calldata: vec_of_felt_to_calldata(&self.calldata),
+    //     };
 
-        btx::L1HandlerTransaction { tx, paid_fee_on_l1, tx_hash: transaction_hash.into() }
-    }
+    //     btx::L1HandlerTransaction { tx, paid_fee_on_l1, tx_hash: transaction_hash.into() }
+    // }
 
     pub fn from_starknet(inner: starknet_api::transaction::L1HandlerTransaction) -> Self {
         Self {
