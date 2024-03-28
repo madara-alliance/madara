@@ -62,6 +62,8 @@ sp_api::decl_runtime_apis! {
         fn estimate_fee(transactions: Vec<AccountTransaction>) -> Result<Vec<(u128, u128)>, DispatchError>;
         /// Returns message fee estimate
         fn estimate_message_fee(message: L1HandlerTransaction) -> Result<(u128, u128, u128), DispatchError>;
+        /// Simulates single L1 Message and returns its trace
+        fn simulate_message(message: L1HandlerTransaction, simulation_flags: SimulationFlags) -> Result<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {
         /// Simulates transactions and returns their trace
         fn simulate_transactions(transactions: Vec<AccountTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<(CommitmentStateDiff, TransactionSimulationResult)>, DispatchError>;
 
