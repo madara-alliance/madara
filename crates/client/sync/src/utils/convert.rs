@@ -234,7 +234,7 @@ fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFe
 }
 
 fn contract_address(field_element: starknet_ff::FieldElement) -> starknet_api::api_core::ContractAddress {
-    starknet_api::api_core::ContractAddress(starknet_api::api_core::PatriciaKey(felt(field_element)))
+    starknet_api::core::ContractAddress(starknet_api::core::PatriciaKey(felt(field_element)))
 }
 
 pub fn state_update(state_update: StateUpdateProvider) -> PendingStateUpdate {

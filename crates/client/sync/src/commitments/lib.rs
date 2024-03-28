@@ -21,7 +21,7 @@ use sp_core::H256;
 use sp_runtime::generic::{Block, Header};
 use sp_runtime::traits::BlakeTwo256;
 use sp_runtime::OpaqueExtrinsic;
-use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
+use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::Event;
