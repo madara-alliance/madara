@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
 
-
 use anyhow::anyhow;
 use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
@@ -92,8 +91,8 @@ pub fn flattened_sierra_to_casm_contract_class(
         ),
         abi: None, // we can convert the ABI but for now, to convert to Casm, the ABI isn't needed
     };
-    //TODO : fix from_contract_class parameters here
-    let casm_contract_class = CasmContractClass::from_contract_class(sierra_contract_class, false, usize::MAX).unwrap();    
+    // TODO : fix from_contract_class parameters here
+    let casm_contract_class = CasmContractClass::from_contract_class(sierra_contract_class, false, usize::MAX).unwrap();
     Ok(casm_contract_class)
 }
 

@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 
 use mp_felt::Felt252Wrapper;
 use starknet_api::transaction as sttx;
+
 use super::{
     DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeployAccountTransaction,
     HandleL1MessageTransaction, InvokeTransactionV0, InvokeTransactionV1,
@@ -14,8 +15,8 @@ impl DeclareTransactionV0 {
     //     chain_id: Felt252Wrapper,
     //     contract_class: ContractClass,
     //     offset_version: bool,
-    // ) -> TransactionExecutionResult<btx::DeclareTransaction> {
-    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // ) -> TransactionExecutionResult<btx::DeclareTransaction> { let transaction_hash =
+    //   self.compute_hash::<H>(chain_id, offset_version, None);
 
     //     // TODO: Stop using our custom types
     //     // I pass fake values so it don't crash, but will result in unrealistic fees
@@ -51,8 +52,8 @@ impl DeclareTransactionV1 {
     //     chain_id: Felt252Wrapper,
     //     contract_class: ContractClass,
     //     offset_version: bool,
-    // ) -> TransactionExecutionResult<btx::DeclareTransaction> {
-    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // ) -> TransactionExecutionResult<btx::DeclareTransaction> { let transaction_hash =
+    //   self.compute_hash::<H>(chain_id, offset_version, None);
 
     //     // TODO: Stop using our custom types
     //     // I pass fake values so it don't crash, but will result in unrealistic fees
@@ -89,8 +90,8 @@ impl DeclareTransactionV2 {
     //     chain_id: Felt252Wrapper,
     //     contract_class: ContractClass,
     //     offset_version: bool,
-    // ) -> TransactionExecutionResult<btx::DeclareTransaction> {
-    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // ) -> TransactionExecutionResult<btx::DeclareTransaction> { let transaction_hash =
+    //   self.compute_hash::<H>(chain_id, offset_version, None);
 
     //     // TODO: Stop using our custom types
     //     // I pass fake values so it don't crash, but will result in unrealistic fees
@@ -129,12 +130,11 @@ impl DeclareTransactionV2 {
 //         chain_id: Felt252Wrapper,
 //         contract_class: ContractClass,
 //         offset_version: bool,
-//     ) -> TransactionExecutionResult<btx::DeclareTransaction> {
-//         match self {
-//             DeclareTransaction::V0(tx) => tx.try_into_executable::<H>(chain_id, contract_class, offset_version),
-//             DeclareTransaction::V1(tx) => tx.try_into_executable::<H>(chain_id, contract_class, offset_version),
-//             DeclareTransaction::V2(tx) => tx.try_into_executable::<H>(chain_id, contract_class, offset_version),
-//         }
+//     ) -> TransactionExecutionResult<btx::DeclareTransaction> { match self {
+//       DeclareTransaction::V0(tx) => tx.try_into_executable::<H>(chain_id, contract_class,
+//       offset_version), DeclareTransaction::V1(tx) => tx.try_into_executable::<H>(chain_id,
+//       contract_class, offset_version), DeclareTransaction::V2(tx) =>
+//       tx.try_into_executable::<H>(chain_id, contract_class, offset_version), }
 //     }
 // }
 
@@ -143,8 +143,8 @@ impl InvokeTransactionV0 {
     //     &self,
     //     chain_id: Felt252Wrapper,
     //     offset_version: bool,
-    // ) -> btx::InvokeTransaction {
-    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // ) -> btx::InvokeTransaction { let transaction_hash = self.compute_hash::<H>(chain_id,
+    //   offset_version, None);
 
     //     btx::InvokeTransaction {
     //         tx: sttx::InvokeTransaction::V0(sttx::InvokeTransactionV0 {
@@ -175,8 +175,8 @@ impl InvokeTransactionV1 {
     //     &self,
     //     chain_id: Felt252Wrapper,
     //     offset_version: bool,
-    // ) -> btx::InvokeTransaction {
-    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // ) -> btx::InvokeTransaction { let transaction_hash = self.compute_hash::<H>(chain_id,
+    //   offset_version, None);
 
     //     btx::InvokeTransaction {
     //         tx: sttx::InvokeTransaction::V1(sttx::InvokeTransactionV1 {
@@ -208,11 +208,9 @@ impl InvokeTransactionV1 {
 //         &self,
 //         chain_id: Felt252Wrapper,
 //         offset_version: bool,
-//     ) -> btx::InvokeTransaction {
-//         match self {
-//             InvokeTransaction::V0(tx) => tx.into_executable::<H>(chain_id, offset_version),
-//             InvokeTransaction::V1(tx) => tx.into_executable::<H>(chain_id, offset_version),
-//         }
+//     ) -> btx::InvokeTransaction { match self { InvokeTransaction::V0(tx) =>
+//       tx.into_executable::<H>(chain_id, offset_version), InvokeTransaction::V1(tx) =>
+//       tx.into_executable::<H>(chain_id, offset_version), }
 //     }
 // }
 
@@ -221,11 +219,10 @@ impl DeployAccountTransaction {
     //     &self,
     //     chain_id: Felt252Wrapper,
     //     offset_version: bool,
-    // ) -> btx::DeployAccountTransaction {
-    //     let account_address = self.get_account_address();
-    //     let transaction_hash: Felt252Wrapper =
-    //         self.compute_hash_given_contract_address::<H>(chain_id.into(), account_address, offset_version).into();
-    //     let contract_address: Felt252Wrapper = account_address.into();
+    // ) -> btx::DeployAccountTransaction { let account_address = self.get_account_address(); let
+    //   transaction_hash: Felt252Wrapper =
+    //   self.compute_hash_given_contract_address::<H>(chain_id.into(), account_address,
+    //   offset_version).into(); let contract_address: Felt252Wrapper = account_address.into();
 
     //     let tx = sttx::DeployAccountTransaction::V1(sttx::DeployAccountTransactionV1 {
     //         max_fee: sttx::Fee(self.max_fee),
@@ -264,8 +261,8 @@ impl HandleL1MessageTransaction {
     //     chain_id: Felt252Wrapper,
     //     paid_fee_on_l1: Fee,
     //     offset_version: bool,
-    // ) -> btx::L1HandlerTransaction {
-    //     let transaction_hash = self.compute_hash::<H>(chain_id, offset_version, None);
+    // ) -> btx::L1HandlerTransaction { let transaction_hash = self.compute_hash::<H>(chain_id,
+    //   offset_version, None);
 
     //     let tx = sttx::L1HandlerTransaction {
     //         version: TransactionVersion(StarkFelt::from(0u8)),
