@@ -81,7 +81,16 @@ impl NetworkType {
         let feeder_gateway = format!("{uri}/feeder_gateway").parse().unwrap();
         let l1_core_address = self.l1_core_address();
 
-        FetchConfig { gateway, feeder_gateway, chain_id, workers: 5, sound: false, l1_core_address, verify: true }
+        FetchConfig {
+            gateway,
+            feeder_gateway,
+            chain_id,
+            workers: 5,
+            sound: false,
+            l1_core_address,
+            verify: true,
+            api_key: None,
+        }
     }
 }
 
@@ -126,6 +135,10 @@ pub struct ExtendedRunCmd {
     #[clap(long)]
     pub disable_root: bool,
 
+    /// Gateway api key to avoid rate limiting (optional)
+    #[clap(long)]
+    pub gateway_key: Option<String>,
+
     /// A flag to run the TUI dashboard
     #[cfg(feature = "tui")]
     #[clap(long)]
@@ -168,6 +181,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         let mut fetch_block_config = cli.run.network.block_fetch_config();
         fetch_block_config.sound = cli.run.sound;
         fetch_block_config.verify = !cli.run.disable_root;
+        fetch_block_config.api_key = cli.run.gateway_key.clone();
 
         update_config(&fetch_block_config);
         log::debug!("Using fetch block config: {:?}", fetch_block_config);

@@ -44,7 +44,7 @@ where
         error!("Failed to get config: {e}");
         StarknetRpcApiError::InternalServerError
     })?;
-    let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
+    let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id, None);
 
     let sequencer_response = match sequencer.add_invoke_transaction(invoke_transaction).await {
         Ok(response) => response,
