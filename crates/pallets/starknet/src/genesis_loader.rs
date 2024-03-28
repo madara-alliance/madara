@@ -3,7 +3,7 @@ use std::vec::Vec;
 use blockifier::execution::contract_class::ContractClass as StarknetContractClass;
 use mp_felt::Felt252Wrapper;
 pub use mp_genesis_config::{GenesisData, GenesisLoader, HexFelt, PredeployedAccount};
-use starknet_api::api_core::{ContractAddress, PatriciaKey};
+use starknet_api::core::{ContractAddress, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 
@@ -47,9 +47,18 @@ impl<T: crate::Config> From<GenesisData> for GenesisConfig<T> {
                 )
             })
             .collect();
-        let fee_token_address = Felt252Wrapper(data.fee_token_address.0).into();
 
-        GenesisConfig { contracts, sierra_to_casm_class_hash, storage, fee_token_address, ..Default::default() }
+        // GenesisConfig { contracts, sierra_to_casm_class_hash, storage, strk_fee_token_address: Felt252Wrapper(loader.data().strk_fee_token_address.0).into(),
+        //     eth_fee_token_address: Felt252Wrapper(loader.data().eth_fee_token_address.0).into(),, ..Default::default() }
+        GenesisConfig {
+            contracts,
+            contract_classes,
+            sierra_to_casm_class_hash,
+            storage,
+            strk_fee_token_address: Felt252Wrapper(loader.data().strk_fee_token_address.0).into(),
+            eth_fee_token_address: Felt252Wrapper(loader.data().eth_fee_token_address.0).into(),
+            ..Default::default()
+        }
     }
 }
 
