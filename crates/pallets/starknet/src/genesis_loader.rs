@@ -21,6 +21,27 @@ impl<T: crate::Config> From<GenesisData> for GenesisConfig<T> {
                 (address, hash)
             })
             .collect::<Vec<_>>();
+        let contract_classes = data
+            .contract_classes
+            .clone()
+            .into_iter()
+            .map(|(hash, class)| {
+                let hash = Felt252Wrapper(hash.0).into();
+                println!("loading: {:?}", class);
+                match class {
+                    ContractClass::Path { path, version } => (
+                        hash,
+                        read_contract_class_from_json(
+                            &std::fs::read_to_string(loader.base_path().join(path)).expect(
+                                "Some contract is missing in the config folder. Try to run `madara setup` before \
+                                 opening an issue.",
+                            ),
+                            version,
+                        ),
+                    ),
+                }
+            })
+            .collect::<Vec<_>>();
         let sierra_to_casm_class_hash = data
             .sierra_class_hash_to_casm_class_hash
             .clone()

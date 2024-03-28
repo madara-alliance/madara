@@ -100,7 +100,7 @@ use starknet_crypto::FieldElement;
 use transaction_validation::TxPriorityInfo;
 
 use crate::alloc::string::ToString;
-use crate::types::{CasmClassHash, ContractStorageKey, SierraClassHash, SierraOrCasmClassHash, StorageSlot};
+use crate::types::{CasmClassHash, ContractStorageKey, SierraClassHash, StorageSlot};
 
 pub(crate) const LOG_TARGET: &str = "runtime::starknet";
 
@@ -167,7 +167,7 @@ pub mod pallet {
         #[pallet::constant]
         type ValidateMaxNSteps: Get<u32>;
         #[pallet::constant]
-        type ProtocolVersion: Get<Felt252Wrapper>;
+        type ProtocolVersion: Get<u8>;
         #[pallet::constant]
         type ChainId: Get<Felt252Wrapper>;
         #[pallet::constant]
@@ -1071,23 +1071,27 @@ impl<T: Config> Pallet<T> {
             let global_state_root = Felt252Wrapper::default();
             let transaction_count = transactions.len();
             let parent_block_hash = Self::parent_block_hash(&block_number);
+            let events_count = transaction_hashes.iter().map(|tx_hash| TxEvents::<T>::get(tx_hash).len() as u128).sum();
             let events: Vec<StarknetEvent> = transaction_hashes.iter().flat_map(TxEvents::<T>::take).collect();
             let sequencer_address = Self::sequencer_address();
             let block_timestamp = Self::block_timestamp();
-            let (transaction_commitment, event_commitment) = (Felt252Wrapper::default(), Felt252Wrapper::default());
+
+        
             let protocol_version = T::ProtocolVersion::get();
             let extra_data = None;
             let l1_gas_price = T::L1GasPrices::get();
+            let ordered_events = vec![];
 
 
             let block = DeoxysBlock::new(
                 StarknetHeader::new(
                     parent_block_hash.into(),
                     block_number,
-                    global_state_root.into(),
+                    //global_state_root.into(),
                     sequencer_address,
                     block_timestamp,
                     transaction_count as u128,
+                    events_count,
                     protocol_version,
                     l1_gas_price,
                     extra_data,
