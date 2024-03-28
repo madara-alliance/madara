@@ -1,14 +1,14 @@
 use alloc::sync::Arc;
 
-use blockifier::block_context::BlockContext;
-use mp_fee::ResourcePrice;
+use blockifier::blockifier::block::{BlockInfo, GasPrices};
+use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
+use blockifier::versioned_constants::VersionedConstants;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use sp_core::U256;
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::hash::StarkHash;
-use starknet_api::stdlib::collections::HashMap;
 use starknet_core::types::FieldElement;
 
 /// Block status.

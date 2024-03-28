@@ -8,6 +8,7 @@
 
 use blockifier::context::{BlockContext, FeeTokenAddresses};
 use blockifier::execution::contract_class::ContractClass;
+use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
@@ -18,9 +19,8 @@ pub extern crate alloc;
 use alloc::vec::Vec;
 
 use mp_contract::ContractAbi;
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
+use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags, TransactionSimulationResult};
 use sp_runtime::DispatchError;
-use blockifier::context::BlockContext;
 use starknet_api::core::{ClassHash, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
