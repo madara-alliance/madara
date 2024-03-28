@@ -157,7 +157,7 @@ pub async fn sync<C>(
         fetch_config.gateway.clone(),
         fetch_config.feeder_gateway.clone(),
         fetch_config.chain_id,
-        fetch_config.api_key
+        fetch_config.api_key,
     ));
     let mut last_block_hash = None;
 
