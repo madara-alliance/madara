@@ -5058,9 +5058,9 @@ dependencies = [
 
 [[package]]
 name = "lambdaworks-crypto"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d4c222d5b2fdc0faf702d3ab361d14589b097f40eac9dc550e27083483edc65"
+checksum = "458fee521f12d0aa97a2e06eaf134398a5d2ae7b2074af77eb402b0d93138c47"
 dependencies = [
  "lambdaworks-math",
  "serde",
@@ -5070,9 +5070,9 @@ dependencies = [
 
 [[package]]
 name = "lambdaworks-math"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ee7dcab3968c71896b8ee4dc829147acc918cffe897af6265b1894527fe3add"
+checksum = "6c74ce6f0d9cb672330b6ca59e85a6c3607a3329e0372ab0d3fe38c2d38e50f9"
 dependencies = [
  "serde",
  "serde_json",
@@ -10975,7 +10975,7 @@ dependencies = [
 [[package]]
 name = "starknet-core"
 version = "0.8.0"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#664bfce5e9cf9e5eb7905255d5f3abafa90c9935"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#3f59288f2bdd9702713d05fd4417c3ae34dd58e2"
 dependencies = [
  "base64 0.21.5",
  "flate2",
@@ -11030,7 +11030,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto"
 version = "0.6.1"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#664bfce5e9cf9e5eb7905255d5f3abafa90c9935"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#3f59288f2bdd9702713d05fd4417c3ae34dd58e2"
 dependencies = [
  "crypto-bigint",
  "hex",
@@ -11097,7 +11097,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto-codegen"
 version = "0.3.2"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#664bfce5e9cf9e5eb7905255d5f3abafa90c9935"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#3f59288f2bdd9702713d05fd4417c3ae34dd58e2"
 dependencies = [
  "starknet-curve 0.4.0 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
  "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
@@ -11127,7 +11127,7 @@ dependencies = [
 [[package]]
 name = "starknet-curve"
 version = "0.4.0"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#664bfce5e9cf9e5eb7905255d5f3abafa90c9935"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#3f59288f2bdd9702713d05fd4417c3ae34dd58e2"
 dependencies = [
  "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
 ]
@@ -11160,7 +11160,7 @@ dependencies = [
 [[package]]
 name = "starknet-ff"
 version = "0.3.5"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#664bfce5e9cf9e5eb7905255d5f3abafa90c9935"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#3f59288f2bdd9702713d05fd4417c3ae34dd58e2"
 dependencies = [
  "ark-ff",
  "bigdecimal",
@@ -11220,7 +11220,7 @@ dependencies = [
 [[package]]
 name = "starknet-providers"
 version = "0.8.0"
-source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#664bfce5e9cf9e5eb7905255d5f3abafa90c9935"
+source = "git+https://github.com/jbcaron/starknet-rs.git?branch=classes#3f59288f2bdd9702713d05fd4417c3ae34dd58e2"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -11274,8 +11274,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-types-core"
-version = "0.0.9"
-source = "git+https://github.com/starknet-io/types-rs.git?branch=main#36f5be1e849b60d60697b873e428836305429ca6"
+version = "0.0.11"
+source = "git+https://github.com/starknet-io/types-rs.git?branch=main#bcb3fc518620635dbb172ce5f80e63177aa913ef"
 dependencies = [
  "bitvec",
  "lambdaworks-crypto",
@@ -12311,7 +12311,7 @@ checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
  "digest 0.10.7",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 
