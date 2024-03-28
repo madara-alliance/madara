@@ -1,6 +1,9 @@
 //! Configuration of the pallets used in the runtime.
 //! The pallets used in the runtime are configured here.
 //! This file is used to generate the `construct_runtime!` macro.
+use std::num::NonZeroU128;
+
+use blockifier::blockifier::block::GasPrices;
 pub use frame_support::traits::{
     ConstBool, ConstU128, ConstU32, ConstU64, ConstU8, KeyOwnerProofSystem, OnTimestampSet, Randomness, StorageInfo,
 };
@@ -10,9 +13,6 @@ pub use frame_support::weights::constants::{
 pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
-use std::num::NonZeroU128;
-
-use blockifier::blockifier::block::GasPrices;
 pub use mp_program_hash::SN_OS_PROGRAM_HASH;
 /// Import the StarkNet pallet.
 pub use pallet_starknet;

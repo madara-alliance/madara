@@ -235,9 +235,7 @@ impl<T: Config> Pallet<T> {
                 Transaction::AccountTransaction(tx) => {
                     Self::execute_account_transaction(tx, block_context, simulation_flags)
                 }
-                Transaction::L1HandlerTransaction(tx) => {
-                    Self::execute_message(tx, block_context, simulation_flags)
-                }
+                Transaction::L1HandlerTransaction(tx) => Self::execute_message(tx, block_context, simulation_flags),
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| PlaceHolderErrorTypeForFailedStarknetExecution)

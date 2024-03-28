@@ -67,7 +67,6 @@ use blockifier::execution::call_info::CallInfo;
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
 use blockifier::execution::errors::{EntryPointExecutionError, PreExecutionError};
-use blockifier_state_adapter::BlockifierStateAdapter;
 use blockifier::state::cached_state::{CachedState, GlobalContractCache};
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::{DeprecatedTransactionInfo, TransactionInfo};
@@ -76,6 +75,7 @@ use blockifier::transaction::transactions::{
     DeclareTransaction, DeployAccountTransaction, ExecutableTransaction, InvokeTransaction, L1HandlerTransaction,
 };
 use blockifier::versioned_constants::VersionedConstants;
+use blockifier_state_adapter::BlockifierStateAdapter;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
@@ -90,8 +90,8 @@ use mp_sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRES
 use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
-use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::block::{BlockNumber, BlockTimestamp};
+use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
@@ -122,9 +122,9 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
+    use blockifier::transaction::account_transaction::AccountTransaction;
     use mp_block::state_update::StorageDiffWrapper;
     use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
-    use blockifier::transaction::account_transaction::AccountTransaction;
 
     use super::*;
 
@@ -665,7 +665,11 @@ pub mod pallet {
                 &tx_execution_infos.execute_call_info,
                 &tx_execution_infos.fee_transfer_call_info,
             );
-            Self::store_transaction(transaction.tx_hash, Transaction::AccountTransaction(AccountTransaction::Declare(transaction)), tx_execution_infos.revert_error);
+            Self::store_transaction(
+                transaction.tx_hash,
+                Transaction::AccountTransaction(AccountTransaction::Declare(transaction)),
+                tx_execution_infos.revert_error,
+            );
 
             Ok(())
         }
@@ -1076,18 +1080,16 @@ impl<T: Config> Pallet<T> {
             let sequencer_address = Self::sequencer_address();
             let block_timestamp = Self::block_timestamp();
 
-        
             let protocol_version = T::ProtocolVersion::get();
             let extra_data = None;
             let l1_gas_price = T::L1GasPrices::get();
             let ordered_events = vec![];
 
-
             let block = DeoxysBlock::new(
                 StarknetHeader::new(
                     parent_block_hash.into(),
                     block_number,
-                    //global_state_root.into(),
+                    // global_state_root.into(),
                     sequencer_address,
                     block_timestamp,
                     transaction_count as u128,

@@ -1,6 +1,6 @@
 //! Starknet pallet custom types.
 use std::collections::HashMap;
- 
+
 use blockifier::execution::contract_class::ContractClass;
 use mp_felt::Felt252Wrapper;
 use sp_core::ConstU32;

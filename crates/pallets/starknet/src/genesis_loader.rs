@@ -2,7 +2,7 @@ use std::vec::Vec;
 
 use blockifier::execution::contract_class::ContractClass as StarknetContractClass;
 use mp_felt::Felt252Wrapper;
-pub use mp_genesis_config::{GenesisData, GenesisLoader, HexFelt, PredeployedAccount, ContractClass};
+pub use mp_genesis_config::{ContractClass, GenesisData, GenesisLoader, HexFelt, PredeployedAccount};
 use starknet_api::core::{ContractAddress, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;

@@ -3,8 +3,8 @@ use std::io::Write;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
-use blockifier::execution::contract_class::ContractClass as BlockifierContractClass;
 use blockifier::execution::call_info::CallInfo;
+use blockifier::execution::contract_class::ContractClass as BlockifierContractClass;
 use cairo_lang_casm_contract_class::{CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints};
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
@@ -149,10 +149,7 @@ pub(crate) fn tx_hash_compute<H>(block: &DeoxysBlock, chain_id: Felt) -> Vec<Fie
 where
     H: HasherT + Send + Sync + 'static,
 {
-    block
-        .transactions_hashes()
-        .map(FieldElement::from)
-        .collect()
+    block.transactions_hashes().map(FieldElement::from).collect()
 }
 
 pub(crate) fn tx_conv(txs: &[mp_transactions::Transaction], tx_hashes: Vec<FieldElement>) -> Vec<Transaction> {
