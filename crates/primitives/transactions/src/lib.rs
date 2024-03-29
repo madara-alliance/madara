@@ -16,7 +16,8 @@ pub mod utils;
 
 use alloc::vec::Vec;
 
-use blockifier::execution::contract_class::ContractClass;
+use blockifier::transaction::transactions::{DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction};
+use blockifier::{execution::contract_class::ContractClass, transaction::account_transaction::AccountTransaction};
 use blockifier::transaction::transaction_types::TransactionType;
 use derive_more::From;
 use starknet_api::transaction::{DeclareTransaction, DeployAccountTransaction, Fee, InvokeTransaction};
@@ -81,14 +82,14 @@ impl From<TxType> for TransactionType {
 //     }
 // }
 
-// #[derive(Clone, Debug, Eq, PartialEq, From)]
-// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-// #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-// pub enum UserTransaction {
-//     Declare(DeclareTransaction, ContractClass),
-//     DeployAccount(DeployAccountTransaction),
-//     Invoke(InvokeTransaction),
-// }
+#[derive(Clone, Debug, Eq, PartialEq, From)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+pub enum UserTransaction {
+    Declare(DeclareTransaction),
+    DeployAccount(DeployAccountTransaction),
+    Invoke(InvokeTransaction),
+}
 
 // #[derive(Clone, Debug, Eq, PartialEq, From, PartialOrd, Ord)]
 // #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
@@ -101,13 +102,13 @@ impl From<TxType> for TransactionType {
 //     L1Handler(HandleL1MessageTransaction),
 // }
 
-// #[derive(Clone, Debug, Eq, PartialEq, From)]
-// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-// #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-// pub enum UserOrL1HandlerTransaction {
-//     User(UserTransaction),
-//     L1Handler(HandleL1MessageTransaction, Fee),
-// }
+#[derive(Clone, Debug, Eq, PartialEq, From)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+pub enum UserOrL1HandlerTransaction {
+    User(AccountTransaction),
+    L1Handler(L1HandlerTransaction),
+}
 
 // #[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
 // #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
@@ -238,15 +239,15 @@ impl From<TxType> for TransactionType {
 //     pub constructor_calldata: Vec<Felt252Wrapper>,
 // }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct HandleL1MessageTransaction {
-    pub nonce: u64,
-    pub contract_address: Felt252Wrapper,
-    pub entry_point_selector: Felt252Wrapper,
-    pub calldata: Vec<Felt252Wrapper>,
-}
+// #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+// #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub struct HandleL1MessageTransaction {
+//     pub nonce: u64,
+//     pub contract_address: Felt252Wrapper,
+//     pub entry_point_selector: Felt252Wrapper,
+//     pub calldata: Vec<Felt252Wrapper>,
+// }
 
 // impl From<MsgFromL1> for HandleL1MessageTransaction {
 //     fn from(msg: MsgFromL1) -> Self {
