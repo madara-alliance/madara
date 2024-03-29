@@ -21,8 +21,8 @@ use blockifier::transaction::transaction_types::TransactionType;
 use derive_more::From;
 use lazy_static::lazy_static;
 use spin::Mutex;
-use starknet_api::transaction::{Fee, TransactionVersion};
-use starknet_core::types::{MsgFromL1, TransactionExecutionStatus, TransactionFinalityStatus};
+use starknet_api::{data_availability::DataAvailabilityMode, transaction::{Fee, ResourceBoundsMapping, TransactionVersion}};
+use starknet_core::types::{MsgFromL1};
 use starknet_ff::FieldElement;
 
 const SIMULATE_TX_VERSION_OFFSET: FieldElement =
@@ -49,14 +49,6 @@ lazy_static! {
 pub fn update_legacy() {
     let mut env = LEGACY_ENV.lock();
     env.legacy_mode = false;
-}
-
-// TODO(antiyro): remove this when released: https://github.com/xJonathanLEI/starknet-rs/blame/fec81d126c58ff3dff6cbfd4b9e714913298e54e/starknet-core/src/types/serde_impls.rs#L175
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct TransactionStatus {
-    pub finality_status: TransactionFinalityStatus,
-    pub execution_status: TransactionExecutionStatus,
 }
 
 /// Wrapper type for transaction execution error.
@@ -211,17 +203,41 @@ pub struct DeclareTransactionV2 {
     pub offset_version: bool,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+pub enum DeployAccountTransaction {
+    V1(DeployAccountTransactionV1),
+    V3(DeployAccountTransactionV3),
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct DeployAccountTransaction {
+pub struct DeployAccountTransactionV1 {
     pub max_fee: u128,
     pub signature: Vec<Felt252Wrapper>,
     pub nonce: Felt252Wrapper,
+    pub class_hash: Felt252Wrapper,
     pub contract_address_salt: Felt252Wrapper,
     pub constructor_calldata: Vec<Felt252Wrapper>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+pub struct DeployAccountTransactionV3 {
+    pub resource_bounds: ResourceBoundsMapping,
+    pub tip: u64,
+    pub signature: Vec<Felt252Wrapper>,
+    pub nonce: Felt252Wrapper,
     pub class_hash: Felt252Wrapper,
-    pub offset_version: bool,
+    pub contract_address_salt: Felt252Wrapper,
+    pub constructor_calldata: Vec<Felt252Wrapper>,
+    pub nonce_data_availability_mode: DataAvailabilityMode,
+    pub fee_data_availability_mode: DataAvailabilityMode,
+    pub paymaster_data: Vec<Felt252Wrapper>,
+    pub max_fee: u128,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
