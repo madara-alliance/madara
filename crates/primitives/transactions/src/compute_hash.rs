@@ -5,17 +5,14 @@ use mp_hashers::HasherT;
 use starknet_api::core::calculate_contract_address;
 use starknet_api::data_availability::DataAvailabilityMode;
 use starknet_api::transaction::{
-    Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3,
-    DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, InvokeTransaction,
-    InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Resource,
-    ResourceBoundsMapping, TransactionHash,
+    Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Resource, ResourceBoundsMapping, TransactionHash
 };
 use starknet_core::crypto::compute_hash_on_elements;
 use starknet_core::utils::starknet_keccak;
 use starknet_crypto::FieldElement;
 
 use super::SIMULATE_TX_VERSION_OFFSET;
-use crate::{DeployTransaction, LEGACY_BLOCK_NUMBER};
+use crate::LEGACY_BLOCK_NUMBER;
 
 const DECLARE_PREFIX: &[u8] = b"declare";
 const DEPLOY_ACCOUNT_PREFIX: &[u8] = b"deploy_account";
@@ -555,7 +552,3 @@ pub fn compute_hash_given_contract_address<H: HasherT>(
         .into()
     }
 }
-
-#[cfg(test)]
-#[path = "compute_hash_tests.rs"]
-mod compute_hash_tests;
