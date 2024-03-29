@@ -65,7 +65,7 @@ sp_api::decl_runtime_apis! {
         /// Simulates single L1 Message and returns its trace
         fn simulate_message(message: L1HandlerTransaction, simulation_flags: SimulationFlags) -> Result<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>;
         /// Simulates transactions and returns their trace
-        fn simulate_transactions(transactions: Vec<AccountTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<(CommitmentStateDiff, TransactionSimulationResult)>, DispatchError>;
+        fn simulate_transactions(transactions: Vec<AccountTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>;
 
         /// Filters extrinsic transactions to return only Starknet transactions
         ///
@@ -87,7 +87,7 @@ sp_api::decl_runtime_apis! {
         ///
         /// Idealy, the execution traces of all of `transactions_to_trace`.
         /// If any of the transactions (from both arguments) fails, an error is returned.
-        fn re_execute_transactions(transactions: Vec<Transaction>) -> Result<Result<Vec<(TransactionExecutionInfo, CommitmentStateDiff)>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>;
+        fn re_execute_transactions(transactions_before: Vec<Transaction>, transactions_to_trace: Vec<Transaction>) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>;
 
         fn get_events_for_tx_by_hash(tx_hash: TransactionHash) -> Vec<StarknetEvent>;
         fn get_index_and_tx_for_tx_hash(xts: Vec<<Block as BlockT>::Extrinsic>, chain_id: Felt252Wrapper, tx_hash: TransactionHash) -> Option<(u32, Transaction)>;
@@ -100,6 +100,9 @@ sp_api::decl_runtime_apis! {
         fn is_transaction_fee_disabled() -> bool;
         /// Return messages sent to L1 during tx execution
         fn get_tx_messages_to_l1(tx_hash: TransactionHash) -> Vec<MessageToL1>;
+
+        fn get_events_for_tx_by_hash(tx_hash: TransactionHash) -> Vec<StarknetEvent>;
+
         /// Check if L1 Message Nonce has not been used
         fn l1_nonce_unused(nonce: Nonce) -> bool;
     }

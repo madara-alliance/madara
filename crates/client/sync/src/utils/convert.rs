@@ -2,8 +2,13 @@
 
 use std::collections::HashMap;
 
+use blockifier::blockifier::block::GasPrices;
+use blockifier::transaction::account_transaction::AccountTransaction;
+use blockifier::transaction::transaction_execution::Transaction;
+use blockifier::transaction::transactions::{
+    DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction,
+};
 use mp_block::DeoxysBlock;
-use mp_fee::ResourcePrice;
 use mp_felt::Felt252Wrapper;
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
@@ -66,40 +71,52 @@ pub async fn block(block: p::Block) -> DeoxysBlock {
     DeoxysBlock::new(header, transactions, ordered_events)
 }
 
-fn transactions(txs: Vec<p::TransactionType>) -> Vec<mp_transactions::Transaction> {
+fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {
     txs.into_iter().map(transaction).collect()
 }
 
-fn transaction(transaction: p::TransactionType) -> mp_transactions::Transaction {
+fn transaction(transaction: p::TransactionType) -> Transaction {
     match transaction {
-        p::TransactionType::InvokeFunction(tx) => mp_transactions::Transaction::Invoke(invoke_transaction(tx)),
-        p::TransactionType::Declare(tx) => mp_transactions::Transaction::Declare(declare_transaction(tx)),
-        p::TransactionType::Deploy(tx) => mp_transactions::Transaction::Deploy(deploy_transaction(tx)),
-        p::TransactionType::DeployAccount(tx) => {
-            mp_transactions::Transaction::DeployAccount(deploy_account_transaction(tx))
+        p::TransactionType::InvokeFunction(tx) => {
+            Transaction::AccountTransaction(AccountTransaction::Invoke(invoke_transaction(tx)))
         }
-        p::TransactionType::L1Handler(tx) => mp_transactions::Transaction::L1Handler(l1_handler_transaction(tx)),
+        p::TransactionType::Declare(tx) => {
+            Transaction::AccountTransaction(AccountTransaction::Declare(declare_transaction(tx)))
+        }
+        p::TransactionType::Deploy(tx) => unreachable!("Deploy transactions are not supported"),
+        p::TransactionType::DeployAccount(tx) => {
+            Transaction::AccountTransaction(AccountTransaction::DeployAccount(deploy_account_transaction(tx)))
+        }
+        p::TransactionType::L1Handler(tx) => Transaction::L1HandlerTransaction(l1_handler_transaction(tx)),
     }
 }
 
-fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> mp_transactions::InvokeTransaction {
+fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
     if tx.version == FieldElement::ZERO {
-        mp_transactions::InvokeTransaction::V0(mp_transactions::InvokeTransactionV0 {
-            max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-            contract_address: felt(tx.sender_address).into(),
-            entry_point_selector: felt(tx.entry_point_selector.expect("no entry_point_selector provided")).into(),
-            calldata: tx.calldata.into_iter().map(felt).map(Into::into).collect(),
-        })
+        InvokeTransaction {
+            tx: starknet_api::transaction::InvokeTransaction::V0(starknet_api::transaction::InvokeTransactionV0 {
+                max_fee: fee(tx.max_fee.expect("no max fee provided")),
+                signature: signature(tx.signature),
+                contract_address: address(tx.sender_address),
+                entry_point_selector: entry_point(tx.entry_point_selector.expect("no entry_point_selector provided")),
+                calldata: call_data(tx.calldata),
+            }),
+            // TODO: verify if the given tx_hash is correct
+            tx_hash: tx_hash(tx.transaction_hash),
+            only_query: false,
+        }
     } else {
-        mp_transactions::InvokeTransaction::V1(mp_transactions::InvokeTransactionV1 {
-            max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-            nonce: felt(tx.nonce.expect("no nonce provided")).into(),
-            sender_address: felt(tx.sender_address).into(),
-            calldata: tx.calldata.into_iter().map(felt).map(Into::into).collect(),
-            offset_version: false,
-        })
+        InvokeTransaction {
+            tx: starknet_api::transaction::InvokeTransaction::V1(starknet_api::transaction::InvokeTransactionV1 {
+                max_fee: fee(tx.max_fee.expect("no max fee provided")),
+                signature: signature(tx.signature),
+                nonce: nonce(tx.nonce.expect("no nonce provided")),
+                sender_address: address(tx.sender_address),
+                calldata: call_data(tx.calldata),
+            }),
+            tx_hash: tx_hash(tx.transaction_hash),
+            only_query: false,
+        }
     }
 }
 
@@ -183,12 +200,42 @@ fn starknet_version(version: &Option<String>) -> Felt252Wrapper {
     }
 }
 
-fn fee(felt: starknet_ff::FieldElement) -> u128 {
-    felt.try_into().expect("Value out of range for u128")
+fn fee(felt: starknet_ff::FieldElement) -> starknet_api::transaction::Fee {
+    starknet_api::transaction::Fee(felt.try_into().expect("Value out of range for u128"))
 }
 
-fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> ResourcePrice {
-    ResourcePrice { price_in_strk: None, price_in_wei: fee(eth_l1_gas_price) }
+fn signature(signature: Vec<starknet_ff::FieldElement>) -> starknet_api::transaction::TransactionSignature {
+    starknet_api::transaction::TransactionSignature(signature.into_iter().map(felt).collect())
+}
+
+fn address(address: starknet_ff::FieldElement) -> starknet_api::core::ContractAddress {
+    starknet_api::core::ContractAddress(starknet_api::core::PatriciaKey(felt(address)))
+}
+
+fn entry_point(entry_point: starknet_ff::FieldElement) -> starknet_api::core::EntryPointSelector {
+    starknet_api::core::EntryPointSelector(felt(entry_point))
+}
+
+fn call_data(call_data: Vec<starknet_ff::FieldElement>) -> starknet_api::transaction::Calldata {
+    starknet_api::transaction::Calldata(call_data.into_iter().map(felt).collect())
+}
+
+fn tx_hash(tx_hash: starknet_ff::FieldElement) -> starknet_api::transaction::TransactionHash {
+    starknet_api::transaction::TransactionHash(felt(tx_hash))
+}
+
+fn nonce(nonce: starknet_ff::FieldElement) -> starknet_api::core::Nonce {
+    starknet_api::core::Nonce(felt(nonce))
+}
+
+// TODO: calculate gas_price when starknet-rs supports v0.13.1
+fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> GasPrices {
+    GasPrices {
+        eth_l1_gas_price: 10,       // In wei.
+        strk_l1_gas_price: 10,      // In fri.
+        eth_l1_data_gas_price: 10,  // In wei.
+        strk_l1_data_gas_price: 10, // In fri.
+    }
 }
 
 fn events(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<starknet_api::transaction::Event> {
@@ -233,8 +280,8 @@ fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFe
     starknet_api::hash::StarkFelt::new(field_element.to_bytes_be()).unwrap()
 }
 
-fn contract_address(field_element: starknet_ff::FieldElement) -> starknet_api::api_core::ContractAddress {
-    starknet_api::api_core::ContractAddress(starknet_api::api_core::PatriciaKey(felt(field_element)))
+fn contract_address(field_element: starknet_ff::FieldElement) -> starknet_api::core::ContractAddress {
+    starknet_api::core::ContractAddress(starknet_api::core::PatriciaKey(felt(field_element)))
 }
 
 pub fn state_update(state_update: StateUpdateProvider) -> PendingStateUpdate {

@@ -14,7 +14,7 @@ use sp_core::{H160, H256};
 use sp_runtime::generic::{Block as RuntimeBlock, Header};
 use sp_runtime::traits::BlakeTwo256;
 use sp_runtime::OpaqueExtrinsic;
-use starknet_api::api_core::ClassHash;
+use starknet_api::core::ClassHash;
 use starknet_core::types::BlockId as BlockIdCore;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;

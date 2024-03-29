@@ -10,7 +10,7 @@ use mc_db::bonsai_db::BonsaiDb;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use sp_core::hexdisplay::AsBytesRef;
-use starknet_api::api_core::ContractAddress;
+use starknet_api::core::ContractAddress;
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_types_core::hash::Pedersen;

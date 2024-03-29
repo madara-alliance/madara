@@ -85,14 +85,44 @@ pub fn to_starknet_core_tx(
             starknet_core::types::Transaction::Declare(tx)
         }
         super::Transaction::DeployAccount(tx) => {
-            let tx = starknet_core::types::DeployAccountTransaction {
-                transaction_hash,
-                max_fee: tx.max_fee.into(),
-                signature: cast_vec_of_felt_252_wrappers(tx.signature),
-                nonce: tx.nonce.into(),
-                contract_address_salt: tx.contract_address_salt.into(),
-                constructor_calldata: cast_vec_of_felt_252_wrappers(tx.constructor_calldata),
-                class_hash: tx.class_hash.into(),
+            let tx = match tx {
+                super::DeployAccountTransaction::V0(super::DeployAccountTransactionV0 {
+                    max_fee,
+                    signature,
+                    nonce,
+                    contract_address_salt,
+                    constructor_calldata,
+                    class_hash,
+                }) => starknet_core::types::DeployAccountTransaction::V0(
+                    starknet_core::types::DeployAccountTransactionV0 {
+                        transaction_hash,
+                        max_fee: max_fee.into(),
+                        signature: cast_vec_of_felt_252_wrappers(signature),
+                        nonce: nonce.into(),
+                        contract_address_salt: contract_address_salt.into(),
+                        constructor_calldata: cast_vec_of_felt_252_wrappers(constructor_calldata),
+                        class_hash: class_hash.into(),
+                    },
+                ),
+                super::DeployAccountTransaction::V1(super::DeployAccountTransactionV1 {
+                    max_fee,
+                    signature,
+                    nonce,
+                    contract_address_salt,
+                    constructor_calldata,
+                    class_hash,
+                    ..
+                }) => starknet_core::types::DeployAccountTransaction::V1(
+                    starknet_core::types::DeployAccountTransactionV1 {
+                        transaction_hash,
+                        max_fee: max_fee.into(),
+                        signature: cast_vec_of_felt_252_wrappers(signature),
+                        nonce: nonce.into(),
+                        contract_address_salt: contract_address_salt.into(),
+                        constructor_calldata: cast_vec_of_felt_252_wrappers(constructor_calldata),
+                        class_hash: class_hash.into(),
+                    },
+                ),
             };
 
             starknet_core::types::Transaction::DeployAccount(tx)

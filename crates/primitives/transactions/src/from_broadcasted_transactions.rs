@@ -174,6 +174,10 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
 
                 UserTransaction::Declare(tx, contract_class)
             }
+            BroadcastedDeclareTransaction::V3(BroadcastedDeclareTransactionV3 {
+            }) => {
+
+            }
         };
 
         Ok(user_tx)
@@ -353,16 +357,40 @@ impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
     type Error = BroadcastedTransactionConversionError;
 
     fn try_from(tx: BroadcastedDeployAccountTransaction) -> Result<Self, Self::Error> {
-        let tx = UserTransaction::DeployAccount(super::DeployAccountTransaction {
-            max_fee: tx.max_fee.try_into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
-            signature: cast_vec_of_field_elements(tx.signature),
-            nonce: tx.nonce.into(),
-            contract_address_salt: tx.contract_address_salt.into(),
-            constructor_calldata: cast_vec_of_field_elements(tx.constructor_calldata),
-            class_hash: tx.class_hash.into(),
-            offset_version: tx.is_query,
-        });
-
-        Ok(tx)
+        match tx {
+            BroadcastedDeployAccountTransaction::V1(tx_v1) => {
+                let tx = UserTransaction::DeployAccount(super::DeployAccountTransaction::V1(
+                    super::DeployAccountTransactionV1 {
+                        max_fee: tx_v1.max_fee.try_into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
+                        signature: cast_vec_of_field_elements(tx_v1.signature),
+                        nonce: tx_v1.nonce.into(),
+                        contract_address_salt: tx_v1.contract_address_salt.into(),
+                        constructor_calldata: cast_vec_of_field_elements(tx_v1.constructor_calldata),
+                        class_hash: tx_v1.class_hash.into(),
+                    },
+                ));
+                Ok(tx)
+            },
+            BroadcastedDeployAccountTransaction::V3(tx_v3) => {
+                let tx = UserTransaction::DeployAccount(super::DeployAccountTransaction::V3(
+                    super::DeployAccountTransactionV3 {
+                        resource_bounds: tx_v3.resource_bounds.into(),
+                        tip: tx_v3.tip.into(),
+                        signature: cast_vec_of_field_elements(tx_v3.signature),
+                        nonce: tx_v3.nonce.into(),
+                        class_hash: tx_v3.class_hash.into(),
+                        contract_address_salt: tx_v3.contract_address_salt.into(),
+                        constructor_calldata: cast_vec_of_field_elements(tx_v3.constructor_calldata),
+                        nonce_data_availability_mode: tx_v3.nonce_data_availability_mode.into(),
+                        fee_data_availability_mode: tx_v3.fee_data_availability_mode.into(),
+                        paymaster_data: cast_vec_of_field_elements(tx_v3.paymaster_data),
+                        // defaulted for now since it's not suported in Starknet-rs
+                        max_fee: 0u128,
+                   },
+                ));
+                Ok(tx)
+            },
+        }
     }
 }
+

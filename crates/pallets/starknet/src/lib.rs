@@ -167,7 +167,7 @@ pub mod pallet {
         #[pallet::constant]
         type ValidateMaxNSteps: Get<u32>;
         #[pallet::constant]
-        type ProtocolVersion: Get<u8>;
+        type ProtocolVersion: Get<Felt252Wrapper>;
         #[pallet::constant]
         type ChainId: Get<Felt252Wrapper>;
         #[pallet::constant]
@@ -1079,6 +1079,7 @@ impl<T: Config> Pallet<T> {
             let events: Vec<StarknetEvent> = transaction_hashes.iter().flat_map(TxEvents::<T>::take).collect();
             let sequencer_address = Self::sequencer_address();
             let block_timestamp = Self::block_timestamp();
+            let (transaction_commitment, event_commitment) = (Felt252Wrapper::default(), Felt252Wrapper::default());
 
             let protocol_version = T::ProtocolVersion::get();
             let extra_data = None;
@@ -1089,11 +1090,13 @@ impl<T: Config> Pallet<T> {
                 StarknetHeader::new(
                     parent_block_hash.into(),
                     block_number,
-                    // global_state_root.into(),
+                    global_state_root.into(),
                     sequencer_address,
                     block_timestamp,
                     transaction_count as u128,
+                    transaction_commitment.into(),
                     events_count,
+                    event_commitment.into(),
                     protocol_version,
                     l1_gas_price,
                     extra_data,
