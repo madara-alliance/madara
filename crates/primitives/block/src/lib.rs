@@ -47,7 +47,7 @@ pub enum BlockId {
 }
 
 /// Starknet block definition.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct DeoxysBlock {
     /// The block header.
@@ -84,6 +84,9 @@ impl DeoxysBlock {
         &self.events
     }
 
+    /// Returns an iterator that iterates over all transaction hashes.
+    ///
+    /// Those transactions are computed using the given `chain_id`.
     pub fn transactions_hashes(&self) -> impl '_ + Iterator<Item = TransactionHash> {
         self.transactions.iter().map(|tx| match tx {
             Transaction::AccountTransaction(ac) => match ac {
