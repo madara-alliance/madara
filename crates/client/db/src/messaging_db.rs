@@ -4,7 +4,7 @@ use std::sync::Arc;
 use parity_scale_codec::{Decode, Encode};
 
 use crate::error::DbError;
-use crate::{Column, DB, DatabaseExt};
+use crate::{Column, DatabaseExt, DB};
 
 pub struct MessagingDb {
     pub(crate) db: Arc<DB>,
@@ -42,11 +42,7 @@ impl MessagingDb {
     ) -> Result<(), DbError> {
         let column = self.db.get_column(Column::Messaging);
 
-        self.db.put_cf(
-            &column,
-            crate::static_keys::LAST_SYNCED_L1_EVENT_BLOCK,
-            &last_synced_event_block.encode(),
-        )?;
+        self.db.put_cf(&column, crate::static_keys::LAST_SYNCED_L1_EVENT_BLOCK, last_synced_event_block.encode())?;
         Ok(())
     }
 }

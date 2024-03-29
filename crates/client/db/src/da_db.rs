@@ -33,7 +33,7 @@ impl DaDb {
     pub fn store_state_diff(&self, block_hash: &BlockHash, diff: &ThinStateDiff) -> Result<(), DbError> {
         let column = self.db.get_column(Column::Da);
 
-        self.db.put_cf(&column, block_hash.0.bytes(), &diff.encode())?;
+        self.db.put_cf(&column, block_hash.0.bytes(), diff.encode())?;
         Ok(())
     }
 
@@ -49,7 +49,7 @@ impl DaDb {
     pub fn update_cairo_job(&self, block_hash: &BlockHash, job_id: Uuid) -> Result<(), DbError> {
         let column = self.db.get_column(Column::Da);
 
-        self.db.put_cf(&column, block_hash.0.bytes(), &job_id.into_bytes())?;
+        self.db.put_cf(&column, block_hash.0.bytes(), job_id.into_bytes())?;
         Ok(())
     }
 
@@ -71,7 +71,7 @@ impl DaDb {
     pub fn update_last_proved_block(&self, block_hash: &BlockHash) -> Result<(), DbError> {
         let column = self.db.get_column(Column::Da);
 
-        self.db.put_cf(&column, crate::static_keys::LAST_PROVED_BLOCK, &block_hash.0.encode())?;
+        self.db.put_cf(&column, crate::static_keys::LAST_PROVED_BLOCK, block_hash.0.encode())?;
         Ok(())
     }
 }

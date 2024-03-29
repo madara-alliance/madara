@@ -7,7 +7,7 @@ use rocksdb::WriteBatchWithTransaction;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::hash::StarkHash;
 
-use crate::{Column, DbError, DB, DatabaseExt};
+use crate::{Column, DatabaseExt, DbError, DB};
 
 /// The mapping to write in db
 #[derive(Debug)]
@@ -35,7 +35,7 @@ impl MappingDb {
     pub fn is_synced(&self, block_hash: &DHashT) -> Result<bool, DbError> {
         let synced_mapping_col = self.db.get_column(Column::SyncedMapping);
 
-        match self.db.get_cf(&synced_mapping_col, &block_hash.encode())? {
+        match self.db.get_cf(&synced_mapping_col, block_hash.encode())? {
             Some(raw) => Ok(bool::decode(&mut &raw[..])?),
             None => Ok(false),
         }
@@ -48,7 +48,7 @@ impl MappingDb {
     pub fn block_hash(&self, starknet_block_hash: StarkHash) -> Result<Option<Vec<DHashT>>, DbError> {
         let block_mapping_col = self.db.get_column(Column::BlockMapping);
 
-        match self.db.get_cf(&block_mapping_col, &starknet_block_hash.encode())? {
+        match self.db.get_cf(&block_mapping_col, starknet_block_hash.encode())? {
             Some(raw) => Ok(Some(Vec::<DHashT>::decode(&mut &raw[..])?)),
             None => Ok(None),
         }
@@ -58,7 +58,7 @@ impl MappingDb {
     pub fn write_none(&self, block_hash: DHashT) -> Result<(), DbError> {
         let synced_mapping_col = self.db.get_column(Column::SyncedMapping);
 
-        self.db.put_cf(&synced_mapping_col, &block_hash.encode(), &true.encode())?;
+        self.db.put_cf(&synced_mapping_col, block_hash.encode(), true.encode())?;
         Ok(())
     }
 
@@ -91,11 +91,7 @@ impl MappingDb {
         transaction.put_cf(&synced_mapping_col, &commitment.block_hash.encode(), &true.encode());
 
         for transaction_hash in commitment.starknet_transaction_hashes.iter() {
-            transaction.put_cf(
-                &transaction_mapping_col,
-                &transaction_hash.encode(),
-                &commitment.block_hash.encode(),
-            );
+            transaction.put_cf(&transaction_mapping_col, &transaction_hash.encode(), &commitment.block_hash.encode());
         }
 
         if self.cache_more_things {
@@ -128,7 +124,7 @@ impl MappingDb {
     pub fn block_hash_from_transaction_hash(&self, transaction_hash: StarkHash) -> Result<Option<DHashT>, DbError> {
         let transaction_mapping_col = self.db.get_column(Column::TransactionMapping);
 
-        match self.db.get_cf(&transaction_mapping_col, &transaction_hash.encode())? {
+        match self.db.get_cf(&transaction_mapping_col, transaction_hash.encode())? {
             Some(raw) => Ok(Some(<DHashT>::decode(&mut &raw[..])?)),
             None => Ok(None),
         }
@@ -159,7 +155,7 @@ impl MappingDb {
             return Ok(None);
         }
 
-        match self.db.get_cf(&starknet_tx_hashes_col, &starknet_block_hash.encode())? {
+        match self.db.get_cf(&starknet_tx_hashes_col, starknet_block_hash.encode())? {
             Some(raw) => Ok(Some(Vec::<StarkHash>::decode(&mut &raw[..])?)),
             None => Ok(None),
         }
@@ -190,7 +186,7 @@ impl MappingDb {
             return Ok(None);
         }
 
-        match self.db.get_cf(&starknet_block_hashes_col, &starknet_block_number.encode())? {
+        match self.db.get_cf(&starknet_block_hashes_col, starknet_block_number.encode())? {
             Some(raw) => Ok(Some(<StarkHash>::decode(&mut &raw[..])?)),
             None => Ok(None),
         }

@@ -4,7 +4,7 @@ use deoxys_runtime::opaque::DHashT;
 // Substrate
 use parity_scale_codec::{Decode, Encode};
 
-use crate::{Column, DbError, DB, DatabaseExt};
+use crate::{Column, DatabaseExt, DbError, DB};
 
 /// Allow interaction with the meta db
 ///
@@ -33,7 +33,7 @@ impl MetaDb {
     pub fn write_current_syncing_tips(&self, tips: Vec<DHashT>) -> Result<(), DbError> {
         let column = self.db.get_column(Column::Meta);
 
-        self.db.put_cf(&column, crate::static_keys::CURRENT_SYNCING_TIPS, &tips.encode())?;
+        self.db.put_cf(&column, crate::static_keys::CURRENT_SYNCING_TIPS, tips.encode())?;
         Ok(())
     }
 }

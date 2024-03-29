@@ -38,11 +38,11 @@ starknet_api = { workspace = true, default-features = true, features = [
 ] }
 
 # Other crates
+anyhow.workspace = true
 ethers = { workspace = true }
 log = { workspace = true, default-features = true }
-thiserror = { workspace = true }
-uuid = "1.4.1"
 rocksdb = { version = "0.21", features = [
   # "multi-threaded-cf",
 ] }
-anyhow.workspace = true
+thiserror = { workspace = true }
+uuid = "1.4.1"

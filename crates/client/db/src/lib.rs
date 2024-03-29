@@ -54,8 +54,8 @@ pub type DB = OptimisticTransactionDB<MultiThreaded>;
 
 pub(crate) fn open_database(config: &DatabaseSettings) -> Result<DB> {
     Ok(match &config.source {
-        DatabaseSource::RocksDb { path, .. } => open_rocksdb(&path, true)?,
-        DatabaseSource::Auto { paritydb_path: _, rocksdb_path, .. } => open_rocksdb(&rocksdb_path, false)?,
+        DatabaseSource::RocksDb { path, .. } => open_rocksdb(path, true)?,
+        DatabaseSource::Auto { paritydb_path: _, rocksdb_path, .. } => open_rocksdb(rocksdb_path, false)?,
         _ => bail!("only the rocksdb database source is supported at the moment"),
     })
 }
@@ -66,7 +66,7 @@ pub(crate) fn open_rocksdb(path: &Path, create: bool) -> Result<OptimisticTransa
     opts.set_use_fsync(false);
     opts.create_if_missing(create);
     opts.create_missing_column_families(true);
-    opts.set_bytes_per_sync(1 * 1024 * 1024);
+    opts.set_bytes_per_sync(1024 * 1024);
     opts.set_keep_log_file_num(1);
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     opts.increase_parallelism(i32::max(cores / 2, 1));
@@ -188,9 +188,10 @@ impl Column {
     /// Per column rocksdb options, like memory budget, compaction profiles, block sizes for hdd/sdd
     /// etc. TODO: add basic sensible defaults
     pub(crate) fn rocksdb_options(&self) -> Options {
-        match self {
-            _ => Options::default(),
-        }
+        // match self {
+        //     _ => Options::default(),
+        // }
+        Options::default()
     }
 }
 
