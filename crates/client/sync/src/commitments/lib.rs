@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
@@ -167,32 +167,26 @@ where
 pub fn update_state_root(
     csd: CommitmentStateDiff,
     overrides: Arc<OverrideHandle<Block<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
-    bonsai_contract_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
-    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
+    bonsai_contract: &mut BonsaiStorage<BasicId, BonsaiDb, Pedersen>,
+    bonsai_contract_storage: &mut BonsaiStorage<BasicId, BonsaiDb, Pedersen>,
+    bonsai_class: &mut BonsaiStorage<BasicId, BonsaiDb, Poseidon>,
     block_number: u64,
     substrate_block_hash: Option<H256>,
 ) -> Felt252Wrapper {
     // Update contract and its storage tries
     let (contract_trie_root, class_trie_root) = rayon::join(
         || {
-            let mut bonsai_contract = bonsai_contract.lock().unwrap();
-            let mut bonsai_contract_storage = bonsai_contract_storage.lock().unwrap();
-
             contract_trie_root(
                 &csd,
                 overrides,
-                &mut bonsai_contract,
-                &mut bonsai_contract_storage,
+                bonsai_contract,
+                bonsai_contract_storage,
                 block_number,
                 substrate_block_hash,
             )
             .expect("Failed to compute contract root")
         },
-        || {
-            let mut bonsai_class = bonsai_class.lock().unwrap();
-            class_trie_root(&csd, &mut bonsai_class, block_number).expect("Failed to compute class root")
-        },
+        || class_trie_root(&csd, bonsai_class, block_number).expect("Failed to compute class root"),
     );
 
     calculate_state_root::<PoseidonHasher>(contract_trie_root, class_trie_root)

@@ -11,37 +11,35 @@
 //! `paritydb` and `rocksdb` are both supported, behind the `kvdb-rocksd` and `parity-db` feature
 //! flags. Support for custom databases is possible but not supported yet.
 
-mod error;
-use bonsai_trie::id::BasicId;
-use bonsai_trie::BonsaiStorage;
-pub use error::{BonsaiDbError, DbError};
-
-mod mapping_db;
-use kvdb::KeyValueDB;
-pub use mapping_db::MappingCommitment;
-use sierra_classes_db::SierraClassesDb;
-use starknet_api::hash::StarkHash;
-mod da_db;
-mod db_opening_utils;
-mod messaging_db;
-mod sierra_classes_db;
-pub use messaging_db::LastSyncedEventBlock;
-use starknet_types_core::hash::{Pedersen, Poseidon};
-pub mod bonsai_db;
-mod l1_handler_tx_fee;
-mod meta_db;
-
+use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 
-use bonsai_db::{BonsaiConfigs, BonsaiDb, TrieColumn};
+use anyhow::{bail, Context, Result};
+use bonsai_db::{BonsaiStorageAccess, DatabaseKeyMapping};
 use da_db::DaDb;
 use l1_handler_tx_fee::L1HandlerTxFeeDb;
 use mapping_db::MappingDb;
 use messaging_db::MessagingDb;
 use meta_db::MetaDb;
 use sc_client_db::DatabaseSource;
-use sp_database::Database;
+
+mod error;
+mod mapping_db;
+use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, MultiThreaded, OptimisticTransactionDB, Options};
+use sierra_classes_db::SierraClassesDb;
+mod da_db;
+mod messaging_db;
+mod sierra_classes_db;
+use starknet_api::hash::StarkHash;
+use starknet_types_core::hash::{Pedersen, Poseidon};
+pub mod bonsai_db;
+mod l1_handler_tx_fee;
+mod meta_db;
+
+pub use error::{BonsaiDbError, DbError};
+pub use mapping_db::MappingCommitment;
+pub use messaging_db::LastSyncedEventBlock;
 
 const DB_HASH_LEN: usize = 32;
 /// Hash type that this backend uses for the database.
@@ -52,53 +50,158 @@ struct DatabaseSettings {
     pub source: DatabaseSource,
 }
 
-pub(crate) mod columns {
-    /// Total number of columns.
-    // ===== /!\ ===================================================================================
-    // MUST BE INCREMENTED WHEN A NEW COLUMN IN ADDED
-    // ===== /!\ ===================================================================================
-    pub const NUM_COLUMNS: u32 = 16;
+pub type DB = OptimisticTransactionDB<MultiThreaded>;
 
-    pub const META: u32 = 0;
-    pub const BLOCK_MAPPING: u32 = 1;
-    pub const TRANSACTION_MAPPING: u32 = 2;
-    pub const SYNCED_MAPPING: u32 = 3;
-    pub const DA: u32 = 4;
+pub(crate) fn open_database(config: &DatabaseSettings) -> Result<DB> {
+    Ok(match &config.source {
+        DatabaseSource::RocksDb { path, .. } => open_rocksdb(&path, true)?,
+        DatabaseSource::Auto { paritydb_path: _, rocksdb_path, .. } => open_rocksdb(&rocksdb_path, false)?,
+        _ => bail!("only the rocksdb database source is supported at the moment"),
+    })
+}
+
+pub(crate) fn open_rocksdb(path: &Path, create: bool) -> Result<OptimisticTransactionDB<MultiThreaded>> {
+    let mut opts = Options::default();
+    opts.set_report_bg_io_stats(true);
+    opts.set_use_fsync(false);
+    opts.create_if_missing(create);
+    opts.create_missing_column_families(true);
+    opts.set_bytes_per_sync(1 * 1024 * 1024);
+    opts.set_keep_log_file_num(1);
+    let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
+    opts.increase_parallelism(i32::max(cores / 2, 1));
+
+    let db = OptimisticTransactionDB::<MultiThreaded>::open_cf_descriptors(
+        &opts,
+        path,
+        Column::ALL.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name(), col.rocksdb_options())),
+    )?;
+
+    Ok(db)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Column {
+    Meta,
+    BlockMapping,
+    TransactionMapping,
+    SyncedMapping,
+    Da,
 
     /// This column is used to map starknet block hashes to a list of transaction hashes that are
     /// contained in the block.
     ///
     /// This column should only be accessed if the `--cache` flag is enabled.
-    pub const STARKNET_TRANSACTION_HASHES_CACHE: u32 = 5;
+    StarknetTransactionHashesCache,
 
     /// This column is used to map starknet block numbers to their block hashes.
     ///
     /// This column should only be accessed if the `--cache` flag is enabled.
-    pub const STARKNET_BLOCK_HASHES_CACHE: u32 = 6;
+    StarknetBlockHashesCache,
 
     /// This column contains last synchronized L1 block.
-    pub const MESSAGING: u32 = 7;
+    Messaging,
 
     /// This column contains the Sierra contract classes
-    pub const SIERRA_CONTRACT_CLASSES: u32 = 8;
+    SierraContractClasses,
 
     /// This column stores the fee paid on l1 for L1Handler transactions
-    pub const L1_HANDLER_PAID_FEE: u32 = 9;
+    L1HandlerPaidFee,
 
-    /// The bonsai columns are triplicated since we need to set a column for
-    ///
-    /// const TRIE_LOG_CF: &str = "trie_log";
-    /// const TRIE_CF: &str = "trie";
-    /// const FLAT_CF: &str = "flat";
-    /// as defined in https://github.com/keep-starknet-strange/bonsai-trie/blob/oss/src/databases/rocks_db.rs
-    ///
-    /// For each tries CONTRACTS, CLASSES and STORAGE
-    pub const TRIE_BONSAI_CONTRACTS: u32 = 10;
-    pub const FLAT_BONSAI_CONTRACTS: u32 = 11;
-    pub const LOG_BONSAI_CONTRACTS: u32 = 12;
-    pub const TRIE_BONSAI_CLASSES: u32 = 13;
-    pub const FLAT_BONSAI_CLASSES: u32 = 14;
-    pub const LOG_BONSAI_CLASSES: u32 = 15;
+    // Each bonsai storage has 3 columns
+    BonsaiContractsTrie,
+    BonsaiContractsFlat,
+    BonsaiContractsLog,
+
+    BonsaiContractsStorageTrie,
+    BonsaiContractsStorageFlat,
+    BonsaiContractsStorageLog,
+
+    BonsaiClassesTrie,
+    BonsaiClassesFlat,
+    BonsaiClassesLog,
+}
+
+impl fmt::Debug for Column {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.rocksdb_name())
+    }
+}
+
+impl fmt::Display for Column {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.rocksdb_name())
+    }
+}
+
+impl Column {
+    pub const ALL: &'static [Self] = {
+        use Column::*;
+        &[
+            Meta,
+            BlockMapping,
+            TransactionMapping,
+            SyncedMapping,
+            Da,
+            StarknetTransactionHashesCache,
+            StarknetBlockHashesCache,
+            Messaging,
+            SierraContractClasses,
+            L1HandlerPaidFee,
+            BonsaiContractsTrie,
+            BonsaiContractsFlat,
+            BonsaiContractsLog,
+            BonsaiContractsStorageTrie,
+            BonsaiContractsStorageFlat,
+            BonsaiContractsStorageLog,
+            BonsaiClassesTrie,
+            BonsaiClassesFlat,
+            BonsaiClassesLog,
+        ]
+    };
+    pub const NUM_COLUMNS: usize = Self::ALL.len();
+
+    pub(crate) fn rocksdb_name(&self) -> &'static str {
+        match self {
+            Column::Meta => "meta",
+            Column::BlockMapping => "block_mapping",
+            Column::TransactionMapping => "transaction_mapping",
+            Column::SyncedMapping => "synced_mapping",
+            Column::Da => "da",
+            Column::StarknetTransactionHashesCache => "starknet_transaction_hashes_cache",
+            Column::StarknetBlockHashesCache => "starnet_block_hashes_cache",
+            Column::Messaging => "messaging",
+            Column::SierraContractClasses => "sierra_contract_classes",
+            Column::L1HandlerPaidFee => "l1_handler_paid_fee",
+            Column::BonsaiContractsTrie => "bonsai_contracts_trie",
+            Column::BonsaiContractsFlat => "bonsai_contracts_flat",
+            Column::BonsaiContractsLog => "bonsai_contracts_log",
+            Column::BonsaiContractsStorageTrie => "bonsai_contracts_storage_trie",
+            Column::BonsaiContractsStorageFlat => "bonsai_contracts_storage_flat",
+            Column::BonsaiContractsStorageLog => "bonsai_contracts_storage_log",
+            Column::BonsaiClassesTrie => "bonsai_classes_trie",
+            Column::BonsaiClassesFlat => "bonsai_classes_flat",
+            Column::BonsaiClassesLog => "bonsai_classes_log",
+        }
+    }
+
+    /// Per column rocksdb options, like memory budget, compaction profiles, block sizes for hdd/sdd
+    /// etc. TODO: add basic sensible defaults
+    pub(crate) fn rocksdb_options(&self) -> Options {
+        match self {
+            _ => Options::default(),
+        }
+    }
+}
+
+pub(crate) trait DatabaseExt {
+    fn get_column(&self, col: Column) -> Arc<BoundColumnFamily<'_>>;
+}
+
+impl DatabaseExt for DB {
+    fn get_column(&self, col: Column) -> Arc<BoundColumnFamily<'_>> {
+        self.cf_handle(col.rocksdb_name()).expect("column not inititalized")
+    }
 }
 
 pub mod static_keys {
@@ -134,9 +237,9 @@ pub struct DeoxysBackend {
     messaging: Arc<MessagingDb>,
     sierra_classes: Arc<SierraClassesDb>,
     l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
-    bonsai_contract: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
-    bonsai_storage: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
-    bonsai_class: Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
+    bonsai_contract: BonsaiStorageAccess<Pedersen>,
+    bonsai_storage: BonsaiStorageAccess<Pedersen>,
+    bonsai_class: BonsaiStorageAccess<Poseidon>,
 }
 
 // Singleton backing instance for `DeoxysBackend`
@@ -152,15 +255,16 @@ impl DeoxysBackend {
         database: &DatabaseSource,
         db_config_dir: &Path,
         cache_more_things: bool,
-    ) -> Result<&'static Arc<DeoxysBackend>, String> {
+    ) -> Result<&'static Arc<DeoxysBackend>> {
         BACKEND_SINGLETON
             .set(Arc::new(Self::init(database, db_config_dir, cache_more_things).unwrap()))
-            .map_err(|_| "Backend already initialized")?;
+            .ok()
+            .context("Backend already initialized")?;
 
         Ok(BACKEND_SINGLETON.get().unwrap())
     }
 
-    fn init(database: &DatabaseSource, db_config_dir: &Path, cache_more_things: bool) -> Result<Self, String> {
+    fn init(database: &DatabaseSource, db_config_dir: &Path, cache_more_things: bool) -> Result<Self> {
         Self::new(
             &DatabaseSettings {
                 source: match database {
@@ -175,33 +279,47 @@ impl DeoxysBackend {
                         paritydb_path: starknet_database_dir(db_config_dir, "paritydb"),
                         cache_size: 0,
                     },
-                    _ => return Err("Supported db sources: `rocksdb` | `paritydb` | `auto`".to_string()),
+                    _ => bail!("Supported db sources: `rocksdb` | `paritydb` | `auto`"),
                 },
             },
             cache_more_things,
         )
     }
 
-    fn new(config: &DatabaseSettings, cache_more_things: bool) -> Result<Self, String> {
-        let db = db_opening_utils::open_database(config)?;
-        let kvdb: Arc<dyn KeyValueDB> = db.0;
-        let spdb: Arc<dyn Database<DbHash>> = db.1;
-
-        let contract = BonsaiDb { db: kvdb.clone(), current_column: TrieColumn::Contract };
-        let contract_storage = BonsaiDb { db: kvdb.clone(), current_column: TrieColumn::ContractStorage };
-        let class = BonsaiDb { db: kvdb.clone(), current_column: TrieColumn::Class };
-        let config = BonsaiConfigs::new(contract, contract_storage, class);
+    fn new(config: &DatabaseSettings, cache_more_things: bool) -> Result<Self> {
+        let db = Arc::new(open_database(config)?);
 
         Ok(Self {
-            mapping: Arc::new(MappingDb::new(spdb.clone(), cache_more_things)),
-            meta: Arc::new(MetaDb { db: spdb.clone() }),
-            da: Arc::new(DaDb { db: spdb.clone() }),
-            messaging: Arc::new(MessagingDb { db: spdb.clone() }),
-            sierra_classes: Arc::new(SierraClassesDb { db: spdb.clone() }),
-            l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb { db: spdb.clone() }),
-            bonsai_contract: Arc::new(Mutex::new(config.contract)),
-            bonsai_storage: Arc::new(Mutex::new(config.contract_storage)),
-            bonsai_class: Arc::new(Mutex::new(config.class)),
+            mapping: Arc::new(MappingDb::new(Arc::clone(&db), cache_more_things)),
+            meta: Arc::new(MetaDb::new(Arc::clone(&db))),
+            da: Arc::new(DaDb::new(Arc::clone(&db))),
+            messaging: Arc::new(MessagingDb::new(Arc::clone(&db))),
+            sierra_classes: Arc::new(SierraClassesDb::new(Arc::clone(&db))),
+            l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb::new(Arc::clone(&db))),
+            bonsai_contract: BonsaiStorageAccess::new(
+                Arc::clone(&db),
+                DatabaseKeyMapping {
+                    flat: Column::BonsaiContractsFlat,
+                    trie: Column::BonsaiContractsTrie,
+                    trie_log: Column::BonsaiContractsLog,
+                },
+            ),
+            bonsai_storage: BonsaiStorageAccess::new(
+                Arc::clone(&db),
+                DatabaseKeyMapping {
+                    flat: Column::BonsaiContractsStorageFlat,
+                    trie: Column::BonsaiContractsStorageTrie,
+                    trie_log: Column::BonsaiContractsStorageLog,
+                },
+            ),
+            bonsai_class: BonsaiStorageAccess::new(
+                Arc::clone(&db),
+                DatabaseKeyMapping {
+                    flat: Column::BonsaiClassesFlat,
+                    trie: Column::BonsaiClassesTrie,
+                    trie_log: Column::BonsaiClassesLog,
+                },
+            ),
         })
     }
 
@@ -230,15 +348,15 @@ impl DeoxysBackend {
         BACKEND_SINGLETON.get().map(|backend| &backend.sierra_classes).expect("Backend not initialized")
     }
 
-    pub fn bonsai_contract() -> &'static Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>> {
+    pub fn bonsai_contract() -> &'static BonsaiStorageAccess<Pedersen> {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_contract).expect("Backend not initialized")
     }
 
-    pub fn bonsai_storage() -> &'static Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>> {
+    pub fn bonsai_storage() -> &'static BonsaiStorageAccess<Pedersen> {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_storage).expect("Backend not initialized")
     }
 
-    pub fn bonsai_class() -> &'static Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>> {
+    pub fn bonsai_class() -> &'static BonsaiStorageAccess<Poseidon> {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_class).expect("Backend not initialized")
     }
 
