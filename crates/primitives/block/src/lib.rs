@@ -8,12 +8,11 @@ use alloc::vec::Vec;
 mod header;
 mod ordered_events;
 pub mod state_update;
-
-use blockifier::transaction::transaction_execution::Transaction;
 pub use header::Header;
 use mp_felt::Felt252Wrapper;
 pub use ordered_events::*;
 use starknet_api::transaction::TransactionHash;
+use starknet_api::transaction::Transaction;
 
 /// Block Transactions
 pub type BlockTransactions = Vec<Transaction>;
@@ -53,7 +52,7 @@ pub struct DeoxysBlock {
     /// The block header.
     header: Header,
     /// The block transactions.
-    transactions: BlockTransactions,
+    transactions: BlockTransactions, // Vec<starknet_api::transaction::Transaction>,
     /// The block events.
     events: BlockEvents,
 }
@@ -88,14 +87,8 @@ impl DeoxysBlock {
     ///
     /// Those transactions are computed using the given `chain_id`.
     pub fn transactions_hashes(&self) -> impl '_ + Iterator<Item = TransactionHash> {
-        self.transactions.iter().map(|tx| match tx {
-            Transaction::AccountTransaction(ac) => match ac {
-                blockifier::transaction::account_transaction::AccountTransaction::Declare(tx) => tx.tx_hash,
-                blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(tx) => tx.tx_hash,
-                blockifier::transaction::account_transaction::AccountTransaction::Invoke(tx) => tx.tx_hash,
-            },
-            Transaction::L1HandlerTransaction(lhc) => lhc.tx_hash,
-        })
+        todo!("Implement transactions_hashes")
+        //self.transactions.iter().map(starknet_api::hash::StarkHash)
     }
 }
 
