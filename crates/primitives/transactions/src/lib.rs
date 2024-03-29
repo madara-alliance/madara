@@ -62,33 +62,33 @@ impl From<TxType> for TransactionType {
     }
 }
 
-impl From<&UserTransaction> for TxType {
-    fn from(value: &UserTransaction) -> Self {
-        match value {
-            UserTransaction::Declare(_, _) => TxType::Declare,
-            UserTransaction::DeployAccount(_) => TxType::DeployAccount,
-            UserTransaction::Invoke(_) => TxType::Invoke,
-        }
-    }
-}
+// impl From<&UserTransaction> for TxType {
+//     fn from(value: &UserTransaction) -> Self {
+//         match value {
+//             UserTransaction::Declare(_, _) => TxType::Declare,
+//             UserTransaction::DeployAccount(_) => TxType::DeployAccount,
+//             UserTransaction::Invoke(_) => TxType::Invoke,
+//         }
+//     }
+// }
 
-impl From<&UserOrL1HandlerTransaction> for TxType {
-    fn from(value: &UserOrL1HandlerTransaction) -> Self {
-        match value {
-            UserOrL1HandlerTransaction::User(tx) => tx.into(),
-            UserOrL1HandlerTransaction::L1Handler(_, _) => TxType::L1Handler,
-        }
-    }
-}
+// impl From<&UserOrL1HandlerTransaction> for TxType {
+//     fn from(value: &UserOrL1HandlerTransaction) -> Self {
+//         match value {
+//             UserOrL1HandlerTransaction::User(tx) => tx.into(),
+//             UserOrL1HandlerTransaction::L1Handler(_, _) => TxType::L1Handler,
+//         }
+//     }
+// }
 
-#[derive(Clone, Debug, Eq, PartialEq, From)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub enum UserTransaction {
-    Declare(DeclareTransaction, ContractClass),
-    DeployAccount(DeployAccountTransaction),
-    Invoke(InvokeTransaction),
-}
+// #[derive(Clone, Debug, Eq, PartialEq, From)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+// #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub enum UserTransaction {
+//     Declare(DeclareTransaction, ContractClass),
+//     DeployAccount(DeployAccountTransaction),
+//     Invoke(InvokeTransaction),
+// }
 
 // #[derive(Clone, Debug, Eq, PartialEq, From, PartialOrd, Ord)]
 // #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
@@ -101,13 +101,13 @@ pub enum UserTransaction {
 //     L1Handler(HandleL1MessageTransaction),
 // }
 
-#[derive(Clone, Debug, Eq, PartialEq, From)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub enum UserOrL1HandlerTransaction {
-    User(UserTransaction),
-    L1Handler(HandleL1MessageTransaction, Fee),
-}
+// #[derive(Clone, Debug, Eq, PartialEq, From)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+// #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub enum UserOrL1HandlerTransaction {
+//     User(UserTransaction),
+//     L1Handler(HandleL1MessageTransaction, Fee),
+// }
 
 // #[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
 // #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
