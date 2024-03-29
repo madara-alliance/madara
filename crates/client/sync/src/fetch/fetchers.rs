@@ -45,6 +45,8 @@ pub struct FetchConfig {
     pub l1_core_address: H160,
     /// Whether to check the root of the state update
     pub verify: bool,
+    /// The optional API_KEY to avoid rate limiting from the sequencer gateway.
+    pub api_key: Option<String>,
 }
 
 pub async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -> Result<p::Block, L2SyncError> {
@@ -75,6 +77,7 @@ where
 
         match block.as_ref().err().or(state_update.as_ref().err()) {
             Some(L2SyncError::Provider(ProviderError::RateLimited)) => {
+                log::info!("The fetching process has been rate limited");
                 log::debug!("The fetching process has been rate limited, retrying in {:?} seconds", base_delay);
                 attempt += 1;
                 if attempt >= MAX_RETRY {
@@ -93,7 +96,12 @@ where
 }
 
 pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBlock, String> {
-    let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
+    let client = SequencerGatewayProvider::new(
+        config.gateway.clone(),
+        config.feeder_gateway.clone(),
+        config.chain_id,
+        config.api_key.clone(),
+    );
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
     Ok(crate::convert::block(block).await)
