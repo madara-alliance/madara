@@ -120,38 +120,54 @@ fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
     }
 }
 
-fn declare_transaction(tx: p::DeclareTransaction) -> mp_transactions::DeclareTransaction {
+// TODO: find a method to create a DeclareTransaction
+fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
     if tx.version == FieldElement::ZERO {
-        mp_transactions::DeclareTransaction::V0(mp_transactions::DeclareTransactionV0 {
-            max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-            nonce: felt(tx.nonce).into(),
-            class_hash: felt(tx.class_hash).into(),
-            sender_address: felt(tx.sender_address).into(),
-        })
+        DeclareTransaction {
+            tx: starknet_api::transaction::DeclareTransaction::V0(starknet_api::transaction::DeclareTransactionV0V1 {
+                max_fee: fee(tx.max_fee.expect("no max fee provided")),
+                signature: signature(tx.signature),
+                nonce: nonce(tx.nonce.expect("no nonce provided")),
+                class_hash: starknet_api::core::PatriciaKey(felt(tx.class_hash)),
+                sender_address: address(tx.sender_address),
+            }),
+            tx_hash: tx_hash(tx.transaction_hash),
+            only_query: todo!("private field"),
+            class_info: todo!("class_info"),
+        }
     } else if tx.version == FieldElement::ONE {
-        mp_transactions::DeclareTransaction::V1(mp_transactions::DeclareTransactionV1 {
-            max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-            nonce: felt(tx.nonce).into(),
-            class_hash: felt(tx.class_hash).into(),
-            sender_address: felt(tx.sender_address).into(),
-            offset_version: false,
-        })
+        DeclareTransaction {
+            tx: starknet_api::transaction::DeclareTransaction::V1(starknet_api::transaction::DeclareTransactionV0V1 {
+                max_fee: fee(tx.max_fee.expect("no max fee provided")),
+                signature: signature(tx.signature),
+                nonce: nonce(tx.nonce.expect("no nonce provided")),
+                class_hash: starknet_api::core::PatriciaKey(felt(tx.class_hash)),
+                sender_address: address(tx.sender_address),
+            }),
+            tx_hash: tx_hash(tx.transaction_hash),
+            only_query: todo!("private field"),
+            class_info: todo!("class_info"),
+        }
     } else {
-        mp_transactions::DeclareTransaction::V2(mp_transactions::DeclareTransactionV2 {
-            max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-            nonce: felt(tx.nonce).into(),
-            class_hash: felt(tx.class_hash).into(),
-            sender_address: felt(tx.sender_address).into(),
-            compiled_class_hash: felt(tx.compiled_class_hash.expect("no class hash available")).into(),
-            offset_version: false,
-        })
+        DeclareTransaction {
+            tx: starknet_api::transaction::DeclareTransaction::V2(starknet_api::transaction::DeclareTransactionV2 {
+                max_fee: fee(tx.max_fee.expect("no max fee provided")),
+                signature: signature(tx.signature),
+                nonce: nonce(tx.nonce.expect("no nonce provided")),
+                class_hash: starknet_api::core::PatriciaKey(felt(tx.class_hash)),
+                compiled_class_hash: starknet_api::core::PatriciaKey(felt(
+                    tx.compiled_class_hash.expect("no compiled class hash provided"),
+                )),
+                sender_address: address(tx.sender_address),
+            }),
+            tx_hash: tx_hash(tx.transaction_hash),
+            only_query: todo!("private field"),
+            class_info: todo!("class_info"),
+        }
     }
 }
 
-fn deploy_transaction(tx: p::DeployTransaction) -> mp_transactions::DeployTransaction {
+fn deploy_transaction(tx: p::DeployTransaction) -> DeployAccountTransaction {
     mp_transactions::DeployTransaction {
         version: starknet_api::transaction::TransactionVersion(felt(tx.version)),
         class_hash: felt(tx.class_hash).into(),
@@ -161,31 +177,35 @@ fn deploy_transaction(tx: p::DeployTransaction) -> mp_transactions::DeployTransa
     }
 }
 
-fn deploy_account_transaction(tx: p::DeployAccountTransaction) -> mp_transactions::DeployAccountTransaction {
-    mp_transactions::DeployAccountTransaction {
-        max_fee: fee(tx.max_fee.expect("no max fee provided")),
-        signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-        nonce: felt(tx.nonce).into(),
-        contract_address_salt: felt(tx.contract_address_salt).into(),
-        constructor_calldata: tx.constructor_calldata.into_iter().map(felt).map(Into::into).collect(),
-        class_hash: felt(tx.class_hash).into(),
-        offset_version: false,
+fn deploy_account_transaction(tx: p::DeployAccountTransaction) -> DeployAccountTransaction {
+    DeployAccountTransaction {
+        tx: starknet_api::transaction::DeployAccountTransaction::V1(
+            starknet_api::transaction::DeployAccountTransactionV1 {
+                max_fee: fee(tx.max_fee.expect("no max fee provided")),
+                signature: signature(tx.signature),
+                nonce: nonce(tx.nonce.expect("no nonce provided")),
+                class_hash: starknet_api::core::PatriciaKey(felt(tx.class_hash)),
+                contract_address_salt: starknet_api::core::PatriciaKey(felt(tx.contract_address_salt)),
+                constructor_calldata: call_data(tx.constructor_calldata),
+            },
+        ),
+        tx_hash: tx_hash(tx.transaction_hash),
+        contract_address: contract_address(tx.contract_address),
+        only_query: false,
     }
 }
 
-fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> mp_transactions::HandleL1MessageTransaction {
-    mp_transactions::HandleL1MessageTransaction {
-        nonce: tx
-            .nonce
-            .ok_or("Nonce value is missing")
-            .and_then(|n| u64::try_from(felt(n)).map_err(|_| "Failed to convert felt value to u64"))
-            .unwrap_or_else(|e| {
-                eprintln!("{}", e);
-                0
-            }),
-        contract_address: felt(tx.contract_address).into(),
-        entry_point_selector: felt(tx.entry_point_selector).into(),
-        calldata: tx.calldata.into_iter().map(felt).map(Into::into).collect(),
+fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
+    L1HandlerTransaction {
+        tx: starknet_api::transaction::L1HandlerTransaction {
+            version: starknet_api::transaction::TransactionVersion(felt(tx.version)),
+            nonce: nonce(tx.nonce.expect("no nonce provided")),
+            contract_address: contract_address(tx.contract_address),
+            entry_point_selector: entry_point(tx.entry_point_selector.expect("no entry_point_selector provided")),
+            calldata: call_data(tx.calldata),
+        },
+        tx_hash: tx_hash(tx.transaction_hash),
+        paid_fee_on_l1: fee(tx.paid_fee_on_l1.expect("no paid fee on L1 provided")),
     }
 }
 
