@@ -952,7 +952,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/antiyro/bonsai-trie.git?branch=oss#d1641a844b418a7e399a061f9d1cf38b52bbdfc2"
+source = "git+https://github.com/cchudant/bonsai-trie.git?branch=deoxys#144c0ee8f40a870682283896aa4ec8dfab2b9357"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -11275,7 +11275,8 @@ dependencies = [
 [[package]]
 name = "starknet-types-core"
 version = "0.0.11"
-source = "git+https://github.com/starknet-io/types-rs.git?branch=main#bcb3fc518620635dbb172ce5f80e63177aa913ef"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1e16522c1c9aa7fc149a46816cd18aa12a5fc2b2b75a018089022db473a9237"
 dependencies = [
  "bitvec",
  "lambdaworks-crypto",

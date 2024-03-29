@@ -1,7 +1,8 @@
-git # Deoxys Changelog
+# Deoxys Changelog
 
 ## Next release
 
+- chore: bump starknet-types-core to 0.0.11
 - feat(api_key): api key passed to FetchConfig correctly
 - feat(api_key): Added support for --gateway-api to avoid rate limit from the gateway
 - fix(latest): Retrieve latest synced block via internal client
