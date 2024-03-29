@@ -35,7 +35,7 @@ pub fn to_starknet_core_tx(
     match tx {
         super::Transaction::Declare(tx) => {
             let tx = match tx {
-                super::DeclareTransaction::V0(super::DeclareTransactionV0 {
+                super::DeclareTransaction::V0(super::DeclareTransactionV0V1 {
                     max_fee,
                     signature,
                     nonce: _,
@@ -48,7 +48,7 @@ pub fn to_starknet_core_tx(
                     class_hash: class_hash.into(),
                     sender_address: sender_address.into(),
                 }),
-                super::DeclareTransaction::V1(super::DeclareTransactionV1 {
+                super::DeclareTransaction::V1(super::DeclareTransactionV0V1 {
                     max_fee,
                     signature,
                     nonce,
@@ -86,24 +86,6 @@ pub fn to_starknet_core_tx(
         }
         super::Transaction::DeployAccount(tx) => {
             let tx = match tx {
-                super::DeployAccountTransaction::V0(super::DeployAccountTransactionV0 {
-                    max_fee,
-                    signature,
-                    nonce,
-                    contract_address_salt,
-                    constructor_calldata,
-                    class_hash,
-                }) => starknet_core::types::DeployAccountTransaction::V0(
-                    starknet_core::types::DeployAccountTransactionV0 {
-                        transaction_hash,
-                        max_fee: max_fee.into(),
-                        signature: cast_vec_of_felt_252_wrappers(signature),
-                        nonce: nonce.into(),
-                        contract_address_salt: contract_address_salt.into(),
-                        constructor_calldata: cast_vec_of_felt_252_wrappers(constructor_calldata),
-                        class_hash: class_hash.into(),
-                    },
-                ),
                 super::DeployAccountTransaction::V1(super::DeployAccountTransactionV1 {
                     max_fee,
                     signature,
@@ -121,6 +103,33 @@ pub fn to_starknet_core_tx(
                         contract_address_salt: contract_address_salt.into(),
                         constructor_calldata: cast_vec_of_felt_252_wrappers(constructor_calldata),
                         class_hash: class_hash.into(),
+                    },
+                ),
+                super::DeployAccountTransaction::V3(super::DeployAccountTransactionV3 {
+                    resource_bounds,
+                    tip,
+                    signature,
+                    nonce,
+                    class_hash,
+                    contract_address_salt,
+                    constructor_calldata,
+                    nonce_data_availability_mode,
+                    fee_data_availability_mode,
+                    paymaster_data,
+                    max_fee
+                }) => starknet_core::types::DeployAccountTransaction::V3(
+                    starknet_core::types::DeployAccountTransactionV3 {
+                        transaction_hash,
+                        resource_bounds: resource_bounds.into(),
+                        tip: tip.into(),
+                        signature: cast_vec_of_felt_252_wrappers(signature),
+                        nonce: nonce.into(),
+                        class_hash: class_hash.into(),
+                        contract_address_salt: contract_address_salt.into(),
+                        constructor_calldata: cast_vec_of_felt_252_wrappers(constructor_calldata),
+                        nonce_data_availability_mode: nonce_data_availability_mode.into(),
+                        fee_data_availability_mode: fee_data_availability_mode.into(),
+                        paymaster_data: paymaster_data.into(),
                     },
                 ),
             };

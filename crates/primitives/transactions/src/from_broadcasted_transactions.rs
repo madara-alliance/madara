@@ -21,13 +21,12 @@ use starknet_core::types::contract::legacy::{
 };
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
-    BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV1, BroadcastedDeclareTransactionV2,
-    BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction,
-    CompressedLegacyContractClass, EntryPointsByType, FlattenedSierraClass, LegacyContractEntryPoint,
-    LegacyEntryPointsByType, SierraEntryPoint,
+    BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV1, BroadcastedDeclareTransactionV2, BroadcastedDeclareTransactionV3, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, CompressedLegacyContractClass, EntryPointsByType, FlattenedSierraClass, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint
 };
 use starknet_crypto::FieldElement;
 use thiserror::Error;
+
+use crate::DeclareTransactionV3;
 
 use super::{DeclareTransaction, DeclareTransactionV1, DeclareTransactionV2, UserTransaction};
 
@@ -175,8 +174,47 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                 UserTransaction::Declare(tx, contract_class)
             }
             BroadcastedDeclareTransaction::V3(BroadcastedDeclareTransactionV3 {
+                sender_address,
+                compiled_class_hash,
+                signature,
+                nonce,
+                contract_class,
+                resource_bounds,
+                tip,
+                paymaster_data,
+                account_deployment_data,
+                nonce_data_availability_mode,
+                fee_data_availability_mode,
+                is_query
             }) => {
+                let tx = DeclareTransaction::V3(DeclareTransactionV3 {
+                    resource_bounds: resource_bounds.into(),
+                    tip: tip.into(),
+                    signature: cast_vec_of_field_elements(signature),
+                    nonce: nonce.into(),
+                    class_hash: contract_class.class_hash().into(),
+                    sender_address: sender_address.into(),
+                    compiled_class_hash: compiled_class_hash.into(),
+                    nonce_data_availability_mode: nonce_data_availability_mode.into(),
+                    fee_data_availability_mode: fee_data_availability_mode.into(),
+                    paymaster_data: cast_vec_of_field_elements(paymaster_data),
+                    account_deployment_data: account_deployment_data.into(),
+                });
 
+                let casm_contract_class = flattened_sierra_to_casm_contract_class(contract_class)
+                    .map_err(|_| BroadcastedTransactionConversionError::SierraCompilationFailed)?;
+
+                // ensure that the user has sign the correct class hash
+                if get_casm_cotract_class_hash(&casm_contract_class) != compiled_class_hash {
+                    return Err(BroadcastedTransactionConversionError::InvalidCompiledClassHash);
+                }
+
+                let contract_class = ContractClass::V1(
+                    ContractClassV1::try_from(casm_contract_class)
+                        .map_err(|_| BroadcastedTransactionConversionError::CasmContractClassConversionFailed)?,
+                );
+
+                UserTransaction::Declare(tx, contract_class)
             }
         };
 

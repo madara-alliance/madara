@@ -158,36 +158,25 @@ pub struct InvokeTransactionV1 {
     pub offset_version: bool,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub enum DeclareTransaction {
-    V0(DeclareTransactionV0),
-    V1(DeclareTransactionV1),
+    V0(DeclareTransactionV0V1),
+    V1(DeclareTransactionV0V1),
     V2(DeclareTransactionV2),
+    V3(DeclareTransactionV3),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct DeclareTransactionV0 {
+pub struct DeclareTransactionV0V1 {
     pub max_fee: u128,
     pub signature: Vec<Felt252Wrapper>,
     pub nonce: Felt252Wrapper,
     pub class_hash: Felt252Wrapper,
     pub sender_address: Felt252Wrapper,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct DeclareTransactionV1 {
-    pub max_fee: u128,
-    pub signature: Vec<Felt252Wrapper>,
-    pub nonce: Felt252Wrapper,
-    pub class_hash: Felt252Wrapper,
-    pub sender_address: Felt252Wrapper,
-    pub offset_version: bool,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
@@ -198,9 +187,25 @@ pub struct DeclareTransactionV2 {
     pub signature: Vec<Felt252Wrapper>,
     pub nonce: Felt252Wrapper,
     pub class_hash: Felt252Wrapper,
-    pub sender_address: Felt252Wrapper,
     pub compiled_class_hash: Felt252Wrapper,
-    pub offset_version: bool,
+    pub sender_address: Felt252Wrapper,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+pub struct DeclareTransactionV3 {
+    pub resource_bounds: ResourceBoundsMapping,
+    pub tip: u64,
+    pub signature: Vec<Felt252Wrapper>,
+    pub nonce: Felt252Wrapper,
+    pub class_hash: Felt252Wrapper,
+    pub compiled_class_hash: Felt252Wrapper,
+    pub sender_address: Felt252Wrapper,
+    pub nonce_data_availability_mode: DataAvailabilityMode,
+    pub fee_data_availability_mode: DataAvailabilityMode,
+    pub paymaster_data: PaymasterData,
+    pub account_deployment_data: AccountDeploymentData,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]

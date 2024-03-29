@@ -5,48 +5,11 @@ use mp_felt::Felt252Wrapper;
 use starknet_api::transaction as sttx;
 
 use super::{
-    DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeployAccountTransaction,
+    DeclareTransactionV0V1, DeclareTransactionV2, DeployAccountTransaction,
     HandleL1MessageTransaction, InvokeTransactionV0, InvokeTransactionV1,
 };
 
-impl DeclareTransactionV0 {
-    // fn try_into_executable<H: HasherT>(
-    //     &self,
-    //     chain_id: Felt252Wrapper,
-    //     contract_class: ContractClass,
-    //     offset_version: bool,
-    // ) -> TransactionExecutionResult<btx::DeclareTransaction> { let transaction_hash =
-    //   self.compute_hash::<H>(chain_id, offset_version, None);
-
-    //     // TODO: Stop using our custom types
-    //     // I pass fake values so it don't crash, but will result in unrealistic fees
-    //     let class_info = ClassInfo::new(&contract_class, 0, 0).unwrap();
-
-    //     btx::DeclareTransaction::new(
-    //         sttx::DeclareTransaction::V0(sttx::DeclareTransactionV0V1 {
-    //             max_fee: sttx::Fee(self.max_fee),
-    //             signature: vec_of_felt_to_signature(&self.signature),
-    //             nonce: self.nonce.into(),
-    //             class_hash: self.class_hash.into(),
-    //             sender_address: self.sender_address.into(),
-    //         }),
-    //         transaction_hash.into(),
-    //         class_info,
-    //     )
-    // }
-
-    pub fn from_starknet(inner: starknet_api::transaction::DeclareTransactionV0V1) -> Self {
-        Self {
-            nonce: inner.nonce.0.into(),
-            max_fee: inner.max_fee.0,
-            signature: inner.signature.0.iter().map(|felt| Felt252Wrapper::from(*felt)).collect(),
-            sender_address: inner.sender_address.into(),
-            class_hash: inner.class_hash.into(),
-        }
-    }
-}
-
-impl DeclareTransactionV1 {
+impl DeclareTransactionV0V1 {
     // fn try_into_executable<H: HasherT>(
     //     &self,
     //     chain_id: Felt252Wrapper,
@@ -79,7 +42,6 @@ impl DeclareTransactionV1 {
             signature: inner.signature.0.iter().map(|felt| Felt252Wrapper::from(*felt)).collect(),
             sender_address: inner.sender_address.into(),
             class_hash: inner.class_hash.into(),
-            offset_version: false,
         }
     }
 }
