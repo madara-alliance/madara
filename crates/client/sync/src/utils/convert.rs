@@ -7,7 +7,7 @@ use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
-    DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction,
+    DeclareTransaction, DeployAccountTransaction, DeployTransaction, Event, InvokeTransaction, L1HandlerTransaction,
     Transaction,
 };
 use starknet_core::types::{
@@ -257,11 +257,7 @@ fn event(event: &p::Event) -> starknet_api::transaction::Event {
     }
 }
 
-async fn commitments(
-    transactions: &[mp_transactions::Transaction],
-    events: &[starknet_api::transaction::Event],
-    block_number: u64,
-) -> (StarkFelt, StarkFelt) {
+async fn commitments(transactions: &[Transaction], events: &[Event], block_number: u64) -> (StarkFelt, StarkFelt) {
     let chain_id = chain_id();
 
     let (commitment_tx, commitment_event) = calculate_commitments(transactions, events, chain_id, block_number).await;

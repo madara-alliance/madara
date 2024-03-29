@@ -1,10 +1,14 @@
 use std::vec::Vec;
+
 use blockifier::transaction::objects::FeeTypeIter;
-use starknet_api::transaction::{Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Transaction};
-
-///Here we transform mp-transactions input into starknet-api trasnactions 
-
+/// Here we transform mp-transactions input into starknet-api trasnactions
 use mp_felt::Felt252Wrapper;
+use starknet_api::transaction::{
+    Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3,
+    DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction,
+    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction,
+    Transaction,
+};
 use starknet_core::types::DeclareTransactionV0;
 use starknet_crypto::FieldElement;
 
@@ -33,10 +37,7 @@ fn cast_vec_of_felt_252_wrappers(data: Vec<Felt252Wrapper>) -> Vec<FieldElement>
     unsafe { alloc::vec::Vec::from_raw_parts(data.as_mut_ptr() as *mut FieldElement, data.len(), data.capacity()) }
 }
 
-pub fn to_starknet_core_tx(
-    tx: Transaction,
-    transaction_hash: FieldElement,
-) -> starknet_core::types::Transaction {
+pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> starknet_core::types::Transaction {
     match tx {
         Transaction::Declare(tx) => {
             let tx = match tx {
@@ -109,9 +110,13 @@ pub fn to_starknet_core_tx(
                     nonce_data_availability_mode: nonce_data_availability_mode.into(),
                     fee_data_availability_mode: fee_data_availability_mode.into(),
                     paymaster_data: paymaster_data.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
-                    account_deployment_data: account_deployment_data.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    account_deployment_data: account_deployment_data
+                        .0
+                        .iter()
+                        .map(|x| Felt252Wrapper::from(*x))
+                        .collect()
+                        .into(),
                 }),
-
             };
 
             starknet_core::types::Transaction::Declare(tx)
@@ -133,11 +138,16 @@ pub fn to_starknet_core_tx(
                         signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
                         nonce: Felt252Wrapper::from(nonce.0).into(),
                         contract_address_salt: Felt252Wrapper::from(contract_address_salt.0).into(),
-                        constructor_calldata: constructor_calldata.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                        constructor_calldata: constructor_calldata
+                            .0
+                            .iter()
+                            .map(|x| Felt252Wrapper::from(*x))
+                            .collect()
+                            .into(),
                         class_hash: Felt252Wrapper::from(class_hash.0).into(),
                     },
                 ),
-                DeployAccountTransaction::V3(DeployAccountTransactionV3{
+                DeployAccountTransaction::V3(DeployAccountTransactionV3 {
                     resource_bounds,
                     tip,
                     signature,
@@ -157,7 +167,12 @@ pub fn to_starknet_core_tx(
                         nonce: Felt252Wrapper::from(nonce.0).into(),
                         class_hash: Felt252Wrapper::from(class_hash.0).into(),
                         contract_address_salt: Felt252Wrapper::from(contract_address_salt.0).into(),
-                        constructor_calldata: constructor_calldata.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                        constructor_calldata: constructor_calldata
+                            .0
+                            .iter()
+                            .map(|x| Felt252Wrapper::from(*x))
+                            .collect()
+                            .into(),
                         nonce_data_availability_mode: nonce_data_availability_mode.into(),
                         fee_data_availability_mode: fee_data_availability_mode.into(),
                         paymaster_data: paymaster_data.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
@@ -194,7 +209,7 @@ pub fn to_starknet_core_tx(
                     entry_point_selector: Felt252Wrapper::from(entry_point_selector.0).into(),
                     calldata: calldata.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
                 }),
-                InvokeTransaction::V1(InvokeTransactionV1{
+                InvokeTransaction::V1(InvokeTransactionV1 {
                     max_fee,
                     signature,
                     nonce,
@@ -220,7 +235,6 @@ pub fn to_starknet_core_tx(
                     fee_data_availability_mode,
                     paymaster_data,
                     account_deployment_data,
-
                 }) => starknet_core::types::InvokeTransaction::V3(starknet_core::types::InvokeTransactionV3 {
                     transaction_hash,
                     resource_bounds: resource_bounds.into(),
@@ -232,7 +246,12 @@ pub fn to_starknet_core_tx(
                     nonce_data_availability_mode: nonce_data_availability_mode.into(),
                     fee_data_availability_mode: fee_data_availability_mode.into(),
                     paymaster_data: paymaster_data.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
-                    account_deployment_data: account_deployment_data.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    account_deployment_data: account_deployment_data
+                        .0
+                        .iter()
+                        .map(|x| Felt252Wrapper::from(*x))
+                        .collect()
+                        .into(),
                 }),
             };
 

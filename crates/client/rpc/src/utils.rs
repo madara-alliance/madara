@@ -21,6 +21,7 @@ use sp_runtime::DispatchError;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::ThinStateDiff;
+use starknet_api::transaction::Transaction;
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
     BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem,
@@ -152,7 +153,7 @@ where
     block.transactions_hashes().map(FieldElement::from).collect()
 }
 
-pub(crate) fn tx_conv(txs: &[mp_transactions::Transaction], tx_hashes: Vec<FieldElement>) -> Vec<Transaction> {
+pub(crate) fn tx_conv(txs: &[Transaction], tx_hashes: Vec<FieldElement>) -> Vec<Transaction> {
     txs.iter().zip(tx_hashes).map(|(tx, hash)| to_starknet_core_tx(tx.clone(), hash)).collect()
 }
 

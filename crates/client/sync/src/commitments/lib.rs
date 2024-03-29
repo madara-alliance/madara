@@ -16,7 +16,6 @@ use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::poseidon::PoseidonHasher;
 use mp_hashers::HasherT;
 use mp_storage::StarknetStorageSchemaVersion::Undefined;
-use mp_transactions::Transaction;
 use sp_core::H256;
 use sp_runtime::generic::{Block, Header};
 use sp_runtime::traits::BlakeTwo256;
@@ -24,7 +23,7 @@ use sp_runtime::OpaqueExtrinsic;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::Event;
+use starknet_api::transaction::{Event, Transaction};
 use starknet_types_core::hash::{Pedersen, Poseidon};
 use tokio::join;
 

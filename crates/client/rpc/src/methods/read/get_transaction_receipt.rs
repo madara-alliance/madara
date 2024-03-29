@@ -11,7 +11,7 @@ use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::{DeclareTransaction, Transaction as TransactionMp, UserOrL1HandlerTransaction, UserTransaction};
+use mp_transactions::{DeclareTransaction, UserOrL1HandlerTransaction, UserTransaction};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -20,6 +20,7 @@ use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::api_core::ClassHash;
+use starknet_api::transaction::{InvokeTransaction, Transaction};
 use starknet_core::types::{
     BlockId, BlockTag, DeclareTransactionReceipt, DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult,
     FieldElement, Hash256, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MaybePendingTransactionReceipt,
@@ -125,7 +126,7 @@ where
 
     // TODO: use actual execution ressources
     let receipt = match transaction {
-        mp_transactions::Transaction::Declare(_) => TransactionReceipt::Declare(DeclareTransactionReceipt {
+        Transaction::Declare(_) => TransactionReceipt::Declare(DeclareTransactionReceipt {
             transaction_hash,
             actual_fee,
             finality_status,
@@ -136,21 +137,19 @@ where
             execution_resources,
             execution_result,
         }),
-        mp_transactions::Transaction::DeployAccount(tx) => {
-            TransactionReceipt::DeployAccount(DeployAccountTransactionReceipt {
-                transaction_hash,
-                actual_fee,
-                finality_status,
-                block_hash: block_hash.into(),
-                block_number,
-                messages_sent,
-                events,
-                execution_resources,
-                execution_result,
-                contract_address: tx.get_account_address(),
-            })
-        }
-        mp_transactions::Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {
+        Transaction::DeployAccount(tx) => TransactionReceipt::DeployAccount(DeployAccountTransactionReceipt {
+            transaction_hash,
+            actual_fee,
+            finality_status,
+            block_hash: block_hash.into(),
+            block_number,
+            messages_sent,
+            events,
+            execution_resources,
+            execution_result,
+            contract_address: tx.get_account_address(),
+        }),
+        Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {
             transaction_hash,
             actual_fee,
             finality_status,
@@ -161,7 +160,7 @@ where
             execution_resources,
             execution_result,
         }),
-        mp_transactions::Transaction::L1Handler(_) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+        Transaction::L1Handler(_) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
             message_hash,
             transaction_hash,
             actual_fee,
@@ -260,17 +259,15 @@ where
 
     // TODO: use actual execution ressources
     let receipt = match transaction {
-        mp_transactions::Transaction::Declare(_) => {
-            PendingTransactionReceipt::Declare(PendingDeclareTransactionReceipt {
-                transaction_hash,
-                actual_fee,
-                messages_sent,
-                events,
-                execution_resources,
-                execution_result,
-            })
-        }
-        mp_transactions::Transaction::DeployAccount(tx) => {
+        Transactionansaction::Declare(_) => PendingTransactionReceipt::Declare(PendingDeclareTransactionReceipt {
+            transaction_hash,
+            actual_fee,
+            messages_sent,
+            events,
+            execution_resources,
+            execution_result,
+        }),
+        Transactionansaction::DeployAccount(tx) => {
             PendingTransactionReceipt::DeployAccount(PendingDeployAccountTransactionReceipt {
                 transaction_hash,
                 actual_fee,
@@ -281,7 +278,7 @@ where
                 contract_address: tx.get_account_address(),
             })
         }
-        mp_transactions::Transaction::Invoke(_) => PendingTransactionReceipt::Invoke(PendingInvokeTransactionReceipt {
+        Transactionansaction::Invoke(_) => PendingTransactionReceipt::Invoke(PendingInvokeTransactionReceipt {
             transaction_hash,
             actual_fee,
             messages_sent,
@@ -289,17 +286,15 @@ where
             execution_resources,
             execution_result,
         }),
-        mp_transactions::Transaction::L1Handler(_) => {
-            PendingTransactionReceipt::L1Handler(PendingL1HandlerTransactionReceipt {
-                message_hash,
-                transaction_hash,
-                actual_fee,
-                messages_sent,
-                events,
-                execution_resources,
-                execution_result,
-            })
-        }
+        Transaction::L1Handler(_) => PendingTransactionReceipt::L1Handler(PendingL1HandlerTransactionReceipt {
+            message_hash,
+            transaction_hash,
+            actual_fee,
+            messages_sent,
+            events,
+            execution_resources,
+            execution_result,
+        }),
         _ => unreachable!("Pending deploy transactions are not supported"),
     };
 
@@ -369,18 +364,18 @@ where
     Ok(transactions)
 }
 
-fn tx_invoke_transaction(tx: mp_transactions::InvokeTransaction) -> RpcResult<UserOrL1HandlerTransaction> {
+fn tx_invoke_transaction(tx: InvokeTransaction) -> RpcResult<UserOrL1HandlerTransaction> {
     Ok(UserOrL1HandlerTransaction::User(UserTransaction::Invoke(tx)))
 }
 
-fn tx_deploy_account(tx: mp_transactions::DeployAccountTransaction) -> RpcResult<UserOrL1HandlerTransaction> {
+fn tx_deploy_account(tx: DeployAccountTransaction) -> RpcResult<UserOrL1HandlerTransaction> {
     Ok(UserOrL1HandlerTransaction::User(UserTransaction::DeployAccount(tx)))
 }
 
 fn tx_declare<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     substrate_block_hash: DHashT,
-    declare_tx: mp_transactions::DeclareTransaction,
+    declare_tx: DeclareTransaction,
 ) -> RpcResult<UserOrL1HandlerTransaction>
 where
     A: ChainApi<Block = DBlockT> + 'static,
@@ -405,7 +400,7 @@ where
 fn tx_declare_v0v1<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     substrate_block_hash: DHashT,
-    declare_tx: mp_transactions::DeclareTransaction,
+    declare_tx: DeclareTransaction,
     class_hash: ClassHash,
 ) -> RpcResult<UserOrL1HandlerTransaction>
 where
@@ -430,10 +425,7 @@ where
     Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx, contract_class)))
 }
 
-fn tx_declare_v2(
-    declare_tx: mp_transactions::DeclareTransaction,
-    class_hash: ClassHash,
-) -> RpcResult<UserOrL1HandlerTransaction> {
+fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcResult<UserOrL1HandlerTransaction> {
     // Welcome to type hell! This 3-part conversion will take you through the extenses
     // of a codebase so thick it might as well be pasta -yum!
     // Also should no be a problem as a declare transaction *should* not be able to

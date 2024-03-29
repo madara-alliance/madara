@@ -15,14 +15,20 @@ use mp_felt::Felt252Wrapper;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_api::core::EntryPointSelector;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
-use starknet_api::transaction::{DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, InvokeTransactionV1, InvokeTransactionV3};
 use starknet_api::hash::StarkFelt;
+use starknet_api::transaction::{
+    DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
+    DeployAccountTransactionV1, DeployAccountTransactionV3, InvokeTransactionV1, InvokeTransactionV3,
+};
 use starknet_core::types::contract::legacy::{
     LegacyContractClass, LegacyEntrypointOffset, RawLegacyEntryPoint, RawLegacyEntryPoints,
 };
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
-    BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV1, BroadcastedDeclareTransactionV2, BroadcastedDeclareTransactionV3, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction, CompressedLegacyContractClass, EntryPointsByType, FlattenedSierraClass, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint
+    BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV1, BroadcastedDeclareTransactionV2,
+    BroadcastedDeclareTransactionV3, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
+    BroadcastedTransaction, CompressedLegacyContractClass, EntryPointsByType, FlattenedSierraClass,
+    LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
 };
 use starknet_crypto::FieldElement;
 use thiserror::Error;
@@ -182,7 +188,7 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                 account_deployment_data,
                 nonce_data_availability_mode,
                 fee_data_availability_mode,
-                is_query
+                is_query,
             }) => {
                 let tx = DeclareTransaction::V3(DeclareTransactionV3 {
                     resource_bounds: resource_bounds.into(),
@@ -344,8 +350,8 @@ pub fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractC
         compiler_version: casm_contract_class.compiler_version.clone(),
         bytecode: casm_contract_class.bytecode.iter().map(|x| biguint_to_field_element(&x.value)).collect(),
         entry_points_by_type: casm_entry_points_to_compiled_entry_points(&casm_contract_class.entry_points_by_type),
-        hints: vec![],        // not needed to get class hash so ignoring this
-        pythonic_hints: None, // not needed to get class hash so ignoring this
+        hints: vec![],                     // not needed to get class hash so ignoring this
+        pythonic_hints: None,              // not needed to get class hash so ignoring this
         bytecode_segment_lengths: todo!(), // TODO: implement this
     }
 }
@@ -379,13 +385,15 @@ impl TryFrom<BroadcastedInvokeTransaction> for UserTransaction {
 
     fn try_from(value: BroadcastedInvokeTransaction) -> Result<Self, Self::Error> {
         match value {
-            BroadcastedInvokeTransaction::V1(v1) => Ok(UserTransaction::Invoke(super::InvokeTransaction::V1(InvokeTransactionV1 {
-                max_fee: v1.max_fee.try_into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
-                signature: cast_vec_of_field_elements(v1.signature),
-                nonce: v1.nonce.into(),
-                sender_address: v1.sender_address.into(),
-                calldata: cast_vec_of_field_elements(v1.calldata),
-            }))),
+            BroadcastedInvokeTransaction::V1(v1) => {
+                Ok(UserTransaction::Invoke(super::InvokeTransaction::V1(InvokeTransactionV1 {
+                    max_fee: v1.max_fee.try_into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
+                    signature: cast_vec_of_field_elements(v1.signature),
+                    nonce: v1.nonce.into(),
+                    sender_address: v1.sender_address.into(),
+                    calldata: cast_vec_of_field_elements(v1.calldata),
+                })))
+            }
             BroadcastedInvokeTransaction::V3(v3) => {
                 Ok(UserTransaction::Invoke(super::InvokeTransaction::V3(InvokeTransactionV3 {
                     signature: cast_vec_of_field_elements(v3.signature),
@@ -409,14 +417,16 @@ impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
 
     fn try_from(tx: BroadcastedDeployAccountTransaction) -> Result<Self, Self::Error> {
         match tx {
-            BroadcastedDeployAccountTransaction::V1(v1) => Ok(UserTransaction::DeployAccount(DeployAccountTransaction::V1(DeployAccountTransactionV1 {
-                max_fee: v1.max_fee.try_into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
-                signature: cast_vec_of_field_elements(v1.signature),
-                nonce: v1.nonce.into(),
-                contract_address_salt: v1.contract_address_salt.into(),
-                constructor_calldata: cast_vec_of_field_elements(v1.constructor_calldata),
-                class_hash: v1.class_hash.into(),
-            }))),
+            BroadcastedDeployAccountTransaction::V1(v1) => {
+                Ok(UserTransaction::DeployAccount(DeployAccountTransaction::V1(DeployAccountTransactionV1 {
+                    max_fee: v1.max_fee.try_into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
+                    signature: cast_vec_of_field_elements(v1.signature),
+                    nonce: v1.nonce.into(),
+                    contract_address_salt: v1.contract_address_salt.into(),
+                    constructor_calldata: cast_vec_of_field_elements(v1.constructor_calldata),
+                    class_hash: v1.class_hash.into(),
+                })))
+            }
             BroadcastedDeployAccountTransaction::V3(v3) => {
                 Ok(UserTransaction::DeployAccount(DeployAccountTransaction::V3(DeployAccountTransactionV3 {
                     resource_bounds: v3.resource_bounds.into(),

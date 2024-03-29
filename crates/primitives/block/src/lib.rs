@@ -11,8 +11,7 @@ pub mod state_update;
 pub use header::Header;
 use mp_felt::Felt252Wrapper;
 pub use ordered_events::*;
-use starknet_api::transaction::TransactionHash;
-use starknet_api::transaction::Transaction;
+use starknet_api::transaction::{Transaction, TransactionHash};
 
 /// Block Transactions
 pub type BlockTransactions = Vec<Transaction>;
@@ -88,7 +87,7 @@ impl DeoxysBlock {
     /// Those transactions are computed using the given `chain_id`.
     pub fn transactions_hashes(&self) -> impl '_ + Iterator<Item = TransactionHash> {
         todo!("Implement transactions_hashes")
-        //self.transactions.iter().map(starknet_api::hash::StarkHash)
+        // self.transactions.iter().map(starknet_api::hash::StarkHash)
     }
 }
 
