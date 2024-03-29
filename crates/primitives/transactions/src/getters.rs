@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use mp_felt::Felt252Wrapper;
-use starknet_api::transaction::{DeclareTransactionV0V1, DeclareTransactionV2, DeployTransaction, InvokeTransactionV0, InvokeTransactionV1, Transaction};
+use starknet_api::transaction::{DeclareTransactionV0V1, DeclareTransactionV2, InvokeTransactionV0, InvokeTransactionV1, Transaction};
 
 use super::{DeclareTransaction, DeployAccountTransaction, InvokeTransaction, UserTransaction};
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
 impl UserTransaction {
     pub fn sender_address(&self) -> Felt252Wrapper {
         match self {
-            UserTransaction::Declare(tx, _) => *tx.sender_address(),
+            UserTransaction::Declare(tx, _) => (*tx.sender_address()).into(),
             UserTransaction::DeployAccount(tx) => tx.account_address(),
             UserTransaction::Invoke(tx) => *tx.sender_address(),
         }
