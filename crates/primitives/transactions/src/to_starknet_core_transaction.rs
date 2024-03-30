@@ -1,15 +1,11 @@
 use std::vec::Vec;
 
-use blockifier::transaction::objects::FeeTypeIter;
-/// Here we transform mp-transactions input into starknet-api trasnactions
+/// Here we transform starknet-api transactions into starknet-core trasnactions
 use mp_felt::Felt252Wrapper;
 use starknet_api::transaction::{
-    Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3,
-    DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction,
-    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction,
-    Transaction,
+    DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Resource, ResourceBoundsMapping, Tip, Transaction
 };
-use starknet_core::types::DeclareTransactionV0;
+use starknet_core::types::{ResourceBounds, ResourceBoundsMapping as CoreResourceBoundsMapping};
 use starknet_crypto::FieldElement;
 
 fn cast_vec_of_felt_252_wrappers(data: Vec<Felt252Wrapper>) -> Vec<FieldElement> {
@@ -50,7 +46,7 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
                 }) => starknet_core::types::DeclareTransaction::V0(starknet_core::types::DeclareTransactionV0 {
                     transaction_hash,
                     max_fee: Felt252Wrapper::from(max_fee.0).into(),
-                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                     class_hash: Felt252Wrapper::from(class_hash.0).into(),
                     sender_address: Felt252Wrapper::from(sender_address.0).into(),
                 }),
@@ -64,7 +60,7 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
                 }) => starknet_core::types::DeclareTransaction::V1(starknet_core::types::DeclareTransactionV1 {
                     transaction_hash,
                     max_fee: Felt252Wrapper::from(max_fee.0).into(),
-                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                     nonce: Felt252Wrapper::from(nonce.0).into(),
                     class_hash: Felt252Wrapper::from(class_hash.0).into(),
                     sender_address: Felt252Wrapper::from(sender_address.0).into(),
@@ -80,7 +76,7 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
                 }) => starknet_core::types::DeclareTransaction::V2(starknet_core::types::DeclareTransactionV2 {
                     transaction_hash,
                     max_fee: Felt252Wrapper::from(max_fee.0).into(),
-                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                     nonce: Felt252Wrapper::from(nonce.0).into(),
                     class_hash: Felt252Wrapper::from(class_hash.0).into(),
                     sender_address: Felt252Wrapper::from(sender_address.0).into(),
@@ -100,22 +96,17 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
                     account_deployment_data,
                 }) => starknet_core::types::DeclareTransaction::V3(starknet_core::types::DeclareTransactionV3 {
                     transaction_hash,
-                    resource_bounds: resource_bounds.into(),
-                    tip: Felt252Wrapper::from(tip.0).into().to_u64(),
-                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    resource_bounds: api_resources_to_core_ressources(resource_bounds),
+                    tip: tip.0,
+                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                     nonce: Felt252Wrapper::from(nonce.0).into(),
                     class_hash: Felt252Wrapper::from(class_hash.0).into(),
                     compiled_class_hash: Felt252Wrapper::from(compiled_class_hash.0).into(),
                     sender_address: Felt252Wrapper::from(sender_address.0).into(),
-                    nonce_data_availability_mode: nonce_data_availability_mode.into(),
-                    fee_data_availability_mode: fee_data_availability_mode.into(),
-                    paymaster_data: paymaster_data.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
-                    account_deployment_data: account_deployment_data
-                        .0
-                        .iter()
-                        .map(|x| Felt252Wrapper::from(*x))
-                        .collect()
-                        .into(),
+                    nonce_data_availability_mode: api_da_to_core_da(nonce_data_availability_mode).unwrap(),
+                    fee_data_availability_mode: api_da_to_core_da(fee_data_availability_mode).unwrap(),
+                    paymaster_data: paymaster_data.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                    account_deployment_data: account_deployment_data.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                 }),
             };
 
@@ -135,15 +126,10 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
                     starknet_core::types::DeployAccountTransactionV1 {
                         transaction_hash,
                         max_fee: Felt252Wrapper::from(max_fee.0).into(),
-                        signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                        signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                         nonce: Felt252Wrapper::from(nonce.0).into(),
                         contract_address_salt: Felt252Wrapper::from(contract_address_salt.0).into(),
-                        constructor_calldata: constructor_calldata
-                            .0
-                            .iter()
-                            .map(|x| Felt252Wrapper::from(*x))
-                            .collect()
-                            .into(),
+                        constructor_calldata: constructor_calldata.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                         class_hash: Felt252Wrapper::from(class_hash.0).into(),
                     },
                 ),
@@ -161,21 +147,16 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
                 }) => starknet_core::types::DeployAccountTransaction::V3(
                     starknet_core::types::DeployAccountTransactionV3 {
                         transaction_hash,
-                        resource_bounds: resource_bounds.into(),
-                        tip: Felt252Wrapper::from(tip.0).into().to_u64(),
-                        signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                        resource_bounds: api_resources_to_core_ressources(resource_bounds),
+                        tip: tip.0,
+                        signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                         nonce: Felt252Wrapper::from(nonce.0).into(),
                         class_hash: Felt252Wrapper::from(class_hash.0).into(),
                         contract_address_salt: Felt252Wrapper::from(contract_address_salt.0).into(),
-                        constructor_calldata: constructor_calldata
-                            .0
-                            .iter()
-                            .map(|x| Felt252Wrapper::from(*x))
-                            .collect()
-                            .into(),
-                        nonce_data_availability_mode: nonce_data_availability_mode.into(),
-                        fee_data_availability_mode: fee_data_availability_mode.into(),
-                        paymaster_data: paymaster_data.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                        constructor_calldata: constructor_calldata.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                        nonce_data_availability_mode: api_da_to_core_da(nonce_data_availability_mode).unwrap(),
+                        fee_data_availability_mode: api_da_to_core_da(fee_data_availability_mode).unwrap(),
+                        paymaster_data: paymaster_data.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                     },
                 ),
             };
@@ -186,7 +167,7 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
             let tx = starknet_core::types::DeployTransaction {
                 transaction_hash,
                 contract_address_salt: Felt252Wrapper::from(tx.contract_address_salt.0).into(),
-                constructor_calldata: constructor_calldata.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                constructor_calldata: tx.constructor_calldata.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                 class_hash: Felt252Wrapper::from(tx.class_hash.0).into(),
                 version: Felt252Wrapper::ZERO.into(),
             };
@@ -204,10 +185,10 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
                 }) => starknet_core::types::InvokeTransaction::V0(starknet_core::types::InvokeTransactionV0 {
                     transaction_hash,
                     max_fee: Felt252Wrapper::from(max_fee.0).into(),
-                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                     contract_address: Felt252Wrapper::from(contract_address.0).into(),
                     entry_point_selector: Felt252Wrapper::from(entry_point_selector.0).into(),
-                    calldata: calldata.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    calldata: calldata.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                 }),
                 InvokeTransaction::V1(InvokeTransactionV1 {
                     max_fee,
@@ -219,10 +200,10 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
                 }) => starknet_core::types::InvokeTransaction::V1(starknet_core::types::InvokeTransactionV1 {
                     transaction_hash,
                     max_fee: Felt252Wrapper::from(max_fee.0).into(),
-                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                     nonce: Felt252Wrapper::from(nonce.0).into(),
                     sender_address: Felt252Wrapper::from(sender_address.0).into(),
-                    calldata: calldata.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    calldata: calldata.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                 }),
                 InvokeTransaction::V3(InvokeTransactionV3 {
                     resource_bounds,
@@ -237,21 +218,16 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
                     account_deployment_data,
                 }) => starknet_core::types::InvokeTransaction::V3(starknet_core::types::InvokeTransactionV3 {
                     transaction_hash,
-                    resource_bounds: resource_bounds.into(),
-                    tip: Felt252Wrapper::from(tip.0).into().to_u64(),
-                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    resource_bounds: api_resources_to_core_ressources(resource_bounds),
+                    tip: tip.0,
+                    signature: signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                     nonce: Felt252Wrapper::from(nonce.0).into(),
                     sender_address: Felt252Wrapper::from(sender_address.0).into(),
-                    calldata: calldata.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
-                    nonce_data_availability_mode: nonce_data_availability_mode.into(),
-                    fee_data_availability_mode: fee_data_availability_mode.into(),
-                    paymaster_data: paymaster_data.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
-                    account_deployment_data: account_deployment_data
-                        .0
-                        .iter()
-                        .map(|x| Felt252Wrapper::from(*x))
-                        .collect()
-                        .into(),
+                    calldata: calldata.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                    nonce_data_availability_mode: api_da_to_core_da(nonce_data_availability_mode).unwrap(),
+                    fee_data_availability_mode: api_da_to_core_da(fee_data_availability_mode).unwrap(),
+                    paymaster_data: paymaster_data.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                    account_deployment_data: account_deployment_data.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                 }),
             };
 
@@ -261,13 +237,47 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
             let tx = starknet_core::types::L1HandlerTransaction {
                 transaction_hash,
                 version: FieldElement::ZERO,
-                nonce: Felt252Wrapper::from(tx.nonce).into().to_u64(),
+                nonce: Felt252Wrapper::from(tx.nonce.0).into(),
                 contract_address: Felt252Wrapper::from(tx.contract_address).into(),
                 entry_point_selector: Felt252Wrapper::from(tx.entry_point_selector).into(),
-                calldata: calldata.0.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                calldata: tx.calldata.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
             };
 
             starknet_core::types::Transaction::L1Handler(tx)
         }
+    }
+}
+
+//TODO (Tbelleng): Custom function here so check if value are correct
+pub fn api_resources_to_core_ressources(resource: ResourceBoundsMapping) -> CoreResourceBoundsMapping {
+    let l1_gas = resource.0.get(&Resource::L1Gas)
+        .clone()
+        .unwrap();
+
+    let l2_gas = resource.0.get(&Resource::L2Gas)
+        .clone()
+        .unwrap();
+
+    let resource_for_l1: starknet_core::types::ResourceBounds = ResourceBounds {
+        max_amount: l1_gas.max_amount,
+        max_price_per_unit: l1_gas.max_price_per_unit,
+    }; 
+    
+    let resource_for_l2: starknet_core::types::ResourceBounds = ResourceBounds {
+        max_amount: l2_gas.max_amount,
+        max_price_per_unit: l2_gas.max_price_per_unit,
+    };
+
+    CoreResourceBoundsMapping {
+        l1_gas: resource_for_l1,
+        l2_gas: resource_for_l2,
+    }
+
+}
+
+pub fn api_da_to_core_da(mode: starknet_api::data_availability::DataAvailabilityMode) -> Option<starknet_core::types::DataAvailabilityMode> {
+    match mode {
+        starknet_api::data_availability::DataAvailabilityMode::L1 => Some(starknet_core::types::DataAvailabilityMode::L1),
+        starknet_api::data_availability::DataAvailabilityMode::L2 => Some(starknet_core::types::DataAvailabilityMode::L2),
     }
 }
