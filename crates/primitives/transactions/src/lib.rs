@@ -16,9 +16,12 @@ pub mod utils;
 
 use alloc::vec::Vec;
 
-use blockifier::transaction::transactions::{DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction};
-use blockifier::{execution::contract_class::ContractClass, transaction::account_transaction::AccountTransaction};
+use blockifier::execution::contract_class::ContractClass;
+use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_types::TransactionType;
+use blockifier::transaction::transactions::{
+    DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction,
+};
 use derive_more::From;
 use starknet_api::transaction::{DeclareTransaction, DeployAccountTransaction, Fee, InvokeTransaction};
 use starknet_ff::FieldElement;
@@ -240,8 +243,8 @@ pub enum UserOrL1HandlerTransaction {
 // }
 
 // #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-// #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 // pub struct HandleL1MessageTransaction {
 //     pub nonce: u64,
 //     pub contract_address: Felt252Wrapper,

@@ -1,6 +1,5 @@
 use std::vec::Vec;
 
-use blockifier::transaction::objects::FeeTypeIter;
 /// Here we transform mp-transactions input into starknet-api trasnactions
 use mp_felt::Felt252Wrapper;
 use starknet_api::transaction::{
