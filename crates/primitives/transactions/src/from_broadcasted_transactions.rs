@@ -16,11 +16,12 @@ use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
 use indexmap::IndexMap;
 use mp_felt::Felt252Wrapper;
+use mp_hashers::pedersen::PedersenHasher;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_api::core::{calculate_contract_address, EntryPointSelector};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
-use starknet_api::transaction as stx;
+use starknet_api::transaction::{self as stx, TransactionSignature};
 use starknet_core::types::contract::legacy::{
     LegacyContractClass, LegacyEntrypointOffset, RawLegacyEntryPoint, RawLegacyEntryPoints,
 };
@@ -30,6 +31,7 @@ use starknet_core::types::{
 };
 use starknet_crypto::FieldElement;
 use thiserror::Error;
+use mp_hashers::HasherT;
 
 use super::UserTransaction;
 use crate::compute_hash::{self, ComputeTransactionHash};
@@ -107,15 +109,15 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                     instantiate_blockifier_contract_class(contract_class, decompressed_bytes)?;
 
                 let declare_tx = stx::DeclareTransaction::V1(stx::DeclareTransactionV0V1 {
-                    max_fee: max_fee.into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
-                    signature: signature.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    max_fee: stx::Fee(u128::try_from(Felt252Wrapper::from(max_fee)).map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig).unwrap()),
+                    signature: stx::TransactionSignature(signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
                     nonce: Felt252Wrapper::from(nonce).into(),
                     class_hash: Felt252Wrapper::from(class_hash).into(),
                     sender_address: Felt252Wrapper::from(sender_address).into(),
                 });
 
                 // TODO: defaulted chain id
-                let tx_hash = declare_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+                let tx_hash = declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
                 let class_info = ClassInfo::new(
                     &blockifier_contract_class,
                     contract_class.program.len(),
@@ -176,10 +178,8 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                 );
 
                 let declare_tx = stx::DeclareTransaction::V2(stx::DeclareTransactionV2 {
-                    max_fee: Felt252Wrapper::from(max_fee)
-                        .into()
-                        .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
-                    signature: signature.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    max_fee: stx::Fee(u128::try_from(Felt252Wrapper::from(max_fee)).map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig).unwrap()),
+                    signature: stx::TransactionSignature(signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
                     nonce: Felt252Wrapper::from(nonce).into(),
                     class_hash: Felt252Wrapper::from(class_hash).into(),
                     sender_address: Felt252Wrapper::from(sender_address).into(),
@@ -187,7 +187,7 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                 });
 
                 // TODO: use real chain id
-                let tx_hash = declare_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+                let tx_hash = declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
                 let class_info = ClassInfo::new(
                     &blockifier_contract_class,
                     contract_class.sierra_program.len(),
@@ -253,7 +253,7 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                 );
 
                 let declare_tx = stx::DeclareTransaction::V3(stx::DeclareTransactionV3 {
-                    signature: signature.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    signature: stx::TransactionSignature(signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
                     nonce: Felt252Wrapper::from(nonce).into(),
                     class_hash: Felt252Wrapper::from(class_hash).into(),
                     sender_address: Felt252Wrapper::from(sender_address).into(),
@@ -267,7 +267,7 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                 });
 
                 // TODO: use real chain id
-                let tx_hash = declare_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+                let tx_hash = declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
                 let class_info = ClassInfo::new(
                     &blockifier_contract_class,
                     contract_class.sierra_program.len(),
@@ -300,14 +300,17 @@ impl TryFrom<BroadcastedInvokeTransaction> for UserTransaction {
                 ..
             }) => {
                 let invoke_tx = stx::InvokeTransaction::V1(stx::InvokeTransactionV1 {
-                    max_fee: max_fee.into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
-                    signature: signature.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    max_fee: stx::Fee(u128::try_from(Felt252Wrapper::from(max_fee)).map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig).unwrap()),
+                    signature: stx::TransactionSignature(signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
                     nonce: Felt252Wrapper::from(nonce).into(),
                     sender_address: Felt252Wrapper::from(sender_address).into(),
-                    calldata: calldata.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    calldata: stx::Calldata(calldata
+                        .iter()
+                        .map(|x| Felt252Wrapper::from(*x).into())
+                        .collect::<Vec<StarkFelt>>().into()),
                 });
 
-                let tx_hash = invoke_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+                let tx_hash = invoke_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
 
                 let tx = btx::InvokeTransaction::new(invoke_tx, tx_hash);
 
@@ -327,10 +330,13 @@ impl TryFrom<BroadcastedInvokeTransaction> for UserTransaction {
                 is_query,
             }) => {
                 let invoke_tx = stx::InvokeTransaction::V3(stx::InvokeTransactionV3 {
-                    signature: signature.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    signature: stx::TransactionSignature(signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
                     nonce: Felt252Wrapper::from(nonce).into(),
                     sender_address: Felt252Wrapper::from(sender_address).into(),
-                    calldata: calldata.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    calldata: stx::Calldata(calldata
+                        .iter()
+                        .map(|x| Felt252Wrapper::from(*x).into())
+                        .collect::<Vec<StarkFelt>>().into()),
                     resource_bounds: core_resources_to_api_resources(resource_bounds),
                     tip: stx::Tip(tip),
                     paymaster_data: stx::PaymasterData(paymaster_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
@@ -339,7 +345,7 @@ impl TryFrom<BroadcastedInvokeTransaction> for UserTransaction {
                     fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
                 });
 
-                let tx_hash = invoke_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+                let tx_hash = invoke_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
 
                 let tx = btx::InvokeTransaction::new(invoke_tx, tx_hash);
 
@@ -365,25 +371,24 @@ impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
                 is_query,
             }) => {
                 let deploy_account_tx = stx::DeployAccountTransaction::V1(stx::DeployAccountTransactionV1 {
-                    max_fee: max_fee.into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
-                    signature: signature.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    max_fee: stx::Fee(u128::try_from(Felt252Wrapper::from(max_fee)).map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig).unwrap()),
+                    signature: stx::TransactionSignature(signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
                     nonce: Felt252Wrapper::from(nonce).into(),
                     contract_address_salt: Felt252Wrapper::from(contract_address_salt).into(),
-                    constructor_calldata: constructor_calldata
+                    constructor_calldata: stx::Calldata(constructor_calldata
                         .iter()
-                        .map(|x| Felt252Wrapper::from(*x))
-                        .collect()
-                        .into(),
+                        .map(|x| Felt252Wrapper::from(*x).into())
+                        .collect::<Vec<StarkFelt>>().into()),
                     class_hash: Felt252Wrapper::from(class_hash).into(),
                 });
 
-                let tx_hash = deploy_account_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+                let tx_hash = deploy_account_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
 
                 let contract_address = 
                     calculate_contract_address(
                         Felt252Wrapper::from(contract_address_salt).into(),
                         Felt252Wrapper::from(class_hash).into(),
-                        constructor_calldata.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                        &deploy_account_tx.constructor_calldata(),
                         Default::default(),
                     ).unwrap();
 
@@ -405,14 +410,13 @@ impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
                 is_query,
             }) => {
                 let deploy_account_tx = stx::DeployAccountTransaction::V3(stx::DeployAccountTransactionV3 {
-                    signature: signature.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                    signature: stx::TransactionSignature(signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
                     nonce: Felt252Wrapper::from(nonce).into(),
                     contract_address_salt: Felt252Wrapper::from(contract_address_salt).into(),
-                    constructor_calldata: constructor_calldata
+                    constructor_calldata: stx::Calldata(constructor_calldata
                         .iter()
-                        .map(|x| Felt252Wrapper::from(*x))
-                        .collect()
-                        .into(),
+                        .map(|x| Felt252Wrapper::from(*x).into())
+                        .collect::<Vec<StarkFelt>>().into()),
                     class_hash: Felt252Wrapper::from(class_hash).into(),
                     resource_bounds: core_resources_to_api_resources(resource_bounds),
                     tip: stx::Tip(tip),
@@ -421,13 +425,13 @@ impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
                     fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
                 });
 
-                let tx_hash = deploy_account_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+                let tx_hash = deploy_account_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
 
                 let contract_address = 
                     calculate_contract_address(
                         Felt252Wrapper::from(contract_address_salt).into(),
                         Felt252Wrapper::from(class_hash).into(),
-                        constructor_calldata.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                        &deploy_account_tx.constructor_calldata(),
                         Default::default(),
                     ).unwrap();
 
