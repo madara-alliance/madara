@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
 use blockifier::execution::contract_class::{
@@ -257,12 +258,12 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                     class_hash: Felt252Wrapper::from(class_hash).into(),
                     sender_address: Felt252Wrapper::from(sender_address).into(),
                     compiled_class_hash: Felt252Wrapper::from(compiled_class_hash).into(),
-                    resource_bounds: resource_bounds.into(),
+                    resource_bounds: core_resources_to_api_resources(resource_bounds),
                     tip: tip.into(),
-                    paymaster_data: paymaster_data.into(),
-                    account_deployment_data: account_deployment_data.into(),
-                    nonce_data_availability_mode: nonce_data_availability_mode.into(),
-                    fee_data_availability_mode: fee_data_availability_mode.into(),
+                    paymaster_data: stx::PaymasterData(paymaster_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
+                    account_deployment_data: stx::AccountDeploymentData(account_deployment_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
+                    nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
+                    fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
                 });
 
                 // TODO: use real chain id
@@ -330,12 +331,12 @@ impl TryFrom<BroadcastedInvokeTransaction> for UserTransaction {
                     nonce: Felt252Wrapper::from(nonce).into(),
                     sender_address: Felt252Wrapper::from(sender_address).into(),
                     calldata: calldata.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
-                    resource_bounds: resource_bounds.into(),
+                    resource_bounds: core_resources_to_api_resources(resource_bounds),
                     tip: tip.into(),
-                    paymaster_data: paymaster_data.into(),
-                    account_deployment_data: account_deployment_data.into(),
-                    nonce_data_availability_mode: nonce_data_availability_mode.into(),
-                    fee_data_availability_mode: fee_data_availability_mode.into(),
+                    paymaster_data: stx::PaymasterData(paymaster_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
+                    account_deployment_data: stx::AccountDeploymentData(account_deployment_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
+                    nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
+                    fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
                 });
 
                 let tx_hash = invoke_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
@@ -413,11 +414,11 @@ impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
                         .collect()
                         .into(),
                     class_hash: Felt252Wrapper::from(class_hash).into(),
-                    resource_bounds: resource_bounds.into(),
+                    resource_bounds: core_resources_to_api_resources(resource_bounds),
                     tip: tip.into(),
-                    paymaster_data: paymaster_data.into(),
-                    nonce_data_availability_mode: nonce_data_availability_mode.into(),
-                    fee_data_availability_mode: fee_data_availability_mode.into(),
+                    paymaster_data: stx::PaymasterData(paymaster_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>()),
+                    nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
+                    fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
                 });
 
                 let tx_hash = deploy_account_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
@@ -591,7 +592,8 @@ pub fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractC
         bytecode: casm_contract_class.bytecode.iter().map(|x| biguint_to_field_element(&x.value)).collect(),
         entry_points_by_type: casm_entry_points_to_compiled_entry_points(&casm_contract_class.entry_points_by_type),
         hints: vec![],        // not needed to get class hash so ignoring this
-        pythonic_hints: None, // not needed to get class hash so ignoring this
+        pythonic_hints: None,
+        bytecode_segment_lengths: todo!(), // not needed to get class hash so ignoring this
     }
 }
 
@@ -617,4 +619,36 @@ fn casm_entry_point_to_compiled_entry_point(value: &CasmContractEntryPoint) -> C
         offset: value.offset.try_into().unwrap(),
         builtins: value.builtins.clone(),
     }
+}
+
+pub fn core_da_to_api_da(da: starknet_core::types::DataAvailabilityMode) -> starknet_api::data_availability::DataAvailabilityMode {
+    match da {
+        starknet_core::types::DataAvailabilityMode::L1 => starknet_api::data_availability::DataAvailabilityMode::L1,
+        starknet_core::types::DataAvailabilityMode::L2 => starknet_api::data_availability::DataAvailabilityMode::L2,
+    }
+}
+
+// TODO: check here for L1 gas instead of L2 gas
+pub fn core_resources_to_api_resources(core_resources: starknet_core::types::ResourceBoundsMapping) -> stx::ResourceBoundsMapping {
+    let mut api_resources_map = BTreeMap::new();
+
+    // Convert L1 gas ResourceBounds
+    api_resources_map.insert(
+        stx::Resource::L1Gas, // Assuming you have an enum Resource with L1Gas and L2Gas variants
+        stx::ResourceBounds {
+            max_amount: core_resources.l1_gas.max_amount.into(),
+            max_price_per_unit: core_resources.l1_gas.max_price_per_unit.into(),
+        },
+    );
+
+    // Convert L2 gas ResourceBounds
+    api_resources_map.insert(
+        stx::Resource::L2Gas,
+        stx::ResourceBounds {
+            max_amount: core_resources.l2_gas.max_amount.into(),
+            max_price_per_unit: core_resources.l2_gas.max_price_per_unit.into(),
+        },
+    );
+
+    stx::ResourceBoundsMapping(api_resources_map)
 }
