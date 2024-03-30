@@ -14,22 +14,16 @@ pub mod to_starknet_core_transaction;
 #[cfg(feature = "client")]
 pub mod utils;
 
-use alloc::vec::Vec;
-
-use blockifier::execution::contract_class::ContractClass;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_types::TransactionType;
 use blockifier::transaction::transactions::{
     DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction,
 };
 use derive_more::From;
-use starknet_api::transaction::{DeclareTransaction, DeployAccountTransaction, Fee, InvokeTransaction};
 use starknet_ff::FieldElement;
 
 const SIMULATE_TX_VERSION_OFFSET: FieldElement =
     FieldElement::from_mont([18446744073700081665, 17407, 18446744073709551584, 576460752142434320]);
-
-use mp_felt::Felt252Wrapper;
 
 /// Legacy check for deprecated txs
 /// See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/` for more details.

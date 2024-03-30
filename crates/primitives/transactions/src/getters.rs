@@ -1,56 +1,41 @@
+use mp_felt::Felt252Wrapper;
 use starknet_api::transaction::{
     DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, InvokeTransactionV0, InvokeTransactionV1,
-    InvokeTransactionV3, L1HandlerTransaction, Transaction,
+    InvokeTransactionV3, L1HandlerTransaction, DeclareTransaction, InvokeTransaction, DeployAccountTransaction,
 };
 
-use super::{DeclareTransaction, DeployAccountTransaction, InvokeTransaction};
+use crate::UserTransaction;
 
 impl UserTransaction {
     pub fn sender_address(&self) -> Felt252Wrapper {
         match self {
-            UserTransaction::Declare(tx, _) => (*tx.sender_address()).into(),
-            UserTransaction::DeployAccount(tx) => tx.account_address(),
-            UserTransaction::Invoke(tx) => *tx.sender_address(),
+            UserTransaction::Declare(tx) => tx.tx.sender_address().into(),
+            UserTransaction::DeployAccount(tx) => tx.tx.contract_address_salt().into(),
+            UserTransaction::Invoke(tx) => tx.tx.sender_address().into(),
         }
     }
 
-    pub fn signature(&self) -> &Vec<Felt252Wrapper> {
+    pub fn signature(&self) -> Vec<Felt252Wrapper> {
         match self {
-            UserTransaction::Declare(tx, _) => tx.signature(),
-            UserTransaction::DeployAccount(tx) => tx.signature(),
-            UserTransaction::Invoke(tx) => tx.signature(),
+            UserTransaction::Declare(tx) => tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect(),
+            UserTransaction::DeployAccount(tx) =>  tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect(),
+            UserTransaction::Invoke(tx) =>  tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect(),
         }
     }
 
-    pub fn max_fee(&self) -> &u128 {
-        match self {
-            UserTransaction::Declare(tx, _) => tx.max_fee(),
-            UserTransaction::DeployAccount(tx) => tx.max_fee(),
-            UserTransaction::Invoke(tx) => tx.max_fee(),
-        }
-    }
-
-    pub fn calldata(&self) -> Option<&Vec<Felt252Wrapper>> {
+    pub fn calldata(&self) -> Option<Vec<Felt252Wrapper>> {
         match self {
             UserTransaction::Declare(..) => None,
-            UserTransaction::DeployAccount(tx) => Some(tx.calldata()),
-            UserTransaction::Invoke(tx) => Some(tx.calldata()),
+            UserTransaction::DeployAccount(tx) => Some(tx.tx.constructor_calldata().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()),
+            UserTransaction::Invoke(tx) => Some(tx.tx.calldata().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()),
         }
     }
 
-    pub fn nonce(&self) -> Option<&Felt252Wrapper> {
+    pub fn nonce(&self) -> Option<Felt252Wrapper> {
         match self {
-            UserTransaction::Declare(tx, _) => Some(tx.nonce()),
-            UserTransaction::DeployAccount(tx) => Some(tx.nonce()),
-            UserTransaction::Invoke(tx) => tx.nonce(),
-        }
-    }
-
-    pub fn offset_version(&self) -> bool {
-        match self {
-            UserTransaction::Declare(tx, _) => tx.offset_version(),
-            UserTransaction::DeployAccount(tx) => tx.offset_version(),
-            UserTransaction::Invoke(tx) => tx.offset_version(),
+            UserTransaction::Declare(tx) => Some(tx.tx.nonce().0.into()),
+            UserTransaction::DeployAccount(tx) => Some(tx.tx.nonce().0.into()),
+            UserTransaction::Invoke(tx) => Some(tx.tx.nonce().0.into()),
         }
     }
 }
