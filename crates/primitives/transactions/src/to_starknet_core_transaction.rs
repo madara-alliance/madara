@@ -237,7 +237,7 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
             let tx = starknet_core::types::L1HandlerTransaction {
                 transaction_hash,
                 version: FieldElement::ZERO,
-                nonce: Felt252Wrapper::from(tx.nonce.0).into(),
+                nonce: u64::try_from(Felt252Wrapper::from(tx.nonce.0)).unwrap(),
                 contract_address: Felt252Wrapper::from(tx.contract_address).into(),
                 entry_point_selector: Felt252Wrapper::from(tx.entry_point_selector).into(),
                 calldata: tx.calldata.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
