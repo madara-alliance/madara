@@ -16,7 +16,7 @@ use flate2::read::GzDecoder;
 use indexmap::IndexMap;
 use mp_felt::Felt252Wrapper;
 use num_bigint::{BigInt, BigUint, Sign};
-use starknet_api::core::EntryPointSelector;
+use starknet_api::core::{calculate_contract_address, EntryPointSelector};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction as stx;
@@ -378,6 +378,14 @@ impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
 
                 let tx_hash = deploy_account_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
 
+                let contract_address = 
+                    calculate_contract_address(
+                        Felt252Wrapper::from(contract_address_salt).into(),
+                        Felt252Wrapper::from(class_hash).into(),
+                        constructor_calldata.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                        Default::default(),
+                    ).unwrap();
+
                 let tx = btx::DeployAccountTransaction::new(deploy_account_tx, tx_hash, contract_address);
 
                 UserTransaction::DeployAccount(tx)
@@ -413,6 +421,14 @@ impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
                 });
 
                 let tx_hash = deploy_account_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+
+                let contract_address = 
+                    calculate_contract_address(
+                        Felt252Wrapper::from(contract_address_salt).into(),
+                        Felt252Wrapper::from(class_hash).into(),
+                        constructor_calldata.iter().map(|x| Felt252Wrapper::from(*x)).collect().into(),
+                        Default::default(),
+                    ).unwrap();
 
                 let tx = btx::DeployAccountTransaction::new(deploy_account_tx, tx_hash, contract_address);
 

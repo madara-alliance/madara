@@ -337,6 +337,51 @@ impl ComputeTransactionHash for DeployAccountTransaction {
     }
 }
 
+
+impl ComputeTransactionHash for DeployAccountTransactionV1 {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        _block_number: Option<u64>,
+    ) -> TransactionHash {
+        let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
+        
+        let contract_address = Felt252Wrapper::from(
+            calculate_contract_address(
+                self.contract_address_salt,
+                self.class_hash,
+                &self.constructor_calldata,
+                Default::default(),
+            )
+            .unwrap(),
+        )
+        .into();
+    let prefix = FieldElement::from_byte_slice_be(DEPLOY_ACCOUNT_PREFIX).unwrap();
+    let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::ONE } else { FieldElement::ONE };
+    let entrypoint_selector = FieldElement::ZERO;
+    let mut calldata: Vec<FieldElement> = Vec::with_capacity(constructor_calldata.len() + 2);
+    calldata.push(Felt252Wrapper::from(self.class_hash).into());
+    calldata.push(Felt252Wrapper::from(self.contract_address_salt).into());
+    calldata.extend_from_slice(&constructor_calldata);
+    let calldata_hash = compute_hash_on_elements(&calldata);
+    let max_fee = FieldElement::from(self.max_fee.0);
+    let nonce = Felt252Wrapper::from(self.nonce).into();
+    
+    Felt252Wrapper(H::compute_hash_on_elements(&[
+        prefix,
+        version,
+        contract_address,
+        entrypoint_selector,
+        calldata_hash,
+        max_fee,
+        chain_id.into(),
+        nonce,
+        ]))
+        .into()
+    }
+}
+
 impl ComputeTransactionHash for DeployTransaction {
     fn compute_hash<H: HasherT>(
         &self,
@@ -361,50 +406,6 @@ impl ComputeTransactionHash for DeployTransaction {
     }
 }
 
-impl ComputeTransactionHash for DeployAccountTransactionV1 {
-    fn compute_hash<H: HasherT>(
-        &self,
-        chain_id: Felt252Wrapper,
-        offset_version: bool,
-        _block_number: Option<u64>,
-    ) -> TransactionHash {
-        let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
-
-        let contract_address = Felt252Wrapper::from(
-            calculate_contract_address(
-                self.contract_address_salt,
-                self.class_hash,
-                &self.constructor_calldata,
-                Default::default(),
-            )
-            .unwrap(),
-        )
-        .into();
-        let prefix = FieldElement::from_byte_slice_be(DEPLOY_ACCOUNT_PREFIX).unwrap();
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::ONE } else { FieldElement::ONE };
-        let entrypoint_selector = FieldElement::ZERO;
-        let mut calldata: Vec<FieldElement> = Vec::with_capacity(constructor_calldata.len() + 2);
-        calldata.push(Felt252Wrapper::from(self.class_hash).into());
-        calldata.push(Felt252Wrapper::from(self.contract_address_salt).into());
-        calldata.extend_from_slice(&constructor_calldata);
-        let calldata_hash = compute_hash_on_elements(&calldata);
-        let max_fee = FieldElement::from(self.max_fee.0);
-        let nonce = Felt252Wrapper::from(self.nonce).into();
-
-        Felt252Wrapper(H::compute_hash_on_elements(&[
-            prefix,
-            version,
-            contract_address,
-            entrypoint_selector,
-            calldata_hash,
-            max_fee,
-            chain_id.into(),
-            nonce,
-        ]))
-        .into()
-    }
-}
-
 impl ComputeTransactionHash for DeployAccountTransactionV3 {
     fn compute_hash<H: HasherT>(
         &self,
@@ -414,7 +415,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
     ) -> TransactionHash {
         let prefix = FieldElement::from_byte_slice_be(DEPLOY_ACCOUNT_PREFIX).unwrap();
         let version =
-            if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::THREE } else { FieldElement::THREE };
+        if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::THREE } else { FieldElement::THREE };
         let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
         let contract_address = Felt252Wrapper::from(
             calculate_contract_address(
