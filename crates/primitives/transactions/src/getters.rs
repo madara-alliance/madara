@@ -1,7 +1,7 @@
 use mp_felt::Felt252Wrapper;
 use starknet_api::transaction::{
-    DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, InvokeTransactionV0, InvokeTransactionV1,
-    InvokeTransactionV3, L1HandlerTransaction, DeclareTransaction, InvokeTransaction, DeployAccountTransaction,
+    DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
+    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction,
 };
 
 use crate::UserTransaction;
@@ -17,17 +17,27 @@ impl UserTransaction {
 
     pub fn signature(&self) -> Vec<Felt252Wrapper> {
         match self {
-            UserTransaction::Declare(tx) => tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect(),
-            UserTransaction::DeployAccount(tx) =>  tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect(),
-            UserTransaction::Invoke(tx) =>  tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect(),
+            UserTransaction::Declare(tx) => {
+                tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()
+            }
+            UserTransaction::DeployAccount(tx) => {
+                tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()
+            }
+            UserTransaction::Invoke(tx) => {
+                tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()
+            }
         }
     }
 
     pub fn calldata(&self) -> Option<Vec<Felt252Wrapper>> {
         match self {
             UserTransaction::Declare(..) => None,
-            UserTransaction::DeployAccount(tx) => Some(tx.tx.constructor_calldata().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()),
-            UserTransaction::Invoke(tx) => Some(tx.tx.calldata().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()),
+            UserTransaction::DeployAccount(tx) => {
+                Some(tx.tx.constructor_calldata().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect())
+            }
+            UserTransaction::Invoke(tx) => {
+                Some(tx.tx.calldata().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect())
+            }
         }
     }
 
