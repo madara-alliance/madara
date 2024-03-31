@@ -151,7 +151,8 @@ fn testnet_genesis(
     initial_authorities: Vec<(AuraId, GrandpaId)>,
     _enable_println: bool,
 ) -> RuntimeGenesisConfig {
-    let starknet_genesis_config = GenesisConfig::from(genesis_loader);
+    // TODO: ensure this defaulted config isnt disturbing the genesis state
+    let starknet_genesis_config = GenesisConfig::default();
 
     RuntimeGenesisConfig {
         system: SystemConfig {
