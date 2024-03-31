@@ -37,19 +37,24 @@ where
 {
     let include_signature = block_number >= 61394;
 
-    let signature_hash = if matches!(transaction, Transaction::Invoke(_)) || include_signature {
-        // Include signatures for Invoke transactions or for all transactions
-        // starting from block 61394
-        H::compute_hash_on_elements(
-            &transaction.signature().iter().map(|elt| FieldElement::from(*elt)).collect::<Vec<FieldElement>>(),
-        )
-    } else {
-        // Before block 61394, and for non-Invoke transactions, signatures are not included
-        H::compute_hash_on_elements(&[])
+    let signature_hash = match transaction {
+        Transaction::Invoke(invoke_tx) if include_signature => {
+           // Include signatures for Invoke transactions or for all transactions
+            // starting from block 61394
+            let signature = invoke_tx.signature();
+            
+            H::compute_hash_on_elements(
+                &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+            )
+        },
+        _ => {
+            // Before block 61394, and for non-Invoke transactions, signatures are not included
+            H::compute_hash_on_elements(&[])
+        },
     };
 
     H::hash_elements(
-        FieldElement::from(transaction.compute_hash::<H>(chain_id, false, Some(block_number))),
+        Felt252Wrapper::from(transaction.compute_hash::<H>(chain_id, false, Some(block_number)).0).into(),
         signature_hash,
     )
 }

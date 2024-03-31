@@ -1,14 +1,17 @@
 //! Converts types from [`starknet_providers`] to madara's expected types.
 
 use std::collections::HashMap;
+use std::num::NonZeroU128;
+use std::sync::Arc;
 
 use blockifier::blockifier::block::GasPrices;
+use ethers::core::k256::pkcs8::der::Class;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
+use starknet_api::core::{ClassHash, CompiledClassHash};
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
-    DeclareTransaction, DeployAccountTransaction, DeployTransaction, Event, InvokeTransaction, L1HandlerTransaction,
-    Transaction,
+    Calldata, ContractAddressSalt, DeclareTransaction, DeployAccountTransaction, DeployAccountTransactionV1, DeployTransaction, Event, InvokeTransaction, L1HandlerTransaction, Transaction, TransactionVersion
 };
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, PendingStateUpdate,
@@ -18,7 +21,7 @@ use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::state_update::{
     DeclaredContract, DeployedContract, StateDiff as StateDiffProvider, StorageDiff as StorageDiffProvider,
 };
-use starknet_providers::sequencer::models::{self as p, DeployTransaction, StateUpdate as StateUpdateProvider};
+use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
 
 use crate::commitments::lib::calculate_commitments;
 use crate::utility::get_config;
@@ -76,13 +79,13 @@ fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {
 
 fn transaction(transaction: p::TransactionType) -> Transaction {
     match transaction {
-        p::TransactionType::Declare(tx) => Transaction::Declare(DeclareTransaction(declare_transaction(tx))),
-        p::TransactionType::Deploy(tx) => Transaction::Deploy(DeployTransaction(deploy_transaction(tx))),
+        p::TransactionType::Declare(tx) => Transaction::Declare(declare_transaction(tx)),
+        p::TransactionType::Deploy(tx) => Transaction::Deploy(deploy_transaction(tx)),
         p::TransactionType::DeployAccount(tx) => {
-            Transaction::DeployAccount(DeployAccountTransaction(deploy_account_transaction(tx)))
+            Transaction::DeployAccount(deploy_account_transaction(tx))
         }
-        p::TransactionType::InvokeFunction(tx) => Transaction::Invoke(InvokeTransaction(invoke_transaction(tx))),
-        p::TransactionType::L1Handler(tx) => Transaction::L1Handler(L1HandlerTransaction(l1_handler_transaction(tx))),
+        p::TransactionType::InvokeFunction(tx) => Transaction::Invoke(invoke_transaction(tx)),
+        p::TransactionType::L1Handler(tx) => Transaction::L1Handler(l1_handler_transaction(tx)),
     }
 }
 
@@ -91,25 +94,25 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
         FieldElement::ZERO => DeclareTransaction::V0(starknet_api::transaction::DeclareTransactionV0V1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
-            nonce: nonce(tx.nonce.expect("no nonce provided")),
-            class_hash: starknet_api::core::PatriciaKey(felt(tx.class_hash)),
+            nonce: nonce(tx.nonce),
+            class_hash: ClassHash(felt(tx.class_hash)),
             sender_address: address(tx.sender_address),
         }),
 
         FieldElement::ONE => DeclareTransaction::V1(starknet_api::transaction::DeclareTransactionV0V1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
-            nonce: nonce(tx.nonce.expect("no nonce provided")),
-            class_hash: starknet_api::core::PatriciaKey(felt(tx.class_hash)),
+            nonce: nonce(tx.nonce),
+            class_hash: ClassHash(felt(tx.class_hash)),
             sender_address: address(tx.sender_address),
         }),
 
         FieldElement::TWO => DeclareTransaction::V2(starknet_api::transaction::DeclareTransactionV2 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
-            nonce: nonce(tx.nonce.expect("no nonce provided")),
-            class_hash: starknet_api::core::PatriciaKey(felt(tx.class_hash)),
-            compiled_class_hash: starknet_api::core::PatriciaKey(felt(
+            nonce: nonce(tx.nonce),
+            class_hash: ClassHash(felt(tx.class_hash)),
+            compiled_class_hash: CompiledClassHash(felt(
                 tx.compiled_class_hash.expect("no compiled class hash provided"),
             )),
             sender_address: address(tx.sender_address),
@@ -125,21 +128,21 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
 
 fn deploy_transaction(tx: p::DeployTransaction) -> DeployTransaction {
     DeployTransaction {
-        version: starknet_api::transaction::TransactionVersion(felt(tx.version)),
-        class_hash: felt(tx.class_hash).into(),
-        contract_address_salt: felt(tx.contract_address_salt).into(),
-        constructor_calldata: tx.constructor_calldata.into_iter().map(felt).map(Into::into).collect(),
+        version: TransactionVersion(felt(tx.version)),
+        class_hash: ClassHash(felt(tx.class_hash)),
+        contract_address_salt: ContractAddressSalt(felt(tx.contract_address_salt)),
+        constructor_calldata: Calldata(Arc::new(tx.constructor_calldata.into_iter().map(felt).map(Into::into).collect())),
     }
 }
 
 fn deploy_account_transaction(tx: p::DeployAccountTransaction) -> DeployAccountTransaction {
     match deploy_account_transaction_version(&tx) {
-        1 => DeployAccountTransaction::V1(starknet_api::transaction::DeployAccountTransactionV1 {
+        1 => DeployAccountTransaction::V1(DeployAccountTransactionV1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
-            nonce: nonce(tx.nonce.expect("no nonce provided")),
-            class_hash: starknet_api::core::PatriciaKey(felt(tx.class_hash)),
-            contract_address_salt: starknet_api::core::PatriciaKey(felt(tx.contract_address_salt)),
+            nonce: nonce(tx.nonce),
+            class_hash: ClassHash(felt(tx.class_hash)),
+            contract_address_salt: ContractAddressSalt(felt(tx.contract_address_salt)),
             constructor_calldata: call_data(tx.constructor_calldata),
         }),
 
@@ -187,7 +190,7 @@ fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
         version: starknet_api::transaction::TransactionVersion(felt(tx.version)),
         nonce: nonce(tx.nonce.expect("no nonce provided")),
         contract_address: contract_address(tx.contract_address),
-        entry_point_selector: entry_point(tx.entry_point_selector.expect("no entry_point_selector provided")),
+        entry_point_selector: entry_point(tx.entry_point_selector),
         calldata: call_data(tx.calldata),
     }
 }
@@ -220,7 +223,9 @@ fn entry_point(entry_point: starknet_ff::FieldElement) -> starknet_api::core::En
 }
 
 fn call_data(call_data: Vec<starknet_ff::FieldElement>) -> starknet_api::transaction::Calldata {
-    starknet_api::transaction::Calldata(call_data.into_iter().map(felt).collect())
+    starknet_api::transaction::Calldata(Arc::new(
+        call_data.into_iter().map(felt).collect()
+    ))
 }
 
 fn tx_hash(tx_hash: starknet_ff::FieldElement) -> starknet_api::transaction::TransactionHash {
@@ -234,10 +239,10 @@ fn nonce(nonce: starknet_ff::FieldElement) -> starknet_api::core::Nonce {
 // TODO: calculate gas_price when starknet-rs supports v0.13.1
 fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> GasPrices {
     GasPrices {
-        eth_l1_gas_price: 10,       // In wei.
-        strk_l1_gas_price: 10,      // In fri.
-        eth_l1_data_gas_price: 10,  // In wei.
-        strk_l1_data_gas_price: 10, // In fri.
+        eth_l1_gas_price: NonZeroU128::new(10).unwrap(),       // In wei.
+        strk_l1_gas_price: NonZeroU128::new(10).unwrap(),     // In fri.
+        eth_l1_data_gas_price: NonZeroU128::new(10).unwrap(),  // In wei.
+        strk_l1_data_gas_price: NonZeroU128::new(10).unwrap(), // In fri.
     }
 }
 
