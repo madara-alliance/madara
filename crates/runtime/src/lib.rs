@@ -233,10 +233,6 @@ impl_runtime_apis! {
 
     impl pallet_starknet_runtime_api::StarknetRuntimeApi<Block> for Runtime {
 
-        fn get_storage_at(address: ContractAddress, key: StorageKey) -> Result<StarkFelt, DispatchError> {
-            Starknet::get_storage_at(address, key)
-        }
-
         fn get_storage_from(address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
             Starknet::get_storage_from(address)
         }

@@ -62,6 +62,7 @@ panic = "abort"
 
 [profile.release]
 panic = "unwind"
+debug = true
 
 [profile.production]
 codegen-units = 1    # Setting this to 1 allows for more optimizations at the cost of slower compile time

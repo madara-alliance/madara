@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use blockifier::execution::contract_class::ContractClass;
-use mc_db::storage::StorageHandler;
 use mp_contract::ContractAbi;
 use mp_storage::{
     PALLET_STARKNET, STARKNET_CONTRACT_ABI, STARKNET_CONTRACT_CLASS, STARKNET_CONTRACT_CLASS_HASH, STARKNET_NONCE,
@@ -57,19 +56,6 @@ where
     C: HeaderBackend<B> + StorageProvider<B, BE> + 'static,
     BE: Backend<B> + 'static,
 {
-    fn get_storage_by_storage_key(
-        &self,
-        // FIXME: handle block hash once the bonsai lib supports
-        // returning to previous commits in a non-destructive way
-        _block_hash: <B as BlockT>::Hash,
-        address: ContractAddress,
-        key: StarknetStorageKey,
-    ) -> Option<StarkFelt> {
-        let query = StorageHandler::contract_storage().get(&address, &key).unwrap_or(None);
-
-        query.map(|value| StarkFelt(value.to_bytes_be()))
-    }
-
     fn get_storage_from(
         &self,
         block_hash: <B as BlockT>::Hash,

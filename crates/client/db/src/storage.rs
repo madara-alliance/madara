@@ -5,7 +5,7 @@ use bitvec::prelude::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
-use bonsai_trie::BonsaiStorage;
+use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use sp_core::hexdisplay::AsBytesRef;
 use starknet_api::api_core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
@@ -207,21 +207,48 @@ impl ContractStorageTrieHandler {
         Ok(())
     }
 
-    pub fn get(&self, identifier: &ContractAddress, key: &StorageKey) -> Result<Option<Felt>, DeoxysStorageError> {
+    pub fn get(
+        &self,
+        identifier: &ContractAddress,
+        key: &StorageKey,
+        block_number: u64,
+    ) -> Result<Option<Felt>, DeoxysStorageError> {
         let identifier = conv_contract_identifier(identifier);
         let key = conv_contract_storage_key(key);
-
-        let value = self
+        let snapshot = self
             .0
             .read()
             .unwrap()
-            .get(identifier, &key)
+            .get_transactional_state(BasicId::new(block_number), BonsaiStorageConfig::default())
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?;
+
+        log::info!("no error when retrieving snapshot!");
+
+        let value = match snapshot {
+            Some(trie) => {
+                log::info!("trie exists");
+                trie.get(identifier, &key)
+                    .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
+            }
+            None => {
+                log::info!("trie does not exist");
+                None
+            }
+        };
+
+        // let value = self
+        //     .0
+        //     .read()
+        //     .unwrap()
+        //     .get(identifier, &key)
+        //     .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?;
 
         Ok(value)
     }
 
     pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
+        log::info!("comitting contract storage for block {block_number}");
+
         self.0
             .write()
             .unwrap()

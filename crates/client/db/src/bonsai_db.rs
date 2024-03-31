@@ -29,7 +29,8 @@ pub struct BonsaiConfigs {
 
 impl BonsaiConfigs {
     pub fn new(contract: BonsaiDb, contract_storage: BonsaiDb, class: BonsaiDb) -> Self {
-        let config = BonsaiStorageConfig::default();
+        let config =
+            BonsaiStorageConfig { max_saved_trie_logs: None, max_saved_snapshots: None, snapshot_interval: 100 };
 
         let contract =
             BonsaiStorage::<_, _, Pedersen>::new(contract, config.clone()).expect("Failed to create bonsai storage");
@@ -58,9 +59,9 @@ impl TrieColumn {
                 KeyType::TrieLog => crate::columns::LOG_BONSAI_CONTRACTS,
             },
             TrieColumn::ContractStorage => match key_type {
-                KeyType::Trie => crate::columns::TRIE_BONSAI_CONTRACTS,
-                KeyType::Flat => crate::columns::FLAT_BONSAI_CONTRACTS,
-                KeyType::TrieLog => crate::columns::LOG_BONSAI_CONTRACTS,
+                KeyType::Trie => crate::columns::TRIE_BONSAI_CONTRACTS_STORAGE,
+                KeyType::Flat => crate::columns::FLAT_BONSAI_CONTRACTS_STORAGE,
+                KeyType::TrieLog => crate::columns::LOG_BONSAI_CONTRACTS_STORAGE,
             },
         }
     }

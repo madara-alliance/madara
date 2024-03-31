@@ -38,8 +38,6 @@ sp_api::decl_runtime_apis! {
     pub trait StarknetRuntimeApi {
         /// Returns the nonce associated with the given address in the given block
         fn nonce(contract_address: ContractAddress) -> Nonce;
-        /// Returns a storage slot value
-        fn get_storage_at(address: ContractAddress, key: StorageKey) -> Result<StarkFelt, DispatchError>;
         /// Returns a storage keys and values of a given contract
         fn get_storage_from(address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError>;
         /// Returns a `Call` response.

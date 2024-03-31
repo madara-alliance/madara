@@ -58,7 +58,7 @@ pub(crate) mod columns {
     // ===== /!\ ===================================================================================
     // MUST BE INCREMENTED WHEN A NEW COLUMN IN ADDED
     // ===== /!\ ===================================================================================
-    pub const NUM_COLUMNS: u32 = 16;
+    pub const NUM_COLUMNS: u32 = 19;
 
     pub const META: u32 = 0;
     pub const BLOCK_MAPPING: u32 = 1;
@@ -97,9 +97,14 @@ pub(crate) mod columns {
     pub const TRIE_BONSAI_CONTRACTS: u32 = 10;
     pub const FLAT_BONSAI_CONTRACTS: u32 = 11;
     pub const LOG_BONSAI_CONTRACTS: u32 = 12;
-    pub const TRIE_BONSAI_CLASSES: u32 = 13;
-    pub const FLAT_BONSAI_CLASSES: u32 = 14;
-    pub const LOG_BONSAI_CLASSES: u32 = 15;
+
+    pub const TRIE_BONSAI_CONTRACTS_STORAGE: u32 = 13;
+    pub const FLAT_BONSAI_CONTRACTS_STORAGE: u32 = 14;
+    pub const LOG_BONSAI_CONTRACTS_STORAGE: u32 = 15;
+
+    pub const TRIE_BONSAI_CLASSES: u32 = 16;
+    pub const FLAT_BONSAI_CLASSES: u32 = 17;
+    pub const LOG_BONSAI_CLASSES: u32 = 18;
 }
 
 pub mod static_keys {
