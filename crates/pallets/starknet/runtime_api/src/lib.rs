@@ -7,7 +7,6 @@
 
 use blockifier::context::{BlockContext, FeeTokenAddresses};
 use blockifier::execution::contract_class::ContractClass;
-use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution::Transaction;
@@ -18,7 +17,7 @@ pub extern crate alloc;
 use alloc::vec::Vec;
 
 use mp_contract::ContractAbi;
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags, TransactionSimulationResult};
+use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
 use sp_runtime::DispatchError;
 use starknet_api::core::{ClassHash, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::hash::{StarkFelt, StarkHash};
@@ -100,9 +99,6 @@ sp_api::decl_runtime_apis! {
         fn is_transaction_fee_disabled() -> bool;
         /// Return messages sent to L1 during tx execution
         fn get_tx_messages_to_l1(tx_hash: TransactionHash) -> Vec<MessageToL1>;
-
-        fn get_events_for_tx_by_hash(tx_hash: TransactionHash) -> Vec<StarknetEvent>;
-
         /// Check if L1 Message Nonce has not been used
         fn l1_nonce_unused(nonce: Nonce) -> bool;
     }

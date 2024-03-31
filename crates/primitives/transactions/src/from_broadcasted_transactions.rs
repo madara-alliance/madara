@@ -82,7 +82,7 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                 signature,
                 nonce,
                 contract_class,
-                is_query,
+                is_query: _,
             }) => {
                 // Create a GzipDecoder to decompress the bytes
                 let mut gz = GzDecoder::new(&contract_class.program[..]);
@@ -145,7 +145,7 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                 signature,
                 nonce,
                 contract_class,
-                is_query,
+                is_query: _,
             }) => {
 
                 let casm_contract_class = flattened_sierra_to_casm_contract_class(&contract_class)
@@ -201,7 +201,7 @@ impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
                 account_deployment_data,
                 nonce_data_availability_mode,
                 fee_data_availability_mode,
-                is_query,
+                is_query: _,
             }) => {
                 let casm_contract_class = flattened_sierra_to_casm_contract_class(&contract_class)
                     .map_err(|_| BroadcastedTransactionConversionError::SierraCompilationFailed)?;
@@ -272,7 +272,7 @@ impl TryFrom<BroadcastedInvokeTransaction> for UserTransaction {
                 max_fee,
                 signature,
                 nonce,
-                is_query,
+                is_query: _,
                 ..
             }) => {
                 let invoke_tx = stx::InvokeTransaction::V1(stx::InvokeTransactionV1 {
@@ -308,7 +308,7 @@ impl TryFrom<BroadcastedInvokeTransaction> for UserTransaction {
                 account_deployment_data,
                 nonce_data_availability_mode,
                 fee_data_availability_mode,
-                is_query,
+                is_query: _,
             }) => {
                 let invoke_tx = stx::InvokeTransaction::V3(stx::InvokeTransactionV3 {
                     signature: stx::TransactionSignature(
@@ -357,7 +357,7 @@ impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
                 contract_address_salt,
                 constructor_calldata,
                 class_hash,
-                is_query,
+                is_query: _,
             }) => {
                 let deploy_account_tx = stx::DeployAccountTransaction::V1(stx::DeployAccountTransactionV1 {
                     max_fee: stx::Fee(
@@ -405,7 +405,7 @@ impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
                 paymaster_data,
                 nonce_data_availability_mode,
                 fee_data_availability_mode,
-                is_query,
+                is_query: _,
             }) => {
                 let deploy_account_tx = stx::DeployAccountTransaction::V3(stx::DeployAccountTransactionV3 {
                     signature: stx::TransactionSignature(

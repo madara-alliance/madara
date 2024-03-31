@@ -1,8 +1,8 @@
-use starknet_api::core::{ContractAddress, EthAddress, Nonce, PatriciaKey};
+use starknet_api::core::EthAddress;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::MessageToL1;
 
-use crate::{MessageL1ToL2, MessageL2ToL1};
+use crate::MessageL2ToL1;
 
 pub fn eth_address_to_felt(eth_address: &EthAddress) -> StarkFelt {
     let mut bytes = [0u8; 32];

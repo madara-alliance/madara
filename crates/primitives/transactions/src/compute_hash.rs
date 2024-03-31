@@ -4,10 +4,7 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use starknet_api::data_availability::DataAvailabilityMode;
 use starknet_api::transaction::{
-    Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3,
-    DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction,
-    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Resource,
-    ResourceBoundsMapping, TransactionHash,
+    Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Resource, ResourceBoundsMapping, Transaction, TransactionHash
 };
 use starknet_core::crypto::compute_hash_on_elements;
 use starknet_core::utils::starknet_keccak;
@@ -62,6 +59,23 @@ fn prepare_data_availability_modes(
 
     // Safe to unwrap because we left most significant bit of the buffer empty
     FieldElement::from_bytes_be(&buffer).unwrap()
+}
+
+impl ComputeTransactionHash for Transaction {
+    fn compute_hash<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        offset_version: bool,
+        block_number: Option<u64>,
+    ) -> TransactionHash {
+        match self {
+            Transaction::Declare(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
+            Transaction::Deploy(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
+            Transaction::DeployAccount(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
+            Transaction::Invoke(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
+            Transaction::L1Handler(tx) => tx.compute_hash::<H>(chain_id, offset_version, block_number),
+        }
+    }
 }
 
 impl ComputeTransactionHash for InvokeTransactionV0 {

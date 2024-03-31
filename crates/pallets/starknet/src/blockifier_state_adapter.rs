@@ -2,10 +2,9 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use core::marker::PhantomData;
 
 use blockifier::execution::contract_class::ContractClass;
-use blockifier::state::cached_state::{CommitmentStateDiff, StateChangesCount};
+use blockifier::state::cached_state::StateChangesCount;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
-use indexmap::IndexMap;
 use mp_felt::Felt252Wrapper;
 use mp_state::StateChanges;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
@@ -13,7 +12,6 @@ use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_crypto::FieldElement;
 
-use crate::types::ContractStorageKey;
 use crate::{Config, Pallet};
 
 /// Empty struct that implements the traits needed by the blockifier/starknet in rust.

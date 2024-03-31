@@ -10,6 +10,8 @@ mod ordered_events;
 pub mod state_update;
 pub use header::Header;
 use mp_felt::Felt252Wrapper;
+use mp_hashers::HasherT;
+use mp_transactions::compute_hash::ComputeTransactionHash;
 pub use ordered_events::*;
 use starknet_api::transaction::{Transaction, TransactionHash};
 
@@ -85,10 +87,13 @@ impl DeoxysBlock {
     /// Returns an iterator that iterates over all transaction hashes.
     ///
     /// Those transactions are computed using the given `chain_id`.
-    pub fn transactions_hashes(&self) -> impl '_ + Iterator<Item = TransactionHash> {
-        todo!("Implement transactions_hashes")
-        // self.transactions.iter().map(starknet_api::hash::StarkHash)
-    }
+    pub fn transactions_hashes<H: HasherT>(
+        &self,
+        chain_id: Felt252Wrapper,
+        block_number: Option<u64>,
+    ) -> impl '_ + Iterator<Item = TransactionHash> {
+        self.transactions.iter().map(move |tx| tx.compute_hash::<H>(chain_id, false, block_number))
+    }    
 }
 
 #[cfg(test)]

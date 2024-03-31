@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 
 use blockifier::context::BlockContext;
-use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::TransactionExecutionInfo;
@@ -9,11 +8,9 @@ use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use frame_support::storage;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
-use mp_transactions::{HandleL1MessageTransaction, UserOrL1HandlerTransaction, UserTransaction};
 use sp_core::Get;
 use sp_runtime::DispatchError;
 
-use crate::blockifier_state_adapter::BlockifierStateAdapter;
 use crate::{Config, Error, Pallet};
 
 impl<T: Config> Pallet<T> {
