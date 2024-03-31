@@ -257,3 +257,13 @@ pub enum UserOrL1HandlerTransaction {
 //         }
 //     }
 // }
+
+impl From<UserTransaction> for AccountTransaction {
+    fn from(user_transaction: UserTransaction) -> Self {
+        match user_transaction {
+            UserTransaction::Declare(declare_tx) => AccountTransaction::Declare(declare_tx),
+            UserTransaction::DeployAccount(deploy_account_tx) => AccountTransaction::DeployAccount(deploy_account_tx),
+            UserTransaction::Invoke(invoke_tx) => AccountTransaction::Invoke(invoke_tx),
+        }
+    }
+}

@@ -76,7 +76,7 @@ where
             )),
         )?
     } else {
-        transaction.compute_hash::<H>(chain_id.0.into(), false, Some(starknet_block.header().block_number)).0
+        Felt252Wrapper::from(transaction.compute_hash::<H>(chain_id.0.into(), false, Some(starknet_block.header().block_number)).0).into()
     };
 
     Ok(to_starknet_core_tx(transaction.clone(), transaction_hash))

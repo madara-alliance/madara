@@ -1,3 +1,4 @@
+use blockifier::transaction::account_transaction::AccountTransaction;
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use log::error;
@@ -11,7 +12,7 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate};
+use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit};
 
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
@@ -51,11 +52,16 @@ where
             error!("Failed to convert BroadcastedTransaction to UserTransaction: {e}");
             StarknetRpcApiError::InternalServerError
         })?;
+    
+    let account_transactions = transactions
+        .into_iter()
+        .map(AccountTransaction::from)
+        .collect();
 
     let fee_estimates = starknet
         .client
         .runtime_api()
-        .estimate_fee(substrate_block_hash, transactions)
+        .estimate_fee(substrate_block_hash, account_transactions)
         .map_err(|e| {
             error!("Request parameters error: {e}");
             StarknetRpcApiError::InternalServerError
@@ -68,7 +74,8 @@ where
     let estimates = fee_estimates
             .into_iter()
 			// FIXME: https://github.com/keep-starknet-strange/madara/issues/329
-            .map(|x| FeeEstimate { gas_price: 10, gas_consumed: x.1, overall_fee: x.0 })
+            // TODO: reflect right estimation
+            .map(|x| FeeEstimate { gas_price: 10u32.into(), gas_consumed: x.1.into(), overall_fee: x.0.into(), unit: PriceUnit::Fri})
             .collect();
 
     Ok(estimates)

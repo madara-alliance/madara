@@ -10,7 +10,7 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
+use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1, PriceUnit};
 
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
@@ -69,10 +69,12 @@ where
             StarknetRpcApiError::ContractError
         })?;
 
+    // TODO: Check if fee estimation is correct
     let estimate = FeeEstimate {
         gas_price: fee_estimate.0.try_into().map_err(|_| StarknetRpcApiError::InternalServerError)?,
-        gas_consumed: fee_estimate.2,
-        overall_fee: fee_estimate.1,
+        gas_consumed: fee_estimate.2.into(),
+        overall_fee: fee_estimate.1.into(),
+        unit: PriceUnit::Fri,
     };
 
     Ok(estimate)

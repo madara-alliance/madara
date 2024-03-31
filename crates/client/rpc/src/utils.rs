@@ -21,7 +21,7 @@ use sp_runtime::DispatchError;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::ThinStateDiff;
-use starknet_api::transaction::Transaction;
+use starknet_api::transaction::Transaction as stx;
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
     BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem,

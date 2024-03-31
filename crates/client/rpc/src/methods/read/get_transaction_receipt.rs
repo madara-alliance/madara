@@ -19,7 +19,7 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_api::api_core::ClassHash;
+use starknet_api::core::ClassHash;
 use starknet_api::transaction::{InvokeTransaction, Transaction};
 use starknet_core::types::{
     BlockId, BlockTag, DeclareTransactionReceipt, DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult,

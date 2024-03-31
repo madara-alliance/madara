@@ -90,7 +90,7 @@ where
             .transactions()
             .iter()
             .find(|tx| {
-                tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0 == transaction_hash
+                tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0 == Felt252Wrapper::from(transaction_hash).into()
             })
             .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
     };
