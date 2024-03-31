@@ -3,9 +3,12 @@ use std::io::Write;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use blockifier::blockifier::block::GasPrices;
 use blockifier::execution::call_info::CallInfo;
 use blockifier::execution::contract_class::ContractClass as BlockifierContractClass;
-use cairo_lang_casm_contract_class::{CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints};
+use cairo_lang_starknet_classes::casm_contract_class::{
+    CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints, StarknetSierraCompilationError,
+};
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
 use mp_block::DeoxysBlock;
@@ -27,7 +30,7 @@ use starknet_core::types::{
     BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem,
     DeployedContractItem, EntryPointsByType, Event, ExecutionResources, FieldElement, FlattenedSierraClass,
     FromByteArrayError, LegacyContractEntryPoint, LegacyEntryPointsByType, MsgToL1, NonceUpdate, ReplacedClassItem,
-    ResourcePrice, StateDiff, StorageEntry, Transaction,
+    ResourcePrice, StateDiff, StorageEntry,
 };
 
 use crate::errors::StarknetRpcApiError;
@@ -120,26 +123,6 @@ pub fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> Execut
     }
 }
 
-#[allow(dead_code)]
-pub fn blockifier_to_starknet_rs_ordered_events(
-    ordered_events: &[blockifier::execution::entry_point::OrderedEvent],
-) -> Vec<starknet_core::types::OrderedEvent> {
-    ordered_events
-        .iter()
-        .map(|event| starknet_core::types::OrderedEvent {
-            order: event.order as u64, // Convert usize to u64
-            keys: event.event.keys.iter().map(|key| FieldElement::from_byte_slice_be(key.0.bytes()).unwrap()).collect(),
-            data: event
-                .event
-                .data
-                .0
-                .iter()
-                .map(|data_item| FieldElement::from_byte_slice_be(data_item.bytes()).unwrap())
-                .collect(),
-        })
-        .collect()
-}
-
 pub(crate) fn tx_hash_retrieve(tx_hashes: Vec<StarkFelt>) -> Vec<FieldElement> {
     let mut v = Vec::with_capacity(tx_hashes.len());
     for tx_hash in tx_hashes {
@@ -152,10 +135,13 @@ pub(crate) fn tx_hash_compute<H>(block: &DeoxysBlock, chain_id: Felt) -> Vec<Fie
 where
     H: HasherT + Send + Sync + 'static,
 {
-    block.transactions_hashes().map(FieldElement::from).collect()
+    block
+    .transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number))
+    .map(|tx_hash| FieldElement::from(Felt252Wrapper::from(tx_hash)))
+    .collect()
 }
 
-pub(crate) fn tx_conv(txs: &[Transaction], tx_hashes: Vec<FieldElement>) -> Vec<Transaction> {
+pub(crate) fn tx_conv(txs: &[Transaction], tx_hashes: Vec<FieldElement>) -> Vec<starknet_core::types::Transaction> {
     txs.iter().zip(tx_hashes).map(|(tx, hash)| to_starknet_core_tx(tx.clone(), hash)).collect()
 }
 
@@ -183,8 +169,8 @@ pub(crate) fn sequencer_address(block: &DeoxysBlock) -> FieldElement {
     Felt252Wrapper::from(block.header().sequencer_address).into()
 }
 
-pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
-    block.header().l1_gas_price.into()
+pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> GasPrices {
+    block.header().l1_gas_price
 }
 
 pub(crate) fn starknet_version(block: &DeoxysBlock) -> String {
