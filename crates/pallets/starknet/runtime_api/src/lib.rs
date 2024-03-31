@@ -74,7 +74,7 @@ sp_api::decl_runtime_apis! {
         /// this limitation. The solution is to offload decoding and filtering to the RuntimeApi in
         /// the runtime itself, accomplished through the extrinsic_filter method. This enables the
         /// client to operate seamlessly while abstracting the extrinsic complexity.
-        fn extrinsic_filter(xts: Vec<<Block as BlockT>::Extrinsic>) -> Vec<Transaction>;
+        // fn extrinsic_filter(xts: Vec<<Block as BlockT>::Extrinsic>) -> Vec<Transaction>;
         /// Used to re-execute transactions from a past block and return their trace
         ///
         /// # Arguments
@@ -89,7 +89,7 @@ sp_api::decl_runtime_apis! {
         fn re_execute_transactions(transactions_before: Vec<Transaction>, transactions_to_trace: Vec<Transaction>) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>;
 
         fn get_events_for_tx_by_hash(tx_hash: TransactionHash) -> Vec<StarknetEvent>;
-        fn get_index_and_tx_for_tx_hash(xts: Vec<<Block as BlockT>::Extrinsic>, chain_id: Felt252Wrapper, tx_hash: TransactionHash) -> Option<(u32, Transaction)>;
+        // fn get_index_and_tx_for_tx_hash(xts: Vec<<Block as BlockT>::Extrinsic>, chain_id: Felt252Wrapper, tx_hash: TransactionHash) -> Option<(u32, Transaction)>;
 
         /// Return the outcome of the tx execution
         fn get_tx_execution_outcome(tx_hash: TransactionHash) -> Option<Vec<u8>>;
@@ -105,10 +105,10 @@ sp_api::decl_runtime_apis! {
 
     pub trait ConvertTransactionRuntimeApi {
         /// Converts the transaction to an UncheckedExtrinsic for submission to the pool.
-        fn convert_transaction(transaction: AccountTransaction) -> <Block as BlockT>::Extrinsic;
+        // fn convert_transaction(transaction: AccountTransaction) -> <Block as BlockT>::Extrinsic;
 
         /// Converts the L1 Message transaction to an UncheckedExtrinsic for submission to the pool.
-        fn convert_l1_transaction(transaction: L1HandlerTransaction) -> <Block as BlockT>::Extrinsic;
+        // fn convert_l1_transaction(transaction: L1HandlerTransaction) -> <Block as BlockT>::Extrinsic;
 
         /// Converts the DispatchError to an understandable error for the client
         fn convert_error(error: DispatchError) -> StarknetTransactionExecutionError;
