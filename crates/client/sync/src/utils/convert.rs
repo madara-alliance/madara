@@ -90,24 +90,16 @@ fn transaction(transaction: p::TransactionType) -> Transaction {
 }
 
 fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
-    match tx.version {
-        FieldElement::ZERO => DeclareTransaction::V0(starknet_api::transaction::DeclareTransactionV0V1 {
+    if tx.version == FieldElement::ZERO || tx.version == FieldElement::ONE {
+        DeclareTransaction::V1(starknet_api::transaction::DeclareTransactionV0V1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
             nonce: nonce(tx.nonce),
             class_hash: ClassHash(felt(tx.class_hash)),
             sender_address: address(tx.sender_address),
-        }),
-
-        FieldElement::ONE => DeclareTransaction::V1(starknet_api::transaction::DeclareTransactionV0V1 {
-            max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: signature(tx.signature),
-            nonce: nonce(tx.nonce),
-            class_hash: ClassHash(felt(tx.class_hash)),
-            sender_address: address(tx.sender_address),
-        }),
-
-        FieldElement::TWO => DeclareTransaction::V2(starknet_api::transaction::DeclareTransactionV2 {
+        })
+    } else if tx.version == FieldElement::TWO {
+        DeclareTransaction::V2(starknet_api::transaction::DeclareTransactionV2 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
             nonce: nonce(tx.nonce),
@@ -116,13 +108,12 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
                 tx.compiled_class_hash.expect("no compiled class hash provided"),
             )),
             sender_address: address(tx.sender_address),
-        }),
-
-        FieldElement::THREE => {
-            todo!("implement V3 declare transaction")
-        }
-
-        _ => panic!("declare transaction version not supported"),
+        })
+    } else if tx.version == FieldElement::THREE {
+        // Implement V3 declare transaction
+        todo!("implement V3 declare transaction")
+    } else {
+        panic!("declare transaction version not supported");
     }
 }
 
@@ -160,28 +151,27 @@ fn deploy_account_transaction_version(tx: &p::DeployAccountTransaction) -> u8 {
 }
 
 fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
-    match tx.version {
-        FieldElement::ZERO => InvokeTransaction::V0(starknet_api::transaction::InvokeTransactionV0 {
+    if tx.version == FieldElement::ZERO {
+        InvokeTransaction::V0(starknet_api::transaction::InvokeTransactionV0 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
             contract_address: address(tx.sender_address),
             entry_point_selector: entry_point(tx.entry_point_selector.expect("no entry_point_selector provided")),
             calldata: call_data(tx.calldata),
-        }),
-
-        FieldElement::ONE => InvokeTransaction::V1(starknet_api::transaction::InvokeTransactionV1 {
+        })
+    } else if tx.version == FieldElement::ONE {
+        InvokeTransaction::V1(starknet_api::transaction::InvokeTransactionV1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
             nonce: nonce(tx.nonce.expect("no nonce provided")),
             sender_address: address(tx.sender_address),
             calldata: call_data(tx.calldata),
-        }),
-
-        FieldElement::THREE => {
-            todo!("implement V3 invoke transaction")
-        }
-
-        _ => panic!("invoke transaction version not supported"),
+        })
+    } else if tx.version == FieldElement::THREE {
+        // TODO: Implement V3 invoke transaction
+        todo!("implement V3 invoke transaction")
+    } else {
+        panic!("invoke transaction version not supported");
     }
 }
 
