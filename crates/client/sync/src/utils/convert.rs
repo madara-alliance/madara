@@ -5,13 +5,12 @@ use std::num::NonZeroU128;
 use std::sync::Arc;
 
 use blockifier::blockifier::block::GasPrices;
-use ethers::core::k256::pkcs8::der::Class;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
-use starknet_api::core::{ClassHash, CompiledClassHash};
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
-    Calldata, ContractAddressSalt, DeclareTransaction, DeployAccountTransaction, DeployAccountTransactionV1, DeployTransaction, Event, InvokeTransaction, L1HandlerTransaction, Transaction, TransactionVersion
+    DeclareTransaction, DeployAccountTransaction, DeployAccountTransactionV1, DeployTransaction, Event,
+    InvokeTransaction, L1HandlerTransaction, Transaction,
 };
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, PendingStateUpdate,
@@ -81,9 +80,7 @@ fn transaction(transaction: p::TransactionType) -> Transaction {
     match transaction {
         p::TransactionType::Declare(tx) => Transaction::Declare(declare_transaction(tx)),
         p::TransactionType::Deploy(tx) => Transaction::Deploy(deploy_transaction(tx)),
-        p::TransactionType::DeployAccount(tx) => {
-            Transaction::DeployAccount(deploy_account_transaction(tx))
-        }
+        p::TransactionType::DeployAccount(tx) => Transaction::DeployAccount(deploy_account_transaction(tx)),
         p::TransactionType::InvokeFunction(tx) => Transaction::Invoke(invoke_transaction(tx)),
         p::TransactionType::L1Handler(tx) => Transaction::L1Handler(l1_handler_transaction(tx)),
     }
@@ -95,7 +92,7 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
             nonce: nonce(tx.nonce),
-            class_hash: ClassHash(felt(tx.class_hash)),
+            class_hash: class_hash(tx.class_hash),
             sender_address: address(tx.sender_address),
         })
     } else if tx.version == FieldElement::TWO {
@@ -103,10 +100,8 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
             nonce: nonce(tx.nonce),
-            class_hash: ClassHash(felt(tx.class_hash)),
-            compiled_class_hash: CompiledClassHash(felt(
-                tx.compiled_class_hash.expect("no compiled class hash provided"),
-            )),
+            class_hash: class_hash(tx.class_hash),
+            compiled_class_hash: compiled_class_hash(tx.compiled_class_hash.expect("no compiled class hash provided")),
             sender_address: address(tx.sender_address),
         })
     } else if tx.version == FieldElement::THREE {
@@ -119,10 +114,10 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
 
 fn deploy_transaction(tx: p::DeployTransaction) -> DeployTransaction {
     DeployTransaction {
-        version: TransactionVersion(felt(tx.version)),
-        class_hash: ClassHash(felt(tx.class_hash)),
-        contract_address_salt: ContractAddressSalt(felt(tx.contract_address_salt)),
-        constructor_calldata: Calldata(Arc::new(tx.constructor_calldata.into_iter().map(felt).map(Into::into).collect())),
+        version: transaction_version(tx.version),
+        class_hash: class_hash(tx.class_hash),
+        contract_address_salt: contract_address_salt(tx.contract_address_salt),
+        constructor_calldata: call_data(tx.constructor_calldata),
     }
 }
 
@@ -132,8 +127,8 @@ fn deploy_account_transaction(tx: p::DeployAccountTransaction) -> DeployAccountT
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
             nonce: nonce(tx.nonce),
-            class_hash: ClassHash(felt(tx.class_hash)),
-            contract_address_salt: ContractAddressSalt(felt(tx.contract_address_salt)),
+            class_hash: class_hash(tx.class_hash),
+            contract_address_salt: contract_address_salt(tx.contract_address_salt),
             constructor_calldata: call_data(tx.constructor_calldata),
         }),
 
@@ -177,7 +172,7 @@ fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
 
 fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
     L1HandlerTransaction {
-        version: starknet_api::transaction::TransactionVersion(felt(tx.version)),
+        version: transaction_version(tx.version),
         nonce: nonce(tx.nonce.expect("no nonce provided")),
         contract_address: contract_address(tx.contract_address),
         entry_point_selector: entry_point(tx.entry_point_selector),
@@ -213,9 +208,7 @@ fn entry_point(entry_point: starknet_ff::FieldElement) -> starknet_api::core::En
 }
 
 fn call_data(call_data: Vec<starknet_ff::FieldElement>) -> starknet_api::transaction::Calldata {
-    starknet_api::transaction::Calldata(Arc::new(
-        call_data.into_iter().map(felt).collect()
-    ))
+    starknet_api::transaction::Calldata(Arc::new(call_data.into_iter().map(felt).collect()))
 }
 
 fn tx_hash(tx_hash: starknet_ff::FieldElement) -> starknet_api::transaction::TransactionHash {
@@ -226,11 +219,29 @@ fn nonce(nonce: starknet_ff::FieldElement) -> starknet_api::core::Nonce {
     starknet_api::core::Nonce(felt(nonce))
 }
 
+fn class_hash(class_hash: starknet_ff::FieldElement) -> starknet_api::core::ClassHash {
+    starknet_api::core::ClassHash(felt(class_hash))
+}
+
+fn compiled_class_hash(compiled_class_hash: starknet_ff::FieldElement) -> starknet_api::core::CompiledClassHash {
+    starknet_api::core::CompiledClassHash(felt(compiled_class_hash))
+}
+
+fn contract_address_salt(
+    contract_address_salt: starknet_ff::FieldElement,
+) -> starknet_api::transaction::ContractAddressSalt {
+    starknet_api::transaction::ContractAddressSalt(felt(contract_address_salt))
+}
+
+fn transaction_version(version: starknet_ff::FieldElement) -> starknet_api::transaction::TransactionVersion {
+    starknet_api::transaction::TransactionVersion(felt(version))
+}
+
 // TODO: calculate gas_price when starknet-rs supports v0.13.1
 fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> GasPrices {
     GasPrices {
         eth_l1_gas_price: NonZeroU128::new(10).unwrap(),       // In wei.
-        strk_l1_gas_price: NonZeroU128::new(10).unwrap(),     // In fri.
+        strk_l1_gas_price: NonZeroU128::new(10).unwrap(),      // In fri.
         eth_l1_data_gas_price: NonZeroU128::new(10).unwrap(),  // In wei.
         strk_l1_data_gas_price: NonZeroU128::new(10).unwrap(), // In fri.
     }
