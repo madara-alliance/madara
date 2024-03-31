@@ -87,23 +87,24 @@ pub fn extract_messages_from_call_info(call_info: &CallInfo) -> Vec<MsgToL1> {
 }
 
 pub fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> ExecutionResources {
-    let vm_ressources = &callinfo.vm_resources;
+    let vm_resources = &callinfo.resources;
 
-    let steps = vm_ressources.n_steps as u64;
-    let memory_holes = match vm_ressources.n_memory_holes as u64 {
+    let steps = vm_resources.n_steps as u64;
+    let memory_holes = match vm_resources.n_memory_holes as u64 {
         0 => None,
         n => Some(n),
     };
 
-    let builtin_insstance = &vm_ressources.builtin_instance_counter;
+    let builtin_instance = &vm_resources.builtin_instance_counter;
 
-    let range_check_builtin_applications = *builtin_insstance.get("range_check_builtin").unwrap_or(&0) as u64;
-    let pedersen_builtin_applications = *builtin_insstance.get("pedersen_builtin").unwrap_or(&0) as u64;
-    let poseidon_builtin_applications = *builtin_insstance.get("poseidon_builtin").unwrap_or(&0) as u64;
-    let ec_op_builtin_applications = *builtin_insstance.get("ec_op_builtin").unwrap_or(&0) as u64;
-    let ecdsa_builtin_applications = *builtin_insstance.get("ecdsa_builtin").unwrap_or(&0) as u64;
-    let bitwise_builtin_applications = *builtin_insstance.get("bitwise_builtin").unwrap_or(&0) as u64;
-    let keccak_builtin_applications = *builtin_insstance.get("keccak_builtin").unwrap_or(&0) as u64;
+    let range_check_builtin_applications = builtin_instance.get("range_check_builtin").map(|&value| value as u64);
+    let pedersen_builtin_applications = builtin_instance.get("pedersen_builtin").map(|&value| value as u64);
+    let poseidon_builtin_applications = builtin_instance.get("poseidon_builtin").map(|&value| value as u64);
+    let ec_op_builtin_applications = builtin_instance.get("ec_op_builtin").map(|&value| value as u64);
+    let ecdsa_builtin_applications = builtin_instance.get("ecdsa_builtin").map(|&value| value as u64);
+    let bitwise_builtin_applications = builtin_instance.get("bitwise_builtin").map(|&value| value as u64);
+    let keccak_builtin_applications = builtin_instance.get("keccak_builtin").map(|&value| value as u64);
+    let segment_arena_builtin = builtin_instance.get("segment_arena_builtin").map(|&value| value as u64);
 
     ExecutionResources {
         steps,
@@ -115,6 +116,7 @@ pub fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> Execut
         ecdsa_builtin_applications,
         bitwise_builtin_applications,
         keccak_builtin_applications,
+        segment_arena_builtin,
     }
 }
 
