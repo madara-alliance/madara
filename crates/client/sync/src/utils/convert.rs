@@ -5,7 +5,7 @@ use std::num::NonZeroU128;
 use std::sync::Arc;
 
 use blockifier::blockifier::block::GasPrices;
-use mp_block::DeoxysBlock;
+use mp_block::{DeoxysBlock, GasPricesWrapper};
 use mp_felt::Felt252Wrapper;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
@@ -238,12 +238,14 @@ fn transaction_version(version: starknet_ff::FieldElement) -> starknet_api::tran
 }
 
 // TODO: calculate gas_price when starknet-rs supports v0.13.1
-fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> GasPrices {
-    GasPrices {
-        eth_l1_gas_price: NonZeroU128::new(10).unwrap(),       // In wei.
-        strk_l1_gas_price: NonZeroU128::new(10).unwrap(),      // In fri.
-        eth_l1_data_gas_price: NonZeroU128::new(10).unwrap(),  // In wei.
-        strk_l1_data_gas_price: NonZeroU128::new(10).unwrap(), // In fri.
+fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> GasPricesWrapper {
+    GasPricesWrapper {
+        inner: GasPrices {
+            eth_l1_gas_price: NonZeroU128::new(10).unwrap(),       // In wei.
+            strk_l1_gas_price: NonZeroU128::new(10).unwrap(),      // In fri.
+            eth_l1_data_gas_price: NonZeroU128::new(10).unwrap(),  // In wei.
+            strk_l1_data_gas_price: NonZeroU128::new(10).unwrap(), // In fri.
+        }
     }
 }
 

@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 mod header;
 mod ordered_events;
 pub mod state_update;
-pub use header::Header;
+pub use header::{Header, GasPricesWrapper};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -47,7 +47,7 @@ pub enum BlockId {
 }
 
 /// Starknet block definition.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct DeoxysBlock {
     /// The block header.

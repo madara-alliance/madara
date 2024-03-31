@@ -76,7 +76,7 @@ use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
 use itertools::Itertools;
 use mp_block::state_update::StateUpdateWrapper;
-use mp_block::{DeoxysBlock, Header as StarknetHeader};
+use mp_block::{DeoxysBlock, Header as StarknetHeader, GasPricesWrapper};
 use mp_contract::ContractAbi;
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_felt::Felt252Wrapper;
@@ -1078,7 +1078,7 @@ impl<T: Config> Pallet<T> {
 
             let protocol_version = T::ProtocolVersion::get();
             let extra_data = None;
-            let l1_gas_price = T::L1GasPrices::get();
+            let l1_gas_price = GasPricesWrapper::default();
             let ordered_events = vec![];
 
             let block = DeoxysBlock::new(

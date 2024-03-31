@@ -171,8 +171,8 @@ pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
     let resource_price = &block.header().l1_gas_price;
     //TODO: verify values
     ResourcePrice {
-        price_in_fri: resource_price.strk_l1_gas_price.get().into(),
-        price_in_wei: resource_price.eth_l1_gas_price.get().into()
+        price_in_fri: resource_price.inner.strk_l1_gas_price.get().into(),
+        price_in_wei: resource_price.inner.eth_l1_gas_price.get().into()
     }
 }
 
