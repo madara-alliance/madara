@@ -246,18 +246,6 @@ pub enum UserOrL1HandlerTransaction {
 //     pub calldata: Vec<Felt252Wrapper>,
 // }
 
-// impl From<MsgFromL1> for HandleL1MessageTransaction {
-//     fn from(msg: MsgFromL1) -> Self {
-//         let calldata = msg.payload.into_iter().map(|felt| felt.into()).collect();
-//         Self {
-//             contract_address: msg.to_address.into(),
-//             nonce: 0u32.into(),
-//             entry_point_selector: msg.entry_point_selector.into(),
-//             calldata,
-//         }
-//     }
-// }
-
 impl From<UserTransaction> for AccountTransaction {
     fn from(user_transaction: UserTransaction) -> Self {
         match user_transaction {

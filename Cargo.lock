@@ -5992,6 +5992,7 @@ dependencies = [
  "mc-storage",
  "mc-sync",
  "mp-digest-log",
+ "mp-felt",
  "mp-hashers",
  "mp-transactions",
  "pallet-starknet-runtime-api",
@@ -6007,6 +6008,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "blockifier",
+ "cairo-lang-starknet-classes",
  "deoxys-runtime",
  "flate2",
  "hex",

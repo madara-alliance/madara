@@ -11,6 +11,7 @@ use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1, PriceUnit};
+use starknet_ff::FieldElement;
 
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
@@ -51,29 +52,30 @@ where
         StarknetRpcApiError::BlockNotFound
     })?;
 
-    let message = message.try_into().map_err(|e| {
-        error!("Failed to convert MsgFromL1 to UserTransaction: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?;
+    //TODO: correct this with the correct conversion
+    // let message = message.try_into().map_err(|e| {
+    //     error!("Failed to convert MsgFromL1 to UserTransaction: {e}");
+    //     StarknetRpcApiError::InternalServerError
+    // })?;
 
-    let fee_estimate = starknet
-        .client
-        .runtime_api()
-        .estimate_message_fee(substrate_block_hash, message)
-        .map_err(|e| {
-            error!("Runtime api error: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .map_err(|e| {
-            error!("function execution failed: {:#?}", e);
-            StarknetRpcApiError::ContractError
-        })?;
+    // let fee_estimate = starknet
+    //     .client
+    //     .runtime_api()
+    //     .estimate_message_fee(substrate_block_hash, message)
+    //     .map_err(|e| {
+    //         error!("Runtime api error: {e}");
+    //         StarknetRpcApiError::InternalServerError
+    //     })?
+    //     .map_err(|e| {
+    //         error!("function execution failed: {:#?}", e);
+    //         StarknetRpcApiError::ContractError
+    //     })?;
 
-    // TODO: Check if fee estimation is correct
+    // TODO: Check if fee estimation is correct (spoiler alert it is not)
     let estimate = FeeEstimate {
-        gas_price: fee_estimate.0.try_into().map_err(|_| StarknetRpcApiError::InternalServerError)?,
-        gas_consumed: fee_estimate.2.into(),
-        overall_fee: fee_estimate.1.into(),
+        gas_price: FieldElement::ZERO,
+        gas_consumed: FieldElement::ZERO,
+        overall_fee: FieldElement::ZERO,
         unit: PriceUnit::Fri,
     };
 

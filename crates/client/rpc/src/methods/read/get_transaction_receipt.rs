@@ -1,4 +1,5 @@
-use blockifier::execution::contract_class::{ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf};
+use blockifier::execution::contract_address;
+use blockifier::execution::contract_class::{ClassInfo, ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf};
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::error::Error;
@@ -8,10 +9,12 @@ use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_sync::l2::get_pending_block;
 use mp_block::DeoxysBlock;
+use mp_contract::class;
 use mp_felt::Felt252Wrapper;
+use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::{DeclareTransaction, UserOrL1HandlerTransaction, UserTransaction};
+use mp_transactions::{UserOrL1HandlerTransaction, UserTransaction};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -19,8 +22,9 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_api::core::ClassHash;
-use starknet_api::transaction::{InvokeTransaction, Transaction};
+use starknet_api::core::{ClassHash, ContractAddress};
+use starknet_api::transaction::{DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction, Transaction, TransactionHash};
+use blockifier::transaction::transaction_execution as btx;
 use starknet_core::types::{
     BlockId, BlockTag, DeclareTransactionReceipt, DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult,
     FieldElement, Hash256, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MaybePendingTransactionReceipt,
@@ -74,7 +78,7 @@ where
     })?;
 
     // TODO: remove this line when deploy is supported
-    if let TransactionMp::Deploy(_) = transaction {
+    if let Transaction::Deploy(_) = transaction {
         log::error!("re executing a deploy transaction is not supported yet");
         return Err(StarknetRpcApiError::UnimplementedMethod.into());
     }
@@ -86,7 +90,11 @@ where
     // TODO(#1291): compute message hash correctly to L1HandlerTransactionReceipt
     let message_hash: Hash256 = Hash256::from_felt(&FieldElement::default());
 
-    let actual_fee = execution_infos.actual_fee.0.into();
+    // TODO: implement fee in Fri when Blockifier will support it
+    let actual_fee = starknet_core::types::FeePayment {
+        amount: execution_infos.actual_fee.0.into(),
+        unit: starknet_core::types::PriceUnit::Wei,
+    };
 
     let finality_status = if block_number <= mc_sync::l1::ETHEREUM_STATE_UPDATE.read().unwrap().block_number {
         TransactionFinalityStatus::AcceptedOnL1
@@ -104,13 +112,14 @@ where
         None => ExecutionResources {
             steps: 0,
             memory_holes: None,
-            range_check_builtin_applications: 0,
-            pedersen_builtin_applications: 0,
-            poseidon_builtin_applications: 0,
-            ec_op_builtin_applications: 0,
-            ecdsa_builtin_applications: 0,
-            bitwise_builtin_applications: 0,
-            keccak_builtin_applications: 0,
+            range_check_builtin_applications: None,
+            pedersen_builtin_applications: None,
+            poseidon_builtin_applications: None,
+            ec_op_builtin_applications: None,
+            ecdsa_builtin_applications: None,
+            bitwise_builtin_applications: None,
+            keccak_builtin_applications: None,
+            segment_arena_builtin: None,
         },
     };
 
@@ -124,7 +133,6 @@ where
         None => vec![],
     };
 
-    // TODO: use actual execution ressources
     let receipt = match transaction {
         Transaction::Declare(_) => TransactionReceipt::Declare(DeclareTransactionReceipt {
             transaction_hash,
@@ -147,7 +155,8 @@ where
             events,
             execution_resources,
             execution_result,
-            contract_address: tx.get_account_address(),
+            // TODO: retrieve account address
+            contract_address: FieldElement::default(),
         }),
         Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {
             transaction_hash,
@@ -213,7 +222,7 @@ where
     })?;
 
     // TODO: remove this line when deploy is supported
-    if let TransactionMp::Deploy(_) = transaction {
+    if let Transaction::Deploy(_) = transaction {
         log::error!("re executing a deploy transaction is not supported yet");
         return Err(StarknetRpcApiError::UnimplementedMethod.into());
     }
@@ -225,7 +234,11 @@ where
     // TODO(#1291): compute message hash correctly to L1HandlerTransactionReceipt
     let message_hash: Hash256 = Hash256::from_felt(&FieldElement::default());
 
-    let actual_fee = execution_infos.actual_fee.0.into();
+    // TODO: implement fee in Fri when Blockifier will support it
+    let actual_fee = starknet_core::types::FeePayment {
+        amount: execution_infos.actual_fee.0.into(),
+        unit: starknet_core::types::PriceUnit::Wei,
+    };
 
     let execution_result = match execution_infos.revert_error.clone() {
         Some(err) => ExecutionResult::Reverted { reason: err },
@@ -237,13 +250,14 @@ where
         None => ExecutionResources {
             steps: 0,
             memory_holes: None,
-            range_check_builtin_applications: 0,
-            pedersen_builtin_applications: 0,
-            poseidon_builtin_applications: 0,
-            ec_op_builtin_applications: 0,
-            ecdsa_builtin_applications: 0,
-            bitwise_builtin_applications: 0,
-            keccak_builtin_applications: 0,
+            range_check_builtin_applications: None,
+            pedersen_builtin_applications: None,
+            poseidon_builtin_applications: None,
+            ec_op_builtin_applications: None,
+            ecdsa_builtin_applications: None,
+            bitwise_builtin_applications: None,
+            keccak_builtin_applications: None,
+            segment_arena_builtin: None,
         },
     };
 
@@ -259,7 +273,7 @@ where
 
     // TODO: use actual execution ressources
     let receipt = match transaction {
-        Transactionansaction::Declare(_) => PendingTransactionReceipt::Declare(PendingDeclareTransactionReceipt {
+        Transaction::Declare(_) => PendingTransactionReceipt::Declare(PendingDeclareTransactionReceipt {
             transaction_hash,
             actual_fee,
             messages_sent,
@@ -267,7 +281,7 @@ where
             execution_resources,
             execution_result,
         }),
-        Transactionansaction::DeployAccount(tx) => {
+        Transaction::DeployAccount(tx) => {
             PendingTransactionReceipt::DeployAccount(PendingDeployAccountTransactionReceipt {
                 transaction_hash,
                 actual_fee,
@@ -275,10 +289,11 @@ where
                 events,
                 execution_resources,
                 execution_result,
-                contract_address: tx.get_account_address(),
+                // TODO: retrieve account address
+                contract_address: FieldElement::default(),
             })
         }
-        Transactionansaction::Invoke(_) => PendingTransactionReceipt::Invoke(PendingInvokeTransactionReceipt {
+        Transaction::Invoke(_) => PendingTransactionReceipt::Invoke(PendingInvokeTransactionReceipt {
             transaction_hash,
             actual_fee,
             messages_sent,
@@ -328,7 +343,7 @@ fn transactions<A, BE, G, C, P, H>(
     block: &DeoxysBlock,
     block_number: u64,
     tx_index: usize,
-) -> RpcResult<Vec<UserOrL1HandlerTransaction>>
+) -> RpcResult<Vec<btx::Transaction>>
 where
     A: ChainApi<Block = DBlockT> + 'static,
     P: TransactionPool<Block = DBlockT> + 'static,
@@ -343,40 +358,57 @@ where
             .transactions()
             .iter()
             .take(tx_index + 1)
-            .filter(|tx| !matches!(tx, TransactionMp::Deploy(_))) // TODO: remove this line when deploy is supported
+            .filter(|tx| !matches!(tx, Transaction::Deploy(_))) // TODO: remove this line when deploy is supported
             .map(|tx| match tx {
-                TransactionMp::Invoke(invoke_tx) => {
-					tx_invoke_transaction(invoke_tx.clone())
+                Transaction::Invoke(invoke_tx) => {
+					tx_invoke_transaction(invoke_tx.clone(), invoke_tx.compute_hash::<H>(Felt252Wrapper::from(chain_id.0).into(), false, Some(block_number)))
                 }
-                TransactionMp::DeployAccount(deploy_account_tx) => {
-					tx_deploy_account(deploy_account_tx.clone())
+                // TODO: add real contract address param here
+                Transaction::DeployAccount(deploy_account_tx) => {
+					tx_deploy_account(deploy_account_tx.clone(), deploy_account_tx.compute_hash::<H>(Felt252Wrapper::from(chain_id.0).into(), false, Some(block_number)), ContractAddress::default())
                 }
-                TransactionMp::Declare(declare_tx) => {
+                Transaction::Declare(declare_tx) => {
 					tx_declare(client, substrate_block_hash, declare_tx.clone())
                 }
-                TransactionMp::L1Handler(l1_handler) => {
+                Transaction::L1Handler(l1_handler) => {
 					tx_l1_handler::<H>(chain_id, block_number, l1_handler.clone())
                 }
-                TransactionMp::Deploy(_) => todo!(),
+                Transaction::Deploy(_) => todo!(),
             })
             .collect::<Result<Vec<_>, _>>()?;
 
     Ok(transactions)
 }
 
-fn tx_invoke_transaction(tx: InvokeTransaction) -> RpcResult<UserOrL1HandlerTransaction> {
-    Ok(UserOrL1HandlerTransaction::User(UserTransaction::Invoke(tx)))
+fn tx_invoke_transaction(tx: InvokeTransaction, hash: TransactionHash) -> RpcResult<btx::Transaction> {
+
+    Ok(btx::Transaction::AccountTransaction(
+        blockifier::transaction::account_transaction::AccountTransaction::Invoke(
+        blockifier::transaction::transactions::InvokeTransaction{
+            tx: tx,
+            tx_hash: hash,
+            only_query: false,
+        }
+    )))
 }
 
-fn tx_deploy_account(tx: DeployAccountTransaction) -> RpcResult<UserOrL1HandlerTransaction> {
-    Ok(UserOrL1HandlerTransaction::User(UserTransaction::DeployAccount(tx)))
+fn tx_deploy_account(tx: DeployAccountTransaction, hash: TransactionHash, contract_address: ContractAddress) -> RpcResult<btx::Transaction> {
+    Ok(btx::Transaction::AccountTransaction(
+        blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(
+        blockifier::transaction::transactions::DeployAccountTransaction{
+            tx: tx,
+            tx_hash: hash,
+            only_query: false,
+            contract_address
+        }
+    )))
 }
 
 fn tx_declare<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     substrate_block_hash: DHashT,
     declare_tx: DeclareTransaction,
-) -> RpcResult<UserOrL1HandlerTransaction>
+) -> RpcResult<btx::Transaction>
 where
     A: ChainApi<Block = DBlockT> + 'static,
     P: TransactionPool<Block = DBlockT> + 'static,
@@ -387,13 +419,14 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let class_hash = ClassHash::from(*declare_tx.class_hash());
+    let class_hash = ClassHash(Felt252Wrapper::from(*declare_tx.class_hash()).into());
 
     match declare_tx {
         DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => {
             tx_declare_v0v1(client, substrate_block_hash, declare_tx, class_hash)
         }
         DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
+        DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
     }
 }
 
@@ -402,7 +435,7 @@ fn tx_declare_v0v1<A, BE, G, C, P, H>(
     substrate_block_hash: DHashT,
     declare_tx: DeclareTransaction,
     class_hash: ClassHash,
-) -> RpcResult<UserOrL1HandlerTransaction>
+) -> RpcResult<btx::Transaction>
 where
     A: ChainApi<Block = DBlockT> + 'static,
     P: TransactionPool<Block = DBlockT> + 'static,
@@ -422,10 +455,32 @@ where
             StarknetRpcApiError::InternalServerError
         })?;
 
-    Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx, contract_class)))
+    // let class_info = ClassInfo::new(
+    //     &contract_class,
+    //     contract_class.
+    //     contract_class
+    // )
+    // .unwrap();
+
+    // Ok(btx::Transaction::AccountTransaction(
+    //     blockifier::transaction::account_transaction::AccountTransaction::Declare(
+    //     blockifier::transaction::transactions::DeclareTransaction::new(
+    //         declare_tx,
+    //         declare_tx.compute_hash::<H>(Felt252Wrapper::from(class_hash.0).into(), false, None),
+    //         class_info,
+    //     ).unwrap()
+    // )))
+    // TODO: Correct this that was used as a place holder to compile
+    match declare_tx {
+        DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => {
+            tx_declare_v0v1(client, substrate_block_hash, declare_tx, class_hash)
+        }
+        DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
+        DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
+    }
 }
 
-fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcResult<UserOrL1HandlerTransaction> {
+fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcResult<btx::Transaction> {
     // Welcome to type hell! This 3-part conversion will take you through the extenses
     // of a codebase so thick it might as well be pasta -yum!
     // Also should no be a problem as a declare transaction *should* not be able to
@@ -452,32 +507,52 @@ fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcRe
         StarknetRpcApiError::InternalServerError
     })?);
 
-    Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx, contract_class)))
+    // Ok(btx::Transaction::AccountTransaction(
+    //     blockifier::transaction::account_transaction::AccountTransaction::Declare(
+    //     blockifier::transaction::transactions::DeclareTransaction::new(
+    //         declare_tx,
+    //         declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::from(class_hash.0).into(), false, None),
+    //         contract_class,
+    //     ).unwrap()
+    // )))
+    // TODO: Correct this that was used as a place holder to compile
+    match declare_tx {
+        DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
+        DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
+        DeclareTransaction::V0(_) => todo!(),
+        DeclareTransaction::V1(_) => todo!(),
+    }
 }
 
 fn tx_l1_handler<H>(
     chain_id: Felt,
     block_number: u64,
-    l1_handler: mp_transactions::HandleL1MessageTransaction,
-) -> RpcResult<UserOrL1HandlerTransaction>
+    l1_handler: L1HandlerTransaction,
+) -> RpcResult<btx::Transaction>
 where
     H: HasherT + Send + Sync + 'static,
 {
     let chain_id = chain_id.0.into();
     let tx_hash = l1_handler.compute_hash::<H>(chain_id, false, Some(block_number));
     let paid_fee =
-        DeoxysBackend::l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(tx_hash.into()).map_err(|e| {
+        DeoxysBackend::l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(tx_hash.0.into()).map_err(|e| {
             log::error!("Failed to retrieve fee paid on l1 for tx with hash `{tx_hash:?}`: {e}");
             StarknetRpcApiError::InternalServerError
         })?;
 
-    Ok(UserOrL1HandlerTransaction::L1Handler(l1_handler, paid_fee))
+    Ok(btx::Transaction::L1HandlerTransaction(
+        blockifier::transaction::transactions::L1HandlerTransaction {
+            tx: l1_handler,
+            tx_hash: tx_hash,
+            paid_fee_on_l1: paid_fee
+        }
+    ))
 }
 
 fn execution_infos<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     previous_block_hash: DHashT,
-    transactions: Vec<UserOrL1HandlerTransaction>,
+    transactions: Vec<btx::Transaction>,
 ) -> RpcResult<TransactionExecutionInfo>
 where
     A: ChainApi<Block = DBlockT> + 'static,

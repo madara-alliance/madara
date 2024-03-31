@@ -3,6 +3,7 @@ use mc_db::DeoxysBackend;
 use mc_rpc::utils::get_block_by_block_hash;
 use mp_digest_log::{find_starknet_block, FindLogError};
 use mp_hashers::HasherT;
+use mp_felt::Felt252Wrapper;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -50,11 +51,11 @@ where
                                 .transactions()
                                 .iter()
                                 .map(|tx| {
-                                    tx.compute_hash::<H>(
+                                    Felt252Wrapper::from(tx.compute_hash::<H>(
                                         chain_id,
                                         false,
                                         Some(digest_starknet_block.header().block_number),
-                                    )
+                                    ))
                                     .into()
                                 })
                                 .collect(),

@@ -70,8 +70,8 @@ where
                 .collect()
         } else {
             starknet_block
-                .transactions_hashes::<H>(chain_id, Some(starknet_block.header().block_number))
-                .map(FieldElement::from)
+                .transactions_hashes::<H>(chain_id.0.into(), Some(starknet_block.header().block_number))
+                .map(|tx_hash| FieldElement::from(Felt252Wrapper::from(tx_hash)))
                 .collect()
         };
 
@@ -92,8 +92,8 @@ where
                 from_address: Felt252Wrapper::from(event.from_address).0,
                 keys: event.content.keys.into_iter().map(|felt| Felt252Wrapper::from(felt).0).collect(),
                 data: event.content.data.0.into_iter().map(|felt| Felt252Wrapper::from(felt).0).collect(),
-                block_hash: block_hash.0,
-                block_number,
+                block_hash: Some(block_hash.0),
+                block_number: Some(block_number),
                 transaction_hash: tx_hash.0,
             })
             .collect();

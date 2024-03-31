@@ -3,9 +3,13 @@ use std::io::Write;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use blockifier::blockifier::block::GasPrices;
 use blockifier::execution::call_info::CallInfo;
 use blockifier::execution::contract_class::ContractClass as BlockifierContractClass;
-use cairo_lang_casm_contract_class::{CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints};
+use blockifier::transaction::transactions::L1HandlerTransaction;
+use cairo_lang_starknet_classes::casm_contract_class::{
+    CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints, StarknetSierraCompilationError,
+};
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
 use mp_block::DeoxysBlock;
@@ -21,13 +25,10 @@ use sp_runtime::DispatchError;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::ThinStateDiff;
-use starknet_api::transaction::Transaction as stx;
+use starknet_api::transaction as stx;
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
-    BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem,
-    DeployedContractItem, EntryPointsByType, Event, ExecutionResources, FieldElement, FlattenedSierraClass,
-    FromByteArrayError, LegacyContractEntryPoint, LegacyEntryPointsByType, MsgToL1, NonceUpdate, ReplacedClassItem,
-    ResourcePrice, StateDiff, StorageEntry, Transaction,
+    BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, EntryPointsByType, Event, ExecutionResources, FieldElement, FlattenedSierraClass, FromByteArrayError, LegacyContractEntryPoint, LegacyEntryPointsByType, MsgFromL1, MsgToL1, NonceUpdate, ReplacedClassItem, ResourcePrice, StateDiff, StorageEntry
 };
 
 use crate::errors::StarknetRpcApiError;
@@ -87,23 +88,24 @@ pub fn extract_messages_from_call_info(call_info: &CallInfo) -> Vec<MsgToL1> {
 }
 
 pub fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> ExecutionResources {
-    let vm_ressources = &callinfo.vm_resources;
+    let vm_resources = &callinfo.resources;
 
-    let steps = vm_ressources.n_steps as u64;
-    let memory_holes = match vm_ressources.n_memory_holes as u64 {
+    let steps = vm_resources.n_steps as u64;
+    let memory_holes = match vm_resources.n_memory_holes as u64 {
         0 => None,
         n => Some(n),
     };
 
-    let builtin_insstance = &vm_ressources.builtin_instance_counter;
+    let builtin_instance = &vm_resources.builtin_instance_counter;
 
-    let range_check_builtin_applications = *builtin_insstance.get("range_check_builtin").unwrap_or(&0) as u64;
-    let pedersen_builtin_applications = *builtin_insstance.get("pedersen_builtin").unwrap_or(&0) as u64;
-    let poseidon_builtin_applications = *builtin_insstance.get("poseidon_builtin").unwrap_or(&0) as u64;
-    let ec_op_builtin_applications = *builtin_insstance.get("ec_op_builtin").unwrap_or(&0) as u64;
-    let ecdsa_builtin_applications = *builtin_insstance.get("ecdsa_builtin").unwrap_or(&0) as u64;
-    let bitwise_builtin_applications = *builtin_insstance.get("bitwise_builtin").unwrap_or(&0) as u64;
-    let keccak_builtin_applications = *builtin_insstance.get("keccak_builtin").unwrap_or(&0) as u64;
+    let range_check_builtin_applications = builtin_instance.get("range_check_builtin").map(|&value| value as u64);
+    let pedersen_builtin_applications = builtin_instance.get("pedersen_builtin").map(|&value| value as u64);
+    let poseidon_builtin_applications = builtin_instance.get("poseidon_builtin").map(|&value| value as u64);
+    let ec_op_builtin_applications = builtin_instance.get("ec_op_builtin").map(|&value| value as u64);
+    let ecdsa_builtin_applications = builtin_instance.get("ecdsa_builtin").map(|&value| value as u64);
+    let bitwise_builtin_applications = builtin_instance.get("bitwise_builtin").map(|&value| value as u64);
+    let keccak_builtin_applications = builtin_instance.get("keccak_builtin").map(|&value| value as u64);
+    let segment_arena_builtin = builtin_instance.get("segment_arena_builtin").map(|&value| value as u64);
 
     ExecutionResources {
         steps,
@@ -115,27 +117,8 @@ pub fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> Execut
         ecdsa_builtin_applications,
         bitwise_builtin_applications,
         keccak_builtin_applications,
+        segment_arena_builtin,
     }
-}
-
-#[allow(dead_code)]
-pub fn blockifier_to_starknet_rs_ordered_events(
-    ordered_events: &[blockifier::execution::entry_point::OrderedEvent],
-) -> Vec<starknet_core::types::OrderedEvent> {
-    ordered_events
-        .iter()
-        .map(|event| starknet_core::types::OrderedEvent {
-            order: event.order as u64, // Convert usize to u64
-            keys: event.event.keys.iter().map(|key| FieldElement::from_byte_slice_be(key.0.bytes()).unwrap()).collect(),
-            data: event
-                .event
-                .data
-                .0
-                .iter()
-                .map(|data_item| FieldElement::from_byte_slice_be(data_item.bytes()).unwrap())
-                .collect(),
-        })
-        .collect()
 }
 
 pub(crate) fn tx_hash_retrieve(tx_hashes: Vec<StarkFelt>) -> Vec<FieldElement> {
@@ -150,10 +133,13 @@ pub(crate) fn tx_hash_compute<H>(block: &DeoxysBlock, chain_id: Felt) -> Vec<Fie
 where
     H: HasherT + Send + Sync + 'static,
 {
-    block.transactions_hashes().map(FieldElement::from).collect()
+    block
+    .transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number))
+    .map(|tx_hash| FieldElement::from(Felt252Wrapper::from(tx_hash)))
+    .collect()
 }
 
-pub(crate) fn tx_conv(txs: &[Transaction], tx_hashes: Vec<FieldElement>) -> Vec<Transaction> {
+pub(crate) fn tx_conv(txs: &[stx::Transaction], tx_hashes: Vec<FieldElement>) -> Vec<starknet_core::types::Transaction> {
     txs.iter().zip(tx_hashes).map(|(tx, hash)| to_starknet_core_tx(tx.clone(), hash)).collect()
 }
 
@@ -182,7 +168,12 @@ pub(crate) fn sequencer_address(block: &DeoxysBlock) -> FieldElement {
 }
 
 pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
-    block.header().l1_gas_price.into()
+    let resource_price = &block.header().l1_gas_price;
+    //TODO: verify values
+    ResourcePrice {
+        price_in_fri: resource_price.strk_l1_gas_price.get().into(),
+        price_in_wei: resource_price.eth_l1_gas_price.get().into()
+    }
 }
 
 pub(crate) fn starknet_version(block: &DeoxysBlock) -> String {
@@ -193,8 +184,9 @@ pub(crate) fn starknet_version(block: &DeoxysBlock) -> String {
 pub fn to_rpc_contract_class(contract_class: BlockifierContractClass) -> Result<ContractClass> {
     match contract_class {
         BlockifierContractClass::V0(contract_class) => {
-            let entry_points_by_type = to_legacy_entry_points_by_type(&contract_class.entry_points_by_type)?;
-            let compressed_program = compress(&contract_class.program.to_bytes())?;
+            let entry_points_by_type: HashMap<_, _> = contract_class.entry_points_by_type.clone().into_iter().collect();
+            let entry_points_by_type = to_legacy_entry_points_by_type(&entry_points_by_type)?;
+            let compressed_program = compress(&contract_class.program.serialize()?)?;
             Ok(ContractClass::Legacy(CompressedLegacyContractClass {
                 program: compressed_program,
                 entry_points_by_type,
@@ -348,6 +340,7 @@ fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractClass
         entry_points_by_type: casm_entry_points_to_compiled_entry_points(&casm_contract_class.entry_points_by_type),
         hints: vec![],        // not needed to get class hash so ignoring this
         pythonic_hints: None, // not needed to get class hash so ignoring this
+        bytecode_segment_lengths: todo!(), //TODO: implement this
     }
 }
 
