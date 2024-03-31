@@ -6,13 +6,11 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_rpc_core::utils::{blockifier_to_rpc_state_diff_types, get_block_by_block_hash};
-use mc_rpc_core::StarknetTraceRpcApiServer;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_simulations::{SimulationFlags, TransactionSimulationResult};
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::{DeclareTransaction, Transaction, TxType, UserOrL1HandlerTransaction, UserTransaction};
+use mp_transactions::{TxType, UserOrL1HandlerTransaction, UserTransaction};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_transaction_pool::ChainApi;
@@ -30,7 +28,7 @@ use starknet_ff::FieldElement;
 use thiserror::Error;
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
+use crate::{Starknet, StarknetTraceRpcApiServer};
 
 #[async_trait]
 #[allow(unused_variables)]
@@ -353,7 +351,7 @@ fn try_get_function_invocation_from_call_info(
     })
 }
 
-fn tx_execution_infos_to_tx_trace(
+pub fn tx_execution_infos_to_tx_trace(
     tx_type: TxType,
     tx_exec_info: &TransactionExecutionInfo,
     state_diff: Option<StateDiff>,

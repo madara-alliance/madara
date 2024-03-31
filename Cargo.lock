@@ -6008,7 +6008,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "blockifier",
+ "cairo-lang-starknet",
  "cairo-lang-starknet-classes",
+ "cairo-lang-utils",
  "deoxys-runtime",
  "flate2",
  "hex",
