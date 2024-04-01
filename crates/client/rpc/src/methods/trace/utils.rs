@@ -34,7 +34,6 @@ use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
 use crate::Starknet;
 
-
 pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core::types::OrderedMessage> {
     call_info
         .execution
@@ -258,7 +257,6 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
 
     Ok(tx_trace)
 }
-
 
 pub fn map_transaction_to_user_transaction<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,

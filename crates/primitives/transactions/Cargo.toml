@@ -13,6 +13,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 blockifier = { workspace = true }
 derive_more = { workspace = true, features = ["from"] }
+indexmap = { workspace = true }
 lazy_static = { workspace = true }
 log = { workspace = true }
 mp-fee = { workspace = true }
@@ -24,11 +25,10 @@ starknet-core = { workspace = true }
 starknet-crypto = { workspace = true, features = ["alloc"] }
 starknet-ff = { workspace = true, features = ["alloc"] }
 starknet_api = { workspace = true }
-indexmap = { workspace = true }
 
 # Optional (client)
-cairo-lang-starknet-classes = { workspace = true, optional = true }
 cairo-lang-starknet = { workspace = true, optional = true }
+cairo-lang-starknet-classes = { workspace = true, optional = true }
 cairo-lang-utils = { workspace = true, optional = true }
 cairo-vm = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
@@ -53,7 +53,7 @@ std = [
   "starknet-core/std",
   "mp-state/std",
   "mp-hashers/std",
-  "mp-felt/std",  
+  "mp-felt/std",
   # Optional
   "parity-scale-codec?/std",
   "scale-info?/std",
@@ -81,6 +81,6 @@ scale-info = [
   "dep:scale-info",
   "mp-felt/scale-info",
   "starknet_api/scale-info",
-  "blockifier/scale-info"
+  "blockifier/scale-info",
 ]
 serde = ["dep:serde", "mp-felt/serde"]

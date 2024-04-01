@@ -30,8 +30,8 @@ mc-storage = { workspace = true }
 mc-sync = { workspace = true }
 
 # Cairo lang
-cairo-lang-starknet-classes = { workspace = true }
 cairo-lang-starknet = { workspace = true }
+cairo-lang-starknet-classes = { workspace = true }
 cairo-lang-utils = { workspace = true }
 
 # Substate primitives

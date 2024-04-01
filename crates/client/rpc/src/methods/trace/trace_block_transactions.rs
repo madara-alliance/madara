@@ -11,16 +11,14 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_core::types::{
-    BlockId, TransactionTraceWithHash,
-};
+use starknet_core::types::{BlockId, TransactionTraceWithHash};
 
+use super::utils::{
+    get_previous_block_substrate_hash, map_transaction_to_user_transaction, tx_execution_infos_to_tx_trace,
+};
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
 use crate::{Starknet, StarknetReadRpcApiServer};
-
-use super::utils::{get_previous_block_substrate_hash, map_transaction_to_user_transaction, tx_execution_infos_to_tx_trace};
-
 
 pub async fn trace_block_transactions<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,

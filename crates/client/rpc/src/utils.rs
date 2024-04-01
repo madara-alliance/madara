@@ -181,10 +181,7 @@ pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
             price_in_fri: resource_price.strk_l1_gas_price.get().into(),
             price_in_wei: resource_price.eth_l1_gas_price.get().into(),
         },
-        None => ResourcePrice {
-            price_in_fri: FieldElement::ZERO,
-            price_in_wei: FieldElement::ZERO,
-        },
+        None => ResourcePrice { price_in_fri: FieldElement::ZERO, price_in_wei: FieldElement::ZERO },
     }
 }
 

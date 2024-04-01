@@ -14,7 +14,9 @@ use sp_blockchain::HeaderBackend;
 use starknet_core::types::TransactionTraceWithHash;
 use starknet_ff::FieldElement;
 
-use super::utils::{get_previous_block_substrate_hash, map_transaction_to_user_transaction, tx_execution_infos_to_tx_trace};
+use super::utils::{
+    get_previous_block_substrate_hash, map_transaction_to_user_transaction, tx_execution_infos_to_tx_trace,
+};
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
 use crate::{Starknet, StarknetReadRpcApiServer};
