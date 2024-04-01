@@ -11,7 +11,7 @@ use starknet_core::utils::starknet_keccak;
 use starknet_crypto::FieldElement;
 
 use super::SIMULATE_TX_VERSION_OFFSET;
-use crate::LEGACY_BLOCK_NUMBER;
+use crate::{UserOrL1HandlerTransaction, LEGACY_BLOCK_NUMBER};
 
 const DECLARE_PREFIX: &[u8] = b"declare";
 const DEPLOY_ACCOUNT_PREFIX: &[u8] = b"deploy_account";
@@ -518,19 +518,6 @@ impl ComputeTransactionHash for L1HandlerTransaction {
         }
     }
 }
-
-// impl ComputeTransactionHash for UserOrL1HandlerTransaction {
-//     fn compute_hash<H: HasherT>(
-//         &self,
-//         chain_id: Felt252Wrapper,
-//         offset_version: bool,
-//         block_number: Option<u64>,
-//     ) -> TransactionHash { match self { UserOrL1HandlerTransaction::User(tx) =>
-//       tx.compute_hash::<H>(chain_id, offset_version, block_number),
-//       UserOrL1HandlerTransaction::L1Handler(tx, _) => { tx.compute_hash::<H>(chain_id,
-//       offset_version, block_number) } }
-//     }
-// }
 
 pub fn compute_hash_given_contract_address<H: HasherT>(
     transaction: DeployTransaction,

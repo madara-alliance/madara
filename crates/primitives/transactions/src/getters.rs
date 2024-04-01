@@ -2,7 +2,7 @@ use blockifier::transaction::account_transaction::AccountTransaction;
 use mp_felt::Felt252Wrapper;
 use starknet_api::transaction::{
     DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
-    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction,
+    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, TransactionHash,
 };
 
 use crate::{TxType, UserOrL1HandlerTransaction, UserTransaction};
@@ -72,6 +72,28 @@ impl UserOrL1HandlerTransaction {
             UserOrL1HandlerTransaction::L1Handler(_) => TxType::L1Handler,
         }
     }
+
+    pub fn tx_hash(&self) -> Option<TransactionHash> {
+        match self {
+            UserOrL1HandlerTransaction::User(user_tx) => {
+                match user_tx {
+                    AccountTransaction::Declare(declare_transaction) => {
+                        Some(declare_transaction.tx_hash)
+                    },
+                    AccountTransaction::DeployAccount(deploy_account_transaction) => {
+                        Some(deploy_account_transaction.tx_hash)
+                    },
+                    AccountTransaction::Invoke(invoke_transaction) => {
+                        Some(invoke_transaction.tx_hash)
+                    },
+                }
+            },
+            UserOrL1HandlerTransaction::L1Handler(l1_handler_transaction) => {
+                Some(l1_handler_transaction.tx_hash)
+            },
+        }
+    }
+
 }
 
 

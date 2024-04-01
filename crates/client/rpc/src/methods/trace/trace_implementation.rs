@@ -16,7 +16,7 @@ use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::{TxType, UserOrL1HandlerTransaction, tx_into_user_or_l1_vec};
+use mp_transactions::{TxType, UserOrL1HandlerTransaction};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_transaction_pool::ChainApi;
@@ -35,7 +35,7 @@ use starknet_ff::FieldElement;
 use super::lib::*;
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
-use crate::{Felt, Starknet, StarknetReadRpcApiServer};
+use crate::{Starknet, StarknetReadRpcApiServer};
 
 pub async fn trace_block_transactions<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
@@ -102,9 +102,7 @@ where
                 &tx_exec_info,
             )
             .map(|trace_root| TransactionTraceWithHash {
-                transaction_hash: block_transactions[tx_idx]
-                    .compute_hash::<H>(chain_id, false, Some(block_number))
-                    .into(),
+                transaction_hash: Felt252Wrapper::from(block_transactions[tx_idx].tx_hash().unwrap()).into(),
                 trace_root,
             })
         })
@@ -250,7 +248,8 @@ fn try_get_funtion_invocation_from_call_info<B: BlockT>(
         })
         .collect::<Result<_, _>>()?;
 
-    call_info.get_sorted_l2_to_l1_payloads_length()?;
+    // TODO: check why this is here
+    // call_info.get_sorted_l2_to_l1_payloads_length()?;
 
     let entry_point_type = match call_info.call.entry_point_type {
         starknet_api::deprecated_contract_class::EntryPointType::Constructor => {
@@ -415,7 +414,7 @@ where
     for tx in starknet_block.transactions() {
         let current_tx_hash = tx.compute_hash::<H>(chain_id, false, Some(block_number));
 
-        if Some(current_tx_hash) == target_transaction_hash {
+        if Some(Felt252Wrapper::from(current_tx_hash)) == target_transaction_hash {
             let converted_tx = convert_transaction(tx, starknet, substrate_block_hash, chain_id, block_number)?;
             transaction_to_trace.push(converted_tx);
             break;
@@ -534,7 +533,7 @@ where
         }
         stx::Transaction::L1Handler(handle_l1_message_tx) => {
             let tx_hash = handle_l1_message_tx.compute_hash::<H>(chain_id, false, Some(block_number));
-            let paid_fee: starknet_api::transaction::Fee =
+            let paid_fee_on_l1: starknet_api::transaction::Fee =
                 DeoxysBackend::l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(Felt252Wrapper::from(tx_hash).into()).map_err(|e| {
                     error!("Failed to retrieve fee paid on l1 for tx with hash `{tx_hash:?}`: {e}");
                     StarknetRpcApiError::InternalServerError
