@@ -1,11 +1,4 @@
-use blockifier::execution::contract_address;
-use blockifier::execution::contract_class::{
-    ClassInfo, ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf,
-};
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use blockifier::transaction::transactions::{
-    DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction,
-};
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use log::error;
@@ -24,10 +17,9 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulatedTransaction, SimulationFlag,
 };
-use starknet_ff::FieldElement;
 
 use super::lib::ConvertCallInfoToExecuteInvocationError;
-use super::trace_implementation::tx_execution_infos_to_tx_trace;
+use super::utils::tx_execution_infos_to_tx_trace;
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
