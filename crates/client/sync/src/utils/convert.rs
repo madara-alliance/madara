@@ -93,7 +93,7 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
             signature: signature(tx.signature),
             nonce: nonce(tx.nonce),
             class_hash: class_hash(tx.class_hash),
-            sender_address: address(tx.sender_address),
+            sender_address: contract_address(tx.sender_address),
         })
     } else if tx.version == FieldElement::TWO {
         DeclareTransaction::V2(starknet_api::transaction::DeclareTransactionV2 {
@@ -102,7 +102,7 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
             nonce: nonce(tx.nonce),
             class_hash: class_hash(tx.class_hash),
             compiled_class_hash: compiled_class_hash(tx.compiled_class_hash.expect("no compiled class hash provided")),
-            sender_address: address(tx.sender_address),
+            sender_address: contract_address(tx.sender_address),
         })
     } else if tx.version == FieldElement::THREE {
         // Implement V3 declare transaction
@@ -150,7 +150,7 @@ fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
         InvokeTransaction::V0(starknet_api::transaction::InvokeTransactionV0 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
-            contract_address: address(tx.sender_address),
+            contract_address: contract_address(tx.sender_address),
             entry_point_selector: entry_point(tx.entry_point_selector.expect("no entry_point_selector provided")),
             calldata: call_data(tx.calldata),
         })
@@ -159,12 +159,31 @@ fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
             nonce: nonce(tx.nonce.expect("no nonce provided")),
-            sender_address: address(tx.sender_address),
+            sender_address: contract_address(tx.sender_address),
             calldata: call_data(tx.calldata),
         })
     } else if tx.version == FieldElement::THREE {
-        // TODO: Implement V3 invoke transaction
-        todo!("implement V3 invoke transaction")
+        let ressources_bounds = tx.resource_bounds.expect("no resource bounds provided");
+        InvokeTransaction::V3(starknet_api::transaction::InvokeTransactionV3 {
+            resource_bounds: resource_bounds(
+                ressources_bounds.l1_gas.max_amount,
+                ressources_bounds.l1_gas.max_price_per_unit,
+                ressources_bounds.l2_gas.max_amount,
+                ressources_bounds.l2_gas.max_price_per_unit,
+            ),
+            tip: tip(tx.tip.expect("no tip provided")),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce.expect("no nonce provided")),
+            sender_address: contract_address(tx.sender_address),
+            calldata: call_data(tx.calldata),
+            // TODO: use data_availability_mode when starknet-rs supports v0.13.1
+            nonce_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
+            fee_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
+            paymaster_data: paymaster_data(tx.paymaster_data.expect("no paymaster_data provided")),
+            account_deployment_data: account_deployment_data(
+                tx.account_deployment_data.expect("no account_deployment_data provided"),
+            ),
+        })
     } else {
         panic!("invoke transaction version not supported");
     }
@@ -199,7 +218,7 @@ fn signature(signature: Vec<starknet_ff::FieldElement>) -> starknet_api::transac
     starknet_api::transaction::TransactionSignature(signature.into_iter().map(felt).collect())
 }
 
-fn address(address: starknet_ff::FieldElement) -> starknet_api::core::ContractAddress {
+fn contract_address(address: starknet_ff::FieldElement) -> starknet_api::core::ContractAddress {
     starknet_api::core::ContractAddress(starknet_api::core::PatriciaKey(felt(address)))
 }
 
@@ -237,6 +256,73 @@ fn transaction_version(version: starknet_ff::FieldElement) -> starknet_api::tran
     starknet_api::transaction::TransactionVersion(felt(version))
 }
 
+// This function is not functional due to the private transaction module os starknet-rs
+//
+// fn resource_bounds(ressource_bounds:
+// starknet_providers::sequencer::models::transaction::ResourceBoundsMapping) ->
+// starknet_api::transaction::ResourceBoundsMapping { let vec_ressource_bounds:
+// Vec<starknet_api::transaction::Resource, starknet_api::transaction::ResourceBounds> = vec![
+// (starknet_api::transaction::Resource::L1Gas, starknet_api::transaction::ResourceBounds {
+// max_amount: ressource_bounds.l1_gas.max_amount,
+// max_price_per_unit: ressource_bounds.l1_gas.max_price_per_unit,
+// }),
+// (starknet_api::transaction::Resource::L2Gas, starknet_api::transaction::ResourceBounds {
+// max_amount: ressource_bounds.l2_gas.max_amount,
+// max_price_per_unit: ressource_bounds.l2_gas.max_price_per_unit,
+// }),
+// ];
+// vec_ressource_bounds.try_into().expect("Failed to convert resource bounds")
+// }
+
+fn resource_bounds(
+    l1_max_amount: u64,
+    l1_max_price_per_unit: u128,
+    l2_max_amount: u64,
+    l2_max_price_per_unit: u128,
+) -> starknet_api::transaction::ResourceBoundsMapping {
+    let vec_ressource_bounds: Vec<(starknet_api::transaction::Resource, starknet_api::transaction::ResourceBounds)> = vec![
+        (
+            starknet_api::transaction::Resource::L1Gas,
+            starknet_api::transaction::ResourceBounds {
+                max_amount: l1_max_amount,
+                max_price_per_unit: l1_max_price_per_unit,
+            },
+        ),
+        (
+            starknet_api::transaction::Resource::L2Gas,
+            starknet_api::transaction::ResourceBounds {
+                max_amount: l2_max_amount,
+                max_price_per_unit: l2_max_price_per_unit,
+            },
+        ),
+    ];
+    vec_ressource_bounds.try_into().expect("Failed to convert resource bounds")
+}
+
+fn tip(tip: u64) -> starknet_api::transaction::Tip {
+    starknet_api::transaction::Tip(tip)
+}
+
+// This function is not functional due to the private transaction module os starknet-rs
+// fn data_availability_mode(mode:
+// starknet_providers::sequencer::models::transaction::DataAvailabilityMode) ->
+// starknet_api::data_availability::DataAvailabilityMode { match mode {
+// starknet_providers::sequencer::models::transaction::DataAvailabilityMode::L1 =>
+// starknet_api::data_availability::DataAvailabilityMode::L1,
+// starknet_providers::sequencer::models::transaction::DataAvailabilityMode::L2 =>
+// starknet_api::data_availability::DataAvailabilityMode::L2, }
+// }
+
+fn paymaster_data(paymaster_data: Vec<FieldElement>) -> starknet_api::transaction::PaymasterData {
+    starknet_api::transaction::PaymasterData(paymaster_data.into_iter().map(felt).collect())
+}
+
+fn account_deployment_data(
+    account_deployment_data: Vec<FieldElement>,
+) -> starknet_api::transaction::AccountDeploymentData {
+    starknet_api::transaction::AccountDeploymentData(account_deployment_data.into_iter().map(felt).collect())
+}
+
 // TODO: calculate gas_price when starknet-rs supports v0.13.1
 fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> GasPricesWrapper {
     GasPricesWrapper {
@@ -245,7 +331,7 @@ fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> GasPricesWrapp
             strk_l1_gas_price: NonZeroU128::new(10).unwrap(),      // In fri.
             eth_l1_data_gas_price: NonZeroU128::new(10).unwrap(),  // In wei.
             strk_l1_data_gas_price: NonZeroU128::new(10).unwrap(), // In fri.
-        }
+        },
     }
 }
 
@@ -285,10 +371,6 @@ fn chain_id() -> mp_felt::Felt252Wrapper {
 
 fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {
     starknet_api::hash::StarkFelt::new(field_element.to_bytes_be()).unwrap()
-}
-
-fn contract_address(field_element: starknet_ff::FieldElement) -> starknet_api::core::ContractAddress {
-    starknet_api::core::ContractAddress(starknet_api::core::PatriciaKey(felt(field_element)))
 }
 
 pub fn state_update(state_update: StateUpdateProvider) -> PendingStateUpdate {

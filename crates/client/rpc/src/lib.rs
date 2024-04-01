@@ -195,13 +195,13 @@ pub trait StarknetTraceRpcApi {
         simulation_flags: Vec<SimulationFlag>,
     ) -> RpcResult<Vec<SimulatedTransaction>>;
 
-    // #[method(name = "traceBlockTransactions")]
-    // /// Returns the execution traces of all transactions included in the given block
-    // async fn trace_block_transactions(&self, block_id: BlockId) -> RpcResult<Vec<TransactionTraceWithHash>>;
+    #[method(name = "traceBlockTransactions")]
+    /// Returns the execution traces of all transactions included in the given block
+    async fn trace_block_transactions(&self, block_id: BlockId) -> RpcResult<Vec<TransactionTraceWithHash>>;
 
-    // #[method(name = "traceTransaction")]
-    // /// Returns the execution trace of a transaction
-    // async fn trace_transaction(&self, transaction_hash: FieldElement) -> RpcResult<TransactionTraceWithHash>;
+    #[method(name = "traceTransaction")]
+    /// Returns the execution trace of a transaction
+    async fn trace_transaction(&self, transaction_hash: FieldElement) -> RpcResult<TransactionTraceWithHash>;
 }
 
 /// A Starknet RPC server for Madara
