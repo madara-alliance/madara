@@ -26,10 +26,8 @@ use crate::commitments::lib::calculate_commitments;
 use crate::utility::get_config;
 
 pub async fn block(block: p::Block) -> DeoxysBlock {
-    // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
-
     let parent_block_hash = felt(block.parent_block_hash);
     let block_number = block.block_number.expect("no block number provided");
     let block_timestamp = block.timestamp;
@@ -37,12 +35,8 @@ pub async fn block(block: p::Block) -> DeoxysBlock {
     let sequencer_address = block.sequencer_address.map_or(contract_address(FieldElement::ZERO), contract_address);
     let transaction_count = transactions.len() as u128;
     let event_count = events.len() as u128;
-
     let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number).await;
-
     let protocol_version = starknet_version(&block.starknet_version);
-    // TODO calculate gas_price when starknet-rs supports v0.13.1
-    // let l1_gas_price = resource_price(block.eth_l1_gas_price);
     let l1_gas_price = resource_price(
         block.l1_gas_price.price_in_wei,
         block.l1_gas_price.price_in_fri,

@@ -1,4 +1,3 @@
-use blockifier::transaction::account_transaction::AccountTransaction;
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use log::error;
