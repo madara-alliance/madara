@@ -111,23 +111,20 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
             sender_address: contract_address(tx.sender_address),
         })
     } else if tx.version == FieldElement::THREE {
-        let ressources_bounds = tx.resource_bounds.expect("no resource bounds provided");
         DeclareTransaction::V3(starknet_api::transaction::DeclareTransactionV3 {
-            resource_bounds: resource_bounds(
-                ressources_bounds.l1_gas.max_amount,
-                ressources_bounds.l1_gas.max_price_per_unit,
-                ressources_bounds.l2_gas.max_amount,
-                ressources_bounds.l2_gas.max_price_per_unit,
-            ),
+            resource_bounds: resource_bounds(tx.resource_bounds.expect("no resource bounds provided")),
             tip: tip(tx.tip.expect("no tip provided")),
             signature: signature(tx.signature),
             nonce: nonce(tx.nonce),
             class_hash: class_hash(tx.class_hash),
             compiled_class_hash: compiled_class_hash(tx.compiled_class_hash.expect("no compiled class hash provided")),
             sender_address: contract_address(tx.sender_address),
-            // TODO: use data_availability_mode when starknet-rs supports v0.13.1
-            nonce_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
-            fee_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
+            nonce_data_availability_mode: data_availability_mode(
+                tx.nonce_data_availability_mode.expect("no nonce_data_availability_mode provided"),
+            ),
+            fee_data_availability_mode: data_availability_mode(
+                tx.fee_data_availability_mode.expect("no fee_data_availability_mode provided"),
+            ),
             paymaster_data: paymaster_data(tx.paymaster_data.expect("no paymaster_data provided")),
             account_deployment_data: account_deployment_data(
                 tx.account_deployment_data.expect("no account_deployment_data provided"),
@@ -158,27 +155,22 @@ fn deploy_account_transaction(tx: p::DeployAccountTransaction) -> DeployAccountT
             constructor_calldata: call_data(tx.constructor_calldata),
         }),
 
-        3 => {
-            let ressources_bounds = tx.resource_bounds.expect("no resource bounds provided");
-            DeployAccountTransaction::V3(starknet_api::transaction::DeployAccountTransactionV3 {
-                resource_bounds: resource_bounds(
-                    ressources_bounds.l1_gas.max_amount,
-                    ressources_bounds.l1_gas.max_price_per_unit,
-                    ressources_bounds.l2_gas.max_amount,
-                    ressources_bounds.l2_gas.max_price_per_unit,
-                ),
-                tip: tip(tx.tip.expect("no tip provided")),
-                signature: signature(tx.signature),
-                nonce: nonce(tx.nonce),
-                class_hash: class_hash(tx.class_hash),
-                contract_address_salt: contract_address_salt(tx.contract_address_salt),
-                constructor_calldata: call_data(tx.constructor_calldata),
-                // TODO: use data_availability_mode when starknet-rs supports v0.13.1
-                nonce_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
-                fee_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
-                paymaster_data: paymaster_data(tx.paymaster_data.expect("no paymaster_data provided")),
-            })
-        }
+        3 => DeployAccountTransaction::V3(starknet_api::transaction::DeployAccountTransactionV3 {
+            resource_bounds: resource_bounds(tx.resource_bounds.expect("no resource bounds provided")),
+            tip: tip(tx.tip.expect("no tip provided")),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce),
+            class_hash: class_hash(tx.class_hash),
+            contract_address_salt: contract_address_salt(tx.contract_address_salt),
+            constructor_calldata: call_data(tx.constructor_calldata),
+            nonce_data_availability_mode: data_availability_mode(
+                tx.nonce_data_availability_mode.expect("no nonce_data_availability_mode provided"),
+            ),
+            fee_data_availability_mode: data_availability_mode(
+                tx.fee_data_availability_mode.expect("no fee_data_availability_mode provided"),
+            ),
+            paymaster_data: paymaster_data(tx.paymaster_data.expect("no paymaster_data provided")),
+        }),
 
         _ => panic!("deploy account transaction version not supported"),
     }
@@ -207,22 +199,19 @@ fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
             calldata: call_data(tx.calldata),
         })
     } else if tx.version == FieldElement::THREE {
-        let ressources_bounds = tx.resource_bounds.expect("no resource bounds provided");
         InvokeTransaction::V3(starknet_api::transaction::InvokeTransactionV3 {
-            resource_bounds: resource_bounds(
-                ressources_bounds.l1_gas.max_amount,
-                ressources_bounds.l1_gas.max_price_per_unit,
-                ressources_bounds.l2_gas.max_amount,
-                ressources_bounds.l2_gas.max_price_per_unit,
-            ),
+            resource_bounds: resource_bounds(tx.resource_bounds.expect("no resource bounds provided")),
             tip: tip(tx.tip.expect("no tip provided")),
             signature: signature(tx.signature),
             nonce: nonce(tx.nonce.expect("no nonce provided")),
             sender_address: contract_address(tx.sender_address),
             calldata: call_data(tx.calldata),
-            // TODO: use data_availability_mode when starknet-rs supports v0.13.1
-            nonce_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
-            fee_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
+            nonce_data_availability_mode: data_availability_mode(
+                tx.nonce_data_availability_mode.expect("no nonce_data_availability_mode provided"),
+            ),
+            fee_data_availability_mode: data_availability_mode(
+                tx.fee_data_availability_mode.expect("no fee_data_availability_mode provided"),
+            ),
             paymaster_data: paymaster_data(tx.paymaster_data.expect("no paymaster_data provided")),
             account_deployment_data: account_deployment_data(
                 tx.account_deployment_data.expect("no account_deployment_data provided"),
@@ -300,62 +289,44 @@ fn transaction_version(version: starknet_ff::FieldElement) -> starknet_api::tran
     starknet_api::transaction::TransactionVersion(felt(version))
 }
 
-// This function is not functional due to the private transaction module os starknet-rs
-//
-// fn resource_bounds(ressource_bounds:
-// starknet_providers::sequencer::models::transaction::ResourceBoundsMapping) ->
-// starknet_api::transaction::ResourceBoundsMapping { let vec_ressource_bounds:
-// Vec<starknet_api::transaction::Resource, starknet_api::transaction::ResourceBounds> = vec![
-// (starknet_api::transaction::Resource::L1Gas, starknet_api::transaction::ResourceBounds {
-// max_amount: ressource_bounds.l1_gas.max_amount,
-// max_price_per_unit: ressource_bounds.l1_gas.max_price_per_unit,
-// }),
-// (starknet_api::transaction::Resource::L2Gas, starknet_api::transaction::ResourceBounds {
-// max_amount: ressource_bounds.l2_gas.max_amount,
-// max_price_per_unit: ressource_bounds.l2_gas.max_price_per_unit,
-// }),
-// ];
-// vec_ressource_bounds.try_into().expect("Failed to convert resource bounds")
-// }
-
 fn resource_bounds(
-    l1_max_amount: u64,
-    l1_max_price_per_unit: u128,
-    l2_max_amount: u64,
-    l2_max_price_per_unit: u128,
+    ressource_bounds: starknet_providers::sequencer::models::ResourceBoundsMapping,
 ) -> starknet_api::transaction::ResourceBoundsMapping {
-    let vec_ressource_bounds: Vec<(starknet_api::transaction::Resource, starknet_api::transaction::ResourceBounds)> = vec![
+    starknet_api::transaction::ResourceBoundsMapping::try_from(vec![
         (
             starknet_api::transaction::Resource::L1Gas,
             starknet_api::transaction::ResourceBounds {
-                max_amount: l1_max_amount,
-                max_price_per_unit: l1_max_price_per_unit,
+                max_amount: ressource_bounds.l1_gas.max_amount,
+                max_price_per_unit: ressource_bounds.l1_gas.max_price_per_unit,
             },
         ),
         (
             starknet_api::transaction::Resource::L2Gas,
             starknet_api::transaction::ResourceBounds {
-                max_amount: l2_max_amount,
-                max_price_per_unit: l2_max_price_per_unit,
+                max_amount: ressource_bounds.l2_gas.max_amount,
+                max_price_per_unit: ressource_bounds.l2_gas.max_price_per_unit,
             },
         ),
-    ];
-    vec_ressource_bounds.try_into().expect("Failed to convert resource bounds")
+    ])
+    .expect("Failed to convert resource bounds")
 }
 
 fn tip(tip: u64) -> starknet_api::transaction::Tip {
     starknet_api::transaction::Tip(tip)
 }
 
-// This function is not functional due to the private transaction module os starknet-rs
-// fn data_availability_mode(mode:
-// starknet_providers::sequencer::models::transaction::DataAvailabilityMode) ->
-// starknet_api::data_availability::DataAvailabilityMode { match mode {
-// starknet_providers::sequencer::models::transaction::DataAvailabilityMode::L1 =>
-// starknet_api::data_availability::DataAvailabilityMode::L1,
-// starknet_providers::sequencer::models::transaction::DataAvailabilityMode::L2 =>
-// starknet_api::data_availability::DataAvailabilityMode::L2, }
-// }
+fn data_availability_mode(
+    mode: starknet_providers::sequencer::models::DataAvailabilityMode,
+) -> starknet_api::data_availability::DataAvailabilityMode {
+    match mode {
+        starknet_providers::sequencer::models::DataAvailabilityMode::L1 => {
+            starknet_api::data_availability::DataAvailabilityMode::L1
+        }
+        starknet_providers::sequencer::models::DataAvailabilityMode::L2 => {
+            starknet_api::data_availability::DataAvailabilityMode::L2
+        }
+    }
+}
 
 fn paymaster_data(paymaster_data: Vec<FieldElement>) -> starknet_api::transaction::PaymasterData {
     starknet_api::transaction::PaymasterData(paymaster_data.into_iter().map(felt).collect())
