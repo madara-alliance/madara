@@ -285,14 +285,10 @@ impl From<Transaction> for UserOrL1HandlerTransaction {
     }
 }
 
-pub fn user_or_l1_into_tx_vec(
-    user_or_l1_transactions: Vec<UserOrL1HandlerTransaction>
-) -> Vec<Transaction> {
+pub fn user_or_l1_into_tx_vec(user_or_l1_transactions: Vec<UserOrL1HandlerTransaction>) -> Vec<Transaction> {
     user_or_l1_transactions.into_iter().map(|tx| tx.into()).collect()
 }
 
-pub fn tx_into_user_or_l1_vec(
-    transactions: Vec<Transaction>
-) -> Vec<UserOrL1HandlerTransaction> {
+pub fn tx_into_user_or_l1_vec(transactions: Vec<Transaction>) -> Vec<UserOrL1HandlerTransaction> {
     transactions.into_iter().map(|tx| tx.into()).collect()
 }

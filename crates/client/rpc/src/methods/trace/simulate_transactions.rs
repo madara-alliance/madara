@@ -1,7 +1,11 @@
 use blockifier::execution::contract_address;
-use blockifier::execution::contract_class::{ClassInfo, ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf};
+use blockifier::execution::contract_class::{
+    ClassInfo, ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf,
+};
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use blockifier::transaction::transactions::{DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction};
+use blockifier::transaction::transactions::{
+    DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction,
+};
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use log::error;
@@ -17,7 +21,9 @@ use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
-use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulatedTransaction, SimulationFlag};
+use starknet_core::types::{
+    BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulatedTransaction, SimulationFlag,
+};
 use starknet_ff::FieldElement;
 
 use super::lib::ConvertCallInfoToExecuteInvocationError;
@@ -96,11 +102,10 @@ fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
             Ok(tx_exec_info) => {
                 let transaction_trace =
                     tx_execution_infos_to_tx_trace(storage_override, substrate_block_hash, tx_type, &tx_exec_info)?;
-                let gas =
-                    tx_exec_info.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
+                let gas = tx_exec_info.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
                 let fee = tx_exec_info.actual_fee.0;
                 // TODO: Shouldn't the gas price be taken from the block header instead?
-                let price = if gas > 0 { fee / gas as u128} else { 0 };
+                let price = if gas > 0 { fee / gas as u128 } else { 0 };
 
                 let gas_consumed = gas.into();
                 let gas_price = price.into();

@@ -8,7 +8,7 @@ use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use frame_support::storage;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
-use mp_transactions::{UserOrL1HandlerTransaction, UserTransaction, user_or_l1_into_tx_vec};
+use mp_transactions::{user_or_l1_into_tx_vec, UserOrL1HandlerTransaction, UserTransaction};
 use sp_core::Get;
 use sp_runtime::DispatchError;
 

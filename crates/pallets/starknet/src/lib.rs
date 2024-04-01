@@ -76,7 +76,7 @@ use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
 use itertools::Itertools;
 use mp_block::state_update::StateUpdateWrapper;
-use mp_block::{DeoxysBlock, Header as StarknetHeader, GasPricesWrapper};
+use mp_block::{DeoxysBlock, Header as StarknetHeader};
 use mp_contract::ContractAbi;
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_felt::Felt252Wrapper;
@@ -90,7 +90,10 @@ use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress,
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::{Calldata, Event as StarknetEvent, Fee, MessageToL1, TransactionHash, Transaction, DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction,};
+use starknet_api::transaction::{
+    Calldata, DeclareTransaction, DeployAccountTransaction, Event as StarknetEvent, Fee, InvokeTransaction,
+    L1HandlerTransaction, MessageToL1, Transaction, TransactionHash,
+};
 use starknet_crypto::FieldElement;
 use transaction_validation::TxPriorityInfo;
 
@@ -585,15 +588,16 @@ pub mod pallet {
         //         starknet_api::transaction::InvokeTransaction::V3(tx) => tx.sender_address,
         //     };
         //     // Check if contract is deployed
-        //     ensure!(ContractClassHashes::<T>::contains_key(sender_address), Error::<T>::AccountNotDeployed);
+        //     ensure!(ContractClassHashes::<T>::contains_key(sender_address),
+        // Error::<T>::AccountNotDeployed);
 
         //     // Init caches
         //     let mut cached_state = Self::init_cached_state();
 
         //     // Execute
         //     let tx_execution_infos = ExecutableTransaction::execute(
-        //         blockifier::transaction::account_transaction::AccountTransaction::Invoke(transaction.clone()),
-        //         &mut cached_state,
+        //         blockifier::transaction::account_transaction::AccountTransaction::Invoke(transaction.
+        // clone()),         &mut cached_state,
         //         &Self::get_block_context(),
         //         true,
         //         true,
@@ -647,8 +651,8 @@ pub mod pallet {
 
         //     // Execute
         //     let tx_execution_infos = ExecutableTransaction::execute(
-        //         blockifier::transaction::account_transaction::AccountTransaction::Declare(transaction.clone()),
-        //         &mut cached_state,
+        //         blockifier::transaction::account_transaction::AccountTransaction::Declare(transaction.
+        // clone()),         &mut cached_state,
         //         &Self::get_block_context(),
         //         true,
         //         true,
@@ -683,9 +687,9 @@ pub mod pallet {
         // /// * `DispatchResult` - The result of the transaction.
         // #[pallet::call_index(3)]
         // #[pallet::weight({0})]
-        // pub fn deploy_account(origin: OriginFor<T>, transaction: DeployAccountTransaction) -> DispatchResult {
-        //     // This ensures that the function can only be called via unsigned transaction.
-        //     ensure_none(origin)?;
+        // pub fn deploy_account(origin: OriginFor<T>, transaction: DeployAccountTransaction) ->
+        // DispatchResult {     // This ensures that the function can only be called via unsigned
+        // transaction.     ensure_none(origin)?;
 
         //     // Check if contract is deployed
         //     ensure!(
@@ -735,14 +739,15 @@ pub mod pallet {
         // /// * Compute weight
         // #[pallet::call_index(4)]
         // #[pallet::weight({0})]
-        // pub fn consume_l1_message(origin: OriginFor<T>, transaction: L1HandlerTransaction) -> DispatchResult {
-        //     // This ensures that the function can only be called via unsigned transaction.
-        //     ensure_none(origin)?;
+        // pub fn consume_l1_message(origin: OriginFor<T>, transaction: L1HandlerTransaction) ->
+        // DispatchResult {     // This ensures that the function can only be called via unsigned
+        // transaction.     ensure_none(origin)?;
 
         //     let nonce = transaction.tx.nonce;
 
         //     // Ensure that L1 Message has not been executed
-        //     Self::ensure_l1_message_not_executed(&nonce).map_err(|_| Error::<T>::L1MessageAlreadyExecuted)?;
+        //     Self::ensure_l1_message_not_executed(&nonce).map_err(|_|
+        // Error::<T>::L1MessageAlreadyExecuted)?;
 
         //     // Store infornamtion about message being processed
         //     // The next instruction executes the message
@@ -796,70 +801,72 @@ pub mod pallet {
         }
     }
 
-//     #[pallet::validate_unsigned]
-//     impl<T: Config> ValidateUnsigned for Pallet<T> {
-//         type Call = Call<T>;
+    //     #[pallet::validate_unsigned]
+    //     impl<T: Config> ValidateUnsigned for Pallet<T> {
+    //         type Call = Call<T>;
 
-//         /// Validate unsigned call to this module.
-//         ///
-//         /// By default unsigned transactions are disallowed, but implementing the validator
-//         /// here we make sure that some particular calls (in this case all calls)
-//         /// are being whitelisted and marked as valid.
-//         // fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {
-//         //     // The priority right now is the max u64 - nonce because for unsigned transactions we need to
-//         //     // determine an absolute priority. For now we use that for the benchmark (lowest nonce goes first)
-//         //     // otherwise we have a nonce error and everything fails.
-//         //     // Once we have a real fee market this is where we'll chose the most profitable transaction.
+    //         /// Validate unsigned call to this module.
+    //         ///
+    //         /// By default unsigned transactions are disallowed, but implementing the validator
+    //         /// here we make sure that some particular calls (in this case all calls)
+    //         /// are being whitelisted and marked as valid.
+    //         // fn validate_unsigned(_source: TransactionSource, call: &Self::Call) ->
+    // TransactionValidity {         //     // The priority right now is the max u64 - nonce
+    // because for unsigned transactions we need to         //     // determine an absolute
+    // priority. For now we use that for the benchmark (lowest nonce goes first)         //
+    // // otherwise we have a nonce error and everything fails.         //     // Once we have a
+    // real fee market this is where we'll chose the most profitable transaction.
 
-//         //     let transaction = Self::get_call_transaction(call.clone()).map_err(|_| InvalidTransaction::Call)?;
+    //         //     let transaction = Self::get_call_transaction(call.clone()).map_err(|_|
+    // InvalidTransaction::Call)?;
 
-//         //     let tx_priority_info = Self::validate_unsigned_tx_nonce(&transaction)?;
+    //         //     let tx_priority_info = Self::validate_unsigned_tx_nonce(&transaction)?;
 
-//         //     Self::validate_unsigned_tx(&transaction)?;
+    //         //     Self::validate_unsigned_tx(&transaction)?;
 
-//         //     let mut valid_transaction_builder = ValidTransaction::with_tag_prefix("starknet")
-//         //         .priority(u64::MAX)
-//         //         .longevity(T::TransactionLongevity::get())
-//         //         .propagate(true);
+    //         //     let mut valid_transaction_builder =
+    // ValidTransaction::with_tag_prefix("starknet")         //         .priority(u64::MAX)
+    //         //         .longevity(T::TransactionLongevity::get())
+    //         //         .propagate(true);
 
-//         //     match tx_priority_info {
-//         //         // Make sure txs from same account are executed in correct order (nonce based ordering)
-//         //         TxPriorityInfo::RegularTxs { sender_address, transaction_nonce, sender_nonce } => {
-//         //             valid_transaction_builder =
-//         //                 valid_transaction_builder.and_provides((sender_address, transaction_nonce));
-//         //             if transaction_nonce > sender_nonce {
-//         //                 valid_transaction_builder = valid_transaction_builder.and_requires((
-//         //                     sender_address,
-//         //                     transaction_nonce
-//         //                         .try_increment()
-//         //                         .map_err(|_| TransactionValidityError::Invalid(InvalidTransaction::BadProof))?,
-//         //                 ));
-//         //             }
-//         //         }
-//         //         TxPriorityInfo::L1Handler { nonce } => {
-//         //             valid_transaction_builder =
-//         //                 valid_transaction_builder.and_provides((ContractAddress::default(), nonce));
-//         //         }
-//         //         _ => {}
-//         //     }
+    //         //     match tx_priority_info {
+    //         //         // Make sure txs from same account are executed in correct order (nonce
+    // based ordering)         //         TxPriorityInfo::RegularTxs { sender_address,
+    // transaction_nonce, sender_nonce } => {         //             valid_transaction_builder =
+    //         //                 valid_transaction_builder.and_provides((sender_address,
+    // transaction_nonce));         //             if transaction_nonce > sender_nonce {
+    //         //                 valid_transaction_builder =
+    // valid_transaction_builder.and_requires((         //                     sender_address,
+    //         //                     transaction_nonce
+    //         //                         .try_increment()
+    //         //                         .map_err(|_|
+    // TransactionValidityError::Invalid(InvalidTransaction::BadProof))?,         //
+    // ));         //             }
+    //         //         }
+    //         //         TxPriorityInfo::L1Handler { nonce } => {
+    //         //             valid_transaction_builder =
+    //         //
+    // valid_transaction_builder.and_provides((ContractAddress::default(), nonce));         //
+    // }         //         _ => {}
+    //         //     }
 
-//         //     valid_transaction_builder.build()
-//         // }
+    //         //     valid_transaction_builder.build()
+    //         // }
 
-//         /// From substrate documentation:
-//         /// Validate the call right before dispatch.
-//         /// This method should be used to prevent transactions already in the pool
-//         /// (i.e. passing validate_unsigned) from being included in blocks in case
-//         /// they became invalid since being added to the pool.
-//         ///
-//         /// In the default implementation of pre_dispatch for the ValidateUnsigned trait,
-//         /// this function calls the validate_unsigned function in order to verify validity
-//         /// before dispatch. In our case, since transaction was already validated in
-//         /// `validate_unsigned` we can just return Ok.
-//         fn pre_dispatch(_call: &Self::Call) -> Result<(), TransactionValidityError> {
-//             Ok(())
-//         }
-//     }
+    //         /// From substrate documentation:
+    //         /// Validate the call right before dispatch.
+    //         /// This method should be used to prevent transactions already in the pool
+    //         /// (i.e. passing validate_unsigned) from being included in blocks in case
+    //         /// they became invalid since being added to the pool.
+    //         ///
+    //         /// In the default implementation of pre_dispatch for the ValidateUnsigned trait,
+    //         /// this function calls the validate_unsigned function in order to verify validity
+    //         /// before dispatch. In our case, since transaction was already validated in
+    //         /// `validate_unsigned` we can just return Ok.
+    //         fn pre_dispatch(_call: &Self::Call) -> Result<(), TransactionValidityError> {
+    //             Ok(())
+    //         }
+    //     }
 }
 
 /// The Starknet pallet internal functions.
@@ -1078,7 +1085,7 @@ impl<T: Config> Pallet<T> {
 
             let protocol_version = T::ProtocolVersion::get();
             let extra_data = None;
-            let l1_gas_price = GasPricesWrapper::default();
+            let l1_gas_price = None;
             let ordered_events = vec![];
 
             let block = DeoxysBlock::new(

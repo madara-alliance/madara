@@ -77,23 +77,23 @@ where
 
     let chain_id = starknet.chain_id()?.0.into();
 
-    let find_tx = if let Some(tx_hashes) =
-        starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into())
-    {
-        tx_hashes
-            .into_iter()
-            .zip(starknet_block.transactions())
-            .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
-            .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash))
-    } else {
-        starknet_block
-            .transactions()
-            .iter()
-            .find(|tx| {
-                tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0 == Felt252Wrapper::from(transaction_hash).into()
-            })
-            .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
-    };
+    let find_tx =
+        if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into()) {
+            tx_hashes
+                .into_iter()
+                .zip(starknet_block.transactions())
+                .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
+                .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash))
+        } else {
+            starknet_block
+                .transactions()
+                .iter()
+                .find(|tx| {
+                    tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0
+                        == Felt252Wrapper::from(transaction_hash).into()
+                })
+                .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
+        };
 
     find_tx.ok_or(StarknetRpcApiError::TxnHashNotFound.into())
 }

@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 mod header;
 mod ordered_events;
 pub mod state_update;
-pub use header::{Header, GasPricesWrapper};
+pub use header::Header;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -93,7 +93,7 @@ impl DeoxysBlock {
         block_number: Option<u64>,
     ) -> impl '_ + Iterator<Item = TransactionHash> {
         self.transactions.iter().map(move |tx| tx.compute_hash::<H>(chain_id, false, block_number))
-    }    
+    }
 }
 
 #[cfg(test)]

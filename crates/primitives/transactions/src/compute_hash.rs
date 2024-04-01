@@ -4,7 +4,10 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use starknet_api::data_availability::DataAvailabilityMode;
 use starknet_api::transaction::{
-    Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Resource, ResourceBoundsMapping, Transaction, TransactionHash
+    Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3,
+    DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction,
+    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Resource,
+    ResourceBoundsMapping, Transaction, TransactionHash,
 };
 use starknet_core::crypto::compute_hash_on_elements;
 use starknet_core::utils::starknet_keccak;
@@ -359,13 +362,12 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
     ) -> TransactionHash {
         let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
 
-        let contract_address = Felt252Wrapper::from(
-            calculate_contract_address(
-                Felt252Wrapper::from(self.contract_address_salt).into(),
-                Felt252Wrapper::from(self.class_hash).into(),
-                &constructor_calldata,
-            )
-        ).into();
+        let contract_address = Felt252Wrapper::from(calculate_contract_address(
+            Felt252Wrapper::from(self.contract_address_salt).into(),
+            Felt252Wrapper::from(self.class_hash).into(),
+            &constructor_calldata,
+        ))
+        .into();
         let prefix = FieldElement::from_byte_slice_be(DEPLOY_ACCOUNT_PREFIX).unwrap();
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::ONE } else { FieldElement::ONE };
         let entrypoint_selector = FieldElement::ZERO;
@@ -401,13 +403,12 @@ impl ComputeTransactionHash for DeployTransaction {
         let chain_id = chain_id.into();
         let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
 
-        let contract_address = Felt252Wrapper::from(
-            calculate_contract_address(
-                Felt252Wrapper::from(self.contract_address_salt).into(),
-                Felt252Wrapper::from(self.class_hash).into(),
-                &constructor_calldata,
-            )
-        ).into();
+        let contract_address = Felt252Wrapper::from(calculate_contract_address(
+            Felt252Wrapper::from(self.contract_address_salt).into(),
+            Felt252Wrapper::from(self.class_hash).into(),
+            &constructor_calldata,
+        ))
+        .into();
 
         compute_hash_given_contract_address::<H>(
             self.clone(),
@@ -432,13 +433,12 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
             if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::THREE } else { FieldElement::THREE };
         let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
 
-        let contract_address = Felt252Wrapper::from(
-            calculate_contract_address(
-                Felt252Wrapper::from(self.contract_address_salt).into(),
-                Felt252Wrapper::from(self.class_hash).into(),
-                &constructor_calldata,
-            )
-        ).into();
+        let contract_address = Felt252Wrapper::from(calculate_contract_address(
+            Felt252Wrapper::from(self.contract_address_salt).into(),
+            Felt252Wrapper::from(self.class_hash).into(),
+            &constructor_calldata,
+        ))
+        .into();
         let gas_hash = compute_hash_on_elements(&[
             FieldElement::from(self.tip.0),
             prepare_resource_bound_value(&self.resource_bounds, Resource::L1Gas),
@@ -563,12 +563,8 @@ pub fn calculate_contract_address(
     constructor_calldata: &[FieldElement],
 ) -> FieldElement {
     /// Cairo string for "STARKNET_CONTRACT_ADDRESS"
-    const PREFIX_CONTRACT_ADDRESS: FieldElement = FieldElement::from_mont([
-        3829237882463328880,
-        17289941567720117366,
-        8635008616843941496,
-        533439743893157637,
-    ]);
+    const PREFIX_CONTRACT_ADDRESS: FieldElement =
+        FieldElement::from_mont([3829237882463328880, 17289941567720117366, 8635008616843941496, 533439743893157637]);
     // 2 ** 251 - 256
     const ADDR_BOUND: FieldElement =
         FieldElement::from_mont([18446743986131443745, 160989183, 18446744073709255680, 576459263475590224]);

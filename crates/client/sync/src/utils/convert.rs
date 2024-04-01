@@ -5,7 +5,7 @@ use std::num::NonZeroU128;
 use std::sync::Arc;
 
 use blockifier::blockifier::block::GasPrices;
-use mp_block::{DeoxysBlock, GasPricesWrapper};
+use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
@@ -43,7 +43,12 @@ pub async fn block(block: p::Block) -> DeoxysBlock {
     let protocol_version = starknet_version(&block.starknet_version);
     // TODO calculate gas_price when starknet-rs supports v0.13.1
     // let l1_gas_price = resource_price(block.eth_l1_gas_price);
-    let l1_gas_price = resource_price(FieldElement::ZERO);
+    let l1_gas_price = resource_price(
+        block.l1_gas_price.price_in_wei,
+        block.l1_gas_price.price_in_fri,
+        block.l1_data_gas_price.price_in_wei,
+        block.l1_data_gas_price.price_in_fri,
+    );
     let extra_data = block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be()));
 
     let header = mp_block::Header {
@@ -324,14 +329,35 @@ fn account_deployment_data(
 }
 
 // TODO: calculate gas_price when starknet-rs supports v0.13.1
-fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> GasPricesWrapper {
-    GasPricesWrapper {
-        inner: GasPrices {
-            eth_l1_gas_price: NonZeroU128::new(10).unwrap(),       // In wei.
-            strk_l1_gas_price: NonZeroU128::new(10).unwrap(),      // In fri.
-            eth_l1_data_gas_price: NonZeroU128::new(10).unwrap(),  // In wei.
-            strk_l1_data_gas_price: NonZeroU128::new(10).unwrap(), // In fri.
-        },
+fn resource_price(
+    eth_l1_gas_price: FieldElement,
+    strk_l1_gas_price: FieldElement,
+    eth_l1_data_gas_price: FieldElement,
+    strk_l1_data_gas_price: FieldElement,
+) -> Option<GasPrices> {
+    if eth_l1_gas_price == FieldElement::ZERO
+        || strk_l1_gas_price == FieldElement::ZERO
+        || eth_l1_data_gas_price == FieldElement::ZERO
+        || strk_l1_data_gas_price == FieldElement::ZERO
+    {
+        return None;
+    } else {
+        return Some(GasPrices {
+            eth_l1_gas_price: NonZeroU128::new(
+                eth_l1_data_gas_price.try_into().expect("FieldElement is more than u128"),
+            )
+            .expect("Failed to convert eth_l1_gas_price"), // In wei.
+            strk_l1_gas_price: NonZeroU128::new(strk_l1_gas_price.try_into().expect("FieldElement is more than u128"))
+                .expect("Failed to convert strk_l1_gas_price"), // In fri.
+            eth_l1_data_gas_price: NonZeroU128::new(
+                eth_l1_data_gas_price.try_into().expect("FieldElement is more than u128"),
+            )
+            .expect("Failed to convert eth_l1_data_gas_price"), // In wei.
+            strk_l1_data_gas_price: NonZeroU128::new(
+                strk_l1_data_gas_price.try_into().expect("FieldElement is more than u128"),
+            )
+            .expect("Failed to convert strk_l1_data_gas_price"), // In fri.
+        });
     }
 }
 

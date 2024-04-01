@@ -40,26 +40,6 @@ impl From<BlockStatus> for starknet_core::types::BlockStatus {
     }
 }
 
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-pub struct GasPricesWrapper {
-    pub inner: GasPrices,
-}
-
-impl Default for GasPricesWrapper {
-    fn default() -> Self {
-        GasPricesWrapper {
-            inner: GasPrices {
-                eth_l1_gas_price: NonZeroU128::new(1).unwrap(),
-                strk_l1_gas_price: NonZeroU128::new(1).unwrap(),
-                eth_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
-                strk_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
-            },
-        }
-    }
-}
-
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
@@ -87,7 +67,7 @@ pub struct Header {
     /// The version of the Starknet protocol used when creating this block
     pub protocol_version: Felt252Wrapper, // TODO: Verify if the type can be changed to u8 for the protocol version
     /// Gas prices for this block
-    pub l1_gas_price: GasPricesWrapper,
+    pub l1_gas_price: Option<GasPrices>,
     /// Extraneous data that might be useful for running transactions
     pub extra_data: Option<U256>,
 }
@@ -107,7 +87,7 @@ impl Header {
         event_count: u128,
         event_commitment: StarkHash,
         protocol_version: Felt252Wrapper,
-        gas_prices: GasPricesWrapper,
+        gas_prices: Option<GasPrices>,
         extra_data: Option<U256>,
     ) -> Self {
         Self {
@@ -133,7 +113,12 @@ impl Header {
                 block_number: BlockNumber(self.block_number),
                 block_timestamp: BlockTimestamp(self.block_timestamp),
                 sequencer_address: self.sequencer_address,
-                gas_prices: self.l1_gas_price.inner,
+                gas_prices: self.l1_gas_price.unwrap_or(GasPrices {
+                    eth_l1_gas_price: NonZeroU128::new(10).unwrap(),
+                    strk_l1_gas_price: NonZeroU128::new(10).unwrap(),
+                    eth_l1_data_gas_price: NonZeroU128::new(10).unwrap(),
+                    strk_l1_data_gas_price: NonZeroU128::new(10).unwrap(),
+                }),
                 // TODO
                 // I have no idea what this is, let's say we did not use any for now
                 use_kzg_da: false,

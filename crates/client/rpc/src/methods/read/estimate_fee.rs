@@ -52,11 +52,8 @@ where
             error!("Failed to convert BroadcastedTransaction to UserTransaction: {e}");
             StarknetRpcApiError::InternalServerError
         })?;
-    
-    let account_transactions: Vec<UserTransaction> = transactions
-        .into_iter()
-        .map(UserTransaction::from)
-        .collect();
+
+    let account_transactions: Vec<UserTransaction> = transactions.into_iter().map(UserTransaction::from).collect();
 
     let fee_estimates = starknet
         .client
