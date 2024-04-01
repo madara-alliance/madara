@@ -355,8 +355,11 @@ where
 
     let hash_best = client.info().best_hash;
     let hash_current = block.parent_block_hash;
+    let number = provider
+        .get_block_id_by_hash(hash_current)
+        .await
+        .map_err(|e| format!("Failed to get block id by hash: {e}"))?;
     let tmp = DHashT::from_str(&hash_current.to_string()).unwrap_or(Default::default());
-    let number = block.block_number.ok_or("block number not found")? - 1;
 
     if hash_best == tmp {
         let state_update = provider
@@ -375,5 +378,11 @@ where
         .write()
         .expect("Failed to acquire write lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER") = (hash_current, number);
 
+    log::debug!(
+        "update_starknet_data: latest_block_number: {}, latest_block_hash: 0x{:x}, best_hash: {}",
+        number,
+        hash_current,
+        hash_best
+    );
     Ok(())
 }
