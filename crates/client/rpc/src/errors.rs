@@ -118,7 +118,7 @@ impl From<StarknetError> for StarknetRpcApiError {
             StarknetError::UnsupportedContractClassVersion => StarknetRpcApiError::UnsupportedContractClassVersion,
             StarknetError::UnexpectedError(_) => StarknetRpcApiError::ErrUnexpectedError,
             StarknetError::NoTraceAvailable(_) => StarknetRpcApiError::InternalServerError,
-            StarknetError::TransactionExecutionError(_) => StarknetRpcApiError::TxnExecutionError
+            StarknetError::TransactionExecutionError(_) => StarknetRpcApiError::TxnExecutionError,
         }
     }
 }

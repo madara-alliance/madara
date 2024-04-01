@@ -28,7 +28,10 @@ use starknet_api::state::ThinStateDiff;
 use starknet_api::transaction as stx;
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
-    BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, EntryPointsByType, Event, ExecutionResources, FieldElement, FlattenedSierraClass, FromByteArrayError, LegacyContractEntryPoint, LegacyEntryPointsByType, MsgFromL1, MsgToL1, NonceUpdate, ReplacedClassItem, ResourcePrice, StateDiff, StorageEntry
+    BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem,
+    DeployedContractItem, EntryPointsByType, Event, ExecutionResources, FieldElement, FlattenedSierraClass,
+    FromByteArrayError, LegacyContractEntryPoint, LegacyEntryPointsByType, MsgFromL1, MsgToL1, NonceUpdate,
+    ReplacedClassItem, ResourcePrice, StateDiff, StorageEntry,
 };
 
 use crate::errors::StarknetRpcApiError;
@@ -134,12 +137,15 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     block
-    .transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number))
-    .map(|tx_hash| FieldElement::from(Felt252Wrapper::from(tx_hash)))
-    .collect()
+        .transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number))
+        .map(|tx_hash| FieldElement::from(Felt252Wrapper::from(tx_hash)))
+        .collect()
 }
 
-pub(crate) fn tx_conv(txs: &[stx::Transaction], tx_hashes: Vec<FieldElement>) -> Vec<starknet_core::types::Transaction> {
+pub(crate) fn tx_conv(
+    txs: &[stx::Transaction],
+    tx_hashes: Vec<FieldElement>,
+) -> Vec<starknet_core::types::Transaction> {
     txs.iter().zip(tx_hashes).map(|(tx, hash)| to_starknet_core_tx(tx.clone(), hash)).collect()
 }
 
@@ -169,10 +175,16 @@ pub(crate) fn sequencer_address(block: &DeoxysBlock) -> FieldElement {
 
 pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
     let resource_price = &block.header().l1_gas_price;
-    //TODO: verify values
-    ResourcePrice {
-        price_in_fri: resource_price.inner.strk_l1_gas_price.get().into(),
-        price_in_wei: resource_price.inner.eth_l1_gas_price.get().into()
+
+    match resource_price {
+        Some(resource_price) => ResourcePrice {
+            price_in_fri: resource_price.strk_l1_gas_price.get().into(),
+            price_in_wei: resource_price.eth_l1_gas_price.get().into(),
+        },
+        None => ResourcePrice {
+            price_in_fri: FieldElement::ZERO,
+            price_in_wei: FieldElement::ZERO,
+        },
     }
 }
 
@@ -338,9 +350,9 @@ fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractClass
         compiler_version: casm_contract_class.compiler_version.clone(),
         bytecode: casm_contract_class.bytecode.iter().map(|x| biguint_to_field_element(&x.value)).collect(),
         entry_points_by_type: casm_entry_points_to_compiled_entry_points(&casm_contract_class.entry_points_by_type),
-        hints: vec![],        // not needed to get class hash so ignoring this
-        pythonic_hints: None, // not needed to get class hash so ignoring this
-        bytecode_segment_lengths: todo!(), //TODO: implement this
+        hints: vec![],                     // not needed to get class hash so ignoring this
+        pythonic_hints: None,              // not needed to get class hash so ignoring this
+        bytecode_segment_lengths: todo!(), // TODO: implement this
     }
 }
 

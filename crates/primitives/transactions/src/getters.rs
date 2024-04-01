@@ -2,7 +2,8 @@ use blockifier::transaction::account_transaction::AccountTransaction;
 use mp_felt::Felt252Wrapper;
 use starknet_api::transaction::{
     DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
-    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, TransactionHash,
+    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction,
+    TransactionHash,
 };
 
 use crate::{TxType, UserOrL1HandlerTransaction, UserTransaction};
@@ -62,12 +63,10 @@ impl UserTransaction {
 impl UserOrL1HandlerTransaction {
     pub fn tx_type(&self) -> TxType {
         match self {
-            UserOrL1HandlerTransaction::User(user_tx) => {
-                match user_tx {
-                    AccountTransaction::Declare(_) => TxType::Declare,
-                    AccountTransaction::DeployAccount(_) => TxType::DeployAccount,
-                    AccountTransaction::Invoke(_) => TxType::Invoke,
-                }
+            UserOrL1HandlerTransaction::User(user_tx) => match user_tx {
+                AccountTransaction::Declare(_) => TxType::Declare,
+                AccountTransaction::DeployAccount(_) => TxType::DeployAccount,
+                AccountTransaction::Invoke(_) => TxType::Invoke,
             },
             UserOrL1HandlerTransaction::L1Handler(_) => TxType::L1Handler,
         }
@@ -75,27 +74,17 @@ impl UserOrL1HandlerTransaction {
 
     pub fn tx_hash(&self) -> Option<TransactionHash> {
         match self {
-            UserOrL1HandlerTransaction::User(user_tx) => {
-                match user_tx {
-                    AccountTransaction::Declare(declare_transaction) => {
-                        Some(declare_transaction.tx_hash)
-                    },
-                    AccountTransaction::DeployAccount(deploy_account_transaction) => {
-                        Some(deploy_account_transaction.tx_hash)
-                    },
-                    AccountTransaction::Invoke(invoke_transaction) => {
-                        Some(invoke_transaction.tx_hash)
-                    },
+            UserOrL1HandlerTransaction::User(user_tx) => match user_tx {
+                AccountTransaction::Declare(declare_transaction) => Some(declare_transaction.tx_hash),
+                AccountTransaction::DeployAccount(deploy_account_transaction) => {
+                    Some(deploy_account_transaction.tx_hash)
                 }
+                AccountTransaction::Invoke(invoke_transaction) => Some(invoke_transaction.tx_hash),
             },
-            UserOrL1HandlerTransaction::L1Handler(l1_handler_transaction) => {
-                Some(l1_handler_transaction.tx_hash)
-            },
+            UserOrL1HandlerTransaction::L1Handler(l1_handler_transaction) => Some(l1_handler_transaction.tx_hash),
         }
     }
-
 }
-
 
 pub trait TransactionVersion {
     fn version(&self) -> u8;

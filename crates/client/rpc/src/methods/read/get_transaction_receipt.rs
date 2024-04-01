@@ -1,6 +1,9 @@
 use blockifier::execution::contract_address;
-use blockifier::execution::contract_class::{ClassInfo, ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf};
+use blockifier::execution::contract_class::{
+    ClassInfo, ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf,
+};
 use blockifier::transaction::objects::TransactionExecutionInfo;
+use blockifier::transaction::transaction_execution as btx;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
@@ -23,8 +26,10 @@ use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::core::{ClassHash, ContractAddress};
-use starknet_api::transaction::{DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction, Transaction, TransactionHash};
-use blockifier::transaction::transaction_execution as btx;
+use starknet_api::transaction::{
+    DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction,
+    Transaction, TransactionHash,
+};
 use starknet_core::types::{
     BlockId, BlockTag, DeclareTransactionReceipt, DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult,
     FieldElement, Hash256, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MaybePendingTransactionReceipt,
@@ -381,27 +386,26 @@ where
 }
 
 fn tx_invoke_transaction(tx: InvokeTransaction, hash: TransactionHash) -> RpcResult<btx::Transaction> {
-
-    Ok(btx::Transaction::AccountTransaction(
-        blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-        blockifier::transaction::transactions::InvokeTransaction{
-            tx: tx,
-            tx_hash: hash,
-            only_query: false,
-        }
+    Ok(btx::Transaction::AccountTransaction(blockifier::transaction::account_transaction::AccountTransaction::Invoke(
+        blockifier::transaction::transactions::InvokeTransaction { tx, tx_hash: hash, only_query: false },
     )))
 }
 
-fn tx_deploy_account(tx: DeployAccountTransaction, hash: TransactionHash, contract_address: ContractAddress) -> RpcResult<btx::Transaction> {
+fn tx_deploy_account(
+    tx: DeployAccountTransaction,
+    hash: TransactionHash,
+    contract_address: ContractAddress,
+) -> RpcResult<btx::Transaction> {
     Ok(btx::Transaction::AccountTransaction(
         blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(
-        blockifier::transaction::transactions::DeployAccountTransaction{
-            tx: tx,
-            tx_hash: hash,
-            only_query: false,
-            contract_address
-        }
-    )))
+            blockifier::transaction::transactions::DeployAccountTransaction {
+                tx,
+                tx_hash: hash,
+                only_query: false,
+                contract_address,
+            },
+        ),
+    ))
 }
 
 fn tx_declare<A, BE, G, C, P, H>(
@@ -511,8 +515,8 @@ fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcRe
     //     blockifier::transaction::account_transaction::AccountTransaction::Declare(
     //     blockifier::transaction::transactions::DeclareTransaction::new(
     //         declare_tx,
-    //         declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::from(class_hash.0).into(), false, None),
-    //         contract_class,
+    //         declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::from(class_hash.0).into(),
+    // false, None),         contract_class,
     //     ).unwrap()
     // )))
     // TODO: Correct this that was used as a place holder to compile
@@ -524,11 +528,7 @@ fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcRe
     }
 }
 
-fn tx_l1_handler<H>(
-    chain_id: Felt,
-    block_number: u64,
-    l1_handler: L1HandlerTransaction,
-) -> RpcResult<btx::Transaction>
+fn tx_l1_handler<H>(chain_id: Felt, block_number: u64, l1_handler: L1HandlerTransaction) -> RpcResult<btx::Transaction>
 where
     H: HasherT + Send + Sync + 'static,
 {
@@ -540,13 +540,11 @@ where
             StarknetRpcApiError::InternalServerError
         })?;
 
-    Ok(btx::Transaction::L1HandlerTransaction(
-        blockifier::transaction::transactions::L1HandlerTransaction {
-            tx: l1_handler,
-            tx_hash: tx_hash,
-            paid_fee_on_l1: paid_fee
-        }
-    ))
+    Ok(btx::Transaction::L1HandlerTransaction(blockifier::transaction::transactions::L1HandlerTransaction {
+        tx: l1_handler,
+        tx_hash,
+        paid_fee_on_l1: paid_fee,
+    }))
 }
 
 fn execution_infos<A, BE, G, C, P, H>(

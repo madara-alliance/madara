@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use blockifier::execution::contract_class::{ClassInfo, ContractClass, ContractClassV1};
 use blockifier::execution::call_info::CallInfo;
+use blockifier::execution::contract_class::{ClassInfo, ContractClass, ContractClassV1};
+use blockifier::transaction as btx;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transactions::L1HandlerTransaction;
-use blockifier::transaction as btx;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::RpcResult;
 use log::error;
@@ -27,7 +27,8 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::transaction as stx;
 use starknet_core::types::{
-    BlockId, DeclareTransactionTrace, DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, InvokeTransactionTrace, L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace, TransactionTraceWithHash
+    BlockId, DeclareTransactionTrace, DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources,
+    InvokeTransactionTrace, L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace, TransactionTraceWithHash,
 };
 use starknet_ff::FieldElement;
 
@@ -312,7 +313,7 @@ fn try_get_funtion_invocation_from_call_info<B: BlockT>(
         calls: inner_calls,
         events,
         messages,
-        execution_resources
+        execution_resources,
     })
 }
 
@@ -487,20 +488,16 @@ where
                             error!("Failed to retrieve contract class from hash '{class_hash}'");
                             StarknetRpcApiError::InternalServerError
                         })?;
-                    
+
                     // TODO: fix class info declaration with non defaulted values
-                    let class_info = ClassInfo::new(
-                        &contract_class,
-                        10,
-                        10,
-                    )
-                    .unwrap();
+                    let class_info = ClassInfo::new(&contract_class, 10, 10).unwrap();
 
                     let tx = btx::transactions::DeclareTransaction::new(
                         declare_tx.clone(),
                         declare_tx.compute_hash::<H>(chain_id, false, Some(block_number)),
                         class_info,
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     Ok(UserOrL1HandlerTransaction::User(AccountTransaction::Declare(tx)))
                 }
@@ -526,18 +523,14 @@ where
                     })?);
 
                     // TODO: fix class info declaration with non defaulted values
-                    let class_info = ClassInfo::new(
-                        &contract_class,
-                        10,
-                        10,
-                    )
-                    .unwrap();
+                    let class_info = ClassInfo::new(&contract_class, 10, 10).unwrap();
 
                     let tx = btx::transactions::DeclareTransaction::new(
                         declare_tx.clone(),
                         declare_tx.compute_hash::<H>(chain_id, false, Some(block_number)),
                         class_info,
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     Ok(UserOrL1HandlerTransaction::User(AccountTransaction::Declare(tx)))
                 }
@@ -546,8 +539,9 @@ where
         }
         stx::Transaction::L1Handler(handle_l1_message_tx) => {
             let tx_hash = handle_l1_message_tx.compute_hash::<H>(chain_id, false, Some(block_number));
-            let paid_fee_on_l1: starknet_api::transaction::Fee =
-                DeoxysBackend::l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(Felt252Wrapper::from(tx_hash).into()).map_err(|e| {
+            let paid_fee_on_l1: starknet_api::transaction::Fee = DeoxysBackend::l1_handler_paid_fee()
+                .get_fee_paid_for_l1_handler_tx(Felt252Wrapper::from(tx_hash).into())
+                .map_err(|e| {
                     error!("Failed to retrieve fee paid on l1 for tx with hash `{tx_hash:?}`: {e}");
                     StarknetRpcApiError::InternalServerError
                 })?;

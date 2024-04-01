@@ -93,7 +93,8 @@ where
 }
 
 pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBlock, String> {
-    let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id, None);
+    let client =
+        SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id, None);
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
     Ok(crate::convert::block(block).await)

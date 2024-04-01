@@ -68,7 +68,7 @@ where
     let FullDeps { client, pool, deny_unsafe, starknet: starknet_params, command_sink, graph, .. } = deps;
 
     module.merge(System::new(client.clone(), pool.clone(), deny_unsafe).into_rpc())?;
-    
+
     module.merge(StarknetReadRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, StarknetHasher>::new(
         client.clone(),
         starknet_params.overrides.clone(),
