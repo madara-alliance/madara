@@ -53,9 +53,9 @@ where
             StarknetRpcApiError::InternalServerError
         })?;
     
-    let account_transactions = transactions
+    let account_transactions: Vec<UserTransaction> = transactions
         .into_iter()
-        .map(AccountTransaction::from)
+        .map(UserTransaction::from)
         .collect();
 
     let fee_estimates = starknet

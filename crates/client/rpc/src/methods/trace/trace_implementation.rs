@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use blockifier::execution::contract_class::{ContractClass, ContractClassV1};
+use blockifier::execution::contract_class::{ClassInfo, ContractClass, ContractClassV1};
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
@@ -16,7 +16,7 @@ use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::{TxType, UserOrL1HandlerTransaction, UserTransaction};
+use mp_transactions::{TxType, UserOrL1HandlerTransaction, tx_into_user_or_l1_vec};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_transaction_pool::ChainApi;
@@ -156,7 +156,7 @@ where
     let execution_infos = starknet
         .client
         .runtime_api()
-        .re_execute_transactions(previous_block_substrate_hash, txs_to_execute_before.clone(), tx_to_trace.clone())
+        .re_execute_transactions(previous_block_substrate_hash, tx_into_user_or_l1_vec(txs_to_execute_before.clone()), tx_into_user_or_l1_vec(tx_to_trace.clone()))
         .map_err(|e| {
             error!("Failed to execute runtime API call: {e}");
             StarknetRpcApiError::InternalServerError
@@ -458,7 +458,8 @@ where
             let tx = btx::transactions::DeployAccountTransaction {
                 tx: deploy_account_tx.clone(),
                 tx_hash: deploy_account_tx.compute_hash::<H>(chain_id, false, Some(block_number)),
-                contract_address: deploy_account_tx.contract_address().clone(),
+                // TODO: Fill this with non default contract address
+                contract_address: ContractAddress::default(),
                 // TODO: Check if this is correct
                 only_query: false,
             };
@@ -478,10 +479,18 @@ where
                             StarknetRpcApiError::InternalServerError
                         })?;
                     
+                    // TODO: fix class info declaration with non defaulted values
+                    let class_info = ClassInfo::new(
+                        &contract_class,
+                        10,
+                        10,
+                    )
+                    .unwrap();
+
                     let tx = btx::transactions::DeclareTransaction::new(
                         declare_tx.clone(),
                         declare_tx.compute_hash::<H>(chain_id, false, Some(block_number)),
-                        contract_class,
+                        class_info,
                     ).unwrap();
 
                     Ok(UserOrL1HandlerTransaction::User(AccountTransaction::Declare(tx)))
@@ -507,10 +516,18 @@ where
                         StarknetRpcApiError::InternalServerError
                     })?);
 
+                    // TODO: fix class info declaration with non defaulted values
+                    let class_info = ClassInfo::new(
+                        &contract_class,
+                        10,
+                        10,
+                    )
+                    .unwrap();
+
                     let tx = btx::transactions::DeclareTransaction::new(
                         declare_tx.clone(),
                         declare_tx.compute_hash::<H>(chain_id, false, Some(block_number)),
-                        contract_class,
+                        class_info,
                     ).unwrap();
 
                     Ok(UserOrL1HandlerTransaction::User(AccountTransaction::Declare(tx)))

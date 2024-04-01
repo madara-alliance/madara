@@ -8,7 +8,7 @@ use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use frame_support::storage;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
-use mp_transactions::UserTransaction;
+use mp_transactions::{UserOrL1HandlerTransaction, UserTransaction, user_or_l1_into_tx_vec};
 use sp_core::Get;
 use sp_runtime::DispatchError;
 
@@ -166,8 +166,8 @@ impl<T: Config> Pallet<T> {
     }
 
     pub fn re_execute_transactions(
-        transactions_before: Vec<Transaction>,
-        transactions_to_trace: Vec<Transaction>,
+        transactions_before: Vec<UserOrL1HandlerTransaction>,
+        transactions_to_trace: Vec<UserOrL1HandlerTransaction>,
     ) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>
     {
         storage::transactional::with_transaction(|| {
@@ -180,19 +180,19 @@ impl<T: Config> Pallet<T> {
     }
 
     fn re_execute_transactions_inner(
-        transactions_before: Vec<Transaction>,
-        transactions_to_trace: Vec<Transaction>,
+        transactions_before: Vec<UserOrL1HandlerTransaction>,
+        transactions_to_trace: Vec<UserOrL1HandlerTransaction>,
     ) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>
     {
         let block_context = Self::get_block_context();
 
         let _transactions_before_exec_infos = Self::execute_account_or_l1_handler_transactions(
-            transactions_before,
+            user_or_l1_into_tx_vec(transactions_before),
             &block_context,
             &SimulationFlags::default(),
         );
         let transactions_exec_infos = Self::execute_account_or_l1_handler_transactions(
-            transactions_to_trace,
+            user_or_l1_into_tx_vec(transactions_to_trace),
             &block_context,
             &SimulationFlags::default(),
         );

@@ -257,6 +257,16 @@ impl From<UserTransaction> for AccountTransaction {
     }
 }
 
+impl From<AccountTransaction> for UserTransaction {
+    fn from(account_transaction: AccountTransaction) -> Self {
+        match account_transaction {
+            AccountTransaction::Declare(declare_tx) => UserTransaction::Declare(declare_tx),
+            AccountTransaction::DeployAccount(deploy_account_tx) => UserTransaction::DeployAccount(deploy_account_tx),
+            AccountTransaction::Invoke(invoke_tx) => UserTransaction::Invoke(invoke_tx),
+        }
+    }
+}
+
 impl From<UserOrL1HandlerTransaction> for Transaction {
     fn from(item: UserOrL1HandlerTransaction) -> Self {
         match item {
@@ -264,4 +274,25 @@ impl From<UserOrL1HandlerTransaction> for Transaction {
             UserOrL1HandlerTransaction::L1Handler(tx) => Transaction::L1HandlerTransaction(tx),
         }
     }
+}
+
+impl From<Transaction> for UserOrL1HandlerTransaction {
+    fn from(item: Transaction) -> Self {
+        match item {
+            Transaction::AccountTransaction(tx) => UserOrL1HandlerTransaction::User(tx),
+            Transaction::L1HandlerTransaction(tx) => UserOrL1HandlerTransaction::L1Handler(tx),
+        }
+    }
+}
+
+pub fn user_or_l1_into_tx_vec(
+    user_or_l1_transactions: Vec<UserOrL1HandlerTransaction>
+) -> Vec<Transaction> {
+    user_or_l1_transactions.into_iter().map(|tx| tx.into()).collect()
+}
+
+pub fn tx_into_user_or_l1_vec(
+    transactions: Vec<Transaction>
+) -> Vec<UserOrL1HandlerTransaction> {
+    transactions.into_iter().map(|tx| tx.into()).collect()
 }
