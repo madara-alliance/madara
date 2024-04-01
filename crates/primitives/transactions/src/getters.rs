@@ -1,10 +1,11 @@
+use blockifier::transaction::account_transaction::AccountTransaction;
 use mp_felt::Felt252Wrapper;
 use starknet_api::transaction::{
     DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
     InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction,
 };
 
-use crate::UserTransaction;
+use crate::{TxType, UserOrL1HandlerTransaction, UserTransaction};
 
 impl UserTransaction {
     pub fn sender_address(&self) -> Felt252Wrapper {
@@ -48,7 +49,31 @@ impl UserTransaction {
             UserTransaction::Invoke(tx) => Some(tx.tx.nonce().0.into()),
         }
     }
+
+    pub fn tx_type(&self) -> TxType {
+        match self {
+            UserTransaction::Declare(..) => TxType::Declare,
+            UserTransaction::DeployAccount(..) => TxType::DeployAccount,
+            UserTransaction::Invoke(..) => TxType::Invoke,
+        }
+    }
 }
+
+impl UserOrL1HandlerTransaction {
+    pub fn tx_type(&self) -> TxType {
+        match self {
+            UserOrL1HandlerTransaction::User(user_tx) => {
+                match user_tx {
+                    AccountTransaction::Declare(_) => TxType::Declare,
+                    AccountTransaction::DeployAccount(_) => TxType::DeployAccount,
+                    AccountTransaction::Invoke(_) => TxType::Invoke,
+                }
+            },
+            UserOrL1HandlerTransaction::L1Handler(_) => TxType::L1Handler,
+        }
+    }
+}
+
 
 pub trait TransactionVersion {
     fn version(&self) -> u8;

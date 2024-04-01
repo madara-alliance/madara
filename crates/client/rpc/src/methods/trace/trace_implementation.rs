@@ -98,7 +98,7 @@ where
                 &**storage_override,
                 substrate_block_hash,
                 // Safe to unwrap coz re_execute returns exactly one ExecutionInfo for each tx
-                TxType::from(block_transactions.get(tx_idx).unwrap()),
+                TxType::from(block_transactions.get(tx_idx).unwrap().tx_type()),
                 &tx_exec_info,
             )
             .map(|trace_root| TransactionTraceWithHash {
@@ -148,15 +148,12 @@ where
         Some(transaction_hash_to_trace),
     )?;
 
-    let txs_to_execute_before: Vec<btx::transaction_execution::Transaction> = txs_to_execute_before.into_iter().map(|tx| tx.into()).collect();
-    let tx_to_trace: Vec<btx::transaction_execution::Transaction> = tx_to_trace.into_iter().map(|tx| tx.into()).collect();
-
     let previous_block_substrate_hash = get_previous_block_substrate_hash(starknet, substrate_block_hash)?;
 
     let execution_infos = starknet
         .client
         .runtime_api()
-        .re_execute_transactions(previous_block_substrate_hash, tx_into_user_or_l1_vec(txs_to_execute_before.clone()), tx_into_user_or_l1_vec(tx_to_trace.clone()))
+        .re_execute_transactions(previous_block_substrate_hash, txs_to_execute_before.clone(), tx_to_trace.clone())
         .map_err(|e| {
             error!("Failed to execute runtime API call: {e}");
             StarknetRpcApiError::InternalServerError
@@ -179,7 +176,7 @@ where
     let trace = tx_execution_infos_to_tx_trace(
         &**storage_override,
         substrate_block_hash,
-        TxType::from(tx_to_trace.get(0).unwrap()),
+        tx_to_trace.get(0).unwrap().tx_type(),
         &execution_infos[0],
     )
     .unwrap();
