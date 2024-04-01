@@ -27,8 +27,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::transaction as stx;
 use starknet_core::types::{
-    BlockId, DeclareTransactionTrace, DeployAccountTransactionTrace, ExecuteInvocation, InvokeTransactionTrace,
-    L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace, TransactionTraceWithHash,
+    BlockId, DeclareTransactionTrace, DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, InvokeTransactionTrace, L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace, TransactionTraceWithHash
 };
 use starknet_ff::FieldElement;
 
@@ -285,6 +284,20 @@ fn try_get_funtion_invocation_from_call_info<B: BlockT>(
         class_hash_cache.insert(call_info.call.storage_address, computed_hash);
 
         computed_hash
+    };
+
+    // TODO: Replace this with non default exec resources
+    let execution_resources = ExecutionResources {
+        steps: 0,
+        memory_holes: None,
+        range_check_builtin_applications: None,
+        pedersen_builtin_applications: None,
+        poseidon_builtin_applications: None,
+        ec_op_builtin_applications: None,
+        ecdsa_builtin_applications: None,
+        bitwise_builtin_applications: None,
+        keccak_builtin_applications: None,
+        segment_arena_builtin: None,
     };
 
     Ok(starknet_core::types::FunctionInvocation {
