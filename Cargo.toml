@@ -211,7 +211,7 @@ pallet-grandpa = { default-features = true, git = "https://github.com/massalabs/
 pallet-timestamp = { default-features = true, git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/antiyro/bonsai-trie.git", branch = "oss", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/kasarlabs/bonsai-trie.git", branch = "oss", features = [
   "std",
 ] }
 
