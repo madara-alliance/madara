@@ -192,7 +192,7 @@ fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
 fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
     L1HandlerTransaction {
         version: transaction_version(tx.version),
-        nonce: nonce(tx.nonce.expect("no nonce provided")),
+        nonce: nonce(tx.nonce.unwrap_or_default()), // TODO check when a L1Ha
         contract_address: contract_address(tx.contract_address),
         entry_point_selector: entry_point(tx.entry_point_selector),
         calldata: call_data(tx.calldata),
