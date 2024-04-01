@@ -45,6 +45,8 @@ pub struct FetchConfig {
     pub l1_core_address: H160,
     /// Whether to check the root of the state update
     pub verify: bool,
+    /// The optional API_KEY to avoid rate limiting from the sequencer gateway.
+    pub api_key: Option<String>,
 }
 
 pub async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -> Result<p::Block, L2SyncError> {
@@ -55,9 +57,9 @@ pub async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -
 
 pub async fn fetch_block_and_updates<C>(
     block_n: u64,
-    provider: &SequencerGatewayProvider,
-    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    client: &C,
+    provider: Arc<SequencerGatewayProvider>,
+    overrides: Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
+    client: Arc<C>,
 ) -> Result<(p::Block, StateUpdate, Vec<ContractClassData>), L2SyncError>
 where
     C: HeaderBackend<DBlockT>,
@@ -68,13 +70,14 @@ where
 
     loop {
         log::debug!("fetch_block_and_updates {}", block_n);
-        let block = fetch_block(provider, block_n);
-        let state_update = fetch_state_and_class_update(provider, block_n, overrides, client);
+        let block = fetch_block(&provider, block_n);
+        let state_update = fetch_state_and_class_update(&provider, block_n, &overrides, client.as_ref());
         let (block, state_update) = tokio::join!(block, state_update);
         log::debug!("fetch_block_and_updates: done {block_n}");
 
         match block.as_ref().err().or(state_update.as_ref().err()) {
             Some(L2SyncError::Provider(ProviderError::RateLimited)) => {
+                log::info!("The fetching process has been rate limited");
                 log::debug!("The fetching process has been rate limited, retrying in {:?} seconds", base_delay);
                 attempt += 1;
                 if attempt >= MAX_RETRY {
@@ -93,8 +96,12 @@ where
 }
 
 pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBlock, String> {
-    let client =
-        SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id, None);
+    let client = SequencerGatewayProvider::new(
+        config.gateway.clone(),
+        config.feeder_gateway.clone(),
+        config.chain_id,
+        config.api_key.clone(),
+    );
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
     Ok(crate::convert::block(block).await)

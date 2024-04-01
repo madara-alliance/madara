@@ -3,6 +3,10 @@ git # Deoxys Changelog
 ## Next release
 
 - feat: rebase blockifier
+- feat(api_key): api key passed to FetchConfig correctly
+- feat(api_key): Added support for --gateway-api to avoid rate limit from the gateway
+- fix(latest): Retrieve latest synced block via internal client
+- perf(l2 sync): parallelize commitment computation and refactor part of l2 io sync
 - refactor: rpc methods and removed rpc-core
 - feat: add an optional TUI dashboard
 - feat(bonsai): Bumped bonsai lib to latest opti

@@ -26,6 +26,11 @@ use crate::commitments::lib::calculate_commitments;
 use crate::utility::get_config;
 
 pub async fn block(block: p::Block) -> DeoxysBlock {
+    tokio::task::spawn_blocking(|| convert_block_sync(block)).await.expect("join error")
+}
+
+pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
+    // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
     let parent_block_hash = felt(block.parent_block_hash);
@@ -35,7 +40,9 @@ pub async fn block(block: p::Block) -> DeoxysBlock {
     let sequencer_address = block.sequencer_address.map_or(contract_address(FieldElement::ZERO), contract_address);
     let transaction_count = transactions.len() as u128;
     let event_count = events.len() as u128;
-    let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number).await;
+
+    let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number);
+
     let protocol_version = starknet_version(&block.starknet_version);
     let l1_gas_price = resource_price(
         block.l1_gas_price.price_in_wei,
@@ -371,10 +378,14 @@ fn event(event: &p::Event) -> starknet_api::transaction::Event {
     }
 }
 
-async fn commitments(transactions: &[Transaction], events: &[Event], block_number: u64) -> (StarkFelt, StarkFelt) {
+fn commitments(
+    transactions: &[starknet_api::transaction::Transaction],
+    events: &[starknet_api::transaction::Event],
+    block_number: u64,
+) -> (StarkFelt, StarkFelt) {
     let chain_id = chain_id();
 
-    let (commitment_tx, commitment_event) = calculate_commitments(transactions, events, chain_id, block_number).await;
+    let (commitment_tx, commitment_event) = calculate_commitments(transactions, events, chain_id, block_number);
 
     (commitment_tx.into(), commitment_event.into())
 }

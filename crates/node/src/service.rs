@@ -276,7 +276,6 @@ where
 pub fn new_full(
     config: Configuration,
     sealing: SealingMode,
-    rpc_port: u16,
     l1_url: Url,
     cache_more_things: bool,
     fetch_config: FetchConfig,
@@ -440,7 +439,7 @@ pub fn new_full(
     task_manager.spawn_essential_handle().spawn(
         "starknet-sync-worker",
         Some("madara"),
-        starknet_sync_worker::sync(fetch_config, sender_config, rpc_port, l1_url, Arc::clone(&client)),
+        starknet_sync_worker::sync(fetch_config, sender_config, l1_url, Arc::clone(&client), starting_block),
     );
 
     // manual-seal authorship
