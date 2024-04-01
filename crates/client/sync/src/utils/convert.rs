@@ -111,8 +111,28 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
             sender_address: contract_address(tx.sender_address),
         })
     } else if tx.version == FieldElement::THREE {
-        // Implement V3 declare transaction
-        todo!("implement V3 declare transaction")
+        let ressources_bounds = tx.resource_bounds.expect("no resource bounds provided");
+        DeclareTransaction::V3(starknet_api::transaction::DeclareTransactionV3 {
+            resource_bounds: resource_bounds(
+                ressources_bounds.l1_gas.max_amount,
+                ressources_bounds.l1_gas.max_price_per_unit,
+                ressources_bounds.l2_gas.max_amount,
+                ressources_bounds.l2_gas.max_price_per_unit,
+            ),
+            tip: tip(tx.tip.expect("no tip provided")),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce),
+            class_hash: class_hash(tx.class_hash),
+            compiled_class_hash: compiled_class_hash(tx.compiled_class_hash.expect("no compiled class hash provided")),
+            sender_address: contract_address(tx.sender_address),
+            // TODO: use data_availability_mode when starknet-rs supports v0.13.1
+            nonce_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
+            fee_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
+            paymaster_data: paymaster_data(tx.paymaster_data.expect("no paymaster_data provided")),
+            account_deployment_data: account_deployment_data(
+                tx.account_deployment_data.expect("no account_deployment_data provided"),
+            ),
+        })
     } else {
         panic!("declare transaction version not supported");
     }
@@ -139,7 +159,25 @@ fn deploy_account_transaction(tx: p::DeployAccountTransaction) -> DeployAccountT
         }),
 
         3 => {
-            todo!("implement V3 deploy account transaction")
+            let ressources_bounds = tx.resource_bounds.expect("no resource bounds provided");
+            DeployAccountTransaction::V3(starknet_api::transaction::DeployAccountTransactionV3 {
+                resource_bounds: resource_bounds(
+                    ressources_bounds.l1_gas.max_amount,
+                    ressources_bounds.l1_gas.max_price_per_unit,
+                    ressources_bounds.l2_gas.max_amount,
+                    ressources_bounds.l2_gas.max_price_per_unit,
+                ),
+                tip: tip(tx.tip.expect("no tip provided")),
+                signature: signature(tx.signature),
+                nonce: nonce(tx.nonce),
+                class_hash: class_hash(tx.class_hash),
+                contract_address_salt: contract_address_salt(tx.contract_address_salt),
+                constructor_calldata: call_data(tx.constructor_calldata),
+                // TODO: use data_availability_mode when starknet-rs supports v0.13.1
+                nonce_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
+                fee_data_availability_mode: starknet_api::data_availability::DataAvailabilityMode::L1,
+                paymaster_data: paymaster_data(tx.paymaster_data.expect("no paymaster_data provided")),
+            })
         }
 
         _ => panic!("deploy account transaction version not supported"),
@@ -367,7 +405,7 @@ fn events(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<starknet_api::tran
 }
 
 fn event(event: &p::Event) -> starknet_api::transaction::Event {
-    use starknet_api::transaction::{Event, EventContent, EventData, EventKey};
+    use starknet_api::transaction::{EventContent, EventData, EventKey};
 
     Event {
         from_address: contract_address(event.from_address),
