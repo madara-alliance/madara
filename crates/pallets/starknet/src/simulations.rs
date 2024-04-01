@@ -8,13 +8,14 @@ use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use frame_support::storage;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
+use mp_transactions::UserTransaction;
 use sp_core::Get;
 use sp_runtime::DispatchError;
 
 use crate::{Config, Error, Pallet};
 
 impl<T: Config> Pallet<T> {
-    pub fn estimate_fee(transactions: Vec<AccountTransaction>) -> Result<Vec<(u128, u128)>, DispatchError> {
+    pub fn estimate_fee(transactions: Vec<UserTransaction>) -> Result<Vec<(u128, u128)>, DispatchError> {
         storage::transactional::with_transaction(|| {
             storage::TransactionOutcome::Rollback(Result::<_, DispatchError>::Ok(Self::estimate_fee_inner(
                 transactions,
@@ -23,7 +24,7 @@ impl<T: Config> Pallet<T> {
         .map_err(|_| Error::<T>::FailedToCreateATransactionalStorageExecution)?
     }
 
-    fn estimate_fee_inner(transactions: Vec<AccountTransaction>) -> Result<Vec<(u128, u128)>, DispatchError> {
+    fn estimate_fee_inner(transactions: Vec<UserTransaction>) -> Result<Vec<(u128, u128)>, DispatchError> {
         let transactions_len = transactions.len();
         let chain_id = Self::chain_id();
         let block_context = Self::get_block_context();
@@ -31,7 +32,7 @@ impl<T: Config> Pallet<T> {
         let fee_res_iterator = transactions
             .into_iter()
             .map(|tx| {
-                match Self::execute_account_transaction(tx, &block_context, &SimulationFlags::default()) {
+                match Self::execute_account_transaction(tx.into(), &block_context, &SimulationFlags::default()) {
                     Ok(execution_info) if !execution_info.is_reverted() => Ok(execution_info),
                     Err(e) => {
                         log::error!("Transaction execution failed during fee estimation: {e}");
@@ -66,7 +67,7 @@ impl<T: Config> Pallet<T> {
         Ok(fees)
     }
     pub fn simulate_transactions(
-        transactions: Vec<AccountTransaction>,
+        transactions: Vec<UserTransaction>,
         simulation_flags: &SimulationFlags,
     ) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>
     {
@@ -80,7 +81,7 @@ impl<T: Config> Pallet<T> {
     }
 
     fn simulate_transactions_inner(
-        transactions: Vec<AccountTransaction>,
+        transactions: Vec<UserTransaction>,
         simulation_flags: &SimulationFlags,
     ) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>
     {
@@ -89,7 +90,7 @@ impl<T: Config> Pallet<T> {
         let tx_execution_results = transactions
             .into_iter()
             .map(|tx| {
-                Self::execute_account_transaction(tx, &block_context, simulation_flags).map_err(|e| {
+                Self::execute_account_transaction(tx.into(), &block_context, simulation_flags).map_err(|e| {
                     log::error!("Transaction execution failed during simulation: {e}");
                     PlaceHolderErrorTypeForFailedStarknetExecution
                 })

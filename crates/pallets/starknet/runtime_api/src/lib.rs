@@ -7,7 +7,7 @@
 
 use blockifier::context::{BlockContext, FeeTokenAddresses};
 use blockifier::execution::contract_class::ContractClass;
-use blockifier::transaction::account_transaction::AccountTransaction;
+use mp_transactions::UserTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::L1HandlerTransaction;
@@ -58,13 +58,13 @@ sp_api::decl_runtime_apis! {
         /// Returns the fee token address.
         fn fee_token_addresses() -> FeeTokenAddresses;
         /// Returns fee estimate
-        fn estimate_fee(transactions: Vec<AccountTransaction>) -> Result<Vec<(u128, u128)>, DispatchError>;
+        fn estimate_fee(transactions: Vec<UserTransaction>) -> Result<Vec<(u128, u128)>, DispatchError>;
         /// Returns message fee estimate
         fn estimate_message_fee(message: L1HandlerTransaction) -> Result<(u128, u128, u128), DispatchError>;
         /// Simulates single L1 Message and returns its trace
         fn simulate_message(message: L1HandlerTransaction, simulation_flags: SimulationFlags) -> Result<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>;
         /// Simulates transactions and returns their trace
-        fn simulate_transactions(transactions: Vec<AccountTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>;
+        fn simulate_transactions(transactions: Vec<UserTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>;
 
         /// Filters extrinsic transactions to return only Starknet transactions
         ///
@@ -105,7 +105,7 @@ sp_api::decl_runtime_apis! {
 
     pub trait ConvertTransactionRuntimeApi {
         /// Converts the transaction to an UncheckedExtrinsic for submission to the pool.
-        // fn convert_transaction(transaction: AccountTransaction) -> <Block as BlockT>::Extrinsic;
+        // fn convert_transaction(transaction: UserTransaction) -> <Block as BlockT>::Extrinsic;
 
         /// Converts the L1 Message transaction to an UncheckedExtrinsic for submission to the pool.
         // fn convert_l1_transaction(transaction: L1HandlerTransaction) -> <Block as BlockT>::Extrinsic;

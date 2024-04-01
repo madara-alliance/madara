@@ -15,6 +15,7 @@ pub mod to_starknet_core_transaction;
 pub mod utils;
 
 use blockifier::transaction::account_transaction::AccountTransaction;
+use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transaction_types::TransactionType;
 use blockifier::transaction::transactions::{
     DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction,
@@ -252,6 +253,15 @@ impl From<UserTransaction> for AccountTransaction {
             UserTransaction::Declare(declare_tx) => AccountTransaction::Declare(declare_tx),
             UserTransaction::DeployAccount(deploy_account_tx) => AccountTransaction::DeployAccount(deploy_account_tx),
             UserTransaction::Invoke(invoke_tx) => AccountTransaction::Invoke(invoke_tx),
+        }
+    }
+}
+
+impl From<UserOrL1HandlerTransaction> for Transaction {
+    fn from(item: UserOrL1HandlerTransaction) -> Self {
+        match item {
+            UserOrL1HandlerTransaction::User(tx) => Transaction::AccountTransaction(tx),
+            UserOrL1HandlerTransaction::L1Handler(tx) => Transaction::L1HandlerTransaction(tx),
         }
     }
 }
