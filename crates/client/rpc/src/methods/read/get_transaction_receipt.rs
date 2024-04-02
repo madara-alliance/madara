@@ -1,8 +1,10 @@
+use blockifier::context::BlockContext;
 use blockifier::execution::contract_address;
 use blockifier::execution::contract_class::{
     ClassInfo, ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf,
 };
 use blockifier::transaction::objects::TransactionExecutionInfo;
+use blockifier::transaction::test_utils::block_context;
 use blockifier::transaction::transaction_execution as btx;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::error::Error;
@@ -25,7 +27,7 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_api::core::{ClassHash, ContractAddress};
+use starknet_api::core::{ChainId, ClassHash, ContractAddress};
 use starknet_api::transaction::{
     DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction,
     Transaction, TransactionHash,
@@ -61,7 +63,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let block = get_block_by_block_hash(client.client.as_ref(), substrate_block_hash)?;
-    let block_header = block.header();
+    let block_header = block.header().clone();
     let block_number = block_header.block_number;
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
 
@@ -82,7 +84,7 @@ where
         StarknetRpcApiError::InternalServerError
     })?;
 
-    // TODO: remove this line when deploy is supported
+    // deploy transaction was not supported by blockifier
     if let Transaction::Deploy(_) = transaction {
         log::error!("re executing a deploy transaction is not supported yet");
         return Err(StarknetRpcApiError::UnimplementedMethod.into());
@@ -90,7 +92,14 @@ where
 
     let transactions = transactions(client, substrate_block_hash, chain_id, &block, block_number, tx_index)?;
 
-    let execution_infos = execution_infos(client, previous_block_hash, transactions)?;
+    let fee_token_address = client.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
+        log::error!("Failed to retrieve fee token address");
+        StarknetRpcApiError::InternalServerError
+    })?;
+    // TODO: convert the real chain_id in String
+    let block_context =
+        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
+    let execution_infos = execution_infos(client, previous_block_hash, transactions, &block_context)?;
 
     // TODO(#1291): compute message hash correctly to L1HandlerTransactionReceipt
     let message_hash: Hash256 = Hash256::from_felt(&FieldElement::default());
@@ -234,7 +243,14 @@ where
 
     let transactions = transactions(client, substrate_block_hash, chain_id, &block, block_number, tx_index)?;
 
-    let execution_infos = execution_infos(client, previous_block_hash, transactions)?;
+    let fee_token_address = client.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
+        log::error!("Failed to retrieve fee token address");
+        StarknetRpcApiError::InternalServerError
+    })?;
+    // TODO: convert the real chain_id in String
+    let block_context =
+        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
+    let execution_infos = execution_infos(client, previous_block_hash, transactions, &block_context)?;
 
     // TODO(#1291): compute message hash correctly to L1HandlerTransactionReceipt
     let message_hash: Hash256 = Hash256::from_felt(&FieldElement::default());
@@ -363,7 +379,7 @@ where
             .transactions()
             .iter()
             .take(tx_index + 1)
-            .filter(|tx| !matches!(tx, Transaction::Deploy(_))) // TODO: remove this line when deploy is supported
+            .filter(|tx| !matches!(tx, Transaction::Deploy(_))) // deploy transaction was not supported by blockifier
             .map(|tx| match tx {
                 Transaction::Invoke(invoke_tx) => {
 					tx_invoke_transaction(invoke_tx.clone(), invoke_tx.compute_hash::<H>(Felt252Wrapper::from(chain_id.0).into(), false, Some(block_number)))
@@ -551,6 +567,7 @@ fn execution_infos<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     previous_block_hash: DHashT,
     transactions: Vec<btx::Transaction>,
+    block_context: &BlockContext,
 ) -> RpcResult<TransactionExecutionInfo>
 where
     A: ChainApi<Block = DBlockT> + 'static,
@@ -570,7 +587,12 @@ where
     let execution_infos = client
         .client
         .runtime_api()
-        .re_execute_transactions(previous_block_hash, tx_into_user_or_l1_vec(prev), tx_into_user_or_l1_vec(last))
+        .re_execute_transactions(
+            previous_block_hash,
+            tx_into_user_or_l1_vec(prev),
+            tx_into_user_or_l1_vec(last),
+            block_context,
+        )
         .map_err(|e| {
             log::error!("Failed to execute runtime API call: {e}");
             StarknetRpcApiError::InternalServerError
@@ -579,8 +601,8 @@ where
             log::error!("Failed to reexecute the transactions: {e:?}");
             StarknetRpcApiError::InternalServerError
         })?
-        .map_err(|_| {
-            log::error!("One of the transaction failed during it's reexecution");
+        .map_err(|e| {
+            log::error!("One of the transaction failed during it's reexecution: {e:?}");
             StarknetRpcApiError::InternalServerError
         })?
         .pop()

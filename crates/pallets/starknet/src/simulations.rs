@@ -168,12 +168,14 @@ impl<T: Config> Pallet<T> {
     pub fn re_execute_transactions(
         transactions_before: Vec<UserOrL1HandlerTransaction>,
         transactions_to_trace: Vec<UserOrL1HandlerTransaction>,
+        block_context: &BlockContext,
     ) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>
     {
         storage::transactional::with_transaction(|| {
             storage::TransactionOutcome::Rollback(Result::<_, DispatchError>::Ok(Self::re_execute_transactions_inner(
                 transactions_before,
                 transactions_to_trace,
+                block_context,
             )))
         })
         .map_err(|_| Error::<T>::FailedToCreateATransactionalStorageExecution)?
@@ -182,19 +184,28 @@ impl<T: Config> Pallet<T> {
     fn re_execute_transactions_inner(
         transactions_before: Vec<UserOrL1HandlerTransaction>,
         transactions_to_trace: Vec<UserOrL1HandlerTransaction>,
+        block_context: &BlockContext,
     ) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>
     {
-        let block_context = Self::get_block_context();
+        // desactivate fee charging for the first blocks
+        let simulation_flags = SimulationFlags {
+            charge_fee: if block_context.block_info().gas_prices.eth_l1_gas_price.get() == 1 { false } else { true },
+            validate: false,
+        };
+
+        log::info!("Re-executing transactions");
+        log::info!("Simulation flags: {:?}", simulation_flags);
+        log::info!("Block context: {:?}", block_context);
 
         let _transactions_before_exec_infos = Self::execute_account_or_l1_handler_transactions(
             user_or_l1_into_tx_vec(transactions_before),
             &block_context,
-            &SimulationFlags::default(),
+            &simulation_flags,
         );
         let transactions_exec_infos = Self::execute_account_or_l1_handler_transactions(
             user_or_l1_into_tx_vec(transactions_to_trace),
             &block_context,
-            &SimulationFlags::default(),
+            &simulation_flags,
         );
 
         Ok(transactions_exec_infos)

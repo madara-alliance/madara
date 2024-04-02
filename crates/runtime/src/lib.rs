@@ -17,7 +17,7 @@ mod pallets;
 mod runtime_tests;
 mod types;
 
-use blockifier::context::FeeTokenAddresses;
+use blockifier::context::{BlockContext, FeeTokenAddresses};
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::transaction::account_transaction::AccountTransaction;
@@ -291,8 +291,8 @@ impl_runtime_apis! {
             Starknet::estimate_fee(transactions)
         }
 
-        fn re_execute_transactions(transactions_before: Vec<UserOrL1HandlerTransaction>, transactions_to_trace: Vec<UserOrL1HandlerTransaction>) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {
-            Starknet::re_execute_transactions(transactions_before, transactions_to_trace)
+        fn re_execute_transactions(transactions_before: Vec<UserOrL1HandlerTransaction>, transactions_to_trace: Vec<UserOrL1HandlerTransaction>, block_context: &BlockContext) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {
+            Starknet::re_execute_transactions(transactions_before, transactions_to_trace, block_context)
         }
 
         fn estimate_message_fee(message: L1HandlerTransaction) -> Result<(u128, u128, u128), DispatchError> {

@@ -44,6 +44,7 @@ where
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let block_header = starknet_block.header().clone();
     let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
     let transaction_hash_to_trace: Felt252Wrapper = transaction_hash.into();
 
@@ -57,10 +58,23 @@ where
 
     let previous_block_substrate_hash = get_previous_block_substrate_hash(starknet, substrate_block_hash)?;
 
+    let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
+        log::error!("Failed to retrieve fee token address");
+        StarknetRpcApiError::InternalServerError
+    })?;
+    // TODO: convert the real chain_id in String
+    let block_context =
+        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
+
     let execution_infos = starknet
         .client
         .runtime_api()
-        .re_execute_transactions(previous_block_substrate_hash, txs_to_execute_before.clone(), tx_to_trace.clone())
+        .re_execute_transactions(
+            previous_block_substrate_hash,
+            txs_to_execute_before.clone(),
+            tx_to_trace.clone(),
+            &block_context,
+        )
         .map_err(|e| {
             error!("Failed to execute runtime API call: {e}");
             StarknetRpcApiError::InternalServerError
