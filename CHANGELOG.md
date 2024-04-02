@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- feat(ci) New CI job to double check state root matching against mainnet
 - feat(api_key): api key passed to FetchConfig correctly
 - feat(api_key): Added support for --gateway-api to avoid rate limit from the gateway
 - fix(latest): Retrieve latest synced block via internal client
