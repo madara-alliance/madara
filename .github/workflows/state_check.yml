@@ -24,7 +24,7 @@ jobs:
       run: |
         for BLOCK_NUMBER in {0..999}
         do
-          RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"starknet_getStateUpdate","params":{"block_id":{"block_number":'$BLOCK_NUMBER'}},"id":1}' http://localhost:9944)
+          RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"starknet_getBlockWithTxs","params":{"block_id":{"block_number":'$BLOCK_NUMBER'}},"id":1}' http://localhost:9944)
           NEW_ROOT=$(echo $RESPONSE | jq -r '.result.new_root')
           # Compare $NEW_ROOT with your expected values here
           echo "Block $BLOCK_NUMBER: New Root - $NEW_ROOT"
