@@ -16,6 +16,16 @@ jobs:
           cargo run -- --deoxys --rpc-port 9944 --network main --rpc-cors=all --rpc-methods Safe --l1-endpoint "${{ secrets.ETH_URL }}" --rpc-max-connections 100 --rpc-external --db-cache 1 --disable-root &
           NODE_PID=$!
 
+
+      - name: Wait for Node to be Ready
+        run: |
+          echo "Checking if the node is ready..."
+          until curl -sf http://localhost:9944; do
+              echo "Node is not ready yet. Waiting..."
+              sleep 5
+          done
+          echo "Node is ready."
+
       - name: Wait for Node Sync
         run: |
           echo "Waiting for node to sync to block 1000..."
@@ -30,15 +40,6 @@ jobs:
             fi
             sleep 10
           done
-
-      - name: Wait for Node to be Ready
-        run: |
-          echo "Checking if the node is ready..."
-          until curl -sf http://localhost:9944; do
-              echo "Node is not ready yet. Waiting..."
-              sleep 5
-          done
-          echo "Node is ready."
 
       - name: Compare RPC Responses
         run: |
