@@ -72,8 +72,9 @@ where
 
     log::info!("block number: {block_number}");
 
-    let value = StorageHandler::contract_storage()
-        .get(&contract_address, &key, block_number)
+    let value = StorageHandler::contract_storage_mut(block_number)
+        .map_err(|_| StarknetRpcApiError::ContractNotFound)?
+        .get(&contract_address, &key)
         .unwrap_or(None)
         .ok_or_else(|| {
             error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}'");

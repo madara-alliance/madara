@@ -1,32 +1,34 @@
 use std::sync::Arc;
 
 use parity_scale_codec::{Decode, Encode};
-use sp_database::Database;
 use starknet_api::api_core::ClassHash;
 use starknet_api::state::ContractClass;
 
-use crate::{DbError, DbHash};
+use crate::{Column, DatabaseExt, DbError, DB};
 
 /// Allow interaction with the sierra classes db
 pub struct SierraClassesDb {
-    pub(crate) db: Arc<dyn Database<DbHash>>,
+    db: Arc<DB>,
 }
 
 impl SierraClassesDb {
+    pub(crate) fn new(db: Arc<DB>) -> Self {
+        Self { db }
+    }
+
     pub fn store_sierra_class(&self, class_hash: ClassHash, class: ContractClass) -> Result<(), DbError> {
-        let mut transaction = sp_database::Transaction::new();
+        let column = self.db.get_column(Column::SierraContractClasses);
 
-        transaction.set(crate::columns::SIERRA_CONTRACT_CLASSES, &class_hash.encode(), &class.encode());
-
-        self.db.commit(transaction)?;
-
+        self.db.put_cf(&column, class_hash.encode(), class.encode())?;
         Ok(())
     }
 
     pub fn get_sierra_class(&self, class_hash: ClassHash) -> Result<Option<ContractClass>, DbError> {
+        let column = self.db.get_column(Column::SierraContractClasses);
+
         let opt_contract_class = self
             .db
-            .get(crate::columns::SIERRA_CONTRACT_CLASSES, &class_hash.encode())
+            .get_cf(&column, class_hash.encode())?
             .map(|raw| ContractClass::decode(&mut &raw[..]))
             .transpose()?;
 

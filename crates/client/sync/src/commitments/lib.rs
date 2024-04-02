@@ -194,37 +194,41 @@ fn contract_trie_root(
 ) -> Result<Felt252Wrapper, DeoxysStorageError> {
     // NOTE: handlers implicitely acquire a lock on their respective tries
     // for the duration of their livetimes
-    let mut handler_contract = StorageHandler::contract();
-    let mut handler_storage = StorageHandler::contract_storage();
+    let mut contract_write = StorageHandler::contract_mut(block_number)?;
+    let mut storage_write = StorageHandler::contract_storage_mut(block_number)?;
 
     // Tries need to be initialised before values are inserted
-    handler_contract.init()?;
+    contract_write.init()?;
     let start1 = std::time::Instant::now();
 
     // First we insert the contract storage changes
     let start = std::time::Instant::now();
     for (contract_address, updates) in csd.storage_updates.iter() {
-        handler_storage.init(contract_address)?;
+        storage_write.init(contract_address)?;
 
         for (key, value) in updates {
-            handler_storage.insert(contract_address, key, *value)?;
+            storage_write.insert(contract_address, key, *value)?;
         }
     }
     log::debug!("contract_trie_root update_storage_trie: {:?}", std::time::Instant::now() - start);
 
     // Then we commit them
     let start = std::time::Instant::now();
-    handler_storage.commit(block_number)?;
+    storage_write.commit(block_number + 1)?;
+    // NOTE: handler changes act as separate, mutable instances over storage and need to
+    // be manually merged back into the backend.
+    storage_write.apply_changes()?;
     log::debug!("contract_trie_root bonsai_contract_storage.commit: {:?}", std::time::Instant::now() - start);
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
     let start = std::time::Instant::now();
+    let storage_read = StorageHandler::contract_storage()?;
     let updates = csd
         .storage_updates
         .iter()
         .par_bridge()
         .map(|(contract_address, _)| {
-            let storage_root = handler_storage.root(contract_address).unwrap();
+            let storage_root = storage_read.root(contract_address).unwrap();
             let class_commitment_leaf_hash =
                 contract_state_leaf_hash(csd, &overrides, contract_address, storage_root, maybe_block_hash);
 
@@ -234,15 +238,17 @@ fn contract_trie_root(
     log::debug!("contract_trie_root updates: {:?}", std::time::Instant::now() - start);
 
     let start = std::time::Instant::now();
-    handler_contract.update(updates)?;
+    contract_write.update(updates)?;
     log::debug!("contract_trie_root bonsai_contract.commit: {:?}", std::time::Instant::now() - start);
 
     let start = std::time::Instant::now();
-    handler_contract.commit(block_number)?;
+    contract_write.commit(block_number + 1)?;
+    contract_write.apply_changes()?;
     log::debug!("contract_trie_root bonsai_contract.commit: {:?}", std::time::Instant::now() - start);
     log::debug!("contract_trie_root: {:?}", std::time::Instant::now() - start1);
 
-    Ok(handler_contract.root()?.into())
+    let contract_read = StorageHandler::contract()?;
+    Ok(contract_read.root()?.into())
 }
 
 fn contract_state_leaf_hash(
@@ -304,7 +310,7 @@ lazy_static! {
 ///
 /// The class root.
 fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
-    let mut handler_class = StorageHandler::class();
+    let mut class_write = StorageHandler::class_mut(block_number)?;
 
     let updates = csd
         .class_hash_to_compiled_class_hash
@@ -319,9 +325,11 @@ fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt2
         })
         .collect::<Vec<_>>();
 
-    handler_class.init()?;
-    handler_class.update(updates)?;
-    handler_class.commit(block_number)?;
+    class_write.init()?;
+    class_write.update(updates)?;
+    class_write.commit(block_number + 1)?;
+    class_write.apply_changes()?;
 
-    Ok(handler_class.root()?.into())
+    let class_read = StorageHandler::class()?;
+    Ok(class_read.root()?.into())
 }

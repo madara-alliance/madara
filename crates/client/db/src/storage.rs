@@ -1,11 +1,11 @@
 use std::fmt::Display;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLockReadGuard;
 
 use bitvec::prelude::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
-use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
+use bonsai_trie::BonsaiStorage;
 use sp_core::hexdisplay::AsBytesRef;
 use starknet_api::api_core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
@@ -15,70 +15,24 @@ use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon};
 use thiserror::Error;
 
-use crate::bonsai_db::BonsaiDb;
+use crate::bonsai_db::{BonsaiDb, BonsaiTransaction};
 use crate::DeoxysBackend;
 
 /// Type-safe bonsai storage handler with exclusif acces to the Deoxys backend. Use this to access
 /// storage instead of manually querying the bonsai tries.
 pub struct StorageHandler;
 
-/// Type safe storage handler for using the backend contract bonsai trie.
-///
-/// # Usage
-///
-/// ```
-/// StorageHandler::contract().commit(12);
-/// ```
-///
-/// Note that creating a new instance of `ContractTrieHandler` in this way implicitely creates a new
-/// `Arc` onto the backend contract storage trie. To store this `Arc` for further use, you can do:
-///
-/// ```
-/// let handler_contract = StorageHandler::contract();
-///
-/// handler_contract.init();
-/// handler_contract.commit(12);
-/// ```
-pub struct ContractTrieHandler(Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>);
+pub struct ContractTrieMut(BonsaiStorage<BasicId, BonsaiTransaction<'static>, Pedersen>);
 
-/// Type safe storage handler for using the backend contract storage bonsai trie.
-///
-/// # Usage
-///
-/// ```
-/// StorageHandler::contract_storage().commit(12);
-/// ```
-///
-/// Note that creating a new instance of `ContractStorageTrieHandler` in this way implicitely
-/// creates a new `Arc` onto the backend contract storage trie. To store this `Arc` for further use,
-/// you can do:
-///
-/// ```
-/// let handler_contract = StorageHandler::contract_storage();
-///
-/// handler_contract.init(ContractAddress::from(0u64));
-/// handler_contract.commit(12);
-/// ```
-pub struct ContractStorageTrieHandler(Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>);
+pub struct ContractTrieView<'a>(RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>);
 
-/// Type safe storage handler for using the backend class bonsai trie.
-///
-/// # Usage
-///
-/// ```
-/// StorageHandler::class().commit(12);
-/// ```
-///
-/// Note that creating a new instance of `ClassTrieHandler` in this way implicitely creates a new
-/// `Arc` onto the backend contract storage trie. To store this `Arc` for further use, you can do:
-///
-/// ```
-/// let handler_contract = StorageHandler::class();
-///
-/// handler_contract.init();
-/// handler_contract.commit(12);
-/// ```
-pub struct ClassTrieHandler(Arc<RwLock<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>);
+pub struct ContractStorageTrieMut(BonsaiStorage<BasicId, BonsaiTransaction<'static>, Pedersen>);
+
+pub struct ContractStorageTrieView<'a>(RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>);
+
+pub struct ClassTrieMut(BonsaiStorage<BasicId, BonsaiTransaction<'static>, Poseidon>);
+
+pub struct ClassTrieView<'a>(RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>>);
 
 #[derive(Debug)]
 pub enum StorageType {
@@ -88,7 +42,7 @@ pub enum StorageType {
 }
 
 impl Display for StorageType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let storage_type = match self {
             StorageType::Contract => "contract trie",
             StorageType::ContractStorage => "contract storage trie",
@@ -101,6 +55,8 @@ impl Display for StorageType {
 
 #[derive(Error, Debug)]
 pub enum DeoxysStorageError {
+    #[error("failed to retrieve storage view for {0}")]
+    StoraveViewError(StorageType),
     #[error("failed to insert data into {0}")]
     StorageInsertionError(StorageType),
     #[error("failed to retrive data from {0}")]
@@ -111,6 +67,8 @@ pub enum DeoxysStorageError {
     TrieRootError(StorageType),
     #[error("failed to commit to {0}")]
     TrieCommitError(StorageType),
+    #[error("failed to merge transactional state back into {0}")]
+    TrieMergeError(StorageType),
 }
 
 pub mod bonsai_identifier {
@@ -121,78 +79,164 @@ pub mod bonsai_identifier {
 }
 
 impl StorageHandler {
-    pub fn contract() -> ContractTrieHandler {
-        ContractTrieHandler(Arc::clone(DeoxysBackend::bonsai_contract()))
+    #[rustfmt::skip]
+    pub fn contract_mut(block_number: u64) -> Result<ContractTrieMut, DeoxysStorageError> {
+		let bonsai_contract = DeoxysBackend::bonsai_contract().read().unwrap();
+		let config = bonsai_contract.get_config();
+        let transactional_storage =
+			bonsai_contract.get_transactional_state(BasicId::new(block_number), config);
+
+        match transactional_storage {
+            Ok(Some(transactional_storage)) => {
+                Ok(ContractTrieMut(transactional_storage))
+            }
+            _ => {
+				Err(DeoxysStorageError::StoraveViewError(StorageType::Contract))
+			}
+        }
     }
 
-    pub fn contract_storage() -> ContractStorageTrieHandler {
-        ContractStorageTrieHandler(Arc::clone(DeoxysBackend::bonsai_storage()))
+    pub fn contract<'a>() -> Result<ContractTrieView<'a>, DeoxysStorageError> {
+        Ok(ContractTrieView(
+            DeoxysBackend::bonsai_contract()
+                .read()
+                .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Contract))?,
+        ))
     }
 
-    pub fn class() -> ClassTrieHandler {
-        ClassTrieHandler(Arc::clone(DeoxysBackend::bonsai_class()))
+    #[rustfmt::skip]
+    pub fn contract_storage_mut(block_number: u64) -> Result<ContractStorageTrieMut, DeoxysStorageError> {
+		let bonsai_storage = DeoxysBackend::bonsai_storage().read().unwrap();
+		let config = bonsai_storage.get_config();
+        let transactional_storage =
+			bonsai_storage.get_transactional_state(BasicId::new(block_number), config);
+
+        match transactional_storage {
+            Ok(Some(transactional_storage)) => {
+				Ok(ContractStorageTrieMut(transactional_storage))
+			}
+            _ => {
+				Err(DeoxysStorageError::StoraveViewError(StorageType::ContractStorage))
+			}
+        }
+    }
+
+    pub fn contract_storage<'a>() -> Result<ContractStorageTrieView<'a>, DeoxysStorageError> {
+        Ok(ContractStorageTrieView(
+            DeoxysBackend::bonsai_storage()
+                .read()
+                .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::ContractStorage))?,
+        ))
+    }
+
+    #[rustfmt::skip]
+    pub fn class_mut(block_number: u64) -> Result<ClassTrieMut, DeoxysStorageError> {
+        let bonsai_classes = DeoxysBackend::bonsai_class().read().unwrap();
+        let config = bonsai_classes.get_config();
+        let transactional_storage =
+			bonsai_classes.get_transactional_state(BasicId::new(block_number), config);
+
+		match transactional_storage {
+			Ok(Some(transactional_storage)) => {
+				Ok(ClassTrieMut(transactional_storage))
+			},
+			_ => {
+				Err(DeoxysStorageError::StoraveViewError(StorageType::Class))
+			}
+		}
+    }
+
+    pub fn class<'a>() -> Result<ClassTrieView<'a>, DeoxysStorageError> {
+        Ok(ClassTrieView(
+            DeoxysBackend::bonsai_class()
+                .read()
+                .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Class))?,
+        ))
     }
 }
 
-impl ContractTrieHandler {
+impl ContractTrieMut {
     pub fn update(&mut self, updates: Vec<(&ContractAddress, Felt)>) -> Result<(), DeoxysStorageError> {
-        let mut lock = self.0.write().unwrap();
+        // for (key, value) in updates {
+        //     let key = conv_contract_key(key);
+        //     self.0
+        //         .insert(bonsai_identifier::CONTRACT, &key, &value)
+        //         .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?
+        // }
 
+        let mut lock = DeoxysBackend::bonsai_contract().write().unwrap();
         for (key, value) in updates {
-            let key = conv_contract_key(key);
-            lock.insert(bonsai_identifier::CONTRACT, &key, &value)
-                .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
+            lock.insert(bonsai_identifier::CONTRACT, &conv_contract_key(key), &value)
+                .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?
         }
 
         Ok(())
     }
 
-    pub fn get(&self, key: &ContractAddress) -> Result<Option<Felt>, DeoxysStorageError> {
-        let key = conv_contract_key(key);
-
-        let value = self
-            .0
-            .read()
-            .unwrap()
-            .get(bonsai_identifier::CONTRACT, &key)
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))?;
-
-        Ok(value)
-    }
-
     pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        self.0
+        // self.0
+        //     .transactional_commit(BasicId::new(block_number))
+        //     .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::Contract))?;
+
+        Ok(DeoxysBackend::bonsai_contract()
             .write()
             .unwrap()
             .commit(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::Contract))?;
-
-        Ok(())
+            .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::Contract))?)
     }
 
     pub fn init(&mut self) -> Result<(), DeoxysStorageError> {
-        self.0
+        // self.0
+        //     .init_tree(bonsai_identifier::CONTRACT)
+        //     .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::Class))?;
+
+        Ok(DeoxysBackend::bonsai_contract()
             .write()
             .unwrap()
             .init_tree(bonsai_identifier::CONTRACT)
-            .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::Contract))?;
+            .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::Contract))?)
+    }
 
+    #[deprecated = "Waiting on new transactional state implementations in Bonsai Db"]
+    pub fn apply_changes(self) -> Result<(), DeoxysStorageError> {
+        // Ok(DeoxysBackend::bonsai_contract()
+        //     .write()
+        //     .unwrap()
+        //     .merge(self.0)
+        //     .map_err(|_| DeoxysStorageError::TrieMergeError(StorageType::Contract))?)
         Ok(())
     }
 
-    pub fn root(&self) -> Result<Felt, DeoxysStorageError> {
-        let root_hash = self
-            .0
+    pub fn get(&self, key: &ContractAddress) -> Result<Option<Felt>, DeoxysStorageError> {
+        // let key = conv_contract_key(key);
+        // Ok(self
+        //     .0
+        //     .get(bonsai_identifier::CONTRACT, &key)
+        //     .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))?)
+
+        Ok(DeoxysBackend::bonsai_contract()
             .read()
             .unwrap()
-            .root_hash(bonsai_identifier::CONTRACT)
-            .map_err(|_| DeoxysStorageError::TrieRootError(StorageType::Contract))?;
-
-        Ok(root_hash)
+            .get(bonsai_identifier::CONTRACT, &conv_contract_key(key))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))?)
     }
 }
 
-impl ContractStorageTrieHandler {
+impl ContractTrieView<'_> {
+    pub fn get(&self, key: &ContractAddress) -> Result<Option<Felt>, DeoxysStorageError> {
+        let key = conv_contract_key(key);
+        Ok(self
+            .0
+            .get(bonsai_identifier::CONTRACT, &key)
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))?)
+    }
+
+    pub fn root(&self) -> Result<Felt, DeoxysStorageError> {
+        Ok(self.0.root_hash(bonsai_identifier::CONTRACT).unwrap())
+    }
+}
+
+impl ContractStorageTrieMut {
     pub fn insert(
         &mut self,
         identifier: &ContractAddress,
@@ -203,89 +247,98 @@ impl ContractStorageTrieHandler {
         let key = conv_contract_storage_key(key);
         let value = conv_contract_value(value);
 
-        self.0.write().unwrap().insert(identifier, &key, &value).unwrap();
-        Ok(())
-    }
+        // self.0.insert(identifier, &key, &value).unwrap();
+        // Ok(())
 
-    pub fn get(
-        &self,
-        identifier: &ContractAddress,
-        key: &StorageKey,
-        block_number: u64,
-    ) -> Result<Option<Felt>, DeoxysStorageError> {
-        let identifier = conv_contract_identifier(identifier);
-        let key = conv_contract_storage_key(key);
-        let snapshot = self
-            .0
-            .read()
+        Ok(DeoxysBackend::bonsai_storage()
+            .write()
             .unwrap()
-            .get_transactional_state(BasicId::new(block_number), BonsaiStorageConfig::default())
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?;
-
-        log::info!("no error when retrieving snapshot!");
-
-        let value = match snapshot {
-            Some(trie) => {
-                log::info!("trie exists");
-                trie.get(identifier, &key)
-                    .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
-            }
-            None => {
-                log::info!("trie does not exist");
-                None
-            }
-        };
-
-        // let value = self
-        //     .0
-        //     .read()
-        //     .unwrap()
-        //     .get(identifier, &key)
-        //     .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?;
-
-        Ok(value)
+            .insert(identifier, &key, &value)
+            .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::ContractStorage))?)
     }
 
     pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        log::info!("comitting contract storage for block {block_number}");
+        // self.0
+        //     .transactional_commit(BasicId::new(block_number))
+        //     .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::ContractStorage))?;
+        //
+        // Ok(())
 
-        self.0
+        Ok(DeoxysBackend::bonsai_storage()
             .write()
             .unwrap()
             .commit(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::ContractStorage))?;
-
-        Ok(())
+            .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::ContractStorage))?)
     }
 
     pub fn init(&mut self, identifier: &ContractAddress) -> Result<(), DeoxysStorageError> {
-        let identifier = conv_contract_identifier(identifier);
-        self.0
+        // self.0
+        //     .init_tree(conv_contract_identifier(identifier))
+        //     .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::ContractStorage))?;
+        //
+        // Ok(())
+
+        Ok(DeoxysBackend::bonsai_storage()
             .write()
             .unwrap()
-            .init_tree(identifier)
-            .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::ContractStorage))?;
+            .init_tree(conv_contract_identifier(identifier))
+            .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::ContractStorage))?)
+    }
 
+    #[deprecated = "Waiting on new transactional state implementations in Bonsai Db"]
+    pub fn apply_changes(self) -> Result<(), DeoxysStorageError> {
+        // Ok(DeoxysBackend::bonsai_storage()
+        //     .write()
+        //     .unwrap()
+        //     .merge(self.0)
+        //     .map_err(|_| DeoxysStorageError::TrieMergeError(StorageType::ContractStorage))?)
         Ok(())
     }
 
-    pub fn root(&self, identifier: &ContractAddress) -> Result<Felt, DeoxysStorageError> {
-        let identifier = conv_contract_identifier(identifier);
-        let root_hash = self
-            .0
+    pub fn get(&self, identifier: &ContractAddress, key: &StorageKey) -> Result<Option<Felt>, DeoxysStorageError> {
+        // let identifier = conv_contract_identifier(identifier);
+        // let key = conv_contract_storage_key(key);
+        //
+        // Ok(self
+        //     .0
+        //     .get(identifier, &key)
+        //     .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?)
+
+        Ok(DeoxysBackend::bonsai_storage()
             .read()
             .unwrap()
-            .root_hash(identifier)
-            .map_err(|_| DeoxysStorageError::TrieRootError(StorageType::ContractStorage))?;
-
-        Ok(root_hash)
+            .get(conv_contract_identifier(identifier), &conv_contract_storage_key(key))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?)
     }
 }
 
-impl ClassTrieHandler {
-    pub fn update(&mut self, updates: Vec<(&ClassHash, FieldElement)>) -> Result<(), DeoxysStorageError> {
-        let mut lock = self.0.write().unwrap();
+impl ContractStorageTrieView<'_> {
+    pub fn get(&self, identifier: &ContractAddress, key: &StorageKey) -> Result<Option<Felt>, DeoxysStorageError> {
+        let identifier = conv_contract_identifier(identifier);
+        let key = conv_contract_storage_key(key);
 
+        Ok(self
+            .0
+            .get(identifier, &key)
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?)
+    }
+
+    pub fn root(&self, identifier: &ContractAddress) -> Result<Felt, DeoxysStorageError> {
+        Ok(self.0.root_hash(conv_contract_identifier(identifier)).unwrap())
+    }
+}
+
+impl ClassTrieMut {
+    pub fn update(&mut self, updates: Vec<(&ClassHash, FieldElement)>) -> Result<(), DeoxysStorageError> {
+        // for (key, value) in updates {
+        //     let key = conv_class_key(key);
+        //     let value = Felt::from_bytes_be(&value.to_bytes_be());
+        //     self.0
+        //         .insert(bonsai_identifier::CLASS, &key, &value)
+        //         .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?;
+        // }
+
+        let mut lock = DeoxysBackend::bonsai_class().write().unwrap();
         for (key, value) in updates {
             let key = conv_class_key(key);
             let value = Felt::from_bytes_be(&value.to_bytes_be());
@@ -296,47 +349,71 @@ impl ClassTrieHandler {
         Ok(())
     }
 
-    pub fn get(&self, key: &ClassHash) -> Result<Option<Felt>, DeoxysStorageError> {
-        let key = conv_class_key(key);
-        let value = self
-            .0
-            .read()
-            .unwrap()
-            .get(bonsai_identifier::CLASS, &key)
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Class))?;
-
-        Ok(value)
-    }
-
     pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        self.0
+        // self.0
+        //     .transactional_commit(BasicId::new(block_number))
+        //     .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::Class))?;
+        //
+        // Ok(())
+
+        Ok(DeoxysBackend::bonsai_class()
             .write()
             .unwrap()
             .commit(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::Class))?;
-
-        Ok(())
+            .map_err(|_| DeoxysStorageError::TrieCommitError(StorageType::Class))?)
     }
 
     pub fn init(&mut self) -> Result<(), DeoxysStorageError> {
-        self.0
+        // self.0
+        //     .init_tree(bonsai_identifier::CLASS)
+        //     .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::Class))?;
+        //
+        // Ok(())
+
+        Ok(DeoxysBackend::bonsai_class()
             .write()
             .unwrap()
             .init_tree(bonsai_identifier::CLASS)
-            .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::Class))?;
+            .map_err(|_| DeoxysStorageError::TrieInitError(StorageType::Class))?)
+    }
 
+    #[deprecated = "Waiting on new transactional state implementations in Bonsai Db"]
+    pub fn apply_changes(self) -> Result<(), DeoxysStorageError> {
+        // Ok(DeoxysBackend::bonsai_class()
+        //     .write()
+        //     .unwrap()
+        //     .merge(self.0)
+        //     .map_err(|_| DeoxysStorageError::TrieMergeError(StorageType::Class))?)
         Ok(())
     }
 
-    pub fn root(&self) -> Result<Felt, DeoxysStorageError> {
-        let root_hash = self
-            .0
+    pub fn get(&self, key: &ClassHash) -> Result<Option<Felt>, DeoxysStorageError> {
+        // let key = conv_class_key(key);
+        //
+        // Ok(self
+        //     .0
+        //     .get(bonsai_identifier::CLASS, &key)
+        //     .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Class))?)
+        Ok(DeoxysBackend::bonsai_class()
             .read()
             .unwrap()
-            .root_hash(bonsai_identifier::CLASS)
-            .map_err(|_| DeoxysStorageError::TrieRootError(StorageType::Class))?;
+            .get(bonsai_identifier::CLASS, &conv_class_key(key))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Class))?)
+    }
+}
 
-        Ok(root_hash)
+impl ClassTrieView<'_> {
+    pub fn get(&self, key: &ClassHash) -> Result<Option<Felt>, DeoxysStorageError> {
+        let key = conv_class_key(key);
+
+        Ok(self
+            .0
+            .get(bonsai_identifier::CLASS, &key)
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Class))?)
+    }
+
+    pub fn root(&self) -> Result<Felt, DeoxysStorageError> {
+        Ok(self.0.root_hash(bonsai_identifier::CLASS).unwrap())
     }
 }
 
