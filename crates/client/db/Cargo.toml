@@ -48,6 +48,8 @@ starknet_api = { workspace = true, default-features = true, features = [
 
 # Other crates
 anyhow.workspace = true
+arc-swap = { workspace = true }
+bitvec = { workspace = true }
 ethers = { workspace = true }
 log = { workspace = true, default-features = true }
 rocksdb = { version = "0.21", features = [
@@ -55,5 +57,3 @@ rocksdb = { version = "0.21", features = [
 ] }
 thiserror = { workspace = true }
 uuid = "1.4.1"
-bitvec = { workspace = true }
-arc-swap = { workspace = true }

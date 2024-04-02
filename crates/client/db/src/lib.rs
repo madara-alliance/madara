@@ -56,12 +56,12 @@ struct DatabaseSettings {
     pub snapshot_interval: u64,
 }
 
-impl Into<BonsaiStorageConfig> for &DatabaseSettings {
-    fn into(self) -> BonsaiStorageConfig {
+impl From<&DatabaseSettings> for BonsaiStorageConfig {
+    fn from(val: &DatabaseSettings) -> Self {
         BonsaiStorageConfig {
-            max_saved_trie_logs: self.max_saved_trie_logs,
-            max_saved_snapshots: self.max_saved_snapshots,
-            snapshot_interval: self.snapshot_interval,
+            max_saved_trie_logs: val.max_saved_trie_logs,
+            max_saved_snapshots: val.max_saved_snapshots,
+            snapshot_interval: val.snapshot_interval,
         }
     }
 }
@@ -310,7 +310,7 @@ impl DeoxysBackend {
     fn new(config: &DatabaseSettings, cache_more_things: bool) -> Result<Self> {
         DB_SINGLETON.set(Arc::new(open_database(config)?)).unwrap();
         let db = DB_SINGLETON.get().unwrap();
-        let bonsai_config: BonsaiStorageConfig = config.into();
+        let bonsai_config = BonsaiStorageConfig::from(config);
 
         let mut bonsai_contract = BonsaiStorage::new(
             BonsaiDb::new(

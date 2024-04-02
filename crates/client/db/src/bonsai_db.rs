@@ -260,7 +260,7 @@ where
             let mut read_options = ReadOptions::default();
             read_options.set_snapshot(snapshot);
 
-            Some(BonsaiTransaction { txn, db: &self.db, column_mapping: self.column_mapping.clone() })
+            Some(BonsaiTransaction { txn, db: self.db, column_mapping: self.column_mapping.clone() })
         } else {
             None
         }
