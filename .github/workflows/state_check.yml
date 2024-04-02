@@ -13,7 +13,7 @@ jobs:
 
       - name: Start Node
         run: |-
-          cargo run -- --deoxys --rpc-port 9944 --network main --rpc-cors=all --rpc-methods Safe --l1-endpoint "${{ secrets.ETH_URL }}" --rpc-max-connections 100 --rpc-external --db-cache 1 --disable-root &
+          cargo run -- --deoxys --rpc-port 9944 --network main --rpc-cors=all --rpc-methods Safe --l1-endpoint "${{ secrets.ETH_URL }}" --rpc-max-connections 100 --rpc-external --db-cache 1 &
           NODE_PID=$!
 
       - name: Wait for Node Sync
@@ -35,13 +35,39 @@ jobs:
         run: |
           for BLOCK_NUMBER in {0..999}
           do
-            # Fetch the new_root from the local node
-            LOCAL_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"starknet_getBlockWithTxs","params":{"block_id":{"block_number":'$BLOCK_NUMBER'}},"id":1}' http://localhost:9944)
-            LOCAL_NEW_ROOT=$(echo $LOCAL_RESPONSE | jq -r '.result.new_root')
+            RETRIES=5
+            while [ $RETRIES -gt 0 ]; do
+              LOCAL_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"starknet_getBlockWithTxs","params":{"block_id":{"block_number":'$BLOCK_NUMBER'}},"id":1}' http://localhost:9944)
+              LOCAL_NEW_ROOT=$(echo $LOCAL_RESPONSE | jq -r '.result.new_root')
+              if [[ -z "$LOCAL_NEW_ROOT" || "$LOCAL_NEW_ROOT" == "null" ]]; then
+                echo "Retrying to fetch block $BLOCK_NUMBER from local node..."
+                let RETRIES-=1
+                sleep 60
+              else
+                break
+              fi
+            done
+            if [ $RETRIES -eq 0 ]; then
+              echo "Failed to fetch valid response for block $BLOCK_NUMBER from local node after multiple retries."
+              continue
+            fi
 
-            # Fetch the new_root from Starknet's mainnet
-            MAINNET_RESPONSE=$(curl -s "https://alpha-mainnet.starknet.io/feeder_gateway/get_state_update?blockNumber=$BLOCK_NUMBER")
-            MAINNET_NEW_ROOT=$(echo $MAINNET_RESPONSE | jq -r '.new_root')
+            RETRIES=5
+            while [ $RETRIES -gt 0 ]; do
+              MAINNET_RESPONSE=$(curl -s "https://alpha-mainnet.starknet.io/feeder_gateway/get_state_update?blockNumber=$BLOCK_NUMBER")
+              MAINNET_NEW_ROOT=$(echo $MAINNET_RESPONSE | jq -r '.new_root')
+              if [[ -z "$MAINNET_NEW_ROOT" || "$MAINNET_NEW_ROOT" == "null" ]]; then
+                echo "Retrying to fetch block $BLOCK_NUMBER from Starknet mainnet..."
+                let RETRIES-=1
+                sleep 60
+              else
+                break
+              fi
+            done
+            if [ $RETRIES -eq 0 ]; then
+              echo "Failed to fetch valid response for block $BLOCK_NUMBER from Starknet mainnet after multiple retries."
+              continue
+            fi
 
             # Compare the local and mainnet new_root values
             if [[ "$LOCAL_NEW_ROOT" == "$MAINNET_NEW_ROOT" ]]; then
@@ -50,6 +76,7 @@ jobs:
               echo "Block $BLOCK_NUMBER: New Root Mismatch - Local: $LOCAL_NEW_ROOT, Mainnet: $MAINNET_NEW_ROOT"
             fi
           done
+
 
       - name: Kill Node Process
         if: always()
