@@ -354,7 +354,7 @@ fn resource_price(
         None
     } else {
         Some(GasPrices {
-            eth_l1_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_wei),
+            eth_l1_gas_price: field_element_to_non_zero_u128(l1_gas_price.price_in_wei),
             strk_l1_gas_price: field_element_to_non_zero_u128(l1_gas_price.price_in_fri),
             eth_l1_data_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_wei),
             strk_l1_data_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_fri),

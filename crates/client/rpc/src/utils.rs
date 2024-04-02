@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Write;
+use std::num::NonZeroU128;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -174,12 +175,20 @@ pub(crate) fn sequencer_address(block: &DeoxysBlock) -> FieldElement {
 }
 
 pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
+    // 1 is a special value that means 0 because the gas price is stored as a NonZeroU128
+    fn non_zeo_u128_to_field_element(value: NonZeroU128) -> FieldElement {
+        match value.get() {
+            1 => FieldElement::ZERO,
+            x => FieldElement::from(x),
+        }
+    }
+
     let resource_price = &block.header().l1_gas_price;
 
     match resource_price {
         Some(resource_price) => ResourcePrice {
-            price_in_fri: resource_price.strk_l1_gas_price.get().into(),
-            price_in_wei: resource_price.eth_l1_gas_price.get().into(),
+            price_in_fri: non_zeo_u128_to_field_element(resource_price.strk_l1_gas_price),
+            price_in_wei: non_zeo_u128_to_field_element(resource_price.eth_l1_gas_price),
         },
         None => ResourcePrice { price_in_fri: FieldElement::ZERO, price_in_wei: FieldElement::ZERO },
     }
