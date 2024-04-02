@@ -2,6 +2,7 @@ use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
+use mc_sync::l1;
 use mc_sync::l2::get_pending_block;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -17,8 +18,8 @@ use starknet_core::types::{
 };
 
 use crate::utils::{
-    get_block_by_block_hash, l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, status,
-    timestamp, tx_conv, tx_hash_compute, tx_hash_retrieve,
+    get_block_by_block_hash, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address,
+    starknet_version, status, timestamp, tx_conv, tx_hash_compute, tx_hash_retrieve,
 };
 use crate::{Felt, Starknet};
 
@@ -53,6 +54,7 @@ where
     let timestamp = timestamp(&starknet_block);
     let sequencer_address = sequencer_address(&starknet_block);
     let l1_gas_price = l1_gas_price(&starknet_block);
+    let l1_data_gas_price = l1_data_gas_price(&starknet_block);
     let starknet_version = starknet_version(&starknet_block);
 
     let block_with_tx_hashes = BlockWithTxHashes {
@@ -65,6 +67,7 @@ where
         timestamp,
         sequencer_address,
         l1_gas_price,
+        l1_data_gas_price,
         starknet_version,
     };
 
@@ -83,6 +86,7 @@ where
     let timestamp = timestamp(&starknet_block);
     let sequencer_address = sequencer_address(&starknet_block);
     let l1_gas_price = l1_gas_price(&starknet_block);
+    let l1_data_gas_price = l1_data_gas_price(&starknet_block);
     let starknet_version = starknet_version(&starknet_block);
 
     let block_with_tx_hashes = PendingBlockWithTxHashes {
@@ -91,6 +95,7 @@ where
         timestamp,
         sequencer_address,
         l1_gas_price,
+        l1_data_gas_price,
         starknet_version,
     };
 
@@ -129,6 +134,7 @@ where
     let timestamp = timestamp(&starknet_block);
     let sequencer_address = sequencer_address(&starknet_block);
     let l1_gas_price = l1_gas_price(&starknet_block);
+    let l1_data_gas_price = l1_data_gas_price(&starknet_block);
     let starknet_version = starknet_version(&starknet_block);
 
     let block_with_txs = BlockWithTxs {
@@ -141,6 +147,7 @@ where
         sequencer_address,
         transactions,
         l1_gas_price,
+        l1_data_gas_price,
         starknet_version,
     };
 
@@ -161,10 +168,18 @@ where
     let timestamp = timestamp(&starknet_block);
     let sequencer_address = sequencer_address(&starknet_block);
     let l1_gas_price = l1_gas_price(&starknet_block);
+    let l1_data_gas_price = l1_data_gas_price(&starknet_block);
     let starknet_version = starknet_version(&starknet_block);
 
-    let block_with_txs =
-        PendingBlockWithTxs { transactions, parent_hash, timestamp, sequencer_address, l1_gas_price, starknet_version };
+    let block_with_txs = PendingBlockWithTxs {
+        transactions,
+        parent_hash,
+        timestamp,
+        sequencer_address,
+        l1_gas_price,
+        l1_data_gas_price,
+        starknet_version,
+    };
 
     Ok(MaybePendingBlockWithTxs::PendingBlock(block_with_txs))
 }

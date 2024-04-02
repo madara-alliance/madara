@@ -185,6 +185,18 @@ pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
     }
 }
 
+pub(crate) fn l1_data_gas_price(block: &DeoxysBlock) -> ResourcePrice {
+    let resource_price = &block.header().l1_gas_price;
+
+    match resource_price {
+        Some(resource_price) => ResourcePrice {
+            price_in_fri: resource_price.strk_l1_data_gas_price.get().into(),
+            price_in_wei: resource_price.eth_l1_data_gas_price.get().into(),
+        },
+        None => ResourcePrice { price_in_fri: FieldElement::ONE, price_in_wei: FieldElement::ONE },
+    }
+}
+
 pub(crate) fn starknet_version(block: &DeoxysBlock) -> String {
     block.header().protocol_version.from_utf8().expect("starknet version should be a valid utf8 string")
 }

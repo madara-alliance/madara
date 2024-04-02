@@ -44,12 +44,7 @@ pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
     let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number);
 
     let protocol_version = starknet_version(&block.starknet_version);
-    let l1_gas_price = resource_price(
-        block.l1_gas_price.price_in_wei,
-        block.l1_gas_price.price_in_fri,
-        block.l1_data_gas_price.price_in_wei,
-        block.l1_data_gas_price.price_in_fri,
-    );
+    let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let extra_data = block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be()));
 
     let header = mp_block::Header {
@@ -338,36 +333,32 @@ fn account_deployment_data(
     starknet_api::transaction::AccountDeploymentData(account_deployment_data.into_iter().map(felt).collect())
 }
 
-// TODO: calculate gas_price when starknet-rs supports v0.13.1
+/// Converts the l1 gas price and l1 data gas price to a GasPrices struct, if the l1 gas price is
+/// not 0. If the l1 gas price is 0, returns None.
+/// The other prices are converted to NonZeroU128, with 0 being converted to 1.
 fn resource_price(
-    eth_l1_gas_price: FieldElement,
-    strk_l1_gas_price: FieldElement,
-    eth_l1_data_gas_price: FieldElement,
-    strk_l1_data_gas_price: FieldElement,
+    l1_gas_price: starknet_core::types::ResourcePrice,
+    l1_data_gas_price: starknet_core::types::ResourcePrice,
 ) -> Option<GasPrices> {
-    if eth_l1_gas_price == FieldElement::ZERO
-        || strk_l1_gas_price == FieldElement::ZERO
-        || eth_l1_data_gas_price == FieldElement::ZERO
-        || strk_l1_data_gas_price == FieldElement::ZERO
-    {
-        return None;
+    /// Converts a FieldElement to a NonZeroU128, with 0 being converted to 1.
+    fn field_element_to_non_zero_u128(field_element: FieldElement) -> NonZeroU128 {
+        let value: u128 = if field_element == FieldElement::ZERO {
+            1
+        } else {
+            field_element.try_into().expect("FieldElement is more than u128")
+        };
+        NonZeroU128::new(value).expect("Failed to convert field_element to NonZeroU128")
+    }
+
+    if l1_gas_price.price_in_wei == FieldElement::ZERO {
+        None
     } else {
-        return Some(GasPrices {
-            eth_l1_gas_price: NonZeroU128::new(
-                eth_l1_data_gas_price.try_into().expect("FieldElement is more than u128"),
-            )
-            .expect("Failed to convert eth_l1_gas_price"), // In wei.
-            strk_l1_gas_price: NonZeroU128::new(strk_l1_gas_price.try_into().expect("FieldElement is more than u128"))
-                .expect("Failed to convert strk_l1_gas_price"), // In fri.
-            eth_l1_data_gas_price: NonZeroU128::new(
-                eth_l1_data_gas_price.try_into().expect("FieldElement is more than u128"),
-            )
-            .expect("Failed to convert eth_l1_data_gas_price"), // In wei.
-            strk_l1_data_gas_price: NonZeroU128::new(
-                strk_l1_data_gas_price.try_into().expect("FieldElement is more than u128"),
-            )
-            .expect("Failed to convert strk_l1_data_gas_price"), // In fri.
-        });
+        Some(GasPrices {
+            eth_l1_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_wei),
+            strk_l1_gas_price: field_element_to_non_zero_u128(l1_gas_price.price_in_fri),
+            eth_l1_data_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_wei),
+            strk_l1_data_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_fri),
+        })
     }
 }
 
