@@ -11,6 +11,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Setup build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler libasound2-dev
+
       - name: Start Node
         run: |
           nohup cargo run -- --deoxys --rpc-port 9944 --network main --rpc-cors=all --rpc-methods Safe --l1-endpoint "${{ secrets.ETH_URL }}" --rpc-max-connections 100 --rpc-external --db-cache 1 --disable-root > node.log 2>&1 &
