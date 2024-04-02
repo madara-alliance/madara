@@ -4,6 +4,10 @@ on:
   workflow_dispatch:
   workflow_call:
 
+permissions:
+  contents: read
+  secrets: read
+
 jobs:
   check-state-roots:
     runs-on: ubuntu-latest
