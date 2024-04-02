@@ -27,7 +27,7 @@ jobs:
           until curl -sf http://localhost:9944; do
               tail -n 5 node.log
               echo "Node is not ready yet. Waiting..."
-              sleep 5
+              sleep 30
           done
           echo "Node is ready."
 
