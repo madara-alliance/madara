@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -35,12 +34,12 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        error!("Block not found: '{e}'");
+        log::error!("Block not found: '{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
-        error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
+        log::error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
         StarknetRpcApiError::InternalServerError
     })?;
     let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
@@ -50,20 +49,35 @@ where
 
     let previous_block_substrate_hash = get_previous_block_substrate_hash(starknet, substrate_block_hash)?;
 
+    let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
+        log::error!("Failed to retrieve fee token address");
+        StarknetRpcApiError::InternalServerError
+    })?;
+    let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let block_header = block.header();
+    // TODO: convert the real chain_id in String
+    let block_context =
+        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
+
     let execution_infos = starknet
         .client
         .runtime_api()
-        .re_execute_transactions(previous_block_substrate_hash, empty_transactions.clone(), block_transactions.clone())
+        .re_execute_transactions(
+            previous_block_substrate_hash,
+            empty_transactions.clone(),
+            block_transactions.clone(),
+            &block_context,
+        )
         .map_err(|e| {
-            error!("Failed to execute runtime API call: {e}");
+            log::error!("Failed to execute runtime API call: {e}");
             StarknetRpcApiError::InternalServerError
         })?
         .map_err(|e| {
-            error!("Failed to reexecute the block transactions: {e:?}");
+            log::error!("Failed to reexecute the block transactions: {e:?}");
             StarknetRpcApiError::InternalServerError
         })?
         .map_err(|_| {
-            error!(
+            log::error!(
                 "One of the transaction failed during it's reexecution. This should not happen, as the block has \
                  already been executed successfully in the past. There is a bug somewhere."
             );

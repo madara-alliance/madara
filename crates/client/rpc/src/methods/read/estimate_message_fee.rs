@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -48,13 +47,13 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        error!("'{e}'");
+        log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
 
     // TODO: correct this with the correct conversion
     // let message = message.try_into().map_err(|e| {
-    //     error!("Failed to convert MsgFromL1 to UserTransaction: {e}");
+    //     log::error!("Failed to convert MsgFromL1 to UserTransaction: {e}");
     //     StarknetRpcApiError::InternalServerError
     // })?;
 
@@ -63,11 +62,11 @@ where
     //     .runtime_api()
     //     .estimate_message_fee(substrate_block_hash, message)
     //     .map_err(|e| {
-    //         error!("Runtime api error: {e}");
+    //         log::error!("Runtime api error: {e}");
     //         StarknetRpcApiError::InternalServerError
     //     })?
     //     .map_err(|e| {
-    //         error!("function execution failed: {:#?}", e);
+    //         log::error!("function execution failed: {:#?}", e);
     //         StarknetRpcApiError::ContractError
     //     })?;
 

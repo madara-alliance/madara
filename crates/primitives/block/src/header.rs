@@ -107,17 +107,17 @@ impl Header {
     }
 
     /// Converts to a blockifier BlockContext
-    pub fn into_block_context(self, fee_token_addresses: FeeTokenAddresses, chain_id: ChainId) -> BlockContext {
+    pub fn into_block_context(&self, fee_token_addresses: FeeTokenAddresses, chain_id: ChainId) -> BlockContext {
         BlockContext::new_unchecked(
             &BlockInfo {
                 block_number: BlockNumber(self.block_number),
                 block_timestamp: BlockTimestamp(self.block_timestamp),
                 sequencer_address: self.sequencer_address,
-                gas_prices: self.l1_gas_price.unwrap_or(GasPrices {
-                    eth_l1_gas_price: NonZeroU128::new(10).unwrap(),
-                    strk_l1_gas_price: NonZeroU128::new(10).unwrap(),
-                    eth_l1_data_gas_price: NonZeroU128::new(10).unwrap(),
-                    strk_l1_data_gas_price: NonZeroU128::new(10).unwrap(),
+                gas_prices: self.l1_gas_price.clone().unwrap_or(GasPrices {
+                    eth_l1_gas_price: NonZeroU128::new(1).unwrap(),
+                    strk_l1_gas_price: NonZeroU128::new(1).unwrap(),
+                    eth_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
+                    strk_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
                 }),
                 // TODO
                 // I have no idea what this is, let's say we did not use any for now

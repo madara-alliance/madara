@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_sync::utility::get_config;
 use mp_hashers::HasherT;
@@ -42,7 +41,7 @@ where
 {
     let chain_id = get_config()
         .map_err(|e| {
-            error!("Failed to get config: {e}");
+            log::error!("Failed to get config: {e}");
             StarknetRpcApiError::InternalServerError
         })?
         .chain_id;

@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_sync::utility::get_config;
 use mp_hashers::HasherT;
@@ -41,7 +40,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let config = get_config().map_err(|e| {
-        error!("Failed to get config: {e}");
+        log::error!("Failed to get config: {e}");
         StarknetRpcApiError::InternalServerError
     })?;
     let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id, None);
@@ -52,7 +51,7 @@ where
             return Err(StarknetRpcApiError::from(e).into());
         }
         Err(e) => {
-            error!("Failed to add invoke transaction to sequencer: {e}");
+            log::error!("Failed to add invoke transaction to sequencer: {e}");
             return Err(StarknetRpcApiError::InternalServerError.into());
         }
     };

@@ -12,7 +12,8 @@ use sp_blockchain::HeaderBackend;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate,
     FieldElement, FunctionCall, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MaybePendingTransactionReceipt, MsgFromL1, SyncStatusType, Transaction, TransactionStatus,
+    MaybePendingTransactionReceipt, MsgFromL1, SimulationFlagForEstimateFee, SyncStatusType, Transaction,
+    TransactionStatus,
 };
 
 use super::block_hash_and_number::*;

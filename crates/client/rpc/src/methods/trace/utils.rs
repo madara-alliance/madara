@@ -7,7 +7,6 @@ use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transactions::L1HandlerTransaction;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
-use log::error;
 use mc_db::DeoxysBackend;
 use mc_storage::StorageOverride;
 use mp_block::DeoxysBlock;
@@ -335,7 +334,7 @@ where
                         .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
                         .contract_class_by_class_hash(substrate_block_hash, class_hash)
                         .ok_or_else(|| {
-                            error!("Failed to retrieve contract class from hash '{class_hash}'");
+                            log::error!("Failed to retrieve contract class from hash '{class_hash}'");
                             StarknetRpcApiError::InternalServerError
                         })?;
 
@@ -355,20 +354,22 @@ where
                     let contract_class = DeoxysBackend::sierra_classes()
                         .get_sierra_class(class_hash)
                         .map_err(|e| {
-                            error!("Failed to fetch sierra class with hash {class_hash}: {e}");
+                            log::error!("Failed to fetch sierra class with hash {class_hash}: {e}");
                             StarknetRpcApiError::InternalServerError
                         })?
                         .ok_or_else(|| {
-                            error!("The sierra class with hash {class_hash} is not present in db backend");
+                            log::error!("The sierra class with hash {class_hash} is not present in db backend");
                             StarknetRpcApiError::InternalServerError
                         })?;
                     let contract_class = mp_transactions::utils::sierra_to_casm_contract_class(contract_class)
                         .map_err(|e| {
-                            error!("Failed to convert the SierraContractClass to CasmContractClass: {e}");
+                            log::error!("Failed to convert the SierraContractClass to CasmContractClass: {e}");
                             StarknetRpcApiError::InternalServerError
                         })?;
                     let contract_class = ContractClass::V1(ContractClassV1::try_from(contract_class).map_err(|e| {
-                        error!("Failed to convert the compiler CasmContractClass to blockifier CasmContractClass: {e}");
+                        log::error!(
+                            "Failed to convert the compiler CasmContractClass to blockifier CasmContractClass: {e}"
+                        );
                         StarknetRpcApiError::InternalServerError
                     })?);
 
@@ -392,7 +393,7 @@ where
             let paid_fee_on_l1: starknet_api::transaction::Fee = DeoxysBackend::l1_handler_paid_fee()
                 .get_fee_paid_for_l1_handler_tx(Felt252Wrapper::from(tx_hash).into())
                 .map_err(|e| {
-                    error!("Failed to retrieve fee paid on l1 for tx with hash `{tx_hash:?}`: {e}");
+                    log::error!("Failed to retrieve fee paid on l1 for tx with hash `{tx_hash:?}`: {e}");
                     StarknetRpcApiError::InternalServerError
                 })?;
 
@@ -419,14 +420,14 @@ where
     BE: Backend<DBlockT> + 'static,
 {
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
-        error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
+        log::error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
         StarknetRpcApiError::InternalServerError
     })?;
     let block_number = starknet_block.header().block_number;
     let previous_block_number = block_number - 1;
     let substrate_block_hash =
         starknet.substrate_block_hash_from_starknet_block(BlockId::Number(previous_block_number)).map_err(|e| {
-            error!("Failed to retrieve previous block substrate hash: {e}");
+            log::error!("Failed to retrieve previous block substrate hash: {e}");
             StarknetRpcApiError::InternalServerError
         })?;
 

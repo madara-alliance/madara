@@ -17,7 +17,6 @@ use deoxys_runtime::opaque::{DBlockT, DHashT, DHeaderT};
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use log::error;
 use mc_db::DeoxysBackend;
 use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
@@ -40,8 +39,8 @@ use starknet_core::types::{
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
     InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MaybePendingTransactionReceipt, MsgFromL1, SimulatedTransaction, SimulationFlag, StateDiff, SyncStatusType,
-    Transaction, TransactionStatus, TransactionTraceWithHash,
+    MaybePendingTransactionReceipt, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
+    StateDiff, SyncStatusType, Transaction, TransactionStatus, TransactionTraceWithHash,
 };
 
 use crate::methods::get_block::{
@@ -287,7 +286,7 @@ where
         match block_id {
             BlockId::Hash(h) => madara_backend_client::load_hash(self.client.as_ref(), Felt252Wrapper::from(h).into())
                 .map_err(|e| {
-                    error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
+                    log::error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
                     StarknetRpcApiError::BlockNotFound
                 })?,
             BlockId::Number(n) => self
@@ -331,7 +330,7 @@ where
     /// * `block_hash` - The hash of the block containing the transactions (starknet block).
     fn get_cached_transaction_hashes(&self, block_hash: StarkHash) -> Option<Vec<StarkHash>> {
         DeoxysBackend::mapping().cached_transaction_hashes_from_block_hash(block_hash).unwrap_or_else(|err| {
-            error!("Failed to read from cache: {err}");
+            log::error!("Failed to read from cache: {err}");
             None
         })
     }
@@ -343,7 +342,7 @@ where
     /// * `starknet_block_hash` - The hash of the block containing the state diff (starknet block).
     fn get_state_diff(&self, starknet_block_hash: &APIBlockHash) -> Result<StateDiff, StarknetRpcApiError> {
         let state_diff = DeoxysBackend::da().state_diff(starknet_block_hash).map_err(|e| {
-            error!("Failed to retrieve state diff from cache for block with hash {}: {e}", starknet_block_hash);
+            log::error!("Failed to retrieve state diff from cache for block with hash {}: {e}", starknet_block_hash);
             StarknetRpcApiError::InternalServerError
         })?;
 
