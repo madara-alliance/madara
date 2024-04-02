@@ -2,6 +2,7 @@ name: State root check
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   check-state-roots:
