@@ -22,7 +22,7 @@ jobs:
 
       - name: Start Node
         run: |
-          nohup cargo run -- --deoxys --rpc-port 9944 --network main --rpc-cors=all --rpc-methods Safe --l1-endpoint "${{ secrets.ETH_URL }}" --rpc-max-connections 100 --rpc-external --db-cache 1 --disable-root > node.log 2>&1 &
+          nohup cargo run -- --deoxys --rpc-port 9944 --network main --rpc-cors=all --rpc-methods Safe --l1-endpoint "https://eth-mainnet.g.alchemy.com/v2/Oqh-00iLC3Nx08nkJOg241ky-7JA41cJ" --rpc-max-connections 100 --rpc-external --db-cache 1 --disable-root > node.log 2>&1 &
           echo $! > NODE_PID.txt
 
       - name: Wait for Node to be Ready
