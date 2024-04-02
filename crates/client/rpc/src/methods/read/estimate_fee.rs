@@ -11,7 +11,7 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit};
+use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulationFlagForEstimateFee};
 
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
@@ -29,6 +29,7 @@ use crate::Starknet;
 pub async fn estimate_fee<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
     request: Vec<BroadcastedTransaction>,
+    simulation_flags: Vec<SimulationFlagForEstimateFee>,
     block_id: BlockId,
 ) -> RpcResult<Vec<FeeEstimate>>
 where
@@ -57,7 +58,7 @@ where
     let fee_estimates = starknet
         .client
         .runtime_api()
-        .estimate_fee(substrate_block_hash, account_transactions)
+        .estimate_fee(substrate_block_hash, account_transactions, simulation_flags)
         .map_err(|e| {
             error!("Request parameters error: {e}");
             StarknetRpcApiError::InternalServerError

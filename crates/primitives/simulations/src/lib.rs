@@ -50,3 +50,10 @@ impl core::default::Default for SimulationFlags {
         Self { validate: true, charge_fee: true }
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+pub struct SimulationFlagForEstimateFee {
+    pub skip_validate: bool,
+}

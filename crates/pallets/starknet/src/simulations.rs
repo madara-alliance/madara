@@ -7,7 +7,7 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use frame_support::storage;
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
+use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags, SimulationFlagForEstimateFee};
 use mp_transactions::{user_or_l1_into_tx_vec, UserOrL1HandlerTransaction, UserTransaction};
 use sp_core::Get;
 use sp_runtime::DispatchError;
@@ -15,16 +15,17 @@ use sp_runtime::DispatchError;
 use crate::{Config, Error, Pallet};
 
 impl<T: Config> Pallet<T> {
-    pub fn estimate_fee(transactions: Vec<UserTransaction>) -> Result<Vec<(u128, u128)>, DispatchError> {
+    pub fn estimate_fee(transactions: Vec<UserTransaction>, simulation_flags: &Vec<SimulationFlagForEstimateFee>) -> Result<Vec<(u128, u128)>, DispatchError> {
         storage::transactional::with_transaction(|| {
             storage::TransactionOutcome::Rollback(Result::<_, DispatchError>::Ok(Self::estimate_fee_inner(
                 transactions,
+                simulation_flags,
             )))
         })
         .map_err(|_| Error::<T>::FailedToCreateATransactionalStorageExecution)?
     }
 
-    fn estimate_fee_inner(transactions: Vec<UserTransaction>) -> Result<Vec<(u128, u128)>, DispatchError> {
+    fn estimate_fee_inner(transactions: Vec<UserTransaction>, simulation_flags:  &Vec<SimulationFlagForEstimateFee>) -> Result<Vec<(u128, u128)>, DispatchError> {
         let transactions_len = transactions.len();
         let chain_id = Self::chain_id();
         let block_context = Self::get_block_context();
@@ -32,7 +33,7 @@ impl<T: Config> Pallet<T> {
         let fee_res_iterator = transactions
             .into_iter()
             .map(|tx| {
-                match Self::execute_account_transaction(tx.into(), &block_context, &SimulationFlags::default()) {
+                match Self::execute_fee_transaction(tx.into(), &block_context, simulation_flags) {
                     Ok(execution_info) if !execution_info.is_reverted() => Ok(execution_info),
                     Err(e) => {
                         log::error!("Transaction execution failed during fee estimation: {e}");
@@ -208,6 +209,16 @@ impl<T: Config> Pallet<T> {
         let mut cached_state = Self::init_cached_state();
 
         transaction.execute(&mut cached_state, block_context, simulation_flags.charge_fee, simulation_flags.validate)
+    }
+
+    fn execute_fee_transaction(
+        transaction: AccountTransaction,
+        block_context: &BlockContext,
+        simulation_flags:  &Vec<SimulationFlagForEstimateFee>,
+    ) -> Result<TransactionExecutionInfo, TransactionExecutionError> {
+        let mut cached_state = Self::init_cached_state();
+
+        transaction.execute(&mut cached_state, block_context, false, simulation_flags.0)
     }
 
     fn execute_message(

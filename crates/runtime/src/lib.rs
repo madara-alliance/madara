@@ -34,7 +34,7 @@ pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
 use mp_contract::ContractAbi;
 use mp_felt::Felt252Wrapper;
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags, TransactionSimulationResult};
+use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags, TransactionSimulationResult, SimulationFlagForEstimateFee};
 use mp_transactions::{UserOrL1HandlerTransaction, UserTransaction};
 use pallet_grandpa::{fg_primitives, AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList};
 /// Import the Starknet pallet.
@@ -287,8 +287,8 @@ impl_runtime_apis! {
             Starknet::is_transaction_fee_disabled()
         }
 
-        fn estimate_fee(transactions: Vec<UserTransaction>) -> Result<Vec<(u128, u128)>, DispatchError> {
-            Starknet::estimate_fee(transactions)
+        fn estimate_fee(transactions: Vec<UserTransaction>, simulation_flags: Vec<SimulationFlagForEstimateFee>) -> Result<Vec<(u128, u128)>, DispatchError> {
+            Starknet::estimate_fee(transactions, simulation_flags)
         }
 
         fn re_execute_transactions(transactions_before: Vec<UserOrL1HandlerTransaction>, transactions_to_trace: Vec<UserOrL1HandlerTransaction>) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {

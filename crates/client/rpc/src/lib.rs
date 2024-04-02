@@ -116,6 +116,7 @@ pub trait StarknetReadRpcApi {
     async fn estimate_fee(
         &self,
         request: Vec<BroadcastedTransaction>,
+        simulation_flags: Vec<SimulationFlagForEstimateFee>,
         block_id: BlockId,
     ) -> RpcResult<Vec<FeeEstimate>>;
 

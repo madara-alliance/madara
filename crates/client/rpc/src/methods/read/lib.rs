@@ -76,9 +76,10 @@ where
     async fn estimate_fee(
         &self,
         request: Vec<BroadcastedTransaction>,
+        simulation_flags: Vec<SimulationFlagForEstimateFee>,
         block_id: BlockId,
     ) -> RpcResult<Vec<FeeEstimate>> {
-        estimate_fee(self, request, block_id).await
+        estimate_fee(self, request, simulation_flags, block_id).await
     }
 
     async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<FeeEstimate> {
