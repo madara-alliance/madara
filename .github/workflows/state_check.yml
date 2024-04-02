@@ -12,7 +12,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Start Node
-        run: |
+        run: |-
           cargo run -- --deoxys --rpc-port 9944 --network main --rpc-cors=all --rpc-methods Safe --l1-endpoint "${{ secrets.ETH_URL }}" --rpc-max-connections 100 --rpc-external --db-cache 1 --disable-root &
           NODE_PID=$!
 
