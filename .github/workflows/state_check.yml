@@ -5,7 +5,7 @@ on:
   workflow_call:
 
 jobs:
-  check-rpc:
+  check-state-roots:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -17,16 +17,38 @@ jobs:
           NODE_PID=$!
 
       - name: Wait for Node Sync
-        run: sleep 300
+        run: |
+          echo "Waiting for node to sync to block 1000..."
+          BLOCK_NUMBER=0
+          until [[ "$BLOCK_NUMBER" -eq 1000 ]]; do
+            RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"starknet_blockNumber","params":[],"id":1}' http://localhost:9944)
+            BLOCK_NUMBER=$(echo $RESPONSE | jq -r '.result')
+            echo "Current Block Number: $BLOCK_NUMBER"
+            if [[ "$BLOCK_NUMBER" -eq 1000 ]]; then
+              echo "Node has synced to block 1000."
+              break
+            fi
+            sleep 10
+          done
 
       - name: Compare RPC Responses
         run: |
           for BLOCK_NUMBER in {0..999}
           do
-            RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"starknet_getBlockWithTxs","params":{"block_id":{"block_number":'$BLOCK_NUMBER'}},"id":1}' http://localhost:9944)
-            NEW_ROOT=$(echo $RESPONSE | jq -r '.result.new_root')
-            # Compare $NEW_ROOT with your expected values here
-            echo "Block $BLOCK_NUMBER: New Root - $NEW_ROOT"
+            # Fetch the new_root from the local node
+            LOCAL_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"starknet_getBlockWithTxs","params":{"block_id":{"block_number":'$BLOCK_NUMBER'}},"id":1}' http://localhost:9944)
+            LOCAL_NEW_ROOT=$(echo $LOCAL_RESPONSE | jq -r '.result.new_root')
+
+            # Fetch the new_root from Starknet's mainnet
+            MAINNET_RESPONSE=$(curl -s "https://alpha-mainnet.starknet.io/feeder_gateway/get_state_update?blockNumber=$BLOCK_NUMBER")
+            MAINNET_NEW_ROOT=$(echo $MAINNET_RESPONSE | jq -r '.new_root')
+
+            # Compare the local and mainnet new_root values
+            if [[ "$LOCAL_NEW_ROOT" == "$MAINNET_NEW_ROOT" ]]; then
+              echo "Block $BLOCK_NUMBER: New Root Match - $LOCAL_NEW_ROOT"
+            else
+              echo "Block $BLOCK_NUMBER: New Root Mismatch - Local: $LOCAL_NEW_ROOT, Mainnet: $MAINNET_NEW_ROOT"
+            fi
           done
 
       - name: Kill Node Process
