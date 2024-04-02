@@ -1,7 +1,6 @@
 use blockifier::transaction::errors::TransactionExecutionError;
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::{async_trait, RpcResult};
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};

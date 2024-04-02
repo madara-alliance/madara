@@ -1,7 +1,6 @@
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_storage::StorageOverride;
 use mp_hashers::HasherT;
@@ -52,7 +51,7 @@ where
     let (tx_types, user_transactions) =
         itertools::process_results(tx_type_and_tx_iterator, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>()).map_err(
             |e| {
-                error!("Failed to convert BroadcastedTransaction to UserTransaction: {e}");
+                log::error!("Failed to convert BroadcastedTransaction to UserTransaction: {e}");
                 StarknetRpcApiError::InternalServerError
             },
         )?;
@@ -64,11 +63,11 @@ where
         .runtime_api()
         .simulate_transactions(substrate_block_hash, user_transactions, simulation_flags)
         .map_err(|e| {
-            error!("Request parameters error: {e}");
+            log::error!("Request parameters error: {e}");
             StarknetRpcApiError::InternalServerError
         })?
         .map_err(|e| {
-            error!("Failed to call function: {:#?}", e);
+            log::error!("Failed to call function: {:#?}", e);
             StarknetRpcApiError::ContractError
         })?;
 

@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -66,13 +65,13 @@ where
     // Get the substrate block numbers for the requested range
     let latest_block =
         starknet.substrate_block_number_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
-            error!("'{e}'");
+            log::error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
     let from_block = starknet
         .substrate_block_number_from_starknet_block(filter.event_filter.from_block.unwrap_or(BlockId::Number(0)))
         .map_err(|e| {
-            error!("'{e}'");
+            log::error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
     let to_block = starknet
@@ -80,13 +79,13 @@ where
             filter.event_filter.to_block.unwrap_or(BlockId::Tag(BlockTag::Latest)),
         )
         .map_err(|e| {
-            error!("'{e}'");
+            log::error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
 
     let continuation_token = match filter.result_page_request.continuation_token {
         Some(token) => ContinuationToken::parse(token).map_err(|e| {
-            error!("Failed to parse continuation token: {:?}", e);
+            log::error!("Failed to parse continuation token: {:?}", e);
             StarknetRpcApiError::InvalidContinuationToken
         })?,
         None => ContinuationToken { block_n: from_block, event_n: 0 },

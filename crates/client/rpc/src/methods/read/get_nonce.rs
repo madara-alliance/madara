@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -48,7 +47,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        error!("'{e}'");
+        log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
 
@@ -59,7 +58,7 @@ where
         .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
         .nonce(substrate_block_hash, contract_address)
         .ok_or_else(|| {
-            error!("Failed to get nonce at '{contract_address:?}'");
+            log::error!("Failed to get nonce at '{contract_address:?}'");
             StarknetRpcApiError::ContractNotFound
         })?;
 

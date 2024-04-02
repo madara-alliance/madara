@@ -8,7 +8,6 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transactions::L1HandlerTransaction;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_storage::StorageOverride;

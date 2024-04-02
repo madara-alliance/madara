@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
@@ -38,7 +37,7 @@ where
     let substrate_block_hash = DeoxysBackend::mapping()
         .block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
         .map_err(|e| {
-            error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
+            log::error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
             StarknetRpcApiError::TxnHashNotFound
         })?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
@@ -76,15 +75,15 @@ where
             &block_context,
         )
         .map_err(|e| {
-            error!("Failed to execute runtime API call: {e}");
+            log::error!("Failed to execute runtime API call: {e}");
             StarknetRpcApiError::InternalServerError
         })?
         .map_err(|e| {
-            error!("Failed to reexecute the block transactions: {e:?}");
+            log::error!("Failed to reexecute the block transactions: {e:?}");
             StarknetRpcApiError::InternalServerError
         })?
         .map_err(|_| {
-            error!(
+            log::error!(
                 "One of the transaction failed during it's reexecution. This should not happen, as the block has \
                  already been executed successfully in the past. There is a bug somewhere."
             );

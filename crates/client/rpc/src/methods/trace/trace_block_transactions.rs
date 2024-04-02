@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -35,12 +34,12 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        error!("Block not found: '{e}'");
+        log::error!("Block not found: '{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
-        error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
+        log::error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
         StarknetRpcApiError::InternalServerError
     })?;
     let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
@@ -70,15 +69,15 @@ where
             &block_context,
         )
         .map_err(|e| {
-            error!("Failed to execute runtime API call: {e}");
+            log::error!("Failed to execute runtime API call: {e}");
             StarknetRpcApiError::InternalServerError
         })?
         .map_err(|e| {
-            error!("Failed to reexecute the block transactions: {e:?}");
+            log::error!("Failed to reexecute the block transactions: {e:?}");
             StarknetRpcApiError::InternalServerError
         })?
         .map_err(|_| {
-            error!(
+            log::error!(
                 "One of the transaction failed during it's reexecution. This should not happen, as the block has \
                  already been executed successfully in the past. There is a bug somewhere."
             );

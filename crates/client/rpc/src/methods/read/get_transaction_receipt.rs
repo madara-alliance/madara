@@ -9,7 +9,6 @@ use blockifier::transaction::transaction_execution as btx;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_sync::l2::get_pending_block;
@@ -666,7 +665,7 @@ where
         None => {
             let substrate_block_hash =
                 starknet.substrate_block_hash_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
-                    error!("'{e}'");
+                    log::error!("'{e}'");
                     StarknetRpcApiError::BlockNotFound
                 })?;
 

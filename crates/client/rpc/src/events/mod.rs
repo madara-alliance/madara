@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -38,19 +37,19 @@ where
     pub fn get_block_events(&self, block_number: u64) -> Result<Vec<EmittedEvent>, StarknetRpcApiError> {
         let substrate_block_hash =
             self.substrate_block_hash_from_starknet_block(BlockId::Number(block_number)).map_err(|e| {
-                error!("'{e}'");
+                log::error!("'{e}'");
                 StarknetRpcApiError::BlockNotFound
             })?;
 
         let starknet_block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).map_err(|e| {
-            error!("'{e}'");
+            log::error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
 
         let block_hash = starknet_block.header().hash::<H>();
 
         let chain_id = self.client.runtime_api().chain_id(substrate_block_hash).map_err(|_| {
-            error!("Failed to retrieve chain id");
+            log::error!("Failed to retrieve chain id");
             StarknetRpcApiError::InternalServerError
         })?;
 
@@ -62,7 +61,7 @@ where
                     Felt252Wrapper::try_from(h)
                         .map(|f| f.0)
                         .map_err(|e| {
-                            error!("'{e}'");
+                            log::error!("'{e}'");
                             StarknetRpcApiError::InternalServerError
                         })
                         .unwrap()
