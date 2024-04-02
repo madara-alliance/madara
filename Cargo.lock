@@ -5542,7 +5542,9 @@ dependencies = [
  "glob",
  "libc",
  "libz-sys",
+ "lz4-sys",
  "tikv-jemalloc-sys",
+ "zstd-sys",
 ]
 
 [[package]]
@@ -5849,14 +5851,13 @@ dependencies = [
 name = "mc-db"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bonsai-trie",
  "deoxys-runtime",
  "ethers",
- "kvdb",
- "kvdb-rocksdb",
  "log",
- "parity-db",
  "parity-scale-codec",
+ "rocksdb",
  "sc-client-db",
  "sp-database",
  "sp-runtime",

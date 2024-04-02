@@ -1,14 +1,12 @@
 //! Contains the code required to sync data from the feeder efficiently.
 use std::pin::pin;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
-use bonsai_trie::id::BasicId;
-use bonsai_trie::BonsaiStorage;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use futures::prelude::*;
 use lazy_static::lazy_static;
-use mc_db::bonsai_db::BonsaiDb;
+use mc_db::DeoxysBackend;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::DeoxysBlock;
@@ -25,7 +23,6 @@ use starknet_core::types::{PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
-use starknet_types_core::hash::{Pedersen, Poseidon};
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
@@ -141,15 +138,8 @@ pub struct SenderConfig {
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-pub async fn sync<C>(
-    mut sender_config: SenderConfig,
-    fetch_config: FetchConfig,
-    first_block: u64,
-    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
-    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
-    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
-    client: Arc<C>,
-) where
+pub async fn sync<C>(mut sender_config: SenderConfig, fetch_config: FetchConfig, first_block: u64, client: Arc<C>)
+where
     C: HeaderBackend<DBlockT> + 'static,
 {
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
@@ -165,8 +155,7 @@ pub async fn sync<C>(
     if first_block == 1 {
         let state_update =
             provider.get_state_update(BlockId::Number(0)).await.expect("getting state update for genesis block");
-        verify_l2(0, &state_update, overrides, bonsai_contract, bonsai_contract_storage, bonsai_class, None)
-            .expect("verifying genesis block");
+        verify_l2(0, &state_update, overrides, None).expect("verifying genesis block");
     }
 
     let fetch_stream = (first_block..).map(|block_n| {
@@ -212,9 +201,7 @@ pub async fn sync<C>(
                 let (state_update, block_conv) = {
                     let verify = fetch_config.verify;
                     let overrides = Arc::clone(overrides);
-                    let bonsai_contract = Arc::clone(bonsai_contract);
-                    let bonsai_contract_storage = Arc::clone(bonsai_contract_storage);
-                    let bonsai_class = Arc::clone(bonsai_class);
+
                     let state_update = Arc::new(state_update);
                     let state_update_1 = Arc::clone(&state_update);
 
@@ -227,7 +214,7 @@ pub async fn sync<C>(
                         };
                         let ver_l2 = || {
                             let start = std::time::Instant::now();
-                            verify_l2(block_n, &state_update, &overrides, &bonsai_contract, &bonsai_contract_storage, &bonsai_class, block_hash)
+                            verify_l2(block_n, &state_update, &overrides,block_hash)
                                 .expect("verifying block");
                             log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
                         };
@@ -317,26 +304,27 @@ pub fn verify_l2(
     block_number: u64,
     state_update: &StateUpdate,
     overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    bonsai_contract: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
-    bonsai_contract_storage: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Pedersen>>>,
-    bonsai_class: &Arc<Mutex<BonsaiStorage<BasicId, BonsaiDb, Poseidon>>>,
     substrate_block_hash: Option<H256>,
 ) -> Result<(), L2SyncError> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
+
+    let mut bonsai_contract = DeoxysBackend::bonsai_contract().writable();
+    let mut bonsai_contract_storage = DeoxysBackend::bonsai_storage().writable();
+    let mut bonsai_class = DeoxysBackend::bonsai_class().writable();
 
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
     let state_root = update_state_root(
         csd,
         Arc::clone(overrides),
-        Arc::clone(bonsai_contract),
-        Arc::clone(bonsai_contract_storage),
-        Arc::clone(bonsai_class),
+        &mut bonsai_contract,
+        &mut bonsai_contract_storage,
+        &mut bonsai_class,
         block_number,
         substrate_block_hash,
     );
     log::debug!("state_root: {state_root:?}");
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
-    log::info!("update_state_root {} -- block_hash: {block_hash:?}, state_root: {state_root:?}", block_number);
+    log::debug!("update_state_root {} -- block_hash: {block_hash:?}, state_root: {state_root:?}", block_number);
 
     update_l2(L2StateUpdate {
         block_number,
