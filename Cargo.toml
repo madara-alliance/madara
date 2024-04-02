@@ -167,9 +167,7 @@ sp-version = { git = "https://github.com/massalabs/polkadot-sdk", branch = "rele
 ] }
 
 # Substrate client dependencies
-sc-client-db = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", features = [
-  "rocksdb",
-] }
+sc-client-db = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 sc-consensus = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 sc-network = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 sc-network-common = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }

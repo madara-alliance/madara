@@ -2,13 +2,12 @@ use std::sync::Arc;
 
 // Substrate
 use parity_scale_codec::{Decode, Encode};
-use sp_database::Database;
 
 use crate::error::DbError;
-use crate::DbHash;
+use crate::{Column, DatabaseExt, DB};
 
 pub struct MessagingDb {
-    pub(crate) db: Arc<dyn Database<DbHash>>,
+    pub(crate) db: Arc<DB>,
 }
 
 #[derive(Encode, Decode)]
@@ -24,8 +23,14 @@ impl LastSyncedEventBlock {
 }
 
 impl MessagingDb {
+    pub(crate) fn new(db: Arc<DB>) -> Self {
+        Self { db }
+    }
+
     pub fn last_synced_l1_block_with_event(&self) -> Result<LastSyncedEventBlock, DbError> {
-        match self.db.get(crate::columns::MESSAGING, crate::static_keys::LAST_SYNCED_L1_EVENT_BLOCK) {
+        let column = self.db.get_column(Column::Messaging);
+
+        match self.db.get_cf(&column, crate::static_keys::LAST_SYNCED_L1_EVENT_BLOCK)? {
             Some(raw) => Ok(LastSyncedEventBlock::decode(&mut &raw[..])?),
             None => Ok(LastSyncedEventBlock::new(0, 0)),
         }
@@ -35,16 +40,9 @@ impl MessagingDb {
         &self,
         last_synced_event_block: &LastSyncedEventBlock,
     ) -> Result<(), DbError> {
-        let mut transaction = sp_database::Transaction::new();
+        let column = self.db.get_column(Column::Messaging);
 
-        transaction.set(
-            crate::columns::MESSAGING,
-            crate::static_keys::LAST_SYNCED_L1_EVENT_BLOCK,
-            &last_synced_event_block.encode(),
-        );
-
-        self.db.commit(transaction)?;
-
+        self.db.put_cf(&column, crate::static_keys::LAST_SYNCED_L1_EVENT_BLOCK, last_synced_event_block.encode())?;
         Ok(())
     }
 }
