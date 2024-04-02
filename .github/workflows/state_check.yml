@@ -20,6 +20,7 @@ jobs:
         run: |
           echo "Checking if the node is ready..."
           until curl -sf http://localhost:9944; do
+              cat node.log
               echo "Node is not ready yet. Waiting..."
               sleep 5
           done
