@@ -9,27 +9,27 @@ jobs:
   check-rpc:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-    - name: Start Node
-      run: |
-        cargo run -- --deoxys --rpc-port 9944 --network main --rpc-cors=all --rpc-methods Safe --l1-endpoint "https://eth-mainnet.g.alchemy.com/v2/Oqh-00iLC3Nx08nkJOg241ky-7JA41cJ" --rpc-max-connections 100 --rpc-external --db-cache 1 &
-        NODE_PID=$!
-      
-    - name: Wait for Node Sync
-      run: sleep 300
+      - name: Start Node
+        run: |
+          cargo run -- --deoxys --rpc-port 9944 --network main --rpc-cors=all --rpc-methods Safe --l1-endpoint "https://eth-mainnet.g.alchemy.com/v2/Oqh-00iLC3Nx08nkJOg241ky-7JA41cJ" --rpc-max-connections 100 --rpc-external --db-cache 1 &
+          NODE_PID=$!
 
-    - name: Compare RPC Responses
-      run: |
-        for BLOCK_NUMBER in {0..999}
-        do
-          RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"starknet_getBlockWithTxs","params":{"block_id":{"block_number":'$BLOCK_NUMBER'}},"id":1}' http://localhost:9944)
-          NEW_ROOT=$(echo $RESPONSE | jq -r '.result.new_root')
-          # Compare $NEW_ROOT with your expected values here
-          echo "Block $BLOCK_NUMBER: New Root - $NEW_ROOT"
-        done
-      
-    - name: Kill Node Process
-      if: always()
-      run: kill $NODE_PID
+      - name: Wait for Node Sync
+        run: sleep 300
+
+      - name: Compare RPC Responses
+        run: |
+          for BLOCK_NUMBER in {0..999}
+          do
+            RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"starknet_getBlockWithTxs","params":{"block_id":{"block_number":'$BLOCK_NUMBER'}},"id":1}' http://localhost:9944)
+            NEW_ROOT=$(echo $RESPONSE | jq -r '.result.new_root')
+            # Compare $NEW_ROOT with your expected values here
+            echo "Block $BLOCK_NUMBER: New Root - $NEW_ROOT"
+          done
+
+      - name: Kill Node Process
+        if: always()
+        run: kill $NODE_PID
