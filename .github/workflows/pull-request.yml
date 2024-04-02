@@ -33,4 +33,4 @@ jobs:
   state_check:
     name: State root check
     uses: ./.github/workflows/state_check.yml
-    needs: rust_check
+    needs: changelog
