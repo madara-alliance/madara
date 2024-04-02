@@ -1,9 +1,8 @@
 name: State root check
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+  workflow_call:
 
 jobs:
   check-rpc:
