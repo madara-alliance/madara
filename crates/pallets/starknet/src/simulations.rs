@@ -193,10 +193,6 @@ impl<T: Config> Pallet<T> {
             validate: false,
         };
 
-        log::info!("Re-executing transactions");
-        log::info!("Simulation flags: {:?}", simulation_flags);
-        log::info!("Block context: {:?}", block_context);
-
         let _transactions_before_exec_infos = Self::execute_account_or_l1_handler_transactions(
             user_or_l1_into_tx_vec(transactions_before),
             &block_context,
