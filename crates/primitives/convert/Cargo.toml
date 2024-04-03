@@ -8,7 +8,10 @@ version.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 blockifier = { workspace = true }
-cairo-lang-starknet = { workspace = true }
+casm-compiler-v1_0_0-alpha6 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-alpha.6" }
+casm-compiler-v1_0_0-rc0 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-rc0" }
+casm-compiler-v1_1_1 = { package = "cairo-lang-starknet", version = "=1.1.1" }
+casm-compiler-v2_6_0 = { package = "cairo-lang-starknet", version = "=2.6.0" }
 cairo-lang-starknet-classes = { workspace = true }
 cairo-lang-utils = { workspace = true }
 cairo-vm = { workspace = true }
@@ -20,6 +23,7 @@ scale-info = { workspace = true, features = ["derive"] }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true }
+log = { workspace = true, default-features = false}
 
 [features]
 default = ["std"]

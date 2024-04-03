@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 
 use anyhow::anyhow;
+use blockifier::blockifier::block;
 use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
 };
@@ -10,6 +11,11 @@ use cairo_lang_starknet_classes::casm_contract_class::{CasmContractClass, Starkn
 use cairo_lang_starknet_classes::contract_class::{
     ContractClass as SierraContractClass, ContractEntryPoint, ContractEntryPoints,
 };
+use casm_compiler_v1_0_0_alpha6::casm_contract_class::CasmContractClass as CasmContractClassV1;
+use casm_compiler_v1_0_0_rc0::casm_contract_class::CasmContractClass as CasmContractClassV2;
+use casm_compiler_v1_1_1::casm_contract_class::CasmContractClass as CasmContractClassV3;
+use semver::Version;
+
 use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
@@ -27,9 +33,10 @@ use starknet_core::types::{
 };
 
 /// Returns a [`BlockifierContractClass`] from a [`ContractClass`]
-pub fn from_rpc_contract_class(contract_class: &ContractClassCore) -> anyhow::Result<ContractClassBlockifier> {
+pub fn from_rpc_contract_class(contract_class: &ContractClassCore, starknet_version: Option<String>) -> anyhow::Result<ContractClassBlockifier> {
+    log::info!("from_rpc_contract_class");
     match contract_class {
-        ContractClassCore::Sierra(contract_class) => from_contract_class_sierra(contract_class),
+        ContractClassCore::Sierra(contract_class) => from_contract_class_sierra(contract_class, starknet_version),
         ContractClassCore::Legacy(contract_class) => from_contract_class_cairo(contract_class),
     }
 }
@@ -44,8 +51,9 @@ pub fn to_contract_class_sierra(_: &ContractClassV1, abi: String) -> anyhow::Res
     }))
 }
 
-pub fn from_contract_class_sierra(contract_class: &FlattenedSierraClass) -> anyhow::Result<ContractClassBlockifier> {
-    let casm_contract = flattened_sierra_to_casm_contract_class(contract_class)?;
+pub fn from_contract_class_sierra(contract_class: &FlattenedSierraClass, starknet_version: Option<String>) -> anyhow::Result<ContractClassBlockifier> {
+    println!("ICI PRN");
+    let casm_contract = flattened_sierra_to_casm_contract_class(contract_class, starknet_version)?;
     let blockifier_contract = ContractClassV1::try_from(casm_contract).unwrap();
     anyhow::Ok(ContractClassBlockifier::V1(blockifier_contract))
 }
@@ -81,7 +89,9 @@ pub fn from_contract_class_cairo(
 /// Converts a [FlattenedSierraClass] to a [CasmContractClass]
 pub fn flattened_sierra_to_casm_contract_class(
     flattened_sierra: &FlattenedSierraClass,
+    starknet_version: Option<String>
 ) -> Result<CasmContractClass, StarknetSierraCompilationError> {
+    log::info!("Ca rentre ici ouuu?");
     let sierra_contract_class = SierraContractClass {
         sierra_program: flattened_sierra.sierra_program.iter().map(field_element_to_big_uint_as_hex).collect(),
         sierra_program_debug_info: None,
@@ -89,10 +99,33 @@ pub fn flattened_sierra_to_casm_contract_class(
         entry_points_by_type: entry_points_by_type_to_contract_entry_points(
             flattened_sierra.entry_points_by_type.clone(),
         ),
-        abi: None, // we can convert the ABI but for now, to convert to Casm, the ABI isn't needed
+        abi: None
     };
-    // TODO : fix from_contract_class parameters here
-    let casm_contract_class = CasmContractClass::from_contract_class(sierra_contract_class, false, usize::MAX).unwrap();
+
+    log::info!("Ca foire la? {:?}", sierra_contract_class);
+
+    // Parse the starknet_version
+    let version = starknet_version
+        .as_deref()
+        .and_then(|v| Version::parse(v).ok())
+        .unwrap_or_else(|| Version::new(0, 0, 0));
+
+    // Define version thresholds
+    let v1_0_0_alpha6 = Version::new(1, 0, 0);
+    let v1_0_0_rc0 = Version::parse("1.0.0-rc0").unwrap();
+    let v1_1_1 = Version::new(1, 1, 1);
+    let v2_6_0 = Version::new(2, 6, 0);
+
+    let casm_contract_class = if version >= v2_6_0 {
+        CasmContractClassV1::from_contract_class(sierra_contract_class, true)?
+    } else if version >= v1_1_1 {
+        CasmContractClassV2::from_contract_class(sierra_contract_class, true)?
+    } else if version > v1_0_0_rc0 {
+        CasmContractClassV3::from_contract_class(sierra_contract_class, true)?
+    } else {
+        CasmContractClass::from_contract_class(sierra_contract_class, true, usize::MAX)?
+    };
+
     Ok(casm_contract_class)
 }
 
@@ -223,7 +256,11 @@ fn from_legacy_entry_point(entry_point: &LegacyContractEntryPoint) -> EntryPoint
 
 /// Converts a [FieldElement] to a [BigUint]
 fn field_element_to_big_uint(value: &FieldElement) -> BigUint {
-    BigInt::from_bytes_be(Sign::Plus, &value.to_bytes_be()).to_biguint().unwrap()
+    if value == &FieldElement::ZERO {
+        BigInt::from_bytes_be(Sign::NoSign, &value.to_bytes_be()).to_biguint().unwrap()
+    } else {
+        BigInt::from_bytes_be(Sign::Plus, &value.to_bytes_be()).to_biguint().unwrap()
+    }
 }
 
 /// Converts a [FieldElement] to a [BigUintAsHex]

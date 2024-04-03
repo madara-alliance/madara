@@ -52,6 +52,8 @@ pub struct FetchConfig {
 pub async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -> Result<p::Block, L2SyncError> {
     let block = client.get_block(BlockId::Number(block_number)).await?;
 
+    
+
     Ok(block)
 }
 
@@ -113,6 +115,7 @@ async fn fetch_state_and_class_update<C>(
     block_number: u64,
     overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     client: &C,
+    starknet_version: Felt252Wrapper,
 ) -> Result<(StateUpdate, Vec<ContractClassData>), L2SyncError>
 where
     C: HeaderBackend<DBlockT>,
@@ -158,7 +161,7 @@ where
         let provider = Arc::clone(&arc_provider);
         let state_update = Arc::clone(state_update);
         let class_hash = *class_hash;
-        set.spawn(async move { fetch_class(class_hash, block_hash_deoxys(&state_update), &provider).await });
+        set.spawn(async move { fetch_class(class_hash, block_hash_deoxys(&state_update), &provider, block_number).await });
         set
     });
 
@@ -179,19 +182,37 @@ async fn fetch_class(
     class_hash: FieldElement,
     block_hash: FieldElement,
     provider: &SequencerGatewayProvider,
+    block_number: u64,
 ) -> Result<ContractClassData, L2SyncError> {
     // log::info!("💾 Downloading class {class_hash:#x}");
     let core_class = provider.get_class(BlockIdCore::Hash(block_hash), class_hash).await?;
-
+    // Check for Starknet versions for block number >= 30000 (TODO: this is for mainnet, add support for Sepolia)
+    let starknet_version: Option<String> = if block_number >= 30000u64 {
+        Some(fetch_starknet_version(provider, block_number).await?)
+    } else {
+        None
+    };
     // Core classes have to be converted into Blockifier classes to gain support
     // for Substrate [`Encode`] and [`Decode`] traits
     Ok(ContractClassData {
-        // TODO: find a less roundabout way of converting from a Felt252Wrapper
         hash: ClassHash(Felt252Wrapper::from(class_hash).into()),
         // TODO: remove this expect when ContractClassWrapper::try_from does proper error handling using
         // thiserror
-        contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
+        contract_class: ContractClassWrapper::try_from((core_class, starknet_version)).expect("converting contract class"),
     })
+}
+
+/// Fetch Starknet version at a specific block number
+/// 
+/// This function is used to convert a class definition based on a specific Starknet version
+/// TODO: replace this with a thread safe canal between the fetch block thread
+async fn fetch_starknet_version(
+    provider: &SequencerGatewayProvider,
+    block_number: u64,
+) -> Result<String, L2SyncError> {
+    let block = provider.get_block(BlockId::Number(block_number)).await?;
+    
+    Ok(block.starknet_version)
 }
 
 /// Filters out class declarations in the Starknet sequencer state update
