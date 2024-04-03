@@ -1,71 +1,64 @@
 use alloc::vec::Vec;
 
 use blockifier::context::BlockContext;
+use blockifier::execution::errors::EntryPointExecutionError;
+use blockifier::fee;
+use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::transaction::account_transaction::AccountTransaction;
-use blockifier::transaction::errors::TransactionExecutionError;
-use blockifier::transaction::objects::TransactionExecutionInfo;
+use blockifier::transaction::errors::{TransactionExecutionError, TransactionFeeError};
+use blockifier::transaction::objects::{GasVector, HasRelatedFeeType, TransactionExecutionInfo};
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use frame_support::storage;
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
+use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlagForEstimateFee, SimulationFlags};
 use mp_transactions::{user_or_l1_into_tx_vec, UserOrL1HandlerTransaction, UserTransaction};
 use sp_core::Get;
 use sp_runtime::DispatchError;
+use starknet_api::core::{ContractAddress, EntryPointSelector};
 
+// use starknet_core::types::PriceUnit;
+use crate::types::{FeeEstimate, PriceUnit};
 use crate::{Config, Error, Pallet};
 
 impl<T: Config> Pallet<T> {
-    pub fn estimate_fee(transactions: Vec<UserTransaction>) -> Result<Vec<(u128, u128)>, DispatchError> {
+    pub fn estimate_fee(
+        transactions: Vec<UserTransaction>,
+        simulation_flags: &Vec<SimulationFlagForEstimateFee>,
+    ) -> Result<Vec<FeeEstimate>, DispatchError> {
         storage::transactional::with_transaction(|| {
             storage::TransactionOutcome::Rollback(Result::<_, DispatchError>::Ok(Self::estimate_fee_inner(
                 transactions,
+                simulation_flags,
             )))
         })
         .map_err(|_| Error::<T>::FailedToCreateATransactionalStorageExecution)?
     }
 
-    fn estimate_fee_inner(transactions: Vec<UserTransaction>) -> Result<Vec<(u128, u128)>, DispatchError> {
+    fn estimate_fee_inner(
+        transactions: Vec<UserTransaction>,
+        simulation_flags: &Vec<SimulationFlagForEstimateFee>,
+    ) -> Result<Vec<FeeEstimate>, DispatchError> {
         let transactions_len = transactions.len();
         let chain_id = Self::chain_id();
         let block_context = Self::get_block_context();
 
-        let fee_res_iterator = transactions
-            .into_iter()
-            .map(|tx| {
-                match Self::execute_account_transaction(tx.into(), &block_context, &SimulationFlags::default()) {
-                    Ok(execution_info) if !execution_info.is_reverted() => Ok(execution_info),
+        let mut fees = Vec::with_capacity(transactions_len);
+
+        for tx in transactions {
+            for flag in simulation_flags.iter() {
+                match Self::execute_fee_transaction(tx.clone().into(), &block_context, flag.clone()) {
+                    Ok(execution_info) => fees.push(execution_info),
                     Err(e) => {
                         log::error!("Transaction execution failed during fee estimation: {e}");
-                        Err(Error::<T>::TransactionExecutionFailed)
-                    }
-                    Ok(execution_info) => {
-                        log::error!(
-                            "Transaction execution reverted during fee estimation: {}",
-                            // Safe due to the `match` branch order
-                            execution_info.revert_error.unwrap()
-                        );
-                        Err(Error::<T>::TransactionExecutionFailed)
+                        return Err(Error::<T>::TransactionExecutionFailed.into());
                     }
                 }
-            })
-            .map(|exec_info_res| {
-                exec_info_res.map(|exec_info| {
-                    exec_info
-                        .actual_resources
-                        .0
-                        .get("l1_gas_usage")
-                        .ok_or_else(|| DispatchError::from(Error::<T>::MissingL1GasUsage))
-                        .map(|l1_gas_usage| (exec_info.actual_fee.0, *l1_gas_usage))
-                })
-            });
-
-        let mut fees = Vec::with_capacity(transactions_len);
-        for fee_res in fee_res_iterator {
-            fees.push(fee_res??);
+            }
         }
 
         Ok(fees)
     }
+
     pub fn simulate_transactions(
         transactions: Vec<UserTransaction>,
         simulation_flags: &SimulationFlags,
@@ -217,6 +210,71 @@ impl<T: Config> Pallet<T> {
         transaction.execute(&mut cached_state, block_context, simulation_flags.charge_fee, simulation_flags.validate)
     }
 
+    fn execute_fee_transaction(
+        transaction: AccountTransaction,
+        block_context: &BlockContext,
+        simulation_flags: SimulationFlagForEstimateFee,
+    ) -> Result<FeeEstimate, TransactionExecutionError> {
+        let mut cached_state = Self::init_cached_state();
+
+        let fee_type = transaction.fee_type();
+
+        let gas_price = block_context.block_info().gas_prices.get_gas_price_by_fee_type(&fee_type).get();
+        let data_gas_price = block_context.block_info().gas_prices.get_data_gas_price_by_fee_type(&fee_type).get();
+        let unit = match fee_type {
+            blockifier::transaction::objects::FeeType::Strk => PriceUnit::Fri,
+            blockifier::transaction::objects::FeeType::Eth => PriceUnit::Wei,
+        };
+
+        let minimal_l1_gas_amount_vector = estimate_minimal_gas_vector(block_context, &transaction)
+            .map_err(|e| TransactionExecutionError::TransactionPreValidationError(e));
+
+        let tx_info: Result<
+            blockifier::transaction::objects::TransactionExecutionInfo,
+            blockifier::transaction::errors::TransactionExecutionError,
+        > = transaction.execute(&mut cached_state, &block_context, false, simulation_flags.skip_validate).and_then(
+            |mut tx_info| {
+                if tx_info.actual_fee.0 == 0 {
+                    tx_info.actual_fee = blockifier::fee::fee_utils::calculate_tx_fee(
+                        &tx_info.actual_resources,
+                        &block_context,
+                        &fee_type,
+                    )?;
+                }
+
+                Ok(tx_info)
+            },
+        );
+
+        match tx_info {
+            Ok(tx_info) => {
+                if let Some(_revert_error) = tx_info.revert_error {
+                    return Err(TransactionExecutionError::ExecutionError {
+                        error: EntryPointExecutionError::InternalError("Transaction reverted".to_string()),
+                        storage_address: ContractAddress::default(),
+                        selector: EntryPointSelector::default(),
+                    });
+                }
+
+                let fee_estimate = from_tx_info_and_gas_price(
+                    &tx_info,
+                    gas_price,
+                    data_gas_price,
+                    unit,
+                    minimal_l1_gas_amount_vector.expect("Minimal gas vector error"),
+                );
+                Ok(fee_estimate)
+            }
+            Err(_error) => {
+                return Err(TransactionExecutionError::ExecutionError {
+                    error: EntryPointExecutionError::InternalError("Execution error".to_string()),
+                    storage_address: ContractAddress::default(),
+                    selector: EntryPointSelector::default(),
+                });
+            }
+        }
+    }
+
     fn execute_message(
         transaction: L1HandlerTransaction,
         block_context: &BlockContext,
@@ -244,5 +302,34 @@ impl<T: Config> Pallet<T> {
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| PlaceHolderErrorTypeForFailedStarknetExecution)
+    }
+}
+
+pub fn from_tx_info_and_gas_price(
+    tx_info: &TransactionExecutionInfo,
+    gas_price: u128,
+    data_gas_price: u128,
+    unit: PriceUnit,
+    minimal_l1_gas_amount_vector: GasVector,
+) -> FeeEstimate {
+    let data_gas_consumed = tx_info.da_gas.l1_data_gas;
+    let data_gas_fee = data_gas_consumed.saturating_mul(data_gas_price);
+    let gas_consumed = tx_info.actual_fee.0.saturating_sub(data_gas_fee) / gas_price.max(1);
+
+    let minimal_gas_consumed = minimal_l1_gas_amount_vector.l1_gas;
+    let minimal_data_gas_consumed = minimal_l1_gas_amount_vector.l1_data_gas;
+
+    let gas_consumed = gas_consumed.max(minimal_gas_consumed);
+    let data_gas_consumed = data_gas_consumed.max(minimal_data_gas_consumed);
+    let overall_fee =
+        gas_consumed.saturating_mul(gas_price).saturating_add(data_gas_consumed.saturating_mul(data_gas_price));
+
+    FeeEstimate {
+        gas_consumed: gas_consumed.into(),
+        gas_price: gas_price.into(),
+        data_gas_consumed: data_gas_consumed.into(),
+        data_gas_price: data_gas_price.into(),
+        overall_fee: overall_fee.into(),
+        unit,
     }
 }

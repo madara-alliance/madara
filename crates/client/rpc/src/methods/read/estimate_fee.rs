@@ -2,6 +2,7 @@ use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
+use mp_simulations::convert_flags;
 use mp_transactions::UserTransaction;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -10,7 +11,9 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit};
+use starknet_core::types::{
+    BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulationFlagForEstimateFee as EstimateFeeFlag,
+};
 
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
@@ -28,6 +31,7 @@ use crate::Starknet;
 pub async fn estimate_fee<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
     request: Vec<BroadcastedTransaction>,
+    simulation_flags: Vec<EstimateFeeFlag>,
     block_id: BlockId,
 ) -> RpcResult<Vec<FeeEstimate>>
 where
@@ -53,10 +57,12 @@ where
 
     let account_transactions: Vec<UserTransaction> = transactions.into_iter().map(UserTransaction::from).collect();
 
+    let simulation_flags = convert_flags(simulation_flags);
+
     let fee_estimates = starknet
         .client
         .runtime_api()
-        .estimate_fee(substrate_block_hash, account_transactions)
+        .estimate_fee(substrate_block_hash, account_transactions, simulation_flags)
         .map_err(|e| {
             log::error!("Request parameters error: {e}");
             StarknetRpcApiError::InternalServerError
@@ -70,7 +76,7 @@ where
             .into_iter()
 			// FIXME: https://github.com/keep-starknet-strange/madara/issues/329
             // TODO: reflect right estimation
-            .map(|x| FeeEstimate { gas_price: 10u32.into(), gas_consumed: x.1.into(), overall_fee: x.0.into(), unit: PriceUnit::Fri})
+            .map(|x| FeeEstimate { gas_consumed: x.gas_consumed.0 , gas_price: x.gas_price.0, data_gas_consumed: x.data_gas_consumed.0, data_gas_price: x.data_gas_price.0, overall_fee: x.overall_fee.0, unit: x.unit.into()})
             .collect();
 
     Ok(estimates)

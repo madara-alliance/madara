@@ -73,6 +73,8 @@ where
     // TODO: Check if fee estimation is correct (spoiler alert it is not)
     let estimate = FeeEstimate {
         gas_price: FieldElement::ZERO,
+        data_gas_consumed: FieldElement::ZERO,
+        data_gas_price: FieldElement::ZERO,
         gas_consumed: FieldElement::ZERO,
         overall_fee: FieldElement::ZERO,
         unit: PriceUnit::Fri,
