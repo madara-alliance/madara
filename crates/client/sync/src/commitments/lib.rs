@@ -237,13 +237,22 @@ fn contract_trie_root(
         .iter()
         .par_bridge()
         .map(|contract_address| {
-            contract_state_leaf_hash(csd, &overrides, contract_address.0, maybe_block_hash, bonsai_contract_storage)
+            Ok((
+                contract_address,
+                contract_state_leaf_hash(
+                    csd,
+                    &overrides,
+                    contract_address.0,
+                    maybe_block_hash,
+                    bonsai_contract_storage,
+                )?,
+            ))
         })
         .collect::<Result<Vec<_>, BonsaiStorageError<BonsaiDbError>>>()?;
     log::debug!("contract_trie_root updates: {:?}", std::time::Instant::now() - start);
 
     let start = std::time::Instant::now();
-    for (contract_address, class_commitment_leaf_hash) in csd.storage_updates.iter().zip(updates) {
+    for (contract_address, class_commitment_leaf_hash) in updates {
         let key = key(contract_address.0.0.0);
         bonsai_contract.insert(identifier, &key, &class_commitment_leaf_hash.into())?;
     }
@@ -318,10 +327,13 @@ fn class_trie_root(
         .values()
         .par_bridge()
         .map(|compiled_class_hash| {
-            calculate_class_commitment_leaf_hash::<PoseidonHasher>(Felt252Wrapper::from(compiled_class_hash.0))
+            (
+                compiled_class_hash,
+                calculate_class_commitment_leaf_hash::<PoseidonHasher>(Felt252Wrapper::from(compiled_class_hash.0)),
+            )
         })
         .collect::<Vec<_>>();
-    for (class_hash, class_commitment_leaf_hash) in csd.class_hash_to_compiled_class_hash.keys().zip(updates) {
+    for (class_hash, class_commitment_leaf_hash) in updates {
         let key = key(class_hash.0);
         bonsai_class.insert(identifier, key.as_bitslice(), &class_commitment_leaf_hash.into())?;
     }
