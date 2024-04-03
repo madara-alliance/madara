@@ -20,6 +20,7 @@ mp-transactions = { workspace = true, features = [
   "parity-scale-codec",
   "scale-info",
 ] }
+pallet-starknet = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }

@@ -39,8 +39,8 @@ use starknet_core::types::{
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
     InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MaybePendingTransactionReceipt, MsgFromL1, SimulatedTransaction, SimulationFlag, StateDiff, SyncStatusType,
-    Transaction, TransactionStatus, TransactionTraceWithHash,
+    MaybePendingTransactionReceipt, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
+    StateDiff, SyncStatusType, Transaction, TransactionStatus, TransactionTraceWithHash,
 };
 
 use crate::methods::get_block::{
@@ -115,6 +115,7 @@ pub trait StarknetReadRpcApi {
     async fn estimate_fee(
         &self,
         request: Vec<BroadcastedTransaction>,
+        simulation_flags: Vec<SimulationFlagForEstimateFee>,
         block_id: BlockId,
     ) -> RpcResult<Vec<FeeEstimate>>;
 
