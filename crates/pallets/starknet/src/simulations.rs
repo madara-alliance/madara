@@ -15,8 +15,9 @@ use mp_transactions::{user_or_l1_into_tx_vec, UserOrL1HandlerTransaction, UserTr
 use sp_core::Get;
 use sp_runtime::DispatchError;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
-use starknet_core::types::{FeeEstimate, PriceUnit};
 
+// use starknet_core::types::PriceUnit;
+use crate::types::{FeeEstimate, PriceUnit};
 use crate::{Config, Error, Pallet};
 
 impl<T: Config> Pallet<T> {

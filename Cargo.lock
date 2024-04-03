@@ -7258,6 +7258,7 @@ dependencies = [
  "mp-felt",
  "mp-simulations",
  "mp-transactions",
+ "pallet-starknet",
  "parity-scale-codec",
  "scale-info",
  "sp-api",

@@ -76,7 +76,7 @@ where
             .into_iter()
 			// FIXME: https://github.com/keep-starknet-strange/madara/issues/329
             // TODO: reflect right estimation
-            .map(|x| FeeEstimate { gas_consumed: x.0, gas_price: x.1, data_gas_consumed: x.2, data_gas_price: x.3, overall_fee: x.4, unit: x.5})
+            .map(|x| FeeEstimate { gas_consumed: x.gas_consumed.0 , gas_price: x.gas_price.0, data_gas_consumed: x.data_gas_consumed.0, data_gas_price: x.data_gas_price.0, overall_fee: x.overall_fee.0, unit: x.unit.into()})
             .collect();
 
     Ok(estimates)

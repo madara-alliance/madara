@@ -2,7 +2,6 @@
 use std::collections::HashMap;
 
 use blockifier::execution::contract_class::ContractClass;
-use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::{FeeType, HasRelatedFeeType};
 use blockifier::transaction::transaction_execution::Transaction;
 use mp_felt::Felt252Wrapper;
@@ -11,6 +10,7 @@ use sp_std::vec::Vec;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Event, Fee, MessageToL1, TransactionHash};
+use starknet_core::types::PriceUnit as Price;
 
 /// Contract Storage Key
 pub type ContractStorageKey = (ContractAddress, StorageKey);
@@ -79,5 +79,14 @@ pub fn fee_type(transaction: &Transaction) -> FeeType {
     match transaction {
         Transaction::AccountTransaction(tx) => tx.fee_type(),
         Transaction::L1HandlerTransaction(tx) => tx.fee_type(),
+    }
+}
+
+impl From<PriceUnit> for Price {
+    fn from(unit: PriceUnit) -> Self {
+        match unit {
+            PriceUnit::Wei => Price::Wei,
+            PriceUnit::Fri => Price::Fri,
+        }
     }
 }
