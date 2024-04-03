@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use blockifier::execution::contract_class::{ContractClass, ContractClassV1};
 use blockifier::execution::entry_point::CallInfo;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::RpcResult;
@@ -12,7 +11,7 @@ use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::{DeclareTransaction, Transaction, TxType, UserOrL1HandlerTransaction, UserTransaction};
+use mp_transactions::{Transaction, TxType, UserOrL1HandlerTransaction, UserTransaction};
 use mp_types::block::{DBlockT, DHashT};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
@@ -425,7 +424,7 @@ where
 
 fn convert_transaction<A, BE, G, C, P, H>(
     tx: &Transaction,
-    starknet: &Starknet<A, BE, G, C, P, H>,
+    client: &Starknet<A, BE, G, C, P, H>,
     substrate_block_hash: DHashT,
     chain_id: Felt252Wrapper,
     block_number: u64,
@@ -446,43 +445,16 @@ where
         Transaction::Declare(declare_tx) => {
             let class_hash = ClassHash::from(*declare_tx.class_hash());
 
-            match declare_tx {
-                DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => {
-                    let contract_class = starknet
-                        .overrides
-                        .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
-                        .contract_class_by_class_hash(substrate_block_hash, class_hash)
-                        .ok_or_else(|| {
-                            error!("Failed to retrieve contract class from hash '{class_hash}'");
-                            StarknetRpcApiError::InternalServerError
-                        })?;
+            let contract_class = client
+                .overrides
+                .for_block_hash(client.client.as_ref(), substrate_block_hash)
+                .contract_class_by_class_hash(substrate_block_hash, class_hash)
+                .ok_or_else(|| {
+                    log::error!("Failed to retrieve contract class from hash '{class_hash}'");
+                    StarknetRpcApiError::InternalServerError
+                })?;
 
-                    Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx.clone(), contract_class)))
-                }
-                DeclareTransaction::V2(_tx) => {
-                    let contract_class = DeoxysBackend::sierra_classes()
-                        .get_sierra_class(class_hash)
-                        .map_err(|e| {
-                            error!("Failed to fetch sierra class with hash {class_hash}: {e}");
-                            StarknetRpcApiError::InternalServerError
-                        })?
-                        .ok_or_else(|| {
-                            error!("The sierra class with hash {class_hash} is not present in db backend");
-                            StarknetRpcApiError::InternalServerError
-                        })?;
-                    let contract_class = mp_transactions::utils::sierra_to_casm_contract_class(contract_class)
-                        .map_err(|e| {
-                            error!("Failed to convert the SierraContractClass to CasmContractClass: {e}");
-                            StarknetRpcApiError::InternalServerError
-                        })?;
-                    let contract_class = ContractClass::V1(ContractClassV1::try_from(contract_class).map_err(|e| {
-                        error!("Failed to convert the compiler CasmContractClass to blockifier CasmContractClass: {e}");
-                        StarknetRpcApiError::InternalServerError
-                    })?);
-
-                    Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx.clone(), contract_class)))
-                }
-            }
+            Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx.clone(), contract_class)))
         }
         Transaction::L1Handler(handle_l1_message_tx) => {
             let tx_hash = handle_l1_message_tx.compute_hash::<H>(chain_id, false, Some(block_number));
