@@ -1,9 +1,10 @@
+use blockifier::transaction::account_transaction::AccountTransaction;
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
 use mp_simulations::convert_flags;
-use mp_transactions::UserTransaction;
+use mp_transactions::from_broadcasted_transactions::ToAccountTransaction;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -49,13 +50,17 @@ where
         StarknetRpcApiError::BlockNotFound
     })?;
 
-    let transactions =
-        request.into_iter().map(|tx| tx.try_into()).collect::<Result<Vec<UserTransaction>, _>>().map_err(|e| {
-            log::error!("Failed to convert BroadcastedTransaction to UserTransaction: {e}");
+    let transactions = request
+        .into_iter()
+        .map(|tx| tx.to_account_transaction())
+        .collect::<Result<Vec<AccountTransaction>, _>>()
+        .map_err(|e| {
+            log::error!("Failed to convert BroadcastedTransaction to AccountTransaction: {e}");
             StarknetRpcApiError::InternalServerError
         })?;
 
-    let account_transactions: Vec<UserTransaction> = transactions.into_iter().map(UserTransaction::from).collect();
+    let account_transactions: Vec<AccountTransaction> =
+        transactions.into_iter().map(AccountTransaction::from).collect();
 
     let simulation_flags = convert_flags(simulation_flags);
 

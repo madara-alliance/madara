@@ -18,7 +18,6 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::tx_into_user_or_l1_vec;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -586,12 +585,7 @@ where
     let execution_infos = client
         .client
         .runtime_api()
-        .re_execute_transactions(
-            previous_block_hash,
-            tx_into_user_or_l1_vec(prev),
-            tx_into_user_or_l1_vec(last),
-            block_context,
-        )
+        .re_execute_transactions(previous_block_hash, prev, last, block_context)
         .map_err(|e| {
             log::error!("Failed to execute runtime API call: {e}");
             StarknetRpcApiError::InternalServerError

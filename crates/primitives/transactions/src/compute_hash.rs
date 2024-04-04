@@ -14,7 +14,7 @@ use starknet_core::utils::starknet_keccak;
 use starknet_crypto::FieldElement;
 
 use super::SIMULATE_TX_VERSION_OFFSET;
-use crate::{UserOrL1HandlerTransaction, LEGACY_BLOCK_NUMBER};
+use crate::LEGACY_BLOCK_NUMBER;
 
 const DECLARE_PREFIX: &[u8] = b"declare";
 const DEPLOY_ACCOUNT_PREFIX: &[u8] = b"deploy_account";

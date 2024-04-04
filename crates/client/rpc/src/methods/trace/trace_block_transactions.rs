@@ -3,6 +3,7 @@ use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
+use mp_transactions::getters::{Getters, Hash};
 use mp_transactions::TxType;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
@@ -94,7 +95,7 @@ where
                 &**storage_override,
                 substrate_block_hash,
                 // Safe to unwrap coz re_execute returns exactly one ExecutionInfo for each tx
-                TxType::from(block_transactions.get(tx_idx).unwrap().tx_type()),
+                TxType::from(block_transactions.get(tx_idx).unwrap()),
                 &tx_exec_info,
             )
             .map(|trace_root| TransactionTraceWithHash {

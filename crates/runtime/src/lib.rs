@@ -38,7 +38,6 @@ use mp_simulations::{
     PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlagForEstimateFee, SimulationFlags,
     TransactionSimulationResult,
 };
-use mp_transactions::{UserOrL1HandlerTransaction, UserTransaction};
 use pallet_grandpa::{fg_primitives, AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList};
 /// Import the Starknet pallet.
 pub use pallet_starknet;
@@ -291,11 +290,11 @@ impl_runtime_apis! {
             Starknet::is_transaction_fee_disabled()
         }
 
-        fn estimate_fee(transactions: Vec<UserTransaction>, simulation_flags: Vec<SimulationFlagForEstimateFee>) -> Result<Vec<FeeEstimate>, DispatchError> {
+        fn estimate_fee(transactions: Vec<AccountTransaction>, simulation_flags: Vec<SimulationFlagForEstimateFee>) -> Result<Vec<FeeEstimate>, DispatchError> {
             Starknet::estimate_fee(transactions, &simulation_flags)
         }
 
-        fn re_execute_transactions(transactions_before: Vec<UserOrL1HandlerTransaction>, transactions_to_trace: Vec<UserOrL1HandlerTransaction>, block_context: &BlockContext) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {
+        fn re_execute_transactions(transactions_before: Vec<Transaction>, transactions_to_trace: Vec<Transaction>, block_context: &BlockContext) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {
             Starknet::re_execute_transactions(transactions_before, transactions_to_trace, block_context)
         }
 
@@ -303,7 +302,7 @@ impl_runtime_apis! {
             Starknet::estimate_message_fee(message)
         }
 
-        fn simulate_transactions(transactions: Vec<UserTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError> {
+        fn simulate_transactions(transactions: Vec<AccountTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError> {
             Starknet::simulate_transactions(transactions, &simulation_flags)
         }
 
