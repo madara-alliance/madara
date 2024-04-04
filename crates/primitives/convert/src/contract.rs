@@ -69,7 +69,6 @@ pub fn from_rpc_contract_class(
     contract_class: &ContractClassCore,
     starknet_version: Option<String>,
 ) -> anyhow::Result<ContractClassBlockifier> {
-    log::info!("from_rpc_contract_class");
     match contract_class {
         ContractClassCore::Sierra(contract_class) => from_contract_class_sierra(contract_class, starknet_version),
         ContractClassCore::Legacy(contract_class) => from_contract_class_cairo(contract_class),
