@@ -173,7 +173,7 @@ impl EthereumClient {
                         convert_log_state_update(log.clone()).expect("Failed to format event into an L1StateUpdate");
                     update_l1(format_event);
                 }
-                Err(e) => println!("Error while listening for events: {:?}", e),
+                Err(e) => log::error!("Error while listening for events: {:?}", e),
             }
         }
 

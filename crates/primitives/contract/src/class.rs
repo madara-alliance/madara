@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use blockifier::execution::contract_class::ContractClass as ContractClassBlockifier;
+use mp_felt::Felt252Wrapper;
 #[cfg(feature = "parity-scale-codec")]
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::ClassHash;
@@ -47,19 +48,20 @@ pub mod convert {
 
     // Wrapper Class conversion
 
-    impl TryFrom<ContractClassCore> for ContractClassWrapper {
+    impl TryFrom<(ContractClassCore, Option<String>)> for ContractClassWrapper {
         type Error = anyhow::Error;
 
-        fn try_from(contract_class: ContractClassCore) -> Result<Self, Self::Error> {
-            Ok(Self {
-                contract: from_rpc_contract_class(&contract_class)?,
-                abi: match contract_class {
-                    ContractClassCore::Sierra(class_sierra) => ContractAbi::Sierra(class_sierra.abi),
-                    ContractClassCore::Legacy(class_cairo) => {
-                        ContractAbi::Cairo(from_rpc_contract_abi(class_cairo.abi))
-                    }
-                },
-            })
+        fn try_from(inputs: (ContractClassCore, Option<String>)) -> Result<Self, Self::Error> {
+            let (contract_class, starknet_version) = inputs;
+            let contract = from_rpc_contract_class(&contract_class, starknet_version)?;
+            let abi = match &contract_class {
+                ContractClassCore::Sierra(class_sierra) => ContractAbi::Sierra(class_sierra.abi.clone()),
+                ContractClassCore::Legacy(class_cairo) => {
+                    ContractAbi::Cairo(from_rpc_contract_abi(class_cairo.abi.clone()))
+                }
+            };
+
+            Ok(Self { contract, abi })
         }
     }
 
