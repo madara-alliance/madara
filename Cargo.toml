@@ -1,4 +1,4 @@
-[workspace]carg
+[workspace]
 members = [
   "crates/client/db",
   "crates/client/sync",

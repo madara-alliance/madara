@@ -229,10 +229,9 @@ fn contract_trie_root(
         .par_bridge()
         .map(|(contract_address, _)| {
             let storage_root = storage_read.root(contract_address).unwrap();
-            let class_commitment_leaf_hash =
-                contract_state_leaf_hash(csd, &overrides, contract_address, storage_root, maybe_block_hash);
+            let leaf_hash = contract_state_leaf_hash(csd, &overrides, contract_address, storage_root, maybe_block_hash);
 
-            (contract_address, class_commitment_leaf_hash)
+            (contract_address, leaf_hash)
         })
         .collect::<Vec<_>>();
     log::debug!("contract_trie_root updates: {:?}", std::time::Instant::now() - start);

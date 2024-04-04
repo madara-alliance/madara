@@ -110,7 +110,7 @@ pub enum Column {
     /// This column should only be accessed if the `--cache` flag is enabled.
     StarknetBlockHashesCache,
 
-    #[deprecated = "Will be stored in headers shortly, nuke it then"]
+    // TODO: remove this
     L1HandlerPaidFee,
 
     // Each bonsai storage has 3 columns

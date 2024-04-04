@@ -3,6 +3,7 @@ git # Deoxys Changelog
 ## Next release
 
 - feat(storage): set up type-safe bonsai storage abstractions for usage in RPC
+- fix(root): fix state root computation
 - refactor: refactor mc-db crate
 - feat(api_key): api key passed to FetchConfig correctly
 - feat(api_key): Added support for --gateway-api to avoid rate limit from the gateway
