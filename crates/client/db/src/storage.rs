@@ -310,6 +310,16 @@ impl ContractStorageTrieMut {
             .get(conv_contract_identifier(identifier), &conv_contract_storage_key(key))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))
     }
+
+    pub fn get_storage(&self, identifier: &ContractAddress) -> Result<Vec<(Felt, Felt)>, DeoxysStorageError> {
+        Ok(self
+            .0
+            .get_key_value_pairs(conv_contract_identifier(identifier))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
+            .into_iter()
+            .map(|(k, v)| (Felt::from_bytes_be_slice(&k), Felt::from_bytes_be_slice(&v)))
+            .collect())
+    }
 }
 
 impl ContractStorageTrieView<'_> {
