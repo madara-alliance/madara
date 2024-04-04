@@ -21,7 +21,8 @@ use mc_db::DeoxysBackend;
 use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
+use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
+use sc_client_api::backend::{Backend, StorageProvider};
 use sc_network_sync::SyncingService;
 use sc_transaction_pool::{ChainApi, Pool};
 use serde::{Deserialize, Serialize};
@@ -219,6 +220,26 @@ pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
     genesis_provider: Arc<G>,
     _marker: PhantomData<(DBlockT, BE, H)>,
 }
+
+// impl<A, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
+// where
+//     A: ChainApi<Block = DBlockT> + 'static,
+//     BE: Backend<DBlockT>,
+//     C: HeaderBackend<DBlockT> + 'static,
+//     C: ProvideRuntimeApi<DBlockT>,
+//     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+//     H: HasherT + Send + Sync + 'static,
+// {
+//     pub fn do_estimate_message_fee(
+//         &self,
+//         block_hash: DBlockT::Hash,
+//         message: L1HandlerTransaction,
+//     ) -> RpcApiResult<(u128, u128, u128)> { self.client .runtime_api()
+//       .estimate_message_fee(block_hash, message) .map_err(|e| { error!("Runtime Api error: {e}");
+//       StarknetRpcApiError::InternalServerError })? .map_err(|e| { error!("Function execution
+//       failed: {:#?}", e); StarknetRpcApiError::ContractError })
+//     }
+// }
 
 /// Constructor for A Starknet RPC server for Madara
 /// # Arguments
