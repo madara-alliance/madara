@@ -7,10 +7,11 @@
 
 use blockifier::context::{BlockContext, FeeTokenAddresses};
 use blockifier::execution::contract_class::ContractClass;
+use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
+use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::L1HandlerTransaction;
 use mp_felt::Felt252Wrapper;
-use mp_transactions::{UserOrL1HandlerTransaction, UserTransaction};
 use sp_api::BlockT;
 pub extern crate alloc;
 use alloc::vec::Vec;
@@ -58,13 +59,13 @@ sp_api::decl_runtime_apis! {
         /// Returns the fee token address.
         fn fee_token_addresses() -> FeeTokenAddresses;
         /// Returns fee estimate
-        fn estimate_fee(transactions: Vec<UserTransaction>, simulation_flags: Vec<SimulationFlagForEstimateFee>,) -> Result<Vec<FeeEstimate>, DispatchError>;
+        fn estimate_fee(transactions: Vec<AccountTransaction>, simulation_flags: Vec<SimulationFlagForEstimateFee>,) -> Result<Vec<FeeEstimate>, DispatchError>;
         /// Returns message fee estimate
         fn estimate_message_fee(message: L1HandlerTransaction) -> Result<(u128, u128, u128), DispatchError>;
         /// Simulates single L1 Message and returns its trace
         fn simulate_message(message: L1HandlerTransaction, simulation_flags: SimulationFlags) -> Result<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>;
         /// Simulates transactions and returns their trace
-        fn simulate_transactions(transactions: Vec<UserTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>;
+        fn simulate_transactions(transactions: Vec<AccountTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>;
 
         /// Filters extrinsic transactions to return only Starknet transactions
         ///
@@ -86,7 +87,7 @@ sp_api::decl_runtime_apis! {
         ///
         /// Idealy, the execution traces of all of `transactions_to_trace`.
         /// If any of the transactions (from both arguments) fails, an error is returned.
-        fn re_execute_transactions(transactions_before: Vec<UserOrL1HandlerTransaction>, transactions_to_trace: Vec<UserOrL1HandlerTransaction>, block_context: &BlockContext) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>;
+        fn re_execute_transactions(transactions_before: Vec<Transaction>, transactions_to_trace: Vec<Transaction>, block_context: &BlockContext) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>;
 
         fn get_events_for_tx_by_hash(tx_hash: TransactionHash) -> Vec<StarknetEvent>;
         // fn get_index_and_tx_for_tx_hash(xts: Vec<<Block as BlockT>::Extrinsic>, chain_id: Felt252Wrapper, tx_hash: TransactionHash) -> Option<(u32, Transaction)>;

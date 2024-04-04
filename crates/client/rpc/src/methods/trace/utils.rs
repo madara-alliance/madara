@@ -5,6 +5,7 @@ use blockifier::execution::contract_class::{ClassInfo, ContractClass, ContractCl
 use blockifier::transaction as btx;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
+use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::L1HandlerTransaction;
 use deoxys_runtime::opaque::{DBlockT, DHashT};
 use mc_db::DeoxysBackend;
@@ -13,7 +14,7 @@ use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::{TxType, UserOrL1HandlerTransaction};
+use mp_transactions::TxType;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_transaction_pool::ChainApi;
@@ -263,7 +264,7 @@ pub fn map_transaction_to_user_transaction<A, BE, G, C, P, H>(
     substrate_block_hash: DHashT,
     chain_id: Felt252Wrapper,
     target_transaction_hash: Option<Felt252Wrapper>,
-) -> Result<(Vec<UserOrL1HandlerTransaction>, Vec<UserOrL1HandlerTransaction>), StarknetRpcApiError>
+) -> Result<(Vec<Transaction>, Vec<Transaction>), StarknetRpcApiError>
 where
     A: ChainApi<Block = DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
@@ -296,7 +297,7 @@ fn convert_transaction<A, BE, G, C, P, H>(
     substrate_block_hash: DHashT,
     chain_id: Felt252Wrapper,
     block_number: u64,
-) -> Result<UserOrL1HandlerTransaction, StarknetRpcApiError>
+) -> Result<Transaction, StarknetRpcApiError>
 where
     A: ChainApi<Block = DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
@@ -311,7 +312,7 @@ where
                 // TODO: Check if this is correct
                 only_query: false,
             };
-            Ok(UserOrL1HandlerTransaction::User(AccountTransaction::Invoke(tx)))
+            Ok(Transaction::AccountTransaction(AccountTransaction::Invoke(tx)))
         }
         stx::Transaction::DeployAccount(deploy_account_tx) => {
             let tx = btx::transactions::DeployAccountTransaction {
@@ -322,7 +323,7 @@ where
                 // TODO: Check if this is correct
                 only_query: false,
             };
-            Ok(UserOrL1HandlerTransaction::User(AccountTransaction::DeployAccount(tx)))
+            Ok(Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)))
         }
         stx::Transaction::Declare(declare_tx) => {
             let class_hash = ClassHash::from(Felt252Wrapper::from(*declare_tx.class_hash()));
@@ -348,7 +349,7 @@ where
                     )
                     .unwrap();
 
-                    Ok(UserOrL1HandlerTransaction::User(AccountTransaction::Declare(tx)))
+                    Ok(Transaction::AccountTransaction(AccountTransaction::Declare(tx)))
                 }
                 stx::DeclareTransaction::V2(_tx) => {
                     let contract_class = DeoxysBackend::sierra_classes()
@@ -383,7 +384,7 @@ where
                     )
                     .unwrap();
 
-                    Ok(UserOrL1HandlerTransaction::User(AccountTransaction::Declare(tx)))
+                    Ok(Transaction::AccountTransaction(AccountTransaction::Declare(tx)))
                 }
                 stx::DeclareTransaction::V3(_) => todo!(),
             }
@@ -397,7 +398,7 @@ where
                     StarknetRpcApiError::InternalServerError
                 })?;
 
-            Ok(UserOrL1HandlerTransaction::L1Handler(L1HandlerTransaction {
+            Ok(Transaction::L1HandlerTransaction(L1HandlerTransaction {
                 tx: handle_l1_message_tx.clone(),
                 tx_hash,
                 paid_fee_on_l1,

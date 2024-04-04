@@ -5,6 +5,7 @@ use mc_genesis_data_provider::GenesisProvider;
 use mc_storage::StorageOverride;
 use mp_hashers::HasherT;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
+use mp_transactions::from_broadcasted_transactions::ToAccountTransaction;
 use mp_transactions::TxType;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
@@ -43,11 +44,9 @@ where
         starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|_e| StarknetRpcApiError::BlockNotFound)?;
 
     let tx_type_and_tx_iterator = transactions.into_iter().map(|tx| match tx {
-        BroadcastedTransaction::Invoke(invoke_tx) => invoke_tx.try_into().map(|tx| (TxType::Invoke, tx)),
-        BroadcastedTransaction::Declare(declare_tx) => declare_tx.try_into().map(|tx| (TxType::Declare, tx)),
-        BroadcastedTransaction::DeployAccount(deploy_account_tx) => {
-            deploy_account_tx.try_into().map(|tx| (TxType::DeployAccount, tx))
-        }
+        BroadcastedTransaction::Invoke(_) => tx.to_account_transaction().map(|tx| (TxType::Invoke, tx)),
+        BroadcastedTransaction::Declare(_) => tx.to_account_transaction().map(|tx| (TxType::Declare, tx)),
+        BroadcastedTransaction::DeployAccount(_) => tx.to_account_transaction().map(|tx| (TxType::DeployAccount, tx)),
     });
     let (tx_types, user_transactions) =
         itertools::process_results(tx_type_and_tx_iterator, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>()).map_err(

@@ -11,7 +11,6 @@ use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use frame_support::storage;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlagForEstimateFee, SimulationFlags};
-use mp_transactions::{user_or_l1_into_tx_vec, UserOrL1HandlerTransaction, UserTransaction};
 use sp_core::Get;
 use sp_runtime::DispatchError;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
@@ -22,7 +21,7 @@ use crate::{Config, Error, Pallet};
 
 impl<T: Config> Pallet<T> {
     pub fn estimate_fee(
-        transactions: Vec<UserTransaction>,
+        transactions: Vec<AccountTransaction>,
         simulation_flags: &Vec<SimulationFlagForEstimateFee>,
     ) -> Result<Vec<FeeEstimate>, DispatchError> {
         storage::transactional::with_transaction(|| {
@@ -35,7 +34,7 @@ impl<T: Config> Pallet<T> {
     }
 
     fn estimate_fee_inner(
-        transactions: Vec<UserTransaction>,
+        transactions: Vec<AccountTransaction>,
         simulation_flags: &Vec<SimulationFlagForEstimateFee>,
     ) -> Result<Vec<FeeEstimate>, DispatchError> {
         let transactions_len = transactions.len();
@@ -60,7 +59,7 @@ impl<T: Config> Pallet<T> {
     }
 
     pub fn simulate_transactions(
-        transactions: Vec<UserTransaction>,
+        transactions: Vec<AccountTransaction>,
         simulation_flags: &SimulationFlags,
     ) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>
     {
@@ -74,7 +73,7 @@ impl<T: Config> Pallet<T> {
     }
 
     fn simulate_transactions_inner(
-        transactions: Vec<UserTransaction>,
+        transactions: Vec<AccountTransaction>,
         simulation_flags: &SimulationFlags,
     ) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>
     {
@@ -83,7 +82,13 @@ impl<T: Config> Pallet<T> {
         let tx_execution_results = transactions
             .into_iter()
             .map(|tx| {
-                Self::execute_account_transaction(tx.into(), &block_context, simulation_flags).map_err(|e| {
+                tx.execute(
+                    &mut Self::init_cached_state(),
+                    &block_context,
+                    simulation_flags.charge_fee,
+                    simulation_flags.validate,
+                )
+                .map_err(|e| {
                     log::error!("Transaction execution failed during simulation: {e}");
                     PlaceHolderErrorTypeForFailedStarknetExecution
                 })
@@ -159,8 +164,8 @@ impl<T: Config> Pallet<T> {
     }
 
     pub fn re_execute_transactions(
-        transactions_before: Vec<UserOrL1HandlerTransaction>,
-        transactions_to_trace: Vec<UserOrL1HandlerTransaction>,
+        transactions_before: Vec<Transaction>,
+        transactions_to_trace: Vec<Transaction>,
         block_context: &BlockContext,
     ) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>
     {
@@ -175,39 +180,33 @@ impl<T: Config> Pallet<T> {
     }
 
     fn re_execute_transactions_inner(
-        transactions_before: Vec<UserOrL1HandlerTransaction>,
-        transactions_to_trace: Vec<UserOrL1HandlerTransaction>,
+        transactions_before: Vec<Transaction>,
+        transactions_to_trace: Vec<Transaction>,
         block_context: &BlockContext,
     ) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>
     {
-        // desactivate fee charging for the first blocks
-        let simulation_flags = SimulationFlags {
-            charge_fee: if block_context.block_info().gas_prices.eth_l1_gas_price.get() == 1 { false } else { true },
-            validate: false,
-        };
-
-        let _transactions_before_exec_infos = Self::execute_account_or_l1_handler_transactions(
-            user_or_l1_into_tx_vec(transactions_before),
-            &block_context,
-            &simulation_flags,
-        );
-        let transactions_exec_infos = Self::execute_account_or_l1_handler_transactions(
-            user_or_l1_into_tx_vec(transactions_to_trace),
-            &block_context,
-            &simulation_flags,
-        );
-
-        Ok(transactions_exec_infos)
-    }
-
-    fn execute_account_transaction(
-        transaction: AccountTransaction,
-        block_context: &BlockContext,
-        simulation_flags: &SimulationFlags,
-    ) -> Result<TransactionExecutionInfo, TransactionExecutionError> {
+        let charge_fee = if block_context.block_info().gas_prices.eth_l1_gas_price.get() == 1 { false } else { true };
         let mut cached_state = Self::init_cached_state();
 
-        transaction.execute(&mut cached_state, block_context, simulation_flags.charge_fee, simulation_flags.validate)
+        transactions_before
+            .into_iter()
+            .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, false))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| {
+                log::error!("Transaction execution failed during re-execution: {e}");
+                Error::<T>::FailedToCreateATransactionalStorageExecution
+            })?;
+
+        let transactions_exec_infos = transactions_to_trace
+            .into_iter()
+            .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, false))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| {
+                log::error!("Transaction execution failed during re-execution: {e}");
+                Error::<T>::FailedToCreateATransactionalStorageExecution
+            })?;
+
+        Ok(Ok(transactions_exec_infos))
     }
 
     fn execute_fee_transaction(
@@ -283,25 +282,6 @@ impl<T: Config> Pallet<T> {
         let mut cached_state = Self::init_cached_state();
 
         transaction.execute(&mut cached_state, block_context, simulation_flags.charge_fee, simulation_flags.validate)
-    }
-
-    fn execute_account_or_l1_handler_transactions(
-        transactions: Vec<Transaction>,
-        block_context: &BlockContext,
-        simulation_flags: &SimulationFlags,
-    ) -> Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution> {
-        let mut cached_state = Self::init_cached_state();
-
-        transactions
-            .into_iter()
-            .map(|user_or_l1_tx| match user_or_l1_tx {
-                Transaction::AccountTransaction(tx) => {
-                    Self::execute_account_transaction(tx, block_context, simulation_flags)
-                }
-                Transaction::L1HandlerTransaction(tx) => Self::execute_message(tx, block_context, simulation_flags),
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| PlaceHolderErrorTypeForFailedStarknetExecution)
     }
 }
 
