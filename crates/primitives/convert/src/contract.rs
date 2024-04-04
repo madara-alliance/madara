@@ -3,7 +3,6 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use blockifier::blockifier::block;
 use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
 };
@@ -11,18 +10,33 @@ use cairo_lang_starknet_classes::casm_contract_class::{CasmContractClass, Starkn
 use cairo_lang_starknet_classes::contract_class::{
     ContractClass as SierraContractClass, ContractEntryPoint, ContractEntryPoints,
 };
-use casm_compiler_v1_0_0_alpha6::casm_contract_class::CasmContractClass as CasmContractClassV1;
-use casm_compiler_v1_0_0_rc0::casm_contract_class::CasmContractClass as CasmContractClassV2;
-use casm_compiler_v1_1_1::casm_contract_class::CasmContractClass as CasmContractClassV3;
-use semver::Version;
-
 use cairo_lang_utils::bigint::BigUintAsHex;
+use cairo_lang_v1_0_0_alpha6::bigint::BigUintAsHex as BigUintAsHexV1;
+use cairo_lang_v1_0_0_rc0::bigint::BigUintAsHex as BigUintAsHexV2;
+use cairo_lang_v1_1_1::bigint::BigUintAsHex as BigUintAsHexV3;
 use cairo_vm::types::program::Program;
+use casm_compiler_v1_0_0_alpha6::casm_contract_class::CasmContractClass as CasmContractClassV1;
+use casm_compiler_v1_0_0_alpha6::contract_class::{
+    ContractClass as SierraContractClassV1, ContractEntryPoint as ContractEntryPointV1,
+    ContractEntryPoints as ContractEntryPointsV1,
+};
+use casm_compiler_v1_0_0_rc0::casm_contract_class::CasmContractClass as CasmContractClassV2;
+use casm_compiler_v1_0_0_rc0::contract_class::{
+    ContractClass as SierraContractClassV2, ContractEntryPoint as ContractEntryPointV2,
+    ContractEntryPoints as ContractEntryPointsV2,
+};
+use casm_compiler_v1_1_1::casm_contract_class::CasmContractClass as CasmContractClassV3;
+use casm_compiler_v1_1_1::contract_class::{
+    ContractClass as SierraContractClassV3, ContractEntryPoint as ContractEntryPointV3,
+    ContractEntryPoints as ContractEntryPointsV3,
+};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use indexmap::IndexMap;
 use mp_felt::Felt252Wrapper;
 use num_bigint::{BigInt, BigUint, Sign};
+use semver::Version;
+use serde_json;
 use starknet_api::core::EntryPointSelector;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
@@ -32,8 +46,30 @@ use starknet_core::types::{
     LegacyEntryPointsByType, SierraEntryPoint,
 };
 
+#[derive(Debug)]
+pub enum CasmContractClassVersion {
+    V1(CasmContractClassV1),
+    V2(CasmContractClassV2),
+    V3(CasmContractClassV3),
+    Base(CasmContractClass),
+}
+
+#[derive(Debug)]
+pub enum SierraContractClassVersion {
+    V1(SierraContractClassV1),
+    V2(SierraContractClassV2),
+    V3(SierraContractClassV3),
+    Base(SierraContractClass),
+}
+
+#[derive(Debug, PartialEq, PartialOrd)]
+struct StarknetVersion(u8, u8, u8, u8);
+
 /// Returns a [`BlockifierContractClass`] from a [`ContractClass`]
-pub fn from_rpc_contract_class(contract_class: &ContractClassCore, starknet_version: Option<String>) -> anyhow::Result<ContractClassBlockifier> {
+pub fn from_rpc_contract_class(
+    contract_class: &ContractClassCore,
+    starknet_version: Option<String>,
+) -> anyhow::Result<ContractClassBlockifier> {
     log::info!("from_rpc_contract_class");
     match contract_class {
         ContractClassCore::Sierra(contract_class) => from_contract_class_sierra(contract_class, starknet_version),
@@ -51,10 +87,21 @@ pub fn to_contract_class_sierra(_: &ContractClassV1, abi: String) -> anyhow::Res
     }))
 }
 
-pub fn from_contract_class_sierra(contract_class: &FlattenedSierraClass, starknet_version: Option<String>) -> anyhow::Result<ContractClassBlockifier> {
-    println!("ICI PRN");
+/// Converts a [FlattenedSierraClass] to a [ContractClassBlockifier]
+/// 
+/// Note: The conversion between the different legacy class versions is handled by an intermediate json representation.
+pub fn from_contract_class_sierra(
+    contract_class: &FlattenedSierraClass,
+    starknet_version: Option<String>,
+) -> anyhow::Result<ContractClassBlockifier> {
     let casm_contract = flattened_sierra_to_casm_contract_class(contract_class, starknet_version)?;
-    let blockifier_contract = ContractClassV1::try_from(casm_contract).unwrap();
+    let raw_casm_contract = match casm_contract {
+        CasmContractClassVersion::V1(inner) => serde_json::to_string(&inner).unwrap(),
+        CasmContractClassVersion::V2(inner) => serde_json::to_string(&inner).unwrap(),
+        CasmContractClassVersion::V3(inner) => serde_json::to_string(&inner).unwrap(),
+        CasmContractClassVersion::Base(inner) => serde_json::to_string(&inner).unwrap(),
+    };
+    let blockifier_contract = ContractClassV1::try_from_json_string(&raw_casm_contract).unwrap();
     anyhow::Ok(ContractClassBlockifier::V1(blockifier_contract))
 }
 
@@ -73,6 +120,7 @@ pub fn to_contract_class_cairo(
     }))
 }
 
+/// Converts a [CompressedLegacyContractClass] to a [ContractClassBlockifier]
 pub fn from_contract_class_cairo(
     contract_class: &CompressedLegacyContractClass,
 ) -> anyhow::Result<ContractClassBlockifier> {
@@ -86,49 +134,91 @@ pub fn from_contract_class_cairo(
     anyhow::Ok(ContractClassBlockifier::V0(blockifier_contract))
 }
 
-/// Converts a [FlattenedSierraClass] to a [CasmContractClass]
+/// Converts a [FlattenedSierraClass] to a [CasmContractClassVersion]
+///
+/// Note: The Starknet state contains different legacy versions of CasmContractClass, therefore we need to
+/// convert them properly with the associated lib.
 pub fn flattened_sierra_to_casm_contract_class(
     flattened_sierra: &FlattenedSierraClass,
-    starknet_version: Option<String>
-) -> Result<CasmContractClass, StarknetSierraCompilationError> {
-    log::info!("Ca rentre ici ouuu?");
-    let sierra_contract_class = SierraContractClass {
-        sierra_program: flattened_sierra.sierra_program.iter().map(field_element_to_big_uint_as_hex).collect(),
-        sierra_program_debug_info: None,
-        contract_class_version: flattened_sierra.contract_class_version.clone(),
-        entry_points_by_type: entry_points_by_type_to_contract_entry_points(
-            flattened_sierra.entry_points_by_type.clone(),
-        ),
-        abi: None
+    starknet_version: Option<String>,
+) -> Result<CasmContractClassVersion, StarknetSierraCompilationError> {
+    let sierra_contract_class = flattened_sierra_version(flattened_sierra, starknet_version);
+
+    let casm_contract_class_version = match sierra_contract_class {
+        SierraContractClassVersion::V1(inner) => {
+            CasmContractClassVersion::V1(CasmContractClassV1::from_contract_class(inner, true).unwrap())
+        }
+        SierraContractClassVersion::V2(inner) => {
+            CasmContractClassVersion::V2(CasmContractClassV2::from_contract_class(inner, true).unwrap())
+        }
+        SierraContractClassVersion::V3(inner) => {
+            CasmContractClassVersion::V3(CasmContractClassV3::from_contract_class(inner, true).unwrap())
+        }
+        SierraContractClassVersion::Base(inner) => {
+            CasmContractClassVersion::Base(CasmContractClass::from_contract_class(inner, true, usize::MAX).unwrap())
+        }
     };
 
-    log::info!("Ca foire la? {:?}", sierra_contract_class);
-
-    // Parse the starknet_version
-    let version = starknet_version
-        .as_deref()
-        .and_then(|v| Version::parse(v).ok())
-        .unwrap_or_else(|| Version::new(0, 0, 0));
-
-    // Define version thresholds
-    let v1_0_0_alpha6 = Version::new(1, 0, 0);
-    let v1_0_0_rc0 = Version::parse("1.0.0-rc0").unwrap();
-    let v1_1_1 = Version::new(1, 1, 1);
-    let v2_6_0 = Version::new(2, 6, 0);
-
-    let casm_contract_class = if version >= v2_6_0 {
-        CasmContractClassV1::from_contract_class(sierra_contract_class, true)?
-    } else if version >= v1_1_1 {
-        CasmContractClassV2::from_contract_class(sierra_contract_class, true)?
-    } else if version > v1_0_0_rc0 {
-        CasmContractClassV3::from_contract_class(sierra_contract_class, true)?
-    } else {
-        CasmContractClass::from_contract_class(sierra_contract_class, true, usize::MAX)?
-    };
-
-    Ok(casm_contract_class)
+    Ok(casm_contract_class_version)
 }
 
+/// Converts a [FlattenedSierraClass] to a [SierraContractClassVersion]
+pub fn flattened_sierra_version(
+    flattened_sierra: &FlattenedSierraClass,
+    starknet_version: Option<String>,
+) -> SierraContractClassVersion {
+    let version = get_version(&starknet_version.unwrap());
+
+    let v1_0_0_alpha6 = StarknetVersion(0, 11, 0, 0);
+    let v1_0_0_rc0 = StarknetVersion(0, 11, 0, 0);
+    let v1_1_1 = StarknetVersion(0, 11, 1, 0);
+
+    let sierra_contract_class = if version <= v1_0_0_alpha6 {
+        SierraContractClassVersion::V1(SierraContractClassV1 {
+            sierra_program: flattened_sierra.sierra_program.iter().map(field_element_to_big_uint_as_hex_v1).collect(),
+            sierra_program_debug_info: None,
+            contract_class_version: flattened_sierra.contract_class_version.clone(),
+            entry_points_by_type: entry_points_by_type_to_contract_entry_points_v1(
+                flattened_sierra.entry_points_by_type.clone(),
+            ),
+            abi: None,
+        })
+    } else if version > v1_0_0_rc0 {
+        SierraContractClassVersion::V2(SierraContractClassV2 {
+            sierra_program: flattened_sierra.sierra_program.iter().map(field_element_to_big_uint_as_hex_v2).collect(),
+            sierra_program_debug_info: None,
+            contract_class_version: flattened_sierra.contract_class_version.clone(),
+            entry_points_by_type: entry_points_by_type_to_contract_entry_points_v2(
+                flattened_sierra.entry_points_by_type.clone(),
+            ),
+            abi: None,
+        })
+    } else if version > v1_1_1 {
+        SierraContractClassVersion::V3(SierraContractClassV3 {
+            sierra_program: flattened_sierra.sierra_program.iter().map(field_element_to_big_uint_as_hex_v3).collect(),
+            sierra_program_debug_info: None,
+            contract_class_version: flattened_sierra.contract_class_version.clone(),
+            entry_points_by_type: entry_points_by_type_to_contract_entry_points_v3(
+                flattened_sierra.entry_points_by_type.clone(),
+            ),
+            abi: None,
+        })
+    } else {
+        SierraContractClassVersion::Base(SierraContractClass {
+            sierra_program: flattened_sierra.sierra_program.iter().map(field_element_to_big_uint_as_hex).collect(),
+            sierra_program_debug_info: None,
+            contract_class_version: flattened_sierra.contract_class_version.clone(),
+            entry_points_by_type: entry_points_by_type_to_contract_entry_points(
+                flattened_sierra.entry_points_by_type.clone(),
+            ),
+            abi: None,
+        })
+    };
+
+    sierra_contract_class
+}
+
+/// Converts a [Arc<FlattenedSierraClass>] to a [starknet_api::state::ContractClass]
 pub fn flattened_sierra_to_sierra_contract_class(
     flattened_sierra: Arc<FlattenedSierraClass>,
 ) -> starknet_api::state::ContractClass {
@@ -168,6 +258,51 @@ fn entry_points_by_type_to_contract_entry_points(value: EntryPointsByType) -> Co
         }
     }
     ContractEntryPoints {
+        constructor: value.constructor.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+        external: value.external.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+        l1_handler: value.l1_handler.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+    }
+}
+
+/// Converts a [EntryPointsByType] to a [ContractEntryPoints]
+fn entry_points_by_type_to_contract_entry_points_v1(value: EntryPointsByType) -> ContractEntryPointsV1 {
+    fn sierra_entry_point_to_contract_entry_point(value: SierraEntryPoint) -> ContractEntryPointV1 {
+        ContractEntryPointV1 {
+            function_idx: value.function_idx.try_into().unwrap(),
+            selector: field_element_to_big_uint(&value.selector),
+        }
+    }
+    ContractEntryPointsV1 {
+        constructor: value.constructor.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+        external: value.external.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+        l1_handler: value.l1_handler.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+    }
+}
+
+/// Converts a [EntryPointsByType] to a [ContractEntryPoints]
+fn entry_points_by_type_to_contract_entry_points_v2(value: EntryPointsByType) -> ContractEntryPointsV2 {
+    fn sierra_entry_point_to_contract_entry_point(value: SierraEntryPoint) -> ContractEntryPointV2 {
+        ContractEntryPointV2 {
+            function_idx: value.function_idx.try_into().unwrap(),
+            selector: field_element_to_big_uint(&value.selector),
+        }
+    }
+    ContractEntryPointsV2 {
+        constructor: value.constructor.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+        external: value.external.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+        l1_handler: value.l1_handler.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+    }
+}
+
+/// Converts a [EntryPointsByType] to a [ContractEntryPoints]
+fn entry_points_by_type_to_contract_entry_points_v3(value: EntryPointsByType) -> ContractEntryPointsV3 {
+    fn sierra_entry_point_to_contract_entry_point(value: SierraEntryPoint) -> ContractEntryPointV3 {
+        ContractEntryPointV3 {
+            function_idx: value.function_idx.try_into().unwrap(),
+            selector: field_element_to_big_uint(&value.selector),
+        }
+    }
+    ContractEntryPointsV3 {
         constructor: value.constructor.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
         external: value.external.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
         l1_handler: value.l1_handler.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
@@ -263,7 +398,34 @@ fn field_element_to_big_uint(value: &FieldElement) -> BigUint {
     }
 }
 
+/// Converts a [FieldElement] to a [BigUintAsHexV1]
+fn field_element_to_big_uint_as_hex_v1(value: &FieldElement) -> BigUintAsHexV1 {
+    BigUintAsHexV1 { value: field_element_to_big_uint(value) }
+}
+
+/// Converts a [FieldElement] to a [BigUintAsHexV2]
+fn field_element_to_big_uint_as_hex_v2(value: &FieldElement) -> BigUintAsHexV2 {
+    BigUintAsHexV2 { value: field_element_to_big_uint(value) }
+}
+
+/// Converts a [FieldElement] to a [BigUintAsHexV3]
+fn field_element_to_big_uint_as_hex_v3(value: &FieldElement) -> BigUintAsHexV3 {
+    BigUintAsHexV3 { value: field_element_to_big_uint(value) }
+}
+
 /// Converts a [FieldElement] to a [BigUintAsHex]
 fn field_element_to_big_uint_as_hex(value: &FieldElement) -> BigUintAsHex {
     BigUintAsHex { value: field_element_to_big_uint(value) }
+}
+
+/// Returns a [StarknetVersion] from a version string
+fn get_version(version_str: &str) -> StarknetVersion {
+    let parts: Vec<u8> = version_str.split('.').map(|part| part.parse::<u8>().unwrap_or(0)).collect();
+
+    let mut parts_padded = parts.clone();
+    while parts_padded.len() < 3 {
+        parts_padded.push(0);
+    }
+
+    StarknetVersion(parts_padded[0], parts_padded[1], parts_padded[2], 0)
 }
