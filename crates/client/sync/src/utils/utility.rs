@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use bitvec::order::Msb0;
 use bitvec::view::AsBits;
-use deoxys_runtime::opaque::DBlockT;
 use ethers::types::{I256, U256};
 use lazy_static::lazy_static;
+use mp_types::block::DBlockT;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use reqwest::header;

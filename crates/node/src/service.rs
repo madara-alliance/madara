@@ -5,8 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use deoxys_runtime::opaque::DBlockT;
-use deoxys_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
+use deoxys_runtime::{self, RuntimeApi, SealingMode};
 use futures::channel::mpsc;
 use futures::future;
 use futures::future::BoxFuture;
@@ -23,6 +22,7 @@ use mp_contract::class::ClassUpdateWrapper;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
 };
+use mp_types::block::{DBlockT, DHashT, DHasherT};
 use parity_scale_codec::Encode;
 use prometheus_endpoint::Registry;
 use reqwest::Url;
@@ -180,7 +180,7 @@ where
         telemetry.as_ref().map(|x| x.handle()),
     )?;
 
-    let deoxys_backend = DeoxysBackend::open(&config.database, &db_config_dir(config), cache_more_things)?;
+    let deoxys_backend = DeoxysBackend::open(&config.database, &db_config_dir(config), cache_more_things).unwrap();
 
     let (import_queue, block_import) = build_import_queue(
         client.clone(),
@@ -188,7 +188,6 @@ where
         &task_manager,
         telemetry.as_ref().map(|x| x.handle()),
         grandpa_block_import,
-        // TODO: use `DeoxysBackend` import instead
         Arc::clone(deoxys_backend),
     )?;
 
@@ -413,7 +412,7 @@ pub fn new_full(
     task_manager.spawn_essential_handle().spawn(
         "mc-mapping-sync-worker",
         Some(MADARA_TASK_GROUP),
-        MappingSyncWorker::<_, _, StarknetHasher>::new(
+        MappingSyncWorker::<_, _, DHasherT>::new(
             client.import_notification_stream(),
             Duration::new(6, 0),
             client.clone(),
@@ -584,7 +583,7 @@ fn run_manual_seal_authorship(
     block_import: BoxBlockImport,
     task_manager: &TaskManager,
     prometheus_registry: Option<&Registry>,
-    commands_stream: Option<mpsc::Receiver<sc_consensus_manual_seal::rpc::EngineCommand<Hash>>>,
+    commands_stream: Option<mpsc::Receiver<sc_consensus_manual_seal::rpc::EngineCommand<DHashT>>>,
     telemetry: Option<Telemetry>,
 ) -> Result<(), ServiceError>
 where

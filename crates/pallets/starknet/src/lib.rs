@@ -1012,17 +1012,6 @@ impl<T: Config> Pallet<T> {
         }
     }
 
-    /// Get storage value at
-    pub fn get_storage_at(contract_address: ContractAddress, key: StorageKey) -> Result<StarkFelt, DispatchError> {
-        // Get state
-        ensure!(ContractClassHashes::<T>::contains_key(contract_address), Error::<T>::ContractNotFound);
-
-        match Self::storage(contract_address).iter().find(|(storage_key, _)| key == *storage_key) {
-            Some((_, value)) => Ok(*value),
-            None => Err(DispatchError::CannotLookup),
-        }
-    }
-
     /// Returns a storage keys and values of a given contract
     pub fn get_storage_from(contract_address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
         let changes = Self::storage(contract_address);

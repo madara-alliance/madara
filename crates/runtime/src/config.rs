@@ -6,6 +6,7 @@ pub use frame_support::weights::constants::{
 pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
+use mp_types::block::DBlockNumber;
 use parity_scale_codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sp_core::RuntimeDebug;
@@ -17,7 +18,7 @@ pub use sp_runtime::{Perbill, Permill};
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
-use crate::{BlockNumber, RUNTIME_API_VERSIONS};
+use crate::RUNTIME_API_VERSIONS;
 
 /// This determines the average expected block time that we are targeting.
 /// Blocks will be produced at a minimum duration defined by `SLOT_DURATION`.
@@ -58,16 +59,16 @@ pub fn native_version() -> NativeVersion {
 }
 
 // Time is measured by number of blocks.
-pub const MINUTES: BlockNumber = 60_000 / (MILLISECS_PER_BLOCK as BlockNumber);
-pub const HOURS: BlockNumber = MINUTES * 60;
-pub const DAYS: BlockNumber = HOURS * 24;
+pub const MINUTES: DBlockNumber = 60_000 / (MILLISECS_PER_BLOCK as DBlockNumber);
+pub const HOURS: DBlockNumber = MINUTES * 60;
+pub const DAYS: DBlockNumber = HOURS * 24;
 pub const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
 /// Existential deposit.
 pub const EXISTENTIAL_DEPOSIT: u128 = 500;
 
 parameter_types! {
-    pub const BlockHashCount: BlockNumber = 2400;
+    pub const BlockHashCount: DBlockNumber = 2400;
     pub const Version: RuntimeVersion = VERSION;
     /// We allow for 2 seconds of compute with a 6 second average block time.
     pub BlockWeights: frame_system::limits::BlockWeights =

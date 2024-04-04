@@ -24,6 +24,7 @@ members = [
   "crates/primitives/state",
   "crates/primitives/storage",
   "crates/primitives/transactions",
+  "crates/primitives/types",
   "crates/runtime",
 ]
 resolver = "2"
@@ -51,6 +52,7 @@ default-members = [
   "crates/primitives/state",
   "crates/primitives/storage",
   "crates/primitives/transactions",
+  "crates/primitives/types",
   "crates/runtime",
 ]
 
@@ -60,6 +62,7 @@ panic = "abort"
 
 [profile.release]
 panic = "unwind"
+debug = true
 
 [profile.production]
 codegen-units = 1    # Setting this to 1 allows for more optimizations at the cost of slower compile time
@@ -167,9 +170,7 @@ sp-version = { git = "https://github.com/massalabs/polkadot-sdk", branch = "rele
 ] }
 
 # Substrate client dependencies
-sc-client-db = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", features = [
-  "rocksdb",
-] }
+sc-client-db = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 sc-consensus = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 sc-network = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 sc-network-common = { git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
@@ -211,7 +212,7 @@ pallet-grandpa = { default-features = true, git = "https://github.com/massalabs/
 pallet-timestamp = { default-features = true, git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/antiyro/bonsai-trie.git", branch = "oss", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/keep-starknet-strange/bonsai-trie.git", branch = "oss", features = [
   "std",
 ] }
 
@@ -241,6 +242,7 @@ mp-simulations = { path = "crates/primitives/simulations", default-features = fa
 mp-state = { path = "crates/primitives/state", default-features = false }
 mp-storage = { path = "crates/primitives/storage", default-features = false }
 mp-transactions = { path = "crates/primitives/transactions", default-features = false }
+mp-types = { path = "crates/primitives/types", default-features = false }
 
 # Madara client
 mc-db = { path = "crates/client/db" }
@@ -342,6 +344,8 @@ thiserror = "1.0.50"
 thiserror-no-std = "2.0.2"
 tokio = "1.34.0"
 url = "2.4.1"
+rayon = "1.10.0"
+arc-swap = "1.7.1"
 
 [patch."https://github.com/w3f/ring-vrf"]
 bandersnatch_vrfs = { git = "https://github.com/w3f/ring-vrf?rev=3ddc20", version = "0.0.4", rev = "3ddc20" }

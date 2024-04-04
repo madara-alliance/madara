@@ -15,7 +15,6 @@ mod config;
 pub mod opaque;
 mod pallets;
 mod runtime_tests;
-mod types;
 
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::transaction::objects::TransactionExecutionInfo;
@@ -33,6 +32,9 @@ use mp_felt::Felt252Wrapper;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::{HandleL1MessageTransaction, Transaction, UserOrL1HandlerTransaction, UserTransaction};
+use mp_types::account::{DAccountAddressT, DAccountIdT};
+use mp_types::block::DHeaderT;
+use mp_types::transactions::{DTxIndexT, DTxSignatureT};
 use pallet_grandpa::{fg_primitives, AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList};
 /// Import the Starknet pallet.
 pub use pallet_starknet;
@@ -45,7 +47,7 @@ use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::crypto::KeyTypeId;
 use sp_core::OpaqueMetadata;
-use sp_runtime::traits::{BlakeTwo256, Block as BlockT, NumberFor};
+use sp_runtime::traits::{Block as BlockT, NumberFor};
 use sp_runtime::transaction_validity::{TransactionSource, TransactionValidity};
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
@@ -57,8 +59,6 @@ use starknet_api::api_core::{ClassHash, ContractAddress, EntryPointSelector, Non
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Calldata, Event as StarknetEvent, Fee, MessageToL1, TransactionHash};
-/// Import the types.
-pub use types::*;
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
@@ -72,12 +72,8 @@ construct_runtime!(
     }
 );
 
-/// The address format for describing accounts.
-pub type Address = sp_runtime::MultiAddress<AccountId, ()>;
-/// Block header type as expected by this runtime.
-pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
 /// Block type as expected by this runtime.
-pub type Block = generic::Block<Header, UncheckedExtrinsic>;
+pub type Block = generic::Block<DHeaderT, UncheckedExtrinsic>;
 
 /// The SignedExtension to the basic transaction logic.
 pub type SignedExtra = (
@@ -90,7 +86,7 @@ pub type SignedExtra = (
     frame_system::CheckWeight<Runtime>,
 );
 /// Unchecked extrinsic type as expected by this runtime.
-pub type UncheckedExtrinsic = generic::UncheckedExtrinsic<Address, RuntimeCall, Signature, SignedExtra>;
+pub type UncheckedExtrinsic = generic::UncheckedExtrinsic<DAccountAddressT, RuntimeCall, DTxSignatureT, SignedExtra>;
 /// The payload being signed in transactions.
 pub type SignedPayload = generic::SignedPayload<RuntimeCall, SignedExtra>;
 /// Executive: handles dispatch to the various modules.
@@ -229,17 +225,13 @@ impl_runtime_apis! {
         }
     }
 
-    impl frame_system_rpc_runtime_api::AccountNonceApi<Block, AccountId, Index> for Runtime {
-        fn account_nonce(account: AccountId) -> Index {
+    impl frame_system_rpc_runtime_api::AccountNonceApi<Block, DAccountIdT, DTxIndexT> for Runtime {
+        fn account_nonce(account: DAccountIdT) -> DTxIndexT {
             System::account_nonce(account)
         }
     }
 
     impl pallet_starknet_runtime_api::StarknetRuntimeApi<Block> for Runtime {
-
-        fn get_storage_at(address: ContractAddress, key: StorageKey) -> Result<StarkFelt, DispatchError> {
-            Starknet::get_storage_at(address, key)
-        }
 
         fn get_storage_from(address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
             Starknet::get_storage_from(address)

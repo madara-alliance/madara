@@ -1,9 +1,9 @@
-use deoxys_runtime::opaque::{DBlockT, DHashT, DHeaderT};
 use mc_db::DeoxysBackend;
 use mc_rpc::utils::get_block_by_block_hash;
 use mp_digest_log::{find_starknet_block, FindLogError};
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
+use mp_types::block::{DBlockT, DHashT, DHeaderT};
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_api::ProvideRuntimeApi;
