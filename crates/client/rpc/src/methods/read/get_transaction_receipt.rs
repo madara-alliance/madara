@@ -1,6 +1,4 @@
-use blockifier::execution::contract_class::{ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf};
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use log::error;
@@ -11,7 +9,8 @@ use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::{DeclareTransaction, Transaction as TransactionMp, UserOrL1HandlerTransaction, UserTransaction};
+use mp_transactions::{Transaction as TransactionMp, UserOrL1HandlerTransaction, UserTransaction};
+use mp_types::block::{DBlockT, DHashT};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -394,30 +393,6 @@ where
 {
     let class_hash = ClassHash::from(*declare_tx.class_hash());
 
-    match declare_tx {
-        DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => {
-            tx_declare_v0v1(client, substrate_block_hash, declare_tx, class_hash)
-        }
-        DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
-    }
-}
-
-fn tx_declare_v0v1<A, BE, G, C, P, H>(
-    client: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: DHashT,
-    declare_tx: mp_transactions::DeclareTransaction,
-    class_hash: ClassHash,
-) -> RpcResult<UserOrL1HandlerTransaction>
-where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
     let contract_class = client
         .overrides
         .for_block_hash(client.client.as_ref(), substrate_block_hash)
@@ -426,39 +401,6 @@ where
             log::error!("Failed to retrieve contract class from hash '{class_hash}'");
             StarknetRpcApiError::InternalServerError
         })?;
-
-    Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx, contract_class)))
-}
-
-fn tx_declare_v2(
-    declare_tx: mp_transactions::DeclareTransaction,
-    class_hash: ClassHash,
-) -> RpcResult<UserOrL1HandlerTransaction> {
-    // Welcome to type hell! This 3-part conversion will take you through the extenses
-    // of a codebase so thick it might as well be pasta -yum!
-    // Also should no be a problem as a declare transaction *should* not be able to
-    // reference a contract class created on the same block (this kind of issue
-    // might otherwise arise for `pending` blocks)
-    let contract_class = DeoxysBackend::sierra_classes()
-        .get_sierra_class(class_hash)
-        .map_err(|e| {
-            log::error!("Failed to fetch sierra class with hash {class_hash}: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .ok_or_else(|| {
-            log::error!("The sierra class with hash {class_hash} is not present in db backend");
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-    let contract_class = mp_transactions::utils::sierra_to_casm_contract_class(contract_class).map_err(|e| {
-        log::error!("Failed to convert the SierraContractClass to CasmContractClass: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?;
-
-    let contract_class = ContractClassBf::V1(ContractClassV1Bf::try_from(contract_class).map_err(|e| {
-        log::error!("Failed to convert the compiler CasmContractClass to blockifier CasmContractClass: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?);
 
     Ok(UserOrL1HandlerTransaction::User(UserTransaction::Declare(declare_tx, contract_class)))
 }

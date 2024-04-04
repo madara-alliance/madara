@@ -1,4 +1,3 @@
-use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::types::error::CallError;
 use log::error;
@@ -7,6 +6,7 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
+use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;

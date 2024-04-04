@@ -1,9 +1,9 @@
-use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
 use mp_transactions::UserTransaction;
+use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;

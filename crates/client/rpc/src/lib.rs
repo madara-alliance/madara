@@ -13,7 +13,6 @@ pub mod utils;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use deoxys_runtime::opaque::{DBlockT, DHashT, DHeaderT};
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
@@ -22,6 +21,7 @@ use mc_db::DeoxysBackend;
 use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
+use mp_types::block::{DBlockT, DHashT, DHeaderT};
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_network_sync::SyncingService;
 use sc_transaction_pool::{ChainApi, Pool};

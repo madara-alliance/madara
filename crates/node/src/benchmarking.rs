@@ -24,6 +24,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use deoxys_runtime as runtime;
+use mp_types::transactions::DTxSignatureT;
 use runtime::SystemCall;
 use sc_cli::Result;
 use sc_client_api::BlockBackend;
@@ -59,9 +60,13 @@ impl frame_benchmarking_cli::ExtrinsicBuilder for RemarkBuilder {
 
     fn build(&self, nonce: u32) -> std::result::Result<OpaqueExtrinsic, &'static str> {
         let acc = Sr25519Keyring::Bob.pair();
-        let extrinsic: OpaqueExtrinsic =
-            create_benchmark_extrinsic(self.client.as_ref(), acc, SystemCall::remark { remark: vec![] }.into(), nonce)
-                .into();
+        let extrinsic: OpaqueExtrinsic = create_benchmark_extrinsic(
+            self.client.as_ref(),
+            acc,
+            SystemCall::remark { remark: vec![] }.into(),
+            nonce as u128,
+        )
+        .into();
 
         Ok(extrinsic)
     }
@@ -74,7 +79,7 @@ pub fn create_benchmark_extrinsic(
     client: &FullClient,
     sender: sp_core::sr25519::Pair,
     call: runtime::RuntimeCall,
-    nonce: u32,
+    nonce: u128,
 ) -> runtime::UncheckedExtrinsic {
     let genesis_hash = client.block_hash(0).ok().flatten().expect("Genesis block exists; qed");
     let best_hash = client.chain_info().best_hash;
@@ -104,7 +109,7 @@ pub fn create_benchmark_extrinsic(
     runtime::UncheckedExtrinsic::new_signed(
         call,
         sp_runtime::AccountId32::from(sender.public()).into(),
-        runtime::Signature::Sr25519(signature),
+        DTxSignatureT::Sr25519(signature),
         extra,
     )
 }

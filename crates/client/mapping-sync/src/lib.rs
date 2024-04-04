@@ -15,12 +15,12 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use deoxys_runtime::opaque::{DBlockT, DHeaderT};
 use futures::prelude::*;
 use futures::task::{Context, Poll};
 use futures_timer::Delay;
 use log::debug;
 use mp_hashers::HasherT;
+use mp_types::block::{DBlockT, DHeaderT};
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::client::ImportNotifications;

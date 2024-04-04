@@ -13,33 +13,31 @@
 
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use anyhow::{bail, Context, Result};
-use bonsai_db::{BonsaiStorageAccess, DatabaseKeyMapping};
+use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
+use bonsai_trie::id::BasicId;
+use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use da_db::DaDb;
 use l1_handler_tx_fee::L1HandlerTxFeeDb;
 use mapping_db::MappingDb;
-use messaging_db::MessagingDb;
 use meta_db::MetaDb;
 use sc_client_db::DatabaseSource;
 
 mod error;
 mod mapping_db;
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, MultiThreaded, OptimisticTransactionDB, Options};
-use sierra_classes_db::SierraClassesDb;
 mod da_db;
-mod messaging_db;
-mod sierra_classes_db;
 use starknet_api::hash::StarkHash;
 use starknet_types_core::hash::{Pedersen, Poseidon};
 pub mod bonsai_db;
 mod l1_handler_tx_fee;
 mod meta_db;
+pub mod storage;
 
 pub use error::{BonsaiDbError, DbError};
 pub use mapping_db::MappingCommitment;
-pub use messaging_db::LastSyncedEventBlock;
 
 const DB_HASH_LEN: usize = 32;
 /// Hash type that this backend uses for the database.
@@ -48,6 +46,19 @@ pub type DbHash = [u8; DB_HASH_LEN];
 struct DatabaseSettings {
     /// Where to find the database.
     pub source: DatabaseSource,
+    pub max_saved_trie_logs: Option<usize>,
+    pub max_saved_snapshots: Option<usize>,
+    pub snapshot_interval: u64,
+}
+
+impl From<&DatabaseSettings> for BonsaiStorageConfig {
+    fn from(val: &DatabaseSettings) -> Self {
+        BonsaiStorageConfig {
+            max_saved_trie_logs: val.max_saved_trie_logs,
+            max_saved_snapshots: val.max_saved_snapshots,
+            snapshot_interval: val.snapshot_interval,
+        }
+    }
 }
 
 pub type DB = OptimisticTransactionDB<MultiThreaded>;
@@ -99,13 +110,7 @@ pub enum Column {
     /// This column should only be accessed if the `--cache` flag is enabled.
     StarknetBlockHashesCache,
 
-    /// This column contains last synchronized L1 block.
-    Messaging,
-
-    /// This column contains the Sierra contract classes
-    SierraContractClasses,
-
-    /// This column stores the fee paid on l1 for L1Handler transactions
+    // TODO: remove this
     L1HandlerPaidFee,
 
     // Each bonsai storage has 3 columns
@@ -145,8 +150,6 @@ impl Column {
             Da,
             StarknetTransactionHashesCache,
             StarknetBlockHashesCache,
-            Messaging,
-            SierraContractClasses,
             L1HandlerPaidFee,
             BonsaiContractsTrie,
             BonsaiContractsFlat,
@@ -170,8 +173,6 @@ impl Column {
             Column::Da => "da",
             Column::StarknetTransactionHashesCache => "starknet_transaction_hashes_cache",
             Column::StarknetBlockHashesCache => "starnet_block_hashes_cache",
-            Column::Messaging => "messaging",
-            Column::SierraContractClasses => "sierra_contract_classes",
             Column::L1HandlerPaidFee => "l1_handler_paid_fee",
             Column::BonsaiContractsTrie => "bonsai_contracts_trie",
             Column::BonsaiContractsFlat => "bonsai_contracts_flat",
@@ -235,18 +236,17 @@ pub struct DeoxysBackend {
     meta: Arc<MetaDb>,
     mapping: Arc<MappingDb>,
     da: Arc<DaDb>,
-    messaging: Arc<MessagingDb>,
-    sierra_classes: Arc<SierraClassesDb>,
     l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
-    bonsai_contract: BonsaiStorageAccess<Pedersen>,
-    bonsai_storage: BonsaiStorageAccess<Pedersen>,
-    bonsai_class: BonsaiStorageAccess<Poseidon>,
+    bonsai_contract: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
+    bonsai_storage: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
+    bonsai_class: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>>,
 }
 
 // Singleton backing instance for `DeoxysBackend`
 static BACKEND_SINGLETON: OnceLock<Arc<DeoxysBackend>> = OnceLock::new();
 
-// TODO: add neogen to comment this :)
+static DB_SINGLETON: OnceLock<Arc<DB>> = OnceLock::new();
+
 impl DeoxysBackend {
     /// Initializes a local database, returning a singleton backend instance.
     ///
@@ -282,45 +282,69 @@ impl DeoxysBackend {
                     },
                     _ => bail!("Supported db sources: `rocksdb` | `paritydb` | `auto`"),
                 },
+                max_saved_trie_logs: None,
+                max_saved_snapshots: None,
+                snapshot_interval: 100,
             },
             cache_more_things,
         )
     }
 
     fn new(config: &DatabaseSettings, cache_more_things: bool) -> Result<Self> {
-        let db = Arc::new(open_database(config)?);
+        DB_SINGLETON.set(Arc::new(open_database(config)?)).unwrap();
+        let db = DB_SINGLETON.get().unwrap();
+        let bonsai_config = BonsaiStorageConfig::from(config);
 
-        Ok(Self {
-            mapping: Arc::new(MappingDb::new(Arc::clone(&db), cache_more_things)),
-            meta: Arc::new(MetaDb::new(Arc::clone(&db))),
-            da: Arc::new(DaDb::new(Arc::clone(&db))),
-            messaging: Arc::new(MessagingDb::new(Arc::clone(&db))),
-            sierra_classes: Arc::new(SierraClassesDb::new(Arc::clone(&db))),
-            l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb::new(Arc::clone(&db))),
-            bonsai_contract: BonsaiStorageAccess::new(
-                Arc::clone(&db),
+        let mut bonsai_contract = BonsaiStorage::new(
+            BonsaiDb::new(
+                db,
                 DatabaseKeyMapping {
                     flat: Column::BonsaiContractsFlat,
                     trie: Column::BonsaiContractsTrie,
                     trie_log: Column::BonsaiContractsLog,
                 },
             ),
-            bonsai_storage: BonsaiStorageAccess::new(
-                Arc::clone(&db),
+            bonsai_config.clone(),
+        )
+        .unwrap();
+        bonsai_contract.commit(BasicId::new(0)).unwrap();
+
+        let mut bonsai_contract_storage = BonsaiStorage::new(
+            BonsaiDb::new(
+                db,
                 DatabaseKeyMapping {
                     flat: Column::BonsaiContractsStorageFlat,
                     trie: Column::BonsaiContractsStorageTrie,
                     trie_log: Column::BonsaiContractsStorageLog,
                 },
             ),
-            bonsai_class: BonsaiStorageAccess::new(
-                Arc::clone(&db),
+            bonsai_config.clone(),
+        )
+        .unwrap();
+        bonsai_contract_storage.commit(BasicId::new(0)).unwrap();
+
+        let mut bonsai_classes = BonsaiStorage::new(
+            BonsaiDb::new(
+                db,
                 DatabaseKeyMapping {
                     flat: Column::BonsaiClassesFlat,
                     trie: Column::BonsaiClassesTrie,
                     trie_log: Column::BonsaiClassesLog,
                 },
             ),
+            bonsai_config.clone(),
+        )
+        .unwrap();
+        bonsai_classes.commit(BasicId::new(0)).unwrap();
+
+        Ok(Self {
+            mapping: Arc::new(MappingDb::new(Arc::clone(db), cache_more_things)),
+            meta: Arc::new(MetaDb::new(Arc::clone(db))),
+            da: Arc::new(DaDb::new(Arc::clone(db))),
+            l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb::new(Arc::clone(db))),
+            bonsai_contract: RwLock::new(bonsai_contract),
+            bonsai_storage: RwLock::new(bonsai_contract_storage),
+            bonsai_class: RwLock::new(bonsai_classes),
         })
     }
 
@@ -339,25 +363,15 @@ impl DeoxysBackend {
         BACKEND_SINGLETON.get().map(|backend| &backend.da).expect("Backend not initialized")
     }
 
-    /// Return the da database manager
-    pub fn messaging() -> &'static Arc<MessagingDb> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.messaging).expect("Backend not initialized")
-    }
-
-    /// Return the sierra classes database manager
-    pub fn sierra_classes() -> &'static Arc<SierraClassesDb> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.sierra_classes).expect("Backend not initialized")
-    }
-
-    pub fn bonsai_contract() -> &'static BonsaiStorageAccess<Pedersen> {
+    pub(crate) fn bonsai_contract() -> &'static RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_contract).expect("Backend not initialized")
     }
 
-    pub fn bonsai_storage() -> &'static BonsaiStorageAccess<Pedersen> {
+    pub(crate) fn bonsai_storage() -> &'static RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_storage).expect("Backend not initialized")
     }
 
-    pub fn bonsai_class() -> &'static BonsaiStorageAccess<Poseidon> {
+    pub(crate) fn bonsai_class() -> &'static RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_class).expect("Backend not initialized")
     }
 

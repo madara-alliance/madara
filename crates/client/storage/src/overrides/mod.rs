@@ -56,14 +56,6 @@ impl<B: BlockT> OverrideHandle<B> {
 /// State Backend with some assumptions about pallet-starknet's storage schema. Using such an
 /// optimized implementation avoids spawning a runtime and the overhead associated with it.
 pub trait StorageOverride<B: BlockT>: Send + Sync {
-    /// get storage by storage key for a specific contract address and block hash
-    fn get_storage_by_storage_key(
-        &self,
-        block_hash: B::Hash,
-        address: ContractAddress,
-        key: StorageKey,
-    ) -> Option<StarkFelt>;
-
     /// get storage keys and values from a specific contract address
     fn get_storage_from(&self, block_hash: B::Hash, address: ContractAddress) -> Option<Vec<(StorageKey, StarkFelt)>>;
 
@@ -115,32 +107,6 @@ where
     C: ProvideRuntimeApi<B> + Send + Sync,
     C::Api: StarknetRuntimeApi<B>,
 {
-    /// Get the storage value for a specific contract address and storage key
-    ///
-    /// # Arguments
-    ///
-    /// * `block_hash` - The block hash
-    /// * `address` - The contract address to fetch the storage from
-    /// * `key` - The storage key to fetch the value for
-    ///
-    /// # Returns
-    /// * `Some(storage_value)` - The storage value for the provided contract address and storage
-    ///   key
-    fn get_storage_by_storage_key(
-        &self,
-        block_hash: <B as BlockT>::Hash,
-        address: ContractAddress,
-        key: StorageKey,
-    ) -> Option<StarkFelt> {
-        let api = self.client.runtime_api();
-
-        match api.get_storage_at(block_hash, address, key) {
-            Ok(Ok(storage)) => Some(storage),
-            Ok(Err(_)) => None,
-            Err(_) => None,
-        }
-    }
-
     /// Get the storage keys and values from a specific contract address
     ///
     /// # Arguments

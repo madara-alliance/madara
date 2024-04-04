@@ -21,14 +21,23 @@ parity-scale-codec = { workspace = true, default-features = true, features = [
   "derive",
 ] }
 sc-client-db = { workspace = true, default-features = true }
+sp-core = { workspace = true }
 sp-database = { workspace = true, default-features = true }
 sp-runtime = { workspace = true, default-features = true }
 
 # Madara crates
-deoxys-runtime = { workspace = true }
+mp-hashers = { workspace = true }
+mp-types = { workspace = true }
 
 # Starknet crates
+blockifier = { workspace = true, default-features = false, features = [
+  "testing",
+] }
 bonsai-trie = { workspace = true }
+starknet-ff = { workspace = true, default-features = false, features = [
+  "alloc",
+  "serde",
+] }
 starknet-types-core = { workspace = true, default-features = false, features = [
   "hash",
   "parity-scale-codec",
@@ -39,6 +48,8 @@ starknet_api = { workspace = true, default-features = true, features = [
 
 # Other crates
 anyhow.workspace = true
+arc-swap = { workspace = true }
+bitvec = { workspace = true }
 ethers = { workspace = true }
 log = { workspace = true, default-features = true }
 rocksdb = { version = "0.21", features = [

@@ -3,15 +3,14 @@ use std::pin::pin;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use deoxys_runtime::opaque::{DBlockT, DHashT};
 use futures::prelude::*;
 use lazy_static::lazy_static;
-use mc_db::DeoxysBackend;
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::DeoxysBlock;
 use mp_contract::class::ClassUpdateWrapper;
 use mp_felt::Felt252Wrapper;
+use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
@@ -23,6 +22,7 @@ use starknet_core::types::{PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
+use starknet_types_core::felt::Felt;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
@@ -201,7 +201,6 @@ where
                 let (state_update, block_conv) = {
                     let verify = fetch_config.verify;
                     let overrides = Arc::clone(overrides);
-
                     let state_update = Arc::new(state_update);
                     let state_update_1 = Arc::clone(&state_update);
 
@@ -214,7 +213,7 @@ where
                         };
                         let ver_l2 = || {
                             let start = std::time::Instant::now();
-                            verify_l2(block_n, &state_update, &overrides,block_hash)
+                            verify_l2(block_n, &state_update, &overrides, block_hash)
                                 .expect("verifying block");
                             log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
                         };
@@ -308,23 +307,12 @@ pub fn verify_l2(
 ) -> Result<(), L2SyncError> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
 
-    let mut bonsai_contract = DeoxysBackend::bonsai_contract().writable();
-    let mut bonsai_contract_storage = DeoxysBackend::bonsai_storage().writable();
-    let mut bonsai_class = DeoxysBackend::bonsai_class().writable();
-
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
-    let state_root = update_state_root(
-        csd,
-        Arc::clone(overrides),
-        &mut bonsai_contract,
-        &mut bonsai_contract_storage,
-        &mut bonsai_class,
-        block_number,
-        substrate_block_hash,
-    );
-    log::debug!("state_root: {state_root:?}");
+    let state_root = update_state_root(csd, Arc::clone(overrides), block_number, substrate_block_hash);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
-    log::debug!("update_state_root {} -- block_hash: {block_hash:?}, state_root: {state_root:?}", block_number);
+
+    let state_root_display = Felt::from_bytes_be(&state_root.0.to_bytes_be());
+    log::info!("🌳 State root #{block_number}: {state_root_display:#064x}");
 
     update_l2(L2StateUpdate {
         block_number,

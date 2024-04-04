@@ -56,32 +56,6 @@ where
     C: HeaderBackend<B> + StorageProvider<B, BE> + 'static,
     BE: Backend<B> + 'static,
 {
-    fn get_storage_by_storage_key(
-        &self,
-        block_hash: <B as BlockT>::Hash,
-        address: ContractAddress,
-        key: StarknetStorageKey,
-    ) -> Option<StarkFelt> {
-        let storage_storage_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_STORAGE);
-        let key = (address, key);
-
-        // check if contract exists
-        match self.contract_class_hash_by_address(block_hash, address) {
-            Some(_) => (),
-            None => return None,
-        }
-
-        let storage = self.query_storage::<StarkFelt>(
-            block_hash,
-            &StorageKey(storage_key_build(storage_storage_prefix, &self.encode_storage_key(&key))),
-        );
-
-        match storage {
-            Some(storage) => Some(storage),
-            None => Some(Default::default()),
-        }
-    }
-
     fn get_storage_from(
         &self,
         block_hash: <B as BlockT>::Hash,
