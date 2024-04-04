@@ -320,8 +320,6 @@ pub fn verify_l2(
     let state_root = update_state_root(csd, Arc::clone(overrides), block_number, substrate_block_hash);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
-    let state_root_display = Felt::from_bytes_be(&state_root.0.to_bytes_be());
-
     update_l2(L2StateUpdate {
         block_number,
         global_root: state_root.into(),
