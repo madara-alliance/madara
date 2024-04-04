@@ -36,6 +36,7 @@ use starknet_core::types::{
 };
 use starknet_crypto::FieldElement;
 use thiserror::Error;
+
 use crate::compute_hash::ComputeTransactionHash;
 
 #[derive(Debug, Error)]

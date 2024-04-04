@@ -53,21 +53,13 @@ pub mod convert {
 
         fn try_from(inputs: (ContractClassCore, Option<String>)) -> Result<Self, Self::Error> {
             let (contract_class, starknet_version) = inputs;
-            log::info!("Attempting to convert ContractClassCore to ContractClassWrapper");
             let contract = from_rpc_contract_class(&contract_class, starknet_version)?;
-            log::info!("Converted contract_class to contract successfully");
-
             let abi = match &contract_class {
-                ContractClassCore::Sierra(class_sierra) => {
-                    log::info!("Handling Sierra class");
-                    ContractAbi::Sierra(class_sierra.abi.clone())
-                }
+                ContractClassCore::Sierra(class_sierra) => ContractAbi::Sierra(class_sierra.abi.clone()),
                 ContractClassCore::Legacy(class_cairo) => {
-                    log::info!("Handling Legacy class");
                     ContractAbi::Cairo(from_rpc_contract_abi(class_cairo.abi.clone()))
                 }
             };
-            log::info!("ABI conversion successful");
 
             Ok(Self { contract, abi })
         }

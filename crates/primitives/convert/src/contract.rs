@@ -87,8 +87,9 @@ pub fn to_contract_class_sierra(_: &ContractClassV1, abi: String) -> anyhow::Res
 }
 
 /// Converts a [FlattenedSierraClass] to a [ContractClassBlockifier]
-/// 
-/// Note: The conversion between the different legacy class versions is handled by an intermediate json representation.
+///
+/// Note: The conversion between the different legacy class versions is handled by an intermediate
+/// json representation.
 pub fn from_contract_class_sierra(
     contract_class: &FlattenedSierraClass,
     starknet_version: Option<String>,
@@ -135,8 +136,8 @@ pub fn from_contract_class_cairo(
 
 /// Converts a [FlattenedSierraClass] to a [CasmContractClassVersion]
 ///
-/// Note: The Starknet state contains different legacy versions of CasmContractClass, therefore we need to
-/// convert them properly with the associated lib.
+/// Note: The Starknet state contains different legacy versions of CasmContractClass, therefore we
+/// need to convert them properly with the associated lib.
 pub fn flattened_sierra_to_casm_contract_class(
     flattened_sierra: &FlattenedSierraClass,
     starknet_version: Option<String>,
@@ -180,7 +181,7 @@ pub fn flattened_sierra_version(
             entry_points_by_type: entry_points_by_type_to_contract_entry_points_v1(
                 flattened_sierra.entry_points_by_type.clone(),
             ),
-            abi: None,
+            abi: None, // TODO: Pass the abi correctly on sierra contract classes
         })
     } else if version > v1_0_0_rc0 {
         SierraContractClassVersion::V2(SierraContractClassV2 {
@@ -190,7 +191,7 @@ pub fn flattened_sierra_version(
             entry_points_by_type: entry_points_by_type_to_contract_entry_points_v2(
                 flattened_sierra.entry_points_by_type.clone(),
             ),
-            abi: None,
+            abi: None, // TODO: Pass the abi correctly on sierra contract classes
         })
     } else if version > v1_1_1 {
         SierraContractClassVersion::V3(SierraContractClassV3 {
@@ -200,7 +201,7 @@ pub fn flattened_sierra_version(
             entry_points_by_type: entry_points_by_type_to_contract_entry_points_v3(
                 flattened_sierra.entry_points_by_type.clone(),
             ),
-            abi: None,
+            abi: None, // TODO: Pass the abi correctly on sierra contract classes
         })
     } else {
         SierraContractClassVersion::Base(SierraContractClass {
@@ -210,7 +211,7 @@ pub fn flattened_sierra_version(
             entry_points_by_type: entry_points_by_type_to_contract_entry_points(
                 flattened_sierra.entry_points_by_type.clone(),
             ),
-            abi: None,
+            abi: None, // TODO: Pass the abi correctly on sierra contract classes
         })
     };
 
