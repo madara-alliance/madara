@@ -4,6 +4,7 @@ use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
+use mp_transactions::TxType;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_transaction_pool::ChainApi;
@@ -96,7 +97,7 @@ where
     let trace = tx_execution_infos_to_tx_trace(
         &**storage_override,
         substrate_block_hash,
-        tx_to_trace.get(0).unwrap().tx_type(),
+        TxType::from(tx_to_trace.get(0).unwrap()),
         &execution_infos[0],
     )
     .unwrap();
