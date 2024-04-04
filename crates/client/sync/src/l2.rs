@@ -321,7 +321,6 @@ pub fn verify_l2(
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
     let state_root_display = Felt::from_bytes_be(&state_root.0.to_bytes_be());
-    log::info!("🌳 State root #{block_number}: {state_root_display:#064x}");
 
     update_l2(L2StateUpdate {
         block_number,
