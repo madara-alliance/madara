@@ -234,6 +234,15 @@ pub async fn sync<C>(
 
                         if verify {
                             let (_, block_conv) = rayon::join(ver_l2, || convert_block(block));
+                            let last_l2_state_update =
+                                STARKNET_STATE_UPDATE.read().expect("Failed to acquire read lock on STARKNET_STATE_UPDATE");
+                            if (block_conv.header().global_state_root) != last_l2_state_update.global_root {
+                                log::info!(
+                                    "❗ Verified state: {:?} doesn't match fetched state: {:?}",
+                                    last_l2_state_update.global_root,
+                                    block_conv.header().global_state_root
+                                );
+                            }
                             block_conv
                         } else {
                             convert_block(block)
