@@ -183,14 +183,11 @@ async fn fetch_class(
     provider: &SequencerGatewayProvider,
     block_number: u64,
 ) -> Result<ContractClassData, L2SyncError> {
-    // log::info!("💾 Downloading class {class_hash:#x}");
     let core_class = provider.get_class(BlockIdCore::Hash(block_hash), class_hash).await?;
     // Check for Starknet versions for block number >= 30000 (TODO: this is for mainnet, add support for
     // Sepolia)
     let starknet_version: Option<String> =
-        if block_number >= 30000u64 { Some(fetch_starknet_version(provider, block_number).await?) } else { None };
-    // Core classes have to be converted into Blockifier classes to gain support
-    // for Substrate [`Encode`] and [`Decode`] traits
+        if block_number >= 31600u64 { Some(fetch_starknet_version(provider, block_number).await?) } else { None };
     Ok(ContractClassData {
         hash: ClassHash(Felt252Wrapper::from(class_hash).into()),
         // TODO: remove this expect when ContractClassWrapper::try_from does proper error handling using
