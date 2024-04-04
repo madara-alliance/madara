@@ -35,7 +35,6 @@ use flate2::write::GzEncoder;
 use indexmap::IndexMap;
 use mp_felt::Felt252Wrapper;
 use num_bigint::{BigInt, BigUint, Sign};
-use semver::Version;
 use serde_json;
 use starknet_api::core::EntryPointSelector;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
