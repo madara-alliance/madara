@@ -1,5 +1,4 @@
 use deoxys_runtime::opaque::DBlockT;
-use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_sync::l2::get_pending_block;
 use mp_block::DeoxysBlock;
@@ -11,11 +10,10 @@ use sc_client_api::BlockBackend;
 use sc_transaction_pool::ChainApi;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventsPage};
+use starknet_core::types::{BlockId, BlockTag, EmittedEvent};
 use starknet_ff::FieldElement;
 
 use crate::errors::StarknetRpcApiError;
-use crate::types::{ContinuationToken, RpcEventFilter};
 use crate::utils::get_block_by_block_hash;
 use crate::Starknet;
 
@@ -158,110 +156,4 @@ where
             }
         }
     }
-
-    /// Helper function to filter Starknet events provided a RPC event filter
-    ///
-    /// # Arguments
-    ///
-    /// * `filter` - The RPC event filter
-    ///
-    /// # Returns
-    ///
-    /// * `EventsPage` - The filtered events with continuation token
-    pub fn filter_events(&self, filter: RpcEventFilter) -> RpcResult<EventsPage> {
-        // if pending cas particulier ->
-        // get filter values
-        let continuation_token = filter.continuation_token;
-        // skip blocks with continuation token block number
-        let from_block = continuation_token.block_n;
-        let mut current_block = from_block;
-        let to_block = filter.to_block;
-        let from_address = filter.from_address;
-        let keys = filter.keys;
-        let chunk_size = filter.chunk_size;
-        let latest_block_number =
-            self.substrate_block_number_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
-                error!("'{e}'");
-                StarknetRpcApiError::BlockNotFound
-            })?;
-
-        let mut filtered_events: Vec<EmittedEvent> = Vec::new();
-
-        // Iterate on block range
-        while current_block <= to_block {
-            let emitted_events = if current_block <= latest_block_number {
-                self.get_block_events(BlockId::Number(current_block))?
-            } else {
-                self.get_block_events(BlockId::Tag(BlockTag::Pending))?
-            };
-
-            let block_filtered_events: Vec<EmittedEvent> = filter_events_by_params(emitted_events, from_address, &keys);
-
-            if current_block == from_block && (block_filtered_events.len() as u64) < continuation_token.event_n {
-                return Err(StarknetRpcApiError::InvalidContinuationToken.into());
-            }
-
-            #[allow(clippy::iter_skip_zero)]
-            let block_filtered_reduced_events: Vec<EmittedEvent> = block_filtered_events
-                .into_iter()
-                .skip(if current_block == from_block { continuation_token.event_n as usize } else { 0 })
-                .take(chunk_size as usize - filtered_events.len())
-                .collect();
-
-            let num_events = block_filtered_reduced_events.len();
-
-            filtered_events.extend(block_filtered_reduced_events);
-
-            if filtered_events.len() == chunk_size as usize {
-                let event_n = if current_block == from_block {
-                    continuation_token.event_n + chunk_size
-                } else {
-                    num_events as u64
-                };
-                let token = Some(ContinuationToken { block_n: current_block, event_n }.to_string());
-
-                return Ok(EventsPage { events: filtered_events, continuation_token: token });
-            }
-
-            current_block += 1;
-        }
-
-        Ok(EventsPage { events: filtered_events, continuation_token: None })
-    }
-}
-
-/// Helper function to get filter events using address and keys
-
-/// # Arguments
-///
-/// * `events` - A vector of all events
-/// * `address` - Address to use to filter the events
-/// * `keys` - Keys to use to filter the events. An event is filtered if any key is present
-/// * `max_results` - Optional, indicated the max events that need to be filtered
-///
-/// # Returns
-///
-/// * `(block_events: Vec<EventWrapper>, continuation_token: usize)` - A tuple of the filtered
-///   events and the first index which still hasn't been processed block_id and an instance of Block
-pub fn filter_events_by_params<'a, 'b: 'a>(
-    events: Vec<EmittedEvent>,
-    address: Option<Felt252Wrapper>,
-    keys: &'a [Vec<FieldElement>],
-) -> Vec<EmittedEvent> {
-    let mut filtered_events = vec![];
-
-    // Iterate on block events.
-    for event in events {
-        let match_from_address = address.map_or(true, |addr| addr.0 == event.from_address);
-        // Based on https://github.com/starkware-libs/papyrus
-        let match_keys = keys
-            .iter()
-            .enumerate()
-            .all(|(i, keys)| event.keys.len() > i && (keys.is_empty() || keys.contains(&event.keys[i])));
-
-        if match_from_address && match_keys {
-            filtered_events.push(event);
-        }
-    }
-    filtered_events
 }
