@@ -86,7 +86,7 @@ where
 
     let mut filtered_events: Vec<EmittedEvent> = Vec::new();
 
-    // Iterate on block range
+    // Iterate on block range: TODO: stop using Cpp-like loops with mutation
     while current_block <= to_block {
         let emitted_events = if current_block <= latest_block {
             starknet.get_block_events(BlockId::Number(current_block))?
