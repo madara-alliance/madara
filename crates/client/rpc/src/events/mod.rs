@@ -169,6 +169,7 @@ where
     ///
     /// * `EventsPage` - The filtered events with continuation token
     pub fn filter_events(&self, filter: RpcEventFilter) -> RpcResult<EventsPage> {
+        // if pending cas particulier ->
         // get filter values
         let continuation_token = filter.continuation_token;
         // skip blocks with continuation token block number
@@ -178,12 +179,21 @@ where
         let from_address = filter.from_address;
         let keys = filter.keys;
         let chunk_size = filter.chunk_size;
+        let latest_block_number =
+            self.substrate_block_number_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
+                error!("'{e}'");
+                StarknetRpcApiError::BlockNotFound
+            })?;
 
         let mut filtered_events: Vec<EmittedEvent> = Vec::new();
 
         // Iterate on block range
         while current_block <= to_block {
-            let emitted_events = self.get_block_events(BlockId::Number(current_block))?;
+            let emitted_events = if current_block <= latest_block_number {
+                self.get_block_events(BlockId::Number(current_block))?
+            } else {
+                self.get_block_events(BlockId::Tag(BlockTag::Pending))?
+            };
 
             let block_filtered_events: Vec<EmittedEvent> = filter_events_by_params(emitted_events, from_address, &keys);
 

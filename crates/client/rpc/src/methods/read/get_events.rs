@@ -69,13 +69,13 @@ where
             error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
-    let from_block = starknet
+    let mut from_block = starknet
         .substrate_block_number_from_starknet_block(filter.event_filter.from_block.unwrap_or(BlockId::Number(0)))
         .map_err(|e| {
             error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
-    let to_block = starknet
+    let mut to_block = starknet
         .substrate_block_number_from_starknet_block(
             filter.event_filter.to_block.unwrap_or(BlockId::Tag(BlockTag::Latest)),
         )
@@ -83,7 +83,12 @@ where
             error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
-
+    if filter.event_filter.from_block == Some(BlockId::Tag(BlockTag::Pending)) {
+        from_block += 1;
+    }
+    if filter.event_filter.to_block == Some(BlockId::Tag(BlockTag::Pending)) {
+        to_block += 1;
+    }
     let continuation_token = match filter.result_page_request.continuation_token {
         Some(token) => ContinuationToken::parse(token).map_err(|e| {
             error!("Failed to parse continuation token: {:?}", e);
