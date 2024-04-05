@@ -419,6 +419,7 @@ pub fn new_full(
             backend.clone(),
             3,
             0,
+            prometheus_registry.clone(),
         )
         .for_each(|()| future::ready(())),
     );
