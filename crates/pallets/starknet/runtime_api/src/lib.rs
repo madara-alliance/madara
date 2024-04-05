@@ -21,8 +21,7 @@ use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationF
 use sp_runtime::DispatchError;
 use starknet_api::api_core::{ChainId, ClassHash, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::block::{BlockNumber, BlockTimestamp};
-use starknet_api::hash::{StarkFelt, StarkHash};
-use starknet_api::state::StorageKey;
+use starknet_api::hash::StarkHash;
 use starknet_api::transaction::{Calldata, Event as StarknetEvent, Fee, MessageToL1, TransactionHash};
 
 #[derive(parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
@@ -38,8 +37,6 @@ sp_api::decl_runtime_apis! {
     pub trait StarknetRuntimeApi {
         /// Returns the nonce associated with the given address in the given block
         fn nonce(contract_address: ContractAddress) -> Nonce;
-        /// Returns a storage keys and values of a given contract
-        fn get_storage_from(address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError>;
         /// Returns a `Call` response.
         fn call(address: ContractAddress, function_selector: EntryPointSelector, calldata: Calldata) -> Result<Vec<Felt252Wrapper>, DispatchError>;
         /// Returns the contract class hash at the given address.

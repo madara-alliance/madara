@@ -56,8 +56,7 @@ pub use sp_runtime::{Perbill, Permill};
 use sp_std::prelude::*;
 use sp_version::RuntimeVersion;
 use starknet_api::api_core::{ClassHash, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::hash::{StarkFelt, StarkHash};
-use starknet_api::state::StorageKey;
+use starknet_api::hash::StarkHash;
 use starknet_api::transaction::{Calldata, Event as StarknetEvent, Fee, MessageToL1, TransactionHash};
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -232,11 +231,6 @@ impl_runtime_apis! {
     }
 
     impl pallet_starknet_runtime_api::StarknetRuntimeApi<Block> for Runtime {
-
-        fn get_storage_from(address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
-            Starknet::get_storage_from(address)
-        }
-
         fn call(address: ContractAddress, function_selector: EntryPointSelector, calldata: Calldata) -> Result<Vec<Felt252Wrapper>, DispatchError> {
             Starknet::call_contract(address, function_selector, calldata)
         }
