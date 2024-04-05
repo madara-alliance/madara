@@ -34,11 +34,11 @@ blockifier = { workspace = true, default-features = false, features = [
   "testing",
 ] }
 bonsai-trie = { workspace = true }
+starknet-core = { workspace = true }
 starknet-ff = { workspace = true, default-features = false, features = [
   "alloc",
   "serde",
 ] }
-starknet-core = { workspace = true }
 starknet-types-core = { workspace = true, default-features = false, features = [
   "hash",
   "parity-scale-codec",
