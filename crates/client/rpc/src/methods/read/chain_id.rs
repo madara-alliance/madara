@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_sync::utility::get_config;
 
 use crate::errors::StarknetRpcApiError;
@@ -22,7 +21,7 @@ use crate::Felt;
 pub fn chain_id() -> RpcResult<Felt> {
     let chain_id = get_config()
         .map_err(|e| {
-            error!("Failed to get config: {e}");
+            log::error!("Failed to get config: {e}");
             StarknetRpcApiError::InternalServerError
         })?
         .chain_id;

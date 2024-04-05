@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 
+use blockifier::transaction::transactions::L1HandlerTransaction as L1HandlerTransactionBlockifier;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use starknet_api::data_availability::DataAvailabilityMode;
@@ -14,7 +15,7 @@ use starknet_core::utils::starknet_keccak;
 use starknet_crypto::FieldElement;
 
 use super::SIMULATE_TX_VERSION_OFFSET;
-use crate::{UserOrL1HandlerTransaction, LEGACY_BLOCK_NUMBER};
+use crate::LEGACY_BLOCK_NUMBER;
 
 const DECLARE_PREFIX: &[u8] = b"declare";
 const DEPLOY_ACCOUNT_PREFIX: &[u8] = b"deploy_account";

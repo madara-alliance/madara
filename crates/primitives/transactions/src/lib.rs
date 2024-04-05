@@ -61,6 +61,25 @@ impl From<TxType> for TransactionType {
     }
 }
 
+impl From<&Transaction> for TxType {
+    fn from(value: &Transaction) -> Self {
+        match value {
+            Transaction::AccountTransaction(tx) => tx.into(),
+            Transaction::L1HandlerTransaction(_) => TxType::L1Handler,
+        }
+    }
+}
+
+impl From<&AccountTransaction> for TxType {
+    fn from(value: &AccountTransaction) -> Self {
+        match value {
+            AccountTransaction::Declare(_) => TxType::Declare,
+            AccountTransaction::DeployAccount(_) => TxType::DeployAccount,
+            AccountTransaction::Invoke(_) => TxType::Invoke,
+        }
+    }
+}
+
 // impl From<&UserTransaction> for TxType {
 //     fn from(value: &UserTransaction) -> Self {
 //         match value {
@@ -80,14 +99,14 @@ impl From<TxType> for TransactionType {
 //     }
 // }
 
-#[derive(Clone, Debug, Eq, PartialEq, From)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub enum UserTransaction {
-    Declare(DeclareTransaction),
-    DeployAccount(DeployAccountTransaction),
-    Invoke(InvokeTransaction),
-}
+// #[derive(Clone, Debug, Eq, PartialEq, From)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub enum UserTransaction {
+//     Declare(DeclareTransaction),
+//     DeployAccount(DeployAccountTransaction),
+//     Invoke(InvokeTransaction),
+// }
 
 // #[derive(Clone, Debug, Eq, PartialEq, From, PartialOrd, Ord)]
 // #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
@@ -100,13 +119,13 @@ pub enum UserTransaction {
 //     L1Handler(HandleL1MessageTransaction),
 // }
 
-#[derive(Clone, Debug, Eq, PartialEq, From)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub enum UserOrL1HandlerTransaction {
-    User(AccountTransaction),
-    L1Handler(L1HandlerTransaction),
-}
+// #[derive(Clone, Debug, Eq, PartialEq, From)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub enum UserOrL1HandlerTransaction {
+//     User(AccountTransaction),
+//     L1Handler(L1HandlerTransaction),
+// }
 
 // #[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
 // #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
@@ -247,48 +266,48 @@ pub enum UserOrL1HandlerTransaction {
 //     pub calldata: Vec<Felt252Wrapper>,
 // }
 
-impl From<UserTransaction> for AccountTransaction {
-    fn from(user_transaction: UserTransaction) -> Self {
-        match user_transaction {
-            UserTransaction::Declare(declare_tx) => AccountTransaction::Declare(declare_tx),
-            UserTransaction::DeployAccount(deploy_account_tx) => AccountTransaction::DeployAccount(deploy_account_tx),
-            UserTransaction::Invoke(invoke_tx) => AccountTransaction::Invoke(invoke_tx),
-        }
-    }
-}
+// impl From<UserTransaction> for AccountTransaction {
+//     fn from(user_transaction: UserTransaction) -> Self {
+//         match user_transaction {
+//             UserTransaction::Declare(declare_tx) => AccountTransaction::Declare(declare_tx),
+//             UserTransaction::DeployAccount(deploy_account_tx) =>
+// AccountTransaction::DeployAccount(deploy_account_tx),
+// UserTransaction::Invoke(invoke_tx) => AccountTransaction::Invoke(invoke_tx),         }
+//     }
+// }
 
-impl From<AccountTransaction> for UserTransaction {
-    fn from(account_transaction: AccountTransaction) -> Self {
-        match account_transaction {
-            AccountTransaction::Declare(declare_tx) => UserTransaction::Declare(declare_tx),
-            AccountTransaction::DeployAccount(deploy_account_tx) => UserTransaction::DeployAccount(deploy_account_tx),
-            AccountTransaction::Invoke(invoke_tx) => UserTransaction::Invoke(invoke_tx),
-        }
-    }
-}
+// impl From<AccountTransaction> for UserTransaction {
+//     fn from(account_transaction: AccountTransaction) -> Self {
+//         match account_transaction {
+//             AccountTransaction::Declare(declare_tx) => UserTransaction::Declare(declare_tx),
+//             AccountTransaction::DeployAccount(deploy_account_tx) =>
+// UserTransaction::DeployAccount(deploy_account_tx),
+// AccountTransaction::Invoke(invoke_tx) => UserTransaction::Invoke(invoke_tx),         }
+//     }
+// }
 
-impl From<UserOrL1HandlerTransaction> for Transaction {
-    fn from(item: UserOrL1HandlerTransaction) -> Self {
-        match item {
-            UserOrL1HandlerTransaction::User(tx) => Transaction::AccountTransaction(tx),
-            UserOrL1HandlerTransaction::L1Handler(tx) => Transaction::L1HandlerTransaction(tx),
-        }
-    }
-}
+// impl From<UserOrL1HandlerTransaction> for Transaction {
+//     fn from(item: UserOrL1HandlerTransaction) -> Self {
+//         match item {
+//             UserOrL1HandlerTransaction::User(tx) => Transaction::AccountTransaction(tx),
+//             UserOrL1HandlerTransaction::L1Handler(tx) => Transaction::L1HandlerTransaction(tx),
+//         }
+//     }
+// }
 
-impl From<Transaction> for UserOrL1HandlerTransaction {
-    fn from(item: Transaction) -> Self {
-        match item {
-            Transaction::AccountTransaction(tx) => UserOrL1HandlerTransaction::User(tx),
-            Transaction::L1HandlerTransaction(tx) => UserOrL1HandlerTransaction::L1Handler(tx),
-        }
-    }
-}
+// impl From<Transaction> for UserOrL1HandlerTransaction {
+//     fn from(item: Transaction) -> Self {
+//         match item {
+//             Transaction::AccountTransaction(tx) => UserOrL1HandlerTransaction::User(tx),
+//             Transaction::L1HandlerTransaction(tx) => UserOrL1HandlerTransaction::L1Handler(tx),
+//         }
+//     }
+// }
 
-pub fn user_or_l1_into_tx_vec(user_or_l1_transactions: Vec<UserOrL1HandlerTransaction>) -> Vec<Transaction> {
-    user_or_l1_transactions.into_iter().map(|tx| tx.into()).collect()
-}
+// pub fn user_or_l1_into_tx_vec(user_or_l1_transactions: Vec<UserOrL1HandlerTransaction>) ->
+// Vec<Transaction> {     user_or_l1_transactions.into_iter().map(|tx| tx.into()).collect()
+// }
 
-pub fn tx_into_user_or_l1_vec(transactions: Vec<Transaction>) -> Vec<UserOrL1HandlerTransaction> {
-    transactions.into_iter().map(|tx| tx.into()).collect()
-}
+// pub fn tx_into_user_or_l1_vec(transactions: Vec<Transaction>) -> Vec<UserOrL1HandlerTransaction>
+// {     transactions.into_iter().map(|tx| tx.into()).collect()
+// }

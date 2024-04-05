@@ -17,12 +17,12 @@ use deoxys_runtime::opaque::{DBlockT, DHashT, DHeaderT};
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use log::error;
 use mc_db::DeoxysBackend;
 use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
+use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
+use sc_client_api::backend::{Backend, StorageProvider};
 use sc_network_sync::SyncingService;
 use sc_transaction_pool::{ChainApi, Pool};
 use serde::{Deserialize, Serialize};
@@ -40,8 +40,8 @@ use starknet_core::types::{
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
     InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MaybePendingTransactionReceipt, MsgFromL1, SimulatedTransaction, SimulationFlag, StateDiff, SyncStatusType,
-    Transaction, TransactionStatus, TransactionTraceWithHash,
+    MaybePendingTransactionReceipt, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
+    StateDiff, SyncStatusType, Transaction, TransactionStatus, TransactionTraceWithHash,
 };
 
 use crate::methods::get_block::{
@@ -116,6 +116,7 @@ pub trait StarknetReadRpcApi {
     async fn estimate_fee(
         &self,
         request: Vec<BroadcastedTransaction>,
+        simulation_flags: Vec<SimulationFlagForEstimateFee>,
         block_id: BlockId,
     ) -> RpcResult<Vec<FeeEstimate>>;
 
@@ -220,6 +221,26 @@ pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
     _marker: PhantomData<(DBlockT, BE, H)>,
 }
 
+// impl<A, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
+// where
+//     A: ChainApi<Block = DBlockT> + 'static,
+//     BE: Backend<DBlockT>,
+//     C: HeaderBackend<DBlockT> + 'static,
+//     C: ProvideRuntimeApi<DBlockT>,
+//     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+//     H: HasherT + Send + Sync + 'static,
+// {
+//     pub fn do_estimate_message_fee(
+//         &self,
+//         block_hash: DBlockT::Hash,
+//         message: L1HandlerTransaction,
+//     ) -> RpcApiResult<(u128, u128, u128)> { self.client .runtime_api()
+//       .estimate_message_fee(block_hash, message) .map_err(|e| { error!("Runtime Api error: {e}");
+//       StarknetRpcApiError::InternalServerError })? .map_err(|e| { error!("Function execution
+//       failed: {:#?}", e); StarknetRpcApiError::ContractError })
+//     }
+// }
+
 /// Constructor for A Starknet RPC server for Madara
 /// # Arguments
 // * `client` - The Madara client
@@ -292,7 +313,7 @@ where
         match block_id {
             BlockId::Hash(h) => madara_backend_client::load_hash(self.client.as_ref(), Felt252Wrapper::from(h).into())
                 .map_err(|e| {
-                    error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
+                    log::error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
                     StarknetRpcApiError::BlockNotFound
                 })?,
             BlockId::Number(n) => self
@@ -336,7 +357,7 @@ where
     /// * `block_hash` - The hash of the block containing the transactions (starknet block).
     fn get_cached_transaction_hashes(&self, block_hash: StarkHash) -> Option<Vec<StarkHash>> {
         DeoxysBackend::mapping().cached_transaction_hashes_from_block_hash(block_hash).unwrap_or_else(|err| {
-            error!("Failed to read from cache: {err}");
+            log::error!("Failed to read from cache: {err}");
             None
         })
     }
@@ -348,7 +369,7 @@ where
     /// * `starknet_block_hash` - The hash of the block containing the state diff (starknet block).
     fn get_state_diff(&self, starknet_block_hash: &APIBlockHash) -> Result<StateDiff, StarknetRpcApiError> {
         let state_diff = DeoxysBackend::da().state_diff(starknet_block_hash).map_err(|e| {
-            error!("Failed to retrieve state diff from cache for block with hash {}: {e}", starknet_block_hash);
+            log::error!("Failed to retrieve state diff from cache for block with hash {}: {e}", starknet_block_hash);
             StarknetRpcApiError::InternalServerError
         })?;
 

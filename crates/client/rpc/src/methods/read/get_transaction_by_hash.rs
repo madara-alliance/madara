@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
@@ -64,7 +63,7 @@ where
     let substrate_block_hash_from_db = DeoxysBackend::mapping()
         .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
         .map_err(|e| {
-            error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
+            log::error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
             StarknetRpcApiError::TxnHashNotFound
         })?;
 

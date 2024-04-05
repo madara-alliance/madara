@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -46,7 +45,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        error!("'{e}'");
+        log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
 

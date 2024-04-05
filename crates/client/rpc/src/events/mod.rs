@@ -1,7 +1,7 @@
 use deoxys_runtime::opaque::DBlockT;
-use log::error;
 use mc_sync::l2::get_pending_block;
 use mp_block::DeoxysBlock;
+use jsonrpsee::core::RpcResult;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};

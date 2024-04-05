@@ -1,6 +1,5 @@
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -70,7 +69,7 @@ where
 
     let continuation_token = match filter.result_page_request.continuation_token {
         Some(token) => ContinuationToken::parse(token).map_err(|e| {
-            error!("Failed to parse continuation token: {:?}", e);
+            log::error!("Failed to parse continuation token: {:?}", e);
             StarknetRpcApiError::InvalidContinuationToken
         })?,
         None => ContinuationToken { block_n: from_block, event_n: 0 },

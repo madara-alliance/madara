@@ -1,11 +1,11 @@
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_storage::StorageOverride;
 use mp_hashers::HasherT;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
+use mp_transactions::from_broadcasted_transactions::ToAccountTransaction;
 use mp_transactions::TxType;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
@@ -17,6 +17,7 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulatedTransaction, SimulationFlag,
 };
+use starknet_ff::FieldElement;
 
 use super::lib::ConvertCallInfoToExecuteInvocationError;
 use super::utils::tx_execution_infos_to_tx_trace;
@@ -43,16 +44,14 @@ where
         starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|_e| StarknetRpcApiError::BlockNotFound)?;
 
     let tx_type_and_tx_iterator = transactions.into_iter().map(|tx| match tx {
-        BroadcastedTransaction::Invoke(invoke_tx) => invoke_tx.try_into().map(|tx| (TxType::Invoke, tx)),
-        BroadcastedTransaction::Declare(declare_tx) => declare_tx.try_into().map(|tx| (TxType::Declare, tx)),
-        BroadcastedTransaction::DeployAccount(deploy_account_tx) => {
-            deploy_account_tx.try_into().map(|tx| (TxType::DeployAccount, tx))
-        }
+        BroadcastedTransaction::Invoke(_) => tx.to_account_transaction().map(|tx| (TxType::Invoke, tx)),
+        BroadcastedTransaction::Declare(_) => tx.to_account_transaction().map(|tx| (TxType::Declare, tx)),
+        BroadcastedTransaction::DeployAccount(_) => tx.to_account_transaction().map(|tx| (TxType::DeployAccount, tx)),
     });
     let (tx_types, user_transactions) =
         itertools::process_results(tx_type_and_tx_iterator, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>()).map_err(
             |e| {
-                error!("Failed to convert BroadcastedTransaction to UserTransaction: {e}");
+                log::error!("Failed to convert BroadcastedTransaction to UserTransaction: {e}");
                 StarknetRpcApiError::InternalServerError
             },
         )?;
@@ -64,11 +63,11 @@ where
         .runtime_api()
         .simulate_transactions(substrate_block_hash, user_transactions, simulation_flags)
         .map_err(|e| {
-            error!("Request parameters error: {e}");
+            log::error!("Request parameters error: {e}");
             StarknetRpcApiError::InternalServerError
         })?
         .map_err(|e| {
-            error!("Failed to call function: {:#?}", e);
+            log::error!("Failed to call function: {:#?}", e);
             StarknetRpcApiError::ContractError
         })?;
 
@@ -104,10 +103,19 @@ fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
                 let overall_fee = fee.into();
 
                 let unit: PriceUnit = PriceUnit::Wei; //TODO(Tbelleng) : Get Price Unit from Tx
+                let data_gas_consumed = FieldElement::default();
+                let data_gas_price = FieldElement::default();
 
                 results.push(SimulatedTransaction {
                     transaction_trace,
-                    fee_estimation: FeeEstimate { gas_consumed, gas_price, overall_fee, unit },
+                    fee_estimation: FeeEstimate {
+                        gas_consumed,
+                        data_gas_consumed,
+                        data_gas_price,
+                        gas_price,
+                        overall_fee,
+                        unit,
+                    },
                 });
             }
             Err(_) => {
