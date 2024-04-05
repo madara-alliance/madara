@@ -6,11 +6,13 @@ use blockifier::state::cached_state::{CommitmentStateDiff, StateChangesCount};
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
 use indexmap::IndexMap;
+use mc_db::storage::StorageHandler;
 use mp_felt::Felt252Wrapper;
 use mp_state::StateChanges;
 use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
+use starknet_core::types::{BlockId, BlockTag};
 use starknet_crypto::FieldElement;
 
 use crate::{Config, Pallet};
@@ -56,11 +58,11 @@ impl<T: Config> Default for BlockifierStateAdapter<T> {
 
 impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     fn get_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
-        let search = Pallet::<T>::storage(contract_address).into_iter().find(|(storage_key, _)| key == *storage_key);
+        let search = StorageHandler::contract_storage().unwrap().get(&contract_address, &key);
 
         match search {
-            Some((_, value)) => Ok(value),
-            None => Err(StateError::StateReadError(format!(
+            Ok(Some(value)) => Ok(StarkFelt(value.to_bytes_be())),
+            _ => Err(StateError::StateReadError(format!(
                 "Failed to retrieve storage value for contract {} at key {}",
                 contract_address.0.0, key.0.0
             ))),
@@ -87,7 +89,11 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
 impl<T: Config> State for BlockifierStateAdapter<T> {
     fn set_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey, value: StarkFelt) {
         self.storage_update.insert(contract_address, vec![(key, value)]);
-        crate::StorageView::<T>::insert(contract_address, vec![(key, value)]);
+        let _ = StorageHandler::contract_storage_mut(BlockId::Tag(BlockTag::Latest)).unwrap().insert(
+            &contract_address,
+            &key,
+            value,
+        );
     }
 
     fn increment_nonce(&mut self, contract_address: ContractAddress) -> StateResult<()> {
