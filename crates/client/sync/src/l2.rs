@@ -22,7 +22,6 @@ use starknet_core::types::{PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
-use starknet_types_core::felt::Felt;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;

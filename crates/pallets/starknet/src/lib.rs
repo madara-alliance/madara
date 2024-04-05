@@ -32,6 +32,7 @@
 // Ensure we're `no_std` when compiling for Wasm.
 #![allow(clippy::large_enum_variant)]
 
+use mc_db::storage::StorageHandler;
 /// Starknet pallet.
 /// Definition of the pallet's runtime storage items, events, errors, and dispatchable
 /// functions.
@@ -70,7 +71,6 @@ use blockifier_state_adapter::BlockifierStateAdapter;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
-use itertools::Itertools;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::{DeoxysBlock, Header as StarknetHeader};
 use mp_contract::ContractAbi;
@@ -87,7 +87,9 @@ use mp_transactions::{
 };
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
-use starknet_api::api_core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce};
+use starknet_api::api_core::{
+    ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce, PatriciaKey,
+};
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::{StarkFelt, StarkHash};
@@ -120,7 +122,6 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
-    use mp_block::state_update::StorageDiffWrapper;
     use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
 
     use super::*;
@@ -217,24 +218,6 @@ pub mod pallet {
     fn store_state_update<T: Config>(encoded_data: &Vec<u8>) {
         match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
             Ok(state_update) => {
-                for (contract_address, storage_diffs) in state_update.state_diff.storage_diffs {
-                    let contract_address = ContractAddress(contract_address.into());
-
-                    // Previous storage has to be persisted. Since we have no way of using hashmaps
-                    // in a no-std environment, we are currently joining previous and current
-                    // storage updates and filtering out duplicates
-                    // TODO: find a more performant way to do this.
-                    let storage_old = <StorageView<T>>::get(contract_address);
-                    let storage_new: Vec<(StorageKey, StarkFelt)> = storage_diffs
-                        .into_iter()
-                        .map(|StorageDiffWrapper { key, value }| (StorageKey::from(key), StarkFelt::from(value)))
-                        .collect();
-                    let storage: Vec<(StorageKey, StarkFelt)> =
-                        storage_new.into_iter().chain(storage_old.into_iter()).unique_by(|(key, _)| *key).collect();
-
-                    <StorageView<T>>::insert(contract_address, storage);
-                }
-
                 // nonces stored for accessing on `starknet_getNonce` RPC call.
                 state_update
                     .state_diff
@@ -381,14 +364,6 @@ pub mod pallet {
     #[pallet::getter(fn nonce)]
     pub(super) type Nonces<T: Config> = StorageMap<_, Identity, ContractAddress, Nonce, ValueQuery>;
 
-    /// Mapping from Starknet contract storage to its keys and values.
-    /// Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn storage)]
-    pub(super) type StorageView<T: Config> =
-        StorageMap<_, Identity, ContractAddress, Vec<(StorageKey, StarkFelt)>, ValueQuery>;
-
     /// The last processed Ethereum block number for L1 messages consumption.
     /// This is used to avoid re-processing the same Ethereum block multiple times.
     /// This is used by the offchain worker.
@@ -469,10 +444,6 @@ pub mod pallet {
             self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
                 CompiledClassHashes::<T>::insert(class_hash, CompiledClassHash(compiled_class_hash.0))
             });
-
-            self.storage
-                .iter()
-                .for_each(|(contract_address, storage)| StorageView::<T>::insert(contract_address, storage));
 
             LastKnownEthBlock::<T>::set(None);
             // Set the fee token address from the genesis config.
@@ -1014,8 +985,13 @@ impl<T: Config> Pallet<T> {
 
     /// Returns a storage keys and values of a given contract
     pub fn get_storage_from(contract_address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
-        let changes = Self::storage(contract_address);
-        Ok(changes)
+        Ok(StorageHandler::contract_storage()
+            .unwrap()
+            .get_storage(&contract_address)
+            .map_err(|_| Error::<T>::ContractNotFound)?
+            .iter()
+            .map(|(k, v)| (StorageKey(PatriciaKey(StarkFelt(k.to_bytes_be()))), StarkFelt(v.to_bytes_be())))
+            .collect())
     }
 
     /// Store a Starknet block in the blockchain.

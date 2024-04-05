@@ -958,7 +958,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/bonsai-trie.git?branch=oss#83b2cab7f25cf6aad907e2d49c39ab9303a723c0"
+source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=oss#058d74485f92b75eba7f7a5849c1c6edae958a5e"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -5874,6 +5874,7 @@ dependencies = [
  "sp-core",
  "sp-database",
  "sp-runtime",
+ "starknet-core 0.8.0",
  "starknet-ff 0.3.5 (git+https://github.com/jbcaron/starknet-rs.git?branch=classes)",
  "starknet-types-core",
  "starknet_api",
@@ -6790,10 +6791,11 @@ dependencies = [
 
 [[package]]
 name = "num-integer"
-version = "0.1.46"
+version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7969661fd2958a5cb096e56c8e1ad0444ac2bbcd0061bd28660485a44879858f"
+checksum = "225d3389fb3509a24c93f5c29eb6bde2586b98d9f016636dff58d7c6f7569cd9"
 dependencies = [
+ "autocfg",
  "num-traits 0.2.18",
 ]
 
@@ -11304,13 +11306,12 @@ dependencies = [
 
 [[package]]
 name = "starknet-types-core"
-version = "0.0.11"
-source = "git+https://github.com/starknet-io/types-rs.git?branch=main#948fbb22ca59166d3e39666f7387c6f7976650f9"
+version = "0.1.0"
+source = "git+https://github.com/starknet-io/types-rs.git?branch=main#ab055382b23c9cc907985e1d19dce4c9c316d3ae"
 dependencies = [
  "bitvec",
  "lambdaworks-crypto",
  "lambdaworks-math",
- "lazy_static",
  "num-bigint",
  "num-integer",
  "num-traits 0.2.18",

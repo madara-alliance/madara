@@ -21,6 +21,7 @@ use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonc
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::Event;
+use starknet_core::types::BlockId;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 
@@ -194,8 +195,8 @@ fn contract_trie_root(
 ) -> Result<Felt252Wrapper, DeoxysStorageError> {
     // NOTE: handlers implicitely acquire a lock on their respective tries
     // for the duration of their livetimes
-    let mut contract_write = StorageHandler::contract_mut(block_number)?;
-    let mut storage_write = StorageHandler::contract_storage_mut(block_number)?;
+    let mut contract_write = StorageHandler::contract_mut(BlockId::Number(block_number))?;
+    let mut storage_write = StorageHandler::contract_storage_mut(BlockId::Number(block_number))?;
 
     // Tries need to be initialised before values are inserted
     contract_write.init()?;
@@ -309,7 +310,7 @@ lazy_static! {
 ///
 /// The class root.
 fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
-    let mut class_write = StorageHandler::class_mut(block_number)?;
+    let mut class_write = StorageHandler::class_mut(BlockId::Number(block_number))?;
 
     let updates = csd
         .class_hash_to_compiled_class_hash

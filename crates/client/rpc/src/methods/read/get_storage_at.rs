@@ -72,7 +72,7 @@ where
 
     log::info!("block number: {block_number}");
 
-    let value = StorageHandler::contract_storage_mut(block_number)
+    let value = StorageHandler::contract_storage_mut(BlockId::Number(block_number))
         .map_err(|_| StarknetRpcApiError::ContractNotFound)?
         .get(&contract_address, &key)
         .unwrap_or(None)

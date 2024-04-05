@@ -34,6 +34,7 @@ blockifier = { workspace = true, default-features = false, features = [
   "testing",
 ] }
 bonsai-trie = { workspace = true }
+starknet-core = { workspace = true }
 starknet-ff = { workspace = true, default-features = false, features = [
   "alloc",
   "serde",
