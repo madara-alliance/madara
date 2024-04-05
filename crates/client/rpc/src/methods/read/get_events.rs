@@ -176,14 +176,14 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let latest = starknet.substrate_block_number_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
-        error!("'{e}'");
+        log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
     let from = if from_block == Some(BlockId::Tag(BlockTag::Pending)) {
         latest + 1
     } else {
         starknet.substrate_block_number_from_starknet_block(from_block.unwrap_or(BlockId::Number(0))).map_err(|e| {
-            error!("'{e}'");
+            log::error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?
     };
@@ -191,7 +191,7 @@ where
         latest + 1
     } else {
         starknet.substrate_block_number_from_starknet_block(from_block.unwrap_or(BlockId::Number(0))).map_err(|e| {
-            error!("'{e}'");
+            log::error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?
     };
