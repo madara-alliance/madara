@@ -4,13 +4,17 @@ use mp_digest_log::{find_starknet_block, FindLogError};
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
+use num_traits::FromPrimitive;
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
+use prometheus_endpoint::prometheus::core::Number;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{Backend as _, HeaderBackend};
 use sp_runtime::traits::Header as HeaderT;
 
-fn sync_block<C, BE, H>(client: &C, header: &DHeaderT) -> anyhow::Result<()>
+use crate::block_metrics::BlockMetrics;
+
+fn sync_block<C, BE, H>(client: &C, header: &DHeaderT, block_metrics: Option<&BlockMetrics>) -> anyhow::Result<()>
 where
     // TODO: refactor this!
     C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
@@ -60,6 +64,27 @@ where
                                 .collect(),
                         };
 
+                        if let Some(block_metrics) = block_metrics {
+                            let starknet_block = &digest_starknet_block.clone();
+                            block_metrics.block_height.set(starknet_block.header().block_number.into_f64());
+
+                            // sending f64::MIN in case we exceed f64 (highly unlikely). The min numbers will
+                            // allow dashboards to catch anomalies so that it can be investigated.
+                            block_metrics
+                                .transaction_count
+                                .inc_by(f64::from_u128(starknet_block.header().transaction_count).unwrap_or(f64::MIN));
+                            block_metrics
+                                .event_count
+                                .inc_by(f64::from_u128(starknet_block.header().event_count).unwrap_or(f64::MIN));
+                            block_metrics.l1_gas_price_wei.set(
+                                f64::from_u128(starknet_block.header().l1_gas_price.price_in_wei).unwrap_or(f64::MIN),
+                            );
+
+                            block_metrics
+                                .l1_gas_price_strk
+                                .set(starknet_block.header().l1_gas_price.price_in_strk.unwrap_or(0).into_f64());
+                        }
+
                         DeoxysBackend::mapping().write_hashes(mapping_commitment).map_err(|e| anyhow::anyhow!(e))
                     }
                 }
@@ -106,6 +131,7 @@ fn sync_one_block<C, BE, H>(
     client: &C,
     substrate_backend: &BE,
     sync_from: <DHeaderT as HeaderT>::Number,
+    block_metrics: Option<&BlockMetrics>,
 ) -> anyhow::Result<bool>
 where
     C: ProvideRuntimeApi<DBlockT>,
@@ -145,7 +171,7 @@ where
         DeoxysBackend::meta().write_current_syncing_tips(current_syncing_tips)?;
         Ok(true)
     } else {
-        sync_block::<_, _, H>(client, &operating_header)?;
+        sync_block::<_, _, H>(client, &operating_header, block_metrics)?;
 
         current_syncing_tips.push(*operating_header.parent_hash());
         DeoxysBackend::meta().write_current_syncing_tips(current_syncing_tips)?;
@@ -158,6 +184,7 @@ pub fn sync_blocks<C, BE, H>(
     substrate_backend: &BE,
     limit: usize,
     sync_from: <DHeaderT as HeaderT>::Number,
+    block_metrics: Option<&BlockMetrics>,
 ) -> anyhow::Result<bool>
 where
     C: ProvideRuntimeApi<DBlockT>,
@@ -169,7 +196,7 @@ where
     let mut synced_any = false;
 
     for _ in 0..limit {
-        synced_any = synced_any || sync_one_block::<_, _, H>(client, substrate_backend, sync_from)?;
+        synced_any = synced_any || sync_one_block::<_, _, H>(client, substrate_backend, sync_from, block_metrics)?;
     }
 
     Ok(synced_any)

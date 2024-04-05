@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- feat(metrics): Add prometheus metrics for mapping worker
 - feat(storage): finished migrating contract storage to our backend bonsai trie dbs
 - feat(storage): set up type-safe bonsai storage abstractions for usage in RPC
 - fix(root): fix state root computation
