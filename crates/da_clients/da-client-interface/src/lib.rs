@@ -1,10 +1,16 @@
-use crate::jobs::types::JobVerificationStatus;
-use axum::async_trait;
+use async_trait::async_trait;
 use color_eyre::Result;
 use starknet::core::types::FieldElement;
 
-/// Ethereum client
-pub mod ethereum;
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum DaVerificationStatus {
+    #[allow(dead_code)]
+    Pending,
+    #[allow(dead_code)]
+    Verified,
+    #[allow(dead_code)]
+    Rejected,
+}
 
 /// Trait for every new DaClient to implement
 #[async_trait]
@@ -13,7 +19,7 @@ pub trait DaClient: Send + Sync {
     /// which can be used to track the status of the DA transaction.
     async fn publish_state_diff(&self, state_diff: Vec<FieldElement>) -> Result<String>;
     /// Should verify the inclusion of the state diff in the DA layer and return the status
-    async fn verify_inclusion(&self, external_id: &str) -> Result<JobVerificationStatus>;
+    async fn verify_inclusion(&self, external_id: &str) -> Result<DaVerificationStatus>;
 }
 
 /// Trait for every new DaConfig to implement

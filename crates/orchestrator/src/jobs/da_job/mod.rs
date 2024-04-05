@@ -49,7 +49,7 @@ impl Job for DaJob {
     }
 
     async fn verify_job(&self, config: &Config, job: &JobItem) -> Result<JobVerificationStatus> {
-        Ok(config.da_client().verify_inclusion(job.external_id.unwrap_string()?).await?)
+        Ok(config.da_client().verify_inclusion(job.external_id.unwrap_string()?).await?.into())
     }
 
     fn max_process_attempts(&self) -> u64 {

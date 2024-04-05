@@ -1,5 +1,5 @@
-use crate::da_clients::DaConfig;
-use crate::utils::env_utils::get_env_var_or_panic;
+use da_client_interface::DaConfig;
+use utils::env_utils::get_env_var_or_panic;
 
 #[derive(Clone, Debug)]
 pub struct EthereumDaConfig {

@@ -1,39 +1,38 @@
-[package]
-name = "madara-orchestrator"
+[workspace]
+resolver = "2"
+members = [
+  "crates/orchestrator",
+  "crates/da_clients/da-client-interface",
+  "crates/da_clients/ethereum",
+  "crates/utils"
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 authors = ["Apoorv Sadana <@apoorvsadana>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
-alloy = { git = "https://github.com/alloy-rs/alloy", rev = "86027c9bb984f3a12a30ffd2a3c5f2f06595f1d6", features = [
-  "providers",
-  "rpc-client",
-  "transport-http",
-], optional = true }
-async-trait = "0.1.77"
-axum = { version = "0.7.4", features = ["macros"] }
-axum-macros = "0.4.1"
-color-eyre = "0.6.2"
-dotenvy = "0.15.7"
-futures = "0.3.30"
-mongodb = { version = "2.8.1", features = ["bson-uuid-1"], optional = true }
-omniqueue = { version = "0.2.0", optional = true }
-reqwest = { version = "0.11.24", optional = true }
-rstest = "0.18.2"
+[workspace.dependencies]
+async-trait = { version = "0.1.77" }
+axum = { version = "0.7.4" }
+axum-macros = { version = "0.4.1" }
+color-eyre = { version = "0.6.2" }
+dotenvy = { version = "0.15.7" }
+futures = { version = "0.3.30" }
+mongodb = { version = "2.8.1" }
+omniqueue = { version = "0.2.0" }
+rstest = { version = "0.18.2" }
 serde = { version = "1.0.197" }
-serde_json = "1.0.114"
-starknet = "0.9.0"
-thiserror = "1.0.57"
-tokio = { version = "1.36.0", features = ["sync", "macros", "rt-multi-thread"] }
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-url = "2.5.0"
-uuid = { version = "1.7.0", features = ["v4", "serde"] }
-
-[features]
-default = ["ethereum", "with_mongdb", "with_sqs"]
-ethereum = ["alloy", "reqwest"]
-with_mongdb = ["mongodb"]
-with_sqs = ["omniqueue"]
+serde_json = { version = "1.0.114" }
+starknet = { version = "0.9.0" }
+thiserror = { version = "1.0.57" }
+tokio = { version = "1.36.0" }
+tracing = { version = "0.1.40" }
+tracing-subscriber = { version = "0.3.18" }
+url = { version = "2.5.0" }
+uuid = { version = "1.7.0" }
+da-client-interface = { path = "crates/da_clients/da-client-interface" }
+ethereum-da-client = { path = "crates/da_clients/ethereum" }
+utils = { path = "crates/utils" }
