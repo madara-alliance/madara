@@ -14,11 +14,7 @@ use sp_runtime::traits::Header as HeaderT;
 
 use crate::block_metrics::BlockMetrics;
 
-fn sync_block<C, BE, H>(
-    client: &C,
-    header: &DHeaderT,
-    block_metrics: Option<&BlockMetrics>,
-) -> anyhow::Result<()>
+fn sync_block<C, BE, H>(client: &C, header: &DHeaderT, block_metrics: Option<&BlockMetrics>) -> anyhow::Result<()>
 where
     // TODO: refactor this!
     C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
@@ -200,8 +196,7 @@ where
     let mut synced_any = false;
 
     for _ in 0..limit {
-        synced_any = synced_any
-            || sync_one_block::<_, _, H>(client, substrate_backend, sync_from, block_metrics)?;
+        synced_any = synced_any || sync_one_block::<_, _, H>(client, substrate_backend, sync_from, block_metrics)?;
     }
 
     Ok(synced_any)
