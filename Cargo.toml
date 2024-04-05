@@ -4,7 +4,7 @@ members = [
   "crates/orchestrator",
   "crates/da_clients/da-client-interface",
   "crates/da_clients/ethereum",
-  "crates/utils"
+  "crates/utils",
 ]
 
 [workspace.package]

@@ -8,7 +8,9 @@ async-trait = { workspace = true }
 axum = { workspace = true, features = ["macros"] }
 axum-macros = { workspace = true }
 color-eyre = { workspace = true }
+da-client-interface = { workspace = true }
 dotenvy = { workspace = true }
+ethereum-da-client = { workspace = true, optional = true }
 futures = { workspace = true }
 mongodb = { workspace = true, features = ["bson-uuid-1"], optional = true }
 omniqueue = { workspace = true, optional = true }
@@ -22,8 +24,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
-da-client-interface = { workspace = true }
-ethereum-da-client = { workspace = true, optional = true }
 
 [features]
 default = ["ethereum", "with_mongdb", "with_sqs"]
