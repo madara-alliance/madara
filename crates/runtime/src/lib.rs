@@ -298,7 +298,7 @@ impl_runtime_apis! {
             Starknet::re_execute_transactions(transactions_before, transactions_to_trace, block_context)
         }
 
-        fn estimate_message_fee(message: L1HandlerTransaction) -> Result<(u128, u128, u128), DispatchError> {
+        fn estimate_message_fee(message: L1HandlerTransaction) -> Result<FeeEstimate, DispatchError> {
             Starknet::estimate_message_fee(message)
         }
 

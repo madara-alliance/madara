@@ -6,14 +6,16 @@ use blockifier::fee;
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::errors::{TransactionExecutionError, TransactionFeeError};
-use blockifier::transaction::objects::{GasVector, HasRelatedFeeType, TransactionExecutionInfo};
+use blockifier::transaction::objects::{FeeType, GasVector, HasRelatedFeeType, TransactionExecutionInfo};
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use frame_support::storage;
+use mp_felt::Felt252Wrapper;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlagForEstimateFee, SimulationFlags};
 use sp_core::Get;
 use sp_runtime::DispatchError;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
+use starknet_api::transaction::Fee;
 
 // use starknet_core::types::PriceUnit;
 use crate::types::{FeeEstimate, PriceUnit};
@@ -125,7 +127,7 @@ impl<T: Config> Pallet<T> {
         Ok(tx_execution_result)
     }
 
-    pub fn estimate_message_fee(message: L1HandlerTransaction) -> Result<(u128, u128, u128), DispatchError> {
+    pub fn estimate_message_fee(message: L1HandlerTransaction) -> Result<FeeEstimate, DispatchError> {
         storage::transactional::with_transaction(|| {
             storage::TransactionOutcome::Rollback(Result::<_, DispatchError>::Ok(Self::estimate_message_fee_inner(
                 message,
@@ -134,33 +136,43 @@ impl<T: Config> Pallet<T> {
         .map_err(|_| Error::<T>::FailedToCreateATransactionalStorageExecution)?
     }
 
-    fn estimate_message_fee_inner(message: L1HandlerTransaction) -> Result<(u128, u128, u128), DispatchError> {
+    fn estimate_message_fee_inner(message: L1HandlerTransaction) -> Result<FeeEstimate, DispatchError> {
         let mut cached_state = Self::init_cached_state();
 
-        let tx_execution_infos = match message.execute(&mut cached_state, &Self::get_block_context(), true, true) {
-            Ok(execution_info) if !execution_info.is_reverted() => Ok(execution_info),
-            Err(e) => {
-                log::error!(
-                    "Transaction execution failed during fee estimation: {e} {:?}",
-                    std::error::Error::source(&e)
-                );
-                Err(Error::<T>::TransactionExecutionFailed)
-            }
-            Ok(execution_info) => {
-                log::error!(
-                    "Transaction execution reverted during fee estimation: {}",
-                    // Safe due to the `match` branch order
-                    execution_info.revert_error.unwrap()
-                );
-                Err(Error::<T>::TransactionExecutionFailed)
-            }
-        }?;
+        let tx_execution_infos =
+            match message.clone().execute(&mut cached_state, &Self::get_block_context(), true, true) {
+                Ok(execution_info) if !execution_info.is_reverted() => Ok(execution_info),
+                Err(e) => {
+                    log::error!(
+                        "Transaction execution failed during fee estimation: {e} {:?}",
+                        std::error::Error::source(&e)
+                    );
+                    Err(Error::<T>::TransactionExecutionFailed)
+                }
+                Ok(execution_info) => {
+                    log::error!(
+                        "Transaction execution reverted during fee estimation: {}",
+                        // Safe due to the `match` branch order
+                        execution_info.revert_error.unwrap()
+                    );
+                    Err(Error::<T>::TransactionExecutionFailed)
+                }
+            }?;
 
-        if let Some(l1_gas_usage) = tx_execution_infos.actual_resources.0.get("l1_gas_usage") {
-            Ok((T::L1GasPrices::get().eth_l1_gas_price.into(), tx_execution_infos.actual_fee.0, *l1_gas_usage))
-        } else {
-            Err(Error::<T>::MissingL1GasUsage.into())
-        }
+        let unit = match message.fee_type() {
+            blockifier::transaction::objects::FeeType::Strk => PriceUnit::Fri,
+            blockifier::transaction::objects::FeeType::Eth => PriceUnit::Wei,
+        };
+
+        let fee = FeeEstimate {
+            gas_consumed: Felt252Wrapper::from(*tx_execution_infos.actual_resources.0.get("l1_gas_usage").unwrap()),
+            gas_price: Felt252Wrapper::from(T::L1GasPrices::get().eth_l1_gas_price.get()),
+            data_gas_consumed: tx_execution_infos.da_gas.l1_data_gas.into(),
+            data_gas_price: Felt252Wrapper::from(T::L1GasPrices::get().eth_l1_data_gas_price.get()),
+            overall_fee: tx_execution_infos.actual_fee.0.into(),
+            unit,
+        };
+        Ok(fee)
     }
 
     pub fn re_execute_transactions(
