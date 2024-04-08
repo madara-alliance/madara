@@ -17,7 +17,7 @@ use starknet_core::types::{FieldElement, TransactionExecutionStatus, Transaction
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
-use crate::{Starknet, StarknetReadRpcApiServer};
+use crate::Starknet;
 
 /// Gets the Transaction Status, Including Mempool Status and Execution Details
 ///

@@ -1,18 +1,6 @@
 use std::num::ParseIntError;
 use std::{fmt, u64};
 
-use mp_felt::Felt252Wrapper;
-use starknet_ff::FieldElement;
-
-pub struct RpcEventFilter {
-    pub from_block: u64,
-    pub to_block: u64,
-    pub from_address: Option<Felt252Wrapper>,
-    pub keys: Vec<Vec<FieldElement>>,
-    pub chunk_size: u64,
-    pub continuation_token: ContinuationToken,
-}
-
 #[derive(PartialEq, Eq, Debug, Default)]
 pub struct ContinuationToken {
     pub block_n: u64,

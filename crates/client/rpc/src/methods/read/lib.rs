@@ -66,9 +66,9 @@ where
         call(self, request, block_id)
     }
 
-    fn chain_id(&self) -> RpcResult<Felt> {
-        chain_id(self)
-    }
+    //   fn chain_id(&self) -> RpcResult<Felt> {
+    // chain_id(self)
+    // }
 
     fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128> {
         get_block_transaction_count(self, block_id)

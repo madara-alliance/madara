@@ -21,7 +21,7 @@ use sc_transaction_pool::ChainApi;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
-use starknet_api::core::{ClassHash, ContractAddress};
+use starknet_api::core::{ClassHash, ContractAddress, PatriciaKey};
 use starknet_api::transaction as stx;
 use starknet_core::types::{
     BlockId, ComputationResources, DataResources, DeclareTransactionTrace, DeployAccountTransactionTrace,

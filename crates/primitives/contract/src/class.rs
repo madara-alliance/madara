@@ -1,7 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use blockifier::execution::contract_class::ContractClass as ContractClassBlockifier;
-use mp_felt::Felt252Wrapper;
 #[cfg(feature = "parity-scale-codec")]
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::ClassHash;

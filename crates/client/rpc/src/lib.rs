@@ -21,7 +21,8 @@ use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
+use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
+use sc_client_api::backend::{Backend, StorageProvider};
 use sc_network_sync::SyncingService;
 use sc_transaction_pool::{ChainApi, Pool};
 use serde::{Deserialize, Serialize};
@@ -102,9 +103,9 @@ pub trait StarknetReadRpcApi {
     #[method(name = "call")]
     fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<String>>;
 
-    /// Get the chain id
-    #[method(name = "chainId")]
-    fn chain_id(&self) -> RpcResult<Felt>;
+    //   /// Get the chain id
+    // #[method(name = "chainId")]
+    // fn chain_id(&self) -> RpcResult<Felt>;
 
     /// Get the number of transactions in a block given a block id
     #[method(name = "getBlockTransactionCount")]
@@ -220,6 +221,26 @@ pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
     _marker: PhantomData<(DBlockT, BE, H)>,
 }
 
+// impl<A, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
+// where
+//     A: ChainApi<Block = DBlockT> + 'static,
+//     BE: Backend<DBlockT>,
+//     C: HeaderBackend<DBlockT> + 'static,
+//     C: ProvideRuntimeApi<DBlockT>,
+//     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+//     H: HasherT + Send + Sync + 'static,
+// {
+//     pub fn do_estimate_message_fee(
+//         &self,
+//         block_hash: DBlockT::Hash,
+//         message: L1HandlerTransaction,
+//     ) -> RpcApiResult<(u128, u128, u128)> { self.client .runtime_api()
+//       .estimate_message_fee(block_hash, message) .map_err(|e| { error!("Runtime Api error: {e}");
+//       StarknetRpcApiError::InternalServerError })? .map_err(|e| { error!("Function execution
+//       failed: {:#?}", e); StarknetRpcApiError::ContractError })
+//     }
+// }
+
 /// Constructor for A Starknet RPC server for Madara
 /// # Arguments
 // * `client` - The Madara client
@@ -246,6 +267,12 @@ impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
     }
 }
 
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
+    fn chain_id(&self) -> RpcResult<Felt> {
+        methods::read::chain_id::chain_id()
+    }
+}
+
 impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
 where
     C: HeaderBackend<DBlockT> + 'static,
@@ -260,7 +287,7 @@ where
     C: HeaderBackend<DBlockT> + 'static,
 {
     pub fn current_spec_version(&self) -> RpcResult<String> {
-        Ok("0.5.1".to_string())
+        Ok("0.7.0".to_string())
     }
 }
 
