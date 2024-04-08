@@ -17,10 +17,6 @@ pub mod utils;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transaction_types::TransactionType;
-use blockifier::transaction::transactions::{
-    DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction,
-};
-use derive_more::From;
 use starknet_ff::FieldElement;
 
 const SIMULATE_TX_VERSION_OFFSET: FieldElement =

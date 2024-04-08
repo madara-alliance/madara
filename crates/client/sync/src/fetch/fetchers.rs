@@ -2,13 +2,13 @@
 use core::time::Duration;
 use std::sync::Arc;
 
-use deoxys_runtime::opaque::DBlockT;
 use itertools::Itertools;
 use mc_storage::OverrideHandle;
 use mp_block::DeoxysBlock;
 use mp_contract::class::{ContractClassData, ContractClassWrapper};
 use mp_felt::Felt252Wrapper;
 use mp_storage::StarknetStorageSchemaVersion;
+use mp_types::block::DBlockT;
 use sp_blockchain::HeaderBackend;
 use sp_core::{H160, H256};
 use sp_runtime::generic::{Block as RuntimeBlock, Header};

@@ -18,6 +18,7 @@ mod starkware_types_conversions;
 pub mod with_serde;
 
 use alloc::string::{String, ToString};
+use core::fmt;
 
 use cairo_vm::felt::Felt252;
 #[cfg(feature = "parity-scale-codec")]
@@ -33,10 +34,22 @@ use thiserror_no_std::Error;
 #[cfg(feature = "serde")]
 pub use crate::with_serde::*;
 
-#[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Hash, Eq, Copy)]
+#[derive(Clone, PartialEq, PartialOrd, Ord, Hash, Eq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct Felt252Wrapper(pub FieldElement);
+
+impl fmt::Debug for Felt252Wrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:#x}", &self.0)
+    }
+}
+
+impl fmt::Display for Felt252Wrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:#x}", &self.0)
+    }
+}
 
 impl Felt252Wrapper {
     /// Field252 constant that's equal to 0

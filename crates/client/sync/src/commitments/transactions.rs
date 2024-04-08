@@ -2,6 +2,7 @@ use bitvec::prelude::*;
 use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
+use mc_db::storage::bonsai_identifier;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
@@ -11,8 +12,6 @@ use starknet_api::transaction::Transaction;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
-
-use crate::utils::constant::bonsai_identifier;
 
 /// Compute the combined hash of the transaction hash and the signature.
 ///

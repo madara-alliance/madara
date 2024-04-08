@@ -1,10 +1,9 @@
-use deoxys_runtime::opaque::{DBlockT, DHashT};
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_sync::l1;
 use mc_sync::l2::get_pending_block;
 use mp_hashers::HasherT;
+use mp_types::block::{DBlockT, DHashT};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -69,6 +68,7 @@ where
         l1_gas_price,
         l1_data_gas_price,
         starknet_version,
+        l1_da_mode: todo!(),
     };
 
     Ok(MaybePendingBlockWithTxHashes::Block(block_with_tx_hashes))
@@ -97,6 +97,7 @@ where
         l1_gas_price,
         l1_data_gas_price,
         starknet_version,
+        l1_da_mode: todo!(),
     };
 
     Ok(MaybePendingBlockWithTxHashes::PendingBlock(block_with_tx_hashes))
@@ -149,6 +150,7 @@ where
         l1_gas_price,
         l1_data_gas_price,
         starknet_version,
+        l1_da_mode: todo!(),
     };
 
     Ok(MaybePendingBlockWithTxs::Block(block_with_txs))
@@ -179,6 +181,7 @@ where
         l1_gas_price,
         l1_data_gas_price,
         starknet_version,
+        l1_da_mode: todo!(),
     };
 
     Ok(MaybePendingBlockWithTxs::PendingBlock(block_with_txs))

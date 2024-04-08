@@ -4,20 +4,18 @@ use std::num::NonZeroU128;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
-use blockifier::blockifier::block::GasPrices;
 use blockifier::execution::call_info::CallInfo;
 use blockifier::execution::contract_class::ContractClass as BlockifierContractClass;
-use blockifier::transaction::transactions::L1HandlerTransaction;
 use cairo_lang_starknet_classes::casm_contract_class::{
-    CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints, StarknetSierraCompilationError,
+    CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints,
 };
-use deoxys_runtime::opaque::{DBlockT, DHashT};
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
 use mp_block::DeoxysBlock;
 use mp_digest_log::find_starknet_block;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
+use mp_types::block::{DBlockT, DHashT};
 use num_bigint::BigUint;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sp_api::{BlockT, HeaderT, ProvideRuntimeApi};
@@ -29,9 +27,9 @@ use starknet_api::state::ThinStateDiff;
 use starknet_api::transaction as stx;
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
-    BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem,
-    DeployedContractItem, EntryPointsByType, Event, ExecutionResources, FieldElement, FlattenedSierraClass,
-    FromByteArrayError, LegacyContractEntryPoint, LegacyEntryPointsByType, MsgFromL1, MsgToL1, NonceUpdate,
+    BlockStatus, CompressedLegacyContractClass, ComputationResources, ContractClass, ContractStorageDiffItem,
+    DataResources, DeclaredClassItem, DeployedContractItem, EntryPointsByType, Event, ExecutionResources, FieldElement,
+    FlattenedSierraClass, FromByteArrayError, LegacyContractEntryPoint, LegacyEntryPointsByType, MsgToL1, NonceUpdate,
     ReplacedClassItem, ResourcePrice, StateDiff, StorageEntry,
 };
 
@@ -112,16 +110,19 @@ pub fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> Execut
     let segment_arena_builtin = builtin_instance.get("segment_arena_builtin").map(|&value| value as u64);
 
     ExecutionResources {
-        steps,
-        memory_holes,
-        range_check_builtin_applications,
-        pedersen_builtin_applications,
-        poseidon_builtin_applications,
-        ec_op_builtin_applications,
-        ecdsa_builtin_applications,
-        bitwise_builtin_applications,
-        keccak_builtin_applications,
-        segment_arena_builtin,
+        computation_resources: ComputationResources {
+            steps,
+            memory_holes,
+            range_check_builtin_applications,
+            pedersen_builtin_applications,
+            poseidon_builtin_applications,
+            ec_op_builtin_applications,
+            ecdsa_builtin_applications,
+            bitwise_builtin_applications,
+            keccak_builtin_applications,
+            segment_arena_builtin,
+        },
+        data_resources: DataResources { data_availability: todo!() },
     }
 }
 

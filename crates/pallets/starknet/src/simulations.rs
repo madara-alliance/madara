@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 
 use blockifier::context::BlockContext;
 use blockifier::execution::errors::EntryPointExecutionError;
-use blockifier::fee;
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::errors::{TransactionExecutionError, TransactionFeeError};

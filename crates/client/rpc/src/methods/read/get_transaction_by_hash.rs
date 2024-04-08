@@ -1,4 +1,3 @@
-use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
@@ -6,6 +5,7 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
+use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -17,7 +17,7 @@ use starknet_core::types::{FieldElement, Transaction};
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
-use crate::{Starknet, StarknetReadRpcApiServer};
+use crate::Starknet;
 
 /// Get the details and status of a submitted transaction.
 ///

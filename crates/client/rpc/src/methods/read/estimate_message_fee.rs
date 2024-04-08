@@ -1,12 +1,9 @@
-use std::sync::Arc;
-
-use blockifier::transaction::transactions::L1HandlerTransaction;
-use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
+use mp_types::block::DBlockT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -15,13 +12,13 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_api::core::{ContractAddress, Nonce};
+use starknet_api::core::Nonce;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{Calldata, Fee, TransactionVersion};
-use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1, PriceUnit};
-use starknet_ff::FieldElement;
+use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
+use std::sync::Arc;
+use blockifier::transaction::transactions::L1HandlerTransaction;
 
-use super::call;
 use crate::errors::StarknetRpcApiError;
 use crate::{Starknet, StarknetReadRpcApiServer};
 

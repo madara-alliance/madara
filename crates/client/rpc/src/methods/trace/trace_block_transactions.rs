@@ -1,10 +1,10 @@
-use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use mp_transactions::getters::{Getters, Hash};
+use mp_transactions::getters::Hash;
 use mp_transactions::TxType;
+use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_transaction_pool::ChainApi;
