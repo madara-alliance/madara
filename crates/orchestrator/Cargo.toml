@@ -26,7 +26,7 @@ url = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 
 [features]
-default = ["ethereum", "with_mongdb", "with_sqs"]
+default = ["ethereum", "with_mongodb", "with_sqs"]
 ethereum = ["ethereum-da-client"]
-with_mongdb = ["mongodb"]
+with_mongodb = ["mongodb"]
 with_sqs = ["omniqueue"]
