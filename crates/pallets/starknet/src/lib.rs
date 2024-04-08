@@ -47,8 +47,7 @@ pub mod blockifier_state_adapter;
 pub mod genesis_loader;
 /// Simulation, estimations and execution trace logic.
 pub mod simulations;
-/// Transaction validation logic.
-pub mod transaction_validation;
+
 /// The Starknet pallet's runtime custom types.
 pub mod types;
 
@@ -95,7 +94,6 @@ use starknet_api::transaction::{
     L1HandlerTransaction, MessageToL1, Transaction, TransactionHash,
 };
 use starknet_crypto::FieldElement;
-use transaction_validation::TxPriorityInfo;
 
 use crate::alloc::string::ToString;
 use crate::types::{CasmClassHash, ContractStorageKey, SierraClassHash, StorageSlot};

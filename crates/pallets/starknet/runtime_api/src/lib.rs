@@ -100,8 +100,6 @@ sp_api::decl_runtime_apis! {
         fn is_transaction_fee_disabled() -> bool;
         /// Return messages sent to L1 during tx execution
         fn get_tx_messages_to_l1(tx_hash: TransactionHash) -> Vec<MessageToL1>;
-        /// Check if L1 Message Nonce has not been used
-        fn l1_nonce_unused(nonce: Nonce) -> bool;
     }
 
     pub trait ConvertTransactionRuntimeApi {
