@@ -1,13 +1,13 @@
-use crate::da_clients::ethereum::config::EthereumDaConfig;
-use crate::da_clients::ethereum::EthereumDaClient;
-use crate::da_clients::{DaClient, DaConfig};
 use crate::database::mongodb::config::MongoDbConfig;
 use crate::database::mongodb::MongoDb;
 use crate::database::{Database, DatabaseConfig};
 use crate::queue::sqs::SqsQueue;
 use crate::queue::QueueProvider;
 use crate::utils::env_utils::get_env_var_or_panic;
+use da_client_interface::{DaClient, DaConfig};
 use dotenvy::dotenv;
+use ethereum_da_client::config::EthereumDaConfig;
+use ethereum_da_client::EthereumDaClient;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Url};
 use std::sync::Arc;

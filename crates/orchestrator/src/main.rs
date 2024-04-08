@@ -2,8 +2,6 @@
 mod config;
 /// Controllers for the routes
 mod controllers;
-/// Contains the trait that all DA clients must implement
-mod da_clients;
 /// Contains the trait that all database clients must implement
 mod database;
 /// Contains the trait that all jobs must implement. Also

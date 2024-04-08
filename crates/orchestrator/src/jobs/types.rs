@@ -1,4 +1,6 @@
 use color_eyre::{eyre::eyre, Result};
+use da_client_interface::DaVerificationStatus;
+// TODO: job types shouldn't depend on mongodb
 use mongodb::bson::serde_helpers::uuid_1_as_binary;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -122,4 +124,14 @@ pub enum JobVerificationStatus {
     Verified,
     #[allow(dead_code)]
     Rejected,
+}
+
+impl From<DaVerificationStatus> for JobVerificationStatus {
+    fn from(status: DaVerificationStatus) -> Self {
+        match status {
+            DaVerificationStatus::Pending => JobVerificationStatus::Pending,
+            DaVerificationStatus::Verified => JobVerificationStatus::Verified,
+            DaVerificationStatus::Rejected => JobVerificationStatus::Rejected,
+        }
+    }
 }

@@ -9,9 +9,8 @@ use starknet::core::types::FieldElement;
 use std::str::FromStr;
 use url::Url;
 
-use crate::da_clients::ethereum::config::EthereumDaConfig;
-use crate::da_clients::DaClient;
-use crate::jobs::types::JobVerificationStatus;
+use config::EthereumDaConfig;
+use da_client_interface::{DaClient, DaVerificationStatus};
 
 pub mod config;
 pub struct EthereumDaClient {
@@ -25,7 +24,7 @@ impl DaClient for EthereumDaClient {
         unimplemented!()
     }
 
-    async fn verify_inclusion(&self, _external_id: &str) -> Result<JobVerificationStatus> {
+    async fn verify_inclusion(&self, _external_id: &str) -> Result<DaVerificationStatus> {
         todo!()
     }
 }
