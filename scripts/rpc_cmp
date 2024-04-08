@@ -187,6 +187,12 @@ case $COMMAND in
         get_class_hash_at "$PROVIDER_DEOXYS" "$1" "$2" "$OUTPUT_DEOXYS"
         get_class_hash_at "$PROVIDER_PATHFINDER" "$1" "$2" "$OUTPUT_PATHFINDER"
         ;;
+    getStorageAt)
+        echo "🧪 Testing starknet_getStorageAt"
+        validate_args $# 2
+        get_storage_at "$PROVIDER_DEOXYS" "$1" "$2" "$OUTPUT_DEOXYS"
+        get_storage_at "$PROVIDER_PATHFINDER" "$1" "$2" "$OUTPUT_PATHFINDER"
+        ;;
     getTransactionReceipt)
         echo "🧪 Testing starknet_getTransactionReceipt"
         validate_args $# 1

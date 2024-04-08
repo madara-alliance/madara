@@ -1,11 +1,7 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
 use mp_felt::Felt252Wrapper;
-use starknet_api::transaction::{
-    DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
-    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction,
-    TransactionHash,
-};
+use starknet_api::transaction::TransactionHash;
 
 use crate::TxType;
 

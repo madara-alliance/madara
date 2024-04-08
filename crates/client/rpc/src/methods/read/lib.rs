@@ -1,7 +1,7 @@
-use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
+use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -12,7 +12,7 @@ use sp_blockchain::HeaderBackend;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate,
     FieldElement, FunctionCall, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MaybePendingTransactionReceipt, MsgFromL1, SimulationFlagForEstimateFee, SyncStatusType, Transaction,
+    MsgFromL1, SimulationFlagForEstimateFee, SyncStatusType, Transaction, TransactionReceiptWithBlockInfo,
     TransactionStatus,
 };
 
@@ -130,7 +130,7 @@ where
     async fn get_transaction_receipt(
         &self,
         transaction_hash: FieldElement,
-    ) -> RpcResult<MaybePendingTransactionReceipt> {
+    ) -> RpcResult<TransactionReceiptWithBlockInfo> {
         get_transaction_receipt(self, transaction_hash).await
     }
 

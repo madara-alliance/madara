@@ -1,10 +1,10 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
-use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
 use mp_simulations::convert_flags;
 use mp_transactions::from_broadcasted_transactions::ToAccountTransaction;
+use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -13,7 +13,7 @@ use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{
-    BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulationFlagForEstimateFee as EstimateFeeFlag,
+    BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee as EstimateFeeFlag,
 };
 
 use crate::errors::StarknetRpcApiError;

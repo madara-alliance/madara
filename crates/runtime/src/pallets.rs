@@ -14,6 +14,8 @@ pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
 pub use mp_program_hash::SN_OS_PROGRAM_HASH;
+use mp_types::block::{DHashT, DHasherT};
+use mp_types::transactions::DTxIndexT;
 /// Import the StarkNet pallet.
 pub use pallet_starknet;
 pub use pallet_timestamp::Call as TimestampCall;
@@ -35,7 +37,7 @@ use crate::*;
 /// Configure the Starknet pallet in pallets/starknet.
 impl pallet_starknet::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
-    type SystemHash = StarknetHasher;
+    type SystemHash = DHasherT;
     type TimestampProvider = Timestamp;
     type UnsignedPriority = UnsignedPriority;
     type TransactionLongevity = TransactionLongevity;
@@ -66,15 +68,15 @@ impl frame_system::Config for Runtime {
     /// The maximum length of a block (in bytes).
     type BlockLength = BlockLength;
     /// The identifier used to distinguish between accounts.
-    type AccountId = AccountId;
+    type AccountId = DAccountIdT;
     /// The aggregated dispatch type that is available for extrinsics.
     type RuntimeCall = RuntimeCall;
     /// The lookup mechanism to get account ID from whatever is passed in dispatchers.
-    type Lookup = AccountIdLookup<AccountId, ()>;
+    type Lookup = AccountIdLookup<DAccountIdT, ()>;
     /// The index type for storing how many extrinsics an account has signed.
-    type Nonce = Index;
+    type Nonce = DTxIndexT;
     /// The type for hashing blocks and tries.
-    type Hash = Hash;
+    type Hash = DHashT;
     /// The hashing algorithm used.
     type Hashing = BlakeTwo256;
     /// The Block type.

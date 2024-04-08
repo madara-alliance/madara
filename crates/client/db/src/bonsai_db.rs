@@ -1,265 +1,273 @@
-use std::sync::Arc;
+use std::collections::BTreeMap;
 
-use bonsai_trie::id::{BasicId, Id};
-use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, BonsaiStorageConfig, DatabaseKey};
-use kvdb::{DBTransaction, KeyValueDB};
-use starknet_types_core::hash::{Pedersen, Poseidon};
+use bonsai_trie::id::BasicId;
+use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, DatabaseKey};
+use rocksdb::{
+    Direction, IteratorMode, OptimisticTransactionOptions, ReadOptions, SnapshotWithThreadMode, Transaction,
+    WriteBatchWithTransaction, WriteOptions,
+};
 
-use crate::error::BonsaiDbError;
+use crate::{BonsaiDbError, Column, DatabaseExt, DB};
 
-#[derive(Debug)]
-pub enum TrieColumn {
-    Class,
-    Contract,
-    ContractStorage,
+pub type RocksDBTransaction = WriteBatchWithTransaction<true>;
+
+#[derive(Clone, Debug)]
+pub(crate) struct DatabaseKeyMapping {
+    pub(crate) flat: Column,
+    pub(crate) trie: Column,
+    pub(crate) trie_log: Column,
 }
 
-#[derive(Debug)]
-pub enum KeyType {
-    Trie,
-    Flat,
-    TrieLog,
-}
-
-pub struct BonsaiConfigs {
-    pub contract: BonsaiStorage<BasicId, BonsaiDb, Pedersen>,
-    pub contract_storage: BonsaiStorage<BasicId, BonsaiDb, Pedersen>,
-    pub class: BonsaiStorage<BasicId, BonsaiDb, Poseidon>,
-}
-
-impl BonsaiConfigs {
-    pub fn new(contract: BonsaiDb, contract_storage: BonsaiDb, class: BonsaiDb) -> Self {
-        let config = BonsaiStorageConfig::default();
-
-        let contract =
-            BonsaiStorage::<_, _, Pedersen>::new(contract, config.clone()).expect("Failed to create bonsai storage");
-
-        let contract_storage = BonsaiStorage::<_, _, Pedersen>::new(contract_storage, config.clone())
-            .expect("Failed to create bonsai storage");
-
-        let class =
-            BonsaiStorage::<_, _, Poseidon>::new(class, config.clone()).expect("Failed to create bonsai storage");
-
-        Self { contract, contract_storage, class }
-    }
-}
-
-impl TrieColumn {
-    pub fn to_index(&self, key_type: KeyType) -> u32 {
-        match self {
-            TrieColumn::Class => match key_type {
-                KeyType::Trie => crate::columns::TRIE_BONSAI_CLASSES,
-                KeyType::Flat => crate::columns::FLAT_BONSAI_CLASSES,
-                KeyType::TrieLog => crate::columns::LOG_BONSAI_CLASSES,
-            },
-            TrieColumn::Contract => match key_type {
-                KeyType::Trie => crate::columns::TRIE_BONSAI_CONTRACTS,
-                KeyType::Flat => crate::columns::FLAT_BONSAI_CONTRACTS,
-                KeyType::TrieLog => crate::columns::LOG_BONSAI_CONTRACTS,
-            },
-            TrieColumn::ContractStorage => match key_type {
-                KeyType::Trie => crate::columns::TRIE_BONSAI_CONTRACTS,
-                KeyType::Flat => crate::columns::FLAT_BONSAI_CONTRACTS,
-                KeyType::TrieLog => crate::columns::LOG_BONSAI_CONTRACTS,
-            },
+impl DatabaseKeyMapping {
+    pub(crate) fn map(&self, key: &DatabaseKey) -> Column {
+        match key {
+            DatabaseKey::Trie(_) => self.trie,
+            DatabaseKey::Flat(_) => self.flat,
+            DatabaseKey::TrieLog(_) => self.trie_log,
         }
     }
 }
 
-/// Represents a Bonsai database instance parameterized by a block type.
-pub struct BonsaiDb {
+pub struct BonsaiDb<'db> {
     /// Database interface for key-value operations.
-    pub(crate) db: Arc<dyn KeyValueDB>,
-    /// Set current column to give trie context
-    pub(crate) current_column: TrieColumn,
+    db: &'db DB,
+    /// Mapping from `DatabaseKey` => rocksdb column name
+    column_mapping: DatabaseKeyMapping,
+    snapshots: BTreeMap<BasicId, SnapshotWithThreadMode<'db, DB>>,
 }
 
-pub fn key_type(key: &DatabaseKey) -> KeyType {
-    match key {
-        DatabaseKey::Trie(_) => KeyType::Trie,
-        DatabaseKey::Flat(_) => KeyType::Flat,
-        DatabaseKey::TrieLog(_) => KeyType::TrieLog,
+impl<'db> BonsaiDb<'db> {
+    pub(crate) fn new(db: &'db DB, column_mapping: DatabaseKeyMapping) -> Self {
+        Self { db, column_mapping, snapshots: BTreeMap::new() }
     }
 }
 
-impl BonsaiDatabase for BonsaiDb {
-    type Batch = DBTransaction;
+impl BonsaiDatabase for BonsaiDb<'_> {
+    type Batch = RocksDBTransaction;
     type DatabaseError = BonsaiDbError;
 
-    /// Creates a new database transaction batch.
     fn create_batch(&self) -> Self::Batch {
-        DBTransaction::new()
+        Self::Batch::default()
     }
 
-    /// Retrieves a value by its database key.
     fn get(&self, key: &DatabaseKey) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        let key_type = key_type(key);
-        let column = self.current_column.to_index(key_type);
-        let key_slice = key.as_slice();
-        self.db.get(column, key_slice).map_err(Into::into)
+        log::trace!("Getting from RocksDB: {:?}", key);
+        let handle = self.db.get_column(self.column_mapping.map(key));
+        Ok(self.db.get_cf(&handle, key.as_slice())?)
     }
 
-    /// Inserts a key-value pair into the database, optionally within a provided batch.
+    fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Self::DatabaseError> {
+        log::trace!("Getting from RocksDB: {:?}", prefix);
+        let handle = self.db.get_column(self.column_mapping.map(prefix));
+        let iter = self.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
+        Ok(iter
+            .map_while(|kv| {
+                if let Ok((key, value)) = kv {
+                    if key.starts_with(prefix.as_slice()) { Some((key.to_vec(), value.to_vec())) } else { None }
+                } else {
+                    None
+                }
+            })
+            .collect())
+    }
+
+    fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
+        log::trace!("Checking if RocksDB contains: {:?}", key);
+        let handle = self.db.get_column(self.column_mapping.map(key));
+        Ok(self.db.get_cf(&handle, key.as_slice()).map(|value| value.is_some())?)
+    }
+
     fn insert(
         &mut self,
         key: &DatabaseKey,
         value: &[u8],
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        let key_type: KeyType = key_type(key);
-        let column = self.current_column.to_index(key_type);
-        let key_slice = key.as_slice();
-        let previous_value = self.db.get(column, key_slice)?;
-
+        log::trace!("Inserting into RocksDB: {:?} {:?}", key, value);
+        let handle = self.db.get_column(self.column_mapping.map(key));
+        let old_value = self.db.get_cf(&handle, key.as_slice())?;
         if let Some(batch) = batch {
-            batch.put(column, key_slice, value);
+            batch.put_cf(&handle, key.as_slice(), value);
         } else {
-            let mut transaction = self.create_batch();
-            transaction.put(column, key_slice, value);
-            self.db.write(transaction)?;
+            self.db.put_cf(&handle, key.as_slice(), value)?;
         }
-
-        Ok(previous_value)
+        Ok(old_value)
     }
 
-    /// Checks if a key exists in the database.
-    fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
-        let key_type = key_type(key);
-        let column = self.current_column.to_index(key_type);
-        let key_slice = key.as_slice();
-        self.db.has_key(column, key_slice).map_err(Into::into)
-    }
-
-    /// Retrieves all key-value pairs starting with a given prefix.
-    fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Self::DatabaseError> {
-        let key_type = key_type(prefix);
-        let column = self.current_column.to_index(key_type);
-        let prefix_slice = prefix.as_slice();
-        let mut result = Vec::new();
-
-        for pair in self.db.iter_with_prefix(column, prefix_slice) {
-            let pair = pair.map_err(BonsaiDbError::from)?;
-            result.push((pair.0.into_vec(), pair.1));
-        }
-
-        Ok(result)
-    }
-
-    /// Removes a key-value pair from the database, optionally within a provided batch.
     fn remove(
         &mut self,
         key: &DatabaseKey,
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        let key_type = key_type(key);
-        let column = self.current_column.to_index(key_type);
-        let key_slice = key.as_slice();
-        let previous_value = self.db.get(column, key_slice)?;
-
+        log::trace!("Removing from RocksDB: {:?}", key);
+        let handle = self.db.get_column(self.column_mapping.map(key));
+        let old_value = self.db.get_cf(&handle, key.as_slice())?;
         if let Some(batch) = batch {
-            batch.delete(column, key_slice);
+            batch.delete_cf(&handle, key.as_slice());
         } else {
-            let mut transaction = self.create_batch();
-            transaction.delete(column, key_slice);
-            self.db.write(transaction)?;
+            self.db.delete_cf(&handle, key.as_slice())?;
         }
-
-        Ok(previous_value)
+        Ok(old_value)
     }
 
-    /// Removes all key-value pairs starting with a given prefix.
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
-        let key_type = key_type(prefix);
-        let column = self.current_column.to_index(key_type);
-        let prefix_slice = prefix.as_slice();
-        let mut transaction = self.create_batch();
-        transaction.delete_prefix(column, prefix_slice);
-        self.db.write(transaction).map_err(Into::into)
+        log::trace!("Getting from RocksDB: {:?}", prefix);
+        let handle = self.db.get_column(self.column_mapping.map(prefix));
+        let iter = self.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
+        let mut batch = self.create_batch();
+        for kv in iter {
+            if let Ok((key, _)) = kv {
+                if key.starts_with(prefix.as_slice()) {
+                    batch.delete_cf(&handle, &key);
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        drop(handle);
+        self.write_batch(batch)?;
+        Ok(())
     }
 
-    /// Writes a batch of changes to the database.
     fn write_batch(&mut self, batch: Self::Batch) -> Result<(), Self::DatabaseError> {
-        self.db.write(batch).map_err(Into::into)
+        Ok(self.db.write(batch)?)
     }
 }
 
-/// A wrapper around a database transaction.
-pub struct TransactionWrapper {
-    /// The underlying database transaction.
-    _transaction: DBTransaction,
+pub struct BonsaiTransaction<'db> {
+    txn: Transaction<'db, DB>,
+    db: &'db DB,
+    column_mapping: DatabaseKeyMapping,
 }
 
-/// This implementation is a stub to mute BonsaiPersistentDatabase that is currently not needed.
-impl BonsaiDatabase for TransactionWrapper {
-    type Batch = DBTransaction;
+impl<'db> BonsaiDatabase for BonsaiTransaction<'db> {
+    type Batch = WriteBatchWithTransaction<true>;
     type DatabaseError = BonsaiDbError;
 
-    /// Creates a new database transaction batch.
     fn create_batch(&self) -> Self::Batch {
-        DBTransaction::new()
+        self.txn.get_writebatch()
     }
 
-    /// Retrieves a value by its database key.
-    fn get(&self, _key: &DatabaseKey) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        // Simulate database access without performing real operations
-        Ok(None)
+    fn get(&self, key: &DatabaseKey) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
+        log::trace!("Getting from RocksDB: {:?}", key);
+        let handle = self.db.get_column(self.column_mapping.map(key));
+        Ok(self.txn.get_cf(&handle, key.as_slice())?)
     }
 
-    /// Inserts a key-value pair into the database.
+    fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Self::DatabaseError> {
+        log::trace!("Getting from RocksDB: {:?}", prefix);
+        let handle = self.db.get_column(self.column_mapping.map(prefix));
+        let iter = self.txn.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
+        Ok(iter
+            .map_while(|kv| {
+                if let Ok((key, value)) = kv {
+                    if key.starts_with(prefix.as_slice()) { Some((key.to_vec(), value.to_vec())) } else { None }
+                } else {
+                    None
+                }
+            })
+            .collect())
+    }
+
+    fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
+        log::trace!("Checking if RocksDB contains: {:?}", key);
+        let handle = self.db.get_column(self.column_mapping.map(key));
+        Ok(self.txn.get_cf(&handle, key.as_slice()).map(|value| value.is_some())?)
+    }
+
     fn insert(
         &mut self,
-        _key: &DatabaseKey,
-        _value: &[u8],
-        _batch: Option<&mut Self::Batch>,
+        key: &DatabaseKey,
+        value: &[u8],
+        batch: Option<&mut Self::Batch>,
     ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        Ok(None)
+        log::trace!("Inserting into RocksDB: {:?} {:?}", key, value);
+        let handle = self.db.get_column(self.column_mapping.map(key));
+        let old_value = self.txn.get_cf(&handle, key.as_slice())?;
+        if let Some(batch) = batch {
+            batch.put_cf(&handle, key.as_slice(), value);
+        } else {
+            self.txn.put_cf(&handle, key.as_slice(), value)?;
+        }
+        Ok(old_value)
     }
 
-    /// Checks if a key exists in the database.
-    fn contains(&self, _key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
-        Ok(false)
-    }
-
-    /// Retrieves all key-value pairs starting with a given prefix.
-    fn get_by_prefix(&self, _prefix: &DatabaseKey) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Self::DatabaseError> {
-        Ok(Vec::new())
-    }
-
-    /// Removes a key-value pair from the database.
     fn remove(
         &mut self,
-        _key: &DatabaseKey,
-        _batch: Option<&mut Self::Batch>,
+        key: &DatabaseKey,
+        batch: Option<&mut Self::Batch>,
     ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
-        Ok(None)
+        log::trace!("Removing from RocksDB: {:?}", key);
+        let handle = self.db.get_column(self.column_mapping.map(key));
+        let old_value = self.txn.get_cf(&handle, key.as_slice())?;
+        if let Some(batch) = batch {
+            batch.delete_cf(&handle, key.as_slice());
+        } else {
+            self.txn.delete_cf(&handle, key.as_slice())?;
+        }
+        Ok(old_value)
     }
 
-    /// Removes all key-value pairs starting with a given prefix.
-    fn remove_by_prefix(&mut self, _prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
+    fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
+        log::trace!("Getting from RocksDB: {:?}", prefix);
+        let handle = self.db.get_column(self.column_mapping.map(prefix));
+        let iter = self.txn.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
+        let mut batch = self.create_batch();
+        for kv in iter {
+            if let Ok((key, _)) = kv {
+                if key.starts_with(prefix.as_slice()) {
+                    batch.delete_cf(&handle, &key);
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        drop(handle);
+        self.write_batch(batch)?;
         Ok(())
     }
 
-    /// Writes a batch of changes to the database.
-    fn write_batch(&mut self, _batch: Self::Batch) -> Result<(), Self::DatabaseError> {
-        Ok(())
+    fn write_batch(&mut self, batch: Self::Batch) -> Result<(), Self::DatabaseError> {
+        Ok(self.txn.rebuild_from_writebatch(&batch)?)
     }
 }
 
-/// This implementation is a stub to mute any error but is is currently not used.
-impl<ID: Id> BonsaiPersistentDatabase<ID> for BonsaiDb {
-    type Transaction = TransactionWrapper;
+impl<'db> BonsaiPersistentDatabase<BasicId> for BonsaiDb<'db>
+where
+    Self: 'db,
+{
+    type Transaction = BonsaiTransaction<'db>;
     type DatabaseError = BonsaiDbError;
 
-    /// Snapshots the current database state, associated with an ID.
-    fn snapshot(&mut self, _id: ID) {}
-
-    /// Begins a new transaction associated with a snapshot ID.
-    fn transaction(&self, _id: ID) -> Option<Self::Transaction> {
-        None
+    fn snapshot(&mut self, id: BasicId) {
+        log::trace!("Generating RocksDB snapshot");
+        let snapshot = self.db.snapshot();
+        self.snapshots.insert(id, snapshot);
     }
 
-    /// Merges a completed transaction into the persistent database.
-    fn merge(&mut self, _transaction: Self::Transaction) -> Result<(), Self::DatabaseError> {
+    fn transaction(&self, id: BasicId) -> Option<Self::Transaction> {
+        log::trace!("Generating RocksDB transaction");
+        if let Some(snapshot) = self.snapshots.get(&id) {
+            let write_opts = WriteOptions::default();
+            let mut txn_opts = OptimisticTransactionOptions::default();
+            txn_opts.set_snapshot(true);
+            let txn = self.db.transaction_opt(&write_opts, &txn_opts);
+
+            let mut read_options = ReadOptions::default();
+            read_options.set_snapshot(snapshot);
+
+            Some(BonsaiTransaction { txn, db: self.db, column_mapping: self.column_mapping.clone() })
+        } else {
+            None
+        }
+    }
+
+    fn merge(&mut self, transaction: Self::Transaction) -> Result<(), Self::DatabaseError> {
+        transaction.txn.commit()?;
         Ok(())
     }
 }

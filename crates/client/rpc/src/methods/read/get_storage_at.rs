@@ -1,8 +1,10 @@
-use deoxys_runtime::opaque::DBlockT;
 use jsonrpsee::core::RpcResult;
+use log::error;
+use mc_db::storage::StorageHandler;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
+use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -60,18 +62,20 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        log::error!("'{e}'");
+    let block_number = starknet.substrate_block_number_from_starknet_block(block_id).map_err(|e| {
+        error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
 
     let contract_address = Felt252Wrapper(contract_address).into();
     let key = Felt252Wrapper(key).into();
 
-    let value = starknet
-        .overrides
-        .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
-        .get_storage_by_storage_key(substrate_block_hash, contract_address, key)
+    log::info!("block number: {block_number}");
+
+    let value = StorageHandler::contract_storage_mut(BlockId::Number(block_number))
+        .map_err(|_| StarknetRpcApiError::ContractNotFound)?
+        .get(&contract_address, &key)
+        .unwrap_or(None)
         .ok_or_else(|| {
             log::error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}'");
             StarknetRpcApiError::ContractNotFound

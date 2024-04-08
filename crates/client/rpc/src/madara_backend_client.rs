@@ -1,6 +1,6 @@
-use deoxys_runtime::opaque::{DBlockT, DHashT};
 use mc_db::{DbError, DeoxysBackend};
 use mp_block::DeoxysBlock;
+use mp_types::block::{DBlockT, DHashT};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_api::BlockId;
 use sp_blockchain::HeaderBackend;

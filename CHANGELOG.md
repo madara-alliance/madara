@@ -4,6 +4,11 @@ git # Deoxys Changelog
 
 - fix(class): Fix class conversions to support legacy Sierra versions
 - feat: rebase blockifier
+- feat(metrics): Add prometheus metrics for mapping worker
+- feat(storage): finished migrating contract storage to our backend bonsai trie dbs
+- feat(storage): set up type-safe bonsai storage abstractions for usage in RPC
+- fix(root): fix state root computation
+- refactor: refactor mc-db crate
 - feat(api_key): api key passed to FetchConfig correctly
 - feat(api_key): Added support for --gateway-api to avoid rate limit from the gateway
 - fix(latest): Retrieve latest synced block via internal client

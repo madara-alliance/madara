@@ -7,7 +7,6 @@ use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::L1HandlerTransaction;
-use deoxys_runtime::opaque::{DBlockT, DHashT};
 use mc_db::DeoxysBackend;
 use mc_storage::StorageOverride;
 use mp_block::DeoxysBlock;
@@ -15,6 +14,7 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::TxType;
+use mp_types::block::{DBlockT, DHashT};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_transaction_pool::ChainApi;
@@ -24,8 +24,9 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::transaction as stx;
 use starknet_core::types::{
-    BlockId, DeclareTransactionTrace, DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources,
-    InvokeTransactionTrace, L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace,
+    BlockId, ComputationResources, DataResources, DeclareTransactionTrace, DeployAccountTransactionTrace,
+    ExecuteInvocation, ExecutionResources, InvokeTransactionTrace, L1HandlerTransactionTrace, RevertedInvocation,
+    TransactionTrace,
 };
 use starknet_ff::FieldElement;
 
@@ -139,16 +140,19 @@ pub fn try_get_funtion_invocation_from_call_info<B: BlockT>(
 
     // TODO: Replace this with non default exec resources
     let execution_resources = ExecutionResources {
-        steps: 0,
-        memory_holes: None,
-        range_check_builtin_applications: None,
-        pedersen_builtin_applications: None,
-        poseidon_builtin_applications: None,
-        ec_op_builtin_applications: None,
-        ecdsa_builtin_applications: None,
-        bitwise_builtin_applications: None,
-        keccak_builtin_applications: None,
-        segment_arena_builtin: None,
+        computation_resources: ComputationResources {
+            steps: todo!(),
+            memory_holes: todo!(),
+            range_check_builtin_applications: todo!(),
+            pedersen_builtin_applications: todo!(),
+            poseidon_builtin_applications: todo!(),
+            ec_op_builtin_applications: todo!(),
+            ecdsa_builtin_applications: todo!(),
+            bitwise_builtin_applications: todo!(),
+            keccak_builtin_applications: todo!(),
+            segment_arena_builtin: todo!(),
+        },
+        data_resources: DataResources { data_availability: todo!() },
     };
 
     Ok(starknet_core::types::FunctionInvocation {
@@ -163,7 +167,7 @@ pub fn try_get_funtion_invocation_from_call_info<B: BlockT>(
         calls: inner_calls,
         events,
         messages,
-        execution_resources,
+        execution_resources: execution_resources.computation_resources,
     })
 }
 
@@ -174,6 +178,23 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
     tx_exec_info: &TransactionExecutionInfo,
 ) -> Result<TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
     let mut class_hash_cache: HashMap<ContractAddress, FieldElement> = HashMap::new();
+
+    // TODO: Replace this with non default exec resources
+    let execution_resources = ExecutionResources {
+        computation_resources: ComputationResources {
+            steps: todo!(),
+            memory_holes: todo!(),
+            range_check_builtin_applications: todo!(),
+            pedersen_builtin_applications: todo!(),
+            poseidon_builtin_applications: todo!(),
+            ec_op_builtin_applications: todo!(),
+            ecdsa_builtin_applications: todo!(),
+            bitwise_builtin_applications: todo!(),
+            keccak_builtin_applications: todo!(),
+            segment_arena_builtin: todo!(),
+        },
+        data_resources: DataResources { data_availability: todo!() },
+    };
 
     // If simulated with `SimulationFlag::SkipValidate` this will be `None`
     // therefore we cannot unwrap it
@@ -221,12 +242,14 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
             fee_transfer_invocation,
             // TODO(#1291): Compute state diff correctly
             state_diff: None,
+            execution_resources,
         }),
         TxType::Declare => TransactionTrace::Declare(DeclareTransactionTrace {
             validate_invocation,
             fee_transfer_invocation,
             // TODO(#1291): Compute state diff correctly
             state_diff: None,
+            execution_resources,
         }),
         TxType::DeployAccount => {
             TransactionTrace::DeployAccount(DeployAccountTransactionTrace {
@@ -241,6 +264,7 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
                 fee_transfer_invocation,
                 // TODO(#1291): Compute state diff correctly
                 state_diff: None,
+                execution_resources,
             })
         }
         TxType::L1Handler => TransactionTrace::L1Handler(L1HandlerTransactionTrace {
@@ -252,6 +276,7 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
                 &mut class_hash_cache,
             )?,
             state_diff: None,
+            execution_resources,
         }),
     };
 
@@ -352,16 +377,8 @@ where
                     Ok(Transaction::AccountTransaction(AccountTransaction::Declare(tx)))
                 }
                 stx::DeclareTransaction::V2(_tx) => {
-                    let contract_class = DeoxysBackend::sierra_classes()
-                        .get_sierra_class(class_hash)
-                        .map_err(|e| {
-                            log::error!("Failed to fetch sierra class with hash {class_hash}: {e}");
-                            StarknetRpcApiError::InternalServerError
-                        })?
-                        .ok_or_else(|| {
-                            log::error!("The sierra class with hash {class_hash} is not present in db backend");
-                            StarknetRpcApiError::InternalServerError
-                        })?;
+                    // TODO: change this contract class to the correct one
+                    let contract_class = starknet_api::state::ContractClass::default();
                     let contract_class = mp_transactions::utils::sierra_to_casm_contract_class(contract_class)
                         .map_err(|e| {
                             log::error!("Failed to convert the SierraContractClass to CasmContractClass: {e}");

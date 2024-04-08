@@ -1,23 +1,15 @@
 use blockifier::context::BlockContext;
-use blockifier::execution::contract_address;
-use blockifier::execution::contract_class::{
-    ClassInfo, ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf,
-};
+use blockifier::execution::contract_class::{ContractClass as ContractClassBf, ContractClassV1 as ContractClassV1Bf};
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use blockifier::transaction::test_utils::block_context;
 use blockifier::transaction::transaction_execution as btx;
-use deoxys_runtime::opaque::{DBlockT, DHashT};
-use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_sync::l2::get_pending_block;
 use mp_block::DeoxysBlock;
-use mp_contract::class;
 use mp_felt::Felt252Wrapper;
-use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
+use mp_types::block::{DBlockT, DHashT};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -25,16 +17,14 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_api::core::{ChainId, ClassHash, ContractAddress};
+use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::transaction::{
-    DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction,
-    Transaction, TransactionHash,
+    DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction, Transaction, TransactionHash,
 };
 use starknet_core::types::{
-    BlockId, BlockTag, DeclareTransactionReceipt, DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult,
-    FieldElement, Hash256, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MaybePendingTransactionReceipt,
-    PendingDeclareTransactionReceipt, PendingDeployAccountTransactionReceipt, PendingInvokeTransactionReceipt,
-    PendingL1HandlerTransactionReceipt, PendingTransactionReceipt, TransactionFinalityStatus, TransactionReceipt,
+    BlockId, ComputationResources, DataResources, DeclareTransactionReceipt, DeployAccountTransactionReceipt,
+    ExecutionResources, ExecutionResult, FieldElement, Hash256, InvokeTransactionReceipt, L1HandlerTransactionReceipt,
+    TransactionFinalityStatus, TransactionReceipt, TransactionReceiptWithBlockInfo,
 };
 
 use crate::errors::StarknetRpcApiError;
@@ -49,7 +39,7 @@ fn get_transaction_receipt_finalized<A, BE, G, C, P, H>(
     chain_id: Felt,
     substrate_block_hash: DHashT,
     transaction_hash: FieldElement,
-) -> RpcResult<MaybePendingTransactionReceipt>
+) -> RpcResult<TransactionReceiptWithBlockInfo>
 where
     A: ChainApi<Block = DBlockT> + 'static,
     P: TransactionPool<Block = DBlockT> + 'static,
@@ -122,16 +112,19 @@ where
     let execution_resources = match execution_infos.execute_call_info {
         Some(ref call_info) => blockifier_call_info_to_starknet_resources(call_info),
         None => ExecutionResources {
-            steps: 0,
-            memory_holes: None,
-            range_check_builtin_applications: None,
-            pedersen_builtin_applications: None,
-            poseidon_builtin_applications: None,
-            ec_op_builtin_applications: None,
-            ecdsa_builtin_applications: None,
-            bitwise_builtin_applications: None,
-            keccak_builtin_applications: None,
-            segment_arena_builtin: None,
+            computation_resources: ComputationResources {
+                steps: todo!(),
+                memory_holes: todo!(),
+                range_check_builtin_applications: todo!(),
+                pedersen_builtin_applications: todo!(),
+                poseidon_builtin_applications: todo!(),
+                ec_op_builtin_applications: todo!(),
+                ecdsa_builtin_applications: todo!(),
+                bitwise_builtin_applications: todo!(),
+                keccak_builtin_applications: todo!(),
+                segment_arena_builtin: todo!(),
+            },
+            data_resources: DataResources { data_availability: todo!() },
         },
     };
 
@@ -150,8 +143,6 @@ where
             transaction_hash,
             actual_fee,
             finality_status,
-            block_hash: block_hash.into(),
-            block_number,
             messages_sent,
             events,
             execution_resources,
@@ -161,8 +152,6 @@ where
             transaction_hash,
             actual_fee,
             finality_status,
-            block_hash: block_hash.into(),
-            block_number,
             messages_sent,
             events,
             execution_resources,
@@ -174,8 +163,6 @@ where
             transaction_hash,
             actual_fee,
             finality_status,
-            block_hash: block_hash.into(),
-            block_number,
             messages_sent,
             events,
             execution_resources,
@@ -186,8 +173,6 @@ where
             transaction_hash,
             actual_fee,
             finality_status,
-            block_hash: block_hash.into(),
-            block_number,
             messages_sent,
             events,
             execution_resources,
@@ -196,143 +181,7 @@ where
         _ => unreachable!("Deploy transactions are not supported"),
     };
 
-    Ok(MaybePendingTransactionReceipt::Receipt(receipt))
-}
-
-fn get_transaction_receipt_pending<A, BE, G, C, P, H>(
-    client: &Starknet<A, BE, G, C, P, H>,
-    chain_id: Felt,
-    substrate_block_hash: DHashT,
-    transaction_hash: FieldElement,
-) -> RpcResult<MaybePendingTransactionReceipt>
-where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let block = get_pending_block()
-        .ok_or(Error::Custom("Failed to retrieve pending block, node not yet synchronized".to_string()))?;
-    let block_header = block.header();
-    let block_number = block_header.block_number;
-    let block_hash: Felt252Wrapper = block_header.hash::<H>();
-
-    // computes the previous SUBSTRATE block hash
-    let previous_block_hash = previous_block_hash(client, block_number)?;
-
-    let block_txs_hashes = tx_hash_compute::<H>(&block, chain_id);
-
-    let (tx_index, _) = block_txs_hashes.into_iter().enumerate().find(|(_, hash)| hash == &transaction_hash).unwrap();
-
-    let transaction = block.transactions().get(tx_index).ok_or_else(|| {
-        log::error!("Failed to retrieve transaction at index {tx_index} from block with hash {block_hash:?}");
-        StarknetRpcApiError::InternalServerError
-    })?;
-
-    // TODO: remove this line when deploy is supported
-    if let Transaction::Deploy(_) = transaction {
-        log::error!("re executing a deploy transaction is not supported yet");
-        return Err(StarknetRpcApiError::UnimplementedMethod.into());
-    }
-
-    let transactions = transactions(client, substrate_block_hash, chain_id, &block, block_number, tx_index)?;
-
-    let fee_token_address = client.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
-        log::error!("Failed to retrieve fee token address");
-        StarknetRpcApiError::InternalServerError
-    })?;
-    // TODO: convert the real chain_id in String
-    let block_context =
-        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
-    let execution_infos = execution_infos(client, previous_block_hash, transactions, &block_context)?;
-
-    // TODO(#1291): compute message hash correctly to L1HandlerTransactionReceipt
-    let message_hash: Hash256 = Hash256::from_felt(&FieldElement::default());
-
-    // TODO: implement fee in Fri when Blockifier will support it
-    let actual_fee = starknet_core::types::FeePayment {
-        amount: execution_infos.actual_fee.0.into(),
-        unit: starknet_core::types::PriceUnit::Wei,
-    };
-
-    let execution_result = match execution_infos.revert_error.clone() {
-        Some(err) => ExecutionResult::Reverted { reason: err },
-        None => ExecutionResult::Succeeded,
-    };
-
-    let execution_resources = match execution_infos.execute_call_info {
-        Some(ref call_info) => blockifier_call_info_to_starknet_resources(call_info),
-        None => ExecutionResources {
-            steps: 0,
-            memory_holes: None,
-            range_check_builtin_applications: None,
-            pedersen_builtin_applications: None,
-            poseidon_builtin_applications: None,
-            ec_op_builtin_applications: None,
-            ecdsa_builtin_applications: None,
-            bitwise_builtin_applications: None,
-            keccak_builtin_applications: None,
-            segment_arena_builtin: None,
-        },
-    };
-
-    let events = match execution_infos.execute_call_info {
-        Some(ref call_info) => extract_events_from_call_info(call_info),
-        None => vec![],
-    };
-
-    let messages_sent = match execution_infos.execute_call_info {
-        Some(ref call_info) => extract_messages_from_call_info(call_info),
-        None => vec![],
-    };
-
-    // TODO: use actual execution ressources
-    let receipt = match transaction {
-        Transaction::Declare(_) => PendingTransactionReceipt::Declare(PendingDeclareTransactionReceipt {
-            transaction_hash,
-            actual_fee,
-            messages_sent,
-            events,
-            execution_resources,
-            execution_result,
-        }),
-        Transaction::DeployAccount(tx) => {
-            PendingTransactionReceipt::DeployAccount(PendingDeployAccountTransactionReceipt {
-                transaction_hash,
-                actual_fee,
-                messages_sent,
-                events,
-                execution_resources,
-                execution_result,
-                // TODO: retrieve account address
-                contract_address: FieldElement::default(),
-            })
-        }
-        Transaction::Invoke(_) => PendingTransactionReceipt::Invoke(PendingInvokeTransactionReceipt {
-            transaction_hash,
-            actual_fee,
-            messages_sent,
-            events,
-            execution_resources,
-            execution_result,
-        }),
-        Transaction::L1Handler(_) => PendingTransactionReceipt::L1Handler(PendingL1HandlerTransactionReceipt {
-            message_hash,
-            transaction_hash,
-            actual_fee,
-            messages_sent,
-            events,
-            execution_resources,
-            execution_result,
-        }),
-        _ => unreachable!("Pending deploy transactions are not supported"),
-    };
-
-    Ok(MaybePendingTransactionReceipt::PendingReceipt(receipt))
+    Ok(TransactionReceiptWithBlockInfo { receipt, block: todo!() })
 }
 
 fn previous_block_hash<A, BE, G, C, P, H>(client: &Starknet<A, BE, G, C, P, H>, block_number: u64) -> RpcResult<DHashT>
@@ -504,16 +353,8 @@ fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcRe
     // Also should no be a problem as a declare transaction *should* not be able to
     // reference a contract class created on the same block (this kind of issue
     // might otherwise arise for `pending` blocks)
-    let contract_class = DeoxysBackend::sierra_classes()
-        .get_sierra_class(class_hash)
-        .map_err(|e| {
-            log::error!("Failed to fetch sierra class with hash {class_hash}: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .ok_or_else(|| {
-            log::error!("The sierra class with hash {class_hash} is not present in db backend");
-            StarknetRpcApiError::InternalServerError
-        })?;
+    // TODO: change this contract class to the correct one
+    let contract_class = starknet_api::state::ContractClass::default();
 
     let contract_class = mp_transactions::utils::sierra_to_casm_contract_class(contract_class).map_err(|e| {
         log::error!("Failed to convert the SierraContractClass to CasmContractClass: {e}");
@@ -632,7 +473,7 @@ where
 pub async fn get_transaction_receipt<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
     transaction_hash: FieldElement,
-) -> RpcResult<MaybePendingTransactionReceipt>
+) -> RpcResult<TransactionReceiptWithBlockInfo>
 where
     A: ChainApi<Block = DBlockT> + 'static,
     P: TransactionPool<Block = DBlockT> + 'static,
@@ -652,18 +493,5 @@ where
 
     let chain_id = starknet.chain_id()?;
 
-    match substrate_block_hash {
-        Some(substrate_block_hash) => {
-            get_transaction_receipt_finalized(starknet, chain_id, substrate_block_hash, transaction_hash)
-        }
-        None => {
-            let substrate_block_hash =
-                starknet.substrate_block_hash_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
-                    log::error!("'{e}'");
-                    StarknetRpcApiError::BlockNotFound
-                })?;
-
-            get_transaction_receipt_pending(starknet, chain_id, substrate_block_hash, transaction_hash)
-        }
-    }
+    get_transaction_receipt_finalized(starknet, chain_id, substrate_block_hash.unwrap(), transaction_hash)
 }

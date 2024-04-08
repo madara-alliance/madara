@@ -93,6 +93,7 @@ mp-block = { workspace = true }
 mp-contract = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-sequencer-address = { workspace = true, features = ["client"] }
+mp-types = { workspace = true }
 
 # CLI-specific dependencies
 try-runtime-cli = { optional = true, git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
