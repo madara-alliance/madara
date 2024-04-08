@@ -103,9 +103,9 @@ pub trait StarknetReadRpcApi {
     #[method(name = "call")]
     fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<String>>;
 
-    /// Get the chain id
-    #[method(name = "chainId")]
-    fn chain_id(&self) -> RpcResult<Felt>;
+    //   /// Get the chain id
+    // #[method(name = "chainId")]
+    // fn chain_id(&self) -> RpcResult<Felt>;
 
     /// Get the number of transactions in a block given a block id
     #[method(name = "getBlockTransactionCount")]
@@ -267,6 +267,12 @@ impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
     }
 }
 
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
+    fn chain_id(&self) -> RpcResult<Felt> {
+        methods::read::chain_id::chain_id()
+    }
+}
+
 impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
 where
     C: HeaderBackend<DBlockT> + 'static,
@@ -281,7 +287,7 @@ where
     C: HeaderBackend<DBlockT> + 'static,
 {
     pub fn current_spec_version(&self) -> RpcResult<String> {
-        Ok("0.5.1".to_string())
+        Ok("0.7.0".to_string())
     }
 }
 
