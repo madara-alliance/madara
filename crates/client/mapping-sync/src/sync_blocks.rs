@@ -76,7 +76,7 @@ where
                                 strk_l1_gas_price: NonZeroU128::new(1).unwrap(),
                                 eth_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
                                 strk_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
-                            });                            
+                            });
 
                             // sending f64::MIN in case we exceed f64 (highly unlikely). The min numbers will
                             // allow dashboards to catch anomalies so that it can be investigated.
@@ -86,17 +86,13 @@ where
                             block_metrics
                                 .event_count
                                 .inc_by(f64::from_u128(starknet_block.header().event_count).unwrap_or(f64::MIN));
-                            block_metrics.l1_gas_price_wei.set(
-                                f64::from_u128(
-                                    l1_gas_price.eth_l1_gas_price.into(),
-                                ).unwrap_or(f64::MIN)
-                            );
+                            block_metrics
+                                .l1_gas_price_wei
+                                .set(f64::from_u128(l1_gas_price.eth_l1_gas_price.into()).unwrap_or(f64::MIN));
 
-                            block_metrics.l1_gas_price_strk.set(
-                                f64::from_u128(
-                                   l1_gas_price.strk_l1_gas_price.into(),
-                                ).unwrap_or(f64::MIN)
-                            )
+                            block_metrics
+                                .l1_gas_price_strk
+                                .set(f64::from_u128(l1_gas_price.strk_l1_gas_price.into()).unwrap_or(f64::MIN))
                         }
 
                         DeoxysBackend::mapping().write_hashes(mapping_commitment).map_err(|e| anyhow::anyhow!(e))

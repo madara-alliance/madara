@@ -39,9 +39,9 @@ use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
-    InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee, StateDiff, SyncStatusType,
-    Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash, MaybePendingBlockWithReceipts,
+    InvokeTransactionResult, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+    MaybePendingStateUpdate, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee, StateDiff,
+    SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
 
 use crate::methods::get_block::{

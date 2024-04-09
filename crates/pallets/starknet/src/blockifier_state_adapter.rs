@@ -14,8 +14,7 @@ use sp_runtime::Storage;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
-use starknet_core::types::contract;
-use starknet_core::types::{BlockId, BlockTag};
+use starknet_core::types::{contract, BlockId, BlockTag};
 use starknet_crypto::FieldElement;
 
 use crate::{Config, Pallet};
@@ -70,11 +69,11 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
 
         match search {
             Ok(Some(value)) => Ok(StarkFelt(value.to_bytes_be())),
-            None => Ok(StarkFelt::default()),
-            // _ => Err(StateError::StateReadError(format!(
-            //      "Failed to retrieve storage value for contract {} at key {}",
-            //      contract_address.0.0, key.0.0
-            // ))),
+            Ok(None) => Ok(StarkFelt::default()),
+            _ => Err(StateError::StateReadError(format!(
+                "Failed to retrieve storage value for contract {} at key {}",
+                contract_address.0.0, key.0.0
+            ))),
         }
     }
 
@@ -116,7 +115,7 @@ impl<T: Config> State for BlockifierStateAdapter<T> {
         value: StarkFelt,
     ) -> StateResult<()> {
         self.storage_update.insert((contract_address, key), value);
-      
+
         Ok(())
     }
 

@@ -53,7 +53,7 @@ sp_api::decl_runtime_apis! {
         /// Returns the fee token address.
         fn fee_token_addresses() -> FeeTokenAddresses;
         /// Returns the block with transactions receipts
-        //fn block_with_receipts() -> 
+        //fn block_with_receipts() ->
         /// Returns fee estimate
         fn estimate_fee(transactions: Vec<AccountTransaction>, simulation_flags: Vec<SimulationFlagForEstimateFee>,) -> Result<Vec<FeeEstimate>, DispatchError>;
         /// Returns message fee estimate
