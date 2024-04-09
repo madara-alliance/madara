@@ -22,7 +22,6 @@ use starknet_core::types::{PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
-use starknet_types_core::felt::Felt;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
@@ -220,6 +219,15 @@ where
 
                         if verify {
                             let (_, block_conv) = rayon::join(ver_l2, || convert_block(block));
+                            let last_l2_state_update =
+                                STARKNET_STATE_UPDATE.read().expect("Failed to acquire read lock on STARKNET_STATE_UPDATE");
+                            if (block_conv.header().global_state_root) != last_l2_state_update.global_root {
+                                log::info!(
+                                    "❗ Verified state: {:?} doesn't match fetched state: {:?}",
+                                    last_l2_state_update.global_root,
+                                    block_conv.header().global_state_root
+                                );
+                            }
                             block_conv
                         } else {
                             convert_block(block)
@@ -310,9 +318,6 @@ pub fn verify_l2(
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
     let state_root = update_state_root(csd, Arc::clone(overrides), block_number, substrate_block_hash);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
-
-    let state_root_display = Felt::from_bytes_be(&state_root.0.to_bytes_be());
-    log::info!("🌳 State root #{block_number}: {state_root_display:#064x}");
 
     update_l2(L2StateUpdate {
         block_number,
