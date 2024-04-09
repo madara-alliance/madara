@@ -17,8 +17,6 @@ use starknet_core::types::{SimulationFlag, SimulationFlagForEstimateFee as Estim
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct PlaceHolderErrorTypeForFailedStarknetExecution;
 
-pub type TransactionSimulationResult = Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]

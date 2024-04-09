@@ -28,9 +28,9 @@ use starknet_api::transaction as stx;
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
     BlockStatus, CompressedLegacyContractClass, ComputationResources, ContractClass, ContractStorageDiffItem,
-    DataResources, DeclaredClassItem, DeployedContractItem, EntryPointsByType, Event, ExecutionResources, FieldElement,
-    FlattenedSierraClass, FromByteArrayError, LegacyContractEntryPoint, LegacyEntryPointsByType, MsgToL1, NonceUpdate,
-    ReplacedClassItem, ResourcePrice, StateDiff, StorageEntry,
+    DataAvailabilityResources, DataResources, DeclaredClassItem, DeployedContractItem, EntryPointsByType, Event,
+    ExecutionResources, FieldElement, FlattenedSierraClass, FromByteArrayError, LegacyContractEntryPoint,
+    LegacyEntryPointsByType, MsgToL1, NonceUpdate, ReplacedClassItem, ResourcePrice, StateDiff, StorageEntry,
 };
 
 use crate::errors::StarknetRpcApiError;
@@ -122,7 +122,8 @@ pub fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> Execut
             keccak_builtin_applications,
             segment_arena_builtin,
         },
-        data_resources: DataResources { data_availability: todo!() },
+        // TODO: add data resources when blockifier supports it
+        data_resources: DataResources { data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 0 } },
     }
 }
 

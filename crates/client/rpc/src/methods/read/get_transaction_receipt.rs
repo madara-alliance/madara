@@ -22,9 +22,10 @@ use starknet_api::transaction::{
     DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction, Transaction, TransactionHash,
 };
 use starknet_core::types::{
-    BlockId, ComputationResources, DataResources, DeclareTransactionReceipt, DeployAccountTransactionReceipt,
-    ExecutionResources, ExecutionResult, FieldElement, Hash256, InvokeTransactionReceipt, L1HandlerTransactionReceipt,
-    TransactionFinalityStatus, TransactionReceipt, TransactionReceiptWithBlockInfo,
+    BlockId, ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionReceipt,
+    DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult, FieldElement, Hash256,
+    InvokeTransactionReceipt, L1HandlerTransactionReceipt, TransactionFinalityStatus, TransactionReceipt,
+    TransactionReceiptWithBlockInfo,
 };
 
 use crate::errors::StarknetRpcApiError;
@@ -109,22 +110,25 @@ where
         None => ExecutionResult::Succeeded,
     };
 
+    // no execution resources for declare transactions
     let execution_resources = match execution_infos.execute_call_info {
         Some(ref call_info) => blockifier_call_info_to_starknet_resources(call_info),
         None => ExecutionResources {
             computation_resources: ComputationResources {
-                steps: todo!(),
-                memory_holes: todo!(),
-                range_check_builtin_applications: todo!(),
-                pedersen_builtin_applications: todo!(),
-                poseidon_builtin_applications: todo!(),
-                ec_op_builtin_applications: todo!(),
-                ecdsa_builtin_applications: todo!(),
-                bitwise_builtin_applications: todo!(),
-                keccak_builtin_applications: todo!(),
-                segment_arena_builtin: todo!(),
+                steps: 0,
+                memory_holes: None,
+                range_check_builtin_applications: None,
+                pedersen_builtin_applications: None,
+                poseidon_builtin_applications: None,
+                ec_op_builtin_applications: None,
+                ecdsa_builtin_applications: None,
+                bitwise_builtin_applications: None,
+                keccak_builtin_applications: None,
+                segment_arena_builtin: None,
             },
-            data_resources: DataResources { data_availability: todo!() },
+            data_resources: DataResources {
+                data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 0 },
+            },
         },
     };
 
@@ -181,7 +185,9 @@ where
         _ => unreachable!("Deploy transactions are not supported"),
     };
 
-    Ok(TransactionReceiptWithBlockInfo { receipt, block: todo!() })
+    let block_info = starknet_core::types::ReceiptBlock::Block { block_hash: block_hash.0, block_number };
+
+    Ok(TransactionReceiptWithBlockInfo { receipt, block: block_info })
 }
 
 fn previous_block_hash<A, BE, G, C, P, H>(client: &Starknet<A, BE, G, C, P, H>, block_number: u64) -> RpcResult<DHashT>
@@ -433,10 +439,6 @@ where
         })?
         .map_err(|e| {
             log::error!("Failed to reexecute the transactions: {e:?}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .map_err(|e| {
-            log::error!("One of the transaction failed during it's reexecution: {e:?}");
             StarknetRpcApiError::InternalServerError
         })?
         .pop()

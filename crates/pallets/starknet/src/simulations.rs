@@ -43,6 +43,7 @@ impl<T: Config> Pallet<T> {
 
         let mut fees = Vec::with_capacity(transactions_len);
 
+        // TODO: the vector of flags should be for each transaction
         for tx in transactions {
             for flag in simulation_flags.iter() {
                 match Self::execute_fee_transaction(tx.clone().into(), &block_context, flag.clone()) {
@@ -177,24 +178,7 @@ impl<T: Config> Pallet<T> {
         transactions_before: Vec<Transaction>,
         transactions_to_trace: Vec<Transaction>,
         block_context: &BlockContext,
-    ) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>
-    {
-        storage::transactional::with_transaction(|| {
-            storage::TransactionOutcome::Rollback(Result::<_, DispatchError>::Ok(Self::re_execute_transactions_inner(
-                transactions_before,
-                transactions_to_trace,
-                block_context,
-            )))
-        })
-        .map_err(|_| Error::<T>::FailedToCreateATransactionalStorageExecution)?
-    }
-
-    fn re_execute_transactions_inner(
-        transactions_before: Vec<Transaction>,
-        transactions_to_trace: Vec<Transaction>,
-        block_context: &BlockContext,
-    ) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>
-    {
+    ) -> Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution> {
         let charge_fee = if block_context.block_info().gas_prices.eth_l1_gas_price.get() == 1 { false } else { true };
         let mut cached_state = Self::init_cached_state();
 
@@ -204,7 +188,7 @@ impl<T: Config> Pallet<T> {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
                 log::error!("Transaction execution failed during re-execution: {e}");
-                Error::<T>::FailedToCreateATransactionalStorageExecution
+                PlaceHolderErrorTypeForFailedStarknetExecution
             })?;
 
         let transactions_exec_infos = transactions_to_trace
@@ -213,10 +197,10 @@ impl<T: Config> Pallet<T> {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
                 log::error!("Transaction execution failed during re-execution: {e}");
-                Error::<T>::FailedToCreateATransactionalStorageExecution
+                PlaceHolderErrorTypeForFailedStarknetExecution
             })?;
 
-        Ok(Ok(transactions_exec_infos))
+        Ok(transactions_exec_infos)
     }
 
     fn execute_fee_transaction(
