@@ -22,7 +22,7 @@ use crate::{Config, Error, Pallet};
 impl<T: Config> Pallet<T> {
     pub fn estimate_fee(
         transactions: Vec<AccountTransaction>,
-        simulation_flags: &Vec<SimulationFlagForEstimateFee>,
+        simulation_flags: &[SimulationFlagForEstimateFee],
     ) -> Result<Vec<FeeEstimate>, DispatchError> {
         storage::transactional::with_transaction(|| {
             storage::TransactionOutcome::Rollback(Result::<_, DispatchError>::Ok(Self::estimate_fee_inner(
@@ -35,10 +35,9 @@ impl<T: Config> Pallet<T> {
 
     fn estimate_fee_inner(
         transactions: Vec<AccountTransaction>,
-        simulation_flags: &Vec<SimulationFlagForEstimateFee>,
+        simulation_flags: &[SimulationFlagForEstimateFee],
     ) -> Result<Vec<FeeEstimate>, DispatchError> {
         let transactions_len = transactions.len();
-        let chain_id = Self::chain_id();
         let block_context = Self::get_block_context();
 
         let mut fees = Vec::with_capacity(transactions_len);
@@ -46,7 +45,7 @@ impl<T: Config> Pallet<T> {
         // TODO: the vector of flags should be for each transaction
         for tx in transactions {
             for flag in simulation_flags.iter() {
-                match Self::execute_fee_transaction(tx.clone().into(), &block_context, flag.clone()) {
+                match Self::execute_fee_transaction(tx.clone(), &block_context, flag.clone()) {
                     Ok(execution_info) => fees.push(execution_info),
                     Err(e) => {
                         log::error!("Transaction execution failed during fee estimation: {e}");
@@ -118,7 +117,7 @@ impl<T: Config> Pallet<T> {
     ) -> Result<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {
         let block_context = Self::get_block_context();
 
-        let tx_execution_result = Self::execute_message(message, &block_context, &simulation_flags).map_err(|e| {
+        let tx_execution_result = Self::execute_message(message, &block_context, simulation_flags).map_err(|e| {
             log::error!("Transaction execution failed during simulation: {e}");
             PlaceHolderErrorTypeForFailedStarknetExecution
         });
@@ -179,7 +178,7 @@ impl<T: Config> Pallet<T> {
         transactions_to_trace: Vec<Transaction>,
         block_context: &BlockContext,
     ) -> Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution> {
-        let charge_fee = if block_context.block_info().gas_prices.eth_l1_gas_price.get() == 1 { false } else { true };
+        let charge_fee = block_context.block_info().gas_prices.eth_l1_gas_price.get() != 1;
         let mut cached_state = Self::init_cached_state();
 
         transactions_before
@@ -220,17 +219,17 @@ impl<T: Config> Pallet<T> {
         };
 
         let minimal_l1_gas_amount_vector = estimate_minimal_gas_vector(block_context, &transaction)
-            .map_err(|e| TransactionExecutionError::TransactionPreValidationError(e));
+            .map_err(TransactionExecutionError::TransactionPreValidationError);
 
         let tx_info: Result<
             blockifier::transaction::objects::TransactionExecutionInfo,
             blockifier::transaction::errors::TransactionExecutionError,
-        > = transaction.execute(&mut cached_state, &block_context, false, simulation_flags.skip_validate).and_then(
+        > = transaction.execute(&mut cached_state, block_context, false, simulation_flags.skip_validate).and_then(
             |mut tx_info| {
                 if tx_info.actual_fee.0 == 0 {
                     tx_info.actual_fee = blockifier::fee::fee_utils::calculate_tx_fee(
                         &tx_info.actual_resources,
-                        &block_context,
+                        block_context,
                         &fee_type,
                     )?;
                 }
@@ -258,13 +257,11 @@ impl<T: Config> Pallet<T> {
                 );
                 Ok(fee_estimate)
             }
-            Err(_error) => {
-                return Err(TransactionExecutionError::ExecutionError {
-                    error: EntryPointExecutionError::InternalError("Execution error".to_string()),
-                    storage_address: ContractAddress::default(),
-                    selector: EntryPointSelector::default(),
-                });
-            }
+            Err(_error) => Err(TransactionExecutionError::ExecutionError {
+                error: EntryPointExecutionError::InternalError("Execution error".to_string()),
+                storage_address: ContractAddress::default(),
+                selector: EntryPointSelector::default(),
+            }),
         }
     }
 

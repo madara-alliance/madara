@@ -24,9 +24,9 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::transaction as stx;
 use starknet_core::types::{
-    BlockId, ComputationResources, DataResources, DeclareTransactionTrace, DeployAccountTransactionTrace,
-    ExecuteInvocation, ExecutionResources, InvokeTransactionTrace, L1HandlerTransactionTrace, RevertedInvocation,
-    TransactionTrace,
+    BlockId, ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
+    DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, InvokeTransactionTrace,
+    L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace,
 };
 use starknet_ff::FieldElement;
 
@@ -139,20 +139,17 @@ pub fn try_get_funtion_invocation_from_call_info<B: BlockT>(
     };
 
     // TODO: Replace this with non default exec resources
-    let execution_resources = ExecutionResources {
-        computation_resources: ComputationResources {
-            steps: todo!(),
-            memory_holes: todo!(),
-            range_check_builtin_applications: todo!(),
-            pedersen_builtin_applications: todo!(),
-            poseidon_builtin_applications: todo!(),
-            ec_op_builtin_applications: todo!(),
-            ecdsa_builtin_applications: todo!(),
-            bitwise_builtin_applications: todo!(),
-            keccak_builtin_applications: todo!(),
-            segment_arena_builtin: todo!(),
-        },
-        data_resources: DataResources { data_availability: todo!() },
+    let computation_resources = ComputationResources {
+        steps: 0,
+        memory_holes: None,
+        range_check_builtin_applications: None,
+        pedersen_builtin_applications: None,
+        poseidon_builtin_applications: None,
+        ec_op_builtin_applications: None,
+        ecdsa_builtin_applications: None,
+        bitwise_builtin_applications: None,
+        keccak_builtin_applications: None,
+        segment_arena_builtin: None,
     };
 
     Ok(starknet_core::types::FunctionInvocation {
@@ -167,7 +164,7 @@ pub fn try_get_funtion_invocation_from_call_info<B: BlockT>(
         calls: inner_calls,
         events,
         messages,
-        execution_resources: execution_resources.computation_resources,
+        execution_resources: computation_resources,
     })
 }
 
@@ -182,18 +179,18 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
     // TODO: Replace this with non default exec resources
     let execution_resources = ExecutionResources {
         computation_resources: ComputationResources {
-            steps: todo!(),
-            memory_holes: todo!(),
-            range_check_builtin_applications: todo!(),
-            pedersen_builtin_applications: todo!(),
-            poseidon_builtin_applications: todo!(),
-            ec_op_builtin_applications: todo!(),
-            ecdsa_builtin_applications: todo!(),
-            bitwise_builtin_applications: todo!(),
-            keccak_builtin_applications: todo!(),
-            segment_arena_builtin: todo!(),
+            steps: 0,
+            memory_holes: None,
+            range_check_builtin_applications: None,
+            pedersen_builtin_applications: None,
+            poseidon_builtin_applications: None,
+            ec_op_builtin_applications: None,
+            ecdsa_builtin_applications: None,
+            bitwise_builtin_applications: None,
+            keccak_builtin_applications: None,
+            segment_arena_builtin: None,
         },
-        data_resources: DataResources { data_availability: todo!() },
+        data_resources: DataResources { data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 0 } },
     };
 
     // If simulated with `SimulationFlag::SkipValidate` this will be `None`

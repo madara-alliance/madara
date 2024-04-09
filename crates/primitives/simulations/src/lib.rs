@@ -5,7 +5,6 @@ pub extern crate alloc;
 
 use alloc::vec::Vec;
 
-use blockifier::transaction::objects::TransactionExecutionInfo;
 use starknet_core::types::{SimulationFlag, SimulationFlagForEstimateFee as EstimateFeeFlag};
 
 // TODO: This is a placeholder

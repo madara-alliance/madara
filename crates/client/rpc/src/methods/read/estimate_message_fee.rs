@@ -96,20 +96,17 @@ pub fn convert_message_into_tx<H: HasherT + Send + Sync + 'static>(
     chain_id: Felt252Wrapper,
     block_number: Option<u64>,
 ) -> L1HandlerTransaction {
-    let transaction = {
-        let calldata = std::iter::once(Felt252Wrapper::from(message.from_address).into())
-            .chain(message.payload.into_iter().map(|felt| Felt252Wrapper::from(felt).into()))
-            .collect();
-        let tx = starknet_api::transaction::L1HandlerTransaction {
-            version: TransactionVersion::ZERO,
-            nonce: Nonce(StarkFelt::ZERO),
-            contract_address: Felt252Wrapper::from(message.to_address).into(),
-            entry_point_selector: Felt252Wrapper::from(message.entry_point_selector).into(),
-            calldata: Calldata(Arc::new(calldata)),
-        };
-        let tx_hash = tx.compute_hash::<H>(chain_id, true, block_number);
-
-        L1HandlerTransaction { tx, tx_hash, paid_fee_on_l1: Fee(10) }
+    let calldata = std::iter::once(Felt252Wrapper::from(message.from_address).into())
+        .chain(message.payload.into_iter().map(|felt| Felt252Wrapper::from(felt).into()))
+        .collect();
+    let tx = starknet_api::transaction::L1HandlerTransaction {
+        version: TransactionVersion::ZERO,
+        nonce: Nonce(StarkFelt::ZERO),
+        contract_address: Felt252Wrapper::from(message.to_address).into(),
+        entry_point_selector: Felt252Wrapper::from(message.entry_point_selector).into(),
+        calldata: Calldata(Arc::new(calldata)),
     };
-    transaction
+    let tx_hash = tx.compute_hash::<H>(chain_id, true, block_number);
+
+    L1HandlerTransaction { tx, tx_hash, paid_fee_on_l1: Fee(10) }
 }

@@ -438,6 +438,8 @@ fn deploy_account_to_account_transaction(
     Ok(user_tx)
 }
 
+// TODO: is this function needed?
+#[allow(dead_code)]
 fn cast_vec_of_field_elements(data: Vec<FieldElement>) -> Vec<Felt252Wrapper> {
     // Non-copy but less dangerous than transmute
     // https://doc.rust-lang.org/std/mem/fn.transmute.html#alternatives
@@ -589,9 +591,9 @@ pub fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractC
         compiler_version: casm_contract_class.compiler_version.clone(),
         bytecode: casm_contract_class.bytecode.iter().map(|x| biguint_to_field_element(&x.value)).collect(),
         entry_points_by_type: casm_entry_points_to_compiled_entry_points(&casm_contract_class.entry_points_by_type),
-        hints: vec![],                     // not needed to get class hash so ignoring this
-        pythonic_hints: None,              // not needed to get class hash so ignoring this
-        bytecode_segment_lengths: todo!(), // TODO: implement this
+        hints: vec![],                    // not needed to get class hash so ignoring this
+        pythonic_hints: None,             // not needed to get class hash so ignoring this
+        bytecode_segment_lengths: vec![], // TODO: implement this
     }
 }
 
@@ -638,8 +640,8 @@ pub fn core_resources_to_api_resources(
     api_resources_map.insert(
         stx::Resource::L1Gas, // Assuming you have an enum Resource with L1Gas and L2Gas variants
         stx::ResourceBounds {
-            max_amount: core_resources.l1_gas.max_amount.into(),
-            max_price_per_unit: core_resources.l1_gas.max_price_per_unit.into(),
+            max_amount: core_resources.l1_gas.max_amount,
+            max_price_per_unit: core_resources.l1_gas.max_price_per_unit,
         },
     );
 
@@ -647,8 +649,8 @@ pub fn core_resources_to_api_resources(
     api_resources_map.insert(
         stx::Resource::L2Gas,
         stx::ResourceBounds {
-            max_amount: core_resources.l2_gas.max_amount.into(),
-            max_price_per_unit: core_resources.l2_gas.max_price_per_unit.into(),
+            max_amount: core_resources.l2_gas.max_amount,
+            max_price_per_unit: core_resources.l2_gas.max_price_per_unit,
         },
     );
 

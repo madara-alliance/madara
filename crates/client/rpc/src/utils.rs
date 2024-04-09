@@ -29,8 +29,9 @@ use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, Com
 use starknet_core::types::{
     BlockStatus, CompressedLegacyContractClass, ComputationResources, ContractClass, ContractStorageDiffItem,
     DataAvailabilityResources, DataResources, DeclaredClassItem, DeployedContractItem, EntryPointsByType, Event,
-    ExecutionResources, FieldElement, FlattenedSierraClass, FromByteArrayError, LegacyContractEntryPoint,
-    LegacyEntryPointsByType, MsgToL1, NonceUpdate, ReplacedClassItem, ResourcePrice, StateDiff, StorageEntry,
+    ExecutionResources, FieldElement, FlattenedSierraClass, FromByteArrayError, L1DataAvailabilityMode,
+    LegacyContractEntryPoint, LegacyEntryPointsByType, MsgToL1, NonceUpdate, ReplacedClassItem, ResourcePrice,
+    StateDiff, StorageEntry,
 };
 
 use crate::errors::StarknetRpcApiError;
@@ -208,6 +209,14 @@ pub(crate) fn l1_data_gas_price(block: &DeoxysBlock) -> ResourcePrice {
     }
 }
 
+pub(crate) fn l1_da_mode(block: &DeoxysBlock) -> L1DataAvailabilityMode {
+    let l1_da_mode = block.header().l1_da_mode;
+    match l1_da_mode {
+        starknet_api::data_availability::L1DataAvailabilityMode::Calldata => L1DataAvailabilityMode::Calldata,
+        starknet_api::data_availability::L1DataAvailabilityMode::Blob => L1DataAvailabilityMode::Blob,
+    }
+}
+
 pub(crate) fn starknet_version(block: &DeoxysBlock) -> String {
     block.header().protocol_version.from_utf8().expect("starknet version should be a valid utf8 string")
 }
@@ -340,7 +349,7 @@ fn to_legacy_entry_points_by_type(
 /// Returns a [LegacyContractEntryPoint] (starknet-rs) from a [EntryPoint] (starknet-api)
 fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryPoint, FromByteArrayError> {
     let selector = FieldElement::from_bytes_be(&entry_point.selector.0.0)?;
-    let offset = entry_point.offset.0 as u64;
+    let offset = entry_point.offset.0;
     Ok(LegacyContractEntryPoint { selector, offset })
 }
 
@@ -370,9 +379,9 @@ fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractClass
         compiler_version: casm_contract_class.compiler_version.clone(),
         bytecode: casm_contract_class.bytecode.iter().map(|x| biguint_to_field_element(&x.value)).collect(),
         entry_points_by_type: casm_entry_points_to_compiled_entry_points(&casm_contract_class.entry_points_by_type),
-        hints: vec![],                     // not needed to get class hash so ignoring this
-        pythonic_hints: None,              // not needed to get class hash so ignoring this
-        bytecode_segment_lengths: todo!(), // TODO: implement this
+        hints: vec![],                    // not needed to get class hash so ignoring this
+        pythonic_hints: None,             // not needed to get class hash so ignoring this
+        bytecode_segment_lengths: vec![], // TODO: implement this
     }
 }
 

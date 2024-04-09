@@ -340,7 +340,7 @@ impl_runtime_apis! {
         }
 
         fn get_block_context() -> blockifier::context::BlockContext {
-           Starknet::get_block_context().into()
+           Starknet::get_block_context()
         }
     }
 

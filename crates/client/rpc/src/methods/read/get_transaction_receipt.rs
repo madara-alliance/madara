@@ -152,7 +152,7 @@ where
             execution_resources,
             execution_result,
         }),
-        Transaction::DeployAccount(tx) => TransactionReceipt::DeployAccount(DeployAccountTransactionReceipt {
+        Transaction::DeployAccount(_) => TransactionReceipt::DeployAccount(DeployAccountTransactionReceipt {
             transaction_hash,
             actual_fee,
             finality_status,
@@ -235,11 +235,11 @@ where
             .filter(|tx| !matches!(tx, Transaction::Deploy(_))) // deploy transaction was not supported by blockifier
             .map(|tx| match tx {
                 Transaction::Invoke(invoke_tx) => {
-					tx_invoke_transaction(invoke_tx.clone(), invoke_tx.compute_hash::<H>(Felt252Wrapper::from(chain_id.0).into(), false, Some(block_number)))
+					tx_invoke_transaction(invoke_tx.clone(), invoke_tx.compute_hash::<H>(Felt252Wrapper::from(chain_id.0), false, Some(block_number)))
                 }
                 // TODO: add real contract address param here
                 Transaction::DeployAccount(deploy_account_tx) => {
-					tx_deploy_account(deploy_account_tx.clone(), deploy_account_tx.compute_hash::<H>(Felt252Wrapper::from(chain_id.0).into(), false, Some(block_number)), ContractAddress::default())
+					tx_deploy_account(deploy_account_tx.clone(), deploy_account_tx.compute_hash::<H>(Felt252Wrapper::from(chain_id.0), false, Some(block_number)), ContractAddress::default())
                 }
                 Transaction::Declare(declare_tx) => {
 					tx_declare(client, substrate_block_hash, declare_tx.clone())
@@ -319,7 +319,7 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let contract_class = client
+    let _contract_class = client
         .overrides
         .for_block_hash(client.client.as_ref(), substrate_block_hash)
         .contract_class_by_class_hash(substrate_block_hash, class_hash)
@@ -353,7 +353,7 @@ where
     }
 }
 
-fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcResult<btx::Transaction> {
+fn tx_declare_v2(declare_tx: DeclareTransaction, _class_hash: ClassHash) -> RpcResult<btx::Transaction> {
     // Welcome to type hell! This 3-part conversion will take you through the extenses
     // of a codebase so thick it might as well be pasta -yum!
     // Also should no be a problem as a declare transaction *should* not be able to
@@ -367,7 +367,7 @@ fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcRe
         StarknetRpcApiError::InternalServerError
     })?;
 
-    let contract_class = ContractClassBf::V1(ContractClassV1Bf::try_from(contract_class).map_err(|e| {
+    let _contract_class = ContractClassBf::V1(ContractClassV1Bf::try_from(contract_class).map_err(|e| {
         log::error!("Failed to convert the compiler CasmContractClass to blockifier CasmContractClass: {e}");
         StarknetRpcApiError::InternalServerError
     })?);
@@ -384,7 +384,7 @@ fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcRe
     match declare_tx {
         DeclareTransaction::V0(_) => todo!(),
         DeclareTransaction::V1(_) => todo!(),
-        DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
+        DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, _class_hash),
         DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
     }
 }
@@ -396,7 +396,7 @@ where
     let chain_id = chain_id.0.into();
     let tx_hash = l1_handler.compute_hash::<H>(chain_id, false, Some(block_number));
     let paid_fee =
-        DeoxysBackend::l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(tx_hash.0.into()).map_err(|e| {
+        DeoxysBackend::l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(tx_hash.0).map_err(|e| {
             log::error!("Failed to retrieve fee paid on l1 for tx with hash `{tx_hash:?}`: {e}");
             StarknetRpcApiError::InternalServerError
         })?;
