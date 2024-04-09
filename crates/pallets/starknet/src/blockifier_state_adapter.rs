@@ -111,7 +111,7 @@ impl<T: Config> State for BlockifierStateAdapter<T> {
         value: StarkFelt,
     ) -> StateResult<()> {
         self.storage_update.insert((contract_address, key), value);
-      
+
         Ok(())
     }
 

@@ -11,7 +11,7 @@ use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTran
 use frame_support::storage;
 use mp_felt::Felt252Wrapper;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlagForEstimateFee, SimulationFlags};
-use sp_core::Get; 
+use sp_core::Get;
 use sp_runtime::DispatchError;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
 

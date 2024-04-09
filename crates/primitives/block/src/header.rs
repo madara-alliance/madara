@@ -8,6 +8,7 @@ use mp_hashers::HasherT;
 use sp_core::U256;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::core::{ChainId, ContractAddress};
+use starknet_api::data_availability::L1DataAvailabilityMode;
 use starknet_api::hash::StarkHash;
 use starknet_core::types::FieldElement;
 
@@ -68,6 +69,8 @@ pub struct Header {
     pub protocol_version: Felt252Wrapper, // TODO: Verify if the type can be changed to u8 for the protocol version
     /// Gas prices for this block
     pub l1_gas_price: Option<GasPrices>,
+    /// The mode of data availability for this block
+    pub l1_da_mode: L1DataAvailabilityMode,
     /// Extraneous data that might be useful for running transactions
     pub extra_data: Option<U256>,
 }
@@ -88,6 +91,7 @@ impl Header {
         event_commitment: StarkHash,
         protocol_version: Felt252Wrapper,
         gas_prices: Option<GasPrices>,
+        l1_da_mode: L1DataAvailabilityMode,
         extra_data: Option<U256>,
     ) -> Self {
         Self {
@@ -102,6 +106,7 @@ impl Header {
             event_commitment,
             protocol_version,
             l1_gas_price: gas_prices,
+            l1_da_mode,
             extra_data,
         }
     }

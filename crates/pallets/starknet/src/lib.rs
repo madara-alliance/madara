@@ -90,9 +90,7 @@ use starknet_api::core::{
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::{
-    Calldata, Event as StarknetEvent, MessageToL1, Transaction, TransactionHash,
-};
+use starknet_api::transaction::{Calldata, Event as StarknetEvent, MessageToL1, Transaction, TransactionHash};
 use starknet_crypto::FieldElement;
 
 use crate::alloc::string::ToString;
@@ -1005,78 +1003,25 @@ impl<T: Config> Pallet<T> {
     /// * `block_number` - The block number.
     fn store_block(block_number: u64) {
         let block: DeoxysBlock;
-        if !frame_system::Pallet::<T>::digest().logs().is_empty() {
-            match &frame_system::Pallet::<T>::digest().logs()[0] {
-                DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, encoded_data) => {
-                    block = match DeoxysBlock::decode(&mut encoded_data.as_slice()) {
-                        Ok(b) => b,
-                        Err(e) => {
-                            log!(error, "Failed to decode block: {:?}", e);
-                            return;
-                        }
-                    };
+        match &frame_system::Pallet::<T>::digest().logs()[0] {
+            DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, encoded_data) => {
+                block = match DeoxysBlock::decode(&mut encoded_data.as_slice()) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        log!(error, "Failed to decode block: {:?}", e);
+                        return;
+                    }
+                };
 
-                    let blockhash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
-                    BlockHash::<T>::insert(block_number, blockhash);
-                    Pending::<T>::kill();
-                    let digest = DigestItem::Consensus(MADARA_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
-                    frame_system::Pallet::<T>::deposit_log(digest);
-                }
-                _ => {
-                    log!(info, "Block not found in store_block")
-                }
+                let blockhash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
+                BlockHash::<T>::insert(block_number, blockhash);
+                Pending::<T>::kill();
+                let digest = DigestItem::Consensus(MADARA_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
+                frame_system::Pallet::<T>::deposit_log(digest);
             }
-        } else {
-            let transactions = Self::pending();
-            let transaction_hashes = Self::pending_hashes();
-            assert_eq!(
-                transactions.len(),
-                transaction_hashes.len(),
-                "transactions and transaction hashes should be the same length"
-            );
-            let global_state_root = Felt252Wrapper::default();
-            let transaction_count = transactions.len();
-            let parent_block_hash = Self::parent_block_hash(&block_number);
-            let events_count = transaction_hashes.iter().map(|tx_hash| TxEvents::<T>::get(tx_hash).len() as u128).sum();
-            let events: Vec<StarknetEvent> = transaction_hashes.iter().flat_map(TxEvents::<T>::take).collect();
-            let sequencer_address = Self::sequencer_address();
-            let block_timestamp = Self::block_timestamp();
-            let (transaction_commitment, event_commitment) = (Felt252Wrapper::default(), Felt252Wrapper::default());
-
-            let protocol_version = T::ProtocolVersion::get();
-            let extra_data = None;
-            let l1_gas_price = None;
-            let ordered_events = vec![];
-
-            let block = DeoxysBlock::new(
-                StarknetHeader::new(
-                    parent_block_hash.into(),
-                    block_number,
-                    global_state_root.into(),
-                    sequencer_address,
-                    block_timestamp,
-                    transaction_count as u128,
-                    transaction_commitment.into(),
-                    events_count,
-                    event_commitment.into(),
-                    protocol_version,
-                    l1_gas_price,
-                    extra_data,
-                ),
-                transactions,
-                ordered_events,
-            );
-            // Save the block number <> hash mapping.
-            let blockhash = block.header().hash::<T::SystemHash>();
-            BlockHash::<T>::insert(block_number, blockhash);
-
-            // Kill pending storage.
-            // There is no need to kill `TxEvents` as we used `take` while iterating over it.
-            Pending::<T>::kill();
-            PendingHashes::<T>::kill();
-
-            let digest = DigestItem::Consensus(MADARA_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
-            frame_system::Pallet::<T>::deposit_log(digest);
+            _ => {
+                log!(info, "Block not found in store_block")
+            }
         }
     }
 

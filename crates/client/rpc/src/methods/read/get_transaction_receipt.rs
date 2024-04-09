@@ -380,7 +380,6 @@ fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcRe
         DeclareTransaction::V1(_) => todo!(),
         DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
         DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
-        
     }
 }
 
