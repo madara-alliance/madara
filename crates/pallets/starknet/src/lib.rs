@@ -66,7 +66,6 @@ use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses, Transactio
 use blockifier::execution::call_info::CallInfo;
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
-use blockifier::execution::errors::{EntryPointExecutionError, PreExecutionError};
 use blockifier::state::cached_state::{CachedState, GlobalContractCache};
 use blockifier::transaction::objects::{DeprecatedTransactionInfo, TransactionInfo};
 use blockifier::versioned_constants::VersionedConstants;
@@ -92,13 +91,12 @@ use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{
-    Calldata, DeclareTransaction, DeployAccountTransaction, Event as StarknetEvent, Fee, InvokeTransaction,
-    L1HandlerTransaction, MessageToL1, Transaction, TransactionHash,
+    Calldata, Event as StarknetEvent, MessageToL1, Transaction, TransactionHash,
 };
 use starknet_crypto::FieldElement;
 
 use crate::alloc::string::ToString;
-use crate::types::{CasmClassHash, ContractStorageKey, SierraClassHash, StorageSlot};
+use crate::types::{CasmClassHash, SierraClassHash, StorageSlot};
 
 pub(crate) const LOG_TARGET: &str = "runtime::starknet";
 
@@ -120,8 +118,6 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
-    use blockifier::transaction::account_transaction::AccountTransaction;
-    use mp_block::state_update::StorageDiffWrapper;
     use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
 
     use super::*;

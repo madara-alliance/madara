@@ -12,7 +12,7 @@ use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, BlockTag, MaybePendingBlockWithTxHashes};
 
 use crate::errors::StarknetRpcApiError;
-use crate::{get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, Starknet, StarknetReadRpcApiServer};
+use crate::{get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, Starknet};
 
 /// Get block information with transaction hashes given the block id.
 ///

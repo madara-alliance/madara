@@ -1,4 +1,3 @@
-use jsonrpsee::core::RpcResult;
 use mc_sync::l2::get_pending_block;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;

@@ -30,7 +30,7 @@ mp-hashers = { workspace = true }
 mp-types = { workspace = true }
 
 # Starknet crates
-blockifier = { workspace = true, default-features = false, features = [
+blockifier = { workspace = true, features = [
   "testing",
 ] }
 bonsai-trie = { workspace = true }

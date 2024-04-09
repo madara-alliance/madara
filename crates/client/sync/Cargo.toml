@@ -24,7 +24,7 @@ reqwest = { workspace = true }
 serde_json = "1"
 
 
-blockifier = { workspace = true, default-features = false, features = [
+blockifier = { workspace = true, features = [
   "testing",
 ] }
 futures = { workspace = true, default-features = true }
@@ -47,7 +47,7 @@ starknet-ff = { workspace = true, default-features = false, features = [
   "serde",
 ] }
 starknet-providers = { workspace = true }
-starknet_api = { workspace = true, default-features = false }
+starknet_api = { workspace = true}
 
 sc-consensus-manual-seal.workspace = true
 sp-blockchain = { workspace = true, default-features = true }
