@@ -4,6 +4,7 @@ pub mod chain_id;
 pub mod estimate_fee;
 pub mod estimate_message_fee;
 pub mod get_block_transaction_count;
+pub mod get_block_with_receipts;
 pub mod get_block_with_tx_hashes;
 pub mod get_block_with_txs;
 pub mod get_class;
