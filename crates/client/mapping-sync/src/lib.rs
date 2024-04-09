@@ -8,6 +8,7 @@
 //! # Usage
 //! The madara node should spawn a `MappingSyncWorker` among it's services.
 
+mod block_metrics;
 mod sync_blocks;
 
 use std::marker::PhantomData;
@@ -22,11 +23,14 @@ use log::debug;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHeaderT};
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
+use prometheus_endpoint::prometheus;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::client::ImportNotifications;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Header as HeaderT;
+
+use crate::block_metrics::BlockMetrics;
 
 /// The worker in charge of syncing the Madara db when it receive a new Substrate block
 pub struct MappingSyncWorker<C, BE, H> {
@@ -41,6 +45,7 @@ pub struct MappingSyncWorker<C, BE, H> {
     have_next: bool,
     retry_times: usize,
     sync_from: <DHeaderT as HeaderT>::Number,
+    block_metrics: Option<BlockMetrics>,
 }
 
 impl<C, BE, H> Unpin for MappingSyncWorker<C, BE, H> {}
@@ -54,7 +59,11 @@ impl<C, BE, H> MappingSyncWorker<C, BE, H> {
         substrate_backend: Arc<BE>,
         retry_times: usize,
         sync_from: <DHeaderT as HeaderT>::Number,
+        prometheus_registry: Option<prometheus::Registry>,
     ) -> Self {
+        let block_metrics =
+            prometheus_registry.and_then(|registry| block_metrics::BlockMetrics::register(&registry).ok());
+
         Self {
             import_notifications,
             timeout,
@@ -67,6 +76,7 @@ impl<C, BE, H> MappingSyncWorker<C, BE, H> {
             have_next: true,
             retry_times,
             sync_from,
+            block_metrics,
         }
     }
 }
@@ -116,6 +126,7 @@ where
                 self.substrate_backend.as_ref(),
                 self.retry_times,
                 self.sync_from,
+                self.block_metrics.as_ref(),
             ) {
                 Ok(have_next) => {
                     self.have_next = have_next;

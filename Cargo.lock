@@ -5911,11 +5911,13 @@ dependencies = [
  "mp-hashers",
  "mp-transactions",
  "mp-types",
+ "num-traits 0.2.18",
  "pallet-starknet-runtime-api",
  "sc-client-api",
  "sp-api",
  "sp-blockchain",
  "sp-runtime",
+ "substrate-prometheus-endpoint",
 ]
 
 [[package]]

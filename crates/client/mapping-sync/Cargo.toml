@@ -26,7 +26,9 @@ mp-digest-log = { workspace = true }
 mp-hashers = { workspace = true }
 mp-transactions = { workspace = true }
 mp-types = { workspace = true }
+num-traits = { workspace = true }
 pallet-starknet-runtime-api = { workspace = true }
+prometheus-endpoint = { workspace = true }
 sc-client-api = { workspace = true }
 sp-api = { workspace = true }
 sp-blockchain = { workspace = true }
