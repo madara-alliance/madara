@@ -8070,7 +8070,6 @@ dependencies = [
  "cairo-vm",
  "frame-support",
  "hashbrown 0.14.3",
- "mp-state",
  "serde_with",
  "sp-arithmetic",
  "sp-core",
@@ -8170,18 +8169,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mp-state"
-version = "0.1.0"
-dependencies = [
- "blockifier",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "serde_with",
- "starknet_api",
-]
-
-[[package]]
 name = "mp-storage"
 version = "0.1.0"
 dependencies = [
@@ -8209,7 +8196,6 @@ dependencies = [
  "mp-fee",
  "mp-felt",
  "mp-hashers",
- "mp-state",
  "num-bigint",
  "parity-scale-codec",
  "scale-info",
@@ -8936,7 +8922,6 @@ dependencies = [
  "mp-hashers",
  "mp-sequencer-address",
  "mp-simulations",
- "mp-state",
  "mp-storage",
  "mp-transactions",
  "parity-scale-codec",
