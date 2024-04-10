@@ -4250,7 +4250,6 @@ dependencies = [
  "mp-block",
  "mp-chain-id",
  "mp-contract",
- "mp-fee",
  "mp-felt",
  "mp-hashers",
  "mp-program-hash",
@@ -7702,7 +7701,6 @@ dependencies = [
  "mp-contract",
  "mp-convert",
  "mp-digest-log",
- "mp-fee",
  "mp-felt",
  "mp-hashers",
  "mp-simulations",
@@ -7774,7 +7772,6 @@ dependencies = [
  "mc-storage",
  "mp-block",
  "mp-contract",
- "mp-fee",
  "mp-felt",
  "mp-hashers",
  "mp-storage",
@@ -8063,21 +8060,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mp-fee"
-version = "0.1.0"
-dependencies = [
- "blockifier",
- "cairo-vm",
- "frame-support",
- "hashbrown 0.14.3",
- "serde_with",
- "sp-arithmetic",
- "sp-core",
- "starknet-core 0.10.0",
- "starknet_api",
-]
-
-[[package]]
 name = "mp-felt"
 version = "0.1.0"
 dependencies = [
@@ -8193,7 +8175,6 @@ dependencies = [
  "indexmap 2.2.6",
  "lazy_static",
  "log",
- "mp-fee",
  "mp-felt",
  "mp-hashers",
  "num-bigint",
@@ -8916,7 +8897,6 @@ dependencies = [
  "mp-block",
  "mp-contract",
  "mp-digest-log",
- "mp-fee",
  "mp-felt",
  "mp-genesis-config",
  "mp-hashers",

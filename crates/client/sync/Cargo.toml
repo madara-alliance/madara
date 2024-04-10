@@ -58,7 +58,6 @@ mc-db = { workspace = true }
 mc-storage = { workspace = true }
 mp-block = { workspace = true }
 mp-contract = { workspace = true }
-mp-fee = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-storage = { workspace = true, default-features = true }

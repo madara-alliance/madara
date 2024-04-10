@@ -18,7 +18,6 @@ mc-db = { workspace = true }
 mp-block = { workspace = true }
 mp-contract = { workspace = true }
 mp-digest-log = { workspace = true }
-mp-fee = { workspace = true }
 mp-felt = { workspace = true, features = ["parity-scale-codec", "serde"] }
 mp-genesis-config = { workspace = true, default-features = false }
 mp-hashers = { workspace = true }
