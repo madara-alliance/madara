@@ -109,7 +109,7 @@ pub fn to_contract_class_cairo(
     abi: Option<Vec<LegacyContractAbiEntry>>,
 ) -> anyhow::Result<ContractClassCore> {
     let entry_points_by_type: HashMap<_, _> =
-        contract_class.entry_points_by_type.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        contract_class.entry_points_by_type.iter().map(|(k, v)| (*k, v.clone())).collect();
     let entry_points_by_type = to_legacy_entry_points_by_type(&entry_points_by_type)?;
     let compressed_program = compress(&contract_class.program.serialize()?)?;
     Ok(ContractClassCore::Legacy(CompressedLegacyContractClass {
@@ -376,7 +376,7 @@ fn from_legacy_entry_points_by_type(entries: &LegacyEntryPointsByType) -> IndexM
 /// (starknet-api)
 fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryPoint, FromByteArrayError> {
     let selector = FieldElement::from_bytes_be(&entry_point.selector.0.0)?;
-    let offset = entry_point.offset.0 as u64;
+    let offset = entry_point.offset.0;
     Ok(LegacyContractEntryPoint { selector, offset })
 }
 

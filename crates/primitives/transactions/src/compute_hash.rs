@@ -57,8 +57,10 @@ fn prepare_data_availability_modes(
     fee_data_availability_mode: DataAvailabilityMode,
 ) -> FieldElement {
     let mut buffer = [0u8; 32];
-    buffer[64..96].copy_from_slice(&(nonce_data_availability_mode as u32).to_be_bytes());
-    buffer[96..].copy_from_slice(&(fee_data_availability_mode as u32).to_be_bytes());
+    buffer[16..24].copy_from_slice(&(nonce_data_availability_mode as u32).to_be_bytes());
+    buffer[24..].copy_from_slice(&(fee_data_availability_mode as u32).to_be_bytes());
+    // buffer[64..96].copy_from_slice(&(nonce_data_availability_mode as u32).to_be_bytes());
+    // buffer[96..].copy_from_slice(&(fee_data_availability_mode as u32).to_be_bytes());
 
     // Safe to unwrap because we left most significant bit of the buffer empty
     FieldElement::from_bytes_be(&buffer).unwrap()
@@ -222,7 +224,6 @@ impl ComputeTransactionHash for DeclareTransactionV0V1 {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { FieldElement::ZERO };
         let sender_address = Felt252Wrapper::from(self.sender_address).into();
         let entrypoint_selector = FieldElement::ZERO;
-        let alignment_placeholder = compute_hash_on_elements(&[]);
         let max_fee = FieldElement::from(self.max_fee.0);
         let nonce_or_class_hash: FieldElement = if version == FieldElement::ZERO {
             Felt252Wrapper::from(self.class_hash).into()

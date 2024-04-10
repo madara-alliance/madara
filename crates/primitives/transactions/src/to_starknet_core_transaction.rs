@@ -10,6 +10,8 @@ use starknet_api::transaction::{
 use starknet_core::types::{ResourceBounds, ResourceBoundsMapping as CoreResourceBoundsMapping};
 use starknet_crypto::FieldElement;
 
+// TODO: is this function needed?
+#[allow(dead_code)]
 fn cast_vec_of_felt_252_wrappers(data: Vec<Felt252Wrapper>) -> Vec<FieldElement> {
     // Non-copy but less dangerous than transmute
     // https://doc.rust-lang.org/std/mem/fn.transmute.html#alternatives
@@ -321,9 +323,9 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
 
 // TODO (Tbelleng): Custom function here so check if value are correct
 pub fn api_resources_to_core_ressources(resource: ResourceBoundsMapping) -> CoreResourceBoundsMapping {
-    let l1_gas = resource.0.get(&Resource::L1Gas).clone().unwrap();
+    let l1_gas = resource.0.get(&Resource::L1Gas).unwrap();
 
-    let l2_gas = resource.0.get(&Resource::L2Gas).clone().unwrap();
+    let l2_gas = resource.0.get(&Resource::L2Gas).unwrap();
 
     let resource_for_l1: starknet_core::types::ResourceBounds =
         ResourceBounds { max_amount: l1_gas.max_amount, max_price_per_unit: l1_gas.max_price_per_unit };

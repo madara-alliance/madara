@@ -82,13 +82,6 @@ where
         .map_err(|e| {
             log::error!("Failed to reexecute the block transactions: {e:?}");
             StarknetRpcApiError::InternalServerError
-        })?
-        .map_err(|_| {
-            log::error!(
-                "One of the transaction failed during it's reexecution. This should not happen, as the block has \
-                 already been executed successfully in the past. There is a bug somewhere."
-            );
-            StarknetRpcApiError::InternalServerError
         })?;
 
     let storage_override = starknet.overrides.for_block_hash(starknet.client.as_ref(), substrate_block_hash);

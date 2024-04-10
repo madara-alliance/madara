@@ -20,7 +20,7 @@ use crate::utils::{
     get_block_by_block_hash, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address,
     starknet_version, status, timestamp, tx_conv, tx_hash_compute, tx_hash_retrieve,
 };
-use crate::{Felt, Starknet};
+use crate::{l1_da_mode, Felt, Starknet};
 
 pub(crate) fn get_block_with_tx_hashes_finalized<A, BE, G, C, P, H>(
     server: &Starknet<A, BE, G, C, P, H>,
@@ -55,6 +55,7 @@ where
     let l1_gas_price = l1_gas_price(&starknet_block);
     let l1_data_gas_price = l1_data_gas_price(&starknet_block);
     let starknet_version = starknet_version(&starknet_block);
+    let l1_da_mode = l1_da_mode(&starknet_block);
 
     let block_with_tx_hashes = BlockWithTxHashes {
         transactions,
@@ -68,7 +69,7 @@ where
         l1_gas_price,
         l1_data_gas_price,
         starknet_version,
-        l1_da_mode: todo!(),
+        l1_da_mode,
     };
 
     Ok(MaybePendingBlockWithTxHashes::Block(block_with_tx_hashes))
@@ -88,6 +89,7 @@ where
     let l1_gas_price = l1_gas_price(&starknet_block);
     let l1_data_gas_price = l1_data_gas_price(&starknet_block);
     let starknet_version = starknet_version(&starknet_block);
+    let l1_da_mode = l1_da_mode(&starknet_block);
 
     let block_with_tx_hashes = PendingBlockWithTxHashes {
         transactions,
@@ -97,7 +99,7 @@ where
         l1_gas_price,
         l1_data_gas_price,
         starknet_version,
-        l1_da_mode: todo!(),
+        l1_da_mode,
     };
 
     Ok(MaybePendingBlockWithTxHashes::PendingBlock(block_with_tx_hashes))
@@ -137,6 +139,7 @@ where
     let l1_gas_price = l1_gas_price(&starknet_block);
     let l1_data_gas_price = l1_data_gas_price(&starknet_block);
     let starknet_version = starknet_version(&starknet_block);
+    let l1_da_mode = l1_da_mode(&starknet_block);
 
     let block_with_txs = BlockWithTxs {
         status,
@@ -150,7 +153,7 @@ where
         l1_gas_price,
         l1_data_gas_price,
         starknet_version,
-        l1_da_mode: todo!(),
+        l1_da_mode,
     };
 
     Ok(MaybePendingBlockWithTxs::Block(block_with_txs))
@@ -172,6 +175,7 @@ where
     let l1_gas_price = l1_gas_price(&starknet_block);
     let l1_data_gas_price = l1_data_gas_price(&starknet_block);
     let starknet_version = starknet_version(&starknet_block);
+    let l1_da_mode = l1_da_mode(&starknet_block);
 
     let block_with_txs = PendingBlockWithTxs {
         transactions,
@@ -181,7 +185,7 @@ where
         l1_gas_price,
         l1_data_gas_price,
         starknet_version,
-        l1_da_mode: todo!(),
+        l1_da_mode,
     };
 
     Ok(MaybePendingBlockWithTxs::PendingBlock(block_with_txs))

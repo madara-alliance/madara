@@ -96,7 +96,7 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
         match self.compiled_class_hash_update.get(&class_hash) {
-            Some(compiled_class_hash) => Ok(compiled_class_hash.clone()),
+            Some(compiled_class_hash) => Ok(*compiled_class_hash),
             None => Pallet::<T>::compiled_class_hash_by_class_hash(class_hash)
                 .ok_or(StateError::UndeclaredClassHash(class_hash)),
         }
@@ -122,7 +122,7 @@ impl<T: Config> State for BlockifierStateAdapter<T> {
             .cloned()
             .unwrap_or_else(|| Pallet::<T>::nonce(contract_address))
             .try_increment()
-            .map_err(|e| StateError::StarknetApiError(e))?;
+            .map_err(StateError::StarknetApiError)?;
         self.nonce_update.insert(contract_address, nonce);
 
         Ok(())
