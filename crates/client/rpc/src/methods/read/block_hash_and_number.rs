@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
@@ -38,7 +37,7 @@ where
 {
     let block_number = starknet.current_block_number()?;
     let block_hash = starknet.current_block_hash().map_err(|e| {
-        error!("Failed to retrieve the current block hash: {}", e);
+        log::error!("Failed to retrieve the current block hash: {}", e);
         StarknetRpcApiError::NoBlocks
     })?;
 

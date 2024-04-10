@@ -14,6 +14,7 @@ repository = "https://github.com/keep-starknet-strange/madara"
 
 [dependencies]
 anyhow = { workspace = true, default-features = true }
+blockifier = { workspace = true }
 deoxys-runtime = { workspace = true }
 futures = { workspace = true, default-features = true }
 futures-timer = { workspace = true }
@@ -23,6 +24,7 @@ mc-rpc = { workspace = true }
 mc-storage = { workspace = true }
 mc-sync = { workspace = true }
 mp-digest-log = { workspace = true }
+mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-transactions = { workspace = true }
 mp-types = { workspace = true }

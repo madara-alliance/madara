@@ -1,78 +1,65 @@
 use alloc::vec::Vec;
 
-use blockifier::block_context::BlockContext;
+use blockifier::context::BlockContext;
+use blockifier::execution::errors::EntryPointExecutionError;
+use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
+use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::errors::TransactionExecutionError;
-use blockifier::transaction::objects::TransactionExecutionInfo;
+use blockifier::transaction::objects::{GasVector, HasRelatedFeeType, TransactionExecutionInfo};
+use blockifier::transaction::transaction_execution::Transaction;
+use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use frame_support::storage;
 use mp_felt::Felt252Wrapper;
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
-use mp_transactions::execution::{Execute, ExecutionConfig};
-use mp_transactions::{HandleL1MessageTransaction, UserOrL1HandlerTransaction, UserTransaction};
+use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlagForEstimateFee, SimulationFlags};
 use sp_core::Get;
 use sp_runtime::DispatchError;
-use starknet_api::transaction::Fee;
+use starknet_api::core::{ContractAddress, EntryPointSelector};
 
-use crate::blockifier_state_adapter::BlockifierStateAdapter;
-use crate::execution_config::RuntimeExecutionConfigBuilder;
+// use starknet_core::types::PriceUnit;
+use crate::types::{FeeEstimate, PriceUnit};
 use crate::{Config, Error, Pallet};
 
 impl<T: Config> Pallet<T> {
-    pub fn estimate_fee(transactions: Vec<UserTransaction>) -> Result<Vec<(u64, u64)>, DispatchError> {
+    pub fn estimate_fee(
+        transactions: Vec<AccountTransaction>,
+        simulation_flags: &[SimulationFlagForEstimateFee],
+    ) -> Result<Vec<FeeEstimate>, DispatchError> {
         storage::transactional::with_transaction(|| {
             storage::TransactionOutcome::Rollback(Result::<_, DispatchError>::Ok(Self::estimate_fee_inner(
                 transactions,
+                simulation_flags,
             )))
         })
         .map_err(|_| Error::<T>::FailedToCreateATransactionalStorageExecution)?
     }
 
-    fn estimate_fee_inner(transactions: Vec<UserTransaction>) -> Result<Vec<(u64, u64)>, DispatchError> {
+    fn estimate_fee_inner(
+        transactions: Vec<AccountTransaction>,
+        simulation_flags: &[SimulationFlagForEstimateFee],
+    ) -> Result<Vec<FeeEstimate>, DispatchError> {
         let transactions_len = transactions.len();
-        let chain_id = Self::chain_id();
         let block_context = Self::get_block_context();
-        let mut execution_config = RuntimeExecutionConfigBuilder::new::<T>().with_query_mode().build();
-
-        let fee_res_iterator = transactions
-            .into_iter()
-            .map(|tx| {
-                execution_config.set_offset_version(tx.offset_version());
-
-                match Self::execute_user_transaction(tx, chain_id, &block_context, &execution_config) {
-                    Ok(execution_info) if !execution_info.is_reverted() => Ok(execution_info),
-                    Err(e) => {
-                        log::error!("Transaction execution failed during fee estimation: {e}");
-                        Err(Error::<T>::TransactionExecutionFailed)
-                    }
-                    Ok(execution_info) => {
-                        log::error!(
-                            "Transaction execution reverted during fee estimation: {}",
-                            // Safe due to the `match` branch order
-                            execution_info.revert_error.unwrap()
-                        );
-                        Err(Error::<T>::TransactionExecutionFailed)
-                    }
-                }
-            })
-            .map(|exec_info_res| {
-                exec_info_res.map(|exec_info| {
-                    exec_info
-                        .actual_resources
-                        .0
-                        .get("l1_gas_usage")
-                        .ok_or_else(|| DispatchError::from(Error::<T>::MissingL1GasUsage))
-                        .map(|l1_gas_usage| (exec_info.actual_fee.0 as u64, *l1_gas_usage))
-                })
-            });
 
         let mut fees = Vec::with_capacity(transactions_len);
-        for fee_res in fee_res_iterator {
-            fees.push(fee_res??);
+
+        // TODO: the vector of flags should be for each transaction
+        for tx in transactions {
+            for flag in simulation_flags.iter() {
+                match Self::execute_fee_transaction(tx.clone(), &block_context, flag.clone()) {
+                    Ok(execution_info) => fees.push(execution_info),
+                    Err(e) => {
+                        log::error!("Transaction execution failed during fee estimation: {e}");
+                        return Err(Error::<T>::TransactionExecutionFailed.into());
+                    }
+                }
+            }
         }
 
         Ok(fees)
     }
+
     pub fn simulate_transactions(
-        transactions: Vec<UserTransaction>,
+        transactions: Vec<AccountTransaction>,
         simulation_flags: &SimulationFlags,
     ) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>
     {
@@ -86,21 +73,22 @@ impl<T: Config> Pallet<T> {
     }
 
     fn simulate_transactions_inner(
-        transactions: Vec<UserTransaction>,
+        transactions: Vec<AccountTransaction>,
         simulation_flags: &SimulationFlags,
     ) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>
     {
-        let chain_id = Self::chain_id();
         let block_context = Self::get_block_context();
-        let mut execution_config =
-            RuntimeExecutionConfigBuilder::new::<T>().with_simulation_mode(simulation_flags).build();
 
         let tx_execution_results = transactions
             .into_iter()
             .map(|tx| {
-                execution_config.set_offset_version(tx.offset_version());
-
-                Self::execute_user_transaction(tx, chain_id, &block_context, &execution_config).map_err(|e| {
+                tx.execute(
+                    &mut Self::init_cached_state(),
+                    &block_context,
+                    simulation_flags.charge_fee,
+                    simulation_flags.validate,
+                )
+                .map_err(|e| {
                     log::error!("Transaction execution failed during simulation: {e}");
                     PlaceHolderErrorTypeForFailedStarknetExecution
                 })
@@ -111,7 +99,7 @@ impl<T: Config> Pallet<T> {
     }
 
     pub fn simulate_message(
-        message: HandleL1MessageTransaction,
+        message: L1HandlerTransaction,
         simulation_flags: &SimulationFlags,
     ) -> Result<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {
         storage::transactional::with_transaction(|| {
@@ -124,26 +112,20 @@ impl<T: Config> Pallet<T> {
     }
 
     fn simulate_message_inner(
-        message: HandleL1MessageTransaction,
+        message: L1HandlerTransaction,
         simulation_flags: &SimulationFlags,
     ) -> Result<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {
-        let chain_id = Self::chain_id();
         let block_context = Self::get_block_context();
-        let mut execution_config =
-            RuntimeExecutionConfigBuilder::new::<T>().with_simulation_mode(simulation_flags).build();
 
-        // Follow `offset` from Pallet Starknet where it is set to false
-        execution_config.set_offset_version(false);
-        let tx_execution_result =
-            Self::execute_message(message, chain_id, &block_context, &execution_config).map_err(|e| {
-                log::error!("Transaction execution failed during simulation: {e}");
-                PlaceHolderErrorTypeForFailedStarknetExecution
-            });
+        let tx_execution_result = Self::execute_message(message, &block_context, simulation_flags).map_err(|e| {
+            log::error!("Transaction execution failed during simulation: {e}");
+            PlaceHolderErrorTypeForFailedStarknetExecution
+        });
 
         Ok(tx_execution_result)
     }
 
-    pub fn estimate_message_fee(message: HandleL1MessageTransaction) -> Result<(u128, u64, u64), DispatchError> {
+    pub fn estimate_message_fee(message: L1HandlerTransaction) -> Result<FeeEstimate, DispatchError> {
         storage::transactional::with_transaction(|| {
             storage::TransactionOutcome::Rollback(Result::<_, DispatchError>::Ok(Self::estimate_message_fee_inner(
                 message,
@@ -152,16 +134,11 @@ impl<T: Config> Pallet<T> {
         .map_err(|_| Error::<T>::FailedToCreateATransactionalStorageExecution)?
     }
 
-    fn estimate_message_fee_inner(message: HandleL1MessageTransaction) -> Result<(u128, u64, u64), DispatchError> {
-        let chain_id = Self::chain_id();
+    fn estimate_message_fee_inner(message: L1HandlerTransaction) -> Result<FeeEstimate, DispatchError> {
+        let mut cached_state = Self::init_cached_state();
 
-        // Follow `offset` from Pallet Starknet where it is set to false
         let tx_execution_infos =
-            match message.into_executable::<T::SystemHash>(chain_id, Fee(u128::MAX), false).execute(
-                &mut BlockifierStateAdapter::<T>::default(),
-                &Self::get_block_context(),
-                &RuntimeExecutionConfigBuilder::new::<T>().with_query_mode().with_disable_nonce_validation().build(),
-            ) {
+            match message.clone().execute(&mut cached_state, &Self::get_block_context(), true, true) {
                 Ok(execution_info) if !execution_info.is_reverted() => Ok(execution_info),
                 Err(e) => {
                     log::error!(
@@ -180,104 +157,150 @@ impl<T: Config> Pallet<T> {
                 }
             }?;
 
-        if let Some(l1_gas_usage) = tx_execution_infos.actual_resources.0.get("l1_gas_usage") {
-            Ok((T::L1GasPrice::get().price_in_wei, tx_execution_infos.actual_fee.0 as u64, *l1_gas_usage))
-        } else {
-            Err(Error::<T>::MissingL1GasUsage.into())
-        }
+        let unit = match message.fee_type() {
+            blockifier::transaction::objects::FeeType::Strk => PriceUnit::Fri,
+            blockifier::transaction::objects::FeeType::Eth => PriceUnit::Wei,
+        };
+
+        let fee = FeeEstimate {
+            gas_consumed: Felt252Wrapper::from(*tx_execution_infos.actual_resources.0.get("l1_gas_usage").unwrap()),
+            gas_price: Felt252Wrapper::from(T::L1GasPrices::get().eth_l1_gas_price.get()),
+            data_gas_consumed: tx_execution_infos.da_gas.l1_data_gas.into(),
+            data_gas_price: Felt252Wrapper::from(T::L1GasPrices::get().eth_l1_data_gas_price.get()),
+            overall_fee: tx_execution_infos.actual_fee.0.into(),
+            unit,
+        };
+        Ok(fee)
     }
 
     pub fn re_execute_transactions(
-        transactions_before: Vec<UserOrL1HandlerTransaction>,
-        transactions_to_trace: Vec<UserOrL1HandlerTransaction>,
-    ) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>
-    {
-        storage::transactional::with_transaction(|| {
-            storage::TransactionOutcome::Rollback(Result::<_, DispatchError>::Ok(Self::re_execute_transactions_inner(
-                transactions_before,
-                transactions_to_trace,
-            )))
-        })
-        .map_err(|_| Error::<T>::FailedToCreateATransactionalStorageExecution)?
-    }
+        transactions_before: Vec<Transaction>,
+        transactions_to_trace: Vec<Transaction>,
+        block_context: &BlockContext,
+    ) -> Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution> {
+        let charge_fee = block_context.block_info().gas_prices.eth_l1_gas_price.get() != 1;
+        let mut cached_state = Self::init_cached_state();
 
-    fn re_execute_transactions_inner(
-        transactions_before: Vec<UserOrL1HandlerTransaction>,
-        transactions_to_trace: Vec<UserOrL1HandlerTransaction>,
-    ) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>
-    {
-        let chain_id = Self::chain_id();
-        let block_context = Self::get_block_context();
-        let execution_config = RuntimeExecutionConfigBuilder::new::<T>().build();
+        transactions_before
+            .into_iter()
+            .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, false))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| {
+                log::error!("Transaction execution failed during re-execution: {e}");
+                PlaceHolderErrorTypeForFailedStarknetExecution
+            })?;
 
-        let _transactions_before_exec_infos = Self::execute_user_or_l1_handler_transactions(
-            chain_id,
-            &block_context,
-            &execution_config,
-            transactions_before,
-        );
-        let transactions_exec_infos = Self::execute_user_or_l1_handler_transactions(
-            chain_id,
-            &block_context,
-            &execution_config,
-            transactions_to_trace,
-        );
+        let transactions_exec_infos = transactions_to_trace
+            .into_iter()
+            .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, false))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| {
+                log::error!("Transaction execution failed during re-execution: {e}");
+                PlaceHolderErrorTypeForFailedStarknetExecution
+            })?;
 
         Ok(transactions_exec_infos)
     }
 
-    fn execute_user_transaction(
-        transaction: UserTransaction,
-        chain_id: Felt252Wrapper,
+    fn execute_fee_transaction(
+        transaction: AccountTransaction,
         block_context: &BlockContext,
-        execution_config: &ExecutionConfig,
-    ) -> Result<TransactionExecutionInfo, TransactionExecutionError> {
-        match transaction {
-            UserTransaction::Declare(tx, contract_class) => {
-                tx.try_into_executable::<T::SystemHash>(chain_id, contract_class.clone(), tx.offset_version()).and_then(
-                    |exec| exec.execute(&mut BlockifierStateAdapter::<T>::default(), block_context, execution_config),
-                )
+        simulation_flags: SimulationFlagForEstimateFee,
+    ) -> Result<FeeEstimate, TransactionExecutionError> {
+        let mut cached_state = Self::init_cached_state();
+
+        let fee_type = transaction.fee_type();
+
+        let gas_price = block_context.block_info().gas_prices.get_gas_price_by_fee_type(&fee_type).get();
+        let data_gas_price = block_context.block_info().gas_prices.get_data_gas_price_by_fee_type(&fee_type).get();
+        let unit = match fee_type {
+            blockifier::transaction::objects::FeeType::Strk => PriceUnit::Fri,
+            blockifier::transaction::objects::FeeType::Eth => PriceUnit::Wei,
+        };
+
+        let minimal_l1_gas_amount_vector = estimate_minimal_gas_vector(block_context, &transaction)
+            .map_err(TransactionExecutionError::TransactionPreValidationError);
+
+        let tx_info: Result<
+            blockifier::transaction::objects::TransactionExecutionInfo,
+            blockifier::transaction::errors::TransactionExecutionError,
+        > = transaction.execute(&mut cached_state, block_context, false, simulation_flags.skip_validate).and_then(
+            |mut tx_info| {
+                if tx_info.actual_fee.0 == 0 {
+                    tx_info.actual_fee = blockifier::fee::fee_utils::calculate_tx_fee(
+                        &tx_info.actual_resources,
+                        block_context,
+                        &fee_type,
+                    )?;
+                }
+
+                Ok(tx_info)
+            },
+        );
+
+        match tx_info {
+            Ok(tx_info) => {
+                if let Some(_revert_error) = tx_info.revert_error {
+                    return Err(TransactionExecutionError::ExecutionError {
+                        error: EntryPointExecutionError::InternalError("Transaction reverted".to_string()),
+                        storage_address: ContractAddress::default(),
+                        selector: EntryPointSelector::default(),
+                    });
+                }
+
+                let fee_estimate = from_tx_info_and_gas_price(
+                    &tx_info,
+                    gas_price,
+                    data_gas_price,
+                    unit,
+                    minimal_l1_gas_amount_vector.expect("Minimal gas vector error"),
+                );
+                Ok(fee_estimate)
             }
-            UserTransaction::DeployAccount(tx) => {
-                let executable = tx.into_executable::<T::SystemHash>(chain_id, tx.offset_version());
-                executable.execute(&mut BlockifierStateAdapter::<T>::default(), block_context, execution_config)
-            }
-            UserTransaction::Invoke(tx) => {
-                let executable = tx.into_executable::<T::SystemHash>(chain_id, tx.offset_version());
-                executable.execute(&mut BlockifierStateAdapter::<T>::default(), block_context, execution_config)
-            }
+            Err(_error) => Err(TransactionExecutionError::ExecutionError {
+                error: EntryPointExecutionError::InternalError("Execution error".to_string()),
+                storage_address: ContractAddress::default(),
+                selector: EntryPointSelector::default(),
+            }),
         }
     }
 
     fn execute_message(
-        message: HandleL1MessageTransaction,
-        chain_id: Felt252Wrapper,
+        transaction: L1HandlerTransaction,
         block_context: &BlockContext,
-        execution_config: &ExecutionConfig,
+        simulation_flags: &SimulationFlags,
     ) -> Result<TransactionExecutionInfo, TransactionExecutionError> {
-        // Follow `offset` from Pallet Starknet where it is set to false
-        let fee = Fee(u128::MAX);
-        let executable = message.into_executable::<T::SystemHash>(chain_id, fee, false);
-        executable.execute(&mut BlockifierStateAdapter::<T>::default(), block_context, execution_config)
-    }
+        let mut cached_state = Self::init_cached_state();
 
-    fn execute_user_or_l1_handler_transactions(
-        chain_id: Felt252Wrapper,
-        block_context: &BlockContext,
-        execution_config: &ExecutionConfig,
-        transactions: Vec<UserOrL1HandlerTransaction>,
-    ) -> Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution> {
-        transactions
-            .iter()
-            .map(|user_or_l1_tx| match user_or_l1_tx {
-                UserOrL1HandlerTransaction::User(tx) => {
-                    Self::execute_user_transaction(tx.clone(), chain_id, block_context, execution_config)
-                }
-                UserOrL1HandlerTransaction::L1Handler(tx, _fee) => {
-                    Self::execute_message(tx.clone(), chain_id, block_context, execution_config)
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| PlaceHolderErrorTypeForFailedStarknetExecution)
+        transaction.execute(&mut cached_state, block_context, simulation_flags.charge_fee, simulation_flags.validate)
+    }
+}
+
+pub fn from_tx_info_and_gas_price(
+    tx_info: &TransactionExecutionInfo,
+    gas_price: u128,
+    data_gas_price: u128,
+    unit: PriceUnit,
+    minimal_l1_gas_amount_vector: GasVector,
+) -> FeeEstimate {
+    let data_gas_consumed = tx_info.da_gas.l1_data_gas;
+    let data_gas_fee = data_gas_consumed.saturating_mul(data_gas_price);
+    let gas_consumed = tx_info.actual_fee.0.saturating_sub(data_gas_fee) / gas_price.max(1);
+
+    let minimal_gas_consumed = minimal_l1_gas_amount_vector.l1_gas;
+    let minimal_data_gas_consumed = minimal_l1_gas_amount_vector.l1_data_gas;
+
+    let gas_consumed = gas_consumed.max(minimal_gas_consumed);
+    let data_gas_consumed = data_gas_consumed.max(minimal_data_gas_consumed);
+    let overall_fee =
+        gas_consumed.saturating_mul(gas_price).saturating_add(data_gas_consumed.saturating_mul(data_gas_price));
+
+    FeeEstimate {
+        gas_consumed: gas_consumed.into(),
+        gas_price: gas_price.into(),
+        data_gas_consumed: data_gas_consumed.into(),
+        data_gas_price: data_gas_price.into(),
+        overall_fee: overall_fee.into(),
+        unit,
     }
 }

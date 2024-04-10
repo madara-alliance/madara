@@ -1,7 +1,12 @@
+use std::sync::Arc;
+
+use blockifier::transaction::transactions::L1HandlerTransaction;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
+use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
+use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -10,10 +15,13 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
+use starknet_api::core::Nonce;
+use starknet_api::hash::StarkFelt;
+use starknet_api::transaction::{Calldata, Fee, TransactionVersion};
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
+use crate::{Starknet, StarknetReadRpcApiServer};
 
 /// Estimate the L2 fee of a message sent on L1
 ///
@@ -47,33 +55,58 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        error!("'{e}'");
+        log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
-
-    let message = message.try_into().map_err(|e| {
-        error!("Failed to convert MsgFromL1 to UserTransaction: {e}");
-        StarknetRpcApiError::InternalServerError
+    let block_number = starknet.block_number().map_err(|e| {
+        log::error!("'{e}'");
+        StarknetRpcApiError::BlockNotFound
     })?;
+    let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
 
-    let fee_estimate = starknet
+    let transaction = convert_message_into_tx::<H>(message, chain_id, Some(block_number));
+
+    let message_fee = starknet
         .client
         .runtime_api()
-        .estimate_message_fee(substrate_block_hash, message)
+        .estimate_message_fee(substrate_block_hash, transaction)
         .map_err(|e| {
-            error!("Runtime api error: {e}");
+            error!("Runtime Api error: {e}");
             StarknetRpcApiError::InternalServerError
         })?
         .map_err(|e| {
-            error!("function execution failed: {:#?}", e);
+            error!("Function execution failed: {:#?}", e);
             StarknetRpcApiError::ContractError
         })?;
 
-    let estimate = FeeEstimate {
-        gas_price: fee_estimate.0.try_into().map_err(|_| StarknetRpcApiError::InternalServerError)?,
-        gas_consumed: fee_estimate.2,
-        overall_fee: fee_estimate.1,
+    let estimate_message_fee = FeeEstimate {
+        gas_consumed: message_fee.gas_consumed.0,
+        gas_price: message_fee.gas_price.0,
+        data_gas_consumed: message_fee.data_gas_consumed.0,
+        data_gas_price: message_fee.data_gas_price.0,
+        overall_fee: message_fee.overall_fee.0,
+        unit: message_fee.unit.into(),
     };
 
-    Ok(estimate)
+    Ok(estimate_message_fee)
+}
+
+pub fn convert_message_into_tx<H: HasherT + Send + Sync + 'static>(
+    message: MsgFromL1,
+    chain_id: Felt252Wrapper,
+    block_number: Option<u64>,
+) -> L1HandlerTransaction {
+    let calldata = std::iter::once(Felt252Wrapper::from(message.from_address).into())
+        .chain(message.payload.into_iter().map(|felt| Felt252Wrapper::from(felt).into()))
+        .collect();
+    let tx = starknet_api::transaction::L1HandlerTransaction {
+        version: TransactionVersion::ZERO,
+        nonce: Nonce(StarkFelt::ZERO),
+        contract_address: Felt252Wrapper::from(message.to_address).into(),
+        entry_point_selector: Felt252Wrapper::from(message.entry_point_selector).into(),
+        calldata: Calldata(Arc::new(calldata)),
+    };
+    let tx_hash = tx.compute_hash::<H>(chain_id, true, block_number);
+
+    L1HandlerTransaction { tx, tx_hash, paid_fee_on_l1: Fee(10) }
 }

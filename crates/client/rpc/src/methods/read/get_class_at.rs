@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_contract::class::ContractClassWrapper;
 use mp_felt::Felt252Wrapper;
@@ -52,7 +51,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        error!("'{e}'");
+        log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
 
@@ -63,7 +62,7 @@ where
         .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
         .contract_class_by_address(substrate_block_hash, contract_address_wrapped)
         .ok_or_else(|| {
-            error!("Failed to retrieve contract class at '{contract_address}'");
+            log::error!("Failed to retrieve contract class at '{contract_address}'");
             StarknetRpcApiError::ContractNotFound
         })?;
 
@@ -73,7 +72,7 @@ where
         .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
         .contract_abi_by_address(substrate_block_hash, contract_address_wrapped)
         .ok_or_else(|| {
-            error!("Failed to retrieve contract ABI at '{contract_address}'");
+            log::error!("Failed to retrieve contract ABI at '{contract_address}'");
             StarknetRpcApiError::ContractNotFound
         })?;
 

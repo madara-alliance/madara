@@ -1,6 +1,5 @@
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::types::error::CallError;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -18,7 +17,7 @@ use starknet_core::types::{BlockId, FieldElement, Transaction};
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
-use crate::{Starknet, StarknetReadRpcApiServer};
+use crate::Starknet;
 
 /// Get the details of a transaction by a given block id and index.
 ///
@@ -56,7 +55,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        error!("'{e}'");
+        log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
 
@@ -76,7 +75,10 @@ where
             )),
         )?
     } else {
-        transaction.compute_hash::<H>(chain_id.0.into(), false, Some(starknet_block.header().block_number)).0
+        Felt252Wrapper::from(
+            transaction.compute_hash::<H>(chain_id.0.into(), false, Some(starknet_block.header().block_number)).0,
+        )
+        .into()
     };
 
     Ok(to_starknet_core_tx(transaction.clone(), transaction_hash))

@@ -24,9 +24,9 @@ mp-storage = { workspace = true, features = ["std"] }
 deoxys-runtime = { workspace = true, features = ["std"] }
 
 # Starknet crates
-blockifier = { workspace = true, features = ["std"] }
+blockifier = { workspace = true }
 pallet-starknet-runtime-api = { workspace = true, features = ["std"] }
-starknet_api = { workspace = true, features = ["std"] }
+starknet_api = { workspace = true }
 
 # Substrate crates
 frame-support = { workspace = true, features = ["std"] }

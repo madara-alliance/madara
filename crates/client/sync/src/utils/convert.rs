@@ -1,11 +1,17 @@
 //! Converts types from [`starknet_providers`] to madara's expected types.
 
 use std::collections::HashMap;
+use std::num::NonZeroU128;
+use std::sync::Arc;
 
+use blockifier::blockifier::block::GasPrices;
 use mp_block::DeoxysBlock;
-use mp_fee::ResourcePrice;
 use mp_felt::Felt252Wrapper;
 use starknet_api::hash::StarkFelt;
+use starknet_api::transaction::{
+    DeclareTransaction, DeployAccountTransaction, DeployAccountTransactionV1, DeployTransaction, Event,
+    InvokeTransaction, L1HandlerTransaction, Transaction,
+};
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, PendingStateUpdate,
     ReplacedClassItem, StateDiff as StateDiffCore, StorageEntry,
@@ -27,7 +33,6 @@ pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
-
     let parent_block_hash = felt(block.parent_block_hash);
     let block_number = block.block_number.expect("no block number provided");
     let block_timestamp = block.timestamp;
@@ -39,9 +44,8 @@ pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
     let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number);
 
     let protocol_version = starknet_version(&block.starknet_version);
-    // TODO calculate gas_price when starknet-rs supports v0.13.1
-    // let l1_gas_price = resource_price(block.eth_l1_gas_price);
-    let l1_gas_price = resource_price(FieldElement::ZERO);
+    let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
+    let l1_da_mode = l1_da_mode(block.l1_da_mode);
     let extra_data = block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be()));
 
     let header = mp_block::Header {
@@ -56,6 +60,7 @@ pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
         event_commitment,
         protocol_version,
         l1_gas_price,
+        l1_da_mode,
         extra_data,
     };
 
@@ -70,109 +75,157 @@ pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
     DeoxysBlock::new(header, transactions, ordered_events)
 }
 
-fn transactions(txs: Vec<p::TransactionType>) -> Vec<mp_transactions::Transaction> {
+fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {
     txs.into_iter().map(transaction).collect()
 }
 
-fn transaction(transaction: p::TransactionType) -> mp_transactions::Transaction {
+fn transaction(transaction: p::TransactionType) -> Transaction {
     match transaction {
-        p::TransactionType::InvokeFunction(tx) => mp_transactions::Transaction::Invoke(invoke_transaction(tx)),
-        p::TransactionType::Declare(tx) => mp_transactions::Transaction::Declare(declare_transaction(tx)),
-        p::TransactionType::Deploy(tx) => mp_transactions::Transaction::Deploy(deploy_transaction(tx)),
-        p::TransactionType::DeployAccount(tx) => {
-            mp_transactions::Transaction::DeployAccount(deploy_account_transaction(tx))
-        }
-        p::TransactionType::L1Handler(tx) => mp_transactions::Transaction::L1Handler(l1_handler_transaction(tx)),
+        p::TransactionType::Declare(tx) => Transaction::Declare(declare_transaction(tx)),
+        p::TransactionType::Deploy(tx) => Transaction::Deploy(deploy_transaction(tx)),
+        p::TransactionType::DeployAccount(tx) => Transaction::DeployAccount(deploy_account_transaction(tx)),
+        p::TransactionType::InvokeFunction(tx) => Transaction::Invoke(invoke_transaction(tx)),
+        p::TransactionType::L1Handler(tx) => Transaction::L1Handler(l1_handler_transaction(tx)),
     }
 }
 
-fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> mp_transactions::InvokeTransaction {
-    if tx.version == FieldElement::ZERO {
-        mp_transactions::InvokeTransaction::V0(mp_transactions::InvokeTransactionV0 {
+fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
+    if tx.version == FieldElement::ZERO || tx.version == FieldElement::ONE {
+        DeclareTransaction::V1(starknet_api::transaction::DeclareTransactionV0V1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-            contract_address: felt(tx.sender_address).into(),
-            entry_point_selector: felt(tx.entry_point_selector.expect("no entry_point_selector provided")).into(),
-            calldata: tx.calldata.into_iter().map(felt).map(Into::into).collect(),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce),
+            class_hash: class_hash(tx.class_hash),
+            sender_address: contract_address(tx.sender_address),
+        })
+    } else if tx.version == FieldElement::TWO {
+        DeclareTransaction::V2(starknet_api::transaction::DeclareTransactionV2 {
+            max_fee: fee(tx.max_fee.expect("no max fee provided")),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce),
+            class_hash: class_hash(tx.class_hash),
+            compiled_class_hash: compiled_class_hash(tx.compiled_class_hash.expect("no compiled class hash provided")),
+            sender_address: contract_address(tx.sender_address),
+        })
+    } else if tx.version == FieldElement::THREE {
+        DeclareTransaction::V3(starknet_api::transaction::DeclareTransactionV3 {
+            resource_bounds: resource_bounds(tx.resource_bounds.expect("no resource bounds provided")),
+            tip: tip(tx.tip.expect("no tip provided")),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce),
+            class_hash: class_hash(tx.class_hash),
+            compiled_class_hash: compiled_class_hash(tx.compiled_class_hash.expect("no compiled class hash provided")),
+            sender_address: contract_address(tx.sender_address),
+            nonce_data_availability_mode: data_availability_mode(
+                tx.nonce_data_availability_mode.expect("no nonce_data_availability_mode provided"),
+            ),
+            fee_data_availability_mode: data_availability_mode(
+                tx.fee_data_availability_mode.expect("no fee_data_availability_mode provided"),
+            ),
+            paymaster_data: paymaster_data(tx.paymaster_data.expect("no paymaster_data provided")),
+            account_deployment_data: account_deployment_data(
+                tx.account_deployment_data.expect("no account_deployment_data provided"),
+            ),
         })
     } else {
-        mp_transactions::InvokeTransaction::V1(mp_transactions::InvokeTransactionV1 {
-            max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-            nonce: felt(tx.nonce.expect("no nonce provided")).into(),
-            sender_address: felt(tx.sender_address).into(),
-            calldata: tx.calldata.into_iter().map(felt).map(Into::into).collect(),
-            offset_version: false,
-        })
+        panic!("declare transaction version not supported");
     }
 }
 
-fn declare_transaction(tx: p::DeclareTransaction) -> mp_transactions::DeclareTransaction {
-    if tx.version == FieldElement::ZERO {
-        mp_transactions::DeclareTransaction::V0(mp_transactions::DeclareTransactionV0 {
+fn deploy_transaction(tx: p::DeployTransaction) -> DeployTransaction {
+    DeployTransaction {
+        version: transaction_version(tx.version),
+        class_hash: class_hash(tx.class_hash),
+        contract_address_salt: contract_address_salt(tx.contract_address_salt),
+        constructor_calldata: call_data(tx.constructor_calldata),
+    }
+}
+
+fn deploy_account_transaction(tx: p::DeployAccountTransaction) -> DeployAccountTransaction {
+    match deploy_account_transaction_version(&tx) {
+        1 => DeployAccountTransaction::V1(DeployAccountTransactionV1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-            nonce: felt(tx.nonce).into(),
-            class_hash: felt(tx.class_hash).into(),
-            sender_address: felt(tx.sender_address).into(),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce),
+            class_hash: class_hash(tx.class_hash),
+            contract_address_salt: contract_address_salt(tx.contract_address_salt),
+            constructor_calldata: call_data(tx.constructor_calldata),
+        }),
+
+        3 => DeployAccountTransaction::V3(starknet_api::transaction::DeployAccountTransactionV3 {
+            resource_bounds: resource_bounds(tx.resource_bounds.expect("no resource bounds provided")),
+            tip: tip(tx.tip.expect("no tip provided")),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce),
+            class_hash: class_hash(tx.class_hash),
+            contract_address_salt: contract_address_salt(tx.contract_address_salt),
+            constructor_calldata: call_data(tx.constructor_calldata),
+            nonce_data_availability_mode: data_availability_mode(
+                tx.nonce_data_availability_mode.expect("no nonce_data_availability_mode provided"),
+            ),
+            fee_data_availability_mode: data_availability_mode(
+                tx.fee_data_availability_mode.expect("no fee_data_availability_mode provided"),
+            ),
+            paymaster_data: paymaster_data(tx.paymaster_data.expect("no paymaster_data provided")),
+        }),
+
+        _ => panic!("deploy account transaction version not supported"),
+    }
+}
+
+// TODO: implement something better than this
+fn deploy_account_transaction_version(tx: &p::DeployAccountTransaction) -> u8 {
+    if tx.resource_bounds.is_some() { 3 } else { 1 }
+}
+
+fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
+    if tx.version == FieldElement::ZERO {
+        InvokeTransaction::V0(starknet_api::transaction::InvokeTransactionV0 {
+            max_fee: fee(tx.max_fee.expect("no max fee provided")),
+            signature: signature(tx.signature),
+            contract_address: contract_address(tx.sender_address),
+            entry_point_selector: entry_point(tx.entry_point_selector.expect("no entry_point_selector provided")),
+            calldata: call_data(tx.calldata),
         })
     } else if tx.version == FieldElement::ONE {
-        mp_transactions::DeclareTransaction::V1(mp_transactions::DeclareTransactionV1 {
+        InvokeTransaction::V1(starknet_api::transaction::InvokeTransactionV1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-            nonce: felt(tx.nonce).into(),
-            class_hash: felt(tx.class_hash).into(),
-            sender_address: felt(tx.sender_address).into(),
-            offset_version: false,
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce.expect("no nonce provided")),
+            sender_address: contract_address(tx.sender_address),
+            calldata: call_data(tx.calldata),
+        })
+    } else if tx.version == FieldElement::THREE {
+        InvokeTransaction::V3(starknet_api::transaction::InvokeTransactionV3 {
+            resource_bounds: resource_bounds(tx.resource_bounds.expect("no resource bounds provided")),
+            tip: tip(tx.tip.expect("no tip provided")),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce.expect("no nonce provided")),
+            sender_address: contract_address(tx.sender_address),
+            calldata: call_data(tx.calldata),
+            nonce_data_availability_mode: data_availability_mode(
+                tx.nonce_data_availability_mode.expect("no nonce_data_availability_mode provided"),
+            ),
+            fee_data_availability_mode: data_availability_mode(
+                tx.fee_data_availability_mode.expect("no fee_data_availability_mode provided"),
+            ),
+            paymaster_data: paymaster_data(tx.paymaster_data.expect("no paymaster_data provided")),
+            account_deployment_data: account_deployment_data(
+                tx.account_deployment_data.expect("no account_deployment_data provided"),
+            ),
         })
     } else {
-        mp_transactions::DeclareTransaction::V2(mp_transactions::DeclareTransactionV2 {
-            max_fee: fee(tx.max_fee.expect("no max fee provided")),
-            signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-            nonce: felt(tx.nonce).into(),
-            class_hash: felt(tx.class_hash).into(),
-            sender_address: felt(tx.sender_address).into(),
-            compiled_class_hash: felt(tx.compiled_class_hash.expect("no class hash available")).into(),
-            offset_version: false,
-        })
+        panic!("invoke transaction version not supported");
     }
 }
 
-fn deploy_transaction(tx: p::DeployTransaction) -> mp_transactions::DeployTransaction {
-    mp_transactions::DeployTransaction {
-        version: starknet_api::transaction::TransactionVersion(felt(tx.version)),
-        class_hash: felt(tx.class_hash).into(),
-        contract_address: felt(tx.contract_address).into(),
-        contract_address_salt: felt(tx.contract_address_salt).into(),
-        constructor_calldata: tx.constructor_calldata.into_iter().map(felt).map(Into::into).collect(),
-    }
-}
-
-fn deploy_account_transaction(tx: p::DeployAccountTransaction) -> mp_transactions::DeployAccountTransaction {
-    mp_transactions::DeployAccountTransaction {
-        max_fee: fee(tx.max_fee.expect("no max fee provided")),
-        signature: tx.signature.into_iter().map(felt).map(Into::into).collect(),
-        nonce: felt(tx.nonce).into(),
-        contract_address_salt: felt(tx.contract_address_salt).into(),
-        constructor_calldata: tx.constructor_calldata.into_iter().map(felt).map(Into::into).collect(),
-        class_hash: felt(tx.class_hash).into(),
-        offset_version: false,
-    }
-}
-
-fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> mp_transactions::HandleL1MessageTransaction {
-    mp_transactions::HandleL1MessageTransaction {
-        nonce: tx
-            .nonce
-            .ok_or("Nonce value is missing")
-            .and_then(|n| u64::try_from(felt(n)).map_err(|_| "Failed to convert felt value to u64"))
-            .unwrap_or_else(|e| {
-                eprintln!("{}", e);
-                0
-            }),
-        contract_address: felt(tx.contract_address).into(),
-        entry_point_selector: felt(tx.entry_point_selector).into(),
-        calldata: tx.calldata.into_iter().map(felt).map(Into::into).collect(),
+fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
+    L1HandlerTransaction {
+        version: transaction_version(tx.version),
+        nonce: nonce(tx.nonce.unwrap_or_default()), // TODO check when a L1Ha
+        contract_address: contract_address(tx.contract_address),
+        entry_point_selector: entry_point(tx.entry_point_selector),
+        calldata: call_data(tx.calldata),
     }
 }
 
@@ -187,12 +240,143 @@ fn starknet_version(version: &Option<String>) -> Felt252Wrapper {
     }
 }
 
-fn fee(felt: starknet_ff::FieldElement) -> u128 {
-    felt.try_into().expect("Value out of range for u128")
+fn fee(felt: starknet_ff::FieldElement) -> starknet_api::transaction::Fee {
+    starknet_api::transaction::Fee(felt.try_into().expect("Value out of range for u128"))
 }
 
-fn resource_price(eth_l1_gas_price: starknet_ff::FieldElement) -> ResourcePrice {
-    ResourcePrice { price_in_strk: None, price_in_wei: fee(eth_l1_gas_price) }
+fn signature(signature: Vec<starknet_ff::FieldElement>) -> starknet_api::transaction::TransactionSignature {
+    starknet_api::transaction::TransactionSignature(signature.into_iter().map(felt).collect())
+}
+
+fn contract_address(address: starknet_ff::FieldElement) -> starknet_api::core::ContractAddress {
+    starknet_api::core::ContractAddress(starknet_api::core::PatriciaKey(felt(address)))
+}
+
+fn entry_point(entry_point: starknet_ff::FieldElement) -> starknet_api::core::EntryPointSelector {
+    starknet_api::core::EntryPointSelector(felt(entry_point))
+}
+
+fn call_data(call_data: Vec<starknet_ff::FieldElement>) -> starknet_api::transaction::Calldata {
+    starknet_api::transaction::Calldata(Arc::new(call_data.into_iter().map(felt).collect()))
+}
+
+// TODO: is this function needed?
+#[allow(dead_code)]
+fn tx_hash(tx_hash: starknet_ff::FieldElement) -> starknet_api::transaction::TransactionHash {
+    starknet_api::transaction::TransactionHash(felt(tx_hash))
+}
+
+fn nonce(nonce: starknet_ff::FieldElement) -> starknet_api::core::Nonce {
+    starknet_api::core::Nonce(felt(nonce))
+}
+
+fn class_hash(class_hash: starknet_ff::FieldElement) -> starknet_api::core::ClassHash {
+    starknet_api::core::ClassHash(felt(class_hash))
+}
+
+fn compiled_class_hash(compiled_class_hash: starknet_ff::FieldElement) -> starknet_api::core::CompiledClassHash {
+    starknet_api::core::CompiledClassHash(felt(compiled_class_hash))
+}
+
+fn contract_address_salt(
+    contract_address_salt: starknet_ff::FieldElement,
+) -> starknet_api::transaction::ContractAddressSalt {
+    starknet_api::transaction::ContractAddressSalt(felt(contract_address_salt))
+}
+
+fn transaction_version(version: starknet_ff::FieldElement) -> starknet_api::transaction::TransactionVersion {
+    starknet_api::transaction::TransactionVersion(felt(version))
+}
+
+fn resource_bounds(
+    ressource_bounds: starknet_providers::sequencer::models::ResourceBoundsMapping,
+) -> starknet_api::transaction::ResourceBoundsMapping {
+    starknet_api::transaction::ResourceBoundsMapping::try_from(vec![
+        (
+            starknet_api::transaction::Resource::L1Gas,
+            starknet_api::transaction::ResourceBounds {
+                max_amount: ressource_bounds.l1_gas.max_amount,
+                max_price_per_unit: ressource_bounds.l1_gas.max_price_per_unit,
+            },
+        ),
+        (
+            starknet_api::transaction::Resource::L2Gas,
+            starknet_api::transaction::ResourceBounds {
+                max_amount: ressource_bounds.l2_gas.max_amount,
+                max_price_per_unit: ressource_bounds.l2_gas.max_price_per_unit,
+            },
+        ),
+    ])
+    .expect("Failed to convert resource bounds")
+}
+
+fn tip(tip: u64) -> starknet_api::transaction::Tip {
+    starknet_api::transaction::Tip(tip)
+}
+
+fn data_availability_mode(
+    mode: starknet_providers::sequencer::models::DataAvailabilityMode,
+) -> starknet_api::data_availability::DataAvailabilityMode {
+    match mode {
+        starknet_providers::sequencer::models::DataAvailabilityMode::L1 => {
+            starknet_api::data_availability::DataAvailabilityMode::L1
+        }
+        starknet_providers::sequencer::models::DataAvailabilityMode::L2 => {
+            starknet_api::data_availability::DataAvailabilityMode::L2
+        }
+    }
+}
+
+fn paymaster_data(paymaster_data: Vec<FieldElement>) -> starknet_api::transaction::PaymasterData {
+    starknet_api::transaction::PaymasterData(paymaster_data.into_iter().map(felt).collect())
+}
+
+fn account_deployment_data(
+    account_deployment_data: Vec<FieldElement>,
+) -> starknet_api::transaction::AccountDeploymentData {
+    starknet_api::transaction::AccountDeploymentData(account_deployment_data.into_iter().map(felt).collect())
+}
+
+/// Converts the l1 gas price and l1 data gas price to a GasPrices struct, if the l1 gas price is
+/// not 0. If the l1 gas price is 0, returns None.
+/// The other prices are converted to NonZeroU128, with 0 being converted to 1.
+fn resource_price(
+    l1_gas_price: starknet_core::types::ResourcePrice,
+    l1_data_gas_price: starknet_core::types::ResourcePrice,
+) -> Option<GasPrices> {
+    /// Converts a FieldElement to a NonZeroU128, with 0 being converted to 1.
+    fn field_element_to_non_zero_u128(field_element: FieldElement) -> NonZeroU128 {
+        let value: u128 = if field_element == FieldElement::ZERO {
+            1
+        } else {
+            field_element.try_into().expect("FieldElement is more than u128")
+        };
+        NonZeroU128::new(value).expect("Failed to convert field_element to NonZeroU128")
+    }
+
+    if l1_gas_price.price_in_wei == FieldElement::ZERO {
+        None
+    } else {
+        Some(GasPrices {
+            eth_l1_gas_price: field_element_to_non_zero_u128(l1_gas_price.price_in_wei),
+            strk_l1_gas_price: field_element_to_non_zero_u128(l1_gas_price.price_in_fri),
+            eth_l1_data_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_wei),
+            strk_l1_data_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_fri),
+        })
+    }
+}
+
+fn l1_da_mode(
+    mode: starknet_core::types::L1DataAvailabilityMode,
+) -> starknet_api::data_availability::L1DataAvailabilityMode {
+    match mode {
+        starknet_core::types::L1DataAvailabilityMode::Calldata => {
+            starknet_api::data_availability::L1DataAvailabilityMode::Calldata
+        }
+        starknet_core::types::L1DataAvailabilityMode::Blob => {
+            starknet_api::data_availability::L1DataAvailabilityMode::Blob
+        }
+    }
 }
 
 fn events(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<starknet_api::transaction::Event> {
@@ -200,7 +384,7 @@ fn events(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<starknet_api::tran
 }
 
 fn event(event: &p::Event) -> starknet_api::transaction::Event {
-    use starknet_api::transaction::{Event, EventContent, EventData, EventKey};
+    use starknet_api::transaction::{EventContent, EventData, EventKey};
 
     Event {
         from_address: contract_address(event.from_address),
@@ -212,7 +396,7 @@ fn event(event: &p::Event) -> starknet_api::transaction::Event {
 }
 
 fn commitments(
-    transactions: &[mp_transactions::Transaction],
+    transactions: &[starknet_api::transaction::Transaction],
     events: &[starknet_api::transaction::Event],
     block_number: u64,
 ) -> (StarkFelt, StarkFelt) {
@@ -235,10 +419,6 @@ fn chain_id() -> mp_felt::Felt252Wrapper {
 
 fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {
     starknet_api::hash::StarkFelt::new(field_element.to_bytes_be()).unwrap()
-}
-
-fn contract_address(field_element: starknet_ff::FieldElement) -> starknet_api::api_core::ContractAddress {
-    starknet_api::api_core::ContractAddress(starknet_api::api_core::PatriciaKey(felt(field_element)))
 }
 
 pub fn state_update(state_update: StateUpdateProvider) -> PendingStateUpdate {

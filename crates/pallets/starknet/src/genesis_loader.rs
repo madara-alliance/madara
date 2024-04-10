@@ -2,26 +2,17 @@ use std::vec::Vec;
 
 use blockifier::execution::contract_class::ContractClass as StarknetContractClass;
 use mp_felt::Felt252Wrapper;
-pub use mp_genesis_config::{GenesisData, GenesisLoader, HexFelt, PredeployedAccount};
-use starknet_api::api_core::{ContractAddress, PatriciaKey};
+pub use mp_genesis_config::{ContractClass, GenesisData, GenesisLoader, HexFelt, PredeployedAccount};
+use starknet_api::core::{ContractAddress, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 
 use crate::GenesisConfig;
 
-impl<T: crate::Config> From<GenesisData> for GenesisConfig<T> {
-    fn from(data: GenesisData) -> Self {
-        let contracts = data
-            .contracts
-            .clone()
-            .into_iter()
-            .map(|(address, hash)| {
-                let address = Felt252Wrapper(address.0).into();
-                let hash = Felt252Wrapper(hash.0).into();
-                (address, hash)
-            })
-            .collect::<Vec<_>>();
-        let sierra_to_casm_class_hash = data
+impl<T: crate::Config> From<GenesisLoader> for GenesisConfig<T> {
+    fn from(loader: GenesisLoader) -> Self {
+        let sierra_to_casm_class_hash = loader
+            .data()
             .sierra_class_hash_to_casm_class_hash
             .clone()
             .into_iter()
@@ -31,7 +22,19 @@ impl<T: crate::Config> From<GenesisData> for GenesisConfig<T> {
                 (sierra_hash, casm_hash)
             })
             .collect::<Vec<_>>();
-        let storage = data
+        let contracts = loader
+            .data()
+            .contracts
+            .clone()
+            .into_iter()
+            .map(|(address, hash)| {
+                let address = Felt252Wrapper(address.0).into();
+                let hash = Felt252Wrapper(hash.0).into();
+                (address, hash)
+            })
+            .collect::<Vec<_>>();
+        let storage = loader
+            .data()
             .storage
             .clone()
             .into_iter()
@@ -46,10 +49,16 @@ impl<T: crate::Config> From<GenesisData> for GenesisConfig<T> {
                         .collect(),
                 )
             })
-            .collect();
-        let fee_token_address = Felt252Wrapper(data.fee_token_address.0).into();
+            .collect::<Vec<_>>();
 
-        GenesisConfig { contracts, sierra_to_casm_class_hash, storage, fee_token_address, ..Default::default() }
+        GenesisConfig {
+            contracts,
+            sierra_to_casm_class_hash,
+            storage,
+            strk_fee_token_address: Felt252Wrapper(loader.data().strk_fee_token_address.0).into(),
+            eth_fee_token_address: Felt252Wrapper(loader.data().eth_fee_token_address.0).into(),
+            ..Default::default()
+        }
     }
 }
 
@@ -68,7 +77,7 @@ pub fn read_contract_class_from_json(json_str: &str, version: u8) -> StarknetCon
             serde_json::from_str(json_str).expect("`json_str` should be deserializable into the correct ContracClass"),
         );
     } else if version == 1 {
-        let casm_contract_class: cairo_lang_casm_contract_class::CasmContractClass =
+        let casm_contract_class: cairo_lang_starknet_classes::casm_contract_class::CasmContractClass =
             serde_json::from_str(json_str).expect("`json_str` should be deserializable into the CasmContracClass");
         return StarknetContractClass::V1(
             casm_contract_class.try_into().expect("the CasmContractClass should produce a valid ContractClassV1"),

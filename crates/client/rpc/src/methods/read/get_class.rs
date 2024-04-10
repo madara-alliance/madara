@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_contract::class::ContractClassWrapper;
 use mp_felt::Felt252Wrapper;
@@ -45,7 +44,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        error!("'{e}'");
+        log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
 
@@ -56,7 +55,7 @@ where
         .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
         .contract_class_by_class_hash(substrate_block_hash, class_hash)
         .ok_or_else(|| {
-            error!("Failed to retrieve contract class from hash '{class_hash}'");
+            log::error!("Failed to retrieve contract class from hash '{class_hash}'");
             StarknetRpcApiError::ClassHashNotFound
         })?;
 
@@ -66,13 +65,13 @@ where
         .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
         .contract_abi_by_class_hash(substrate_block_hash, class_hash)
         .ok_or_else(|| {
-            error!("Failed to retrieve contract ABI from hash '{class_hash}'");
+            log::error!("Failed to retrieve contract ABI from hash '{class_hash}'");
             StarknetRpcApiError::ClassHashNotFound
         })?;
 
     // converting from stored Blockifier class to rpc class
     Ok(ContractClassWrapper { contract: contract_class, abi: contract_abi }.try_into().map_err(|e| {
-        error!("Failed to convert contract class from hash '{class_hash}' to RPC contract class: {e}");
+        log::error!("Failed to convert contract class from hash '{class_hash}' to RPC contract class: {e}");
         StarknetRpcApiError::InternalServerError
     })?)
 }

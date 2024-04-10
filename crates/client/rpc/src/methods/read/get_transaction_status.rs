@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
@@ -18,7 +17,7 @@ use starknet_core::types::{FieldElement, TransactionExecutionStatus, Transaction
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
-use crate::{Starknet, StarknetReadRpcApiServer};
+use crate::Starknet;
 
 /// Gets the Transaction Status, Including Mempool Status and Execution Details
 ///
@@ -55,7 +54,7 @@ where
     let substrate_block_hash = DeoxysBackend::mapping()
         .block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
         .map_err(|e| {
-            error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
+            log::error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
             StarknetRpcApiError::TxnHashNotFound
         })?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
@@ -64,23 +63,23 @@ where
 
     let chain_id = starknet.chain_id()?.0.into();
 
-    let _starknet_tx = if let Some(tx_hashes) =
-        starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into())
-    {
-        tx_hashes
-            .into_iter()
-            .zip(starknet_block.transactions())
-            .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
-            .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash))
-    } else {
-        starknet_block
-            .transactions()
-            .iter()
-            .find(|tx| {
-                tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0 == transaction_hash
-            })
-            .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
-    };
+    let _starknet_tx =
+        if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into()) {
+            tx_hashes
+                .into_iter()
+                .zip(starknet_block.transactions())
+                .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
+                .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash))
+        } else {
+            starknet_block
+                .transactions()
+                .iter()
+                .find(|tx| {
+                    tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0
+                        == Felt252Wrapper::from(transaction_hash).into()
+                })
+                .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
+        };
 
     let execution_status = {
         let revert_error = starknet
@@ -88,7 +87,7 @@ where
             .runtime_api()
             .get_tx_execution_outcome(substrate_block_hash, Felt252Wrapper(transaction_hash).into())
             .map_err(|e| {
-                error!(
+                log::error!(
                     "Failed to get transaction execution outcome. Substrate block hash: {substrate_block_hash}, \
                      transaction hash: {transaction_hash}, error: {e}"
                 );

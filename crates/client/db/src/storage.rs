@@ -7,7 +7,7 @@ use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiDatabase, BonsaiStorage};
 use sp_core::hexdisplay::AsBytesRef;
-use starknet_api::api_core::{ClassHash, ContractAddress};
+use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_core::types::BlockId;

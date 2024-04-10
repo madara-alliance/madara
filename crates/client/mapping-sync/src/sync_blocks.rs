@@ -1,6 +1,10 @@
+use std::num::NonZeroU128;
+
+use blockifier::blockifier::block::GasPrices;
 use mc_db::DeoxysBackend;
 use mc_rpc::utils::get_block_by_block_hash;
 use mp_digest_log::{find_starknet_block, FindLogError};
+use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
@@ -54,11 +58,11 @@ where
                                 .transactions()
                                 .iter()
                                 .map(|tx| {
-                                    tx.compute_hash::<H>(
+                                    Felt252Wrapper::from(tx.compute_hash::<H>(
                                         chain_id,
                                         false,
                                         Some(digest_starknet_block.header().block_number),
-                                    )
+                                    ))
                                     .into()
                                 })
                                 .collect(),
@@ -67,6 +71,12 @@ where
                         if let Some(block_metrics) = block_metrics {
                             let starknet_block = &digest_starknet_block.clone();
                             block_metrics.block_height.set(starknet_block.header().block_number.into_f64());
+                            let l1_gas_price = starknet_block.header().l1_gas_price.clone().unwrap_or(GasPrices {
+                                eth_l1_gas_price: NonZeroU128::new(1).unwrap(),
+                                strk_l1_gas_price: NonZeroU128::new(1).unwrap(),
+                                eth_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
+                                strk_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
+                            });
 
                             // sending f64::MIN in case we exceed f64 (highly unlikely). The min numbers will
                             // allow dashboards to catch anomalies so that it can be investigated.
@@ -76,13 +86,13 @@ where
                             block_metrics
                                 .event_count
                                 .inc_by(f64::from_u128(starknet_block.header().event_count).unwrap_or(f64::MIN));
-                            block_metrics.l1_gas_price_wei.set(
-                                f64::from_u128(starknet_block.header().l1_gas_price.price_in_wei).unwrap_or(f64::MIN),
-                            );
+                            block_metrics
+                                .l1_gas_price_wei
+                                .set(f64::from_u128(l1_gas_price.eth_l1_gas_price.into()).unwrap_or(f64::MIN));
 
                             block_metrics
                                 .l1_gas_price_strk
-                                .set(starknet_block.header().l1_gas_price.price_in_strk.unwrap_or(0).into_f64());
+                                .set(f64::from_u128(l1_gas_price.strk_l1_gas_price.into()).unwrap_or(f64::MIN))
                         }
 
                         DeoxysBackend::mapping().write_hashes(mapping_commitment).map_err(|e| anyhow::anyhow!(e))

@@ -108,7 +108,7 @@ impl From<StarknetError> for StarknetRpcApiError {
             StarknetError::InvalidTransactionNonce => StarknetRpcApiError::InvalidTxnNonce,
             StarknetError::InsufficientMaxFee => StarknetRpcApiError::InsufficientMaxFee,
             StarknetError::InsufficientAccountBalance => StarknetRpcApiError::InsufficientAccountBalance,
-            StarknetError::ValidationFailure => StarknetRpcApiError::ValidationFailure,
+            StarknetError::ValidationFailure(_) => StarknetRpcApiError::ValidationFailure,
             StarknetError::CompilationFailed => StarknetRpcApiError::CompilationFailed,
             StarknetError::ContractClassSizeIsTooLarge => StarknetRpcApiError::ContractClassSizeTooLarge,
             StarknetError::NonAccount => StarknetRpcApiError::NonAccount,
@@ -118,7 +118,7 @@ impl From<StarknetError> for StarknetRpcApiError {
             StarknetError::UnsupportedContractClassVersion => StarknetRpcApiError::UnsupportedContractClassVersion,
             StarknetError::UnexpectedError(_) => StarknetRpcApiError::ErrUnexpectedError,
             StarknetError::NoTraceAvailable(_) => StarknetRpcApiError::InternalServerError,
-            StarknetError::InvalidTransactionHash => StarknetRpcApiError::InvalidTxnHash,
+            StarknetError::TransactionExecutionError(_) => StarknetRpcApiError::TxnExecutionError,
         }
     }
 }

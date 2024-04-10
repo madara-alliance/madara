@@ -5,8 +5,6 @@
 pub extern crate alloc;
 
 pub mod compute_hash;
-pub mod conversions;
-pub mod execution;
 #[cfg(feature = "client")]
 pub mod from_broadcasted_transactions;
 pub mod getters;
@@ -15,50 +13,19 @@ pub mod to_starknet_core_transaction;
 #[cfg(feature = "client")]
 pub mod utils;
 
-use alloc::vec::Vec;
-
-use blockifier::execution::contract_class::ContractClass;
+use blockifier::transaction::account_transaction::AccountTransaction;
+use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transaction_types::TransactionType;
-use derive_more::From;
-use lazy_static::lazy_static;
-use spin::Mutex;
-use starknet_api::transaction::{Fee, TransactionVersion};
-use starknet_core::types::{MsgFromL1, TransactionExecutionStatus, TransactionFinalityStatus};
 use starknet_ff::FieldElement;
 
 const SIMULATE_TX_VERSION_OFFSET: FieldElement =
     FieldElement::from_mont([18446744073700081665, 17407, 18446744073709551584, 576460752142434320]);
-
-/// Functions related to transaction conversions
-// pub mod utils;
-use mp_felt::Felt252Wrapper;
 
 /// Legacy check for deprecated txs
 /// See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/` for more details.
 
 pub const LEGACY_BLOCK_NUMBER: u64 = 1470;
 pub const LEGACY_L1_HANDLER_BLOCK: u64 = 854;
-
-pub struct LegacyEnv {
-    pub legacy_mode: bool,
-}
-
-lazy_static! {
-    pub static ref LEGACY_ENV: Mutex<LegacyEnv> = Mutex::new(LegacyEnv { legacy_mode: true });
-}
-
-pub fn update_legacy() {
-    let mut env = LEGACY_ENV.lock();
-    env.legacy_mode = false;
-}
-
-// TODO(antiyro): remove this when released: https://github.com/xJonathanLEI/starknet-rs/blame/fec81d126c58ff3dff6cbfd4b9e714913298e54e/starknet-core/src/types/serde_impls.rs#L175
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct TransactionStatus {
-    pub finality_status: TransactionFinalityStatus,
-    pub execution_status: TransactionExecutionStatus,
-}
 
 /// Wrapper type for transaction execution error.
 /// Different tx types.
@@ -89,171 +56,253 @@ impl From<TxType> for TransactionType {
     }
 }
 
-impl From<&UserTransaction> for TxType {
-    fn from(value: &UserTransaction) -> Self {
+impl From<&Transaction> for TxType {
+    fn from(value: &Transaction) -> Self {
         match value {
-            UserTransaction::Declare(_, _) => TxType::Declare,
-            UserTransaction::DeployAccount(_) => TxType::DeployAccount,
-            UserTransaction::Invoke(_) => TxType::Invoke,
+            Transaction::AccountTransaction(tx) => tx.into(),
+            Transaction::L1HandlerTransaction(_) => TxType::L1Handler,
         }
     }
 }
 
-impl From<&UserOrL1HandlerTransaction> for TxType {
-    fn from(value: &UserOrL1HandlerTransaction) -> Self {
+impl From<&AccountTransaction> for TxType {
+    fn from(value: &AccountTransaction) -> Self {
         match value {
-            UserOrL1HandlerTransaction::User(tx) => tx.into(),
-            UserOrL1HandlerTransaction::L1Handler(_, _) => TxType::L1Handler,
+            AccountTransaction::Declare(_) => TxType::Declare,
+            AccountTransaction::DeployAccount(_) => TxType::DeployAccount,
+            AccountTransaction::Invoke(_) => TxType::Invoke,
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, From)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub enum UserTransaction {
-    Declare(DeclareTransaction, ContractClass),
-    DeployAccount(DeployAccountTransaction),
-    Invoke(InvokeTransaction),
-}
+// impl From<&UserTransaction> for TxType {
+//     fn from(value: &UserTransaction) -> Self {
+//         match value {
+//             UserTransaction::Declare(_, _) => TxType::Declare,
+//             UserTransaction::DeployAccount(_) => TxType::DeployAccount,
+//             UserTransaction::Invoke(_) => TxType::Invoke,
+//         }
+//     }
+// }
 
-#[derive(Clone, Debug, Eq, PartialEq, From, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub enum Transaction {
-    Declare(DeclareTransaction),
-    DeployAccount(DeployAccountTransaction),
-    Deploy(DeployTransaction),
-    Invoke(InvokeTransaction),
-    L1Handler(HandleL1MessageTransaction),
-}
+// impl From<&UserOrL1HandlerTransaction> for TxType {
+//     fn from(value: &UserOrL1HandlerTransaction) -> Self {
+//         match value {
+//             UserOrL1HandlerTransaction::User(tx) => tx.into(),
+//             UserOrL1HandlerTransaction::L1Handler(_, _) => TxType::L1Handler,
+//         }
+//     }
+// }
 
-#[derive(Clone, Debug, Eq, PartialEq, From)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub enum UserOrL1HandlerTransaction {
-    User(UserTransaction),
-    L1Handler(HandleL1MessageTransaction, Fee),
-}
+// #[derive(Clone, Debug, Eq, PartialEq, From)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub enum UserTransaction {
+//     Declare(DeclareTransaction),
+//     DeployAccount(DeployAccountTransaction),
+//     Invoke(InvokeTransaction),
+// }
 
-#[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub enum InvokeTransaction {
-    V0(InvokeTransactionV0),
-    V1(InvokeTransactionV1),
-}
+// #[derive(Clone, Debug, Eq, PartialEq, From, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub enum Transaction {
+//     Declare(DeclareTransaction),
+//     DeployAccount(DeployAccountTransaction),
+//     Deploy(DeployTransaction),
+//     Invoke(InvokeTransaction),
+//     L1Handler(HandleL1MessageTransaction),
+// }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct InvokeTransactionV0 {
-    pub max_fee: u128,
-    pub signature: Vec<Felt252Wrapper>,
-    pub contract_address: Felt252Wrapper,
-    pub entry_point_selector: Felt252Wrapper,
-    pub calldata: Vec<Felt252Wrapper>,
-}
+// #[derive(Clone, Debug, Eq, PartialEq, From)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub enum UserOrL1HandlerTransaction {
+//     User(AccountTransaction),
+//     L1Handler(L1HandlerTransaction),
+// }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct InvokeTransactionV1 {
-    pub max_fee: u128,
-    pub signature: Vec<Felt252Wrapper>,
-    pub nonce: Felt252Wrapper,
-    pub sender_address: Felt252Wrapper,
-    pub calldata: Vec<Felt252Wrapper>,
-    pub offset_version: bool,
-}
+// #[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub enum InvokeTransaction {
+//     V0(InvokeTransactionV0),
+//     V1(InvokeTransactionV1),
+// }
 
-#[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub enum DeclareTransaction {
-    V0(DeclareTransactionV0),
-    V1(DeclareTransactionV1),
-    V2(DeclareTransactionV2),
-}
+// #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub struct InvokeTransactionV0 {
+//     pub max_fee: u128,
+//     pub signature: Vec<Felt252Wrapper>,
+//     pub contract_address: Felt252Wrapper,
+//     pub entry_point_selector: Felt252Wrapper,
+//     pub calldata: Vec<Felt252Wrapper>,
+// }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct DeclareTransactionV0 {
-    pub max_fee: u128,
-    pub signature: Vec<Felt252Wrapper>,
-    pub nonce: Felt252Wrapper,
-    pub class_hash: Felt252Wrapper,
-    pub sender_address: Felt252Wrapper,
-}
+// #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub struct InvokeTransactionV1 {
+//     pub max_fee: u128,
+//     pub signature: Vec<Felt252Wrapper>,
+//     pub nonce: Felt252Wrapper,
+//     pub sender_address: Felt252Wrapper,
+//     pub calldata: Vec<Felt252Wrapper>,
+//     pub offset_version: bool,
+// }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct DeclareTransactionV1 {
-    pub max_fee: u128,
-    pub signature: Vec<Felt252Wrapper>,
-    pub nonce: Felt252Wrapper,
-    pub class_hash: Felt252Wrapper,
-    pub sender_address: Felt252Wrapper,
-    pub offset_version: bool,
-}
+// #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub enum DeclareTransaction {
+//     V0(DeclareTransactionV0V1),
+//     V1(DeclareTransactionV0V1),
+//     V2(DeclareTransactionV2),
+//     V3(DeclareTransactionV3),
+// }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct DeclareTransactionV2 {
-    pub max_fee: u128,
-    pub signature: Vec<Felt252Wrapper>,
-    pub nonce: Felt252Wrapper,
-    pub class_hash: Felt252Wrapper,
-    pub sender_address: Felt252Wrapper,
-    pub compiled_class_hash: Felt252Wrapper,
-    pub offset_version: bool,
-}
+// #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub struct DeclareTransactionV0V1 {
+//     pub max_fee: u128,
+//     pub signature: Vec<Felt252Wrapper>,
+//     pub nonce: Felt252Wrapper,
+//     pub class_hash: Felt252Wrapper,
+//     pub sender_address: Felt252Wrapper,
+// }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct DeployAccountTransaction {
-    pub max_fee: u128,
-    pub signature: Vec<Felt252Wrapper>,
-    pub nonce: Felt252Wrapper,
-    pub contract_address_salt: Felt252Wrapper,
-    pub constructor_calldata: Vec<Felt252Wrapper>,
-    pub class_hash: Felt252Wrapper,
-    pub offset_version: bool,
-}
+// #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub struct DeclareTransactionV2 {
+//     pub max_fee: u128,
+//     pub signature: Vec<Felt252Wrapper>,
+//     pub nonce: Felt252Wrapper,
+//     pub class_hash: Felt252Wrapper,
+//     pub compiled_class_hash: Felt252Wrapper,
+//     pub sender_address: Felt252Wrapper,
+// }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct DeployTransaction {
-    pub version: TransactionVersion,
-    pub class_hash: Felt252Wrapper,
-    pub contract_address: Felt252Wrapper,
-    pub contract_address_salt: Felt252Wrapper,
-    pub constructor_calldata: Vec<Felt252Wrapper>,
-}
+// #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub struct DeclareTransactionV3 {
+//     pub resource_bounds: ResourceBoundsMapping,
+//     pub tip: u64,
+//     pub signature: Vec<Felt252Wrapper>,
+//     pub nonce: Felt252Wrapper,
+//     pub class_hash: Felt252Wrapper,
+//     pub compiled_class_hash: Felt252Wrapper,
+//     pub sender_address: Felt252Wrapper,
+//     pub nonce_data_availability_mode: DataAvailabilityMode,
+//     pub fee_data_availability_mode: DataAvailabilityMode,
+//     pub paymaster_data: PaymasterData,
+//     pub account_deployment_data: AccountDeploymentData,
+// }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct HandleL1MessageTransaction {
-    pub nonce: u64,
-    pub contract_address: Felt252Wrapper,
-    pub entry_point_selector: Felt252Wrapper,
-    pub calldata: Vec<Felt252Wrapper>,
-}
+// #[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub enum DeployAccountTransaction {
+//     V1(DeployAccountTransactionV1),
+//     V3(DeployAccountTransactionV3),
+// }
 
-impl From<MsgFromL1> for HandleL1MessageTransaction {
-    fn from(msg: MsgFromL1) -> Self {
-        let calldata = msg.payload.into_iter().map(|felt| felt.into()).collect();
-        Self {
-            contract_address: msg.to_address.into(),
-            nonce: 0u32.into(),
-            entry_point_selector: msg.entry_point_selector.into(),
-            calldata,
-        }
-    }
-}
+// #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub struct DeployAccountTransactionV1 {
+//     pub max_fee: u128,
+//     pub signature: Vec<Felt252Wrapper>,
+//     pub nonce: Felt252Wrapper,
+//     pub class_hash: Felt252Wrapper,
+//     pub contract_address_salt: Felt252Wrapper,
+//     pub constructor_calldata: Vec<Felt252Wrapper>,
+// }
+
+// #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub struct DeployAccountTransactionV3 {
+//     pub resource_bounds: ResourceBoundsMapping,
+//     pub tip: u64,
+//     pub signature: Vec<Felt252Wrapper>,
+//     pub nonce: Felt252Wrapper,
+//     pub class_hash: Felt252Wrapper,
+//     pub contract_address_salt: Felt252Wrapper,
+//     pub constructor_calldata: Vec<Felt252Wrapper>,
+//     pub nonce_data_availability_mode: DataAvailabilityMode,
+//     pub fee_data_availability_mode: DataAvailabilityMode,
+//     pub paymaster_data: Vec<Felt252Wrapper>,
+//     pub max_fee: u128,
+// }
+
+// #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub struct DeployTransaction {
+//     pub version: TransactionVersion,
+//     pub class_hash: Felt252Wrapper,
+//     pub contract_address: Felt252Wrapper,
+//     pub contract_address_salt: Felt252Wrapper,
+//     pub constructor_calldata: Vec<Felt252Wrapper>,
+// }
+
+// #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode,
+// parity_scale_codec::Decode))] #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+// pub struct HandleL1MessageTransaction {
+//     pub nonce: u64,
+//     pub contract_address: Felt252Wrapper,
+//     pub entry_point_selector: Felt252Wrapper,
+//     pub calldata: Vec<Felt252Wrapper>,
+// }
+
+// impl From<UserTransaction> for AccountTransaction {
+//     fn from(user_transaction: UserTransaction) -> Self {
+//         match user_transaction {
+//             UserTransaction::Declare(declare_tx) => AccountTransaction::Declare(declare_tx),
+//             UserTransaction::DeployAccount(deploy_account_tx) =>
+// AccountTransaction::DeployAccount(deploy_account_tx),
+// UserTransaction::Invoke(invoke_tx) => AccountTransaction::Invoke(invoke_tx),         }
+//     }
+// }
+
+// impl From<AccountTransaction> for UserTransaction {
+//     fn from(account_transaction: AccountTransaction) -> Self {
+//         match account_transaction {
+//             AccountTransaction::Declare(declare_tx) => UserTransaction::Declare(declare_tx),
+//             AccountTransaction::DeployAccount(deploy_account_tx) =>
+// UserTransaction::DeployAccount(deploy_account_tx),
+// AccountTransaction::Invoke(invoke_tx) => UserTransaction::Invoke(invoke_tx),         }
+//     }
+// }
+
+// impl From<UserOrL1HandlerTransaction> for Transaction {
+//     fn from(item: UserOrL1HandlerTransaction) -> Self {
+//         match item {
+//             UserOrL1HandlerTransaction::User(tx) => Transaction::AccountTransaction(tx),
+//             UserOrL1HandlerTransaction::L1Handler(tx) => Transaction::L1HandlerTransaction(tx),
+//         }
+//     }
+// }
+
+// impl From<Transaction> for UserOrL1HandlerTransaction {
+//     fn from(item: Transaction) -> Self {
+//         match item {
+//             Transaction::AccountTransaction(tx) => UserOrL1HandlerTransaction::User(tx),
+//             Transaction::L1HandlerTransaction(tx) => UserOrL1HandlerTransaction::L1Handler(tx),
+//         }
+//     }
+// }
+
+// pub fn user_or_l1_into_tx_vec(user_or_l1_transactions: Vec<UserOrL1HandlerTransaction>) ->
+// Vec<Transaction> {     user_or_l1_transactions.into_iter().map(|tx| tx.into()).collect()
+// }
+
+// pub fn tx_into_user_or_l1_vec(transactions: Vec<Transaction>) -> Vec<UserOrL1HandlerTransaction>
+// {     transactions.into_iter().map(|tx| tx.into()).collect()
+// }

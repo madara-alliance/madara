@@ -1,331 +1,202 @@
-use alloc::vec::Vec;
-
+use blockifier::transaction::account_transaction::AccountTransaction;
+use blockifier::transaction::transaction_execution::Transaction;
 use mp_felt::Felt252Wrapper;
+use starknet_api::transaction::TransactionHash;
 
-use super::{DeclareTransaction, DeployAccountTransaction, InvokeTransaction, Transaction, UserTransaction};
-use crate::{
-    DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeployTransaction, HandleL1MessageTransaction,
-    InvokeTransactionV0, InvokeTransactionV1, UserOrL1HandlerTransaction,
-};
+use crate::TxType;
 
-impl Transaction {
-    pub fn signature(&self) -> Vec<Felt252Wrapper> {
+pub trait Getters {
+    fn sender_address(&self) -> Felt252Wrapper;
+    fn signature(&self) -> Vec<Felt252Wrapper>;
+    fn calldata(&self) -> Option<Vec<Felt252Wrapper>>;
+    fn nonce(&self) -> Option<Felt252Wrapper>;
+    fn tx_type(&self) -> TxType;
+}
+
+pub trait Hash {
+    fn tx_hash(&self) -> Option<TransactionHash>;
+}
+
+impl Getters for AccountTransaction {
+    fn sender_address(&self) -> Felt252Wrapper {
         match self {
-            Transaction::Declare(tx) => tx.signature().clone(),
-            Transaction::DeployAccount(tx) => tx.signature().clone(),
-            Transaction::Invoke(tx) => tx.signature().clone(),
-            Transaction::Deploy(_) => Vec::new(),
-            Transaction::L1Handler(_) => Vec::new(),
+            AccountTransaction::Declare(tx) => tx.tx.sender_address().into(),
+            AccountTransaction::DeployAccount(tx) => tx.tx.contract_address_salt().into(),
+            AccountTransaction::Invoke(tx) => tx.tx.sender_address().into(),
+        }
+    }
+
+    fn signature(&self) -> Vec<Felt252Wrapper> {
+        match self {
+            AccountTransaction::Declare(tx) => tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x)).collect(),
+            AccountTransaction::DeployAccount(tx) => {
+                tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x)).collect()
+            }
+            AccountTransaction::Invoke(tx) => tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x)).collect(),
+        }
+    }
+
+    fn calldata(&self) -> Option<Vec<Felt252Wrapper>> {
+        match self {
+            AccountTransaction::Declare(..) => None,
+            AccountTransaction::DeployAccount(tx) => {
+                Some(tx.tx.constructor_calldata().0.iter().map(|x| Felt252Wrapper::from(*x)).collect())
+            }
+            AccountTransaction::Invoke(tx) => {
+                Some(tx.tx.calldata().0.iter().map(|x| Felt252Wrapper::from(*x)).collect())
+            }
+        }
+    }
+
+    fn nonce(&self) -> Option<Felt252Wrapper> {
+        match self {
+            AccountTransaction::Declare(tx) => Some(tx.tx.nonce().0.into()),
+            AccountTransaction::DeployAccount(tx) => Some(tx.tx.nonce().0.into()),
+            AccountTransaction::Invoke(tx) => Some(tx.tx.nonce().0.into()),
+        }
+    }
+
+    fn tx_type(&self) -> TxType {
+        match self {
+            AccountTransaction::Declare(..) => TxType::Declare,
+            AccountTransaction::DeployAccount(..) => TxType::DeployAccount,
+            AccountTransaction::Invoke(..) => TxType::Invoke,
         }
     }
 }
 
-impl UserTransaction {
-    pub fn sender_address(&self) -> Felt252Wrapper {
+impl Hash for Transaction {
+    fn tx_hash(&self) -> Option<TransactionHash> {
         match self {
-            UserTransaction::Declare(tx, _) => *tx.sender_address(),
-            UserTransaction::DeployAccount(tx) => tx.account_address(),
-            UserTransaction::Invoke(tx) => *tx.sender_address(),
-        }
-    }
-
-    pub fn signature(&self) -> &Vec<Felt252Wrapper> {
-        match self {
-            UserTransaction::Declare(tx, _) => tx.signature(),
-            UserTransaction::DeployAccount(tx) => tx.signature(),
-            UserTransaction::Invoke(tx) => tx.signature(),
-        }
-    }
-
-    pub fn max_fee(&self) -> &u128 {
-        match self {
-            UserTransaction::Declare(tx, _) => tx.max_fee(),
-            UserTransaction::DeployAccount(tx) => tx.max_fee(),
-            UserTransaction::Invoke(tx) => tx.max_fee(),
-        }
-    }
-
-    pub fn calldata(&self) -> Option<&Vec<Felt252Wrapper>> {
-        match self {
-            UserTransaction::Declare(..) => None,
-            UserTransaction::DeployAccount(tx) => Some(tx.calldata()),
-            UserTransaction::Invoke(tx) => Some(tx.calldata()),
-        }
-    }
-
-    pub fn nonce(&self) -> Option<&Felt252Wrapper> {
-        match self {
-            UserTransaction::Declare(tx, _) => Some(tx.nonce()),
-            UserTransaction::DeployAccount(tx) => Some(tx.nonce()),
-            UserTransaction::Invoke(tx) => tx.nonce(),
-        }
-    }
-
-    pub fn offset_version(&self) -> bool {
-        match self {
-            UserTransaction::Declare(tx, _) => tx.offset_version(),
-            UserTransaction::DeployAccount(tx) => tx.offset_version(),
-            UserTransaction::Invoke(tx) => tx.offset_version(),
+            Transaction::AccountTransaction(tx) => tx.tx_hash(),
+            Transaction::L1HandlerTransaction(tx) => Some(tx.tx_hash),
         }
     }
 }
 
-impl DeclareTransaction {
-    pub fn sender_address(&self) -> &Felt252Wrapper {
+impl Hash for AccountTransaction {
+    fn tx_hash(&self) -> Option<TransactionHash> {
         match self {
-            DeclareTransaction::V0(tx) => &tx.sender_address,
-            DeclareTransaction::V1(tx) => &tx.sender_address,
-            DeclareTransaction::V2(tx) => &tx.sender_address,
-        }
-    }
-
-    pub fn signature(&self) -> &Vec<Felt252Wrapper> {
-        match self {
-            DeclareTransaction::V0(tx) => &tx.signature,
-            DeclareTransaction::V1(tx) => &tx.signature,
-            DeclareTransaction::V2(tx) => &tx.signature,
-        }
-    }
-
-    pub fn max_fee(&self) -> &u128 {
-        match self {
-            DeclareTransaction::V0(tx) => &tx.max_fee,
-            DeclareTransaction::V1(tx) => &tx.max_fee,
-            DeclareTransaction::V2(tx) => &tx.max_fee,
-        }
-    }
-
-    pub fn nonce(&self) -> &Felt252Wrapper {
-        match self {
-            DeclareTransaction::V0(tx) => &tx.nonce,
-            DeclareTransaction::V1(tx) => &tx.nonce,
-            DeclareTransaction::V2(tx) => &tx.nonce,
-        }
-    }
-
-    pub fn class_hash(&self) -> &Felt252Wrapper {
-        match self {
-            DeclareTransaction::V0(tx) => &tx.class_hash,
-            DeclareTransaction::V1(tx) => &tx.class_hash,
-            DeclareTransaction::V2(tx) => &tx.class_hash,
-        }
-    }
-
-    pub fn compiled_class_hash(&self) -> Option<&Felt252Wrapper> {
-        match self {
-            DeclareTransaction::V0(_) => None,
-            DeclareTransaction::V1(_) => None,
-            DeclareTransaction::V2(tx) => Some(&tx.compiled_class_hash),
-        }
-    }
-
-    pub fn offset_version(&self) -> bool {
-        match self {
-            // we don't accept V0 txs from the RPC
-            DeclareTransaction::V0(_) => false,
-            DeclareTransaction::V1(tx) => tx.offset_version,
-            DeclareTransaction::V2(tx) => tx.offset_version,
+            AccountTransaction::Declare(tx) => Some(tx.tx_hash),
+            AccountTransaction::DeployAccount(tx) => Some(tx.tx_hash),
+            AccountTransaction::Invoke(tx) => Some(tx.tx_hash),
         }
     }
 }
 
-impl DeployAccountTransaction {
-    pub fn signature(&self) -> &Vec<Felt252Wrapper> {
-        &self.signature
-    }
+// impl UserOrL1HandlerTransaction {
+//     pub fn tx_type(&self) -> TxType {
+//         match self {
+//             UserOrL1HandlerTransaction::User(user_tx) => match user_tx {
+//                 AccountTransaction::Declare(_) => TxType::Declare,
+//                 AccountTransaction::DeployAccount(_) => TxType::DeployAccount,
+//                 AccountTransaction::Invoke(_) => TxType::Invoke,
+//             },
+//             UserOrL1HandlerTransaction::L1Handler(_) => TxType::L1Handler,
+//         }
+//     }
 
-    pub fn max_fee(&self) -> &u128 {
-        &self.max_fee
-    }
+//     pub fn tx_hash(&self) -> Option<TransactionHash> {
+//         match self {
+//             UserOrL1HandlerTransaction::User(user_tx) => match user_tx {
+//                 AccountTransaction::Declare(declare_transaction) =>
+// Some(declare_transaction.tx_hash),
+// AccountTransaction::DeployAccount(deploy_account_transaction) => {
+// Some(deploy_account_transaction.tx_hash)                 }
+//                 AccountTransaction::Invoke(invoke_transaction) =>
+// Some(invoke_transaction.tx_hash),             },
+//             UserOrL1HandlerTransaction::L1Handler(l1_handler_transaction) =>
+// Some(l1_handler_transaction.tx_hash),         }
+//     }
+// }
 
-    pub fn calldata(&self) -> &Vec<Felt252Wrapper> {
-        &self.constructor_calldata
-    }
+// pub trait TransactionVersion {
+//     fn version(&self) -> u8;
+// }
 
-    pub fn nonce(&self) -> &Felt252Wrapper {
-        &self.nonce
-    }
+// impl TransactionVersion for InvokeTransaction {
+//     #[inline(always)]
+//     fn version(&self) -> u8 {
+//         match self {
+//             InvokeTransaction::V0(tx) => tx.version(),
+//             InvokeTransaction::V1(tx) => tx.version(),
+//             InvokeTransaction::V3(tx) => tx.version(),
+//         }
+//     }
+// }
 
-    pub fn account_address(&self) -> Felt252Wrapper {
-        Felt252Wrapper(self.get_account_address())
-    }
+// impl TransactionVersion for InvokeTransactionV0 {
+//     #[inline(always)]
+//     fn version(&self) -> u8 {
+//         0
+//     }
+// }
 
-    pub fn class_hash(&self) -> &Felt252Wrapper {
-        &self.class_hash
-    }
+// impl TransactionVersion for InvokeTransactionV1 {
+//     #[inline(always)]
+//     fn version(&self) -> u8 {
+//         1
+//     }
+// }
 
-    pub fn offset_version(&self) -> bool {
-        self.offset_version
-    }
-}
+// impl TransactionVersion for InvokeTransactionV3 {
+//     #[inline(always)]
+//     fn version(&self) -> u8 {
+//         3
+//     }
+// }
 
-impl DeployTransaction {
-    pub fn calldata(&self) -> &Vec<Felt252Wrapper> {
-        &self.constructor_calldata
-    }
+// impl TransactionVersion for DeclareTransaction {
+//     #[inline(always)]
+//     fn version(&self) -> u8 {
+//         match self {
+//             DeclareTransaction::V0(tx) => tx.version(),
+//             DeclareTransaction::V1(tx) => tx.version(),
+//             DeclareTransaction::V2(tx) => tx.version(),
+//             DeclareTransaction::V3(tx) => tx.version(),
+//         }
+//     }
+// }
 
-    pub fn version(&self) -> u8 {
-        1
-    }
+// impl TransactionVersion for DeclareTransactionV0V1 {
+//     #[inline(always)]
+//     fn version(&self) -> u8 {
+//         0
+//     }
+// }
 
-    pub fn account_address(&self) -> Felt252Wrapper {
-        Felt252Wrapper(self.get_account_address())
-    }
+// // TODO: what should we do here?
+// // impl TransactionVersion for DeclareTransactionV1 {
+// //     #[inline(always)]
+// //     fn version(&self) -> u8 {
+// //         1
+// //     }
+// // }
 
-    pub fn class_hash(&self) -> &Felt252Wrapper {
-        &self.class_hash
-    }
-}
+// impl TransactionVersion for DeclareTransactionV2 {
+//     #[inline(always)]
+//     fn version(&self) -> u8 {
+//         2
+//     }
+// }
 
-impl InvokeTransaction {
-    pub fn sender_address(&self) -> &Felt252Wrapper {
-        match self {
-            InvokeTransaction::V0(tx) => &tx.contract_address,
-            InvokeTransaction::V1(tx) => &tx.sender_address,
-        }
-    }
+// impl TransactionVersion for DeclareTransactionV3 {
+//     #[inline(always)]
+//     fn version(&self) -> u8 {
+//         3
+//     }
+// }
 
-    pub fn signature(&self) -> &Vec<Felt252Wrapper> {
-        match self {
-            InvokeTransaction::V0(tx) => &tx.signature,
-            InvokeTransaction::V1(tx) => &tx.signature,
-        }
-    }
+// impl TransactionVersion for DeployAccountTransaction {
+//     #[inline(always)]
+//     fn version(&self) -> u8 {
+//         1
+//     }
+// }
 
-    pub fn max_fee(&self) -> &u128 {
-        match self {
-            InvokeTransaction::V0(tx) => &tx.max_fee,
-            InvokeTransaction::V1(tx) => &tx.max_fee,
-        }
-    }
-
-    pub fn calldata(&self) -> &Vec<Felt252Wrapper> {
-        match self {
-            InvokeTransaction::V0(tx) => &tx.calldata,
-            InvokeTransaction::V1(tx) => &tx.calldata,
-        }
-    }
-
-    pub fn nonce(&self) -> Option<&Felt252Wrapper> {
-        match self {
-            InvokeTransaction::V0(_) => None,
-            InvokeTransaction::V1(tx) => Some(&tx.nonce),
-        }
-    }
-
-    pub fn offset_version(&self) -> bool {
-        match self {
-            // we don't accept V0 txs from the RPC
-            InvokeTransaction::V0(_) => false,
-            InvokeTransaction::V1(tx) => tx.offset_version,
-        }
-    }
-}
-
-pub trait TransactionVersion {
-    fn version(&self) -> u8;
-}
-
-impl TransactionVersion for UserTransaction {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        match self {
-            UserTransaction::Declare(tx, _) => tx.version(),
-            UserTransaction::DeployAccount(tx) => tx.version(),
-            UserTransaction::Invoke(tx) => tx.version(),
-        }
-    }
-}
-
-impl TransactionVersion for Transaction {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        match self {
-            Transaction::Declare(tx) => tx.version(),
-            Transaction::Deploy(tx) => tx.version(),
-            Transaction::DeployAccount(tx) => tx.version(),
-            Transaction::Invoke(tx) => tx.version(),
-            Transaction::L1Handler(tx) => tx.version(),
-        }
-    }
-}
-
-impl TransactionVersion for UserOrL1HandlerTransaction {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        match self {
-            UserOrL1HandlerTransaction::User(tx) => tx.version(),
-            UserOrL1HandlerTransaction::L1Handler(tx, _) => tx.version(),
-        }
-    }
-}
-
-impl TransactionVersion for InvokeTransaction {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        match self {
-            InvokeTransaction::V0(tx) => tx.version(),
-            InvokeTransaction::V1(tx) => tx.version(),
-        }
-    }
-}
-
-impl TransactionVersion for InvokeTransactionV0 {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        0
-    }
-}
-
-impl TransactionVersion for InvokeTransactionV1 {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        1
-    }
-}
-
-impl TransactionVersion for DeclareTransaction {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        match self {
-            DeclareTransaction::V0(tx) => tx.version(),
-            DeclareTransaction::V1(tx) => tx.version(),
-            DeclareTransaction::V2(tx) => tx.version(),
-        }
-    }
-}
-
-impl TransactionVersion for DeclareTransactionV0 {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        0
-    }
-}
-
-impl TransactionVersion for DeclareTransactionV1 {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        1
-    }
-}
-
-impl TransactionVersion for DeclareTransactionV2 {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        2
-    }
-}
-
-impl TransactionVersion for DeployAccountTransaction {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        1
-    }
-}
-
-impl TransactionVersion for HandleL1MessageTransaction {
-    #[inline(always)]
-    fn version(&self) -> u8 {
-        0
-    }
-}
+// impl TransactionVersion for L1HandlerTransaction {
+//     #[inline(always)]
+//     fn version(&self) -> u8 {
+//         0
+//     }
+// }

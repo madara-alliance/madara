@@ -1,34 +1,43 @@
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-use std::collections::HashMap;
 
-use blockifier::execution::contract_class::{ContractClass, ContractClassV0, ContractClassV0Inner, ContractClassV1};
-use cairo_lang_casm_contract_class::{CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints};
-use cairo_lang_starknet::contract_class::{
+use blockifier::execution::contract_class::{
+    ClassInfo, ContractClass, ContractClassV0, ContractClassV0Inner, ContractClassV1,
+};
+use blockifier::transaction::account_transaction::AccountTransaction;
+use blockifier::transaction::transactions as btx;
+use cairo_lang_starknet_classes::casm_contract_class::{
+    CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints, StarknetSierraCompilationError,
+};
+use cairo_lang_starknet_classes::contract_class::{
     ContractClass as SierraContractClass, ContractEntryPoint, ContractEntryPoints,
 };
-use cairo_lang_starknet::contract_class_into_casm_contract_class::StarknetSierraCompilationError;
 use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
+use indexmap::IndexMap;
 use mp_felt::Felt252Wrapper;
+use mp_hashers::pedersen::PedersenHasher;
 use num_bigint::{BigInt, BigUint, Sign};
-use starknet_api::api_core::EntryPointSelector;
+use starknet_api::core::{calculate_contract_address, EntryPointSelector};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
+use starknet_api::transaction::{self as stx};
 use starknet_core::types::contract::legacy::{
     LegacyContractClass, LegacyEntrypointOffset, RawLegacyEntryPoint, RawLegacyEntryPoints,
 };
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV1, BroadcastedDeclareTransactionV2,
-    BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedTransaction,
-    CompressedLegacyContractClass, EntryPointsByType, FlattenedSierraClass, LegacyContractEntryPoint,
-    LegacyEntryPointsByType, SierraEntryPoint,
+    BroadcastedDeclareTransactionV3, BroadcastedDeployAccountTransaction, BroadcastedDeployAccountTransactionV1,
+    BroadcastedDeployAccountTransactionV3, BroadcastedInvokeTransaction, BroadcastedInvokeTransactionV1,
+    BroadcastedInvokeTransactionV3, BroadcastedTransaction, CompressedLegacyContractClass, EntryPointsByType,
+    FlattenedSierraClass, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
 };
 use starknet_crypto::FieldElement;
 use thiserror::Error;
 
-use super::{DeclareTransaction, DeclareTransactionV1, DeclareTransactionV2, UserTransaction};
+use crate::compute_hash::ComputeTransactionHash;
 
 #[derive(Debug, Error)]
 pub enum BroadcastedTransactionConversionError {
@@ -50,18 +59,387 @@ pub enum BroadcastedTransactionConversionError {
     UnsuportedTransactionVersion,
 }
 
-impl TryFrom<BroadcastedTransaction> for UserTransaction {
-    type Error = BroadcastedTransactionConversionError;
+pub trait ToAccountTransaction {
+    fn to_account_transaction(&self) -> Result<AccountTransaction, BroadcastedTransactionConversionError>;
+}
 
-    fn try_from(tx: BroadcastedTransaction) -> Result<Self, Self::Error> {
-        match tx {
-            BroadcastedTransaction::Invoke(tx) => tx.try_into(),
-            BroadcastedTransaction::Declare(tx) => tx.try_into(),
-            BroadcastedTransaction::DeployAccount(tx) => tx.try_into(),
+// TODO: remove clone() and change method with &self
+impl ToAccountTransaction for BroadcastedTransaction {
+    fn to_account_transaction(&self) -> Result<AccountTransaction, BroadcastedTransactionConversionError> {
+        match self {
+            BroadcastedTransaction::Invoke(tx) => invoke_to_account_transaction(tx.clone()),
+            BroadcastedTransaction::Declare(tx) => declare_to_account_transaction(tx.clone()),
+            BroadcastedTransaction::DeployAccount(tx) => deploy_account_to_account_transaction(tx.clone()),
         }
     }
 }
 
+fn declare_to_account_transaction(
+    value: BroadcastedDeclareTransaction,
+) -> Result<AccountTransaction, BroadcastedTransactionConversionError> {
+    let user_tx = match value {
+        BroadcastedDeclareTransaction::V1(BroadcastedDeclareTransactionV1 {
+            sender_address,
+            max_fee,
+            signature,
+            nonce,
+            contract_class,
+            is_query: _,
+        }) => {
+            // Create a GzipDecoder to decompress the bytes
+            let mut gz = GzDecoder::new(&contract_class.program[..]);
+
+            // Read the decompressed bytes into a Vec<u8>
+            let mut decompressed_bytes = Vec::new();
+            std::io::Read::read_to_end(&mut gz, &mut decompressed_bytes)
+                .map_err(|_| BroadcastedTransactionConversionError::ProgramDecompressionFailed)?;
+
+            let class_hash = {
+                let legacy_contract_class = LegacyContractClass {
+                    program: serde_json::from_slice(decompressed_bytes.as_slice())
+                        .map_err(|_| BroadcastedTransactionConversionError::ProgramDeserializationFailed)?,
+                    abi: match contract_class.abi.as_ref() {
+                        Some(abi) => Some(abi.iter().cloned().map(|entry| entry.into()).collect::<Vec<_>>()),
+                        None => vec![].into(),
+                    },
+                    entry_points_by_type: to_raw_legacy_entry_points(contract_class.entry_points_by_type.clone()),
+                };
+
+                legacy_contract_class
+                    .class_hash()
+                    .map_err(|_| BroadcastedTransactionConversionError::ClassHashComputationFailed)?
+            };
+
+            let blockifier_contract_class = instantiate_blockifier_contract_class(&contract_class, decompressed_bytes)?;
+
+            let declare_tx = stx::DeclareTransaction::V1(stx::DeclareTransactionV0V1 {
+                max_fee: stx::Fee(
+                    u128::try_from(Felt252Wrapper::from(max_fee))
+                        .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
+                        .unwrap(),
+                ),
+                signature: stx::TransactionSignature(
+                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                nonce: Felt252Wrapper::from(nonce).into(),
+                class_hash: Felt252Wrapper::from(class_hash).into(),
+                sender_address: Felt252Wrapper::from(sender_address).into(),
+            });
+
+            // TODO: defaulted chain id
+            let tx_hash = declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+            let class_info = ClassInfo::new(
+                &blockifier_contract_class,
+                contract_class.clone().program.len(),
+                contract_class.abi.clone().unwrap().len(),
+            )
+            .unwrap();
+
+            let tx = btx::DeclareTransaction::new(declare_tx, tx_hash, class_info).unwrap();
+
+            AccountTransaction::Declare(tx)
+        }
+        BroadcastedDeclareTransaction::V2(BroadcastedDeclareTransactionV2 {
+            sender_address,
+            compiled_class_hash,
+            max_fee,
+            signature,
+            nonce,
+            contract_class,
+            is_query: _,
+        }) => {
+            let casm_contract_class = flattened_sierra_to_casm_contract_class(&contract_class)
+                .map_err(|_| BroadcastedTransactionConversionError::SierraCompilationFailed)?;
+
+            // ensure that the user has sign the correct class hash
+            if get_casm_contract_class_hash(&casm_contract_class) != compiled_class_hash {
+                return Err(BroadcastedTransactionConversionError::InvalidCompiledClassHash);
+            }
+
+            let blockifier_contract_class = ContractClass::V1(
+                ContractClassV1::try_from(casm_contract_class)
+                    .map_err(|_| BroadcastedTransactionConversionError::CasmContractClassConversionFailed)?,
+            );
+
+            let declare_tx = stx::DeclareTransaction::V2(stx::DeclareTransactionV2 {
+                max_fee: stx::Fee(
+                    u128::try_from(Felt252Wrapper::from(max_fee))
+                        .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
+                        .unwrap(),
+                ),
+                signature: stx::TransactionSignature(
+                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                nonce: Felt252Wrapper::from(nonce).into(),
+                class_hash: Felt252Wrapper::from(contract_class.class_hash()).into(),
+                sender_address: Felt252Wrapper::from(sender_address).into(),
+                compiled_class_hash: Felt252Wrapper::from(compiled_class_hash).into(),
+            });
+
+            // TODO: use real chain id
+            let tx_hash = declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+            let class_info = ClassInfo::new(
+                &blockifier_contract_class,
+                contract_class.sierra_program.len(),
+                contract_class.abi.len(),
+            )
+            .unwrap();
+
+            let tx = btx::DeclareTransaction::new(declare_tx, tx_hash, class_info).unwrap();
+
+            AccountTransaction::Declare(tx)
+        }
+        BroadcastedDeclareTransaction::V3(BroadcastedDeclareTransactionV3 {
+            sender_address,
+            compiled_class_hash,
+            signature,
+            nonce,
+            contract_class,
+            resource_bounds,
+            tip,
+            paymaster_data,
+            account_deployment_data,
+            nonce_data_availability_mode,
+            fee_data_availability_mode,
+            is_query: _,
+        }) => {
+            let casm_contract_class = flattened_sierra_to_casm_contract_class(&contract_class)
+                .map_err(|_| BroadcastedTransactionConversionError::SierraCompilationFailed)?;
+
+            // ensure that the user has sign the correct class hash
+            if get_casm_contract_class_hash(&casm_contract_class) != compiled_class_hash {
+                return Err(BroadcastedTransactionConversionError::InvalidCompiledClassHash);
+            }
+
+            let blockifier_contract_class = ContractClass::V1(
+                ContractClassV1::try_from(casm_contract_class)
+                    .map_err(|_| BroadcastedTransactionConversionError::CasmContractClassConversionFailed)?,
+            );
+
+            let class_hash = contract_class.clone().class_hash();
+            let class_hash = Felt252Wrapper::from(class_hash).into();
+
+            let declare_tx = stx::DeclareTransaction::V3(stx::DeclareTransactionV3 {
+                signature: stx::TransactionSignature(
+                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                nonce: Felt252Wrapper::from(nonce).into(),
+                sender_address: Felt252Wrapper::from(sender_address).into(),
+                class_hash,
+                compiled_class_hash: Felt252Wrapper::from(compiled_class_hash).into(),
+                resource_bounds: core_resources_to_api_resources(resource_bounds),
+                tip: stx::Tip(tip),
+                paymaster_data: stx::PaymasterData(
+                    paymaster_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                account_deployment_data: stx::AccountDeploymentData(
+                    account_deployment_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
+                fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
+            });
+
+            // TODO: use real chain id
+            let tx_hash = declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+            let class_info = ClassInfo::new(
+                &blockifier_contract_class,
+                contract_class.sierra_program.len(),
+                contract_class.abi.len(),
+            )
+            .unwrap();
+
+            let tx = btx::DeclareTransaction::new(declare_tx, tx_hash, class_info).unwrap();
+
+            AccountTransaction::Declare(tx)
+        }
+    };
+
+    Ok(user_tx)
+}
+
+fn invoke_to_account_transaction(
+    value: BroadcastedInvokeTransaction,
+) -> Result<AccountTransaction, BroadcastedTransactionConversionError> {
+    let user_tx = match value {
+        BroadcastedInvokeTransaction::V1(BroadcastedInvokeTransactionV1 {
+            sender_address,
+            calldata,
+            max_fee,
+            signature,
+            nonce,
+            is_query: _,
+            ..
+        }) => {
+            let invoke_tx = stx::InvokeTransaction::V1(stx::InvokeTransactionV1 {
+                max_fee: stx::Fee(
+                    u128::try_from(Felt252Wrapper::from(max_fee))
+                        .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
+                        .unwrap(),
+                ),
+                signature: stx::TransactionSignature(
+                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                nonce: Felt252Wrapper::from(nonce).into(),
+                sender_address: Felt252Wrapper::from(sender_address).into(),
+                calldata: stx::Calldata(
+                    calldata.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>().into(),
+                ),
+            });
+
+            let tx_hash = invoke_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+
+            let tx = btx::InvokeTransaction::new(invoke_tx, tx_hash);
+
+            AccountTransaction::Invoke(tx)
+        }
+        BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+            sender_address,
+            calldata,
+            signature,
+            nonce,
+            resource_bounds,
+            tip,
+            paymaster_data,
+            account_deployment_data,
+            nonce_data_availability_mode,
+            fee_data_availability_mode,
+            is_query: _,
+        }) => {
+            let invoke_tx = stx::InvokeTransaction::V3(stx::InvokeTransactionV3 {
+                signature: stx::TransactionSignature(
+                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                nonce: Felt252Wrapper::from(nonce).into(),
+                sender_address: Felt252Wrapper::from(sender_address).into(),
+                calldata: stx::Calldata(
+                    calldata.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>().into(),
+                ),
+                resource_bounds: core_resources_to_api_resources(resource_bounds),
+                tip: stx::Tip(tip),
+                paymaster_data: stx::PaymasterData(
+                    paymaster_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                account_deployment_data: stx::AccountDeploymentData(
+                    account_deployment_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
+                fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
+            });
+
+            let tx_hash = invoke_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+
+            let tx = btx::InvokeTransaction::new(invoke_tx, tx_hash);
+
+            AccountTransaction::Invoke(tx)
+        }
+    };
+    Ok(user_tx)
+}
+
+fn deploy_account_to_account_transaction(
+    tx: BroadcastedDeployAccountTransaction,
+) -> Result<AccountTransaction, BroadcastedTransactionConversionError> {
+    let user_tx = match tx {
+        BroadcastedDeployAccountTransaction::V1(BroadcastedDeployAccountTransactionV1 {
+            max_fee,
+            signature,
+            nonce,
+            contract_address_salt,
+            constructor_calldata,
+            class_hash,
+            is_query: _,
+        }) => {
+            let deploy_account_tx = stx::DeployAccountTransaction::V1(stx::DeployAccountTransactionV1 {
+                max_fee: stx::Fee(
+                    u128::try_from(Felt252Wrapper::from(max_fee))
+                        .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
+                        .unwrap(),
+                ),
+                signature: stx::TransactionSignature(
+                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                nonce: Felt252Wrapper::from(nonce).into(),
+                contract_address_salt: Felt252Wrapper::from(contract_address_salt).into(),
+                constructor_calldata: stx::Calldata(
+                    constructor_calldata
+                        .iter()
+                        .map(|x| Felt252Wrapper::from(*x).into())
+                        .collect::<Vec<StarkFelt>>()
+                        .into(),
+                ),
+                class_hash: Felt252Wrapper::from(class_hash).into(),
+            });
+
+            let tx_hash = deploy_account_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+
+            let contract_address = calculate_contract_address(
+                Felt252Wrapper::from(contract_address_salt).into(),
+                Felt252Wrapper::from(class_hash).into(),
+                &deploy_account_tx.constructor_calldata(),
+                Default::default(),
+            )
+            .unwrap();
+
+            let tx = btx::DeployAccountTransaction::new(deploy_account_tx, tx_hash, contract_address);
+
+            AccountTransaction::DeployAccount(tx)
+        }
+        BroadcastedDeployAccountTransaction::V3(BroadcastedDeployAccountTransactionV3 {
+            signature,
+            nonce,
+            contract_address_salt,
+            constructor_calldata,
+            class_hash,
+            resource_bounds,
+            tip,
+            paymaster_data,
+            nonce_data_availability_mode,
+            fee_data_availability_mode,
+            is_query: _,
+        }) => {
+            let deploy_account_tx = stx::DeployAccountTransaction::V3(stx::DeployAccountTransactionV3 {
+                signature: stx::TransactionSignature(
+                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                nonce: Felt252Wrapper::from(nonce).into(),
+                contract_address_salt: Felt252Wrapper::from(contract_address_salt).into(),
+                constructor_calldata: stx::Calldata(
+                    constructor_calldata
+                        .iter()
+                        .map(|x| Felt252Wrapper::from(*x).into())
+                        .collect::<Vec<StarkFelt>>()
+                        .into(),
+                ),
+                class_hash: Felt252Wrapper::from(class_hash).into(),
+                resource_bounds: core_resources_to_api_resources(resource_bounds),
+                tip: stx::Tip(tip),
+                paymaster_data: stx::PaymasterData(
+                    paymaster_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                ),
+                nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
+                fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
+            });
+
+            let tx_hash = deploy_account_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+
+            let contract_address = calculate_contract_address(
+                Felt252Wrapper::from(contract_address_salt).into(),
+                Felt252Wrapper::from(class_hash).into(),
+                &deploy_account_tx.constructor_calldata(),
+                Default::default(),
+            )
+            .unwrap();
+
+            let tx = btx::DeployAccountTransaction::new(deploy_account_tx, tx_hash, contract_address);
+
+            AccountTransaction::DeployAccount(tx)
+        }
+    };
+    Ok(user_tx)
+}
+
+// TODO: is this function needed?
+#[allow(dead_code)]
 fn cast_vec_of_field_elements(data: Vec<FieldElement>) -> Vec<Felt252Wrapper> {
     // Non-copy but less dangerous than transmute
     // https://doc.rust-lang.org/std/mem/fn.transmute.html#alternatives
@@ -87,107 +465,15 @@ fn cast_vec_of_field_elements(data: Vec<FieldElement>) -> Vec<Felt252Wrapper> {
     unsafe { alloc::vec::Vec::from_raw_parts(data.as_mut_ptr() as *mut Felt252Wrapper, data.len(), data.capacity()) }
 }
 
-impl TryFrom<BroadcastedDeclareTransaction> for UserTransaction {
-    type Error = BroadcastedTransactionConversionError;
-
-    fn try_from(value: BroadcastedDeclareTransaction) -> Result<Self, Self::Error> {
-        let user_tx = match value {
-            BroadcastedDeclareTransaction::V1(BroadcastedDeclareTransactionV1 {
-                max_fee,
-                signature,
-                nonce,
-                contract_class,
-                sender_address,
-                is_query,
-                ..
-            }) => {
-                // Create a GzipDecoder to decompress the bytes
-                let mut gz = GzDecoder::new(&contract_class.program[..]);
-
-                // Read the decompressed bytes into a Vec<u8>
-                let mut decompressed_bytes = Vec::new();
-                std::io::Read::read_to_end(&mut gz, &mut decompressed_bytes)
-                    .map_err(|_| BroadcastedTransactionConversionError::ProgramDecompressionFailed)?;
-
-                let class_hash = {
-                    let legacy_contract_class = LegacyContractClass {
-                        program: serde_json::from_slice(decompressed_bytes.as_slice())
-                            .map_err(|_| BroadcastedTransactionConversionError::ProgramDeserializationFailed)?,
-                        abi: contract_class
-                            .abi
-                            .as_ref()
-                            .map(|abi| abi.iter().cloned().map(|entry| entry.into()).collect()),
-                        entry_points_by_type: to_raw_legacy_entry_points(contract_class.entry_points_by_type.clone()),
-                    };
-
-                    legacy_contract_class
-                        .class_hash()
-                        .map_err(|_| BroadcastedTransactionConversionError::ClassHashComputationFailed)?
-                };
-
-                let tx = DeclareTransaction::V1(DeclareTransactionV1 {
-                    max_fee: max_fee.try_into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
-                    signature: cast_vec_of_field_elements(signature),
-                    nonce: nonce.into(),
-                    class_hash: class_hash.into(),
-                    sender_address: sender_address.into(),
-                    offset_version: is_query,
-                });
-
-                let contract_class = instantiate_blockifier_contract_class(contract_class, decompressed_bytes)?;
-
-                UserTransaction::Declare(tx, contract_class)
-            }
-            BroadcastedDeclareTransaction::V2(BroadcastedDeclareTransactionV2 {
-                max_fee,
-                signature,
-                nonce,
-                contract_class,
-                sender_address,
-                compiled_class_hash,
-                is_query,
-                ..
-            }) => {
-                let tx = DeclareTransaction::V2(DeclareTransactionV2 {
-                    max_fee: max_fee.try_into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
-                    signature: cast_vec_of_field_elements(signature),
-                    nonce: nonce.into(),
-                    class_hash: contract_class.class_hash().into(),
-                    sender_address: sender_address.into(),
-                    compiled_class_hash: compiled_class_hash.into(),
-                    offset_version: is_query,
-                });
-
-                let casm_contract_class = flattened_sierra_to_casm_contract_class(contract_class)
-                    .map_err(|_| BroadcastedTransactionConversionError::SierraCompilationFailed)?;
-
-                // ensure that the user has sign the correct class hash
-                if get_casm_cotract_class_hash(&casm_contract_class) != compiled_class_hash {
-                    return Err(BroadcastedTransactionConversionError::InvalidCompiledClassHash);
-                }
-
-                let contract_class = ContractClass::V1(
-                    ContractClassV1::try_from(casm_contract_class)
-                        .map_err(|_| BroadcastedTransactionConversionError::CasmContractClassConversionFailed)?,
-                );
-
-                UserTransaction::Declare(tx, contract_class)
-            }
-        };
-
-        Ok(user_tx)
-    }
-}
-
 fn instantiate_blockifier_contract_class(
-    contract_class: Arc<CompressedLegacyContractClass>,
+    contract_class: &Arc<CompressedLegacyContractClass>,
     program_decompressed_bytes: Vec<u8>,
 ) -> Result<ContractClass, BroadcastedTransactionConversionError> {
     // Deserialize it then
     let program: Program = Program::from_bytes(&program_decompressed_bytes, None)
         .map_err(|_| BroadcastedTransactionConversionError::ProgramDeserializationFailed)?;
 
-    let mut entry_points_by_type = <HashMap<EntryPointType, Vec<EntryPoint>>>::new();
+    let mut entry_points_by_type = <IndexMap<EntryPointType, Vec<EntryPoint>>>::new();
     entry_points_by_type.insert(
         EntryPointType::Constructor,
         contract_class
@@ -197,7 +483,7 @@ fn instantiate_blockifier_contract_class(
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
                     selector: EntryPointSelector(StarkFelt(entry_point.selector.to_bytes_be())),
-                    offset: EntryPointOffset(entry_point.offset as usize),
+                    offset: EntryPointOffset(entry_point.offset),
                 }
             })
             .collect::<Vec<EntryPoint>>(),
@@ -211,7 +497,7 @@ fn instantiate_blockifier_contract_class(
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
                     selector: EntryPointSelector(StarkFelt(entry_point.selector.to_bytes_be())),
-                    offset: EntryPointOffset(entry_point.offset as usize),
+                    offset: EntryPointOffset(entry_point.offset),
                 }
             })
             .collect::<Vec<EntryPoint>>(),
@@ -225,7 +511,7 @@ fn instantiate_blockifier_contract_class(
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
                     selector: EntryPointSelector(StarkFelt(entry_point.selector.to_bytes_be())),
-                    offset: EntryPointOffset(entry_point.offset as usize),
+                    offset: EntryPointOffset(entry_point.offset),
                 }
             })
             .collect::<Vec<EntryPoint>>(),
@@ -251,7 +537,7 @@ fn to_raw_legacy_entry_points(entry_points: LegacyEntryPointsByType) -> RawLegac
 
 /// Converts a [FlattenedSierraClass] to a [CasmContractClass]
 fn flattened_sierra_to_casm_contract_class(
-    flattened_sierra: Arc<FlattenedSierraClass>,
+    flattened_sierra: &Arc<FlattenedSierraClass>,
 ) -> Result<CasmContractClass, StarknetSierraCompilationError> {
     let sierra_contract_class = SierraContractClass {
         sierra_program: flattened_sierra.sierra_program.iter().map(field_element_to_big_uint_as_hex).collect(),
@@ -262,7 +548,8 @@ fn flattened_sierra_to_casm_contract_class(
         ),
         abi: None, // we can convert the ABI but for now, to convert to Casm, the ABI isn't needed
     };
-    let casm_contract_class = sierra_contract_class.into_casm_contract_class(false)?;
+    let casm_contract_class = CasmContractClass::from_contract_class(sierra_contract_class, false, usize::MAX)?;
+
     Ok(casm_contract_class)
 }
 
@@ -292,7 +579,7 @@ fn entry_points_by_type_to_contract_entry_points(value: EntryPointsByType) -> Co
 }
 
 // Utils to convert Casm contract class to Compiled class
-pub fn get_casm_cotract_class_hash(casm_contract_class: &CasmContractClass) -> FieldElement {
+pub fn get_casm_contract_class_hash(casm_contract_class: &CasmContractClass) -> FieldElement {
     let compiled_class = casm_contract_class_to_compiled_class(casm_contract_class);
     compiled_class.class_hash().unwrap()
 }
@@ -304,8 +591,9 @@ pub fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractC
         compiler_version: casm_contract_class.compiler_version.clone(),
         bytecode: casm_contract_class.bytecode.iter().map(|x| biguint_to_field_element(&x.value)).collect(),
         entry_points_by_type: casm_entry_points_to_compiled_entry_points(&casm_contract_class.entry_points_by_type),
-        hints: vec![],        // not needed to get class hash so ignoring this
-        pythonic_hints: None, // not needed to get class hash so ignoring this
+        hints: vec![],                    // not needed to get class hash so ignoring this
+        pythonic_hints: None,             // not needed to get class hash so ignoring this
+        bytecode_segment_lengths: vec![], // TODO: implement this
     }
 }
 
@@ -333,35 +621,38 @@ fn casm_entry_point_to_compiled_entry_point(value: &CasmContractEntryPoint) -> C
     }
 }
 
-impl TryFrom<BroadcastedInvokeTransaction> for UserTransaction {
-    type Error = BroadcastedTransactionConversionError;
-
-    fn try_from(value: BroadcastedInvokeTransaction) -> Result<Self, Self::Error> {
-        Ok(UserTransaction::Invoke(super::InvokeTransaction::V1(super::InvokeTransactionV1 {
-            max_fee: value.max_fee.try_into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
-            signature: cast_vec_of_field_elements(value.signature),
-            nonce: value.nonce.into(),
-            sender_address: value.sender_address.into(),
-            calldata: cast_vec_of_field_elements(value.calldata),
-            offset_version: value.is_query,
-        })))
+pub fn core_da_to_api_da(
+    da: starknet_core::types::DataAvailabilityMode,
+) -> starknet_api::data_availability::DataAvailabilityMode {
+    match da {
+        starknet_core::types::DataAvailabilityMode::L1 => starknet_api::data_availability::DataAvailabilityMode::L1,
+        starknet_core::types::DataAvailabilityMode::L2 => starknet_api::data_availability::DataAvailabilityMode::L2,
     }
 }
 
-impl TryFrom<BroadcastedDeployAccountTransaction> for UserTransaction {
-    type Error = BroadcastedTransactionConversionError;
+// TODO: check here for L1 gas instead of L2 gas
+pub fn core_resources_to_api_resources(
+    core_resources: starknet_core::types::ResourceBoundsMapping,
+) -> stx::ResourceBoundsMapping {
+    let mut api_resources_map = BTreeMap::new();
 
-    fn try_from(tx: BroadcastedDeployAccountTransaction) -> Result<Self, Self::Error> {
-        let tx = UserTransaction::DeployAccount(super::DeployAccountTransaction {
-            max_fee: tx.max_fee.try_into().map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?,
-            signature: cast_vec_of_field_elements(tx.signature),
-            nonce: tx.nonce.into(),
-            contract_address_salt: tx.contract_address_salt.into(),
-            constructor_calldata: cast_vec_of_field_elements(tx.constructor_calldata),
-            class_hash: tx.class_hash.into(),
-            offset_version: tx.is_query,
-        });
+    // Convert L1 gas ResourceBounds
+    api_resources_map.insert(
+        stx::Resource::L1Gas, // Assuming you have an enum Resource with L1Gas and L2Gas variants
+        stx::ResourceBounds {
+            max_amount: core_resources.l1_gas.max_amount,
+            max_price_per_unit: core_resources.l1_gas.max_price_per_unit,
+        },
+    );
 
-        Ok(tx)
-    }
+    // Convert L2 gas ResourceBounds
+    api_resources_map.insert(
+        stx::Resource::L2Gas,
+        stx::ResourceBounds {
+            max_amount: core_resources.l2_gas.max_amount,
+            max_price_per_unit: core_resources.l2_gas.max_price_per_unit,
+        },
+    );
+
+    stx::ResourceBoundsMapping(api_resources_map)
 }
