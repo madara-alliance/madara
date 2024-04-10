@@ -8107,18 +8107,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mp-messages"
-version = "0.1.0"
-dependencies = [
- "mp-transactions",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "serde_with",
- "starknet_api",
-]
-
-[[package]]
 name = "mp-program-hash"
 version = "0.1.0"
 dependencies = [

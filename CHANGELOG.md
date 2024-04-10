@@ -1,8 +1,9 @@
 git # Deoxys Changelog
 
 ## Next release
+
 - feat(rpc): add `get_block_with_receipts` rpc call
-- refactor: remove crate mp-fee and mp-state
+- refactor: remove crate mp-state, mp-fee, mp-messages
 - fix(class): Fix class conversions to support legacy Sierra versions
 - feat: rebase blockifier
 - feat(check): Added a state root check to ensure synced compatibility
