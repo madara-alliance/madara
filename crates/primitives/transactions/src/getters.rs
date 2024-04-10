@@ -28,15 +28,11 @@ impl Getters for AccountTransaction {
 
     fn signature(&self) -> Vec<Felt252Wrapper> {
         match self {
-            AccountTransaction::Declare(tx) => {
-                tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()
-            }
+            AccountTransaction::Declare(tx) => tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x)).collect(),
             AccountTransaction::DeployAccount(tx) => {
-                tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()
+                tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x)).collect()
             }
-            AccountTransaction::Invoke(tx) => {
-                tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()
-            }
+            AccountTransaction::Invoke(tx) => tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x)).collect(),
         }
     }
 
@@ -44,10 +40,10 @@ impl Getters for AccountTransaction {
         match self {
             AccountTransaction::Declare(..) => None,
             AccountTransaction::DeployAccount(tx) => {
-                Some(tx.tx.constructor_calldata().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect())
+                Some(tx.tx.constructor_calldata().0.iter().map(|x| Felt252Wrapper::from(*x)).collect())
             }
             AccountTransaction::Invoke(tx) => {
-                Some(tx.tx.calldata().0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect())
+                Some(tx.tx.calldata().0.iter().map(|x| Felt252Wrapper::from(*x)).collect())
             }
         }
     }

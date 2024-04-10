@@ -74,7 +74,7 @@ use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
 use mp_block::state_update::StateUpdateWrapper;
-use mp_block::{DeoxysBlock, Header as StarknetHeader};
+use mp_block::DeoxysBlock;
 use mp_contract::ContractAbi;
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_felt::Felt252Wrapper;
@@ -1134,12 +1134,6 @@ impl<T: Config> Pallet<T> {
             Self::emit_events_in_call_info(tx_hash, call_info, 0);
             Self::aggregate_messages_in_call_info(tx_hash, call_info, 0);
         }
-    }
-
-    fn store_transaction(tx_hash: TransactionHash, tx: Transaction, revert_reason: Option<String>) {
-        Pending::<T>::append(tx);
-        PendingHashes::<T>::append(tx_hash);
-        TxRevertError::<T>::set(tx_hash, revert_reason);
     }
 
     pub fn chain_id() -> Felt252Wrapper {

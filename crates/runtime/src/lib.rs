@@ -276,7 +276,7 @@ impl_runtime_apis! {
             Starknet::estimate_fee(transactions, &simulation_flags)
         }
 
-        fn re_execute_transactions(transactions_before: Vec<Transaction>, transactions_to_trace: Vec<Transaction>, block_context: &BlockContext) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {
+        fn re_execute_transactions(transactions_before: Vec<Transaction>, transactions_to_trace: Vec<Transaction>, block_context: &BlockContext) -> Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution> {
             Starknet::re_execute_transactions(transactions_before, transactions_to_trace, block_context)
         }
 
@@ -340,7 +340,7 @@ impl_runtime_apis! {
         }
 
         fn get_block_context() -> blockifier::context::BlockContext {
-           Starknet::get_block_context().into()
+           Starknet::get_block_context()
         }
     }
 
