@@ -4,6 +4,7 @@ git # Deoxys Changelog
 
 - fix(class): Fix class conversions to support legacy Sierra versions
 - feat: rebase blockifier
+- feat(check): Added a state root check to ensure synced compatibility
 - feat(metrics): Add prometheus metrics for mapping worker
 - feat(storage): finished migrating contract storage to our backend bonsai trie dbs
 - feat(storage): set up type-safe bonsai storage abstractions for usage in RPC
