@@ -45,6 +45,7 @@ pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
 
     let protocol_version = starknet_version(&block.starknet_version);
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
+    let l1_da_mode = l1_da_mode(block.l1_da_mode);
     let extra_data = block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be()));
 
     let header = mp_block::Header {
@@ -59,6 +60,7 @@ pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
         event_commitment,
         protocol_version,
         l1_gas_price,
+        l1_da_mode,
         extra_data,
     };
 
@@ -359,6 +361,19 @@ fn resource_price(
             eth_l1_data_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_wei),
             strk_l1_data_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_fri),
         })
+    }
+}
+
+fn l1_da_mode(
+    mode: starknet_core::types::L1DataAvailabilityMode,
+) -> starknet_api::data_availability::L1DataAvailabilityMode {
+    match mode {
+        starknet_core::types::L1DataAvailabilityMode::Calldata => {
+            starknet_api::data_availability::L1DataAvailabilityMode::Calldata
+        }
+        starknet_core::types::L1DataAvailabilityMode::Blob => {
+            starknet_api::data_availability::L1DataAvailabilityMode::Blob
+        }
     }
 }
 

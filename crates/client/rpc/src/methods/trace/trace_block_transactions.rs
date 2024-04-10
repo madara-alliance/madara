@@ -18,7 +18,7 @@ use super::utils::{
 };
 use crate::errors::StarknetRpcApiError;
 use crate::utils::get_block_by_block_hash;
-use crate::{Starknet, StarknetReadRpcApiServer};
+use crate::Starknet;
 
 pub async fn trace_block_transactions<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
@@ -51,7 +51,7 @@ where
     let previous_block_substrate_hash = get_previous_block_substrate_hash(starknet, substrate_block_hash)?;
 
     let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
-        log::error!("Failed to retrieve fee token address");
+        log::error!("Failed to retrieve fee token address: '{e}'");
         StarknetRpcApiError::InternalServerError
     })?;
     let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;

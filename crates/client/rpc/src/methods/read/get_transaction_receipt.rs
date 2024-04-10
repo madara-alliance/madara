@@ -81,7 +81,7 @@ where
     let transactions = transactions(client, substrate_block_hash, chain_id, &block, block_number, tx_index)?;
 
     let fee_token_address = client.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
-        log::error!("Failed to retrieve fee token address");
+        log::error!("Failed to retrieve fee token address: {e}");
         StarknetRpcApiError::InternalServerError
     })?;
     // TODO: convert the real chain_id in String
@@ -376,10 +376,10 @@ fn tx_declare_v2(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcRe
     // )))
     // TODO: Correct this that was used as a place holder to compile
     match declare_tx {
-        DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
-        DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
         DeclareTransaction::V0(_) => todo!(),
         DeclareTransaction::V1(_) => todo!(),
+        DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
+        DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
     }
 }
 

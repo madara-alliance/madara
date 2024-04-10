@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 
-use blockifier::transaction::transactions::L1HandlerTransaction as L1HandlerTransactionBlockifier;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use starknet_api::data_availability::DataAvailabilityMode;

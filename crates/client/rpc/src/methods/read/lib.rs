@@ -18,7 +18,6 @@ use starknet_core::types::{
 
 use super::block_hash_and_number::*;
 use super::call::*;
-use super::chain_id::*;
 use super::estimate_fee::*;
 use super::estimate_message_fee::*;
 use super::get_block_transaction_count::*;

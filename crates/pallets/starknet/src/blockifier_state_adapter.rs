@@ -1,4 +1,3 @@
-use alloc::collections::{BTreeMap, BTreeSet};
 use core::marker::PhantomData;
 use std::collections::{HashMap, HashSet};
 
@@ -6,11 +5,8 @@ use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::cached_state::StateChangesCount;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
-use indexmap::IndexMap;
 use mc_db::storage::StorageHandler;
-use mp_felt::Felt252Wrapper;
 use mp_state::StateChanges;
-use sp_runtime::Storage;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -30,6 +26,7 @@ pub struct BlockifierStateAdapter<T: Config> {
     class_hash_update: HashMap<ContractAddress, ClassHash>,
     compiled_class_hash_update: HashMap<ClassHash, CompiledClassHash>,
     contract_class_update: HashMap<ClassHash, ContractClass>,
+    visited_pcs: HashMap<ClassHash, HashSet<usize>>,
     _phantom: PhantomData<T>,
 }
 
@@ -58,6 +55,7 @@ impl<T: Config> Default for BlockifierStateAdapter<T> {
             class_hash_update: HashMap::default(),
             compiled_class_hash_update: HashMap::default(),
             contract_class_update: HashMap::default(),
+            visited_pcs: HashMap::default(),
             _phantom: PhantomData,
         }
     }
@@ -154,10 +152,7 @@ impl<T: Config> State for BlockifierStateAdapter<T> {
         Ok(())
     }
 
-    fn add_visited_pcs(&mut self, class_hash: ClassHash, pcs: &std::collections::HashSet<usize>) {
-        // TODO
-        // This should not be part of the trait.
-        // Hopefully it will be fixed upstream
-        unreachable!()
+    fn add_visited_pcs(&mut self, class_hash: ClassHash, pcs: &HashSet<usize>) {
+        self.visited_pcs.entry(class_hash).or_default().extend(pcs);
     }
 }
