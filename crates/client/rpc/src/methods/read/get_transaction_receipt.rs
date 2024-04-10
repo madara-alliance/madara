@@ -35,7 +35,7 @@ use crate::utils::{
 };
 use crate::{Felt, Starknet};
 
-fn get_transaction_receipt_finalized<A, BE, G, C, P, H>(
+pub fn get_transaction_receipt_finalized<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     chain_id: Felt,
     substrate_block_hash: DHashT,

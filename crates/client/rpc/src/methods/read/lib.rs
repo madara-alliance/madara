@@ -11,9 +11,9 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate,
-    FieldElement, FunctionCall, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MsgFromL1, SimulationFlagForEstimateFee, SyncStatusType, Transaction, TransactionReceiptWithBlockInfo,
-    TransactionStatus,
+    FieldElement, FunctionCall, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+    MaybePendingStateUpdate, MsgFromL1, SimulationFlagForEstimateFee, SyncStatusType, Transaction,
+    TransactionReceiptWithBlockInfo, TransactionStatus,
 };
 
 use super::block_hash_and_number::*;
@@ -21,6 +21,7 @@ use super::call::*;
 use super::estimate_fee::*;
 use super::estimate_message_fee::*;
 use super::get_block_transaction_count::*;
+use super::get_block_with_receipts::*;
 use super::get_block_with_tx_hashes::*;
 use super::get_block_with_txs::*;
 use super::get_class::*;
@@ -84,6 +85,10 @@ where
 
     async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<FeeEstimate> {
         estimate_message_fee(self, message, block_id).await
+    }
+
+    async fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithReceipts> {
+        get_block_with_receipts(self, block_id)
     }
 
     fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes> {

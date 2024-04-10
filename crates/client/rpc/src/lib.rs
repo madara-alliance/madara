@@ -38,9 +38,9 @@ use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
-    InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee, StateDiff, SyncStatusType,
-    Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
+    InvokeTransactionResult, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+    MaybePendingStateUpdate, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee, StateDiff,
+    SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
 
 use crate::methods::get_block::{
@@ -122,6 +122,10 @@ pub trait StarknetReadRpcApi {
     /// Estimate the L2 fee of a message sent on L1
     #[method(name = "estimateMessageFee")]
     async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<FeeEstimate>;
+
+    /// Get block information with full transactions and receipts given the block id
+    #[method(name = "getBlockWithReceipts")]
+    async fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithReceipts>;
 
     /// Get block information with transaction hashes given the block id
     #[method(name = "getBlockWithTxHashes")]
@@ -220,37 +224,6 @@ pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
     _marker: PhantomData<(DBlockT, BE, H)>,
 }
 
-// impl<A, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
-// where
-//     A: ChainApi<Block = DBlockT> + 'static,
-//     BE: Backend<DBlockT>,
-//     C: HeaderBackend<DBlockT> + 'static,
-//     C: ProvideRuntimeApi<DBlockT>,
-//     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-//     H: HasherT + Send + Sync + 'static,
-// {
-//     pub fn do_estimate_message_fee(
-//         &self,
-//         block_hash: DBlockT::Hash,
-//         message: L1HandlerTransaction,
-//     ) -> RpcApiResult<(u128, u128, u128)> { self.client .runtime_api()
-//       .estimate_message_fee(block_hash, message) .map_err(|e| { error!("Runtime Api error: {e}");
-//       StarknetRpcApiError::InternalServerError })? .map_err(|e| { error!("Function execution
-//       failed: {:#?}", e); StarknetRpcApiError::ContractError })
-//     }
-// }
-
-/// Constructor for A Starknet RPC server for Madara
-/// # Arguments
-// * `client` - The Madara client
-// * `backend` - The Madara backend
-// * `overrides` - The OverrideHandle
-// * `sync_service` - The Substrate client sync service
-// * `starting_block` - The starting block for the syncing
-// * `hasher` - The hasher used by the runtime
-//
-// # Returns
-// * `Self` - The actual Starknet struct
 #[allow(clippy::too_many_arguments)]
 impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
     pub fn new(
