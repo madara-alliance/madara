@@ -395,11 +395,10 @@ where
 {
     let chain_id = chain_id.0.into();
     let tx_hash = l1_handler.compute_hash::<H>(chain_id, false, Some(block_number));
-    let paid_fee =
-        DeoxysBackend::l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(tx_hash.0).map_err(|e| {
-            log::error!("Failed to retrieve fee paid on l1 for tx with hash `{tx_hash:?}`: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
+    let paid_fee = DeoxysBackend::l1_handler_paid_fee().get_fee_paid_for_l1_handler_tx(tx_hash.0).map_err(|e| {
+        log::error!("Failed to retrieve fee paid on l1 for tx with hash `{tx_hash:?}`: {e}");
+        StarknetRpcApiError::InternalServerError
+    })?;
 
     Ok(btx::Transaction::L1HandlerTransaction(blockifier::transaction::transactions::L1HandlerTransaction {
         tx: l1_handler,

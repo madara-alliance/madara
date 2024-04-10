@@ -3,7 +3,8 @@ use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_types::block::{self, DBlockT};
+use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
+use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -11,16 +12,12 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_api::hash::StarkFelt;
-use starknet_core::types::{
-    BlockId, BlockTag, BlockWithReceipts, L1DataAvailabilityMode, MaybePendingBlockWithReceipts,
-};
-use starknet_ff::FieldElement;
+use starknet_core::types::{BlockId, BlockWithReceipts, MaybePendingBlockWithReceipts, TransactionWithReceipt};
 
 use super::get_transaction_receipt::get_transaction_receipt_finalized;
 use crate::errors::StarknetRpcApiError;
 use crate::utils::{
-    get_block_by_block_hash, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address,
+    get_block_by_block_hash, l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address,
     starknet_version, status, timestamp,
 };
 use crate::Starknet;
@@ -40,7 +37,6 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let chain_id = starknet.chain_id()?;
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
         log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
@@ -62,27 +58,21 @@ where
                 false,
                 Some(starknet_block.header().block_number),
             );
-            let transaction_receipt = get_transaction_receipt_finalized(
+            let transaction = to_starknet_core_tx(tx.clone(), Felt252Wrapper::from(transaction_hash).into());
+            let receipt_with_block_info = get_transaction_receipt_finalized(
                 starknet,
                 chain_id,
                 substrate_block_hash,
-                FieldElement::from(transaction_hash).into(),
+                Felt252Wrapper::from(transaction_hash).into(),
             )
             .unwrap();
+
+            let receipt = receipt_with_block_info.receipt;
+
+            TransactionWithReceipt { transaction, receipt }
         })
-        .collect();
+        .collect::<Vec<TransactionWithReceipt>>();
 
-    let block_context = starknet.client.runtime_api().get_block_context(substrate_block_hash).map_err(|e| {
-        log::error!("Request parameters error: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?;
-
-    let starknet_version = starknet.current_spec_version().map_err(|e| {
-        log::error!("Failed to get current spec version: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?;
-
-    let block_number = starknet_block.header().block_number;
     let status = status(starknet_block.header().block_number);
     let parent_hash = parent_hash(&starknet_block);
     let new_root = new_root(&starknet_block);
@@ -90,6 +80,7 @@ where
     let sequencer_address = sequencer_address(&starknet_block);
     let l1_gas_price = l1_gas_price(&starknet_block);
     let l1_data_gas_price = l1_data_gas_price(&starknet_block);
+    let l1_da_mode = l1_da_mode(&starknet_block);
     let starknet_version = starknet_version(&starknet_block);
 
     let block_with_receipts = BlockWithReceipts {
@@ -98,11 +89,11 @@ where
         parent_hash,
         block_number: starknet_block.header().block_number,
         new_root,
-        timestamp: starknet_block.header().block_timestamp,
+        timestamp,
         sequencer_address,
         l1_gas_price,
         l1_data_gas_price,
-        l1_da_mode: todo!(),
+        l1_da_mode,
         starknet_version,
         transactions: transactions_with_receipts,
     };
