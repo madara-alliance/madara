@@ -14,7 +14,6 @@ members = [
   "crates/primitives/contract",
   "crates/primitives/convert",
   "crates/primitives/digest-log",
-  "crates/primitives/fee",
   "crates/primitives/felt",
   "crates/primitives/genesis-config/",
   "crates/primitives/hashers",
@@ -41,7 +40,6 @@ default-members = [
   "crates/primitives/block",
   "crates/primitives/chain-id",
   "crates/primitives/digest-log",
-  "crates/primitives/fee",
   "crates/primitives/felt",
   "crates/primitives/genesis-config/",
   "crates/primitives/hashers",
@@ -229,7 +227,6 @@ mp-convert = { path = "crates/primitives/convert", default-features = false }
 mp-digest-log = { path = "crates/primitives/digest-log", default-features = false, features = [
   "std",
 ] }
-mp-fee = { path = "crates/primitives/fee", default-features = false }
 mp-felt = { path = "crates/primitives/felt", default-features = false }
 mp-genesis-config = { path = "crates/primitives/genesis-config", default-features = false }
 mp-hashers = { path = "crates/primitives/hashers", default-features = false }

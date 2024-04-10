@@ -16,7 +16,6 @@ derive_more = { workspace = true, features = ["from"] }
 indexmap = { workspace = true }
 lazy_static = { workspace = true }
 log = { workspace = true }
-mp-fee = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 spin = "0.9.8"
