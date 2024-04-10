@@ -17,7 +17,6 @@ members = [
   "crates/primitives/felt",
   "crates/primitives/genesis-config/",
   "crates/primitives/hashers",
-  "crates/primitives/messages",
   "crates/primitives/program-hash",
   "crates/primitives/sequencer-address",
   "crates/primitives/storage",
@@ -43,7 +42,6 @@ default-members = [
   "crates/primitives/felt",
   "crates/primitives/genesis-config/",
   "crates/primitives/hashers",
-  "crates/primitives/messages",
   "crates/primitives/program-hash",
   "crates/primitives/sequencer-address",
   "crates/primitives/storage",
@@ -230,7 +228,6 @@ mp-digest-log = { path = "crates/primitives/digest-log", default-features = fals
 mp-felt = { path = "crates/primitives/felt", default-features = false }
 mp-genesis-config = { path = "crates/primitives/genesis-config", default-features = false }
 mp-hashers = { path = "crates/primitives/hashers", default-features = false }
-mp-messages = { path = "crates/primitives/messages", default-features = false }
 mp-program-hash = { path = "crates/primitives/program-hash", default-features = false }
 mp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
 mp-simulations = { path = "crates/primitives/simulations", default-features = false }
