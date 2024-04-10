@@ -54,7 +54,7 @@ where
         .iter()
         .map(|tx| {
             let transaction_hash = tx.compute_hash::<H>(
-                Felt252Wrapper::from(chain_id.0).into(),
+                Felt252Wrapper::from(chain_id.0),
                 false,
                 Some(starknet_block.header().block_number),
             );
@@ -85,7 +85,7 @@ where
 
     let block_with_receipts = BlockWithReceipts {
         status,
-        block_hash: Felt252Wrapper::from(block_hash).into(),
+        block_hash: block_hash.into(),
         parent_hash,
         block_number: starknet_block.header().block_number,
         new_root,
