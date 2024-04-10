@@ -247,7 +247,7 @@ mc-sync = { path = "crates/client/sync" }
 deoxys-runtime = { path = "crates/runtime" }
 
 # TUI Dashboard
-tui = { path = "crates/tui" }
+deoxys-tui = { path = "crates/tui" }
 
 # Starknet dependencies
 # Cairo Virtual Machine
