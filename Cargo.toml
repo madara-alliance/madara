@@ -14,14 +14,12 @@ members = [
   "crates/primitives/contract",
   "crates/primitives/convert",
   "crates/primitives/digest-log",
-  "crates/primitives/fee",
   "crates/primitives/felt",
   "crates/primitives/genesis-config/",
   "crates/primitives/hashers",
   "crates/primitives/messages",
   "crates/primitives/program-hash",
   "crates/primitives/sequencer-address",
-  "crates/primitives/state",
   "crates/primitives/storage",
   "crates/primitives/transactions",
   "crates/primitives/types",
@@ -42,14 +40,12 @@ default-members = [
   "crates/primitives/block",
   "crates/primitives/chain-id",
   "crates/primitives/digest-log",
-  "crates/primitives/fee",
   "crates/primitives/felt",
   "crates/primitives/genesis-config/",
   "crates/primitives/hashers",
   "crates/primitives/messages",
   "crates/primitives/program-hash",
   "crates/primitives/sequencer-address",
-  "crates/primitives/state",
   "crates/primitives/storage",
   "crates/primitives/transactions",
   "crates/primitives/types",
@@ -231,7 +227,6 @@ mp-convert = { path = "crates/primitives/convert", default-features = false }
 mp-digest-log = { path = "crates/primitives/digest-log", default-features = false, features = [
   "std",
 ] }
-mp-fee = { path = "crates/primitives/fee", default-features = false }
 mp-felt = { path = "crates/primitives/felt", default-features = false }
 mp-genesis-config = { path = "crates/primitives/genesis-config", default-features = false }
 mp-hashers = { path = "crates/primitives/hashers", default-features = false }
@@ -239,7 +234,6 @@ mp-messages = { path = "crates/primitives/messages", default-features = false }
 mp-program-hash = { path = "crates/primitives/program-hash", default-features = false }
 mp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
 mp-simulations = { path = "crates/primitives/simulations", default-features = false }
-mp-state = { path = "crates/primitives/state", default-features = false }
 mp-storage = { path = "crates/primitives/storage", default-features = false }
 mp-transactions = { path = "crates/primitives/transactions", default-features = false }
 mp-types = { path = "crates/primitives/types", default-features = false }

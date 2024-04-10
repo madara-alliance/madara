@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- refactor: remove crate mp-fee and mp-state
 - fix(class): Fix class conversions to support legacy Sierra versions
 - feat: rebase blockifier
 - feat(check): Added a state root check to ensure synced compatibility
