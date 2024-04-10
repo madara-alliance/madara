@@ -6,7 +6,7 @@ use blockifier::state::cached_state::{CommitmentStateDiff, StateChangesCount};
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
 use indexmap::IndexMap;
-use mc_db::storage::StorageHandler;
+use mc_db::storage_handler;
 use mp_felt::Felt252Wrapper;
 use mp_state::StateChanges;
 use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
@@ -58,7 +58,7 @@ impl<T: Config> Default for BlockifierStateAdapter<T> {
 
 impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     fn get_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
-        let search = StorageHandler::contract_storage().unwrap().get(&contract_address, &key);
+        let search = storage_handler::contract_storage().unwrap().get(&contract_address, &key);
 
         match search {
             Ok(Some(value)) => Ok(StarkFelt(value.to_bytes_be())),
@@ -89,7 +89,7 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
 impl<T: Config> State for BlockifierStateAdapter<T> {
     fn set_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey, value: StarkFelt) {
         self.storage_update.insert(contract_address, vec![(key, value)]);
-        let _ = StorageHandler::contract_storage_mut(BlockId::Tag(BlockTag::Latest)).unwrap().insert(
+        let _ = storage_handler::contract_storage_mut(BlockId::Tag(BlockTag::Latest)).unwrap().insert(
             &contract_address,
             &key,
             value,

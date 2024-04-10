@@ -3,7 +3,7 @@ use std::sync::Arc;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
-use mc_db::storage::{DeoxysStorageError, StorageHandler};
+use mc_db::storage_handler::{self, DeoxysStorageError};
 use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_felt::Felt252Wrapper;
@@ -195,8 +195,8 @@ fn contract_trie_root(
 ) -> Result<Felt252Wrapper, DeoxysStorageError> {
     // NOTE: handlers implicitely acquire a lock on their respective tries
     // for the duration of their livetimes
-    let mut contract_write = StorageHandler::contract_mut(BlockId::Number(block_number))?;
-    let mut storage_write = StorageHandler::contract_storage_mut(BlockId::Number(block_number))?;
+    let mut contract_write = storage_handler::contract_mut(BlockId::Number(block_number))?;
+    let mut storage_write = storage_handler::contract_storage_mut(BlockId::Number(block_number))?;
 
     // Tries need to be initialised before values are inserted
     contract_write.init()?;
@@ -223,7 +223,7 @@ fn contract_trie_root(
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
     let start = std::time::Instant::now();
-    let storage_read = StorageHandler::contract_storage()?;
+    let storage_read = storage_handler::contract_storage()?;
     let updates = csd
         .storage_updates
         .iter()
@@ -247,7 +247,7 @@ fn contract_trie_root(
     log::debug!("contract_trie_root bonsai_contract.commit: {:?}", std::time::Instant::now() - start);
     log::debug!("contract_trie_root: {:?}", std::time::Instant::now() - start1);
 
-    let contract_read = StorageHandler::contract()?;
+    let contract_read = storage_handler::contract()?;
     Ok(contract_read.root()?.into())
 }
 
@@ -310,7 +310,7 @@ lazy_static! {
 ///
 /// The class root.
 fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
-    let mut class_write = StorageHandler::class_mut(BlockId::Number(block_number))?;
+    let mut class_write = storage_handler::class_mut(BlockId::Number(block_number))?;
 
     let updates = csd
         .class_hash_to_compiled_class_hash
@@ -330,6 +330,6 @@ fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt2
     class_write.commit(block_number + 1)?;
     class_write.apply_changes()?;
 
-    let class_read = StorageHandler::class()?;
+    let class_read = storage_handler::class()?;
     Ok(class_read.root()?.into())
 }

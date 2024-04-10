@@ -1,6 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
-use mc_db::storage::StorageHandler;
+use mc_db::storage_handler;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -72,7 +72,7 @@ where
 
     log::info!("block number: {block_number}");
 
-    let value = StorageHandler::contract_storage_mut(BlockId::Number(block_number))
+    let value = storage_handler::contract_storage_mut(BlockId::Number(block_number))
         .map_err(|_| StarknetRpcApiError::ContractNotFound)?
         .get(&contract_address, &key)
         .unwrap_or(None)

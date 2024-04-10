@@ -18,7 +18,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 use anyhow::{bail, Context, Result};
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
-use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
+use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig, RevertibleStorage};
 use da_db::DaDb;
 use l1_handler_tx_fee::L1HandlerTxFeeDb;
 use mapping_db::MappingDb;
@@ -34,7 +34,7 @@ use starknet_types_core::hash::{Pedersen, Poseidon};
 pub mod bonsai_db;
 mod l1_handler_tx_fee;
 mod meta_db;
-pub mod storage;
+pub mod storage_handler;
 
 pub use error::{BonsaiDbError, DbError};
 pub use mapping_db::MappingCommitment;
@@ -125,6 +125,14 @@ pub enum Column {
     BonsaiClassesTrie,
     BonsaiClassesFlat,
     BonsaiClassesLog,
+
+    COntractClassesTrie,
+    ContractClassesFlat,
+    ContractClassesLog,
+
+    ContractAbiTrie,
+    ContractAbiFlat,
+    ContractAbiLog,
 }
 
 impl fmt::Debug for Column {
@@ -183,6 +191,12 @@ impl Column {
             Column::BonsaiClassesTrie => "bonsai_classes_trie",
             Column::BonsaiClassesFlat => "bonsai_classes_flat",
             Column::BonsaiClassesLog => "bonsai_classes_log",
+            Column::COntractClassesTrie => "contract_class_trie",
+            Column::ContractClassesFlat => "contract_class_flat",
+            Column::ContractClassesLog => "contract_class_log",
+            Column::ContractAbiTrie => "contract_abi_trie",
+            Column::ContractAbiFlat => "contract_abi_flat",
+            Column::ContractAbiLog => "contract_abi_log",
         }
     }
 
@@ -240,6 +254,8 @@ pub struct DeoxysBackend {
     bonsai_contract: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
     bonsai_storage: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
     bonsai_class: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>>,
+    contract_classes: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
+    contract_abis: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
 }
 
 // Singleton backing instance for `DeoxysBackend`
@@ -337,6 +353,34 @@ impl DeoxysBackend {
         .unwrap();
         bonsai_classes.commit(BasicId::new(0)).unwrap();
 
+        let mut contract_classes = RevertibleStorage::new(
+            BonsaiDb::new(
+                db,
+                DatabaseKeyMapping {
+                    flat: Column::ContractClassesFlat,
+                    trie: Column::COntractClassesTrie,
+                    trie_log: Column::ContractClassesLog,
+                },
+            ),
+            bonsai_config.clone(),
+        )
+        .unwrap();
+        contract_classes.commit(BasicId::new(0)).unwrap();
+
+        let mut contract_abis = RevertibleStorage::new(
+            BonsaiDb::new(
+                db,
+                DatabaseKeyMapping {
+                    flat: Column::ContractAbiFlat,
+                    trie: Column::ContractAbiTrie,
+                    trie_log: Column::ContractAbiLog,
+                },
+            ),
+            bonsai_config.clone(),
+        )
+        .unwrap();
+        contract_abis.commit(BasicId::new(0)).unwrap();
+
         Ok(Self {
             mapping: Arc::new(MappingDb::new(Arc::clone(db), cache_more_things)),
             meta: Arc::new(MetaDb::new(Arc::clone(db))),
@@ -345,6 +389,8 @@ impl DeoxysBackend {
             bonsai_contract: RwLock::new(bonsai_contract),
             bonsai_storage: RwLock::new(bonsai_contract_storage),
             bonsai_class: RwLock::new(bonsai_classes),
+            contract_classes: RwLock::new(contract_classes),
+            contract_abis: RwLock::new(contract_abis),
         })
     }
 
@@ -373,6 +419,14 @@ impl DeoxysBackend {
 
     pub(crate) fn bonsai_class() -> &'static RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_class).expect("Backend not initialized")
+    }
+
+    pub(crate) fn contract_class() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.contract_classes).expect("Backend not initialized")
+    }
+
+    pub(crate) fn contract_abi() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.contract_abis).expect("Backend not initialized")
     }
 
     /// Return l1 handler tx paid fee database manager
