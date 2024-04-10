@@ -223,7 +223,7 @@ where
                                 STARKNET_STATE_UPDATE.read().expect("Failed to acquire read lock on STARKNET_STATE_UPDATE");
                             if (block_conv.header().global_state_root) != last_l2_state_update.global_root {
                                 log::info!(
-                                    "❗ Verified state: {:?} doesn't match fetched state: {:?}",
+                                    "❗ Verified state: {} doesn't match fetched state: {}",
                                     last_l2_state_update.global_root,
                                     block_conv.header().global_state_root
                                 );
