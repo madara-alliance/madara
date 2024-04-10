@@ -2,11 +2,9 @@ use core::marker::PhantomData;
 use std::collections::{HashMap, HashSet};
 
 use blockifier::execution::contract_class::ContractClass;
-use blockifier::state::cached_state::StateChangesCount;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
 use mc_db::storage::StorageHandler;
-use mp_state::StateChanges;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -26,23 +24,6 @@ pub struct BlockifierStateAdapter<T: Config> {
     contract_class_update: HashMap<ClassHash, ContractClass>,
     visited_pcs: HashMap<ClassHash, HashSet<usize>>,
     _phantom: PhantomData<T>,
-}
-
-impl<T> StateChanges for BlockifierStateAdapter<T>
-where
-    T: Config,
-{
-    fn count_state_changes(&self) -> StateChangesCount {
-        let keys = self.storage_update.keys();
-        let n_storage_updates = keys.len();
-        let contract_updated = keys.map(|(contract_address, _)| contract_address).collect::<HashSet<_>>();
-        StateChangesCount {
-            n_modified_contracts: contract_updated.len(),
-            n_storage_updates,
-            n_class_hash_updates: self.class_hash_update.len(),
-            n_compiled_class_hash_updates: self.compiled_class_hash_update.len(),
-        }
-    }
 }
 
 impl<T: Config> Default for BlockifierStateAdapter<T> {
