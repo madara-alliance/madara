@@ -12,7 +12,7 @@ use sp_blockchain::HeaderBackend;
 use starknet_core::types::BlockId;
 
 use crate::errors::StarknetRpcApiError;
-use crate::utils::get_block_by_block_hash;
+use crate::get_block_by_block_hash;
 use crate::Starknet;
 
 /// Get the Number of Transactions in a Given Block

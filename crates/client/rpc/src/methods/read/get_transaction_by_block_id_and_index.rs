@@ -16,7 +16,7 @@ use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, FieldElement, Transaction};
 
 use crate::errors::StarknetRpcApiError;
-use crate::utils::get_block_by_block_hash;
+use crate::get_block_by_block_hash;
 use crate::Starknet;
 
 /// Get the details of a transaction by a given block id and index.

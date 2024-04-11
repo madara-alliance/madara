@@ -1,132 +1,35 @@
 use std::collections::HashMap;
 use std::io::Write;
-use std::num::NonZeroU128;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
-use blockifier::execution::call_info::CallInfo;
 use blockifier::execution::contract_class::ContractClass as BlockifierContractClass;
 use cairo_lang_starknet_classes::casm_contract_class::{
     CasmContractClass, CasmContractEntryPoint, CasmContractEntryPoints,
 };
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
 use mp_block::DeoxysBlock;
-use mp_digest_log::find_starknet_block;
+use starknet_api::transaction as stx;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_types::block::{DBlockT, DHashT};
 use num_bigint::BigUint;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
-use sp_api::{BlockT, HeaderT, ProvideRuntimeApi};
-use sp_blockchain::HeaderBackend;
+use sp_api::ProvideRuntimeApi;
 use sp_runtime::DispatchError;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::ThinStateDiff;
-use starknet_api::transaction as stx;
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
-    BlockStatus, CompressedLegacyContractClass, ComputationResources, ContractClass, ContractStorageDiffItem,
-    DataAvailabilityResources, DataResources, DeclaredClassItem, DeployedContractItem, EntryPointsByType, Event,
-    ExecutionResources, FieldElement, FlattenedSierraClass, FromByteArrayError, L1DataAvailabilityMode,
-    LegacyContractEntryPoint, LegacyEntryPointsByType, MsgToL1, NonceUpdate, ReplacedClassItem, ResourcePrice,
-    StateDiff, StorageEntry,
+    BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem,
+    DeployedContractItem, EntryPointsByType, FieldElement, FlattenedSierraClass, FromByteArrayError,
+    LegacyContractEntryPoint, LegacyEntryPointsByType, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
 };
 
 use crate::errors::StarknetRpcApiError;
 use crate::Felt;
-
-pub fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> {
-    let address = call_info.call.storage_address;
-    let events: Vec<_> = call_info
-        .execution
-        .events
-        .iter()
-        .map(|ordered_event| Event {
-            from_address: FieldElement::from_byte_slice_be(address.0.0.bytes()).unwrap(),
-            keys: ordered_event
-                .event
-                .keys
-                .iter()
-                .map(|key| FieldElement::from_byte_slice_be(key.0.bytes()).unwrap())
-                .collect(),
-            data: ordered_event
-                .event
-                .data
-                .0
-                .iter()
-                .map(|data_item| FieldElement::from_byte_slice_be(data_item.bytes()).unwrap())
-                .collect(),
-        })
-        .collect();
-
-    let inner_events: Vec<_> = call_info.inner_calls.iter().flat_map(extract_events_from_call_info).collect();
-
-    events.into_iter().chain(inner_events).collect()
-}
-
-pub fn extract_messages_from_call_info(call_info: &CallInfo) -> Vec<MsgToL1> {
-    let address = call_info.call.storage_address;
-    let events: Vec<_> = call_info
-        .execution
-        .l2_to_l1_messages
-        .iter()
-        .map(|msg| MsgToL1 {
-            from_address: FieldElement::from_byte_slice_be(address.0.0.bytes()).unwrap(),
-            to_address: FieldElement::from_byte_slice_be(msg.message.to_address.0.to_fixed_bytes().as_slice()).unwrap(),
-            payload: msg
-                .message
-                .payload
-                .0
-                .iter()
-                .map(|data_item| FieldElement::from_byte_slice_be(data_item.bytes()).unwrap())
-                .collect(),
-        })
-        .collect();
-
-    let inner_messages: Vec<_> = call_info.inner_calls.iter().flat_map(extract_messages_from_call_info).collect();
-
-    events.into_iter().chain(inner_messages).collect()
-}
-
-pub fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> ExecutionResources {
-    let vm_resources = &callinfo.resources;
-
-    let steps = vm_resources.n_steps as u64;
-    let memory_holes = match vm_resources.n_memory_holes as u64 {
-        0 => None,
-        n => Some(n),
-    };
-
-    let builtin_instance = &vm_resources.builtin_instance_counter;
-
-    let range_check_builtin_applications = builtin_instance.get("range_check_builtin").map(|&value| value as u64);
-    let pedersen_builtin_applications = builtin_instance.get("pedersen_builtin").map(|&value| value as u64);
-    let poseidon_builtin_applications = builtin_instance.get("poseidon_builtin").map(|&value| value as u64);
-    let ec_op_builtin_applications = builtin_instance.get("ec_op_builtin").map(|&value| value as u64);
-    let ecdsa_builtin_applications = builtin_instance.get("ecdsa_builtin").map(|&value| value as u64);
-    let bitwise_builtin_applications = builtin_instance.get("bitwise_builtin").map(|&value| value as u64);
-    let keccak_builtin_applications = builtin_instance.get("keccak_builtin").map(|&value| value as u64);
-    let segment_arena_builtin = builtin_instance.get("segment_arena_builtin").map(|&value| value as u64);
-
-    ExecutionResources {
-        computation_resources: ComputationResources {
-            steps,
-            memory_holes,
-            range_check_builtin_applications,
-            pedersen_builtin_applications,
-            poseidon_builtin_applications,
-            ec_op_builtin_applications,
-            ecdsa_builtin_applications,
-            bitwise_builtin_applications,
-            keccak_builtin_applications,
-            segment_arena_builtin,
-        },
-        // TODO: add data resources when blockifier supports it
-        data_resources: DataResources { data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 0 } },
-    }
-}
 
 pub(crate) fn tx_hash_retrieve(tx_hashes: Vec<StarkFelt>) -> Vec<FieldElement> {
     let mut v = Vec::with_capacity(tx_hashes.len());
@@ -161,68 +64,8 @@ pub(crate) fn status(block_number: u64) -> BlockStatus {
     }
 }
 
-pub(crate) fn parent_hash(block: &DeoxysBlock) -> FieldElement {
-    Felt252Wrapper::from(block.header().parent_block_hash).into()
-}
-
-pub(crate) fn new_root(block: &DeoxysBlock) -> FieldElement {
-    Felt252Wrapper::from(block.header().global_state_root).into()
-}
-
-pub(crate) fn timestamp(block: &DeoxysBlock) -> u64 {
-    block.header().block_timestamp
-}
-
-pub(crate) fn sequencer_address(block: &DeoxysBlock) -> FieldElement {
-    Felt252Wrapper::from(block.header().sequencer_address).into()
-}
-
-pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
-    // 1 is a special value that means 0 because the gas price is stored as a NonZeroU128
-    fn non_zeo_u128_to_field_element(value: NonZeroU128) -> FieldElement {
-        match value.get() {
-            1 => FieldElement::ZERO,
-            x => FieldElement::from(x),
-        }
-    }
-
-    let resource_price = &block.header().l1_gas_price;
-
-    match resource_price {
-        Some(resource_price) => ResourcePrice {
-            price_in_fri: non_zeo_u128_to_field_element(resource_price.strk_l1_gas_price),
-            price_in_wei: non_zeo_u128_to_field_element(resource_price.eth_l1_gas_price),
-        },
-        None => ResourcePrice { price_in_fri: FieldElement::ZERO, price_in_wei: FieldElement::ZERO },
-    }
-}
-
-pub(crate) fn l1_data_gas_price(block: &DeoxysBlock) -> ResourcePrice {
-    let resource_price = &block.header().l1_gas_price;
-
-    match resource_price {
-        Some(resource_price) => ResourcePrice {
-            price_in_fri: resource_price.strk_l1_data_gas_price.get().into(),
-            price_in_wei: resource_price.eth_l1_data_gas_price.get().into(),
-        },
-        None => ResourcePrice { price_in_fri: FieldElement::ONE, price_in_wei: FieldElement::ONE },
-    }
-}
-
-pub(crate) fn l1_da_mode(block: &DeoxysBlock) -> L1DataAvailabilityMode {
-    let l1_da_mode = block.header().l1_da_mode;
-    match l1_da_mode {
-        starknet_api::data_availability::L1DataAvailabilityMode::Calldata => L1DataAvailabilityMode::Calldata,
-        starknet_api::data_availability::L1DataAvailabilityMode::Blob => L1DataAvailabilityMode::Blob,
-    }
-}
-
-pub(crate) fn starknet_version(block: &DeoxysBlock) -> String {
-    block.header().protocol_version.from_utf8().expect("starknet version should be a valid utf8 string")
-}
-
 /// Returns a [`ContractClass`] from a [`BlockifierContractClass`]
-pub fn to_rpc_contract_class(contract_class: BlockifierContractClass) -> Result<ContractClass> {
+pub(crate) fn to_rpc_contract_class(contract_class: BlockifierContractClass) -> Result<ContractClass> {
     match contract_class {
         BlockifierContractClass::V0(contract_class) => {
             let entry_points_by_type: HashMap<_, _> = contract_class.entry_points_by_type.clone().into_iter().collect();
@@ -245,7 +88,7 @@ pub fn to_rpc_contract_class(contract_class: BlockifierContractClass) -> Result<
 }
 
 /// Returns a [`StateDiff`] from a [`ThinStateDiff`]
-pub fn to_rpc_state_diff(thin_state_diff: ThinStateDiff) -> StateDiff {
+pub(crate) fn to_rpc_state_diff(thin_state_diff: ThinStateDiff) -> StateDiff {
     let nonces = thin_state_diff
         .nonces
         .iter()
@@ -351,19 +194,6 @@ fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryP
     let selector = FieldElement::from_bytes_be(&entry_point.selector.0.0)?;
     let offset = entry_point.offset.0;
     Ok(LegacyContractEntryPoint { selector, offset })
-}
-
-/// Returns the current Starknet block from the block header's digest
-pub fn get_block_by_block_hash<B, C>(client: &C, block_hash: <B as BlockT>::Hash) -> Result<DeoxysBlock>
-where
-    B: BlockT,
-    C: HeaderBackend<B>,
-{
-    let header =
-        client.header(block_hash).ok().flatten().ok_or_else(|| anyhow::Error::msg("Failed to retrieve header"))?;
-    let digest = header.digest();
-    let block = find_starknet_block(digest)?;
-    Ok(block)
 }
 
 // Utils to convert Casm contract class to Compiled class

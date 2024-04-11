@@ -29,10 +29,11 @@ use starknet_core::types::{
 };
 
 use crate::errors::StarknetRpcApiError;
-use crate::utils::{
+use crate::get_block_by_block_hash;
+use crate::utils::call_info::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
-    get_block_by_block_hash, tx_hash_compute, tx_hash_retrieve,
 };
+use crate::utils::utils::{tx_hash_compute, tx_hash_retrieve};
 use crate::{Felt, Starknet};
 
 pub fn get_transaction_receipt_finalized<A, BE, G, C, P, H>(

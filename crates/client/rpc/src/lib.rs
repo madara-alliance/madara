@@ -17,9 +17,12 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use mc_db::DeoxysBackend;
+use mp_digest_log::find_starknet_block;
+use mp_block::DeoxysBlock;
 use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
+use sp_api::BlockT;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_network_sync::SyncingService;
@@ -47,7 +50,7 @@ use crate::methods::get_block::{
     get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
     get_block_with_txs_pending,
 };
-use crate::utils::*;
+use crate::utils::utils::to_rpc_state_diff;
 
 // Starknet RPC API trait and types
 //
@@ -349,4 +352,17 @@ where
 
         Ok(rpc_state_diff)
     }
+}
+
+/// Returns the current Starknet block from the block header's digest
+pub fn get_block_by_block_hash<B, C>(client: &C, block_hash: <B as BlockT>::Hash) -> anyhow::Result<DeoxysBlock>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
+    let header =
+        client.header(block_hash).ok().flatten().ok_or_else(|| anyhow::Error::msg("Failed to retrieve header"))?;
+    let digest = header.digest();
+    let block = find_starknet_block(digest)?;
+    Ok(block)
 }

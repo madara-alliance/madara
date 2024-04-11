@@ -18,7 +18,7 @@ use starknet_api::block::BlockHash as APIBlockHash;
 use starknet_core::types::{BlockId, BlockTag, FieldElement, MaybePendingStateUpdate, StateDiff, StateUpdate};
 
 use crate::errors::StarknetRpcApiError;
-use crate::utils::get_block_by_block_hash;
+use crate::get_block_by_block_hash;
 use crate::Starknet;
 
 fn get_state_update_finalized<A, BE, G, C, P, H>(

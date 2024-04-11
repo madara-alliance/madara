@@ -16,10 +16,12 @@ use starknet_core::types::{BlockId, BlockWithReceipts, MaybePendingBlockWithRece
 
 use super::get_transaction_receipt::get_transaction_receipt_finalized;
 use crate::errors::StarknetRpcApiError;
-use crate::utils::{
-    get_block_by_block_hash, l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address,
-    starknet_version, status, timestamp,
+use crate::get_block_by_block_hash;
+use crate::utils::block::{
+    l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address,
+    starknet_version, timestamp,
 };
+use crate::utils::utils::status;
 use crate::Starknet;
 
 // TODO: Implem pending block
