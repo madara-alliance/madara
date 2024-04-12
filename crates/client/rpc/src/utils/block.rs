@@ -1,15 +1,16 @@
 use std::num::NonZeroU128;
 
 use mp_block::DeoxysBlock;
-use mp_felt::Felt252Wrapper;
 use starknet_core::types::{FieldElement, L1DataAvailabilityMode, ResourcePrice};
 
 pub(crate) fn parent_hash(block: &DeoxysBlock) -> FieldElement {
-    Felt252Wrapper::from(block.header().parent_block_hash).into()
+    // safe unwrap() FieldElement from Starkfelt
+    FieldElement::from_bytes_be(&block.header().parent_block_hash.0).unwrap()
 }
 
 pub(crate) fn new_root(block: &DeoxysBlock) -> FieldElement {
-    Felt252Wrapper::from(block.header().global_state_root).into()
+    // safe unwrap() FieldElement from Starkfelt
+    FieldElement::from_bytes_be(&block.header().global_state_root.0).unwrap()
 }
 
 pub(crate) fn timestamp(block: &DeoxysBlock) -> u64 {
@@ -17,7 +18,8 @@ pub(crate) fn timestamp(block: &DeoxysBlock) -> u64 {
 }
 
 pub(crate) fn sequencer_address(block: &DeoxysBlock) -> FieldElement {
-    Felt252Wrapper::from(block.header().sequencer_address).into()
+    // safe unwrap() FieldElement from Starkfelt
+    FieldElement::from_bytes_be(&block.header().sequencer_address.0.0.0).unwrap()
 }
 
 pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
