@@ -9,7 +9,6 @@ use cairo_lang_starknet_classes::casm_contract_class::{
 };
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
 use mp_block::DeoxysBlock;
-use starknet_api::transaction as stx;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
@@ -21,6 +20,7 @@ use sp_runtime::DispatchError;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::ThinStateDiff;
+use starknet_api::transaction as stx;
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
     BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem,

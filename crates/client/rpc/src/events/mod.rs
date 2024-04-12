@@ -13,8 +13,7 @@ use starknet_core::types::{BlockId, BlockTag, EmittedEvent};
 use starknet_ff::FieldElement;
 
 use crate::errors::StarknetRpcApiError;
-use crate::get_block_by_block_hash;
-use crate::Starknet;
+use crate::{get_block_by_block_hash, Starknet};
 
 impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
 where

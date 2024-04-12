@@ -16,8 +16,7 @@ use sp_blockchain::HeaderBackend;
 use starknet_core::types::{FieldElement, TransactionExecutionStatus, TransactionStatus};
 
 use crate::errors::StarknetRpcApiError;
-use crate::get_block_by_block_hash;
-use crate::Starknet;
+use crate::{get_block_by_block_hash, Starknet};
 
 /// Gets the Transaction Status, Including Mempool Status and Execution Details
 ///
