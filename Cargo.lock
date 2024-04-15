@@ -3247,6 +3247,7 @@ dependencies = [
  "dotenvy",
  "ethereum-da-client",
  "futures",
+ "hyper 0.14.28",
  "mongodb",
  "omniqueue",
  "rstest",

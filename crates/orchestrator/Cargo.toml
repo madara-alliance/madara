@@ -3,6 +3,14 @@ name = "orchestrator"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "orchestrator"
+path = "src/lib.rs"
+
+[[bin]]
+name = "orchestrator"
+path = "src/main.rs"
+
 [dependencies]
 async-trait = { workspace = true }
 axum = { workspace = true, features = ["macros"] }
@@ -13,6 +21,7 @@ dotenvy = { workspace = true }
 ethereum-da-client = { workspace = true, optional = true }
 futures = { workspace = true }
 mongodb = { workspace = true, features = ["bson-uuid-1"], optional = true }
+hyper = { version = "0.14", features = ["full"] }
 omniqueue = { workspace = true, optional = true }
 rstest = { workspace = true }
 serde = { workspace = true }
