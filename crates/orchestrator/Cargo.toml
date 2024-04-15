@@ -21,9 +21,7 @@ dotenvy = { workspace = true }
 ethereum-da-client = { workspace = true, optional = true }
 futures = { workspace = true }
 mongodb = { workspace = true, features = ["bson-uuid-1"], optional = true }
-hyper = { version = "0.14", features = ["full"] }
 omniqueue = { workspace = true, optional = true }
-rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 starknet = { workspace = true }
@@ -39,3 +37,7 @@ default = ["ethereum", "with_mongodb", "with_sqs"]
 ethereum = ["ethereum-da-client"]
 with_mongodb = ["mongodb"]
 with_sqs = ["omniqueue"]
+
+[dev-dependencies]
+hyper = { version = "0.14", features = ["full"] }
+rstest = { workspace = true }
