@@ -1,5 +1,5 @@
 use std::{
-    env, io::Read,
+    io::Read,
     net::SocketAddr,
 };
 
@@ -12,29 +12,12 @@ use starknet::providers::Provider;
 
 use orchestrator::{
     queue::init_consumers,
-    config::{config, Config},
+    config::Config,
     routes::app_router,
     utils::env_utils::get_env_var_or_default,
 };
 
-use crate::common::constants::{MADARA_RPC_URL, MONGODB_CONNECTION_STRING};
-
-#[fixture]
-fn rpc_url() -> String {
-    String::from(MADARA_RPC_URL)
-}
-
-#[fixture]
-pub async fn init_valid_config(
-    rpc_url: String
-) -> &'static Config {
-    env::set_var("MADARA_RPC_URL", rpc_url.as_str());
-    env::set_var("MONGODB_CONNECTION_STRING", MONGODB_CONNECTION_STRING);
-    
-    let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).with_target(false).try_init();
-
-    config().await
-}
+use super::init_valid_config;
 
 #[fixture]
 pub async fn setup_server(
