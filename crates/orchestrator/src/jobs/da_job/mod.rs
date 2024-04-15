@@ -179,4 +179,36 @@ mod tests {
         let expected = FieldElement::from_dec_str(expected.as_str()).unwrap();
         assert_eq!(da_word, expected);
     }
+
+    mod test_state_update_to_blob_data {
+        use super::*;
+        use std::fs::{read_to_string, File};
+        use std::io::{self, BufRead};
+        use serde_json::Error;
+
+        #[test]
+        fn state_update_to_blob_data_works() {
+            let state_update_path = "test-utils/stateUpdate.json".to_owned();
+            let contents = read_to_string(state_update_path).expect("Couldn't find or load that file.");
+
+            let v: Result<StateUpdate, Error> = serde_json::from_str(&contents.as_str());
+
+            let state_update: StateUpdate = match v {
+                Ok(state_update) => state_update,
+                Err(e) => panic!("Couldn't parse the JSON file: {}", e),
+            };
+
+            let blob_data = state_update_to_blob_data(630872, state_update);
+            assert_eq!(blob_data.len(), 4906, "Blob data length must be 4906"); // //! Length was 2375
+
+            let file = File::open("test-utils/blobStateDiffs.txt").expect("Failed to open file");
+            let reader = io::BufReader::new(file);
+
+            // Iterate over both the file lines and the vector simultaneously, with index for comparison
+            for (index, line_result) in reader.lines().enumerate() {
+                let line = line_result.expect("Failed to read line");
+                assert_eq!(blob_data[index].to_string().as_str(), line, "Line {} does not match", index + 1);
+            }
+        }
+    }
 }
