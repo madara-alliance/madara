@@ -8,7 +8,6 @@ use axum::http::StatusCode;
 use hyper::{body::Buf, Body, Request};
 
 use rstest::*;
-use starknet::providers::Provider;
 
 use orchestrator::{
     queue::init_consumers,
@@ -17,11 +16,13 @@ use orchestrator::{
     utils::env_utils::get_env_var_or_default,
 };
 
-use super::init_valid_config;
+use super::common::init_valid_config;
 
 #[fixture]
 pub async fn setup_server(
-    #[future] init_valid_config: &Config
+    #[future]
+    #[with( String::from("http://localhost:9944") )]
+    init_valid_config: &Config
 ) -> SocketAddr {
     let _config = init_valid_config.await;
 
@@ -40,17 +41,6 @@ pub async fn setup_server(
     tracing::info!("Listening on http://{}", address);
 
     addr
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_valid_config(
-    #[future] #[from(init_valid_config)] config: &Config
-) {
-    let config = config.await;
-
-    let result = config.starknet_client().block_number().await;
-    assert!(result.is_ok());
 }
 
 #[rstest]
