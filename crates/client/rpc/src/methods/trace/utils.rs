@@ -440,7 +440,7 @@ where
     })?;
     let block_number = starknet_block.header().block_number;
     let mut previous_block_number = block_number - 1;
-    if previous_block_number <= 0 {
+    if previous_block_number == 0 {
         previous_block_number = 0;
     }
     let substrate_block_hash =
