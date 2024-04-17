@@ -47,12 +47,11 @@ pub mod convert {
 
     // Wrapper Class conversion
 
-    impl TryFrom<(ContractClassCore, Option<String>)> for ContractClassWrapper {
+    impl TryFrom<ContractClassCore> for ContractClassWrapper {
         type Error = anyhow::Error;
 
-        fn try_from(inputs: (ContractClassCore, Option<String>)) -> Result<Self, Self::Error> {
-            let (contract_class, starknet_version) = inputs;
-            let contract = from_rpc_contract_class(&contract_class, starknet_version)?;
+        fn try_from(contract_class: ContractClassCore) -> Result<Self, Self::Error> {
+            let contract = from_rpc_contract_class(&contract_class)?;
             let abi = match &contract_class {
                 ContractClassCore::Sierra(class_sierra) => ContractAbi::Sierra(class_sierra.abi.clone()),
                 ContractClassCore::Legacy(class_cairo) => {

@@ -7,34 +7,10 @@ use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
 };
 use cairo_lang_starknet_classes::casm_contract_class::{CasmContractClass, StarknetSierraCompilationError};
-use cairo_lang_starknet_classes::contract_class::{
-    ContractClass as SierraContractClass, ContractEntryPoint, ContractEntryPoints,
-};
-use cairo_lang_utils::bigint::BigUintAsHex;
-use cairo_lang_v1_0_0_alpha6::bigint::BigUintAsHex as BigUintAsHexV1;
-use cairo_lang_v1_0_0_rc0::bigint::BigUintAsHex as BigUintAsHexV2;
-use cairo_lang_v1_1_1::bigint::BigUintAsHex as BigUintAsHexV3;
 use cairo_vm::types::program::Program;
-use casm_compiler_v1_0_0_alpha6::casm_contract_class::CasmContractClass as CasmContractClassV1;
-use casm_compiler_v1_0_0_alpha6::contract_class::{
-    ContractClass as SierraContractClassV1, ContractEntryPoint as ContractEntryPointV1,
-    ContractEntryPoints as ContractEntryPointsV1,
-};
-use casm_compiler_v1_0_0_rc0::casm_contract_class::CasmContractClass as CasmContractClassV2;
-use casm_compiler_v1_0_0_rc0::contract_class::{
-    ContractClass as SierraContractClassV2, ContractEntryPoint as ContractEntryPointV2,
-    ContractEntryPoints as ContractEntryPointsV2,
-};
-use casm_compiler_v1_1_1::casm_contract_class::CasmContractClass as CasmContractClassV3;
-use casm_compiler_v1_1_1::contract_class::{
-    ContractClass as SierraContractClassV3, ContractEntryPoint as ContractEntryPointV3,
-    ContractEntryPoints as ContractEntryPointsV3,
-};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use indexmap::IndexMap;
-use mp_felt::Felt252Wrapper;
-use num_bigint::{BigInt, BigUint, Sign};
 use serde_json;
 use starknet_api::core::EntryPointSelector;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
@@ -42,35 +18,15 @@ use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
     CompressedLegacyContractClass, ContractClass as ContractClassCore, EntryPointsByType, FieldElement,
     FlattenedSierraClass, FromByteArrayError, LegacyContractAbiEntry, LegacyContractEntryPoint,
-    LegacyEntryPointsByType, SierraEntryPoint,
+    LegacyEntryPointsByType,
 };
-
-#[derive(Debug)]
-pub enum CasmContractClassVersion {
-    V1(CasmContractClassV1),
-    V2(CasmContractClassV2),
-    V3(CasmContractClassV3),
-    Base(CasmContractClass),
-}
-
-#[derive(Debug)]
-pub enum SierraContractClassVersion {
-    V1(SierraContractClassV1),
-    V2(SierraContractClassV2),
-    V3(SierraContractClassV3),
-    Base(SierraContractClass),
-}
-
-#[derive(Debug, PartialEq, PartialOrd)]
-struct StarknetVersion(u8, u8, u8, u8);
 
 /// Returns a [`BlockifierContractClass`] from a [`ContractClass`]
 pub fn from_rpc_contract_class(
     contract_class: &ContractClassCore,
-    starknet_version: Option<String>,
 ) -> anyhow::Result<ContractClassBlockifier> {
     match contract_class {
-        ContractClassCore::Sierra(contract_class) => from_contract_class_sierra(contract_class, starknet_version),
+        ContractClassCore::Sierra(contract_class) => from_contract_class_sierra(contract_class),
         ContractClassCore::Legacy(contract_class) => from_contract_class_cairo(contract_class),
     }
 }
@@ -90,10 +46,9 @@ pub fn to_contract_class_sierra(_: &ContractClassV1, abi: String) -> anyhow::Res
 /// Note: The conversion between the different legacy class versions is handled by an intermediate
 /// json representation.
 pub fn from_contract_class_sierra(
-    contract_class: &FlattenedSierraClass,
-    starknet_version: Option<String>,
+    contract_class: &FlattenedSierraClass
 ) -> anyhow::Result<ContractClassBlockifier> {
-    let raw_casm_contract = flattened_sierra_to_casm_contract_class(contract_class, starknet_version)?;
+    let raw_casm_contract = flattened_sierra_to_casm_contract_class(contract_class)?;
     let blockifier_contract = ContractClassV1::try_from(raw_casm_contract).unwrap();
     anyhow::Ok(ContractClassBlockifier::V1(blockifier_contract))
 }
@@ -132,7 +87,6 @@ pub fn from_contract_class_cairo(
 /// `CasmContractClass::from_contract_class` performs a compilation over the deserialized contract class
 pub fn flattened_sierra_to_casm_contract_class(
     flattened_sierra: &FlattenedSierraClass,
-    starknet_version: Option<String>,
 ) -> Result<CasmContractClass, StarknetSierraCompilationError> {
     let raw_flattened_sierra = serde_json::to_string(flattened_sierra).unwrap();
     let sierra_json = serde_json::from_str(&raw_flattened_sierra).unwrap();
@@ -214,45 +168,4 @@ fn from_legacy_entry_point(entry_point: &LegacyContractEntryPoint) -> EntryPoint
     let selector = EntryPointSelector(StarkFelt(entry_point.selector.to_bytes_be()));
     let offset = EntryPointOffset(entry_point.offset);
     EntryPoint { selector, offset }
-}
-
-/// Converts a [FieldElement] to a [BigUint]
-fn field_element_to_big_uint(value: &FieldElement) -> BigUint {
-    if value == &FieldElement::ZERO {
-        BigInt::from_bytes_be(Sign::NoSign, &value.to_bytes_be()).to_biguint().unwrap()
-    } else {
-        BigInt::from_bytes_be(Sign::Plus, &value.to_bytes_be()).to_biguint().unwrap()
-    }
-}
-
-/// Converts a [FieldElement] to a [BigUintAsHexV1]
-fn field_element_to_big_uint_as_hex_v1(value: &FieldElement) -> BigUintAsHexV1 {
-    BigUintAsHexV1 { value: field_element_to_big_uint(value) }
-}
-
-/// Converts a [FieldElement] to a [BigUintAsHexV2]
-fn field_element_to_big_uint_as_hex_v2(value: &FieldElement) -> BigUintAsHexV2 {
-    BigUintAsHexV2 { value: field_element_to_big_uint(value) }
-}
-
-/// Converts a [FieldElement] to a [BigUintAsHexV3]
-fn field_element_to_big_uint_as_hex_v3(value: &FieldElement) -> BigUintAsHexV3 {
-    BigUintAsHexV3 { value: field_element_to_big_uint(value) }
-}
-
-/// Converts a [FieldElement] to a [BigUintAsHex]
-fn field_element_to_big_uint_as_hex(value: &FieldElement) -> BigUintAsHex {
-    BigUintAsHex { value: field_element_to_big_uint(value) }
-}
-
-/// Returns a [StarknetVersion] from a version string
-fn get_version(version_str: &str) -> StarknetVersion {
-    let parts: Vec<u8> = version_str.split('.').map(|part| part.parse::<u8>().unwrap_or(0)).collect();
-
-    let mut parts_padded = parts.clone();
-    while parts_padded.len() < 3 {
-        parts_padded.push(0);
-    }
-
-    StarknetVersion(parts_padded[0], parts_padded[1], parts_padded[2], 0)
 }
