@@ -44,3 +44,14 @@ pub fn default_job_item() -> JobItem {
         version: 0,
     }
 }
+
+#[fixture]
+pub fn custom_job_item(
+    default_job_item: JobItem,
+    #[default(String::from("0"))] internal_id: String
+) -> JobItem {
+    let mut job_item = default_job_item;
+    job_item.internal_id = internal_id;
+
+    job_item
+}
