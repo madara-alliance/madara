@@ -57,7 +57,7 @@ impl<T: crate::Config> From<GenesisLoader> for GenesisConfig<T> {
             storage,
             strk_fee_token_address: Felt252Wrapper(loader.data().strk_fee_token_address.0).into(),
             eth_fee_token_address: Felt252Wrapper(loader.data().eth_fee_token_address.0).into(),
-            ..Default::default()
+            _phantom: Default::default(),
         }
     }
 }

@@ -972,7 +972,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=oss#058d74485f92b75eba7f7a5849c1c6edae958a5e"
+source = "git+https://github.com/keep-starknet-strange/bonsai-trie.git?branch=oss#6efb6727663ca924814784bed3865eba013220bc"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -8638,7 +8638,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
 dependencies = [
- "proc-macro-crate 2.0.0",
+ "proc-macro-crate 1.1.3",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -13071,7 +13071,7 @@ dependencies = [
 [[package]]
 name = "starknet-types-core"
 version = "0.1.0"
-source = "git+https://github.com/starknet-io/types-rs.git?branch=main#ab055382b23c9cc907985e1d19dce4c9c316d3ae"
+source = "git+https://github.com/starknet-io/types-rs.git?branch=main#3921cb9eaa923539bd67ee477e0de15f1dfb0d79"
 dependencies = [
  "bitvec",
  "lambdaworks-crypto",
@@ -14094,7 +14094,7 @@ checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
  "digest 0.10.7",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 

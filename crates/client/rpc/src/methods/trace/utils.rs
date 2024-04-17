@@ -280,7 +280,7 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
     Ok(tx_trace)
 }
 
-pub fn map_transaction_to_user_transaction<A, BE, G, C, P, H>(
+pub(crate) fn map_transaction_to_user_transaction<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
     starknet_block: DeoxysBlock,
     substrate_block_hash: DHashT,
@@ -439,7 +439,10 @@ where
         StarknetRpcApiError::InternalServerError
     })?;
     let block_number = starknet_block.header().block_number;
-    let previous_block_number = block_number - 1;
+    let mut previous_block_number = block_number - 1;
+    if previous_block_number == 0 {
+        previous_block_number = 0;
+    }
     let substrate_block_hash =
         starknet.substrate_block_hash_from_starknet_block(BlockId::Number(previous_block_number)).map_err(|e| {
             log::error!("Failed to retrieve previous block substrate hash: {e}");
