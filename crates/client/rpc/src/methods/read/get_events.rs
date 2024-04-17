@@ -81,19 +81,17 @@ where
     }
 
     let from_block = continuation_token.block_n;
-    let mut current_block = from_block;
-
     let mut filtered_events: Vec<EmittedEvent> = Vec::new();
 
-    // Iterate on block range: TODO: stop using Cpp-like loops with mutation
-    while current_block <= to_block {
-        let emitted_events = if current_block <= latest_block {
+    for current_block in from_block..=to_block {
+        let block_filtered_events: Vec<EmittedEvent> = if current_block <= latest_block {
             starknet.get_block_events(BlockId::Number(current_block))?
         } else {
             starknet.get_block_events(BlockId::Tag(BlockTag::Pending))?
-        };
-
-        let block_filtered_events: Vec<EmittedEvent> = filter_events_by_params(emitted_events, from_address, &keys);
+        }
+        .into_iter()
+        .filter(|event| event_match_filter(event, from_address, &keys))
+        .collect();
 
         if current_block == from_block && (block_filtered_events.len() as u64) < continuation_token.event_n {
             return Err(StarknetRpcApiError::InvalidContinuationToken.into());
@@ -117,47 +115,18 @@ where
 
             return Ok(EventsPage { events: filtered_events, continuation_token: token });
         }
-
-        current_block += 1;
     }
-
     Ok(EventsPage { events: filtered_events, continuation_token: None })
 }
 
-/// Helper function to get filter events using address and keys
-
-/// # Arguments
-///
-/// * `events` - A vector of all events
-/// * `address` - Address to use to filter the events
-/// * `keys` - Keys to use to filter the events. An event is filtered if any key is present
-/// * `max_results` - Optional, indicated the max events that need to be filtered
-///
-/// # Returns
-///
-/// * `(block_events: Vec<EventWrapper>, continuation_token: usize)` - A tuple of the filtered
-///   events and the first index which still hasn't been processed block_id and an instance of Block
-fn filter_events_by_params<'a, 'b: 'a>(
-    events: Vec<EmittedEvent>,
-    address: Option<Felt252Wrapper>,
-    keys: &'a [Vec<FieldElement>],
-) -> Vec<EmittedEvent> {
-    let mut filtered_events = vec![];
-
-    // Iterate on block events.
-    for event in events {
-        let match_from_address = address.map_or(true, |addr| addr.0 == event.from_address);
-        // Based on https://github.com/starkware-libs/papyrus
-        let match_keys = keys
-            .iter()
-            .enumerate()
-            .all(|(i, keys)| event.keys.len() > i && (keys.is_empty() || keys.contains(&event.keys[i])));
-
-        if match_from_address && match_keys {
-            filtered_events.push(event);
-        }
-    }
-    filtered_events
+#[inline]
+fn event_match_filter(event: &EmittedEvent, address: Option<Felt252Wrapper>, keys: &Vec<Vec<FieldElement>>) -> bool {
+    let match_from_address = address.map_or(true, |addr| addr.0 == event.from_address);
+    let match_keys = keys
+        .iter()
+        .enumerate()
+        .all(|(i, keys)| event.keys.len() > i && (keys.is_empty() || keys.contains(&event.keys[i])));
+    match_from_address && match_keys
 }
 
 fn block_range<A, BE, G, C, P, H>(
