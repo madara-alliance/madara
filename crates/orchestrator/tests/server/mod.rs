@@ -16,15 +16,15 @@ use orchestrator::{
     utils::env_utils::get_env_var_or_default,
 };
 
-use super::common::init_valid_config;
+use super::common::get_or_init_config;
 
 #[fixture]
 pub async fn setup_server(
     #[future]
     #[with( String::from("http://localhost:9944") )]
-    init_valid_config: &Config
+    get_or_init_config: &Config
 ) -> SocketAddr {
-    let _config = init_valid_config.await;
+    let _config = get_or_init_config.await;
 
     let host = get_env_var_or_default("HOST", "127.0.0.1");
     let port = get_env_var_or_default("PORT", "3000").parse::<u16>().expect("PORT must be a u16");
