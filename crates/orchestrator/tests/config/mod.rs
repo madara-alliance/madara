@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::common::default_job_item;
 
 use super::common::{
     get_or_init_config,
@@ -7,18 +7,16 @@ use super::common::{
     }
 };
 
-use orchestrator::config::Config;
-use orchestrator::jobs::types::{
-        JobItem,
-        JobType::DataSubmission,
-        JobStatus::Created,
-        ExternalId,
+use orchestrator::{
+    config::Config,
+    jobs::types::JobItem,
 };
+
 use rstest::*;
 use starknet::providers::Provider;
 
 use starknet::core::types::FieldElement;
-use ::uuid::Uuid;
+
 
 #[fixture]
 fn vec_of_field_elements() -> Vec<FieldElement> {
@@ -96,16 +94,10 @@ async fn test_config_da_client(
 #[tokio::test]
 async fn test_config_database(
     #[future] get_or_init_config: &Config,
+    default_job_item: JobItem,
 ) {
     let config = get_or_init_config.await;
-    let job = JobItem { 
-        id: Uuid::new_v4(),
-        internal_id: String::from("0"),
-        job_type: DataSubmission,status: Created,
-        external_id: ExternalId::Number(0),
-        metadata: HashMap::new(),
-        version: 0,
-    };
+    let job = default_job_item;
     let result = config.database().create_job(job).await;
     assert!(result.is_err());
 }

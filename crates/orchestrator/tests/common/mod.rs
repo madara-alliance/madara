@@ -4,7 +4,19 @@ use rstest::*;
 use constants::*;
 use std::env;
 
-use orchestrator::config::{config, Config};
+use std::collections::HashMap;
+
+use orchestrator::{
+    config::{config, Config},
+    jobs::types::{
+        JobItem,
+        JobType::DataSubmission,
+        JobStatus::Created,
+        ExternalId,
+    },
+};
+
+use ::uuid::Uuid;
 
 #[fixture]
 pub async fn get_or_init_config(
@@ -19,4 +31,16 @@ pub async fn get_or_init_config(
     let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).with_target(false).try_init();
 
     config().await
+}
+
+#[fixture]
+pub fn default_job_item() -> JobItem {
+    JobItem { 
+        id: Uuid::new_v4(),
+        internal_id: String::from("0"),
+        job_type: DataSubmission,status: Created,
+        external_id: ExternalId::Number(0),
+        metadata: HashMap::new(),
+        version: 0,
+    }
 }
