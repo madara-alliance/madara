@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-use super::common::get_or_init_config;
+use super::common::{
+    get_or_init_config,
+    constants::{
+        DA_LAYER, MADARA_RPC_URL, MONGODB_CONNECTION_STRING,
+    }
+};
 
 use orchestrator::config::Config;
 use orchestrator::jobs::types::{
@@ -26,6 +31,28 @@ async fn test_valid_config(
     #[future] get_or_init_config: &Config,
 ) {
     let config = get_or_init_config.await;
+    config.starknet_client();
+    config.da_client();
+    config.database();
+    config.queue();
+}
+
+#[rstest]
+#[case::pass(
+    String::from(MADARA_RPC_URL),
+    String::from(MONGODB_CONNECTION_STRING),
+    String::from(DA_LAYER),
+)]
+#[case::pass(
+    String::from("http://invalid::invalid"), // No new config gets created
+    String::from(MONGODB_CONNECTION_STRING),
+    String::from(DA_LAYER),
+)]
+#[tokio::test]
+async fn test_init_config_runs_ony_once(
+    #[case] rpc_url: String, #[case] db_url: String, #[case] da_url: String 
+) {
+    let config = get_or_init_config(rpc_url, db_url, da_url).await;
     config.starknet_client();
     config.da_client();
     config.database();
@@ -66,7 +93,6 @@ async fn test_config_da_client(
 }
 
 #[rstest]
-#[should_panic]
 #[tokio::test]
 async fn test_config_database(
     #[future] get_or_init_config: &Config,
