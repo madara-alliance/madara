@@ -82,20 +82,19 @@ pub fn from_contract_class_cairo(
     anyhow::Ok(ContractClassBlockifier::V0(blockifier_contract))
 }
 
-/// Converts a [FlattenedSierraClass] to a [CasmContractClassVersion]
-/// 
-/// `CasmContractClass::from_contract_class` performs a compilation over the deserialized contract class
-pub fn flattened_sierra_to_casm_contract_class(
-    flattened_sierra: &FlattenedSierraClass,
-) -> Result<CasmContractClass, StarknetSierraCompilationError> {
-    let raw_flattened_sierra = serde_json::to_string(flattened_sierra).unwrap();
-    let sierra_json = serde_json::from_str(&raw_flattened_sierra).unwrap();
+    /// Converts a [FlattenedSierraClass] to a [CasmContractClassVersion]
+    /// 
+    /// `CasmContractClass::from_contract_class` performs a compilation over the deserialized contract class
+    pub fn flattened_sierra_to_casm_contract_class(
+        flattened_sierra: &FlattenedSierraClass,
+    ) -> anyhow::Result<CasmContractClass> {
+        let raw_flattened_sierra = serde_json::to_string(flattened_sierra).map_err(|err| err)?;
+        let sierra_class = serde_json::from_str(&raw_flattened_sierra).map_err(|err| err)?;
+        let casm_class = CasmContractClass::from_contract_class(sierra_class, true, usize::MAX)
+            .map_err(StarknetSierraCompilationError::from)?;
 
-    let casm_class = CasmContractClass::from_contract_class(sierra_json, true, usize::MAX)
-        .map_err(StarknetSierraCompilationError::from)?;
-
-    Ok(casm_class)
-}
+        Ok(casm_class)
+    }
 
 /// Returns a compressed vector of bytes
 pub(crate) fn compress(data: &[u8]) -> anyhow::Result<Vec<u8>> {
