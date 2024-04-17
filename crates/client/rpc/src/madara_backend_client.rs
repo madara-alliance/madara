@@ -1,5 +1,6 @@
 use mc_db::{DbError, DeoxysBackend};
 use mp_block::DeoxysBlock;
+use mp_digest_log::find_starknet_block;
 use mp_types::block::{DBlockT, DHashT};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_api::BlockId;
@@ -8,7 +9,6 @@ use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use starknet_api::hash::StarkHash;
 
 use crate::errors::StarknetRpcApiError;
-use crate::get_block_by_block_hash;
 
 pub fn load_hash<C>(client: &C, hash: StarkHash) -> Result<Option<DHashT>, DbError>
 where
@@ -67,4 +67,17 @@ where
         }
         _ => Err(StarknetRpcApiError::BlockNotFound),
     }
+}
+
+/// Returns the current Starknet block from the block header's digest
+pub fn get_block_by_block_hash<B, C>(client: &C, block_hash: <B as BlockT>::Hash) -> anyhow::Result<DeoxysBlock>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
+    let header =
+        client.header(block_hash).ok().flatten().ok_or_else(|| anyhow::Error::msg("Failed to retrieve header"))?;
+    let digest = header.digest();
+    let block = find_starknet_block(digest)?;
+    Ok(block)
 }

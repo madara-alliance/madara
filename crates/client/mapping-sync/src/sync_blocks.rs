@@ -2,7 +2,7 @@ use std::num::NonZeroU128;
 
 use blockifier::blockifier::block::GasPrices;
 use mc_db::DeoxysBackend;
-use mc_rpc::get_block_by_block_hash;
+use mc_rpc::madara_backend_client::get_block_by_block_hash;
 use mp_digest_log::{find_starknet_block, FindLogError};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
