@@ -3,6 +3,7 @@ git # Deoxys Changelog
 ## Next release
 
 - fix(compute): Fixed prepare_data_availability_modes computation
+- feat(rpc): add pending block to `get_block_with_receipts` rpc call
 - chore: update bonsai-trie (benefit from perf boost)
 - feat(rpc): add `get_block_with_receipts` rpc call
 - refactor: remove crate mp-state, mp-fee, mp-messages

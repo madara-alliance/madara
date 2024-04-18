@@ -38,6 +38,8 @@ fn convert_calldata(calldata: Calldata) -> Vec<FieldElement> {
     calldata.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect()
 }
 
+// Use a mapping from execution resources to get corresponding fee bounds
+// Encodes this information into 32-byte buffer then converts it into FieldElement
 fn prepare_resource_bound_value(resource_bounds_mapping: &ResourceBoundsMapping, resource: Resource) -> FieldElement {
     let mut buffer = [0u8; 32];
     buffer[2..8].copy_from_slice(match resource {
