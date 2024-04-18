@@ -13,11 +13,9 @@ use starknet_core::types::BlockId;
 
 use crate::{Config, Pallet};
 
-/// Empty struct that implements the traits needed by the blockifier/starknet in rust.
-///
-/// We feed this struct when executing a transaction so that we directly use the substrate storage
-/// and not an extra layer that would add overhead.
-/// We don't implement those traits directly on the pallet to avoid compilation problems.
+/// `BlockifierStateAdapter` is only use to re-executing or simulate transactions.
+/// None of the setters should therefore change the storage persistently,
+/// all changes are temporary stored in the struct and are discarded after the execution
 pub struct BlockifierStateAdapter<T: Config> {
     storage_update: HashMap<(ContractAddress, StorageKey), StarkFelt>,
     nonce_update: HashMap<ContractAddress, Nonce>,
