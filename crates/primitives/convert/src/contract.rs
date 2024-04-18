@@ -3,7 +3,6 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use blockifier::blockifier::block;
 use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
 };
@@ -94,15 +93,14 @@ pub fn from_contract_class_sierra(
     contract_class: &FlattenedSierraClass,
     starknet_version: Option<String>,
 ) -> anyhow::Result<ContractClassBlockifier> {
-    // let casm_contract = flattened_sierra_to_casm_contract_class(contract_class, starknet_version)?;
-    // let raw_casm_contract = match casm_contract {
-    //     CasmContractClassVersion::V1(inner) => serde_json::to_string(&inner).unwrap(),
-    //     CasmContractClassVersion::V2(inner) => serde_json::to_string(&inner).unwrap(),
-    //     CasmContractClassVersion::V3(inner) => serde_json::to_string(&inner).unwrap(),
-    //     CasmContractClassVersion::Base(inner) => serde_json::to_string(&inner).unwrap(),
-    // };
-    // let blockifier_contract = ContractClassV1::try_from_json_string(&raw_casm_contract).unwrap();
-    let blockifier_contract = ContractClassV1::default();
+    let casm_contract = flattened_sierra_to_casm_contract_class(contract_class, starknet_version)?;
+    let raw_casm_contract = match casm_contract {
+        CasmContractClassVersion::V1(inner) => serde_json::to_string(&inner).unwrap(),
+        CasmContractClassVersion::V2(inner) => serde_json::to_string(&inner).unwrap(),
+        CasmContractClassVersion::V3(inner) => serde_json::to_string(&inner).unwrap(),
+        CasmContractClassVersion::Base(inner) => serde_json::to_string(&inner).unwrap(),
+    };
+    let blockifier_contract = ContractClassV1::try_from_json_string(&raw_casm_contract).unwrap();
     anyhow::Ok(ContractClassBlockifier::V1(blockifier_contract))
 }
 
