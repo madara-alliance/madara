@@ -1,75 +1,67 @@
+use std::sync::{RwLockReadGuard, RwLockWriteGuard};
+
 use bonsai_trie::id::BasicId;
+use bonsai_trie::RevertibleStorage;
 use mp_contract::ContractAbi;
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::api_core::ClassHash;
 use starknet_core::types::BlockId;
 
-use super::{conv_class_key, DeoxysStorageError, StorageType};
+use super::{conv_class_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut};
+use crate::bonsai_db::BonsaiDb;
 use crate::DeoxysBackend;
 
-pub fn insert(class_hash: ClassHash, abi: ContractAbi) {
-    DeoxysBackend::contract_abi().write().unwrap().insert(&conv_class_key(&class_hash), &abi.encode());
-}
+pub struct ContractAbiView<'a>(pub(crate) RwLockReadGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
 
-pub fn get(class_hash: ClassHash) -> Result<Option<ContractAbi>, DeoxysStorageError> {
-    let contract_abi = DeoxysBackend::contract_abi()
-        .read()
-        .unwrap()
-        .get(&conv_class_key(&class_hash))
-        .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractAbi))?
-        .map(|bytes| ContractAbi::decode(&mut &bytes[..]));
+pub struct ContractAbiViewMut<'a>(pub(crate) RwLockWriteGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
 
-    match contract_abi {
-        Some(Ok(contract_abi)) => Ok(Some(contract_abi)),
-        Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractAbi)),
-        None => Ok(None),
+impl StorageView for ContractAbiView<'_> {
+    type KEY = ClassHash;
+
+    type VALUE = ContractAbi;
+
+    fn get(self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+        let contract_abi = self
+            .0
+            .get(&conv_class_key(key))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractAbi))?
+            .map(|bytes| ContractAbi::decode(&mut &bytes[..]));
+
+        match contract_abi {
+            Some(Ok(contract_abi)) => Ok(Some(contract_abi)),
+            Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractAbi)),
+            None => Ok(None),
+        }
+    }
+
+    fn contains(self, key: &Self::KEY) -> Result<bool, DeoxysStorageError> {
+        Ok(self
+            .0
+            .contains(&conv_class_key(&key))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractAbi))?)
     }
 }
 
-pub fn get_at(class_hash: ClassHash, block_id: BlockId) -> Result<Option<ContractAbi>, DeoxysStorageError> {
-    let contract_abi_storage = DeoxysBackend::contract_abi().read().unwrap();
+impl StorageViewMut for ContractAbiViewMut<'_> {
+    type KEY = ClassHash;
 
-    let change_id = match block_id {
-        BlockId::Number(number) => BasicId::new(number),
-        _ => contract_abi_storage.get_latest_id().unwrap(),
-    };
+    type VALUE = ContractAbi;
 
-    let bytes = contract_abi_storage
-        .get_transactional_state(change_id, contract_abi_storage.get_config())
-        .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractAbi))?
-        .and_then(|transactional_state| Some(transactional_state.get(&conv_class_key(&class_hash))));
+    fn insert(&mut self, key: &Self::KEY, value: &Self::VALUE) {
+        self.0.insert(&conv_class_key(key), &value.encode());
+    }
 
-    let contract_abi = match bytes {
-        Some(Ok(Some(bytes))) => Some(
-            ContractAbi::decode(&mut &bytes[..])
-                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractAbi))?,
-        ),
-        _ => None,
-    };
+    fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
+        Ok(self
+            .0
+            .commit(BasicId::new(block_number))
+            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractAbi))?)
+    }
 
-    Ok(contract_abi)
-}
-
-pub fn contains(class_hash: ClassHash) -> Result<bool, DeoxysStorageError> {
-    Ok(DeoxysBackend::contract_abi()
-        .read()
-        .unwrap()
-        .contains(&conv_class_key(&class_hash))
-        .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractAbi))?)
-}
-
-pub fn commit(block_numnber: u64) -> Result<(), DeoxysStorageError> {
-    Ok(DeoxysBackend::contract_abi()
-        .write()
-        .unwrap()
-        .commit(BasicId::new(block_numnber))
-        .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractAbi))?)
-}
-
-pub fn revert_to(block_numnber: u64) -> Result<(), DeoxysStorageError> {
-    Ok(DeoxysBackend::contract_abi()
-        .write()
-        .unwrap()
-        .revert_to(BasicId::new(block_numnber))
-        .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractAbi, block_numnber))?)
+    fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
+        Ok(self
+            .0
+            .revert_to(BasicId::new(block_number))
+            .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractAbi, block_number))?)
+    }
 }

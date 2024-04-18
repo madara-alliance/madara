@@ -500,15 +500,15 @@ impl DeoxysBackend {
         BACKEND_SINGLETON.get().map(|backend| &backend.contract_abis).expect("Backend not initialized")
     }
 
-    pub(crate) fn block_hash_to_number() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
+    pub(crate) fn block_number() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.block_hash_to_number).expect("Backend not initialized")
     }
 
-    pub(crate) fn block_number_to_hash() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
+    pub(crate) fn block_hash() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.block_number_to_hash).expect("Backend not initialized")
     }
 
-    pub(crate) fn contract_address_to_class_hash() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
+    pub(crate) fn class_hash() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.contract_address_to_class_hash).expect("Backend not initialized")
     }
 
