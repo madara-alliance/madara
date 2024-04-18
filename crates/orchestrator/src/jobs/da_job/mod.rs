@@ -14,7 +14,7 @@ pub struct DaJob;
 
 #[async_trait]
 impl Job for DaJob {
-    async fn create_job(&self, _config: &Config, internal_id: String) -> Result<JobItem> {
+    async fn create_job(&self, _config: &dyn Config, internal_id: String) -> Result<JobItem> {
         Ok(JobItem {
             id: Uuid::new_v4(),
             internal_id,
@@ -26,7 +26,7 @@ impl Job for DaJob {
         })
     }
 
-    async fn process_job(&self, config: &Config, job: &JobItem) -> Result<String> {
+    async fn process_job(&self, config: &dyn Config, job: &JobItem) -> Result<String> {
         let block_no = job.internal_id.parse::<u64>()?;
         let state_update = config.starknet_client().get_state_update(BlockId::Number(block_no)).await?;
 
@@ -48,7 +48,7 @@ impl Job for DaJob {
         Ok(external_id)
     }
 
-    async fn verify_job(&self, config: &Config, job: &JobItem) -> Result<JobVerificationStatus> {
+    async fn verify_job(&self, config: &dyn Config, job: &JobItem) -> Result<JobVerificationStatus> {
         Ok(config.da_client().verify_inclusion(job.external_id.unwrap_string()?).await?.into())
     }
 

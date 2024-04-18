@@ -23,7 +23,7 @@ pub async fn get_or_init_config(
     #[default(MADARA_RPC_URL.to_string())]rpc_url: String,
     #[default(DA_LAYER.to_string())]da_layer: String,
     #[default(MONGODB_CONNECTION_STRING.to_string())]mongo_url: String,
-) -> &'static Config {
+) -> &'static dyn Config {
     env::set_var("MADARA_RPC_URL", rpc_url);
     env::set_var("DA_LAYER", da_layer);
     env::set_var("MONGODB_CONNECTION_STRING", mongo_url);

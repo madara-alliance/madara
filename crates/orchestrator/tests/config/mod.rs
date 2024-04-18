@@ -26,7 +26,7 @@ fn vec_of_field_elements() -> Vec<FieldElement> {
 #[rstest(get_or_init_config(String::from("http://localhost:9944")))]
 #[tokio::test]
 async fn test_valid_config(
-    #[future] get_or_init_config: &Config,
+    #[future] get_or_init_config: &'static dyn Config,
 ) {
     let config = get_or_init_config.await;
     config.starknet_client();
@@ -62,7 +62,7 @@ async fn test_init_config_runs_ony_once(
 #[should_panic]
 #[tokio::test]
 async fn test_invalid_config(
-    #[future] get_or_init_config: &Config,
+    #[future] get_or_init_config: &'static dyn Config,
 ) {
     get_or_init_config.await;
 }
@@ -70,7 +70,7 @@ async fn test_invalid_config(
 #[rstest]
 #[tokio::test]
 async fn test_config_starknet_client(
-    #[future] get_or_init_config: &Config,
+    #[future] get_or_init_config: &'static dyn Config,
 ) {
     let config = get_or_init_config.await;
     let result = config.starknet_client().block_number().await;
@@ -81,7 +81,7 @@ async fn test_config_starknet_client(
 #[should_panic]
 #[tokio::test]
 async fn test_config_da_client(
-    #[future] get_or_init_config: &Config,
+    #[future] get_or_init_config: &'static dyn Config,
     vec_of_field_elements: Vec<FieldElement>,
 ) {
     let config = get_or_init_config.await;
@@ -93,7 +93,7 @@ async fn test_config_da_client(
 #[rstest]
 #[tokio::test]
 async fn test_config_database(
-    #[future] get_or_init_config: &Config,
+    #[future] get_or_init_config: &'static dyn Config,
     default_job_item: JobItem,
 ) {
     let config = get_or_init_config.await;

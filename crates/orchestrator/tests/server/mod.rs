@@ -22,7 +22,7 @@ use super::common::get_or_init_config;
 pub async fn setup_server(
     #[future]
     #[with( String::from("http://localhost:9944") )]
-    get_or_init_config: &Config
+    get_or_init_config: &'static dyn Config
 ) -> SocketAddr {
     let _config = get_or_init_config.await;
 

@@ -8,14 +8,23 @@ use da_client_interface::{DaClient, DaConfig};
 use dotenvy::dotenv;
 use ethereum_da_client::config::EthereumDaConfig;
 use ethereum_da_client::EthereumDaClient;
+use mockall::automock;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Url};
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
+#[automock]
+pub trait Config: Send + Sync {
+    fn starknet_client(&self) -> &Arc<JsonRpcClient<HttpTransport>>;
+    fn da_client(&self) -> &dyn DaClient;
+    fn database(&self) -> &dyn Database;
+    fn queue(&self) -> &dyn QueueProvider;
+}
+
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling `config` function.
-pub struct Config {
+pub struct AppConfig {
     /// The starknet client to get data from the node
     starknet_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
@@ -26,34 +35,34 @@ pub struct Config {
     queue: Box<dyn QueueProvider>,
 }
 
-impl Config {
+impl Config for AppConfig {
     /// Returns the starknet client
-    pub fn starknet_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
+    fn starknet_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
         &self.starknet_client
     }
 
     /// Returns the DA client
-    pub fn da_client(&self) -> &dyn DaClient {
+    fn da_client(&self) -> &dyn DaClient {
         self.da_client.as_ref()
     }
 
     /// Returns the database client
-    pub fn database(&self) -> &dyn Database {
+    fn database(&self) -> &dyn Database {
         self.database.as_ref()
     }
 
     /// Returns the queue provider
-    pub fn queue(&self) -> &dyn QueueProvider {
+    fn queue(&self) -> &dyn QueueProvider {
         self.queue.as_ref()
     }
 }
 
 /// The app config. It can be accessed from anywhere inside the service.
 /// It's initialized only once.
-pub static CONFIG: OnceCell<Config> = OnceCell::const_new();
+pub static CONFIG: OnceCell<AppConfig> = OnceCell::const_new();
 
 /// Initializes the app config
-async fn init_config() -> Config {
+async fn init_config() -> AppConfig {
     dotenv().ok();
 
     // init starknet client
@@ -67,11 +76,11 @@ async fn init_config() -> Config {
     // init the queue
     let queue = Box::new(SqsQueue {});
 
-    Config { starknet_client: Arc::new(provider), da_client: build_da_client(), database, queue }
+    AppConfig { starknet_client: Arc::new(provider), da_client: build_da_client(), database, queue }
 }
 
 /// Returns the app config. Initializes if not already done.
-pub async fn config() -> &'static Config {
+pub async fn config() -> &'static dyn Config {
     CONFIG.get_or_init(init_config).await
 }
 

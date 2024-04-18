@@ -20,15 +20,15 @@ pub mod types;
 #[async_trait]
 pub trait Job: Send + Sync {
     /// Should build a new job item and return it
-    async fn create_job(&self, config: &Config, internal_id: String) -> Result<JobItem>;
+    async fn create_job(&self, config: &dyn Config, internal_id: String) -> Result<JobItem>;
     /// Should process the job and return the external_id which can be used to
     /// track the status of the job. For example, a DA job will submit the state diff
     /// to the DA layer and return the txn hash.
-    async fn process_job(&self, config: &Config, job: &JobItem) -> Result<String>;
+    async fn process_job(&self, config: &dyn Config, job: &JobItem) -> Result<String>;
     /// Should verify the job and return the status of the verification. For example,
     /// a DA job will verify the inclusion of the state diff in the DA layer and return
     /// the status of the verification.
-    async fn verify_job(&self, config: &Config, job: &JobItem) -> Result<JobVerificationStatus>;
+    async fn verify_job(&self, config: &dyn Config, job: &JobItem) -> Result<JobVerificationStatus>;
     /// Should return the maximum number of attempts to process the job. A new attempt is made
     /// every time the verification returns `JobVerificationStatus::Rejected`
     fn max_process_attempts(&self) -> u64;
