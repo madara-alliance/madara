@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix(rpc): fix chain id method for mainnet
 - chore: update bonsai-trie (benefit from perf boost)
 - feat(rpc): add `get_block_with_receipts` rpc call
 - refactor: remove crate mp-state, mp-fee, mp-messages
