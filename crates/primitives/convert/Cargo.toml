@@ -28,6 +28,7 @@ serde_json = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true }
+log = { workspace = true }
 
 [features]
 default = ["std"]

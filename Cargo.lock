@@ -8040,6 +8040,7 @@ dependencies = [
  "cairo-vm",
  "flate2",
  "indexmap 2.2.6",
+ "log",
  "mp-felt",
  "num-bigint",
  "scale-info",
