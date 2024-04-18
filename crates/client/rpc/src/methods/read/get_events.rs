@@ -137,17 +137,15 @@ where
 ///
 /// * `(block_events: Vec<EventWrapper>, continuation_token: usize)` - A tuple of the filtered
 ///   events and the first index which still hasn't been processed block_id and an instance of Block
-fn filter_events_by_params<'a, 'b: 'a>(
+fn filter_events_by_params(
     events: Vec<EmittedEvent>,
     address: Option<Felt252Wrapper>,
-    keys: &'a [Vec<FieldElement>],
+    keys: &[Vec<FieldElement>],
 ) -> Vec<EmittedEvent> {
     let mut filtered_events = vec![];
 
-    // Iterate on block events.
     for event in events {
         let match_from_address = address.map_or(true, |addr| addr.0 == event.from_address);
-        // Based on https://github.com/starkware-libs/papyrus
         let match_keys = keys
             .iter()
             .enumerate()

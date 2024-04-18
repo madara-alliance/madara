@@ -12,7 +12,10 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_core::types::{BlockId, BlockWithReceipts, MaybePendingBlockWithReceipts, TransactionWithReceipt};
+use starknet_core::types::{
+    BlockId, BlockTag, BlockWithReceipts, MaybePendingBlockWithReceipts, PendingBlockWithReceipts,
+    TransactionWithReceipt,
+};
 
 use super::get_transaction_receipt::get_transaction_receipt_finalized;
 use crate::errors::StarknetRpcApiError;
@@ -22,7 +25,6 @@ use crate::utils::{
 };
 use crate::Starknet;
 
-// TODO: Implem pending block
 pub fn get_block_with_receipts<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
     block_id: BlockId,
@@ -42,11 +44,13 @@ where
         StarknetRpcApiError::BlockNotFound
     })?;
 
+    let is_pending = matches!(block_id, BlockId::Tag(BlockTag::Pending));
+
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
         log::error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
         StarknetRpcApiError::InternalServerError
     })?;
-    let block_hash = starknet_block.header().hash::<H>();
+
     let chain_id = starknet.chain_id()?;
 
     let transactions_with_receipts = starknet_block
@@ -73,32 +77,35 @@ where
         })
         .collect::<Vec<TransactionWithReceipt>>();
 
-    let status = status(starknet_block.header().block_number);
-    let parent_hash = parent_hash(&starknet_block);
-    let new_root = new_root(&starknet_block);
-    let timestamp = timestamp(&starknet_block);
-    let sequencer_address = sequencer_address(&starknet_block);
-    let l1_gas_price = l1_gas_price(&starknet_block);
-    let l1_data_gas_price = l1_data_gas_price(&starknet_block);
-    let l1_da_mode = l1_da_mode(&starknet_block);
-    let starknet_version = starknet_version(&starknet_block);
+    if is_pending {
+        let pending_block_with_receipts = PendingBlockWithReceipts {
+            transactions: transactions_with_receipts,
+            parent_hash: parent_hash(&starknet_block),
+            timestamp: timestamp(&starknet_block),
+            sequencer_address: sequencer_address(&starknet_block),
+            l1_gas_price: l1_gas_price(&starknet_block),
+            l1_data_gas_price: l1_data_gas_price(&starknet_block),
+            l1_da_mode: l1_da_mode(&starknet_block),
+            starknet_version: starknet_version(&starknet_block),
+        };
 
-    let block_with_receipts = BlockWithReceipts {
-        status,
-        block_hash: block_hash.into(),
-        parent_hash,
-        block_number: starknet_block.header().block_number,
-        new_root,
-        timestamp,
-        sequencer_address,
-        l1_gas_price,
-        l1_data_gas_price,
-        l1_da_mode,
-        starknet_version,
-        transactions: transactions_with_receipts,
-    };
-
-    let block = MaybePendingBlockWithReceipts::Block(block_with_receipts);
-
-    Ok(block)
+        let pending_block = MaybePendingBlockWithReceipts::PendingBlock(pending_block_with_receipts);
+        Ok(pending_block)
+    } else {
+        let block_with_receipts = BlockWithReceipts {
+            status: status(starknet_block.header().block_number),
+            block_hash: starknet_block.header().hash::<H>().into(),
+            parent_hash: parent_hash(&starknet_block),
+            block_number: starknet_block.header().block_number,
+            new_root: new_root(&starknet_block),
+            timestamp: timestamp(&starknet_block),
+            sequencer_address: sequencer_address(&starknet_block),
+            l1_gas_price: l1_gas_price(&starknet_block),
+            l1_data_gas_price: l1_data_gas_price(&starknet_block),
+            l1_da_mode: l1_da_mode(&starknet_block),
+            starknet_version: starknet_version(&starknet_block),
+            transactions: transactions_with_receipts,
+        };
+        Ok(MaybePendingBlockWithReceipts::Block(block_with_receipts))
+    }
 }
