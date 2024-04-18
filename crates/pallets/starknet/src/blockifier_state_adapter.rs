@@ -5,9 +5,11 @@ use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
 use mc_db::storage::StorageHandler;
+use sp_runtime::traits::UniqueSaturatedInto;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
+use starknet_core::types::BlockId;
 
 use crate::{Config, Pallet};
 
@@ -42,15 +44,23 @@ impl<T: Config> Default for BlockifierStateAdapter<T> {
 
 impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
-        let search = StorageHandler::contract_storage().unwrap().get(&contract_address, &key);
-
-        match search {
-            Ok(Some(value)) => Ok(StarkFelt(value.to_bytes_be())),
-            Ok(None) => Ok(StarkFelt::default()),
-            _ => Err(StateError::StateReadError(format!(
-                "Failed to retrieve storage value for contract {} at key {}",
-                contract_address.0.0, key.0.0
-            ))),
+        match self.storage_update.get(&(contract_address, key)) {
+            Some(value) => Ok(*value),
+            None => {
+                match StorageHandler::contract_storage_mut(BlockId::Number(
+                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number()),
+                ))
+                .unwrap()
+                .get(&contract_address, &key)
+                {
+                    Ok(Some(value)) => Ok(StarkFelt(value.to_bytes_be())),
+                    Ok(None) => Ok(StarkFelt::default()),
+                    _ => Err(StateError::StateReadError(format!(
+                        "Failed to retrieve storage value for contract {} at key {}",
+                        contract_address.0.0, key.0.0
+                    ))),
+                }
+            }
         }
     }
 
@@ -97,13 +107,8 @@ impl<T: Config> State for BlockifierStateAdapter<T> {
     }
 
     fn increment_nonce(&mut self, contract_address: ContractAddress) -> StateResult<()> {
-        let nonce = self
-            .nonce_update
-            .get(&contract_address)
-            .cloned()
-            .unwrap_or_else(|| Pallet::<T>::nonce(contract_address))
-            .try_increment()
-            .map_err(StateError::StarknetApiError)?;
+        let nonce = self.get_nonce_at(contract_address)?.try_increment().map_err(StateError::StarknetApiError)?;
+
         self.nonce_update.insert(contract_address, nonce);
 
         Ok(())
