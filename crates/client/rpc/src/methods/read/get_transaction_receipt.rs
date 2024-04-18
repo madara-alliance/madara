@@ -247,7 +247,7 @@ where
                 Transaction::L1Handler(l1_handler) => {
 					tx_l1_handler::<H>(chain_id, block_number, l1_handler.clone())
                 }
-                Transaction::Deploy(_) => todo!(),
+                _ => unreachable!("Deploy transactions are not supported"),
             })
             .collect::<Result<Vec<_>, _>>()?;
 
