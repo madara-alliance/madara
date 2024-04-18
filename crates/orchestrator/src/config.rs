@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tokio::sync::OnceCell;
 use async_trait::async_trait;
 
-#[cfg_attr(test, automock)]
+#[automock]
 #[async_trait]
 pub trait MyStarknetProvider: Send + Sync {
     async fn get_state_update(&self, block_id: BlockId) -> Result<MaybePendingStateUpdate, ProviderError>;

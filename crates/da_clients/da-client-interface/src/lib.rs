@@ -14,7 +14,7 @@ pub enum DaVerificationStatus {
 }
 
 /// Trait for every new DaClient to implement
-#[cfg_attr(test, automock)]
+#[automock]
 #[async_trait]
 pub trait DaClient: Send + Sync {
     /// Should publish the state diff to the DA layer and return an external id

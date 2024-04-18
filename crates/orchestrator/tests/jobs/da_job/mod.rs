@@ -4,14 +4,19 @@ use starknet::core::types::StateUpdate;
 use std::fs::read_to_string;
 // use std::io::{self, BufRead};
 use serde_json::Error;
+use std::sync::Arc;
+use mockall::predicate::*;
 
+use starknet_core::types::{BlockId, FieldElement, MaybePendingStateUpdate};
 use crate::common::{
     get_or_init_config,
     default_job_item,
 };
 
+use da_client_interface::MockDaClient;
+
 use orchestrator::{
-    config::{MockConfig, Config},
+    config::{MockConfig, Config, MyStarknetProvider, MockMyStarknetProvider},
     jobs::{
         da_job::DaJob,
         types::{JobItem, JobType},
@@ -33,6 +38,11 @@ fn state_update() -> StateUpdate {
 
     // let blob_data = state_update_to_blob_data(630872, state_update);
     state_update
+}
+
+#[fixture]
+fn blob_data() -> Vec<FieldElement> {
+    vec![FieldElement::ONE, FieldElement::ZERO]
 }
 
 #[rstest]
@@ -64,48 +74,52 @@ async fn test_verify_job(
     assert!(DaJob.verify_job(config, &job_item).await.is_err());
 }
 
-// #[rstest]
-// #[should_panic]
-// #[tokio::test]
-// async fn test_process_job(
-//     #[future] #[from(get_or_init_config)] config: &'static dyn Config,
-//     #[from(default_job_item)] job_item: JobItem,
-//     state_update: StateUpdate,
-// ) {
-//     let mut config = MockConfig::new();
+#[rstest]
+#[should_panic]
+#[tokio::test]
+async fn test_process_job(
+    #[future] #[from(get_or_init_config)] configg: &'static dyn Config,
+    #[from(default_job_item)] job_item: JobItem,
+    state_update: StateUpdate,
+    blob_data: Vec<FieldElement>,
+) {
+    let mut mock_provider = MockMyStarknetProvider::new();
+    // let mut mock_da_client = MockDaClient::new();
+    // let mock_provider = Arc::new(MockMyStarknetProvider::new());
+    let mock_da_client = Arc::new(MockDaClient::new());
+    let mut mock_config = MockConfig::new();
 
-//     // Mock the starknet_client to return a successful update
-//     let mut mock_starknet_client = MockStarknetClient::new();
-//     mock_starknet_client.expect_get_state_update()
-//         .with(mockall::predicate::eq(BlockId::Number(1)))
-//         .times(1)
-//         .return_once(move |_| {
-//             async move { Ok(MaybePendingStateUpdate::Update(state_update)) }.boxed()
-//         });
-    
-//     // You need to return an Arc of the mocked client since your Config trait expects it
-//     config.expect_starknet_client()
-//         .times(1)
-//         .returning(move || Arc::new(mock_starknet_client));
+    mock_config.expect_da_client().with().times(1).return_const(Box::new(*Arc::clone(&mock_da_client)));
+    mock_config.expect_starknet_client().with().times(1).returning(move || mock_provider);
 
-//     // Mock the da_client to return a fake external ID upon publishing state diff
-//     let mut mock_da_client = MockDaClient::new();
-//     mock_da_client.expect_publish_state_diff()
-//         .withf(|blob_data| /* some condition to validate blob_data */ true)
-//         .times(1)
-//         .returning(|_| async { Ok("external_id".to_string()) }.boxed());
-    
-//     config.expect_da_client()
-//         .times(1)
-//         .returning(move || Arc::new(mock_da_client));
 
-//     // Create a custom job item, assuming `default_job_item()` sets up a basic job item
-//     let job_item = job_item;
+    // Mocking get_state_update to return a specific state update
+    let expected_block_id = BlockId::Number(123);
 
-//     let result = DaJob.process_job(&config, &job_item).await;
-//     assert!(result.is_ok());
-//     assert_eq!(result.unwrap(), "external_id");
-// }
+    mock_provider.expect_get_state_update()
+        .with(eq(expected_block_id))
+        .times(1)
+        .returning(move |_| 
+            { 
+                Ok( MaybePendingStateUpdate::Update(state_update.clone()))
+            }
+    );
+
+    // Mocking publish_state_diff to return a specific external ID
+    let external_id = "external_id_123".to_string();
+
+    mock_da_client.expect_publish_state_diff()
+        .with(eq(blob_data.clone()))
+        .times(1)
+        .returning(move |_| Ok(external_id.clone()) );
+
+    // Assuming DaJob implements the processing using the Config trait
+    let job_processor = DaJob; // Assuming DaJob is initialized properly
+    let result = job_processor.process_job(&mock_config, &job_item).await;
+
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), "external_id_123");
+}
 
 #[rstest]
 fn test_max_process_attempts() {
