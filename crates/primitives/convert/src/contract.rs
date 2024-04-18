@@ -6,14 +6,11 @@ use anyhow::anyhow;
 use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
 };
-use cairo_lang_starknet_classes::casm_contract_class::{CasmContractClass, StarknetSierraCompilationError};
-use cairo_lang_starknet_classes::contract_class::ContractClass;
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use indexmap::IndexMap;
 use mp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
-use serde_json;
 use starknet_api::core::EntryPointSelector;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
