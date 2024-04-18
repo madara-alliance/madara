@@ -158,9 +158,7 @@ where
         let provider = Arc::clone(&arc_provider);
         let state_update = Arc::clone(state_update);
         let class_hash = *class_hash;
-        set.spawn(
-            async move { fetch_class(class_hash, block_hash_deoxys(&state_update), &provider).await },
-        );
+        set.spawn(async move { fetch_class(class_hash, block_hash_deoxys(&state_update), &provider).await });
         set
     });
 
@@ -180,15 +178,14 @@ where
 async fn fetch_class(
     class_hash: FieldElement,
     block_hash: FieldElement,
-    provider: &SequencerGatewayProvider
+    provider: &SequencerGatewayProvider,
 ) -> Result<ContractClassData, L2SyncError> {
     let core_class = provider.get_class(BlockIdCore::Hash(block_hash), class_hash).await?;
     Ok(ContractClassData {
         hash: ClassHash(Felt252Wrapper::from(class_hash).into()),
         // TODO: remove this expect when ContractClassWrapper::try_from does proper error handling using
         // thiserror
-        contract_class: ContractClassWrapper::try_from(core_class)
-            .expect("converting contract class"),
+        contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
     })
 }
 

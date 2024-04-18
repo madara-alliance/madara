@@ -8042,6 +8042,7 @@ dependencies = [
  "indexmap 2.2.6",
  "log",
  "mp-felt",
+ "mp-transactions",
  "num-bigint",
  "scale-info",
  "serde_json",

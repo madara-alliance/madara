@@ -22,6 +22,7 @@ casm-compiler-v2_6_0 = { package = "cairo-lang-starknet", version = "=2.6.0" }
 flate2 = { workspace = true }
 indexmap = { workspace = true }
 mp-felt = { workspace = true }
+mp-transactions = { workspace = true }
 num-bigint = { workspace = true }
 scale-info = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

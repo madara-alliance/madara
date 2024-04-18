@@ -546,7 +546,7 @@ fn flattened_sierra_to_casm_contract_class(
         entry_points_by_type: entry_points_by_type_to_contract_entry_points(
             flattened_sierra.entry_points_by_type.clone(),
         ),
-        abi: None, // we can convert the ABI but for now, to convert to Casm, the ABI isn't needed
+        abi: None,
     };
     let casm_contract_class = CasmContractClass::from_contract_class(sierra_contract_class, false, usize::MAX)?;
 

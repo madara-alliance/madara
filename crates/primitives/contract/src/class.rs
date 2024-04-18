@@ -51,7 +51,7 @@ pub mod convert {
         type Error = anyhow::Error;
 
         fn try_from(contract_class: ContractClassCore) -> Result<Self, Self::Error> {
-            let contract = from_rpc_contract_class(&contract_class)?;
+            let contract = from_rpc_contract_class(contract_class.clone())?;
             let abi = match &contract_class {
                 ContractClassCore::Sierra(class_sierra) => ContractAbi::Sierra(class_sierra.abi.clone()),
                 ContractClassCore::Legacy(class_cairo) => {

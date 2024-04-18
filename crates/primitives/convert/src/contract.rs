@@ -7,10 +7,12 @@ use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
 };
 use cairo_lang_starknet_classes::casm_contract_class::{CasmContractClass, StarknetSierraCompilationError};
+use cairo_lang_starknet_classes::contract_class::ContractClass;
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use indexmap::IndexMap;
+use mp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
 use serde_json;
 use starknet_api::core::EntryPointSelector;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
@@ -22,9 +24,7 @@ use starknet_core::types::{
 };
 
 /// Returns a [`BlockifierContractClass`] from a [`ContractClass`]
-pub fn from_rpc_contract_class(
-    contract_class: &ContractClassCore,
-) -> anyhow::Result<ContractClassBlockifier> {
+pub fn from_rpc_contract_class(contract_class: ContractClassCore) -> anyhow::Result<ContractClassBlockifier> {
     match contract_class {
         ContractClassCore::Sierra(contract_class) => from_contract_class_sierra(contract_class),
         ContractClassCore::Legacy(contract_class) => from_contract_class_cairo(contract_class),
@@ -45,10 +45,8 @@ pub fn to_contract_class_sierra(_: &ContractClassV1, abi: String) -> anyhow::Res
 ///
 /// Note: The conversion between the different legacy class versions is handled by an intermediate
 /// json representation.
-pub fn from_contract_class_sierra(
-    contract_class: &FlattenedSierraClass
-) -> anyhow::Result<ContractClassBlockifier> {
-    let raw_casm_contract = flattened_sierra_to_casm_contract_class(contract_class)?;
+pub fn from_contract_class_sierra(contract_class: FlattenedSierraClass) -> anyhow::Result<ContractClassBlockifier> {
+    let raw_casm_contract = flattened_sierra_to_casm_contract_class(&Arc::new(contract_class))?;
     let blockifier_contract = ContractClassV1::try_from(raw_casm_contract).unwrap();
     anyhow::Ok(ContractClassBlockifier::V1(blockifier_contract))
 }
@@ -70,7 +68,7 @@ pub fn to_contract_class_cairo(
 
 /// Converts a [CompressedLegacyContractClass] to a [ContractClassBlockifier]
 pub fn from_contract_class_cairo(
-    contract_class: &CompressedLegacyContractClass,
+    contract_class: CompressedLegacyContractClass,
 ) -> anyhow::Result<ContractClassBlockifier> {
     // decompressed program into json string bytes, then serialize bytes into
     // Program this can cause issues depending on the format used by
@@ -80,22 +78,6 @@ pub fn from_contract_class_cairo(
     let entry_points_by_type = from_legacy_entry_points_by_type(&contract_class.entry_points_by_type);
     let blockifier_contract = ContractClassV0(Arc::new(ContractClassV0Inner { program, entry_points_by_type }));
     anyhow::Ok(ContractClassBlockifier::V0(blockifier_contract))
-}
-
-/// Converts a [FlattenedSierraClass] to a [CasmContractClassVersion]
-/// 
-/// `CasmContractClass::from_contract_class` performs a compilation over the deserialized contract class
-pub fn flattened_sierra_to_casm_contract_class(
-    flattened_sierra: &FlattenedSierraClass,
-) -> anyhow::Result<CasmContractClass> {
-    let raw_flattened_sierra = serde_json::to_string(flattened_sierra).map_err(|err| err)?;
-    log::info!("Flattened sierra: {}", raw_flattened_sierra);
-    let sierra_class = serde_json::from_str(&raw_flattened_sierra).map_err(|err| err)?;
-    log::info!("Sierra class: {:?}", sierra_class);
-    let casm_class = CasmContractClass::from_contract_class(sierra_class, true, usize::MAX)
-        .map_err(StarknetSierraCompilationError::from)?;
-
-    Ok(casm_class)
 }
 
 /// Returns a compressed vector of bytes
