@@ -37,7 +37,7 @@ pub mod starknet_sync_worker {
     ) where
         C: HeaderBackend<DBlockT> + 'static,
     {
-        let starting_block = starting_block + 524435;
+        let starting_block = starting_block + 1;
 
         let _ = tokio::join!(
             l1::sync(l1_url.clone()),
