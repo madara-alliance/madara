@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use color_eyre::Result;
 use starknet::core::types::FieldElement;
+use mockall::{automock, predicate::*};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DaVerificationStatus {
@@ -13,6 +14,7 @@ pub enum DaVerificationStatus {
 }
 
 /// Trait for every new DaClient to implement
+#[cfg_attr(test, automock)]
 #[async_trait]
 pub trait DaClient: Send + Sync {
     /// Should publish the state diff to the DA layer and return an external id

@@ -13,8 +13,6 @@ use orchestrator::{
 };
 
 use rstest::*;
-use starknet::providers::Provider;
-
 use starknet::core::types::FieldElement;
 
 
@@ -73,6 +71,7 @@ async fn test_config_starknet_client(
     #[future] get_or_init_config: &'static dyn Config,
 ) {
     let config = get_or_init_config.await;
+    // let result = config.starknet_client().get_state_update(BlockId::Number(0u64)).await;
     let result = config.starknet_client().block_number().await;
     assert!(result.is_ok(), "Failed to run starknet_client()");
 }

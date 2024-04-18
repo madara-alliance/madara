@@ -1601,6 +1601,7 @@ dependencies = [
  "async-trait",
  "axum 0.7.5",
  "color-eyre",
+ "mockall",
  "starknet",
 ]
 
@@ -3300,6 +3301,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet",
+ "starknet-core 0.9.0",
  "thiserror",
  "tokio",
  "tracing",

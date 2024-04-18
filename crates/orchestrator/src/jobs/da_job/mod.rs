@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use starknet::core::types::{BlockId, FieldElement, MaybePendingStateUpdate, StateUpdate, StorageEntry};
-use starknet::providers::Provider;
 use std::collections::HashMap;
 use tracing::log;
 use uuid::Uuid;
