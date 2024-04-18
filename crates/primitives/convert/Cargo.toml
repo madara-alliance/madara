@@ -10,18 +10,11 @@ anyhow = { workspace = true }
 blockifier = { workspace = true }
 cairo-lang-starknet-classes = { workspace = true }
 cairo-lang-utils = { workspace = true }
-cairo-lang-v1_0_0-alpha6 = { package = "cairo-lang-utils", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-alpha.6" }
-cairo-lang-v1_0_0-rc0 = { package = "cairo-lang-utils", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-rc0" }
-cairo-lang-v1_1_1 = { package = "cairo-lang-utils", version = "=1.1.1" }
-cairo-lang-v2_6_0 = { package = "cairo-lang-utils", version = "=2.6.0" }
 cairo-vm = { workspace = true }
-casm-compiler-v1_0_0-alpha6 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-alpha.6" }
-casm-compiler-v1_0_0-rc0 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-rc0" }
-casm-compiler-v1_1_1 = { package = "cairo-lang-starknet", version = "=1.1.1" }
-casm-compiler-v2_6_0 = { package = "cairo-lang-starknet", version = "=2.6.0" }
 flate2 = { workspace = true }
 indexmap = { workspace = true }
 mp-felt = { workspace = true }
+mp-transactions = { workspace = true }
 num-bigint = { workspace = true }
 scale-info = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

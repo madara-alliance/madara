@@ -43,6 +43,7 @@ cairo_venv
 run.sh
 password.txt
 nohup.out
+deoxys.log
 # pyenv
 .python-version
 
