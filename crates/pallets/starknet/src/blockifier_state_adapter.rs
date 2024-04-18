@@ -74,11 +74,15 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     }
 
     fn get_class_hash_at(&mut self, contract_address: ContractAddress) -> StateResult<ClassHash> {
-        Ok(Pallet::<T>::contract_class_hash_by_address(contract_address))
+        // Ok(Pallet::<T>::contract_class_hash_by_address(contract_address))
+        // TODO: see with @charpa how to implement this with the new storage
+        todo!("see with @charpa how to implement this with the new storage")
     }
 
     fn get_compiled_contract_class(&mut self, class_hash: &ClassHash) -> StateResult<ContractClass> {
-        Pallet::<T>::contract_class_by_class_hash(class_hash).ok_or(StateError::UndeclaredClassHash(*class_hash))
+        // Pallet::<T>::contract_class_by_class_hash(class_hash).ok_or(StateError::UndeclaredClassHash(*
+        // class_hash))
+        todo!("check with @charpao how to do this with new bonsai storage")
     }
 
     fn get_compiled_class_hash(&mut self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
@@ -109,15 +113,17 @@ impl<T: Config> State for BlockifierStateAdapter<T> {
     fn set_class_hash_at(&mut self, contract_address: ContractAddress, class_hash: ClassHash) -> StateResult<()> {
         self.class_hash_update += 1;
 
-        crate::ContractClassHashes::<T>::insert(contract_address, class_hash);
+        // crate::ContractClassHashes::<T>::insert(contract_address, class_hash);
+        //
+        // Ok(())
 
-        Ok(())
+        // TODO: see with @charpa how to implement this with the new storage
+        todo!("see with @charpa how to implement this with the new storage")
     }
 
     fn set_contract_class(&mut self, class_hash: &ClassHash, contract_class: ContractClass) -> StateResult<()> {
-        crate::ContractClasses::<T>::insert(class_hash, contract_class);
-
-        Ok(())
+        // crate::ContractClasses::<T>::insert(class_hash, contract_class);
+        todo!("check with @charpao how to do this with new bonsai storage")
     }
 
     fn set_compiled_class_hash(

@@ -215,7 +215,7 @@ fn contract_trie_root(
 
     // Then we commit them
     let start = std::time::Instant::now();
-    storage_write.commit(block_number + 1)?;
+    storage_write.commit(block_number)?;
     // NOTE: handler changes act as separate, mutable instances over storage and need to
     // be manually merged back into the backend.
     storage_write.apply_changes()?;
@@ -242,7 +242,7 @@ fn contract_trie_root(
     log::debug!("contract_trie_root bonsai_contract.commit: {:?}", std::time::Instant::now() - start);
 
     let start = std::time::Instant::now();
-    contract_write.commit(block_number + 1)?;
+    contract_write.commit(block_number)?;
     contract_write.apply_changes()?;
     log::debug!("contract_trie_root bonsai_contract.commit: {:?}", std::time::Instant::now() - start);
     log::debug!("contract_trie_root: {:?}", std::time::Instant::now() - start1);
@@ -327,7 +327,7 @@ fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt2
 
     class_write.init()?;
     class_write.update(updates)?;
-    class_write.commit(block_number + 1)?;
+    class_write.commit(block_number)?;
     class_write.apply_changes()?;
 
     let class_read = storage_handler::class()?;

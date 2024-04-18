@@ -62,18 +62,6 @@ where
         self.contract_class_by_class_hash(block_hash, class_hash)
     }
 
-    fn contract_class_hash_by_address(
-        &self,
-        block_hash: <B as BlockT>::Hash,
-        address: ContractAddress,
-    ) -> Option<ClassHash> {
-        let storage_contract_class_hash_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_CONTRACT_CLASS_HASH);
-        self.query_storage::<ClassHash>(
-            block_hash,
-            &StorageKey(storage_key_build(storage_contract_class_hash_prefix, &self.encode_storage_key(&address))),
-        )
-    }
-
     fn contract_class_by_class_hash(
         &self,
         block_hash: <B as BlockT>::Hash,

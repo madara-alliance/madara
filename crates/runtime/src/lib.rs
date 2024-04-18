@@ -239,19 +239,6 @@ impl_runtime_apis! {
             Starknet::nonce(address)
         }
 
-        fn contract_class_hash_by_address(address: ContractAddress) -> ClassHash {
-            Starknet::contract_class_hash_by_address(address)
-        }
-
-        fn contract_class_by_class_hash(class_hash: ClassHash) -> Option<ContractClass> {
-            Starknet::contract_class_by_class_hash(class_hash)
-        }
-
-        fn contract_abi_by_class_hash(class_hash: ClassHash) ->
-        Option<ContractAbi> {
-            Starknet::contract_abi_by_class_hash(class_hash)
-        }
-
         fn chain_id() -> Felt252Wrapper {
             Starknet::chain_id()
         }

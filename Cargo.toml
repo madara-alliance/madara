@@ -62,14 +62,14 @@ panic = "abort"
 
 [profile.release]
 panic = "unwind"
-debug = true
 
 [profile.production]
 codegen-units = 1    # Setting this to 1 allows for more optimizations at the cost of slower compile time
 inherits = "release"
-lto = true           # Enables Link Time Optimization, enabling more aggressive optimizations across the entire codebase
+lto = "fat"          # Enables Link Time Optimization, enabling more aggressive optimizations across the entire codebase
 opt-level = 3        # Optimize for speed regardless of binary size or compile time
 rpath = false        # Disables adding rpath to the binary
+strip = "symbols"    # Removes debug info and symbold from final binary
 
 [workspace.package]
 authors = ["Antiyro <@antiyro>"]

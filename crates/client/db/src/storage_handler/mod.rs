@@ -19,15 +19,18 @@ use thiserror::Error;
 use crate::bonsai_db::{BonsaiDb, BonsaiTransaction};
 use crate::DeoxysBackend;
 
+pub mod block_hash_to_number;
+pub mod block_number_to_hash;
+pub mod contract_abi;
+pub mod contract_address_to_class_hash;
+pub mod contract_class;
+
 pub mod bonsai_identifier {
     pub const CONTRACT: &[u8] = "0xcontract".as_bytes();
     pub const CLASS: &[u8] = "0xclass".as_bytes();
     pub const TRANSACTION: &[u8] = "0xtransaction".as_bytes();
     pub const EVENT: &[u8] = "0xevent".as_bytes();
 }
-
-pub mod contract_abi;
-pub mod contract_class;
 
 #[derive(Error, Debug)]
 pub enum DeoxysStorageError {
@@ -49,6 +52,8 @@ pub enum DeoxysStorageError {
     StorageCommitError(StorageType),
     #[error("failed to decode {0}")]
     StorageDecodeError(StorageType),
+    #[error("failed to revert {0} to block {1}")]
+    StorageRevertError(StorageType, u64),
 }
 
 #[derive(Debug)]
@@ -65,6 +70,9 @@ pub enum StorageType {
     Class,
     ContractClass,
     ContractAbi,
+    BlockNumber,
+    BlockHash,
+    ClassHash,
 }
 
 impl Display for TrieType {
@@ -87,6 +95,9 @@ impl Display for StorageType {
             StorageType::Class => "class storage",
             StorageType::ContractClass => "class definition storage",
             StorageType::ContractAbi => "class abi storage",
+            StorageType::BlockNumber => "block number storage",
+            StorageType::BlockHash => "block hash storage",
+            StorageType::ClassHash => "class hash storage",
         };
 
         write!(f, "{storage_type}")

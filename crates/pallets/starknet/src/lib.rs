@@ -32,7 +32,10 @@
 // Ensure we're `no_std` when compiling for Wasm.
 #![allow(clippy::large_enum_variant)]
 
-use mc_db::storage_handler;
+use mc_db::storage_handler::{
+    block_hash_to_number, block_number_to_hash, contract_abi, contract_address_to_class_hash, contract_class,
+    contract_storage,
+};
 /// Starknet pallet.
 /// Definition of the pallet's runtime storage items, events, errors, and dispatchable
 /// functions.
@@ -122,6 +125,7 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
+    use frame_support::fail;
     use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
 
     use super::*;
@@ -183,23 +187,30 @@ pub mod pallet {
         /// The block is being finalized.
         fn on_finalize(_n: BlockNumberFor<T>) {
             assert!(SeqAddrUpdate::<T>::take(), "Sequencer address must be set for the block");
+
+            let block_number =
+                UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
+
             // Create a new Starknet block and store it.
-            <Pallet<T>>::store_block(UniqueSaturatedInto::<u64>::unique_saturated_into(
-                frame_system::Pallet::<T>::block_number(),
-            ));
+            <Pallet<T>>::store_block(block_number);
+
+            block_hash_to_number::commit(block_number + 1).unwrap();
+            block_number_to_hash::commit(block_number + 1).unwrap();
         }
 
         /// The block is being initialized. Implement to have something happen.
         fn on_initialize(_: BlockNumberFor<T>) -> Weight {
             let digest = frame_system::Pallet::<T>::digest();
             let logs = digest.logs();
+            let block_number =
+                UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
 
             if !logs.is_empty() {
                 for log_entry in logs {
                     if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
                         match *engine_id {
-                            mp_digest_log::STATE_ENGINE_ID => store_state_update::<T>(encoded_data),
-                            mp_digest_log::CLASS_ENGINE_ID => store_class_update::<T>(encoded_data),
+                            mp_digest_log::STATE_ENGINE_ID => store_state_update::<T>(encoded_data, block_number),
+                            mp_digest_log::CLASS_ENGINE_ID => store_class_update::<T>(encoded_data, block_number),
                             _ => {}
                         }
                     }
@@ -215,7 +226,7 @@ pub mod pallet {
         }
     }
 
-    fn store_state_update<T: Config>(encoded_data: &Vec<u8>) {
+    fn store_state_update<T: Config>(encoded_data: &Vec<u8>, block_number: u64) {
         match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
             Ok(state_update) => {
                 // nonces stored for accessing on `starknet_getNonce` RPC call.
@@ -233,8 +244,9 @@ pub mod pallet {
                     .chain(state_update.state_diff.replaced_classes)
                     .map(|contract| (ContractAddress(contract.address.into()), ClassHash(contract.class_hash.into())))
                     .for_each(|(contract_address, class_hash)| {
-                        <ContractClassHashes<T>>::insert(contract_address, class_hash)
+                        contract_address_to_class_hash::insert(&contract_address, &class_hash);
                     });
+                contract_address_to_class_hash::commit(block_number + 1).unwrap();
 
                 // we need to store the entire data from the StateDiff to be able to return it
                 // during `starknet_getStateUpdate`
@@ -256,18 +268,23 @@ pub mod pallet {
         }
     }
 
-    fn store_class_update<T: Config>(encoded_data: &Vec<u8>) {
+    fn store_class_update<T: Config>(encoded_data: &Vec<u8>, block_number: u64) {
         match ClassUpdateWrapper::decode(&mut encoded_data.as_slice()) {
             Ok(class_update) => {
-                class_update.0.into_iter().for_each(|ContractClassData { hash, contract_class }| {
-                    let ContractClassWrapper { contract, abi } = contract_class;
+                class_update.0.into_iter().for_each(
+                    |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
+                        let ContractClassWrapper { contract: contract_class, abi } = contract_class_wrapper;
 
-                    // Blockifier class and ABI need to be stored separately since Blockifier
-                    // does not store ABI. In the future, it would be better to have a separate
-                    // storage structure which contains both the class data and the ABI
-                    <ContractClasses<T>>::insert(hash, contract);
-                    <ContractAbis<T>>::insert(hash, abi);
-                })
+                        // Blockifier class and ABI need to be stored separately since Blockifier
+                        // does not store ABI. In the future, it would be better to have a separate
+                        // storage structure which contains both the class data and the ABI
+                        contract_class::insert(class_hash, contract_class);
+                        contract_abi::insert(class_hash, abi);
+                    },
+                );
+
+                contract_class::commit(block_number + 1).unwrap();
+                contract_abi::commit(block_number + 1).unwrap();
             }
             Err(e) => log!(info, "Decoding error: {:?}", e),
         }
@@ -319,35 +336,6 @@ pub mod pallet {
     #[pallet::getter(fn pending_storage_changes)]
     pub(super) type PendingStorageChanges<T: Config> =
         StorageMap<_, Identity, ContractAddress, Vec<StorageSlot>, ValueQuery>;
-
-    /// Mapping for block number and hashes.
-    /// Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn block_hash)]
-    pub(super) type BlockHash<T: Config> = StorageMap<_, Identity, u64, Felt252Wrapper, ValueQuery>;
-
-    /// Mapping from Starknet contract address to the contract's class hash.
-    /// Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn contract_class_hash_by_address)]
-    pub(super) type ContractClassHashes<T: Config> =
-        StorageMap<_, Identity, ContractAddress, CasmClassHash, ValueQuery>;
-
-    /// Mapping from Starknet class hash to contract class.
-    /// Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn contract_class_by_class_hash)]
-    pub(super) type ContractClasses<T: Config> = StorageMap<_, Identity, CasmClassHash, ContractClass, OptionQuery>;
-
-    /// Mapping from Starknet Sierra class hash to  Casm compiled contract class.
-    /// Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn contract_abi_by_class_hash)]
-    pub(super) type ContractAbis<T: Config> = StorageMap<_, Identity, CasmClassHash, ContractAbi, OptionQuery>;
 
     /// Mapping from Starknet Sierra class hash to  Casm compiled contract
     /// class. Safe to use `Identity` as the key is already a hash.
@@ -438,8 +426,9 @@ pub mod pallet {
             );
 
             self.contracts.iter().for_each(|(contract_address, class_hash)| {
-                ContractClassHashes::<T>::insert(contract_address, class_hash)
+                contract_address_to_class_hash::insert(contract_address, class_hash);
             });
+            contract_address_to_class_hash::commit(1);
 
             self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
                 CompiledClassHashes::<T>::insert(class_hash, CompiledClassHash(compiled_class_hash.0))
@@ -557,7 +546,7 @@ pub mod pallet {
                 starknet_api::transaction::InvokeTransaction::V1(tx) => tx.sender_address,
             };
             // Check if contract is deployed
-            ensure!(ContractClassHashes::<T>::contains_key(sender_address), Error::<T>::AccountNotDeployed);
+            ensure!(contract_address_to_class_hash::contains(&sender_address).unwrap(), Error::<T>::AccountNotDeployed);
 
             // Execute
             let tx_execution_infos = transaction
@@ -610,15 +599,16 @@ pub mod pallet {
                 .map_err(|_| Error::<T>::InvalidContractClassForThisDeclareVersion)?;
 
             // Check class hash is not already declared
-            ensure!(
-                !ContractClasses::<T>::contains_key(transaction.tx().class_hash()),
-                Error::<T>::ClassHashAlreadyDeclared
-            );
+            match contract_class::contains(transaction.tx().class_hash()) {
+                Ok(contains) => ensure!(contains, Error::<T>::ClassHashAlreadyDeclared),
+                _ => fail!(Error::<T>::ClassHashAlreadyDeclared),
+            }
+
             // Check if contract is deployed
-            ensure!(
-                ContractClassHashes::<T>::contains_key(transaction.tx().sender_address()),
-                Error::<T>::AccountNotDeployed
-            );
+            match contract_address_to_class_hash::contains(&transaction.tx().sender_address()) {
+                Ok(contains) => ensure!(contains, Error::<T>::AccountNotDeployed),
+                _ => fail!(Error::<T>::AccountNotDeployed),
+            }
 
             // Execute
             let tx_execution_infos = transaction
@@ -663,10 +653,10 @@ pub mod pallet {
             let transaction = input_transaction.into_executable::<T::SystemHash>(chain_id, false);
 
             // Check if contract is deployed
-            ensure!(
-                !ContractClassHashes::<T>::contains_key(transaction.contract_address),
-                Error::<T>::AccountAlreadyDeployed
-            );
+            match contract_address_to_class_hash::contains(&transaction.contract_address) {
+                Ok(contains) => ensure!(!contains, Error::<T>::AccountAlreadyDeployed),
+                _ => fail!(Error::<T>::AccountAlreadyDeployed),
+            }
 
             // Execute
             let tx_execution_infos = transaction
@@ -911,8 +901,11 @@ impl<T: Config> Pallet<T> {
     ///
     /// The block hash of the parent (previous) block or 0 if the current block is 0.
     #[inline(always)]
-    pub fn parent_block_hash(current_block_number: &u64) -> Felt252Wrapper {
-        if current_block_number == &0 { Felt252Wrapper::ZERO } else { Self::block_hash(current_block_number - 1) }
+    pub fn parent_block_hash(current_block_number: u64) -> Felt252Wrapper {
+        match block_number_to_hash::get(current_block_number) {
+            Ok(Some(block_hash)) => block_hash,
+            _ => Felt252Wrapper::ZERO,
+        }
     }
 
     /// Get the current block timestamp in seconds.
@@ -947,10 +940,10 @@ impl<T: Config> Pallet<T> {
         // Get current block context
         let block_context = Self::get_block_context();
         // Get class hash
-        let class_hash = ContractClassHashes::<T>::try_get(address).map_err(|_| Error::<T>::ContractNotFound)?;
+        let class_hash = contract_address_to_class_hash::get(&address).map_err(|_| Error::<T>::ContractNotFound)?;
 
         let entrypoint = CallEntryPoint {
-            class_hash: Some(class_hash),
+            class_hash,
             code_address: None,
             entry_point_type: EntryPointType::External,
             entry_point_selector: function_selector,
@@ -985,7 +978,7 @@ impl<T: Config> Pallet<T> {
 
     /// Returns a storage keys and values of a given contract
     pub fn get_storage_from(contract_address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
-        Ok(storage_handler::contract_storage()
+        Ok(contract_storage()
             .unwrap()
             .get_storage(&contract_address)
             .map_err(|_| Error::<T>::ContractNotFound)?
@@ -1012,8 +1005,9 @@ impl<T: Config> Pallet<T> {
                         }
                     };
 
-                    let blockhash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
-                    BlockHash::<T>::insert(block_number, blockhash);
+                    let block_hash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
+                    block_number_to_hash::insert(block_number, block_hash);
+                    block_hash_to_number::insert(block_hash, block_number);
                     Pending::<T>::kill();
                     let digest = DigestItem::Consensus(MADARA_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
                     frame_system::Pallet::<T>::deposit_log(digest);
@@ -1032,7 +1026,7 @@ impl<T: Config> Pallet<T> {
             );
             let global_state_root = Felt252Wrapper::default();
             let transaction_count = transactions.len();
-            let parent_block_hash = Self::parent_block_hash(&block_number);
+            let parent_block_hash = Self::parent_block_hash(block_number);
             let events: Vec<StarknetEvent> = transaction_hashes.iter().flat_map(TxEvents::<T>::take).collect();
             let sequencer_address = Self::sequencer_address();
             let block_timestamp = Self::block_timestamp();
@@ -1062,8 +1056,9 @@ impl<T: Config> Pallet<T> {
                 ordered_events,
             );
             // Save the block number <> hash mapping.
-            let blockhash = block.header().hash::<T::SystemHash>();
-            BlockHash::<T>::insert(block_number, blockhash);
+            let block_hash = block.header().hash::<T::SystemHash>();
+            block_number_to_hash::insert(block_number, block_hash);
+            block_hash_to_number::insert(block_hash, block_number);
 
             // Kill pending storage.
             // There is no need to kill `TxEvents` as we used `take` while iterating over it.

@@ -958,7 +958,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=revertible_storage#0aa818543ac53bdb23461253cc114428743bd49b"
+source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=revertible_storage#36a73954b55ba19279758082fd5f3042a5e3c3c6"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -5867,6 +5867,7 @@ dependencies = [
  "ethers",
  "log",
  "mp-contract",
+ "mp-felt",
  "mp-hashers",
  "mp-types",
  "parity-scale-codec",
@@ -11308,7 +11309,7 @@ dependencies = [
 [[package]]
 name = "starknet-types-core"
 version = "0.1.0"
-source = "git+https://github.com/starknet-io/types-rs.git?branch=main#cad00f7971cc7d95a2bd708b1ddc13e0117d787c"
+source = "git+https://github.com/starknet-io/types-rs.git?branch=main#ea3ec65fa0b276c5c00197383a283e53928cf24b"
 dependencies = [
  "bitvec",
  "lambdaworks-crypto",
