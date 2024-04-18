@@ -108,5 +108,5 @@ pub fn convert_message_into_tx<H: HasherT + Send + Sync + 'static>(
     };
     let tx_hash = tx.compute_hash::<H>(chain_id, true, block_number);
 
-    L1HandlerTransaction { tx, tx_hash, paid_fee_on_l1: Fee(10) }
+    L1HandlerTransaction { tx, tx_hash, paid_fee_on_l1: Fee(10) } //TODO: fix with real fee
 }

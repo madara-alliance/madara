@@ -536,17 +536,17 @@ fn to_raw_legacy_entry_points(entry_points: LegacyEntryPointsByType) -> RawLegac
 }
 
 /// Converts a [FlattenedSierraClass] to a [CasmContractClass]
-fn flattened_sierra_to_casm_contract_class(
+pub fn flattened_sierra_to_casm_contract_class(
     flattened_sierra: &Arc<FlattenedSierraClass>,
 ) -> Result<CasmContractClass, StarknetSierraCompilationError> {
     let sierra_contract_class = SierraContractClass {
         sierra_program: flattened_sierra.sierra_program.iter().map(field_element_to_big_uint_as_hex).collect(),
-        sierra_program_debug_info: None,
+        sierra_program_debug_info: None, // TODO: implement a correct sierra program debug info conversion
         contract_class_version: flattened_sierra.contract_class_version.clone(),
         entry_points_by_type: entry_points_by_type_to_contract_entry_points(
             flattened_sierra.entry_points_by_type.clone(),
         ),
-        abi: None, // we can convert the ABI but for now, to convert to Casm, the ABI isn't needed
+        abi: None, // TODO: implement a correct abi conversion
     };
     let casm_contract_class = CasmContractClass::from_contract_class(sierra_contract_class, false, usize::MAX)?;
 
