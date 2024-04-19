@@ -2,7 +2,6 @@ use blockifier::execution::contract_class::{ContractClass as ContractClassBf, Co
 use blockifier::transaction::transaction_execution as btx;
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
-use mc_genesis_data_provider::GenesisProvider;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -12,7 +11,6 @@ use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeA
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sc_transaction_pool::ChainApi;
-use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::core::{ClassHash, ContractAddress};
@@ -33,12 +31,10 @@ pub(crate) fn blockifier_transactions<A, BE, G, C, P, H>(
 ) -> RpcResult<Vec<btx::Transaction>>
 where
     A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let transactions = block
@@ -97,12 +93,10 @@ fn tx_declare<A, BE, G, C, P, H>(
 ) -> RpcResult<btx::Transaction>
 where
     A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let class_hash = ClassHash(Felt252Wrapper::from(*declare_tx.class_hash()).into());
@@ -124,12 +118,10 @@ fn tx_declare_v0v1<A, BE, G, C, P, H>(
 ) -> RpcResult<btx::Transaction>
 where
     A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let _contract_class = client
