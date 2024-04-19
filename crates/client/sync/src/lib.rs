@@ -41,7 +41,7 @@ pub mod starknet_sync_worker {
 
         let _ = tokio::join!(
             l1::sync(l1_url.clone()),
-            l2::sync(sender_config, fetch_config.clone(), starting_block.into(), client)
+            l2::sync(sender_config, fetch_config.clone(), starting_block.into(), None, client)
         );
     }
 }

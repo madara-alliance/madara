@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix(sync): Fix end condition of the l2 sync
 - fix(rpc): fix chain id method for mainnet
 - fix(class): Fix Sierra classes conversion (missing abis)
 - fix(compute): Fixed prepare_data_availability_modes computation
