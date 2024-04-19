@@ -958,7 +958,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=revertible_storage#36a73954b55ba19279758082fd5f3042a5e3c3c6"
+source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=snapshot#19c1fc9dee2f77d324889136c21a2e87f293f129"
 dependencies = [
  "bitvec",
  "derive_more",
