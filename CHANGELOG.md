@@ -3,6 +3,7 @@ git # Deoxys Changelog
 ## Next release
 
 - refactor: optimise get_events RPC
+- feat(docker): add dockerfile and docker-compose
 - fix: fix implementation `get_storage_at()` for `BlockifierStateAdapter`
 - fix(sync): Fix end condition of the l2 sync
 - fix(rpc): fix chain id method for mainnet
