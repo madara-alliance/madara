@@ -61,7 +61,7 @@ where
         } else {
             (Some(starknet_block.header().hash::<H>().0), Some(starknet_block.header().block_number))
         };
-        
+
         let emitted_events = tx_hash_and_events
             .into_iter()
             .map(|(tx_hash, event)| EmittedEvent {
