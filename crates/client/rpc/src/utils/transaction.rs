@@ -23,7 +23,7 @@ use starknet_api::transaction::{
 use crate::errors::StarknetRpcApiError;
 use crate::{Felt, Starknet};
 
-pub(crate) fn transactions<A, BE, G, C, P, H>(
+pub(crate) fn blockifier_transactions<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     substrate_block_hash: DHashT,
     chain_id: Felt,

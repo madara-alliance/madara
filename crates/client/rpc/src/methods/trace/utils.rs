@@ -15,16 +15,14 @@ use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::TxType;
 use mp_types::block::{DBlockT, DHashT};
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_transaction_pool::ChainApi;
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::transaction as stx;
 use starknet_core::types::{
-    BlockId, ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
+    ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
     DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, InvokeTransactionTrace,
     L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace,
 };
@@ -32,7 +30,6 @@ use starknet_ff::FieldElement;
 
 use super::lib::*;
 use crate::errors::StarknetRpcApiError;
-use crate::madara_backend_client::get_block_by_block_hash;
 use crate::Starknet;
 
 pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core::types::OrderedMessage> {
@@ -420,34 +417,4 @@ where
         }
         stx::Transaction::Deploy(_) => todo!(),
     }
-}
-
-pub fn get_previous_block_substrate_hash<A, BE, G, C, P, H>(
-    starknet: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: DHashT,
-) -> Result<DHashT, StarknetRpcApiError>
-where
-    A: ChainApi<Block = DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    H: HasherT + Send + Sync + 'static,
-    BE: Backend<DBlockT> + 'static,
-{
-    let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
-        log::error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
-        StarknetRpcApiError::InternalServerError
-    })?;
-    let block_number = starknet_block.header().block_number;
-    let mut previous_block_number = block_number - 1;
-    if previous_block_number == 0 {
-        previous_block_number = 0;
-    }
-    let substrate_block_hash =
-        starknet.substrate_block_hash_from_starknet_block(BlockId::Number(previous_block_number)).map_err(|e| {
-            log::error!("Failed to retrieve previous block substrate hash: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-    Ok(substrate_block_hash)
 }

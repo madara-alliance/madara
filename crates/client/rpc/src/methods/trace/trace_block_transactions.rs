@@ -13,11 +13,10 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, TransactionTraceWithHash};
 
-use super::utils::{
-    get_previous_block_substrate_hash, map_transaction_to_user_transaction, tx_execution_infos_to_tx_trace,
-};
+use super::utils::{map_transaction_to_user_transaction, tx_execution_infos_to_tx_trace};
 use crate::errors::StarknetRpcApiError;
 use crate::madara_backend_client::get_block_by_block_hash;
+use crate::utils::utils::previous_substrate_block_hash;
 use crate::Starknet;
 
 pub async fn trace_block_transactions<A, BE, G, C, P, H>(
@@ -48,7 +47,7 @@ where
     let (block_transactions, empty_transactions) =
         map_transaction_to_user_transaction(starknet, starknet_block, substrate_block_hash, chain_id, None)?;
 
-    let previous_block_substrate_hash = get_previous_block_substrate_hash(starknet, substrate_block_hash)?;
+    let previous_block_substrate_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
 
     let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
         log::error!("Failed to retrieve fee token address: '{e}'");

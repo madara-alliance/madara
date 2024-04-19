@@ -15,7 +15,11 @@ use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_types::block::{DBlockT, DHashT};
 use num_bigint::BigUint;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
+use sc_client_api::backend::{Backend, StorageProvider};
+use sc_client_api::BlockBackend;
+use sc_transaction_pool::ChainApi;
 use sp_api::ProvideRuntimeApi;
+use sp_blockchain::HeaderBackend;
 use sp_runtime::DispatchError;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointType};
 use starknet_api::hash::StarkFelt;
@@ -23,29 +27,28 @@ use starknet_api::state::ThinStateDiff;
 use starknet_api::transaction as stx;
 use starknet_core::types::contract::{CompiledClass, CompiledClassEntrypoint, CompiledClassEntrypointList};
 use starknet_core::types::{
-    BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem,
+    BlockId, BlockStatus, CompressedLegacyContractClass, ContractClass, ContractStorageDiffItem, DeclaredClassItem,
     DeployedContractItem, EntryPointsByType, FieldElement, FlattenedSierraClass, FromByteArrayError,
     LegacyContractEntryPoint, LegacyEntryPointsByType, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
 };
 
 use crate::errors::StarknetRpcApiError;
-use crate::Felt;
+use crate::madara_backend_client::get_block_by_block_hash;
+use crate::{Felt, Starknet};
 
 pub(crate) fn tx_hash_retrieve(tx_hashes: Vec<StarkFelt>) -> Vec<FieldElement> {
-    let mut v = Vec::with_capacity(tx_hashes.len());
-    for tx_hash in tx_hashes {
-        v.push(FieldElement::from(Felt252Wrapper::from(tx_hash)));
-    }
-    v
+    // safe to unwrap because we know that the StarkFelt is a valid FieldElement
+    tx_hashes.iter().map(|tx_hash| FieldElement::from_bytes_be(&tx_hash.0).unwrap()).collect()
 }
 
 pub(crate) fn tx_hash_compute<H>(block: &DeoxysBlock, chain_id: Felt) -> Vec<FieldElement>
 where
     H: HasherT + Send + Sync + 'static,
 {
+    // safe to unwrap because we know that the StarkFelt is a valid FieldElement
     block
         .transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number))
-        .map(|tx_hash| FieldElement::from(Felt252Wrapper::from(tx_hash)))
+        .map(|tx_hash| FieldElement::from_bytes_be(&tx_hash.0.0).unwrap())
         .collect()
 }
 
@@ -64,7 +67,38 @@ pub(crate) fn status(block_number: u64) -> BlockStatus {
     }
 }
 
+pub fn previous_substrate_block_hash<A, BE, G, C, P, H>(
+    starknet: &Starknet<A, BE, G, C, P, H>,
+    substrate_block_hash: DHashT,
+) -> Result<DHashT, StarknetRpcApiError>
+where
+    A: ChainApi<Block = DBlockT> + 'static,
+    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
+    C: ProvideRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+    H: HasherT + Send + Sync + 'static,
+    BE: Backend<DBlockT> + 'static,
+{
+    let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
+        log::error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
+        StarknetRpcApiError::InternalServerError
+    })?;
+    let block_number = starknet_block.header().block_number;
+    let previous_block_number = match block_number {
+        0 => 0,
+        _ => block_number - 1,
+    };
+    let substrate_block_hash =
+        starknet.substrate_block_hash_from_starknet_block(BlockId::Number(previous_block_number)).map_err(|e| {
+            log::error!("Failed to retrieve previous block substrate hash: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+    Ok(substrate_block_hash)
+}
+
 /// Returns a [`ContractClass`] from a [`BlockifierContractClass`]
+#[allow(dead_code)]
 pub(crate) fn to_rpc_contract_class(contract_class: BlockifierContractClass) -> Result<ContractClass> {
     match contract_class {
         BlockifierContractClass::V0(contract_class) => {
@@ -197,7 +231,8 @@ fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryP
 }
 
 // Utils to convert Casm contract class to Compiled class
-pub fn get_casm_cotract_class_hash(casm_contract_class: &CasmContractClass) -> FieldElement {
+#[allow(dead_code)]
+pub fn get_casm_contract_class_hash(casm_contract_class: &CasmContractClass) -> FieldElement {
     let compiled_class = casm_contract_class_to_compiled_class(casm_contract_class);
     compiled_class.class_hash().unwrap()
 }

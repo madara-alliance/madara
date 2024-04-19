@@ -16,7 +16,7 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::transaction::Transaction;
 use starknet_core::types::{
-    BlockId, ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionReceipt,
+    ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionReceipt,
     DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult, FieldElement, Hash256,
     InvokeTransactionReceipt, L1HandlerTransactionReceipt, TransactionFinalityStatus, TransactionReceipt,
     TransactionReceiptWithBlockInfo,
@@ -27,9 +27,9 @@ use crate::madara_backend_client::get_block_by_block_hash;
 use crate::utils::call_info::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
 };
-use crate::utils::utils::{tx_hash_compute, tx_hash_retrieve};
+use crate::utils::transaction::blockifier_transactions;
+use crate::utils::utils::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
 use crate::{Felt, Starknet};
-use crate::utils::transaction::transactions;
 
 /// Get the transaction receipt by the transaction hash.
 ///
@@ -67,16 +67,18 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
+    // get the substrate block hash from the transaction hash
     let substrate_block_hash = DeoxysBackend::mapping()
         .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
         .map_err(|e| {
-            log::error!("Failed to retrieve substrate block hash: {e}");
+            log::error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
             StarknetRpcApiError::InternalServerError
-        })?;
+        })?
+        .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
     let chain_id = starknet.chain_id()?;
 
-    get_transaction_receipt_finalized(starknet, chain_id, substrate_block_hash.unwrap(), transaction_hash)
+    get_transaction_receipt_finalized(starknet, chain_id, substrate_block_hash, transaction_hash)
 }
 
 pub fn get_transaction_receipt_finalized<A, BE, G, C, P, H>(
@@ -101,14 +103,16 @@ where
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
 
     // computes the previous SUBSTRATE block hash
-    let previous_block_hash = previous_block_hash(client, block_number)?;
+    let previous_block_hash = previous_substrate_block_hash(client, substrate_block_hash)?;
 
+    // retrieve all transaction hashes from the block in the cache or compute them
     let block_txs_hashes = if let Some(tx_hashes) = client.get_cached_transaction_hashes(block_hash.into()) {
         tx_hash_retrieve(tx_hashes)
     } else {
         tx_hash_compute::<H>(&block, chain_id)
     };
 
+    // retrieve the transaction index in the block with the transaction hash
     let (tx_index, _) = block_txs_hashes.into_iter().enumerate().find(|(_, hash)| hash == &transaction_hash).unwrap();
 
     let transaction = block.transactions().get(tx_index).ok_or_else(|| {
@@ -118,11 +122,11 @@ where
 
     // deploy transaction was not supported by blockifier
     if let Transaction::Deploy(_) = transaction {
-        log::error!("re executing a deploy transaction is not supported yet");
+        log::error!("re-executing a deploy transaction is not supported");
         return Err(StarknetRpcApiError::UnimplementedMethod.into());
     }
 
-    let transactions = transactions(client, substrate_block_hash, chain_id, &block, block_number, tx_index)?;
+    let transactions = blockifier_transactions(client, substrate_block_hash, chain_id, &block, block_number, tx_index)?;
 
     let fee_token_address = client.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
         log::error!("Failed to retrieve fee token address: {e}");
@@ -231,26 +235,6 @@ where
     let block_info = starknet_core::types::ReceiptBlock::Block { block_hash: block_hash.0, block_number };
 
     Ok(TransactionReceiptWithBlockInfo { receipt, block: block_info })
-}
-
-fn previous_block_hash<A, BE, G, C, P, H>(client: &Starknet<A, BE, G, C, P, H>, block_number: u64) -> RpcResult<DHashT>
-where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let previous_block_hash =
-        client.substrate_block_hash_from_starknet_block(BlockId::Number(block_number - 1)).map_err(|e| {
-            log::error!("Failed to retrieve previous substrate block hash: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-    Ok(previous_block_hash)
 }
 
 fn execution_infos<A, BE, G, C, P, H>(
