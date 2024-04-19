@@ -65,30 +65,3 @@ impl StorageViewRevetible for ContractClassViewMut<'_> {
             .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractClass, block_number))?)
     }
 }
-
-impl StorageView for ContractClassViewAt {
-    type KEY = ClassHash;
-
-    type VALUE = ContractClass;
-
-    fn get(self, class_hash: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        let contract_class = self
-            .storage
-            .get(&conv_class_key(class_hash))
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClass))?
-            .map(|bytes| ContractClass::decode(&mut &bytes[..]));
-
-        match contract_class {
-            Some(Ok(contract_class)) => Ok(Some(contract_class)),
-            Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::Class)),
-            None => Ok(None),
-        }
-    }
-
-    fn contains(self, key: &Self::KEY) -> Result<bool, DeoxysStorageError> {
-        Ok(self
-            .storage
-            .contains(&conv_class_key(class_hash))
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClass))?)
-    }
-}

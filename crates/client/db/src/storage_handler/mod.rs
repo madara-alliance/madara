@@ -127,7 +127,7 @@ pub trait StorageViewMut {
     fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
-pub trait StorageViewRevetible {
+pub trait StorageViewRevetible: StorageViewMut {
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 

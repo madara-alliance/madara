@@ -38,6 +38,20 @@ impl ContractStorageTrieView<'_> {
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))
     }
 
+    pub fn get_at(
+        &self,
+        identifier: &ContractAddress,
+        key: &StorageKey,
+        block_number: u64,
+    ) -> Result<Option<Felt>, DeoxysStorageError> {
+        let identifier = conv_contract_identifier(identifier);
+        let key = conv_contract_storage_key(key);
+
+        self.0
+            .get_at(identifier, &key, BasicId::new(block_number))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))
+    }
+
     pub fn get_storage(
         &self,
         identifier: &ContractAddress,
