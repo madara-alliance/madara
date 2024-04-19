@@ -103,9 +103,9 @@ pub trait StarknetReadRpcApi {
     #[method(name = "call")]
     fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<String>>;
 
-    //   /// Get the chain id
-    // #[method(name = "chainId")]
-    // fn chain_id(&self) -> RpcResult<Felt>;
+    /// Get the chain id
+    #[method(name = "chainId")]
+    fn chain_id(&self) -> RpcResult<Felt>;
 
     /// Get the number of transactions in a block given a block id
     #[method(name = "getBlockTransactionCount")]

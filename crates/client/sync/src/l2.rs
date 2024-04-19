@@ -137,8 +137,14 @@ pub struct SenderConfig {
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-pub async fn sync<C>(mut sender_config: SenderConfig, fetch_config: FetchConfig, first_block: u64, client: Arc<C>)
-where
+/// `n_blocks` is optionally the total number of blocks to sync, for debugging/benchmark purposes.
+pub async fn sync<C>(
+    mut sender_config: SenderConfig,
+    fetch_config: FetchConfig,
+    first_block: u64,
+    n_blocks: Option<usize>,
+    client: Arc<C>,
+) where
     C: HeaderBackend<DBlockT> + 'static,
 {
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
@@ -166,7 +172,7 @@ where
         }
     });
     // Have 10 fetches in parallel at once, using futures Buffered
-    let fetch_stream = stream::iter(fetch_stream).buffered(10);
+    let fetch_stream = stream::iter(fetch_stream.take(n_blocks.unwrap_or(usize::MAX))).buffered(10);
     let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(10);
 
     tokio::select!(
@@ -182,9 +188,15 @@ where
             }
         } => {},
         // fetch blocks and updates in parallel
-        _ = fetch_stream.for_each(|val| async {
-            fetch_stream_sender.send(val).await.expect("receiver is closed");
-        }) => {},
+        _ = async {
+            fetch_stream.for_each(|val| async {
+                fetch_stream_sender.send(val).await.expect("receiver is closed");
+            }).await;
+
+            drop(fetch_stream_sender); // dropping the channel makes the recieving task stop once the queue is empty.
+
+            std::future::pending().await
+        } => {},
         // apply blocks and updates sequentially
         _ = async {
             let mut block_n = first_block;

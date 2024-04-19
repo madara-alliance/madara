@@ -158,9 +158,7 @@ where
         let provider = Arc::clone(&arc_provider);
         let state_update = Arc::clone(state_update);
         let class_hash = *class_hash;
-        set.spawn(
-            async move { fetch_class(class_hash, block_hash_deoxys(&state_update), &provider, block_number).await },
-        );
+        set.spawn(async move { fetch_class(class_hash, block_hash_deoxys(&state_update), &provider).await });
         set
     });
 
@@ -181,30 +179,14 @@ async fn fetch_class(
     class_hash: FieldElement,
     block_hash: FieldElement,
     provider: &SequencerGatewayProvider,
-    block_number: u64,
 ) -> Result<ContractClassData, L2SyncError> {
     let core_class = provider.get_class(BlockIdCore::Hash(block_hash), class_hash).await?;
-    // Check for Starknet versions for block number >= 30000 (TODO: this is for mainnet, add support for
-    // Sepolia)
-    let starknet_version: Option<String> =
-        if block_number >= 31600u64 { Some(fetch_starknet_version(provider, block_number).await?) } else { None };
     Ok(ContractClassData {
         hash: ClassHash(Felt252Wrapper::from(class_hash).into()),
         // TODO: remove this expect when ContractClassWrapper::try_from does proper error handling using
         // thiserror
-        contract_class: ContractClassWrapper::try_from((core_class, starknet_version))
-            .expect("converting contract class"),
+        contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
     })
-}
-
-/// Fetch Starknet version at a specific block number
-///
-/// This function is used to convert a class definition based on a specific Starknet version
-/// TODO: replace this with a thread safe canal between the fetch block thread
-async fn fetch_starknet_version(provider: &SequencerGatewayProvider, block_number: u64) -> Result<String, L2SyncError> {
-    let block = provider.get_block(BlockId::Number(block_number)).await?;
-
-    Ok(block.starknet_version.unwrap())
 }
 
 /// Filters out class declarations in the Starknet sequencer state update
