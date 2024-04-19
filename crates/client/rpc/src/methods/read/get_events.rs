@@ -120,7 +120,7 @@ where
 }
 
 #[inline]
-fn event_match_filter(event: &EmittedEvent, address: Option<Felt252Wrapper>, keys: &Vec<Vec<FieldElement>>) -> bool {
+fn event_match_filter(event: &EmittedEvent, address: Option<Felt252Wrapper>, keys: &[Vec<FieldElement>]) -> bool {
     let match_from_address = address.map_or(true, |addr| addr.0 == event.from_address);
     let match_keys = keys
         .iter()
