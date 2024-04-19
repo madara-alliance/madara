@@ -7,7 +7,7 @@ use parity_scale_codec::{Decode, Encode};
 use starknet_api::api_core::ClassHash;
 use starknet_core::types::BlockId;
 
-use super::{conv_class_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut};
+use super::{conv_class_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
 use crate::bonsai_db::BonsaiDb;
 use crate::DeoxysBackend;
 
@@ -47,8 +47,8 @@ impl StorageViewMut for ContractAbiViewMut<'_> {
 
     type VALUE = ContractAbi;
 
-    fn insert(&mut self, key: &Self::KEY, value: &Self::VALUE) {
-        self.0.insert(&conv_class_key(key), &value.encode());
+    fn insert(&mut self, key: &Self::KEY, value: &Self::VALUE) -> Result<(), DeoxysStorageError> {
+        Ok(self.0.insert(&conv_class_key(key), &value.encode()))
     }
 
     fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
@@ -57,7 +57,9 @@ impl StorageViewMut for ContractAbiViewMut<'_> {
             .commit(BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractAbi))?)
     }
+}
 
+impl StorageViewRevetible for ContractAbiViewMut<'_> {
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
         Ok(self
             .0

@@ -38,6 +38,7 @@ pub mod storage_handler;
 
 pub use error::{BonsaiDbError, DbError};
 pub use mapping_db::MappingCommitment;
+use storage_handler::bonsai_identifier;
 
 const DB_HASH_LEN: usize = 32;
 /// Hash type that this backend uses for the database.
@@ -350,6 +351,7 @@ impl DeoxysBackend {
         // TODO: remove  this and handle transactinal state for non-commited storage
         // directly in storage handler or in the bonsai lib
         bonsai_contract.commit(BasicId::new(0)).unwrap();
+        bonsai_contract.init_tree(bonsai_identifier::CONTRACT).unwrap();
 
         let mut bonsai_contract_storage = BonsaiStorage::new(
             BonsaiDb::new(
@@ -378,6 +380,7 @@ impl DeoxysBackend {
         )
         .unwrap();
         bonsai_classes.commit(BasicId::new(0)).unwrap();
+        bonsai_classes.init_tree(bonsai_identifier::CLASS).unwrap();
 
         let mut contract_classes = RevertibleStorage::new(
             BonsaiDb::new(

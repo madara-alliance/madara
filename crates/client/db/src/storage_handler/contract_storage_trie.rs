@@ -9,9 +9,10 @@ use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 
 use super::{
-    conv_contract_identifier, conv_contract_storage_key, conv_contract_value, DeoxysStorageError, StorageType, TrieType,
+    conv_contract_identifier, conv_contract_storage_key, conv_contract_value, DeoxysStorageError, StorageType,
+    StorageView, TrieType,
 };
-use crate::bonsai_db::BonsaiDb;
+use crate::bonsai_db::{BonsaiDb, BonsaiTransaction};
 
 pub struct ContractStorageTrieView<'a>(
     pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
@@ -20,6 +21,12 @@ pub struct ContractStorageTrieView<'a>(
 pub struct ContractStorageTrieViewMut<'a>(
     pub(crate) RwLockWriteGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
 );
+
+pub struct ContractStorageTrieViewAt {
+    pub(crate) storage: BonsaiStorage<BasicId, BonsaiTransaction<'static>, Pedersen>,
+
+    pub(crate) next_id: u64,
+}
 
 impl ContractStorageTrieView<'_> {
     pub fn get(&self, identifier: &ContractAddress, key: &StorageKey) -> Result<Option<Felt>, DeoxysStorageError> {
@@ -84,6 +91,81 @@ impl ContractStorageTrieViewMut<'_> {
 
     pub fn init(&mut self, identifier: &ContractAddress) -> Result<(), DeoxysStorageError> {
         self.0
+            .init_tree(conv_contract_identifier(identifier))
+            .map_err(|_| DeoxysStorageError::TrieInitError(TrieType::ContractStorage))
+    }
+
+    pub fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
+        self.0
+            .revert_to(BasicId::new(block_number))
+            .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractStorage, block_number))
+    }
+}
+
+impl ContractStorageTrieViewAt {
+    pub fn get(&self, identifier: &ContractAddress, key: &StorageKey) -> Result<Option<Felt>, DeoxysStorageError> {
+        let identifier = conv_contract_identifier(identifier);
+        let key = conv_contract_storage_key(key);
+
+        self.storage
+            .get(identifier, &key)
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))
+    }
+
+    pub fn get_storage(
+        &self,
+        identifier: &ContractAddress,
+    ) -> Result<Vec<(StorageKey, StarkFelt)>, DeoxysStorageError> {
+        Ok(self
+            .storage
+            .get_key_value_pairs(conv_contract_identifier(identifier))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
+            .into_iter()
+            .map(|(k, v)| (StorageKey(PatriciaKey(starkfelt(&k))), starkfelt(&v)))
+            .collect())
+    }
+
+    pub fn contains(&self, identifier: &ContractAddress, key: &StorageKey) -> Result<bool, DeoxysStorageError> {
+        let identifier = conv_contract_identifier(identifier);
+        let key = conv_contract_storage_key(key);
+
+        self.storage
+            .contains(identifier, &key)
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))
+    }
+
+    pub fn root(&self, identifier: &ContractAddress) -> Result<Felt, DeoxysStorageError> {
+        self.storage
+            .root_hash(conv_contract_identifier(identifier))
+            .map_err(|_| DeoxysStorageError::TrieRootError(TrieType::ContractStorage))
+    }
+
+    pub fn insert(
+        &mut self,
+        identifier: &ContractAddress,
+        key: &StorageKey,
+        value: StarkFelt,
+    ) -> Result<(), DeoxysStorageError> {
+        let identifier = conv_contract_identifier(identifier);
+        let key = conv_contract_storage_key(key);
+        let value = conv_contract_value(value);
+
+        self.storage
+            .insert(identifier, &key, &value)
+            .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::ContractStorage))
+    }
+
+    pub fn commit(&mut self) -> Result<(), DeoxysStorageError> {
+        let next_id = BasicId::new(self.next_id);
+        self.next_id += 1;
+
+        self.storage
+            .transactional_commit(next_id)
+            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractStorage))
+    }
+
+    pub fn init(&mut self, identifier: &ContractAddress) -> Result<(), DeoxysStorageError> {
+        self.storage
             .init_tree(conv_contract_identifier(identifier))
             .map_err(|_| DeoxysStorageError::TrieInitError(TrieType::ContractStorage))
     }

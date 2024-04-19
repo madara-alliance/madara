@@ -8,7 +8,7 @@ use bonsai_trie::RevertibleStorage;
 use mp_felt::Felt252Wrapper;
 use parity_scale_codec::{Decode, Encode};
 
-use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
+use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
 use crate::bonsai_db::BonsaiDb;
 use crate::DeoxysBackend;
 
@@ -48,8 +48,8 @@ impl StorageViewMut for BlockNumberViewMut<'_> {
 
     type VALUE = u64;
 
-    fn insert(&mut self, block_hash: &Self::KEY, block_number: &Self::VALUE) {
-        self.0.insert(&conv_key(block_hash), &block_number.encode())
+    fn insert(&mut self, block_hash: &Self::KEY, block_number: &Self::VALUE) -> Result<(), DeoxysStorageError> {
+        Ok(self.0.insert(&conv_key(block_hash), &block_number.encode()))
     }
 
     fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
@@ -58,7 +58,9 @@ impl StorageViewMut for BlockNumberViewMut<'_> {
             .commit(BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::BlockNumber))?)
     }
+}
 
+impl StorageViewRevetible for BlockNumberViewMut<'_> {
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
         Ok(self
             .0

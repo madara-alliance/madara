@@ -8,7 +8,7 @@ use bonsai_trie::RevertibleStorage;
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::api_core::{ClassHash, ContractAddress};
 
-use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
+use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
 use crate::bonsai_db::BonsaiDb;
 use crate::DeoxysBackend;
 
@@ -48,8 +48,8 @@ impl StorageViewMut for ClassHashViewMut<'_> {
 
     type VALUE = ClassHash;
 
-    fn insert(&mut self, key: &Self::KEY, value: &Self::VALUE) {
-        self.0.insert(&conv_key(key), &value.encode())
+    fn insert(&mut self, key: &Self::KEY, value: &Self::VALUE) -> Result<(), DeoxysStorageError> {
+        Ok(self.0.insert(&conv_key(key), &value.encode()))
     }
 
     fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
@@ -58,7 +58,9 @@ impl StorageViewMut for ClassHashViewMut<'_> {
             .commit(BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ClassHash))?)
     }
+}
 
+impl StorageViewRevetible for ClassHashViewMut<'_> {
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
         Ok(self
             .0

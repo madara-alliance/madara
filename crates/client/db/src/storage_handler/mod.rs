@@ -3,12 +3,13 @@ use std::fmt::Display;
 use bitvec::prelude::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
+use bonsai_trie::id::BasicId;
+use bonsai_trie::BonsaiStorageConfig;
 use parity_scale_codec::{Decode, Encode};
 use sp_core::hexdisplay::AsBytesRef;
 use starknet_api::api_core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
-use starknet_core::types::BlockId;
 use starknet_types_core::felt::Felt;
 use thiserror::Error;
 
@@ -18,8 +19,8 @@ use self::class_hash::{ClassHashView, ClassHashViewMut};
 use self::class_trie::{ClassTrieView, ClassTrieViewMut};
 use self::contract_abi::{ContractAbiView, ContractAbiViewMut};
 use self::contract_class::{ContractClassView, ContractClassViewMut};
-use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
-use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
+use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewAt, ContractStorageTrieViewMut};
+use self::contract_trie::{ContractTrieView, ContractTrieViewAt, ContractTrieViewMut};
 use crate::DeoxysBackend;
 
 pub mod block_hash;
@@ -124,6 +125,9 @@ pub trait StorageViewMut {
 
     fn insert(&mut self, key: &Self::KEY, value: &Self::VALUE) -> Result<(), DeoxysStorageError>;
     fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError>;
+}
+
+pub trait StorageViewRevetible {
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
@@ -135,7 +139,7 @@ pub fn contract_trie_mut<'a>() -> Result<ContractTrieViewMut<'a>, DeoxysStorageE
     ))
 }
 
-pub fn contract<'a>() -> Result<ContractTrieView<'a>, DeoxysStorageError> {
+pub fn contract_trie<'a>() -> Result<ContractTrieView<'a>, DeoxysStorageError> {
     Ok(ContractTrieView(
         DeoxysBackend::bonsai_contract()
             .read()
@@ -143,7 +147,23 @@ pub fn contract<'a>() -> Result<ContractTrieView<'a>, DeoxysStorageError> {
     ))
 }
 
-pub fn contract_storage_mut<'a>() -> Result<ContractStorageTrieViewMut<'a>, DeoxysStorageError> {
+pub fn contract_trie_at(block_number: u64) -> Result<ContractTrieViewAt, DeoxysStorageError> {
+    let config =
+        BonsaiStorageConfig { max_saved_trie_logs: Some(0), max_saved_snapshots: Some(0), snapshot_interval: u64::MAX };
+    let mut storage = DeoxysBackend::bonsai_contract()
+        .read()
+        .unwrap()
+        .get_transactional_state(BasicId::new(block_number), config)
+        .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Contract))?
+        .unwrap();
+    storage
+        .init_tree(bonsai_identifier::CONTRACT)
+        .map_err(|_| DeoxysStorageError::TrieInitError(TrieType::Contract))?;
+
+    Ok(ContractTrieViewAt { storage, next_id: block_number + 1 })
+}
+
+pub fn contract_storage_trie_mut<'a>() -> Result<ContractStorageTrieViewMut<'a>, DeoxysStorageError> {
     Ok(ContractStorageTrieViewMut(
         DeoxysBackend::bonsai_storage()
             .write()
@@ -151,12 +171,31 @@ pub fn contract_storage_mut<'a>() -> Result<ContractStorageTrieViewMut<'a>, Deox
     ))
 }
 
-pub fn contract_storage<'a>() -> Result<ContractStorageTrieView<'a>, DeoxysStorageError> {
+pub fn contract_storage_trie<'a>() -> Result<ContractStorageTrieView<'a>, DeoxysStorageError> {
     Ok(ContractStorageTrieView(
         DeoxysBackend::bonsai_storage()
             .read()
             .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::ContractStorage))?,
     ))
+}
+
+pub fn contract_storage_trie_at(block_number: u64) -> Result<ContractStorageTrieViewAt, DeoxysStorageError> {
+    Ok(ContractStorageTrieViewAt {
+        storage: DeoxysBackend::bonsai_storage()
+            .read()
+            .unwrap()
+            .get_transactional_state(
+                BasicId::new(block_number),
+                BonsaiStorageConfig {
+                    max_saved_trie_logs: Some(0),
+                    max_saved_snapshots: Some(0),
+                    snapshot_interval: u64::MAX,
+                },
+            )
+            .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::ContractStorage))?
+            .unwrap(),
+        next_id: block_number + 1,
+    })
 }
 
 pub fn contract_class_mut<'a>() -> Result<ContractClassViewMut<'a>, DeoxysStorageError> {
@@ -191,13 +230,13 @@ pub fn contract_abi<'a>() -> Result<ContractAbiView<'a>, DeoxysStorageError> {
     ))
 }
 
-pub fn class_mut<'a>() -> Result<ClassTrieViewMut<'a>, DeoxysStorageError> {
+pub fn class_trie_mut<'a>() -> Result<ClassTrieViewMut<'a>, DeoxysStorageError> {
     Ok(ClassTrieViewMut(
         DeoxysBackend::bonsai_class().write().map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Class))?,
     ))
 }
 
-pub fn class<'a>() -> Result<ClassTrieView<'a>, DeoxysStorageError> {
+pub fn class_trie<'a>() -> Result<ClassTrieView<'a>, DeoxysStorageError> {
     Ok(ClassTrieView(
         DeoxysBackend::bonsai_class().read().map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Class))?,
     ))

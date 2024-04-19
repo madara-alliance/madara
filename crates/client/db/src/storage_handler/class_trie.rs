@@ -8,7 +8,8 @@ use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Poseidon;
 
 use super::{
-    bonsai_identifier, conv_class_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut, TrieType,
+    bonsai_identifier, conv_class_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut,
+    StorageViewRevetible, TrieType,
 };
 use crate::bonsai_db::BonsaiDb;
 
@@ -50,7 +51,9 @@ impl StorageViewMut for ClassTrieViewMut<'_> {
             .transactional_commit(BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::Class))
     }
+}
 
+impl StorageViewRevetible for ClassTrieViewMut<'_> {
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
         self.0
             .revert_to(BasicId::new(block_number))
