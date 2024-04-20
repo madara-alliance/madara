@@ -28,6 +28,12 @@ impl StorageView for ClassTrieView<'_> {
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Class))
     }
 
+    fn get_at(self, class_hash: &Self::KEY, block_number: u64) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+        self.0
+            .get_at(bonsai_identifier::CLASS, &conv_class_key(class_hash), BasicId::new(block_number))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Class))
+    }
+
     fn contains(self, class_hash: &Self::KEY) -> Result<bool, DeoxysStorageError> {
         self.0
             .contains(bonsai_identifier::CLASS, &conv_class_key(class_hash))

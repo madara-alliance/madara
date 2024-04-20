@@ -10,7 +10,6 @@ use starknet_api::api_core::{ClassHash, ContractAddress};
 
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
 use crate::bonsai_db::BonsaiDb;
-use crate::DeoxysBackend;
 
 pub struct ClassHashView<'a>(pub(crate) RwLockReadGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
 
@@ -21,10 +20,10 @@ impl StorageView for ClassHashView<'_> {
 
     type VALUE = ClassHash;
 
-    fn get(self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+    fn get(self, contract_address: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
         let class_hash = self
             .0
-            .get(&conv_key(key))
+            .get(&conv_key(contract_address))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?
             .map(|bytes| ClassHash::decode(&mut &bytes[..]));
 
@@ -35,10 +34,28 @@ impl StorageView for ClassHashView<'_> {
         }
     }
 
-    fn contains(self, key: &Self::KEY) -> Result<bool, DeoxysStorageError> {
+    fn get_at(
+        self,
+        contract_address: &Self::KEY,
+        block_number: u64,
+    ) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+        let class_hash = self
+            .0
+            .get_at(&conv_key(contract_address), BasicId::new(block_number))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?
+            .map(|bytes| ClassHash::decode(&mut &bytes[..]));
+
+        match class_hash {
+            Some(Ok(class_hash)) => Ok(Some(class_hash)),
+            Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::ClassHash)),
+            None => Ok(None),
+        }
+    }
+
+    fn contains(self, contract_address: &Self::KEY) -> Result<bool, DeoxysStorageError> {
         Ok(self
             .0
-            .contains(&conv_key(key))
+            .contains(&conv_key(contract_address))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?)
     }
 }

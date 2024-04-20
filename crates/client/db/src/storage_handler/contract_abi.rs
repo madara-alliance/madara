@@ -5,11 +5,9 @@ use bonsai_trie::RevertibleStorage;
 use mp_contract::ContractAbi;
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::api_core::ClassHash;
-use starknet_core::types::BlockId;
 
 use super::{conv_class_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
 use crate::bonsai_db::BonsaiDb;
-use crate::DeoxysBackend;
 
 pub struct ContractAbiView<'a>(pub(crate) RwLockReadGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
 
@@ -24,6 +22,20 @@ impl StorageView for ContractAbiView<'_> {
         let contract_abi = self
             .0
             .get(&conv_class_key(key))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractAbi))?
+            .map(|bytes| ContractAbi::decode(&mut &bytes[..]));
+
+        match contract_abi {
+            Some(Ok(contract_abi)) => Ok(Some(contract_abi)),
+            Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractAbi)),
+            None => Ok(None),
+        }
+    }
+
+    fn get_at(self, key: &Self::KEY, block_number: u64) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+        let contract_abi = self
+            .0
+            .get_at(&conv_class_key(key), BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractAbi))?
             .map(|bytes| ContractAbi::decode(&mut &bytes[..]));
 

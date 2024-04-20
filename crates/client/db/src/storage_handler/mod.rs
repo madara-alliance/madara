@@ -25,12 +25,13 @@ use crate::DeoxysBackend;
 
 pub mod block_hash;
 pub mod block_number;
-pub mod class_hash;
-pub mod class_trie;
-pub mod contract_abi;
-pub mod contract_class;
-pub mod contract_storage_trie;
-pub mod contract_trie;
+mod class_hash;
+mod class_trie;
+mod contract_abi;
+mod contract_class;
+mod contract_storage_trie;
+mod contract_trie;
+pub mod query;
 
 pub mod bonsai_identifier {
     pub const CONTRACT: &[u8] = "0xcontract".as_bytes();
@@ -116,6 +117,7 @@ pub trait StorageView {
     type VALUE: Encode + Decode;
 
     fn get(self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError>;
+    fn get_at(self, key: &Self::KEY, block_number: u64) -> Result<Option<Self::VALUE>, DeoxysStorageError>;
     fn contains(self, key: &Self::KEY) -> Result<bool, DeoxysStorageError>;
 }
 

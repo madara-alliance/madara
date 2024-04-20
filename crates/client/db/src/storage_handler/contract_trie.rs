@@ -1,17 +1,15 @@
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use bonsai_trie::id::BasicId;
-use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
+use bonsai_trie::BonsaiStorage;
 use starknet_api::api_core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 
 use super::{
-    bonsai_identifier, conv_contract_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut,
-    StorageViewRevetible, TrieType,
+    bonsai_identifier, conv_contract_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut, TrieType,
 };
 use crate::bonsai_db::{BonsaiDb, BonsaiTransaction};
-use crate::DeoxysBackend;
 
 pub struct ContractTrieView<'a>(pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>);
 
@@ -32,6 +30,16 @@ impl StorageView for ContractTrieView<'_> {
     fn get(self, contract_address: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
         self.0
             .get(bonsai_identifier::CONTRACT, &conv_contract_key(contract_address))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))
+    }
+
+    fn get_at(
+        self,
+        contract_address: &Self::KEY,
+        block_number: u64,
+    ) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+        self.0
+            .get_at(bonsai_identifier::CONTRACT, &conv_contract_key(contract_address), BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))
     }
 
@@ -91,6 +99,16 @@ impl StorageView for ContractTrieViewAt {
     fn get(self, contract_address: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
         self.storage
             .get(bonsai_identifier::CONTRACT, &conv_contract_key(contract_address))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))
+    }
+
+    fn get_at(
+        self,
+        contract_address: &Self::KEY,
+        block_number: u64,
+    ) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+        self.storage
+            .get_at(bonsai_identifier::CONTRACT, &conv_contract_key(contract_address), BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))
     }
 

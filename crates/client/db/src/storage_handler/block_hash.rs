@@ -8,20 +8,15 @@ use bonsai_trie::RevertibleStorage;
 use mp_felt::Felt252Wrapper;
 use parity_scale_codec::{Decode, Encode};
 
-use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
+use super::{DeoxysStorageError, StorageType};
 use crate::bonsai_db::BonsaiDb;
-use crate::DeoxysBackend;
 
 pub struct BlockHashView<'a>(pub(crate) RwLockReadGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
 
 pub struct BlockHashViewMut<'a>(pub(crate) RwLockWriteGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
 
-impl StorageView for BlockHashView<'_> {
-    type KEY = u64;
-
-    type VALUE = Felt252Wrapper;
-
-    fn get(self, block_number: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+impl BlockHashView<'_> {
+    pub fn get(self, block_number: u64) -> Result<Option<Felt252Wrapper>, DeoxysStorageError> {
         let block_hash = self
             .0
             .get(&key(block_number))
@@ -35,7 +30,7 @@ impl StorageView for BlockHashView<'_> {
         }
     }
 
-    fn contains(self, block_number: &Self::KEY) -> Result<bool, DeoxysStorageError> {
+    pub fn contains(self, block_number: u64) -> Result<bool, DeoxysStorageError> {
         Ok(self
             .0
             .contains(&key(block_number))
@@ -43,25 +38,19 @@ impl StorageView for BlockHashView<'_> {
     }
 }
 
-impl StorageViewMut for BlockHashViewMut<'_> {
-    type KEY = u64;
-
-    type VALUE = Felt252Wrapper;
-
-    fn insert(&mut self, block_number: &Self::KEY, block_hash: &Self::VALUE) -> Result<(), DeoxysStorageError> {
+impl BlockHashViewMut<'_> {
+    pub fn insert(&mut self, block_number: u64, block_hash: &Felt252Wrapper) -> Result<(), DeoxysStorageError> {
         Ok(self.0.insert(&key(block_number), &block_hash.encode()))
     }
 
-    fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
+    pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
         Ok(self
             .0
             .commit(BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::BlockHash))?)
     }
-}
 
-impl StorageViewRevetible for BlockHashViewMut<'_> {
-    fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
+    pub fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
         Ok(self
             .0
             .revert_to(BasicId::new(block_number))
@@ -69,6 +58,6 @@ impl StorageViewRevetible for BlockHashViewMut<'_> {
     }
 }
 
-fn key(key: &u64) -> BitVec<u8, Msb0> {
+fn key(key: u64) -> BitVec<u8, Msb0> {
     key.to_be_bytes().view_bits()[5..].to_owned()
 }

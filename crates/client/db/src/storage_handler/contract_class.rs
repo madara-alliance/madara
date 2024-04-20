@@ -32,6 +32,20 @@ impl StorageView for ContractClassView<'_> {
         }
     }
 
+    fn get_at(self, key: &Self::KEY, block_number: u64) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+        let contract_class = self
+            .0
+            .get_at(&conv_class_key(key), BasicId::new(block_number))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClass))?
+            .map(|bytes| ContractClass::decode(&mut &bytes[..]));
+
+        match contract_class {
+            Some(Ok(contract_class)) => Ok(Some(contract_class)),
+            Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::Class)),
+            None => Ok(None),
+        }
+    }
+
     fn contains(self, class_hash: &Self::KEY) -> Result<bool, DeoxysStorageError> {
         Ok(self
             .0
