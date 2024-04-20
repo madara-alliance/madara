@@ -2,17 +2,14 @@ use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use blockifier::execution::contract_class::ContractClass;
 use frame_support::{Identity, StorageHasher};
-use mc_db::storage_handler;
-use mp_contract::ContractAbi;
 use mp_storage::StarknetStorageSchemaVersion;
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::{Backend, HeaderBackend, StorageProvider};
 use sp_api::ProvideRuntimeApi;
 use sp_io::hashing::twox_128;
 use sp_runtime::traits::Block as BlockT;
-use starknet_api::api_core::{ClassHash, ContractAddress, Nonce};
+use starknet_api::api_core::{ContractAddress, Nonce};
 
 mod schema_v1_override;
 
@@ -55,17 +52,6 @@ impl<B: BlockT> OverrideHandle<B> {
 /// State Backend with some assumptions about pallet-starknet's storage schema. Using such an
 /// optimized implementation avoids spawning a runtime and the overhead associated with it.
 pub trait StorageOverride<B: BlockT>: Send + Sync {
-    /// Return the contract class at the provided address for the provided block.
-    fn contract_class_by_address(&self, block_hash: B::Hash, address: ContractAddress) -> Option<ContractClass>;
-    /// Return the contract class for a provided class_hash and block hash.
-    fn contract_class_by_class_hash(
-        &self,
-        block_hash: B::Hash,
-        contract_class_hash: ClassHash,
-    ) -> Option<ContractClass>;
-    fn contract_abi_by_address(&self, block_hash: B::Hash, address: ContractAddress) -> Option<ContractAbi>;
-    /// Return the contract abi for a provided class_hash and block hash
-    fn contract_abi_by_class_hash(&self, block_hash: B::Hash, contract_class_hash: ClassHash) -> Option<ContractAbi>;
     /// Returns the nonce for a provided contract address and block hash.
     fn nonce(&self, block_hash: B::Hash, address: ContractAddress) -> Option<Nonce>;
 }
@@ -101,52 +87,6 @@ where
     C: ProvideRuntimeApi<B> + Send + Sync,
     C::Api: StarknetRuntimeApi<B>,
 {
-    /// Return the class hash at the provided address for the provided block.
-    ///
-    /// # Arguments
-    ///
-    /// * `block_hash` - The block hash
-    /// * `address` - The address to fetch the class hash for
-    ///
-    /// # Returns
-    /// * `Some(class_hash)` - The class hash at the provided address for the provided block
-    fn contract_class_by_address(
-        &self,
-        block_hash: <B as BlockT>::Hash,
-        address: ContractAddress,
-    ) -> Option<ContractClass> {
-        let api = self.client.runtime_api();
-        let class_hash = api.contract_class_hash_by_address(block_hash, address).ok()?;
-
-        // match storage_handler::contract_class::get(class_hash) {
-        //     Ok(contract_class) => contract_class,
-        //     _ => None,
-        // }
-        todo!()
-    }
-
-    // Use the runtime api to fetch the contract ABI at the provided address for the provided block.
-    // # Arguments
-    //
-    // * `block_hash` - The block hash
-    // * `address` - The address to fetch the class hash for
-    //
-    // # Returns
-    // * `Some(class_abi)` - The contract ABI at the provided address for the provided block
-    fn contract_abi_by_address(
-        &self,
-        block_hash: <B as BlockT>::Hash,
-        address: ContractAddress,
-    ) -> Option<ContractAbi> {
-        let api = self.client.runtime_api();
-        let class_hash = api.contract_class_hash_by_address(block_hash, address).ok()?;
-
-        match storage_handler::contract_abi::get(class_hash) {
-            Ok(abi) => abi,
-            _ => None,
-        }
-    }
-
     /// Return the nonce for a provided contract address and block hash.
     ///
     /// # Arguments

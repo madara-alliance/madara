@@ -921,7 +921,7 @@ impl<T: Config> Pallet<T> {
             return Felt252Wrapper::ZERO;
         };
 
-        match handler_block_hash.get(&current_block_number) {
+        match handler_block_hash.get(current_block_number) {
             Ok(Some(block_hash)) => block_hash,
             _ => Felt252Wrapper::ZERO,
         }
@@ -1029,8 +1029,8 @@ impl<T: Config> Pallet<T> {
                     let mut handler_block_hash = storage_handler::block_hash_mut().unwrap();
                     let mut handler_block_number = storage_handler::block_number_mut().unwrap();
 
-                    handler_block_hash.insert(&block_number, &block_hash).unwrap();
-                    handler_block_number.insert(&block_hash, &block_number).unwrap();
+                    handler_block_hash.insert(block_number, &block_hash).unwrap();
+                    handler_block_number.insert(&block_hash, block_number).unwrap();
 
                     handler_block_hash.commit(block_number + 1).unwrap();
                     handler_block_number.commit(block_number + 1).unwrap();
@@ -1088,8 +1088,8 @@ impl<T: Config> Pallet<T> {
             let mut handler_block_hash = storage_handler::block_hash_mut().unwrap();
             let mut handler_block_number = storage_handler::block_number_mut().unwrap();
 
-            handler_block_hash.insert(&block_number, &block_hash).unwrap();
-            handler_block_number.insert(&block_hash, &block_number).unwrap();
+            handler_block_hash.insert(block_number, &block_hash).unwrap();
+            handler_block_number.insert(&block_hash, block_number).unwrap();
 
             handler_block_hash.commit(block_number + 1).unwrap();
             handler_block_number.commit(block_number + 1).unwrap();

@@ -58,15 +58,7 @@ impl<T: Config> Default for BlockifierStateAdapter<T> {
 
 impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     fn get_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
-        let search = storage_handler::contract_storage().unwrap().get(&contract_address, &key);
-
-        match search {
-            Ok(Some(value)) => Ok(StarkFelt(value.to_bytes_be())),
-            _ => Err(StateError::StateReadError(format!(
-                "Failed to retrieve storage value for contract {} at key {}",
-                contract_address.0.0, key.0.0
-            ))),
-        }
+        todo!()
     }
 
     fn get_nonce_at(&mut self, contract_address: ContractAddress) -> StateResult<Nonce> {
@@ -74,14 +66,10 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     }
 
     fn get_class_hash_at(&mut self, contract_address: ContractAddress) -> StateResult<ClassHash> {
-        // Ok(Pallet::<T>::contract_class_hash_by_address(contract_address))
-        // TODO: see with @charpa how to implement this with the new storage
         todo!("see with @charpa how to implement this with the new storage")
     }
 
     fn get_compiled_contract_class(&mut self, class_hash: &ClassHash) -> StateResult<ContractClass> {
-        // Pallet::<T>::contract_class_by_class_hash(class_hash).ok_or(StateError::UndeclaredClassHash(*
-        // class_hash))
         todo!("check with @charpao how to do this with new bonsai storage")
     }
 
@@ -92,12 +80,7 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
 
 impl<T: Config> State for BlockifierStateAdapter<T> {
     fn set_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey, value: StarkFelt) {
-        self.storage_update.insert(contract_address, vec![(key, value)]);
-        let _ = storage_handler::contract_storage_mut(BlockId::Tag(BlockTag::Latest)).unwrap().insert(
-            &contract_address,
-            &key,
-            value,
-        );
+        todo!()
     }
 
     fn increment_nonce(&mut self, contract_address: ContractAddress) -> StateResult<()> {

@@ -2,10 +2,9 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use blockifier::execution::contract_class::ContractClass;
-use mp_contract::ContractAbi;
-use mp_storage::{
     PALLET_STARKNET, STARKNET_CONTRACT_ABI, STARKNET_CONTRACT_CLASS, STARKNET_CONTRACT_CLASS_HASH, STARKNET_NONCE,
 };
+use mc_db::storage_handler;
 use parity_scale_codec::{Decode, Encode};
 // Substrate
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -53,52 +52,11 @@ where
     C: HeaderBackend<B> + StorageProvider<B, BE> + 'static,
     BE: Backend<B> + 'static,
 {
-    fn contract_class_by_address(
-        &self,
-        block_hash: <B as BlockT>::Hash,
-        address: ContractAddress,
-    ) -> Option<ContractClass> {
-        let class_hash = self.contract_class_hash_by_address(block_hash, address)?;
-        self.contract_class_by_class_hash(block_hash, class_hash)
-    }
-
-    fn contract_class_by_class_hash(
-        &self,
-        block_hash: <B as BlockT>::Hash,
-        contract_class_hash: ClassHash,
-    ) -> Option<ContractClass> {
-        let storage_contract_class_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_CONTRACT_CLASS);
-        self.query_storage::<ContractClass>(
-            block_hash,
-            &StorageKey(storage_key_build(
-                storage_contract_class_prefix,
-                &self.encode_storage_key(&contract_class_hash),
-            )),
-        )
-    }
-
-    fn contract_abi_by_address(
-        &self,
-        block_hash: <B as BlockT>::Hash,
-        address: ContractAddress,
-    ) -> Option<ContractAbi> {
-        let contract_class_hash = self.contract_class_hash_by_address(block_hash, address)?;
-        self.contract_abi_by_class_hash(block_hash, contract_class_hash)
-    }
-
-    fn contract_abi_by_class_hash(
-        &self,
-        block_hash: <B as BlockT>::Hash,
-        contract_class_hash: ClassHash,
-    ) -> Option<ContractAbi> {
-        let storage_contract_abi_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_CONTRACT_ABI);
-        self.query_storage::<ContractAbi>(
-            block_hash,
-            &StorageKey(storage_key_build(storage_contract_abi_prefix, &self.encode_storage_key(&contract_class_hash))),
-        )
-    }
-
     fn nonce(&self, block_hash: <B as BlockT>::Hash, address: ContractAddress) -> Option<Nonce> {
+		let Ok(handler_block_number) = storage_handler::block_number() else {
+			return None;
+		let Ok(Some(block_number)) = handler_block_number.get(block_hash)
+
         self.contract_class_hash_by_address(block_hash, address)?;
 
         let storage_nonce_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_NONCE);
