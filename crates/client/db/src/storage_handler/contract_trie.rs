@@ -79,10 +79,6 @@ impl ContractTrieViewMut<'_> {
 
         Ok(())
     }
-
-    pub fn init(&mut self) -> Result<(), DeoxysStorageError> {
-        self.0.init_tree(bonsai_identifier::CONTRACT).map_err(|_| DeoxysStorageError::TrieInitError(TrieType::Contract))
-    }
 }
 
 impl ContractTrieView<'_> {

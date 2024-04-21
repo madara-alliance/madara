@@ -5,7 +5,6 @@ use std::sync::{Arc, RwLock};
 
 use futures::prelude::*;
 use lazy_static::lazy_static;
-use mc_storage::OverrideHandle;
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::DeoxysBlock;
 use mp_contract::class::ClassUpdateWrapper;
@@ -133,8 +132,6 @@ pub struct SenderConfig {
     /// The command sink used to notify the consensus engine that a new block
     /// should be created.
     pub command_sink: CommandSink,
-    // Storage overrides for accessing stored classes
-    pub overrides: Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
@@ -142,7 +139,7 @@ pub async fn sync<C>(mut sender_config: SenderConfig, fetch_config: FetchConfig,
 where
     C: HeaderBackend<DBlockT> + 'static,
 {
-    let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
+    let SenderConfig { block_sender, state_update_sender, class_sender, command_sink } = &mut sender_config;
     let provider = Arc::new(SequencerGatewayProvider::new(
         fetch_config.gateway.clone(),
         fetch_config.feeder_gateway.clone(),
@@ -155,16 +152,12 @@ where
     if first_block == 1 {
         let state_update =
             provider.get_state_update(BlockId::Number(0)).await.expect("getting state update for genesis block");
-        verify_l2(0, &state_update, overrides, None).expect("verifying genesis block");
+        verify_l2(0, &state_update, None).expect("verifying genesis block");
     }
 
     let fetch_stream = (first_block..).map(|block_n| {
         let provider = Arc::clone(&provider);
-        let overrides = Arc::clone(overrides);
-        let client = Arc::clone(&client);
-        async move {
-            tokio::spawn(fetch_block_and_updates(block_n, provider, overrides, client)).await.expect("tokio join error")
-        }
+        async move { tokio::spawn(fetch_block_and_updates(block_n, provider)).await.expect("tokio join error") }
     });
     // Have 10 fetches in parallel at once, using futures Buffered
     let fetch_stream = stream::iter(fetch_stream).buffered(10);
@@ -200,7 +193,6 @@ where
 
                 let (state_update, block_conv) = {
                     let verify = fetch_config.verify;
-                    let overrides = Arc::clone(overrides);
                     let state_update = Arc::new(state_update);
                     let state_update_1 = Arc::clone(&state_update);
 
@@ -213,7 +205,7 @@ where
                         };
                         let ver_l2 = || {
                             let start = std::time::Instant::now();
-                            verify_l2(block_n, &state_update, &overrides, block_hash)
+                            verify_l2(block_n, &state_update, block_hash)
                                 .expect("verifying block");
                             log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
                         };
@@ -302,13 +294,12 @@ pub fn update_l2(state_update: L2StateUpdate) {
 pub fn verify_l2(
     block_number: u64,
     state_update: &StateUpdate,
-    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
     substrate_block_hash: Option<H256>,
 ) -> Result<(), L2SyncError> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
 
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
-    let state_root = update_state_root(csd, Arc::clone(overrides), block_number, substrate_block_hash);
+    let state_root = update_state_root(csd, block_number);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
     let state_root_display = Felt::from_bytes_be(&state_root.0.to_bytes_be());

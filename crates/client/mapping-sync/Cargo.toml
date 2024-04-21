@@ -20,7 +20,6 @@ futures-timer = { workspace = true }
 log = { workspace = true, default-features = true }
 mc-db = { workspace = true }
 mc-rpc = { workspace = true }
-mc-storage = { workspace = true }
 mc-sync = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-hashers = { workspace = true }

@@ -2,7 +2,6 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_storage::StorageOverride;
 use mp_hashers::HasherT;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
 use mp_transactions::TxType;
@@ -70,16 +69,13 @@ where
             StarknetRpcApiError::ContractError
         })?;
 
-    let storage_override = starknet.overrides.for_block_hash(starknet.client.as_ref(), substrate_block_hash);
-    let simulated_transactions =
-        tx_execution_infos_to_simulated_transactions(&**storage_override, substrate_block_hash, tx_types, res)
-            .map_err(StarknetRpcApiError::from)?;
+    let simulated_transactions = tx_execution_infos_to_simulated_transactions(substrate_block_hash, tx_types, res)
+        .map_err(StarknetRpcApiError::from)?;
 
     Ok(simulated_transactions)
 }
 
 fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
-    storage_override: &dyn StorageOverride<B>,
     substrate_block_hash: B::Hash,
     tx_types: Vec<TxType>,
     transaction_execution_results: Vec<
@@ -90,8 +86,7 @@ fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
     for (tx_type, res) in tx_types.into_iter().zip(transaction_execution_results.into_iter()) {
         match res {
             Ok(tx_exec_info) => {
-                let transaction_trace =
-                    tx_execution_infos_to_tx_trace(storage_override, substrate_block_hash, tx_type, &tx_exec_info)?;
+                let transaction_trace = tx_execution_infos_to_tx_trace(substrate_block_hash, tx_type, &tx_exec_info)?;
                 let gas_consumed =
                     tx_exec_info.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
                 let overall_fee = tx_exec_info.actual_fee.0 as u64;

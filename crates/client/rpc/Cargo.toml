@@ -26,7 +26,6 @@ pallet-starknet-runtime-api = { workspace = true, default-features = true }
 
 # Madara client
 mc-db = { workspace = true }
-mc-storage = { workspace = true }
 mc-sync = { workspace = true }
 
 # Substate primitives

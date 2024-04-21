@@ -6,7 +6,6 @@ use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_storage::StorageOverride;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -229,7 +228,6 @@ fn blockifier_to_starknet_rs_ordered_events(
 }
 
 fn try_get_funtion_invocation_from_call_info<B: BlockT>(
-    storage_override: &dyn StorageOverride<B>,
     substrate_block_hash: B::Hash,
     call_info: &CallInfo,
     class_hash_cache: &mut HashMap<ContractAddress, FieldElement>,
@@ -240,9 +238,7 @@ fn try_get_funtion_invocation_from_call_info<B: BlockT>(
     let inner_calls = call_info
         .inner_calls
         .iter()
-        .map(|call| {
-            try_get_funtion_invocation_from_call_info(storage_override, substrate_block_hash, call, class_hash_cache)
-        })
+        .map(|call| try_get_funtion_invocation_from_call_info(substrate_block_hash, call, class_hash_cache))
         .collect::<Result<_, _>>()?;
 
     call_info.get_sorted_l2_to_l1_payloads_length()?;
@@ -299,7 +295,6 @@ fn try_get_funtion_invocation_from_call_info<B: BlockT>(
 }
 
 pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
-    storage_override: &dyn StorageOverride<B>,
     substrate_block_hash: B::Hash,
     tx_type: TxType,
     tx_exec_info: &TransactionExecutionInfo,
@@ -312,12 +307,7 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
         .validate_call_info
         .as_ref()
         .map(|call_info| {
-            try_get_funtion_invocation_from_call_info(
-                storage_override,
-                substrate_block_hash,
-                call_info,
-                &mut class_hash_cache,
-            )
+            try_get_funtion_invocation_from_call_info(substrate_block_hash, call_info, &mut class_hash_cache)
         })
         .transpose()?;
     // If simulated with `SimulationFlag::SkipFeeCharge` this will be `None`
@@ -326,12 +316,7 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
         .fee_transfer_call_info
         .as_ref()
         .map(|call_info| {
-            try_get_funtion_invocation_from_call_info(
-                storage_override,
-                substrate_block_hash,
-                call_info,
-                &mut class_hash_cache,
-            )
+            try_get_funtion_invocation_from_call_info(substrate_block_hash, call_info, &mut class_hash_cache)
         })
         .transpose()?;
 
@@ -342,7 +327,6 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
                 ExecuteInvocation::Reverted(RevertedInvocation { revert_reason: e.clone() })
             } else {
                 ExecuteInvocation::Success(try_get_funtion_invocation_from_call_info(
-                    storage_override,
                     substrate_block_hash,
                     // Safe to unwrap because is only `None`  for `Declare` txs
                     tx_exec_info.execute_call_info.as_ref().unwrap(),
@@ -363,7 +347,6 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
             TransactionTrace::DeployAccount(DeployAccountTransactionTrace {
                 validate_invocation,
                 constructor_invocation: try_get_funtion_invocation_from_call_info(
-                    storage_override,
                     substrate_block_hash,
                     // Safe to unwrap because is only `None` for `Declare` txs
                     tx_exec_info.execute_call_info.as_ref().unwrap(),
@@ -376,7 +359,6 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
         }
         TxType::L1Handler => TransactionTrace::L1Handler(L1HandlerTransactionTrace {
             function_invocation: try_get_funtion_invocation_from_call_info(
-                storage_override,
                 substrate_block_hash,
                 // Safe to unwrap because is only `None` for `Declare` txs
                 tx_exec_info.execute_call_info.as_ref().unwrap(),

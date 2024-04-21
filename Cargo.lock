@@ -2482,7 +2482,6 @@ dependencies = [
  "mc-genesis-data-provider",
  "mc-mapping-sync",
  "mc-rpc",
- "mc-storage",
  "mc-sync",
  "mp-block",
  "mp-contract",
@@ -5907,7 +5906,6 @@ dependencies = [
  "log",
  "mc-db",
  "mc-rpc",
- "mc-storage",
  "mc-sync",
  "mp-digest-log",
  "mp-hashers",
@@ -5937,7 +5935,6 @@ dependencies = [
  "log",
  "mc-db",
  "mc-genesis-data-provider",
- "mc-storage",
  "mc-sync",
  "mp-block",
  "mp-contract",
@@ -5973,29 +5970,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-storage"
-version = "0.1.0"
-dependencies = [
- "blockifier",
- "deoxys-runtime",
- "frame-support",
- "frame-system",
- "log",
- "mc-db",
- "mp-contract",
- "mp-storage",
- "pallet-starknet-runtime-api",
- "parity-scale-codec",
- "sc-client-api",
- "sp-api",
- "sp-blockchain",
- "sp-io",
- "sp-runtime",
- "sp-storage",
- "starknet_api",
-]
-
-[[package]]
 name = "mc-sync"
 version = "0.1.0"
 dependencies = [
@@ -6012,7 +5986,6 @@ dependencies = [
  "lazy_static",
  "log",
  "mc-db",
- "mc-storage",
  "mp-block",
  "mp-contract",
  "mp-fee",
