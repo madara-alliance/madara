@@ -6,7 +6,7 @@ use bitvec::view::BitView;
 use bonsai_trie::id::BasicId;
 use bonsai_trie::RevertibleStorage;
 use parity_scale_codec::{Decode, Encode};
-use starknet_api::api_core::{ClassHash, ContractAddress};
+use starknet_api::core::{ClassHash, ContractAddress};
 
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
 use crate::bonsai_db::BonsaiDb;

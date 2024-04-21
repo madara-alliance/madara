@@ -1,19 +1,13 @@
 use jsonrpsee::core::RpcResult;
-use mc_genesis_data_provider::GenesisProvider;
+use mc_db::storage_handler::{self, StorageView};
 use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
-use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sc_transaction_pool::ChainApi;
-use sc_transaction_pool_api::TransactionPool;
-use sp_api::ProvideRuntimeApi;
-use sp_blockchain::HeaderBackend;
+use starknet_api::core::{ContractAddress, PatriciaKey};
+use starknet_api::hash::StarkFelt;
 use starknet_core::types::{BlockId, FieldElement};
 
 use crate::errors::StarknetRpcApiError;
-use crate::{Felt, Starknet};
+use crate::methods::trace::utils::block_number_by_id;
+use crate::Felt;
 
 /// Get the contract class hash in the given block for the contract deployed at the given
 /// address
@@ -27,35 +21,19 @@ use crate::{Felt, Starknet};
 /// ### Returns
 ///
 /// * `class_hash` - The class hash of the given contract
-pub fn get_class_hash_at<A, BE, G, C, P, H>(
-    starknet: &Starknet<A, BE, G, C, P, H>,
-    block_id: BlockId,
-    contract_address: FieldElement,
-) -> RpcResult<Felt>
-where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        log::error!("'{e}'");
-        StarknetRpcApiError::BlockNotFound
-    })?;
+pub fn get_class_hash_at(block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
+    let block_number = block_number_by_id(block_id);
+    let key = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
 
-    let contract_address = Felt252Wrapper(contract_address).into();
-    let class_hash = starknet
-        .overrides
-        .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
-        .contract_class_hash_by_address(substrate_block_hash, contract_address)
-        .ok_or_else(|| {
-            log::error!("Failed to retrieve contract class hash at '{contract_address:?}'");
-            StarknetRpcApiError::ContractNotFound
-        })?;
+    let Ok(handler_class_hash) = storage_handler::class_hash() else {
+        log::error!("Failed to retrieve contract class hash at '{contract_address:?}'");
+        return Err(StarknetRpcApiError::ContractNotFound.into());
+    };
+
+    let Ok(Some(class_hash)) = handler_class_hash.get_at(&key, block_number) else {
+        log::error!("Failed to retrieve contract class hash at '{contract_address:?}'");
+        return Err(StarknetRpcApiError::ContractNotFound.into());
+    };
 
     Ok(Felt(Felt252Wrapper::from(class_hash).into()))
 }

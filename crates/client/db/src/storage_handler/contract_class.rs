@@ -4,7 +4,7 @@ use blockifier::execution::contract_class::ContractClass;
 use bonsai_trie::id::BasicId;
 use bonsai_trie::RevertibleStorage;
 use parity_scale_codec::{Decode, Encode};
-use starknet_api::api_core::ClassHash;
+use starknet_api::core::ClassHash;
 
 use super::{conv_class_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
 use crate::bonsai_db::BonsaiDb;

@@ -7,7 +7,7 @@ use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorageConfig;
 use parity_scale_codec::{Decode, Encode};
 use sp_core::hexdisplay::AsBytesRef;
-use starknet_api::api_core::{ClassHash, ContractAddress};
+use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
@@ -21,6 +21,7 @@ use self::contract_abi::{ContractAbiView, ContractAbiViewMut};
 use self::contract_class::{ContractClassView, ContractClassViewMut};
 use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewAt, ContractStorageTrieViewMut};
 use self::contract_trie::{ContractTrieView, ContractTrieViewAt, ContractTrieViewMut};
+use self::nonce::{NonceView, NonceViewMut};
 use crate::DeoxysBackend;
 
 pub mod block_hash;
@@ -31,6 +32,7 @@ mod contract_abi;
 mod contract_class;
 mod contract_storage_trie;
 mod contract_trie;
+mod nonce;
 pub mod query;
 
 pub mod bonsai_identifier {
@@ -81,6 +83,7 @@ pub enum StorageType {
     BlockNumber,
     BlockHash,
     ClassHash,
+    Nonce,
 }
 
 impl Display for TrieType {
@@ -106,6 +109,7 @@ impl Display for StorageType {
             StorageType::BlockNumber => "block number storage",
             StorageType::BlockHash => "block hash storage",
             StorageType::ClassHash => "class hash storage",
+            StorageType::Nonce => "nonce storage",
         };
 
         write!(f, "{storage_type}")
@@ -285,6 +289,16 @@ pub fn block_hash_mut<'a>() -> Result<BlockHashViewMut<'a>, DeoxysStorageError> 
 pub fn block_hash<'a>() -> Result<BlockHashView<'a>, DeoxysStorageError> {
     Ok(BlockHashView(
         DeoxysBackend::block_hash().read().map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::BlockHash))?,
+    ))
+}
+
+pub fn nonce<'a>() -> Result<NonceView<'a>, DeoxysStorageError> {
+    Ok(NonceView(DeoxysBackend::nonces().read().map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Nonce))?))
+}
+
+pub fn nonce_mut<'a>() -> Result<NonceViewMut<'a>, DeoxysStorageError> {
+    Ok(NonceViewMut(
+        DeoxysBackend::nonces().write().map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Nonce))?,
     ))
 }
 

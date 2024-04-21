@@ -23,7 +23,7 @@ use starknet_providers::sequencer::models::StateUpdate;
 
 use crate::fetch::fetchers::FetchConfig;
 use crate::l1::{L1StateUpdate, LogStateUpdate};
-use crate::l2::{L2StateUpdate, STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER};
+use crate::l2::L2StateUpdate;
 
 // TODO: find a better place to store this
 lazy_static! {
@@ -151,12 +151,6 @@ pub fn convert_log_state_update(log_state_update: LogStateUpdate) -> Result<L1St
     let block_hash = u256_to_starkfelt(log_state_update.block_hash)?;
 
     Ok(L1StateUpdate { block_number, global_root, block_hash })
-}
-
-pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
-    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
-        .read()
-        .expect("Failed to acquire read lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
 }
 
 /// Retrieves Deoxys block hash from state update

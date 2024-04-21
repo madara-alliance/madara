@@ -8,7 +8,7 @@ use mc_db::storage_handler::StorageView;
 use mp_block::DeoxysBlock;
 use mp_contract::class::{ContractClassData, ContractClassWrapper};
 use sp_core::H160;
-use starknet_api::api_core::ClassHash;
+use starknet_api::core::ClassHash;
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::BlockId as BlockIdCore;
 use starknet_ff::FieldElement;

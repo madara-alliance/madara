@@ -12,14 +12,13 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulatedTransaction, SimulationFlag,
 };
 use starknet_ff::FieldElement;
 
 use super::lib::ConvertCallInfoToExecuteInvocationError;
-use super::utils::tx_execution_infos_to_tx_trace;
+use super::utils::{block_number_by_id, tx_execution_infos_to_tx_trace};
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
@@ -70,25 +69,25 @@ where
             StarknetRpcApiError::ContractError
         })?;
 
-    let simulated_transactions = tx_execution_infos_to_simulated_transactions(substrate_block_hash, tx_types, res)
-        .map_err(StarknetRpcApiError::from)?;
+    let block_number = block_number_by_id(block_id);
+    let simulated_transactions =
+        tx_execution_infos_to_simulated_transactions(tx_types, res, block_number).map_err(StarknetRpcApiError::from)?;
 
     Ok(simulated_transactions)
 }
 
-fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
-    substrate_block_hash: B::Hash,
+fn tx_execution_infos_to_simulated_transactions(
     tx_types: Vec<TxType>,
     transaction_execution_results: Vec<
         Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>,
     >,
+    block_number: u64,
 ) -> Result<Vec<SimulatedTransaction>, ConvertCallInfoToExecuteInvocationError> {
     let mut results = vec![];
     for (tx_type, res) in tx_types.into_iter().zip(transaction_execution_results.into_iter()) {
         match res {
             Ok(tx_exec_info) => {
-                let transaction_trace =
-                    tx_execution_infos_to_tx_trace(storage_override, substrate_block_hash, tx_type, &tx_exec_info)?;
+                let transaction_trace = tx_execution_infos_to_tx_trace(tx_type, &tx_exec_info, block_number)?;
                 let gas = tx_exec_info.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
                 let fee = tx_exec_info.actual_fee.0;
                 // TODO: Shouldn't the gas price be taken from the block header instead?

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
@@ -9,12 +7,11 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::poseidon::PoseidonHasher;
 use mp_hashers::HasherT;
-use mp_transactions::Transaction;
 use rayon::prelude::*;
-use starknet_api::api_core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
+use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::Event;
+use starknet_api::transaction::{Event, Transaction};
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 

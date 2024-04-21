@@ -146,6 +146,10 @@ pub enum Column {
     ContractAddressToClassHashTrie,
     ContractAddressToClassHashFlat,
     ContractAddressToClassHashLog,
+
+    NonceTrie,
+    NonceFlat,
+    NonceLog,
 }
 
 impl fmt::Debug for Column {
@@ -219,6 +223,9 @@ impl Column {
             Column::ContractAddressToClassHashTrie => "contract_address_to_class_hash_trie",
             Column::ContractAddressToClassHashFlat => "contract_address_to_class_hash_flat",
             Column::ContractAddressToClassHashLog => "contract_address_to_class_hash_log",
+            Column::NonceTrie => "nonce_trie",
+            Column::NonceFlat => "nonce_flat",
+            Column::NonceLog => "nonce_log",
         }
     }
 
@@ -281,6 +288,7 @@ pub struct DeoxysBackend {
     block_hash_to_number: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
     block_number_to_hash: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
     contract_address_to_class_hash: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
+    nonces: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
 }
 
 // Singleton backing instance for `DeoxysBackend`
@@ -350,10 +358,9 @@ impl DeoxysBackend {
         .unwrap();
         // TODO: remove  this and handle transactinal state for non-commited storage
         // directly in storage handler or in the bonsai lib
-        bonsai_contract.commit(BasicId::new(0)).unwrap();
         bonsai_contract.init_tree(bonsai_identifier::CONTRACT).unwrap();
 
-        let mut bonsai_contract_storage = BonsaiStorage::new(
+        let bonsai_contract_storage = BonsaiStorage::new(
             BonsaiDb::new(
                 db,
                 DatabaseKeyMapping {
@@ -365,7 +372,6 @@ impl DeoxysBackend {
             bonsai_config.clone(),
         )
         .unwrap();
-        bonsai_contract_storage.commit(BasicId::new(0)).unwrap();
 
         let mut bonsai_classes = BonsaiStorage::new(
             BonsaiDb::new(
@@ -379,10 +385,9 @@ impl DeoxysBackend {
             bonsai_config.clone(),
         )
         .unwrap();
-        bonsai_classes.commit(BasicId::new(0)).unwrap();
         bonsai_classes.init_tree(bonsai_identifier::CLASS).unwrap();
 
-        let mut contract_classes = RevertibleStorage::new(
+        let contract_classes = RevertibleStorage::new(
             BonsaiDb::new(
                 db,
                 DatabaseKeyMapping {
@@ -394,9 +399,8 @@ impl DeoxysBackend {
             bonsai_config.clone(),
         )
         .unwrap();
-        contract_classes.commit(BasicId::new(0)).unwrap();
 
-        let mut contract_abis = RevertibleStorage::new(
+        let contract_abis = RevertibleStorage::new(
             BonsaiDb::new(
                 db,
                 DatabaseKeyMapping {
@@ -408,9 +412,8 @@ impl DeoxysBackend {
             bonsai_config.clone(),
         )
         .unwrap();
-        contract_abis.commit(BasicId::new(0)).unwrap();
 
-        let mut block_hash_to_number = RevertibleStorage::new(
+        let block_hash_to_number = RevertibleStorage::new(
             BonsaiDb::new(
                 db,
                 DatabaseKeyMapping {
@@ -422,9 +425,8 @@ impl DeoxysBackend {
             bonsai_config.clone(),
         )
         .unwrap();
-        block_hash_to_number.commit(BasicId::new(0)).unwrap();
 
-        let mut block_number_to_hash = RevertibleStorage::new(
+        let block_number_to_hash = RevertibleStorage::new(
             BonsaiDb::new(
                 db,
                 DatabaseKeyMapping {
@@ -436,9 +438,8 @@ impl DeoxysBackend {
             bonsai_config.clone(),
         )
         .unwrap();
-        block_number_to_hash.commit(BasicId::new(0)).unwrap();
 
-        let mut contract_address_to_class_hash = RevertibleStorage::new(
+        let contract_address_to_class_hash = RevertibleStorage::new(
             BonsaiDb::new(
                 db,
                 DatabaseKeyMapping {
@@ -450,7 +451,15 @@ impl DeoxysBackend {
             bonsai_config.clone(),
         )
         .unwrap();
-        contract_address_to_class_hash.commit(BasicId::new(0)).unwrap();
+
+        let nonces = RevertibleStorage::new(
+            BonsaiDb::new(
+                db,
+                DatabaseKeyMapping { flat: Column::NonceFlat, trie: Column::NonceTrie, log: Column::NonceLog },
+            ),
+            bonsai_config.clone(),
+        )
+        .unwrap();
 
         Ok(Self {
             mapping: Arc::new(MappingDb::new(Arc::clone(db), cache_more_things)),
@@ -465,6 +474,7 @@ impl DeoxysBackend {
             block_hash_to_number: RwLock::new(block_hash_to_number),
             block_number_to_hash: RwLock::new(block_number_to_hash),
             contract_address_to_class_hash: RwLock::new(contract_address_to_class_hash),
+            nonces: RwLock::new(nonces),
         })
     }
 
@@ -513,6 +523,10 @@ impl DeoxysBackend {
 
     pub(crate) fn class_hash() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.contract_address_to_class_hash).expect("Backend not initialized")
+    }
+
+    pub(crate) fn nonces() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
+        BACKEND_SINGLETON.get().map(|backend| &backend.nonces).expect("Backend not initialized")
     }
 
     /// Return l1 handler tx paid fee database manager

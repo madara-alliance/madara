@@ -100,15 +100,15 @@ where
     }
 
     fn get_class_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<ContractClass> {
-        get_class_at(self, block_id, contract_address)
+        get_class_at(block_id, contract_address)
     }
 
     fn get_class_hash_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
-        get_class_hash_at(self, block_id, contract_address)
+        get_class_hash_at(block_id, contract_address)
     }
 
     fn get_class(&self, block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass> {
-        get_class(self, block_id, class_hash)
+        get_class(block_id, class_hash)
     }
 
     async fn get_events(&self, filter: EventFilterWithPage) -> RpcResult<EventsPage> {
@@ -116,7 +116,7 @@ where
     }
 
     fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
-        get_nonce(self, block_id, contract_address)
+        get_nonce(block_id, contract_address)
     }
 
     fn get_storage_at(&self, contract_address: FieldElement, key: FieldElement, block_id: BlockId) -> RpcResult<Felt> {

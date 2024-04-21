@@ -1,6 +1,6 @@
 use blockifier::execution::contract_class::ContractClass;
 use mp_contract::ContractAbi;
-use starknet_api::api_core::ContractAddress;
+use starknet_api::core::ContractAddress;
 
 use super::{DeoxysStorageError, StorageView};
 

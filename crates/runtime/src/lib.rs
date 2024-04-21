@@ -17,7 +17,6 @@ mod pallets;
 mod runtime_tests;
 
 use blockifier::context::{BlockContext, FeeTokenAddresses};
-use blockifier::execution::contract_class::ContractClass;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution::Transaction;
@@ -30,7 +29,6 @@ pub use frame_support::weights::constants::{
 pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
-use mp_contract::ContractAbi;
 use mp_felt::Felt252Wrapper;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlagForEstimateFee, SimulationFlags};
 use mp_types::account::{DAccountAddressT, DAccountIdT};
@@ -55,7 +53,7 @@ use sp_runtime::{generic, ApplyExtrinsicResult, DispatchError};
 pub use sp_runtime::{Perbill, Permill};
 use sp_std::prelude::*;
 use sp_version::RuntimeVersion;
-use starknet_api::core::{ClassHash, ContractAddress, EntryPointSelector, Nonce};
+use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::hash::StarkHash;
 use starknet_api::transaction::{Calldata, Event as StarknetEvent, MessageToL1, TransactionHash};
 
@@ -233,10 +231,6 @@ impl_runtime_apis! {
     impl pallet_starknet_runtime_api::StarknetRuntimeApi<Block> for Runtime {
         fn call(address: ContractAddress, function_selector: EntryPointSelector, calldata: Calldata) -> Result<Vec<Felt252Wrapper>, DispatchError> {
             Starknet::call_contract(address, function_selector, calldata)
-        }
-
-        fn nonce(address: ContractAddress) -> Nonce{
-            Starknet::nonce(address)
         }
 
         fn chain_id() -> Felt252Wrapper {

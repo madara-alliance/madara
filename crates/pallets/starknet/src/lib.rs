@@ -34,7 +34,6 @@
 
 use std::sync::Arc;
 
-use mc_db::storage::StorageHandler;
 /// Starknet pallet.
 /// Definition of the pallet's runtime storage items, events, errors, and dispatchable
 /// functions.
@@ -64,7 +63,6 @@ use alloc::vec::Vec;
 use blockifier::blockifier::block::{BlockInfo, GasPrices};
 use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses, TransactionContext};
 use blockifier::execution::call_info::CallInfo;
-use blockifier::execution::contract_class::ContractClass;
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
 use blockifier::state::cached_state::{CachedState, GlobalContractCache};
 use blockifier::transaction::objects::{DeprecatedTransactionInfo, TransactionInfo};
@@ -77,7 +75,6 @@ use mc_db::storage_handler;
 use mc_db::storage_handler::{StorageView, StorageViewMut};
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::DeoxysBlock;
-use mp_contract::ContractAbi;
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -86,9 +83,7 @@ use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
-use starknet_api::core::{
-    ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce, PatriciaKey,
-};
+use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
@@ -118,7 +113,6 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
-    use frame_support::fail;
     use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
 
     use super::*;
@@ -220,12 +214,14 @@ pub mod pallet {
         match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
             Ok(state_update) => {
                 // nonces stored for accessing on `starknet_getNonce` RPC call.
+                let mut handler_nonce = storage_handler::nonce_mut().unwrap();
                 state_update
                     .state_diff
                     .nonces
                     .into_iter()
                     .map(|(address, nonce)| (ContractAddress(address.into()), Nonce(nonce.into())))
-                    .for_each(|(contract_address, nonce)| <Nonces<T>>::insert(contract_address, nonce));
+                    .for_each(|(contract_address, nonce)| handler_nonce.insert(&contract_address, &nonce).unwrap());
+                handler_nonce.commit(block_number).unwrap();
 
                 // contract address to class hash equivalence (used in
                 // `starknet_getClassHashAt`` rpc call)
@@ -272,8 +268,8 @@ pub mod pallet {
                         // Blockifier class and ABI need to be stored separately since Blockifier
                         // does not store ABI. In the future, it would be better to have a separate
                         // storage structure which contains both the class data and the ABI
-                        handler_contract_class.insert(&class_hash, &contract_class);
-                        handler_contract_abi.insert(&class_hash, &abi);
+                        handler_contract_class.insert(&class_hash, &contract_class).unwrap();
+                        handler_contract_abi.insert(&class_hash, &abi).unwrap();
                     },
                 );
 
@@ -338,13 +334,6 @@ pub mod pallet {
     #[pallet::getter(fn compiled_class_hash_by_class_hash)]
     pub(super) type CompiledClassHashes<T: Config> =
         StorageMap<_, Identity, SierraClassHash, CompiledClassHash, OptionQuery>;
-
-    /// Mapping from Starknet contract address to its nonce.
-    /// Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn nonce)]
-    pub(super) type Nonces<T: Config> = StorageMap<_, Identity, ContractAddress, Nonce, ValueQuery>;
 
     /// The last processed Ethereum block number for L1 messages consumption.
     /// This is used to avoid re-processing the same Ethereum block multiple times.
@@ -425,7 +414,7 @@ pub mod pallet {
             self.contracts.iter().for_each(|(contract_address, class_hash)| {
                 handler_class_hash.insert(contract_address, class_hash).unwrap();
             });
-            handler_class_hash.commit(1);
+            handler_class_hash.commit(0).unwrap();
 
             self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
                 CompiledClassHashes::<T>::insert(class_hash, CompiledClassHash(compiled_class_hash.0))
@@ -1010,8 +999,17 @@ impl<T: Config> Pallet<T> {
                     }
                 };
 
-                let blockhash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
-                BlockHash::<T>::insert(block_number, blockhash);
+                let block_hash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
+
+                let mut handler_block_number = storage_handler::block_number_mut().unwrap();
+                let mut handler_block_hash = storage_handler::block_hash_mut().unwrap();
+
+                handler_block_number.insert(&block_hash, block_number).unwrap();
+                handler_block_hash.insert(block_number, &block_hash).unwrap();
+
+                handler_block_number.commit(block_number).unwrap();
+                handler_block_hash.commit(block_number).unwrap();
+
                 Pending::<T>::kill();
                 let digest = DigestItem::Consensus(MADARA_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
                 frame_system::Pallet::<T>::deposit_log(digest);

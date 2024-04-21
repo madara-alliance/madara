@@ -2,7 +2,7 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
-use starknet_api::api_core::ContractAddress;
+use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 
@@ -19,6 +19,7 @@ pub struct ContractTrieViewMut<'a>(
 
 pub struct ContractTrieViewAt {
     pub(crate) storage: BonsaiStorage<BasicId, BonsaiTransaction<'static>, Pedersen>,
+    #[allow(dead_code)]
     pub(crate) next_id: u64,
 }
 
@@ -116,12 +117,14 @@ impl StorageView for ContractTrieViewAt {
 }
 
 impl ContractTrieViewAt {
+    #[allow(dead_code)]
     fn insert(&mut self, contract_address: &ContractAddress, leaf_hash: &Felt) -> Result<(), DeoxysStorageError> {
         self.storage
             .insert(bonsai_identifier::CONTRACT, &conv_contract_key(contract_address), leaf_hash)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))
     }
 
+    #[allow(dead_code)]
     fn commit(&mut self) -> Result<(), DeoxysStorageError> {
         let next_id = BasicId::new(self.next_id);
         self.next_id += 1;

@@ -2,7 +2,7 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
-use starknet_api::api_core::ClassHash;
+use starknet_api::core::ClassHash;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Poseidon;

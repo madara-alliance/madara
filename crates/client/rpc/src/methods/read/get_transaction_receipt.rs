@@ -3,6 +3,7 @@ use blockifier::execution::contract_class::{ContractClass as ContractClassBf, Co
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution as btx;
 use jsonrpsee::core::RpcResult;
+use mc_db::storage_handler::{self, StorageView};
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_block::DeoxysBlock;
@@ -242,7 +243,7 @@ where
 					tx_deploy_account(deploy_account_tx.clone(), deploy_account_tx.compute_hash::<H>(Felt252Wrapper::from(chain_id.0), false, Some(block_number)), ContractAddress::default())
                 }
                 Transaction::Declare(declare_tx) => {
-					tx_declare(client, substrate_block_hash, declare_tx.clone())
+					tx_declare(client, substrate_block_hash, declare_tx.clone(), block_number)
                 }
                 Transaction::L1Handler(l1_handler) => {
 					tx_l1_handler::<H>(chain_id, block_number, l1_handler.clone())
@@ -281,6 +282,7 @@ fn tx_declare<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     substrate_block_hash: DHashT,
     declare_tx: DeclareTransaction,
+    block_number: u64,
 ) -> RpcResult<btx::Transaction>
 where
     A: ChainApi<Block = DBlockT> + 'static,
@@ -296,7 +298,7 @@ where
 
     match declare_tx {
         DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => {
-            tx_declare_v0v1(client, substrate_block_hash, declare_tx, class_hash)
+            tx_declare_v0v1(client, substrate_block_hash, declare_tx, class_hash, block_number)
         }
         DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
         DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
@@ -308,6 +310,7 @@ fn tx_declare_v0v1<A, BE, G, C, P, H>(
     substrate_block_hash: DHashT,
     declare_tx: DeclareTransaction,
     class_hash: ClassHash,
+    block_number: u64,
 ) -> RpcResult<btx::Transaction>
 where
     A: ChainApi<Block = DBlockT> + 'static,
@@ -319,14 +322,15 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let _contract_class = client
-        .overrides
-        .for_block_hash(client.client.as_ref(), substrate_block_hash)
-        .contract_class_by_class_hash(substrate_block_hash, class_hash)
-        .ok_or_else(|| {
-            log::error!("Failed to retrieve contract class from hash '{class_hash}'");
-            StarknetRpcApiError::InternalServerError
-        })?;
+    let Ok(handler_contract_class) = storage_handler::contract_class() else {
+        log::error!("Failed to retrieve contract class from hash '{class_hash}'");
+        return Err(StarknetRpcApiError::InternalServerError.into());
+    };
+
+    let Ok(Some(_contract_class)) = handler_contract_class.get_at(&class_hash, block_number) else {
+        log::error!("Failed to retrieve contract class from hash '{class_hash}'");
+        return Err(StarknetRpcApiError::InternalServerError.into());
+    };
 
     // let class_info = ClassInfo::new(
     //     &contract_class,
@@ -346,7 +350,7 @@ where
     // TODO: Correct this that was used as a place holder to compile
     match declare_tx {
         DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => {
-            tx_declare_v0v1(client, substrate_block_hash, declare_tx, class_hash)
+            tx_declare_v0v1(client, substrate_block_hash, declare_tx, class_hash, block_number)
         }
         DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
         DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),

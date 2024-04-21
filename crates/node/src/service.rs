@@ -13,7 +13,6 @@ use futures::prelude::*;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
-use mc_storage::overrides_handle;
 use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::starknet_sync_worker;
 use mp_block::state_update::StateUpdateWrapper;
@@ -363,13 +362,11 @@ pub fn new_full(
         _ => (None, None),
     };
 
-    let overrides = overrides_handle(client.clone());
     let config_dir: PathBuf = config.data_path.clone();
     let genesis_data = OnDiskGenesisConfig(config_dir);
     let starknet_rpc_params = StarknetDeps {
         client: client.clone(),
         madara_backend: madara_backend.clone(),
-        overrides: overrides.clone(),
         sync_service: sync_service.clone(),
         starting_block,
         genesis_provider: genesis_data.into(),
@@ -433,7 +430,6 @@ pub fn new_full(
         state_update_sender,
         command_sink: command_sink.unwrap().clone(),
         class_sender,
-        overrides,
     };
 
     task_manager.spawn_essential_handle().spawn(

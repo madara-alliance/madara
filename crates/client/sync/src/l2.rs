@@ -13,9 +13,6 @@ use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use sp_runtime::generic::{Block as RuntimeBlock, Header};
-use sp_runtime::traits::BlakeTwo256;
-use sp_runtime::OpaqueExtrinsic;
 use starknet_api::hash::StarkHash;
 use starknet_core::types::{PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
@@ -29,7 +26,6 @@ use tokio::time::Duration;
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
 use crate::fetch::fetchers::{fetch_block_and_updates, FetchConfig};
 use crate::l1::ETHEREUM_STATE_UPDATE;
-use crate::utility::block_hash_substrate;
 use crate::CommandSink;
 
 async fn spawn_compute<F, R>(func: F) -> R
@@ -157,7 +153,7 @@ pub async fn sync<C>(
     if first_block == 1 {
         let state_update =
             provider.get_state_update(BlockId::Number(0)).await.expect("getting state update for genesis block");
-        verify_l2(0, &state_update, None).expect("verifying genesis block");
+        verify_l2(0, &state_update).expect("verifying genesis block");
     }
 
     let fetch_stream = (first_block..).map(|block_n| {
@@ -200,8 +196,6 @@ pub async fn sync<C>(
 
                 let (block, state_update, class_update) = val.expect("fetching block");
 
-                let block_hash = block_hash_substrate(client.as_ref(), block_n - 1);
-
                 let (state_update, block_conv) = {
                     let verify = fetch_config.verify;
                     let state_update = Arc::new(state_update);
@@ -216,7 +210,7 @@ pub async fn sync<C>(
                         };
                         let ver_l2 = || {
                             let start = std::time::Instant::now();
-                            verify_l2(block_n, &state_update, block_hash)
+                            verify_l2(block_n, &state_update)
                                 .expect("verifying block");
                             log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
                         };
@@ -311,11 +305,7 @@ pub fn update_l2(state_update: L2StateUpdate) {
 }
 
 /// Verify and update the L2 state according to the latest state update
-pub fn verify_l2(
-    block_number: u64,
-    state_update: &StateUpdate,
-    substrate_block_hash: Option<H256>,
-) -> Result<(), L2SyncError> {
+pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> Result<(), L2SyncError> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
 
     let csd = build_commitment_state_diff(state_update_wrapper.clone());

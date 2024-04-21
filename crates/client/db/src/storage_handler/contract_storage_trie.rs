@@ -2,15 +2,14 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
-use starknet_api::api_core::{ContractAddress, PatriciaKey};
+use starknet_api::core::{ContractAddress, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 
 use super::{
-    conv_contract_identifier, conv_contract_storage_key, conv_contract_value, DeoxysStorageError, StorageType,
-    StorageView, TrieType,
+    conv_contract_identifier, conv_contract_storage_key, conv_contract_value, DeoxysStorageError, StorageType, TrieType,
 };
 use crate::bonsai_db::{BonsaiDb, BonsaiTransaction};
 
