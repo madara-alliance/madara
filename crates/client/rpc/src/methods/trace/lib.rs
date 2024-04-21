@@ -1,6 +1,5 @@
 use blockifier::transaction::errors::TransactionExecutionError;
 use jsonrpsee::core::{async_trait, RpcResult};
-use log::error;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
@@ -16,8 +15,9 @@ use starknet_core::types::{
 use starknet_ff::FieldElement;
 use thiserror::Error;
 
-use super::simulate_transactions::*;
-use super::trace_implementation::*;
+use super::simulate_transactions::simulate_transactions;
+use super::trace_block_transactions::trace_block_transactions;
+use super::trace_transaction::trace_transaction;
 use crate::errors::StarknetRpcApiError;
 use crate::{Starknet, StarknetTraceRpcApiServer};
 
@@ -25,12 +25,12 @@ use crate::{Starknet, StarknetTraceRpcApiServer};
 impl<A, BE, G, C, P, H> StarknetTraceRpcApiServer for Starknet<A, BE, G, C, P, H>
 where
     A: ChainApi<Block = DBlockT> + 'static,
+    P: TransactionPool<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
-    G: GenesisProvider + Send + Sync + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    P: TransactionPool<Block = DBlockT> + 'static,
+    G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     async fn simulate_transactions(

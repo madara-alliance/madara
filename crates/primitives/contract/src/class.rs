@@ -3,7 +3,7 @@
 use blockifier::execution::contract_class::ContractClass as ContractClassBlockifier;
 #[cfg(feature = "parity-scale-codec")]
 use parity_scale_codec::{Decode, Encode};
-use starknet_api::api_core::ClassHash;
+use starknet_api::core::ClassHash;
 
 use crate::ContractAbi;
 
@@ -51,15 +51,15 @@ pub mod convert {
         type Error = anyhow::Error;
 
         fn try_from(contract_class: ContractClassCore) -> Result<Self, Self::Error> {
-            Ok(Self {
-                contract: from_rpc_contract_class(&contract_class)?,
-                abi: match contract_class {
-                    ContractClassCore::Sierra(class_sierra) => ContractAbi::Sierra(class_sierra.abi),
-                    ContractClassCore::Legacy(class_cairo) => {
-                        ContractAbi::Cairo(from_rpc_contract_abi(class_cairo.abi))
-                    }
-                },
-            })
+            let contract = from_rpc_contract_class(contract_class.clone())?;
+            let abi = match &contract_class {
+                ContractClassCore::Sierra(class_sierra) => ContractAbi::Sierra(class_sierra.abi.clone()),
+                ContractClassCore::Legacy(class_cairo) => {
+                    ContractAbi::Cairo(from_rpc_contract_abi(class_cairo.abi.clone()))
+                }
+            };
+
+            Ok(Self { contract, abi })
         }
     }
 

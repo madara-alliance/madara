@@ -5,24 +5,23 @@
 // Specifically, the macro generates a trait (`StarknetRuntimeApi`) with unused type parameters.
 #![allow(clippy::extra_unused_type_parameters)]
 
-use alloc::sync::Arc;
-
+use blockifier::context::{BlockContext, FeeTokenAddresses};
 use blockifier::execution::contract_class::ContractClass;
+use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
+use blockifier::transaction::transaction_execution::Transaction;
+use blockifier::transaction::transactions::L1HandlerTransaction;
 use mp_felt::Felt252Wrapper;
-use mp_transactions::{HandleL1MessageTransaction, Transaction, UserOrL1HandlerTransaction, UserTransaction};
-use sp_api::BlockT;
 pub extern crate alloc;
-use alloc::string::String;
 use alloc::vec::Vec;
 
 use mp_contract::ContractAbi;
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
+use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlagForEstimateFee, SimulationFlags};
+use pallet_starknet::types::FeeEstimate;
 use sp_runtime::DispatchError;
-use starknet_api::api_core::{ChainId, ClassHash, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::block::{BlockNumber, BlockTimestamp};
+use starknet_api::core::{ClassHash, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::hash::StarkHash;
-use starknet_api::transaction::{Calldata, Event as StarknetEvent, Fee, MessageToL1, TransactionHash};
+use starknet_api::transaction::{Calldata, Event as StarknetEvent, MessageToL1, TransactionHash};
 
 #[derive(parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
 pub enum StarknetTransactionExecutionError {
@@ -46,13 +45,15 @@ sp_api::decl_runtime_apis! {
         /// Returns the Starknet config hash.
         fn config_hash() -> StarkHash;
         /// Returns the fee token address.
-        fn fee_token_address() -> ContractAddress;
+        fn fee_token_addresses() -> FeeTokenAddresses;
         /// Returns fee estimate
-        fn estimate_fee(transactions: Vec<UserTransaction>) -> Result<Vec<(u64, u64)>, DispatchError>;
+        fn estimate_fee(transactions: Vec<AccountTransaction>, simulation_flags: Vec<SimulationFlagForEstimateFee>,) -> Result<Vec<FeeEstimate>, DispatchError>;
         /// Returns message fee estimate
-        fn estimate_message_fee(message: HandleL1MessageTransaction) -> Result<(u128, u64, u64), DispatchError>;
+        fn estimate_message_fee(message: L1HandlerTransaction) -> Result<FeeEstimate, DispatchError>;
+        /// Simulates single L1 Message and returns its trace
+        fn simulate_message(message: L1HandlerTransaction, simulation_flags: SimulationFlags) -> Result<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>;
         /// Simulates transactions and returns their trace
-        fn simulate_transactions(transactions: Vec<UserTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>;
+        fn simulate_transactions(transactions: Vec<AccountTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>;
 
         /// Filters extrinsic transactions to return only Starknet transactions
         ///
@@ -62,7 +63,7 @@ sp_api::decl_runtime_apis! {
         /// this limitation. The solution is to offload decoding and filtering to the RuntimeApi in
         /// the runtime itself, accomplished through the extrinsic_filter method. This enables the
         /// client to operate seamlessly while abstracting the extrinsic complexity.
-        fn extrinsic_filter(xts: Vec<<Block as BlockT>::Extrinsic>) -> Vec<Transaction>;
+        // fn extrinsic_filter(xts: Vec<<Block as BlockT>::Extrinsic>) -> Vec<Transaction>;
         /// Used to re-execute transactions from a past block and return their trace
         ///
         /// # Arguments
@@ -74,16 +75,11 @@ sp_api::decl_runtime_apis! {
         ///
         /// Idealy, the execution traces of all of `transactions_to_trace`.
         /// If any of the transactions (from both arguments) fails, an error is returned.
-        fn re_execute_transactions(transactions_before: Vec<UserOrL1HandlerTransaction>, transactions_to_trace: Vec<UserOrL1HandlerTransaction>) -> Result<Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>;
+        fn re_execute_transactions(transactions_before: Vec<Transaction>, transactions_to_trace: Vec<Transaction>, block_context: &BlockContext) -> Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>;
 
-        fn get_index_and_tx_for_tx_hash(xts: Vec<<Block as BlockT>::Extrinsic>, chain_id: Felt252Wrapper, tx_hash: Felt252Wrapper) -> Option<(u32, Transaction)>;
-        /// Returns events, call with index from get_index_and_tx_for_tx_hash method
-        fn get_events_for_tx_by_index(tx_index: u32) -> Option<Vec<StarknetEvent>>;
+        fn get_events_for_tx_by_hash(tx_hash: TransactionHash) -> Vec<StarknetEvent>;
+        // fn get_index_and_tx_for_tx_hash(xts: Vec<<Block as BlockT>::Extrinsic>, chain_id: Felt252Wrapper, tx_hash: TransactionHash) -> Option<(u32, Transaction)>;
 
-        /// Return the list of StarknetEvent evmitted during this block, along with the hash of the starknet transaction they bellong to
-        ///
-        /// `block_extrinsics` is the list of all the extrinsic executed during this block, it is used in order to match
-        fn get_starknet_events_and_their_associated_tx_index() -> Vec<(u32, StarknetEvent)>;
         /// Return the outcome of the tx execution
         fn get_tx_execution_outcome(tx_hash: TransactionHash) -> Option<Vec<u8>>;
         /// Return the block context
@@ -92,76 +88,16 @@ sp_api::decl_runtime_apis! {
         fn is_transaction_fee_disabled() -> bool;
         /// Return messages sent to L1 during tx execution
         fn get_tx_messages_to_l1(tx_hash: TransactionHash) -> Vec<MessageToL1>;
-        /// Check if L1 Message Nonce has not been used
-        fn l1_nonce_unused(nonce: Nonce) -> bool;
     }
 
     pub trait ConvertTransactionRuntimeApi {
         /// Converts the transaction to an UncheckedExtrinsic for submission to the pool.
-        fn convert_transaction(transaction: UserTransaction) -> <Block as BlockT>::Extrinsic;
+        // fn convert_transaction(transaction: UserTransaction) -> <Block as BlockT>::Extrinsic;
 
         /// Converts the L1 Message transaction to an UncheckedExtrinsic for submission to the pool.
-        fn convert_l1_transaction(transaction: HandleL1MessageTransaction, fee: Fee) -> <Block as BlockT>::Extrinsic;
+        // fn convert_l1_transaction(transaction: L1HandlerTransaction) -> <Block as BlockT>::Extrinsic;
 
         /// Converts the DispatchError to an understandable error for the client
         fn convert_error(error: DispatchError) -> StarknetTransactionExecutionError;
-    }
-}
-
-#[derive(Clone, Debug, parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
-pub struct BlockContext {
-    pub chain_id: String,
-    pub block_number: u64,
-    pub block_timestamp: u64,
-
-    // Fee-related.
-    pub sequencer_address: ContractAddress,
-    pub fee_token_address: ContractAddress,
-    pub vm_resource_fee_cost: Vec<(String, sp_arithmetic::fixed_point::FixedU128)>,
-    pub gas_price: u128, // In wei.
-
-    // Limits.
-    pub invoke_tx_max_n_steps: u32,
-    pub validate_max_n_steps: u32,
-    pub max_recursion_depth: u32,
-}
-
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-
-#[cfg(not(feature = "std"))]
-use hashbrown::HashMap;
-
-impl From<BlockContext> for blockifier::block_context::BlockContext {
-    fn from(value: BlockContext) -> Self {
-        Self {
-            chain_id: ChainId(value.chain_id),
-            block_number: BlockNumber(value.block_number),
-            block_timestamp: BlockTimestamp(value.block_timestamp),
-            sequencer_address: value.sequencer_address,
-            fee_token_address: value.fee_token_address,
-            vm_resource_fee_cost: Arc::new(HashMap::from_iter(value.vm_resource_fee_cost)),
-            gas_price: value.gas_price,
-            invoke_tx_max_n_steps: value.invoke_tx_max_n_steps,
-            validate_max_n_steps: value.validate_max_n_steps,
-            max_recursion_depth: value.max_recursion_depth,
-        }
-    }
-}
-
-impl From<blockifier::block_context::BlockContext> for BlockContext {
-    fn from(value: blockifier::block_context::BlockContext) -> Self {
-        Self {
-            chain_id: value.chain_id.0,
-            block_number: value.block_number.0,
-            block_timestamp: value.block_timestamp.0,
-            sequencer_address: value.sequencer_address,
-            fee_token_address: value.fee_token_address,
-            vm_resource_fee_cost: Vec::from_iter(value.vm_resource_fee_cost.iter().map(|(k, v)| (k.clone(), *v))),
-            gas_price: value.gas_price,
-            invoke_tx_max_n_steps: value.invoke_tx_max_n_steps,
-            validate_max_n_steps: value.validate_max_n_steps,
-            max_recursion_depth: value.max_recursion_depth,
-        }
     }
 }

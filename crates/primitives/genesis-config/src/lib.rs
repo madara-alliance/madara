@@ -17,6 +17,9 @@ lazy_static! {
     static ref ETH_TOKEN_ADDR: HexFelt = HexFelt(
         FieldElement::from_hex_be("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap()
     );
+    static ref STRK_TOKEN_ADDR: HexFelt = HexFelt(
+        FieldElement::from_hex_be("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d").unwrap()
+    );
 }
 
 /// A wrapper for FieldElement that implements serde's Serialize and Deserialize for hex strings.
@@ -60,7 +63,8 @@ pub struct GenesisData {
     pub contracts: Vec<(ContractAddress, ClassHash)>,
     pub sierra_class_hash_to_casm_class_hash: Vec<(ClassHash, ClassHash)>,
     pub storage: Vec<(ContractAddress, Vec<(StorageKey, StorageValue)>)>,
-    pub fee_token_address: ContractAddress,
+    pub strk_fee_token_address: ContractAddress,
+    pub eth_fee_token_address: ContractAddress,
 }
 
 #[cfg(feature = "std")]
@@ -75,7 +79,8 @@ pub mod convert {
                 contracts: convert_contract(&genesis_diff),
                 sierra_class_hash_to_casm_class_hash: convert_sierra_class_hash(&genesis_diff),
                 storage: convert_storage(&genesis_diff),
-                fee_token_address: *ETH_TOKEN_ADDR,
+                strk_fee_token_address: *STRK_TOKEN_ADDR,
+                eth_fee_token_address: *ETH_TOKEN_ADDR,
             }
         }
     }

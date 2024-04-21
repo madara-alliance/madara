@@ -16,7 +16,6 @@ use std::sync::Arc;
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use log::error;
 use mc_db::DeoxysBackend;
 use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
@@ -39,9 +38,9 @@ use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
-    InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MaybePendingTransactionReceipt, MsgFromL1, SimulatedTransaction, SimulationFlag, StateDiff, SyncStatusType,
-    Transaction, TransactionStatus, TransactionTraceWithHash,
+    InvokeTransactionResult, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+    MaybePendingStateUpdate, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee, StateDiff,
+    SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
 
 use crate::methods::get_block::{
@@ -116,12 +115,17 @@ pub trait StarknetReadRpcApi {
     async fn estimate_fee(
         &self,
         request: Vec<BroadcastedTransaction>,
+        simulation_flags: Vec<SimulationFlagForEstimateFee>,
         block_id: BlockId,
     ) -> RpcResult<Vec<FeeEstimate>>;
 
     /// Estimate the L2 fee of a message sent on L1
     #[method(name = "estimateMessageFee")]
     async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<FeeEstimate>;
+
+    /// Get block information with full transactions and receipts given the block id
+    #[method(name = "getBlockWithReceipts")]
+    async fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithReceipts>;
 
     /// Get block information with transaction hashes given the block id
     #[method(name = "getBlockWithTxHashes")]
@@ -169,7 +173,7 @@ pub trait StarknetReadRpcApi {
     async fn get_transaction_receipt(
         &self,
         transaction_hash: FieldElement,
-    ) -> RpcResult<MaybePendingTransactionReceipt>;
+    ) -> RpcResult<TransactionReceiptWithBlockInfo>;
 
     /// Gets the Transaction Status, Including Mempool Status and Execution Details
     #[method(name = "getTransactionStatus")]
@@ -220,17 +224,6 @@ pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
     _marker: PhantomData<(DBlockT, BE, H)>,
 }
 
-/// Constructor for A Starknet RPC server for Madara
-/// # Arguments
-// * `client` - The Madara client
-// * `backend` - The Madara backend
-// * `overrides` - The OverrideHandle
-// * `sync_service` - The Substrate client sync service
-// * `starting_block` - The starting block for the syncing
-// * `hasher` - The hasher used by the runtime
-//
-// # Returns
-// * `Self` - The actual Starknet struct
 #[allow(clippy::too_many_arguments)]
 impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
     pub fn new(
@@ -243,6 +236,12 @@ impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
         genesis_provider: Arc<G>,
     ) -> Self {
         Self { client, overrides, pool, graph, sync_service, starting_block, genesis_provider, _marker: PhantomData }
+    }
+}
+
+impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
+    fn chain_id(&self) -> RpcResult<Felt> {
+        methods::read::chain_id::chain_id()
     }
 }
 
@@ -260,7 +259,7 @@ where
     C: HeaderBackend<DBlockT> + 'static,
 {
     pub fn current_spec_version(&self) -> RpcResult<String> {
-        Ok("0.5.1".to_string())
+        Ok("0.7.0".to_string())
     }
 }
 
@@ -286,7 +285,7 @@ where
         match block_id {
             BlockId::Hash(h) => madara_backend_client::load_hash(self.client.as_ref(), Felt252Wrapper::from(h).into())
                 .map_err(|e| {
-                    error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
+                    log::error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
                     StarknetRpcApiError::BlockNotFound
                 })?,
             BlockId::Number(n) => self
@@ -330,7 +329,7 @@ where
     /// * `block_hash` - The hash of the block containing the transactions (starknet block).
     fn get_cached_transaction_hashes(&self, block_hash: StarkHash) -> Option<Vec<StarkHash>> {
         DeoxysBackend::mapping().cached_transaction_hashes_from_block_hash(block_hash).unwrap_or_else(|err| {
-            error!("Failed to read from cache: {err}");
+            log::error!("Failed to read from cache: {err}");
             None
         })
     }
@@ -342,7 +341,7 @@ where
     /// * `starknet_block_hash` - The hash of the block containing the state diff (starknet block).
     fn get_state_diff(&self, starknet_block_hash: &APIBlockHash) -> Result<StateDiff, StarknetRpcApiError> {
         let state_diff = DeoxysBackend::da().state_diff(starknet_block_hash).map_err(|e| {
-            error!("Failed to retrieve state diff from cache for block with hash {}: {e}", starknet_block_hash);
+            log::error!("Failed to retrieve state diff from cache for block with hash {}: {e}", starknet_block_hash);
             StarknetRpcApiError::InternalServerError
         })?;
 

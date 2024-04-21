@@ -104,7 +104,7 @@ fn given_erc20_transfer_when_invoke_then_it_works() {
                 )],
                 data: EventData(vec![
                     sender_account.0 .0, // From
-                    StarkFelt::try_from("0x000000000000000000000000000000000000000000000000000000000000dead").unwrap(), // Sequencer address
+                    ::try_from("0x000000000000000000000000000000000000000000000000000000000000dead").unwrap(), // Sequencer address
                     StarkFelt::try_from("0x00000000000000000000000000000000000000000000000000000000000198de").unwrap(), // Amount low
                     StarkFelt::from(0u128), // Amount high
                 ]),

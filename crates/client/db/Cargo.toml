@@ -32,9 +32,7 @@ mp-types = { workspace = true }
 mp-felt = { workspace = true }
 
 # Starknet crates
-blockifier = { workspace = true, default-features = false, features = [
-  "testing",
-] }
+blockifier = { workspace = true, features = ["testing"] }
 bonsai-trie = { workspace = true }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true, default-features = false, features = [
@@ -45,9 +43,7 @@ starknet-types-core = { workspace = true, default-features = false, features = [
   "hash",
   "parity-scale-codec",
 ] }
-starknet_api = { workspace = true, default-features = true, features = [
-  "parity-scale-codec",
-] }
+starknet_api = { workspace = true, default-features = true }
 
 # Other crates
 anyhow.workspace = true

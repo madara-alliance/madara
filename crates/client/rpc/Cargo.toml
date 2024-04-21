@@ -28,6 +28,11 @@ pallet-starknet-runtime-api = { workspace = true, default-features = true }
 mc-db = { workspace = true }
 mc-sync = { workspace = true }
 
+# Cairo lang
+cairo-lang-starknet = { workspace = true }
+cairo-lang-starknet-classes = { workspace = true }
+cairo-lang-utils = { workspace = true }
+
 # Substate primitives
 sc-transaction-pool = { workspace = true }
 sc-transaction-pool-api = { workspace = true }
@@ -36,19 +41,21 @@ sp-arithmetic = { workspace = true, default-features = true }
 sp-blockchain = { workspace = true, default-features = true }
 sp-core = { workspace = true, default-features = true }
 sp-runtime = { workspace = true, default-features = true }
+
 # Substrate client
 sc-client-api = { workspace = true, default-features = true }
 sc-network-sync = { workspace = true }
+
 # Starknet
 blockifier = { workspace = true, default-features = true }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
+
 # Others
 anyhow = { workspace = true }
 bitvec = { workspace = true }
-cairo-lang-casm-contract-class = { workspace = true }
 flate2 = { workspace = true }
 hex = { workspace = true, default-features = true }
 indexmap = { workspace = true, default-features = true }
@@ -62,7 +69,6 @@ mp-block = { workspace = true, default-features = true }
 mp-contract = { workspace = true, default-features = true }
 mp-convert = { workspace = true, default-features = true }
 mp-digest-log = { workspace = true }
-mp-fee = { workspace = true, default-features = true }
 mp-felt = { workspace = true, default-features = true }
 mp-hashers = { workspace = true, default-features = true }
 mp-simulations = { workspace = true }

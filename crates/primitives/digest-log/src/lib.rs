@@ -31,11 +31,11 @@ pub const BLOCK_ENGINE_ID: ConsensusEngineId = [b'b', b'l', b'o', b'c'];
 pub const STATE_ENGINE_ID: ConsensusEngineId = [b's', b't', b'a', b't'];
 pub const CLASS_ENGINE_ID: ConsensusEngineId = [b'c', b'l', b'a', b'z'];
 
-/// A Madara log
+/// A Deoxys log
 ///
-/// Right now we only expect Madara to log the Starknet block,
+/// Right now we only expect Deoxys to log the Starknet block,
 /// but other usecases may appears later on.
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum Log {
     #[codec(index = 0)]
     Block(DeoxysBlock),

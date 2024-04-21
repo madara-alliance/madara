@@ -21,7 +21,6 @@ use starknet_core::types::{PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
-use starknet_types_core::felt::Felt;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
@@ -135,8 +134,14 @@ pub struct SenderConfig {
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-pub async fn sync<C>(mut sender_config: SenderConfig, fetch_config: FetchConfig, first_block: u64, client: Arc<C>)
-where
+/// `n_blocks` is optionally the total number of blocks to sync, for debugging/benchmark purposes.
+pub async fn sync<C>(
+    mut sender_config: SenderConfig,
+    fetch_config: FetchConfig,
+    first_block: u64,
+    n_blocks: Option<usize>,
+    client: Arc<C>,
+) where
     C: HeaderBackend<DBlockT> + 'static,
 {
     let SenderConfig { block_sender, state_update_sender, class_sender, command_sink } = &mut sender_config;
@@ -160,7 +165,7 @@ where
         async move { tokio::spawn(fetch_block_and_updates(block_n, provider)).await.expect("tokio join error") }
     });
     // Have 10 fetches in parallel at once, using futures Buffered
-    let fetch_stream = stream::iter(fetch_stream).buffered(10);
+    let fetch_stream = stream::iter(fetch_stream.take(n_blocks.unwrap_or(usize::MAX))).buffered(10);
     let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(10);
 
     tokio::select!(
@@ -176,9 +181,15 @@ where
             }
         } => {},
         // fetch blocks and updates in parallel
-        _ = fetch_stream.for_each(|val| async {
-            fetch_stream_sender.send(val).await.expect("receiver is closed");
-        }) => {},
+        _ = async {
+            fetch_stream.for_each(|val| async {
+                fetch_stream_sender.send(val).await.expect("receiver is closed");
+            }).await;
+
+            drop(fetch_stream_sender); // dropping the channel makes the recieving task stop once the queue is empty.
+
+            std::future::pending().await
+        } => {},
         // apply blocks and updates sequentially
         _ = async {
             let mut block_n = first_block;
@@ -212,6 +223,15 @@ where
 
                         if verify {
                             let (_, block_conv) = rayon::join(ver_l2, || convert_block(block));
+                            let last_l2_state_update =
+                                STARKNET_STATE_UPDATE.read().expect("Failed to acquire read lock on STARKNET_STATE_UPDATE");
+                            if (block_conv.header().global_state_root) != last_l2_state_update.global_root {
+                                log::info!(
+                                    "❗ Verified state: {} doesn't match fetched state: {}",
+                                    last_l2_state_update.global_root,
+                                    block_conv.header().global_state_root
+                                );
+                            }
                             block_conv
                         } else {
                             convert_block(block)
@@ -302,9 +322,6 @@ pub fn verify_l2(
     let state_root = update_state_root(csd, block_number);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
-    let state_root_display = Felt::from_bytes_be(&state_root.0.to_bytes_be());
-    log::info!("🌳 State root #{block_number}: {state_root_display:#064x}");
-
     update_l2(L2StateUpdate {
         block_number,
         global_root: state_root.into(),
@@ -322,8 +339,11 @@ where
 
     let hash_best = client.info().best_hash;
     let hash_current = block.parent_block_hash;
+    let number = provider
+        .get_block_id_by_hash(hash_current)
+        .await
+        .map_err(|e| format!("Failed to get block id by hash: {e}"))?;
     let tmp = DHashT::from_str(&hash_current.to_string()).unwrap_or(Default::default());
-    let number = block.block_number.ok_or("block number not found")? - 1;
 
     if hash_best == tmp {
         let state_update = provider
@@ -342,5 +362,11 @@ where
         .write()
         .expect("Failed to acquire write lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER") = (hash_current, number);
 
+    log::debug!(
+        "update_starknet_data: latest_block_number: {}, latest_block_hash: 0x{:x}, best_hash: {}",
+        number,
+        hash_current,
+        hash_best
+    );
     Ok(())
 }

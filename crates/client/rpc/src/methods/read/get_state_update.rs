@@ -1,6 +1,5 @@
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_sync::l2::get_pending_state_update;
@@ -74,7 +73,7 @@ where
     let starknet_block_hash = APIBlockHash(block.header().hash::<H>().into());
 
     Ok(server.get_state_diff(&starknet_block_hash).map_err(|e| {
-        error!("Failed to get state diff. Starknet block hash: {starknet_block_hash}, error: {e}");
+        log::error!("Failed to get state diff. Starknet block hash: {starknet_block_hash}, error: {e}");
         StarknetRpcApiError::InternalServerError
     })?)
 }
@@ -112,7 +111,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        error!("'{e}'");
+        log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
 

@@ -8,13 +8,12 @@ use alloc::vec::Vec;
 mod header;
 mod ordered_events;
 pub mod state_update;
-
-pub use header::*;
+pub use header::Header;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::Transaction;
 pub use ordered_events::*;
+use starknet_api::transaction::{Transaction, TransactionHash};
 
 /// Block Transactions
 pub type BlockTransactions = Vec<Transaction>;
@@ -48,13 +47,13 @@ pub enum BlockId {
 }
 
 /// Starknet block definition.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct DeoxysBlock {
     /// The block header.
     header: Header,
     /// The block transactions.
-    transactions: BlockTransactions,
+    transactions: BlockTransactions, // Vec<starknet_api::transaction::Transaction>,
     /// The block events.
     events: BlockEvents,
 }
@@ -92,7 +91,7 @@ impl DeoxysBlock {
         &self,
         chain_id: Felt252Wrapper,
         block_number: Option<u64>,
-    ) -> impl '_ + Iterator<Item = Felt252Wrapper> {
+    ) -> impl '_ + Iterator<Item = TransactionHash> {
         self.transactions.iter().map(move |tx| tx.compute_hash::<H>(chain_id, false, block_number))
     }
 }

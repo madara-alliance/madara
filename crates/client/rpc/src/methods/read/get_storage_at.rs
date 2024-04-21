@@ -77,7 +77,7 @@ where
         .get(&contract_address, &key)
         .unwrap_or(None)
         .ok_or_else(|| {
-            error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}'");
+            log::error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}'");
             StarknetRpcApiError::ContractNotFound
         })?;
 
