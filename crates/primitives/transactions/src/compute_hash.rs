@@ -9,7 +9,6 @@ use starknet_api::transaction::{
     InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Resource,
     ResourceBoundsMapping, Transaction, TransactionHash,
 };
-use starknet_core::chain_id;
 use starknet_core::crypto::compute_hash_on_elements;
 use starknet_core::utils::starknet_keccak;
 use starknet_crypto::FieldElement;

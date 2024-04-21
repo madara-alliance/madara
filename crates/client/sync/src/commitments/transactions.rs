@@ -1,5 +1,4 @@
 use bitvec::prelude::*;
-use blockifier::test_utils::deploy_account;
 use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
@@ -59,7 +58,8 @@ where
             }
         }
         Transaction::DeployAccount(deploy_account_tx) => {
-            // Include signatures for DeployAccount transactions if the block number is greater than 61394 (mainnet)
+            // Include signatures for DeployAccount transactions if the block number is greater than 61394
+            // (mainnet)
             if include_signature {
                 let signature = deploy_account_tx.signature();
 
@@ -70,7 +70,7 @@ where
                 H::compute_hash_on_elements(&[])
             }
         }
-        _ => H::compute_hash_on_elements(&[])
+        _ => H::compute_hash_on_elements(&[]),
     };
 
     H::hash_elements(

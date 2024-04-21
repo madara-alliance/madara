@@ -62,6 +62,49 @@ impl<T: crate::Config> From<GenesisLoader> for GenesisConfig<T> {
     }
 }
 
+impl<T: crate::Config> From<GenesisData> for GenesisConfig<T> {
+    fn from(data: GenesisData) -> Self {
+        let contracts = data
+            .contracts
+            .clone()
+            .into_iter()
+            .map(|(address, hash)| {
+                let address = Felt252Wrapper(address.0).into();
+                let hash = Felt252Wrapper(hash.0).into();
+                (address, hash)
+            })
+            .collect::<Vec<_>>();
+        let sierra_to_casm_class_hash = data
+            .sierra_class_hash_to_casm_class_hash
+            .clone()
+            .into_iter()
+            .map(|(sierra_hash, casm_hash)| {
+                let sierra_hash = Felt252Wrapper(sierra_hash.0).into();
+                let casm_hash = Felt252Wrapper(casm_hash.0).into();
+                (sierra_hash, casm_hash)
+            })
+            .collect::<Vec<_>>();
+        let storage = data
+            .storage
+            .clone()
+            .into_iter()
+            .map(|(contract_address, storage)| {
+                (
+                    ContractAddress(PatriciaKey(StarkFelt(contract_address.0.to_bytes_be()))),
+                    storage
+                        .into_iter()
+                        .map(|(key, value)| {
+                            (StorageKey(PatriciaKey(StarkFelt(key.0.to_bytes_be()))), StarkFelt(value.0.to_bytes_be()))
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+
+        GenesisConfig { contracts, sierra_to_casm_class_hash, storage, ..Default::default() }
+    }
+}
+
 /// Create a `ContractClass` from a JSON string
 ///
 /// This function takes a JSON string (`json_str`) containing the JSON representation of a
