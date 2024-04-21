@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix(root): fixed state commitments broken due to genesis loader
 - feat(docker): add dockerfile and docker-compose
 - fix: fix implementation `get_storage_at()` for `BlockifierStateAdapter`
 - fix(sync): Fix end condition of the l2 sync
