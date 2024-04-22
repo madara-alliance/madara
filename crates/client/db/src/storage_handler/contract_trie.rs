@@ -10,7 +10,6 @@ use super::{
     bonsai_identifier, conv_contract_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut, TrieType,
 };
 use crate::bonsai_db::BonsaiDb;
-use crate::DeoxysBackend;
 
 pub struct ContractTrieView<'a>(pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>);
 pub struct ContractTrieViewMut<'a>(

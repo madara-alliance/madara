@@ -170,8 +170,8 @@ pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt252
 fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
     // NOTE: handlers implicitely acquire a lock on their respective tries
     // for the duration of their livetimes
-    let mut handler_contract = storage_handler::contract_trie_mut()?;
-    let mut handler_storage = storage_handler::contract_storage_trie_mut()?;
+    let mut handler_contract = storage_handler::contract_trie_mut();
+    let mut handler_storage = storage_handler::contract_storage_trie_mut();
 
     // First we insert the contract storage changes
     for (contract_address, updates) in csd.storage_updates.iter() {
@@ -258,7 +258,7 @@ lazy_static! {
 ///
 /// The class root.
 fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
-    let mut handler_class = storage_handler::class_trie_mut()?;
+    let mut handler_class = storage_handler::class_trie_mut();
 
     let updates = csd
         .class_hash_to_compiled_class_hash

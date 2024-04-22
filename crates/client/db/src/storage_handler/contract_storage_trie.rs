@@ -11,7 +11,7 @@ use starknet_types_core::hash::Pedersen;
 use super::{
     conv_contract_identifier, conv_contract_storage_key, conv_contract_value, DeoxysStorageError, StorageType, TrieType,
 };
-use crate::bonsai_db::{BonsaiDb, BonsaiTransaction};
+use crate::bonsai_db::BonsaiDb;
 
 pub struct ContractStorageTrieView<'a>(
     pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
@@ -19,12 +19,6 @@ pub struct ContractStorageTrieView<'a>(
 pub struct ContractStorageTrieViewMut<'a>(
     pub(crate) RwLockWriteGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
 );
-
-pub struct ContractStorageTrieViewAt {
-    pub(crate) storage: BonsaiStorage<BasicId, BonsaiTransaction<'static>, Pedersen>,
-
-    pub(crate) next_id: u64,
-}
 
 impl ContractStorageTrieView<'_> {
     pub fn get(&self, identifier: &ContractAddress, key: &StorageKey) -> Result<Option<Felt>, DeoxysStorageError> {

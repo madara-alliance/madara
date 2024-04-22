@@ -3,8 +3,6 @@ use std::fmt::Display;
 use bitvec::prelude::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
-use bonsai_trie::id::BasicId;
-use bonsai_trie::BonsaiStorageConfig;
 use parity_scale_codec::{Decode, Encode};
 use sp_core::hexdisplay::AsBytesRef;
 use starknet_api::core::{ClassHash, ContractAddress};
@@ -137,104 +135,72 @@ pub trait StorageViewRevetible: StorageViewMut {
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
-pub fn contract_trie_mut<'a>() -> Result<ContractTrieViewMut<'a>, DeoxysStorageError> {
-    Ok(ContractTrieViewMut(
-        DeoxysBackend::bonsai_contract()
-            .write()
-            .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Contract))?,
-    ))
+pub fn contract_trie_mut<'a>() -> ContractTrieViewMut<'a> {
+    ContractTrieViewMut(DeoxysBackend::bonsai_contract().write().unwrap())
 }
 
 pub fn contract_trie<'a>() -> ContractTrieView<'a> {
     ContractTrieView(DeoxysBackend::bonsai_contract().read().unwrap())
 }
 
-pub fn contract_storage_trie_mut<'a>() -> Result<ContractStorageTrieViewMut<'a>, DeoxysStorageError> {
-    Ok(ContractStorageTrieViewMut(
-        DeoxysBackend::bonsai_storage()
-            .write()
-            .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::ContractStorage))?,
-    ))
+pub fn contract_storage_trie_mut<'a>() -> ContractStorageTrieViewMut<'a> {
+    ContractStorageTrieViewMut(DeoxysBackend::bonsai_storage().write().unwrap())
 }
 
 pub fn contract_storage_trie<'a>() -> ContractStorageTrieView<'a> {
     ContractStorageTrieView(DeoxysBackend::bonsai_storage().read().unwrap())
 }
 
-pub fn contract_class_mut<'a>() -> Result<ContractClassViewMut<'a>, DeoxysStorageError> {
-    Ok(ContractClassViewMut(
-        DeoxysBackend::contract_class()
-            .write()
-            .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::ContractClass))?,
-    ))
+pub fn contract_class_mut<'a>() -> ContractClassViewMut<'a> {
+    ContractClassViewMut(DeoxysBackend::contract_class().write().unwrap())
 }
 
 pub fn contract_class<'a>() -> ContractClassView<'a> {
     ContractClassView(DeoxysBackend::contract_class().read().unwrap())
 }
 
-pub fn contract_abi_mut<'a>() -> Result<ContractAbiViewMut<'a>, DeoxysStorageError> {
-    Ok(ContractAbiViewMut(
-        DeoxysBackend::contract_abi()
-            .write()
-            .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::ContractAbi))?,
-    ))
+pub fn contract_abi_mut<'a>() -> ContractAbiViewMut<'a> {
+    ContractAbiViewMut(DeoxysBackend::contract_abi().write().unwrap())
 }
 
 pub fn contract_abi<'a>() -> ContractAbiView<'a> {
     ContractAbiView(DeoxysBackend::contract_abi().read().unwrap())
 }
 
-pub fn class_trie_mut<'a>() -> Result<ClassTrieViewMut<'a>, DeoxysStorageError> {
-    Ok(ClassTrieViewMut(
-        DeoxysBackend::bonsai_class().write().map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Class))?,
-    ))
+pub fn class_trie_mut<'a>() -> ClassTrieViewMut<'a> {
+    ClassTrieViewMut(DeoxysBackend::bonsai_class().write().unwrap())
 }
 
 pub fn class_trie<'a>() -> ClassTrieView<'a> {
     ClassTrieView(DeoxysBackend::bonsai_class().read().unwrap())
 }
 
-pub fn class_hash_mut<'a>() -> Result<ClassHashViewMut<'a>, DeoxysStorageError> {
-    Ok(ClassHashViewMut(
-        DeoxysBackend::class_hash()
-            .write()
-            .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::ClassHash))?,
-    ))
+pub fn class_hash_mut<'a>() -> ClassHashViewMut<'a> {
+    ClassHashViewMut(DeoxysBackend::class_hash().write().unwrap())
 }
 
 pub fn class_hash<'a>() -> ClassHashView<'a> {
     ClassHashView(DeoxysBackend::class_hash().read().unwrap())
 }
 
-pub fn block_number_mut<'a>() -> Result<BlockNumberViewMut<'a>, DeoxysStorageError> {
-    Ok(BlockNumberViewMut(
-        DeoxysBackend::block_number()
-            .write()
-            .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::BlockNumber))?,
-    ))
+pub fn block_number_mut<'a>() -> BlockNumberViewMut<'a> {
+    BlockNumberViewMut(DeoxysBackend::block_number().write().unwrap())
 }
 
 pub fn block_number<'a>() -> BlockNumberView<'a> {
     BlockNumberView(DeoxysBackend::block_number().read().unwrap())
 }
 
-pub fn block_hash_mut<'a>() -> Result<BlockHashViewMut<'a>, DeoxysStorageError> {
-    Ok(BlockHashViewMut(
-        DeoxysBackend::block_hash()
-            .write()
-            .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::BlockHash))?,
-    ))
+pub fn block_hash_mut<'a>() -> BlockHashViewMut<'a> {
+    BlockHashViewMut(DeoxysBackend::block_hash().write().unwrap())
 }
 
 pub fn block_hash<'a>() -> BlockHashView<'a> {
     BlockHashView(DeoxysBackend::block_hash().read().unwrap())
 }
 
-pub fn nonce_mut<'a>() -> Result<NonceViewMut<'a>, DeoxysStorageError> {
-    Ok(NonceViewMut(
-        DeoxysBackend::nonces().write().map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Nonce))?,
-    ))
+pub fn nonce_mut<'a>() -> NonceViewMut<'a> {
+    NonceViewMut(DeoxysBackend::nonces().write().unwrap())
 }
 
 pub fn nonce<'a>() -> NonceView<'a> {

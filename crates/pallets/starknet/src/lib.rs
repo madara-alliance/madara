@@ -214,7 +214,7 @@ pub mod pallet {
         match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
             Ok(state_update) => {
                 // nonces stored for accessing on `starknet_getNonce` RPC call.
-                let mut handler_nonce = storage_handler::nonce_mut().unwrap();
+                let mut handler_nonce = storage_handler::nonce_mut();
                 state_update
                     .state_diff
                     .nonces
@@ -225,7 +225,7 @@ pub mod pallet {
 
                 // contract address to class hash equivalence (used in
                 // `starknet_getClassHashAt`` rpc call)
-                let mut handler_class_hash = storage_handler::class_hash_mut().unwrap();
+                let mut handler_class_hash = storage_handler::class_hash_mut();
                 core::iter::empty()
                     .chain(state_update.state_diff.deployed_contracts)
                     .chain(state_update.state_diff.replaced_classes)
@@ -258,8 +258,8 @@ pub mod pallet {
     fn store_class_update<T: Config>(encoded_data: &Vec<u8>, block_number: u64) {
         match ClassUpdateWrapper::decode(&mut encoded_data.as_slice()) {
             Ok(class_update) => {
-                let mut handler_contract_class = storage_handler::contract_class_mut().unwrap();
-                let mut handler_contract_abi = storage_handler::contract_abi_mut().unwrap();
+                let mut handler_contract_class = storage_handler::contract_class_mut();
+                let mut handler_contract_abi = storage_handler::contract_abi_mut();
 
                 class_update.0.into_iter().for_each(
                     |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
@@ -410,7 +410,7 @@ pub mod pallet {
                 &StarknetStorageSchemaVersion::V1,
             );
 
-            let mut handler_class_hash = storage_handler::class_hash_mut().unwrap();
+            let mut handler_class_hash = storage_handler::class_hash_mut();
             self.contracts.iter().for_each(|(contract_address, class_hash)| {
                 handler_class_hash.insert(contract_address, class_hash).unwrap();
             });
@@ -993,8 +993,8 @@ impl<T: Config> Pallet<T> {
 
                 let block_hash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
 
-                let mut handler_block_number = storage_handler::block_number_mut().unwrap();
-                let mut handler_block_hash = storage_handler::block_hash_mut().unwrap();
+                let mut handler_block_number = storage_handler::block_number_mut();
+                let mut handler_block_hash = storage_handler::block_hash_mut();
 
                 handler_block_number.insert(&block_hash, block_number).unwrap();
                 handler_block_hash.insert(block_number, &block_hash).unwrap();
