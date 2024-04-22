@@ -185,6 +185,24 @@ impl Column {
             BonsaiClassesTrie,
             BonsaiClassesFlat,
             BonsaiClassesLog,
+            ContractClassesTrie,
+            ContractClassesFlat,
+            ContractClassesLog,
+            ContractAbiTrie,
+            ContractAbiFlat,
+            ContractAbiLog,
+            BlockHashToNumberTrie,
+            BlockHashToNumberFlat,
+            BlockHashToNumberLog,
+            BlockNumberToHashTrie,
+            BlockNumberToHashFlat,
+            BlockNumberToHashLog,
+            ContractAddressToClassHashTrie,
+            ContractAddressToClassHashFlat,
+            ContractAddressToClassHashLog,
+            NonceTrie,
+            NonceFlat,
+            NonceLog,
         ]
     };
     pub const NUM_COLUMNS: usize = Self::ALL.len();
@@ -245,7 +263,11 @@ pub(crate) trait DatabaseExt {
 
 impl DatabaseExt for DB {
     fn get_column(&self, col: Column) -> Arc<BoundColumnFamily<'_>> {
-        self.cf_handle(col.rocksdb_name()).expect("column not inititalized")
+        let name = col.rocksdb_name();
+        match self.cf_handle(name) {
+            Some(column) => column,
+            None => panic!("column {name} not initialized"),
+        }
     }
 }
 

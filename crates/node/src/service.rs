@@ -117,6 +117,8 @@ where
         Arc<MadaraBackend>,
     ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>,
 {
+    let deoxys_backend = DeoxysBackend::open(&config.database, &db_config_dir(config), cache_more_things).unwrap();
+
     let telemetry = config
         .telemetry_endpoints
         .clone()
@@ -178,8 +180,6 @@ where
         select_chain.clone(),
         telemetry.as_ref().map(|x| x.handle()),
     )?;
-
-    let deoxys_backend = DeoxysBackend::open(&config.database, &db_config_dir(config), cache_more_things).unwrap();
 
     let (import_queue, block_import) = build_import_queue(
         client.clone(),

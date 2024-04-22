@@ -10,15 +10,15 @@ use parity_scale_codec::{Decode, Encode};
 
 use super::{DeoxysStorageError, StorageType};
 use crate::bonsai_db::BonsaiDb;
+use crate::DeoxysBackend;
 
-pub struct BlockHashView<'a>(pub(crate) RwLockReadGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
+pub struct BlockHashView;
 
 pub struct BlockHashViewMut<'a>(pub(crate) RwLockWriteGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
 
-impl BlockHashView<'_> {
+impl BlockHashView {
     pub fn get(self, block_number: u64) -> Result<Option<Felt252Wrapper>, DeoxysStorageError> {
-        let block_hash = self
-            .0
+        let block_hash = block_hash_db()
             .get(&key(block_number))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockHash))?
             .map(|bytes| Felt252Wrapper::decode(&mut &bytes[..]));
@@ -31,8 +31,7 @@ impl BlockHashView<'_> {
     }
 
     pub fn contains(self, block_number: u64) -> Result<bool, DeoxysStorageError> {
-        Ok(self
-            .0
+        Ok(block_hash_db()
             .contains(&key(block_number))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockHash))?)
     }
@@ -60,4 +59,8 @@ impl BlockHashViewMut<'_> {
 
 fn key(key: u64) -> BitVec<u8, Msb0> {
     key.to_be_bytes().view_bits()[5..].to_owned()
+}
+
+fn block_hash_db<'a>() -> RwLockReadGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>> {
+    DeoxysBackend::block_hash().read().unwrap()
 }

@@ -125,11 +125,8 @@ fn try_get_funtion_invocation_from_call_info(
         *cached_hash
     } else {
         // Compute and cache the class hash
-        let Ok(handler_class_hash) = storage_handler::class_hash() else {
-            return Err(TryFuntionInvocationFromCallInfoError::ContractNotFound);
-        };
-
-        let Ok(Some(class_hash)) = handler_class_hash.get_at(&call_info.call.storage_address, block_number) else {
+        let Ok(Some(class_hash)) = storage_handler::class_hash().get_at(&call_info.call.storage_address, block_number)
+        else {
             return Err(TryFuntionInvocationFromCallInfoError::ContractNotFound);
         };
 
@@ -325,12 +322,8 @@ where
 
             match declare_tx {
                 stx::DeclareTransaction::V0(_) | stx::DeclareTransaction::V1(_) => {
-                    let Ok(handler_contract_class) = storage_handler::contract_class() else {
-                        log::error!("Failed to retrieve contract class from hash '{class_hash}'");
-                        return Err(StarknetRpcApiError::InternalServerError.into());
-                    };
-
-                    let Ok(Some(contract_class)) = handler_contract_class.get_at(&class_hash, block_number) else {
+                    let Ok(Some(contract_class)) = storage_handler::contract_class().get_at(&class_hash, block_number)
+                    else {
                         log::error!("Failed to retrieve contract class from hash '{class_hash}'");
                         return Err(StarknetRpcApiError::InternalServerError.into());
                     };
@@ -429,16 +422,10 @@ where
 pub fn block_number_by_id(id: BlockId) -> u64 {
     match id {
         BlockId::Number(number) => number,
-        BlockId::Hash(block_hash) => {
-            let Ok(handler_block_number) = storage_handler::block_number() else {
-                return get_highest_block_hash_and_number().1;
-            };
-
-            match handler_block_number.get(&Felt252Wrapper(block_hash)) {
-                Ok(Some(block_number)) => block_number,
-                _ => get_highest_block_hash_and_number().1,
-            }
-        }
+        BlockId::Hash(block_hash) => match storage_handler::block_number().get(&Felt252Wrapper(block_hash)) {
+            Ok(Some(block_number)) => block_number,
+            _ => get_highest_block_hash_and_number().1,
+        },
         BlockId::Tag(_) => get_highest_block_hash_and_number().1,
     }
 }

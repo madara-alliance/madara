@@ -73,12 +73,7 @@ where
     let contract_address = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
     let key = StorageKey(PatriciaKey(StarkFelt(key.to_bytes_be())));
 
-    let Ok(handler_contract_storage) = storage_handler::contract_storage_trie() else {
-        log::error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}'");
-        return Err(StarknetRpcApiError::ContractNotFound.into());
-    };
-
-    let Ok(Some(value)) = handler_contract_storage.get_at(&contract_address, &key, block_number) else {
+    let Ok(Some(value)) = storage_handler::contract_storage_trie().get_at(&contract_address, &key, block_number) else {
         log::error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}'");
         return Err(StarknetRpcApiError::ContractNotFound.into());
     };

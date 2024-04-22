@@ -186,12 +186,8 @@ async fn fetch_class(
 /// Since a change in class definition will result in a change in class hash,
 /// this means we only need to check for class hashes in the db.
 fn is_missing_class(class_hash: &FieldElement) -> bool {
-    let Ok(handler_contract_class) = storage_handler::contract_class() else {
-        return false;
-    };
-
     let class_hash = ClassHash(StarkFelt(class_hash.to_bytes_be()));
-    match handler_contract_class.contains(&class_hash) {
+    match storage_handler::contract_class().contains(&class_hash) {
         Ok(_) => true,
         _ => false,
     }

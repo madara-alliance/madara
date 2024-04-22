@@ -10,18 +10,18 @@ use starknet_api::core::{ContractAddress, Nonce};
 
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
 use crate::bonsai_db::BonsaiDb;
+use crate::DeoxysBackend;
 
-pub struct NonceView<'a>(pub(crate) RwLockReadGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
+pub struct NonceView;
 pub struct NonceViewMut<'a>(pub(crate) RwLockWriteGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
 
-impl StorageView for NonceView<'_> {
+impl StorageView for NonceView {
     type KEY = ContractAddress;
 
     type VALUE = Nonce;
 
     fn get(self, contract_address: &Self::KEY) -> Result<Option<Self::VALUE>, super::DeoxysStorageError> {
-        let nonce = self
-            .0
+        let nonce = nonce_db()
             .get(&key(contract_address))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Nonce))?
             .map(|bytes| Nonce::decode(&mut &bytes[..]));
@@ -38,8 +38,7 @@ impl StorageView for NonceView<'_> {
         contract_address: &Self::KEY,
         block_number: u64,
     ) -> Result<Option<Self::VALUE>, super::DeoxysStorageError> {
-        let nonce = self
-            .0
+        let nonce = nonce_db()
             .get_at(&key(contract_address), BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Nonce))?
             .map(|bytes| Nonce::decode(&mut &bytes[..]));
@@ -52,7 +51,7 @@ impl StorageView for NonceView<'_> {
     }
 
     fn contains(self, contract_address: &Self::KEY) -> Result<bool, super::DeoxysStorageError> {
-        self.0
+        nonce_db()
             .contains(&key(contract_address))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Nonce))
     }
@@ -84,4 +83,8 @@ impl StorageViewRevetible for NonceViewMut<'_> {
 
 fn key(contract_address: &ContractAddress) -> BitVec<u8, Msb0> {
     contract_address.bytes().view_bits()[5..].to_owned()
+}
+
+fn nonce_db<'a>() -> RwLockReadGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>> {
+    DeoxysBackend::nonces().read().unwrap()
 }

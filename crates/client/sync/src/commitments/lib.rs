@@ -153,7 +153,6 @@ pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt252
         || contract_trie_root(&csd, block_number).expect("Failed to compute contract root"),
         || class_trie_root(&csd, block_number).expect("Failed to compute class root"),
     );
-
     calculate_state_root::<PoseidonHasher>(contract_trie_root, class_trie_root)
 }
 
@@ -171,29 +170,28 @@ pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt252
 fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
     // NOTE: handlers implicitely acquire a lock on their respective tries
     // for the duration of their livetimes
-    let mut contract_write = storage_handler::contract_trie_mut()?;
-    let mut storage_write = storage_handler::contract_storage_trie_mut()?;
+    let mut handler_contract = storage_handler::contract_trie_mut()?;
+    let mut handler_storage = storage_handler::contract_storage_trie_mut()?;
 
     // First we insert the contract storage changes
     for (contract_address, updates) in csd.storage_updates.iter() {
-        storage_write.init(contract_address)?;
+        handler_storage.init(contract_address)?;
 
         for (key, value) in updates {
-            storage_write.insert(contract_address, key, *value)?;
+            handler_storage.insert(contract_address, key, *value)?;
         }
     }
 
     // Then we commit them
-    storage_write.commit(block_number)?;
+    handler_storage.commit(block_number)?;
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
-    let storage_read = storage_handler::contract_storage_trie()?;
     let updates = csd
         .storage_updates
         .iter()
         .par_bridge()
         .map(|(contract_address, _)| {
-            let storage_root = storage_read.root(contract_address).unwrap();
+            let storage_root = handler_storage.root(contract_address).unwrap();
             let leaf_hash = contract_state_leaf_hash(csd, contract_address, storage_root, block_number);
 
             (contract_address, leaf_hash)
@@ -201,10 +199,10 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
         .collect::<Vec<_>>();
 
     // then we compute the contract root by applying the changes so far
-    contract_write.update(updates)?;
-    contract_write.commit(block_number)?;
+    handler_contract.update(updates)?;
+    handler_contract.commit(block_number)?;
 
-    Ok(storage_handler::contract_trie()?.root()?.into())
+    Ok(handler_contract.root()?.into())
 }
 
 fn contract_state_leaf_hash(
@@ -232,10 +230,7 @@ fn class_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress, blo
     let class_hash = match csd.address_to_class_hash.get(contract_address) {
         Some(class_hash) => *class_hash,
         None => {
-            let Ok(handler_class_hash) = storage_handler::class_hash() else {
-                return FieldElement::ZERO;
-            };
-            let Ok(Some(class_hash)) = handler_class_hash.get_at(contract_address, block_number) else {
+            let Ok(Some(class_hash)) = storage_handler::class_hash().get_at(contract_address, block_number) else {
                 return FieldElement::ZERO;
             };
 
@@ -263,7 +258,7 @@ lazy_static! {
 ///
 /// The class root.
 fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
-    let mut class_write = storage_handler::class_trie_mut()?;
+    let mut handler_class = storage_handler::class_trie_mut()?;
 
     let updates = csd
         .class_hash_to_compiled_class_hash
@@ -278,9 +273,9 @@ fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt2
         })
         .collect::<Vec<_>>();
 
-    class_write.init()?;
-    class_write.update(updates)?;
-    class_write.commit(block_number)?;
+    handler_class.init()?;
+    handler_class.update(updates)?;
+    handler_class.commit(block_number)?;
 
-    Ok(storage_handler::class_trie()?.root()?.into())
+    Ok(handler_class.root()?.into())
 }

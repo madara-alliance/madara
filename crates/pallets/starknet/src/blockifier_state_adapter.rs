@@ -47,23 +47,13 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
                 let block_number =
                     UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
 
-                let Ok(handler_storage) = storage_handler::contract_storage_trie() else {
-                    return Err(StateError::StateReadError(format!(
+                match storage_handler::contract_storage_trie().get_at(&contract_address, &key, block_number) {
+                    Ok(Some(value)) => Ok(StarkFelt(value.to_bytes_be())),
+                    Ok(None) => Ok(StarkFelt::ZERO),
+                    Err(_) => Err(StateError::StateReadError(format!(
                         "Failed to retrieve storage value for contract {} at key {}",
                         contract_address.0.0, key.0.0
-                    )));
-                };
-
-                let Ok(value) = handler_storage.get_at(&contract_address, &key, block_number) else {
-                    return Err(StateError::StateReadError(format!(
-                        "Failed to retrieve storage value for contract {} at key {}",
-                        contract_address.0.0, key.0.0
-                    )));
-                };
-
-                match value {
-                    Some(value) => Ok(StarkFelt(value.to_bytes_be())),
-                    None => Ok(StarkFelt::ZERO),
+                    ))),
                 }
             }
         }
@@ -76,23 +66,13 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
                 let block_number =
                     UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
 
-                let Ok(handler_nonce) = storage_handler::nonce() else {
-                    return Err(StateError::StateReadError(format!(
-                        "Failed to retrive nonce for contract {}",
-                        contract_address.0.0
-                    )));
-                };
-
-                let Ok(nonce) = handler_nonce.get_at(&contract_address, block_number) else {
-                    return Err(StateError::StateReadError(format!(
+                match storage_handler::nonce().get_at(&contract_address, block_number) {
+                    Ok(Some(nonce)) => Ok(nonce),
+                    Ok(None) => Ok(Nonce::default()),
+                    Err(_) => Err(StateError::StateReadError(format!(
                         "Failed to retrieve nonce for contract {}",
                         contract_address.0.0
-                    )));
-                };
-
-                match nonce {
-                    Some(nonce) => Ok(nonce),
-                    None => Ok(Nonce::default()),
+                    ))),
                 }
             }
         }
@@ -101,23 +81,13 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
         match self.class_hash_update.get(&contract_address).cloned() {
             Some(class_hash) => Ok(class_hash),
-            None => {
-                let Ok(handler_class_hash) = storage_handler::class_hash() else {
-                    return Err(StateError::StateReadError(format!(
-                        "failed to retrive class hash for contract address {}",
-                        contract_address.0.0
-                    )));
-                };
-
-                let Ok(Some(class_hash)) = handler_class_hash.get(&contract_address) else {
-                    return Err(StateError::StateReadError(format!(
-                        "failed to retrive class hash for contract address {}",
-                        contract_address.0.0
-                    )));
-                };
-
-                Ok(class_hash)
-            }
+            None => match storage_handler::class_hash().get(&contract_address) {
+                Ok(Some(class_hash)) => Ok(class_hash),
+                _ => Err(StateError::StateReadError(format!(
+                    "failed to retrive class hash for contract address {}",
+                    contract_address.0.0
+                ))),
+            },
         }
     }
 
@@ -128,15 +98,10 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
                 let block_number =
                     UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
 
-                let Ok(handler_contract_class) = storage_handler::contract_class() else {
-                    return Err(StateError::UndeclaredClassHash(class_hash));
-                };
-
-                let Ok(Some(contract_class)) = handler_contract_class.get_at(&class_hash, block_number) else {
-                    return Err(StateError::UndeclaredClassHash(class_hash));
-                };
-
-                Ok(contract_class)
+                match storage_handler::contract_class().get_at(&class_hash, block_number) {
+                    Ok(Some(contract_class)) => Ok(contract_class),
+                    _ => Err(StateError::UndeclaredClassHash(class_hash)),
+                }
             }
         }
     }

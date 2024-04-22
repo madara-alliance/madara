@@ -24,23 +24,12 @@ pub fn get_class(block_id: BlockId, class_hash: FieldElement) -> RpcResult<Contr
 
     let block_number = block_number_by_id(block_id);
 
-    let Ok(handler_contract_class) = storage_handler::contract_class() else {
+    let Ok(Some(contract_class)) = storage_handler::contract_class().get_at(&class_hash, block_number) else {
         log::error!("Failed to retrieve contract class from hash '{class_hash}'");
         return Err(StarknetRpcApiError::ClassHashNotFound.into());
     };
 
-    let Ok(Some(contract_class)) = handler_contract_class.get_at(&class_hash, block_number) else {
-        log::error!("Failed to retrieve contract class from hash '{class_hash}'");
-        return Err(StarknetRpcApiError::ClassHashNotFound.into());
-    };
-
-    // Blockifier classes do not store ABI, has to be retrieved separately
-    let Ok(handler_contract_abi) = storage_handler::contract_abi() else {
-        log::error!("Failed to retrieve contract ABI from hash '{class_hash}'");
-        return Err(StarknetRpcApiError::ClassHashNotFound.into());
-    };
-
-    let Ok(Some(contract_abi)) = handler_contract_abi.get_at(&class_hash, block_number) else {
+    let Ok(Some(contract_abi)) = storage_handler::contract_abi().get_at(&class_hash, block_number) else {
         log::error!("Failed to retrieve contract ABI from hash '{class_hash}'");
         return Err(StarknetRpcApiError::ClassHashNotFound.into());
     };

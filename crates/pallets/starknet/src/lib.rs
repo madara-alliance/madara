@@ -888,11 +888,7 @@ impl<T: Config> Pallet<T> {
     /// The block hash of the parent (previous) block or 0 if the current block is 0.
     #[inline(always)]
     pub fn parent_block_hash(current_block_number: u64) -> Felt252Wrapper {
-        let Ok(handler_block_hash) = storage_handler::block_hash() else {
-            return Felt252Wrapper::ZERO;
-        };
-
-        match handler_block_hash.get(current_block_number) {
+        match storage_handler::block_hash().get(current_block_number) {
             Ok(Some(block_hash)) => block_hash,
             _ => Felt252Wrapper::ZERO,
         }
@@ -930,10 +926,7 @@ impl<T: Config> Pallet<T> {
         // Get current block context
         let block_context = Self::get_block_context();
         // Get class hash
-        let class_hash = storage_handler::class_hash()
-            .map_err(|_| Error::<T>::ContractNotFound)?
-            .get(&address)
-            .map_err(|_| Error::<T>::ContractNotFound)?;
+        let class_hash = storage_handler::class_hash().get(&address).map_err(|_| Error::<T>::ContractNotFound)?;
 
         let entrypoint = CallEntryPoint {
             class_hash,
@@ -977,7 +970,6 @@ impl<T: Config> Pallet<T> {
     /// Returns a storage keys and values of a given contract
     pub fn get_storage_from(contract_address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
         Ok(storage_handler::contract_storage_trie()
-            .map_err(|_| Error::<T>::ContractNotFound)?
             .get_storage(&contract_address)
             .map_err(|_| Error::<T>::ContractNotFound)?)
     }

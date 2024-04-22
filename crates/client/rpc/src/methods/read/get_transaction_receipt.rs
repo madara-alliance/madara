@@ -322,12 +322,7 @@ where
     G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let Ok(handler_contract_class) = storage_handler::contract_class() else {
-        log::error!("Failed to retrieve contract class from hash '{class_hash}'");
-        return Err(StarknetRpcApiError::InternalServerError.into());
-    };
-
-    let Ok(Some(_contract_class)) = handler_contract_class.get_at(&class_hash, block_number) else {
+    let Ok(Some(_contract_class)) = storage_handler::contract_class().get_at(&class_hash, block_number) else {
         log::error!("Failed to retrieve contract class from hash '{class_hash}'");
         return Err(StarknetRpcApiError::InternalServerError.into());
     };
