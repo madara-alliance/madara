@@ -37,19 +37,40 @@ where
     let include_signature = block_number >= 61394;
 
     let signature_hash = match transaction {
-        Transaction::Invoke(invoke_tx) if include_signature => {
+        Transaction::Invoke(invoke_tx) => {
             // Include signatures for Invoke transactions or for all transactions
-            // starting from block 61394
             let signature = invoke_tx.signature();
 
             H::compute_hash_on_elements(
                 &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
             )
         }
-        _ => {
-            // Before block 61394, and for non-Invoke transactions, signatures are not included
-            H::compute_hash_on_elements(&[])
+        Transaction::Declare(declare_tx) => {
+            // Include signatures for Declare transactions if the block number is greater than 61394 (mainnet)
+            if include_signature {
+                let signature = declare_tx.signature();
+
+                H::compute_hash_on_elements(
+                    &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                )
+            } else {
+                H::compute_hash_on_elements(&[])
+            }
         }
+        Transaction::DeployAccount(deploy_account_tx) => {
+            // Include signatures for DeployAccount transactions if the block number is greater than 61394
+            // (mainnet)
+            if include_signature {
+                let signature = deploy_account_tx.signature();
+
+                H::compute_hash_on_elements(
+                    &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                )
+            } else {
+                H::compute_hash_on_elements(&[])
+            }
+        }
+        _ => H::compute_hash_on_elements(&[]),
     };
 
     H::hash_elements(

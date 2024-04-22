@@ -15,7 +15,7 @@ use starknet_core::utils::starknet_keccak;
 use starknet_crypto::FieldElement;
 
 use super::SIMULATE_TX_VERSION_OFFSET;
-use crate::LEGACY_BLOCK_NUMBER;
+use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK};
 
 const DECLARE_PREFIX: &[u8] = b"declare";
 const DEPLOY_ACCOUNT_PREFIX: &[u8] = b"deploy_account";
@@ -495,35 +495,36 @@ impl ComputeTransactionHash for L1HandlerTransaction {
         let entrypoint_selector = Felt252Wrapper::from(self.entry_point_selector).into();
         let calldata_hash = compute_hash_on_elements(&convert_calldata(self.calldata.clone()));
         let nonce = Felt252Wrapper::from(self.nonce).into();
+        let chain_id = chain_id.into();
 
-        if block_number > Some(LEGACY_BLOCK_NUMBER) && block_number.is_some() {
-            Felt252Wrapper(H::compute_hash_on_elements(&[
+        if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && block_number.is_some() {
+            Felt252Wrapper::from(H::compute_hash_on_elements(&[
                 invoke_prefix,
                 contract_address,
                 entrypoint_selector,
                 calldata_hash,
-                chain_id.into(),
+                chain_id,
             ]))
             .into()
         } else if block_number < Some(LEGACY_BLOCK_NUMBER) && block_number.is_some() {
-            Felt252Wrapper(H::compute_hash_on_elements(&[
+            Felt252Wrapper::from(H::compute_hash_on_elements(&[
                 prefix,
                 contract_address,
                 entrypoint_selector,
                 calldata_hash,
-                chain_id.into(),
+                chain_id,
                 nonce,
             ]))
             .into()
         } else {
-            Felt252Wrapper(H::compute_hash_on_elements(&[
+            Felt252Wrapper::from(H::compute_hash_on_elements(&[
                 prefix,
                 version,
                 contract_address,
                 entrypoint_selector,
                 calldata_hash,
-                FieldElement::ZERO, // fees are set to 0 on l1 handlerTx
-                chain_id.into(),
+                FieldElement::ZERO, // Fees are set to zero on L1 Handler txs
+                chain_id,
                 nonce,
             ]))
             .into()
