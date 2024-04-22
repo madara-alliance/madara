@@ -3,6 +3,7 @@ git # Deoxys Changelog
 ## Next release
 
 - feat(storage): started migrating storage to the bonsai-lib
+- fix: l1HandlerTx computed for commit
 - refactor: optimise get_events RPC
 - fix(root): fixed state commitments broken due to genesis loader
 - feat(docker): add dockerfile and docker-compose
