@@ -159,7 +159,7 @@ where
     let to = if to_block == Some(BlockId::Tag(BlockTag::Pending)) {
         latest + 1
     } else {
-        starknet.substrate_block_number_from_starknet_block(from_block.unwrap_or(BlockId::Number(0))).map_err(|e| {
+        starknet.substrate_block_number_from_starknet_block(to_block.unwrap_or(BlockId::Number(0))).map_err(|e| {
             log::error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?
