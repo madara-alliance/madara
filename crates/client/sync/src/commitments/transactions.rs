@@ -70,6 +70,7 @@ where
                 H::compute_hash_on_elements(&[])
             }
         }
+        Transaction::L1Handler(_) => H::compute_hash_on_elements(&[]),
         _ => H::compute_hash_on_elements(&[]),
     };
 

@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix: l1HandlerTx computed for commit
 - refactor: optimise get_events RPC
 - fix(root): fixed state commitments broken due to genesis loader
 - feat(docker): add dockerfile and docker-compose

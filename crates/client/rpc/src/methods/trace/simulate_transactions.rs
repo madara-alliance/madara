@@ -17,7 +17,6 @@ use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulatedTransaction, SimulationFlag,
 };
-use starknet_ff::FieldElement;
 
 use super::lib::ConvertCallInfoToExecuteInvocationError;
 use super::utils::tx_execution_infos_to_tx_trace;
@@ -103,8 +102,8 @@ fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
                 let overall_fee = fee.into();
 
                 let unit: PriceUnit = PriceUnit::Wei; //TODO(Tbelleng) : Get Price Unit from Tx
-                let data_gas_consumed = FieldElement::default();
-                let data_gas_price = FieldElement::default();
+                let data_gas_consumed = tx_exec_info.da_gas.l1_data_gas.into();
+                let data_gas_price = tx_exec_info.da_gas.l1_gas.into();
 
                 results.push(SimulatedTransaction {
                     transaction_trace,
