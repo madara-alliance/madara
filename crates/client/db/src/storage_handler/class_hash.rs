@@ -10,19 +10,18 @@ use starknet_api::core::{ClassHash, ContractAddress};
 
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
 use crate::bonsai_db::BonsaiDb;
-use crate::DeoxysBackend;
 
-pub struct ClassHashView;
-
+pub struct ClassHashView<'a>(pub(crate) RwLockReadGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
 pub struct ClassHashViewMut<'a>(pub(crate) RwLockWriteGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
 
-impl StorageView for ClassHashView {
+impl StorageView for ClassHashView<'_> {
     type KEY = ContractAddress;
 
     type VALUE = ClassHash;
 
     fn get(self, contract_address: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        let class_hash = class_hash_db()
+        let class_hash = self
+            .0
             .get(&conv_key(contract_address))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?
             .map(|bytes| ClassHash::decode(&mut &bytes[..]));
@@ -39,7 +38,8 @@ impl StorageView for ClassHashView {
         contract_address: &Self::KEY,
         block_number: u64,
     ) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        let class_hash = class_hash_db()
+        let class_hash = self
+            .0
             .get_at(&conv_key(contract_address), BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?
             .map(|bytes| ClassHash::decode(&mut &bytes[..]));
@@ -52,7 +52,8 @@ impl StorageView for ClassHashView {
     }
 
     fn contains(self, contract_address: &Self::KEY) -> Result<bool, DeoxysStorageError> {
-        Ok(class_hash_db()
+        Ok(self
+            .0
             .contains(&conv_key(contract_address))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?)
     }
@@ -86,8 +87,4 @@ impl StorageViewRevetible for ClassHashViewMut<'_> {
 
 fn conv_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
     key.0.0.0.view_bits()[5..].to_owned()
-}
-
-fn class_hash_db<'a>() -> RwLockReadGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>> {
-    DeoxysBackend::class_hash().read().unwrap()
 }

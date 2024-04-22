@@ -11,18 +11,27 @@ use starknet_types_core::hash::Pedersen;
 use super::{
     conv_contract_identifier, conv_contract_storage_key, conv_contract_value, DeoxysStorageError, StorageType, TrieType,
 };
-use crate::bonsai_db::BonsaiDb;
-use crate::DeoxysBackend;
+use crate::bonsai_db::{BonsaiDb, BonsaiTransaction};
 
-pub struct ContractStorageTrieView;
-pub struct ContractStorageTrieViewMut;
+pub struct ContractStorageTrieView<'a>(
+    pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
+);
+pub struct ContractStorageTrieViewMut<'a>(
+    pub(crate) RwLockWriteGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
+);
 
-impl ContractStorageTrieView {
+pub struct ContractStorageTrieViewAt {
+    pub(crate) storage: BonsaiStorage<BasicId, BonsaiTransaction<'static>, Pedersen>,
+
+    pub(crate) next_id: u64,
+}
+
+impl ContractStorageTrieView<'_> {
     pub fn get(&self, identifier: &ContractAddress, key: &StorageKey) -> Result<Option<Felt>, DeoxysStorageError> {
         let identifier = conv_contract_identifier(identifier);
         let key = conv_contract_storage_key(key);
 
-        contract_storage_trie_db()
+        self.0
             .get(identifier, &key)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))
     }
@@ -36,7 +45,7 @@ impl ContractStorageTrieView {
         let identifier = conv_contract_identifier(identifier);
         let key = conv_contract_storage_key(key);
 
-        contract_storage_trie_db()
+        self.0
             .get_at(identifier, &key, BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))
     }
@@ -45,7 +54,8 @@ impl ContractStorageTrieView {
         &self,
         identifier: &ContractAddress,
     ) -> Result<Vec<(StorageKey, StarkFelt)>, DeoxysStorageError> {
-        Ok(contract_storage_trie_db()
+        Ok(self
+            .0
             .get_key_value_pairs(conv_contract_identifier(identifier))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .into_iter()
@@ -57,24 +67,24 @@ impl ContractStorageTrieView {
         let identifier = conv_contract_identifier(identifier);
         let key = conv_contract_storage_key(key);
 
-        contract_storage_trie_db()
+        self.0
             .contains(identifier, &key)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))
     }
 
     pub fn root(&self, identifier: &ContractAddress) -> Result<Felt, DeoxysStorageError> {
-        contract_storage_trie_db()
+        self.0
             .root_hash(conv_contract_identifier(identifier))
             .map_err(|_| DeoxysStorageError::TrieRootError(TrieType::ContractStorage))
     }
 }
 
-impl ContractStorageTrieViewMut {
+impl ContractStorageTrieViewMut<'_> {
     pub fn get(&self, identifier: &ContractAddress, key: &StorageKey) -> Result<Option<Felt>, DeoxysStorageError> {
         let identifier = conv_contract_identifier(identifier);
         let key = conv_contract_storage_key(key);
 
-        contract_storage_trie_db_mut()
+        self.0
             .get(identifier, &key)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))
     }
@@ -88,7 +98,7 @@ impl ContractStorageTrieViewMut {
         let identifier = conv_contract_identifier(identifier);
         let key = conv_contract_storage_key(key);
 
-        contract_storage_trie_db_mut()
+        self.0
             .get_at(identifier, &key, BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))
     }
@@ -97,7 +107,8 @@ impl ContractStorageTrieViewMut {
         &self,
         identifier: &ContractAddress,
     ) -> Result<Vec<(StorageKey, StarkFelt)>, DeoxysStorageError> {
-        Ok(contract_storage_trie_db_mut()
+        Ok(self
+            .0
             .get_key_value_pairs(conv_contract_identifier(identifier))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .into_iter()
@@ -109,13 +120,13 @@ impl ContractStorageTrieViewMut {
         let identifier = conv_contract_identifier(identifier);
         let key = conv_contract_storage_key(key);
 
-        contract_storage_trie_db_mut()
+        self.0
             .contains(identifier, &key)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))
     }
 
     pub fn root(&self, identifier: &ContractAddress) -> Result<Felt, DeoxysStorageError> {
-        contract_storage_trie_db_mut()
+        self.0
             .root_hash(conv_contract_identifier(identifier))
             .map_err(|_| DeoxysStorageError::TrieRootError(TrieType::ContractStorage))
     }
@@ -129,25 +140,25 @@ impl ContractStorageTrieViewMut {
         let key = conv_contract_storage_key(key);
         let value = conv_contract_value(value);
 
-        contract_storage_trie_db_mut()
+        self.0
             .insert(identifier, &key, &value)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::ContractStorage))
     }
 
     pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        contract_storage_trie_db_mut()
+        self.0
             .transactional_commit(BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractStorage))
     }
 
     pub fn init(&mut self, identifier: &ContractAddress) -> Result<(), DeoxysStorageError> {
-        contract_storage_trie_db_mut()
+        self.0
             .init_tree(conv_contract_identifier(identifier))
             .map_err(|_| DeoxysStorageError::TrieInitError(TrieType::ContractStorage))
     }
 
     pub fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        contract_storage_trie_db_mut()
+        self.0
             .revert_to(BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractStorage, block_number))
     }
@@ -155,12 +166,4 @@ impl ContractStorageTrieViewMut {
 
 fn starkfelt(bytes: &[u8]) -> StarkFelt {
     StarkFelt(Felt::from_bytes_be_slice(bytes).to_bytes_be())
-}
-
-fn contract_storage_trie_db<'a>() -> RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>> {
-    DeoxysBackend::bonsai_storage().read().unwrap()
-}
-
-fn contract_storage_trie_db_mut<'a>() -> RwLockWriteGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>> {
-    DeoxysBackend::bonsai_storage().write().unwrap()
 }

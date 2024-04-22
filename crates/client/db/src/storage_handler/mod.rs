@@ -137,20 +137,28 @@ pub trait StorageViewRevetible: StorageViewMut {
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
-pub fn contract_trie_mut() -> Result<ContractTrieViewMut, DeoxysStorageError> {
-    Ok(ContractTrieViewMut)
+pub fn contract_trie_mut<'a>() -> Result<ContractTrieViewMut<'a>, DeoxysStorageError> {
+    Ok(ContractTrieViewMut(
+        DeoxysBackend::bonsai_contract()
+            .write()
+            .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Contract))?,
+    ))
 }
 
-pub fn contract_trie() -> ContractTrieView {
-    ContractTrieView
+pub fn contract_trie<'a>() -> ContractTrieView<'a> {
+    ContractTrieView(DeoxysBackend::bonsai_contract().read().unwrap())
 }
 
-pub fn contract_storage_trie_mut() -> Result<ContractStorageTrieViewMut, DeoxysStorageError> {
-    Ok(ContractStorageTrieViewMut)
+pub fn contract_storage_trie_mut<'a>() -> Result<ContractStorageTrieViewMut<'a>, DeoxysStorageError> {
+    Ok(ContractStorageTrieViewMut(
+        DeoxysBackend::bonsai_storage()
+            .write()
+            .map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::ContractStorage))?,
+    ))
 }
 
-pub fn contract_storage_trie() -> ContractStorageTrieView {
-    ContractStorageTrieView
+pub fn contract_storage_trie<'a>() -> ContractStorageTrieView<'a> {
+    ContractStorageTrieView(DeoxysBackend::bonsai_storage().read().unwrap())
 }
 
 pub fn contract_class_mut<'a>() -> Result<ContractClassViewMut<'a>, DeoxysStorageError> {
@@ -161,8 +169,8 @@ pub fn contract_class_mut<'a>() -> Result<ContractClassViewMut<'a>, DeoxysStorag
     ))
 }
 
-pub fn contract_class() -> ContractClassView {
-    ContractClassView
+pub fn contract_class<'a>() -> ContractClassView<'a> {
+    ContractClassView(DeoxysBackend::contract_class().read().unwrap())
 }
 
 pub fn contract_abi_mut<'a>() -> Result<ContractAbiViewMut<'a>, DeoxysStorageError> {
@@ -173,16 +181,18 @@ pub fn contract_abi_mut<'a>() -> Result<ContractAbiViewMut<'a>, DeoxysStorageErr
     ))
 }
 
-pub fn contract_abi() -> ContractAbiView {
-    ContractAbiView
+pub fn contract_abi<'a>() -> ContractAbiView<'a> {
+    ContractAbiView(DeoxysBackend::contract_abi().read().unwrap())
 }
 
-pub fn class_trie_mut() -> Result<ClassTrieViewMut, DeoxysStorageError> {
-    Ok(ClassTrieViewMut)
+pub fn class_trie_mut<'a>() -> Result<ClassTrieViewMut<'a>, DeoxysStorageError> {
+    Ok(ClassTrieViewMut(
+        DeoxysBackend::bonsai_class().write().map_err(|_| DeoxysStorageError::StoraveViewError(StorageType::Class))?,
+    ))
 }
 
-pub fn class_trie() -> ClassTrieView {
-    ClassTrieView
+pub fn class_trie<'a>() -> ClassTrieView<'a> {
+    ClassTrieView(DeoxysBackend::bonsai_class().read().unwrap())
 }
 
 pub fn class_hash_mut<'a>() -> Result<ClassHashViewMut<'a>, DeoxysStorageError> {
@@ -193,8 +203,8 @@ pub fn class_hash_mut<'a>() -> Result<ClassHashViewMut<'a>, DeoxysStorageError> 
     ))
 }
 
-pub fn class_hash() -> ClassHashView {
-    ClassHashView
+pub fn class_hash<'a>() -> ClassHashView<'a> {
+    ClassHashView(DeoxysBackend::class_hash().read().unwrap())
 }
 
 pub fn block_number_mut<'a>() -> Result<BlockNumberViewMut<'a>, DeoxysStorageError> {
@@ -205,8 +215,8 @@ pub fn block_number_mut<'a>() -> Result<BlockNumberViewMut<'a>, DeoxysStorageErr
     ))
 }
 
-pub fn block_number() -> BlockNumberView {
-    BlockNumberView
+pub fn block_number<'a>() -> BlockNumberView<'a> {
+    BlockNumberView(DeoxysBackend::block_number().read().unwrap())
 }
 
 pub fn block_hash_mut<'a>() -> Result<BlockHashViewMut<'a>, DeoxysStorageError> {
@@ -217,8 +227,8 @@ pub fn block_hash_mut<'a>() -> Result<BlockHashViewMut<'a>, DeoxysStorageError> 
     ))
 }
 
-pub fn block_hash() -> BlockHashView {
-    BlockHashView
+pub fn block_hash<'a>() -> BlockHashView<'a> {
+    BlockHashView(DeoxysBackend::block_hash().read().unwrap())
 }
 
 pub fn nonce_mut<'a>() -> Result<NonceViewMut<'a>, DeoxysStorageError> {
@@ -227,8 +237,8 @@ pub fn nonce_mut<'a>() -> Result<NonceViewMut<'a>, DeoxysStorageError> {
     ))
 }
 
-pub fn nonce<'a>() -> NonceView {
-    NonceView
+pub fn nonce<'a>() -> NonceView<'a> {
+    NonceView(DeoxysBackend::nonces().read().unwrap())
 }
 
 fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {
