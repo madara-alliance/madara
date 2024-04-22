@@ -3,13 +3,29 @@
 use blockifier::execution::contract_class::ContractClass as ContractClassBlockifier;
 #[cfg(feature = "parity-scale-codec")]
 use parity_scale_codec::{Decode, Encode};
-use starknet_api::core::ClassHash;
+use starknet_api::core::{ClassHash, Nonce};
 
 use crate::ContractAbi;
 
 #[doc(hidden)]
 pub extern crate alloc;
 use alloc::vec::Vec;
+
+#[derive(Debug)]
+#[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
+pub struct StorageContractClassData {
+    pub contract_class: ContractClassBlockifier,
+    pub abi: ContractAbi,
+    pub sierra_program_length: u64,
+    pub abi_length: u64,
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
+pub struct StorageContractData {
+    pub class_hash: ClassHash,
+    pub nonce: Nonce,
+}
 
 #[derive(Debug)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]

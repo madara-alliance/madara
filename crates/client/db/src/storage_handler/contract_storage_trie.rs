@@ -126,12 +126,12 @@ impl ContractStorageTrieViewMut<'_> {
     }
     pub fn insert(
         &mut self,
-        identifier: &ContractAddress,
-        key: &StorageKey,
+        identifier: ContractAddress,
+        key: StorageKey,
         value: StarkFelt,
     ) -> Result<(), DeoxysStorageError> {
-        let identifier = conv_contract_identifier(identifier);
-        let key = conv_contract_storage_key(key);
+        let identifier = conv_contract_identifier(&identifier);
+        let key = conv_contract_storage_key(&key);
         let value = conv_contract_value(value);
 
         self.0

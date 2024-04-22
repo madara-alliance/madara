@@ -11,26 +11,22 @@ use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
 use thiserror::Error;
 
-use self::block_hash::{BlockHashView, BlockHashViewMut};
-use self::block_number::{BlockNumberView, BlockNumberViewMut};
-use self::class_hash::{ClassHashView, ClassHashViewMut};
+use self::block_hash::BlockHashView;
+use self::block_number::BlockNumberView;
 use self::class_trie::{ClassTrieView, ClassTrieViewMut};
-use self::contract_abi::{ContractAbiView, ContractAbiViewMut};
-use self::contract_class::{ContractClassView, ContractClassViewMut};
+use self::contract_class_data::{ContractClassDataView, ContractClassDataViewMut};
+use self::contract_data::{ContractDataView, ContractDataViewMut};
 use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
 use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
-use self::nonce::{NonceView, NonceViewMut};
 use crate::DeoxysBackend;
 
 pub mod block_hash;
 pub mod block_number;
-mod class_hash;
 mod class_trie;
-mod contract_abi;
-mod contract_class;
+mod contract_class_data;
+mod contract_data;
 mod contract_storage_trie;
 mod contract_trie;
-mod nonce;
 pub mod query;
 
 pub mod bonsai_identifier {
@@ -76,7 +72,7 @@ pub enum StorageType {
     Contract,
     ContractStorage,
     Class,
-    ContractClass,
+    ContractClassData,
     ContractAbi,
     BlockNumber,
     BlockHash,
@@ -102,7 +98,7 @@ impl Display for StorageType {
             StorageType::Contract => "contract",
             StorageType::ContractStorage => "contract storage",
             StorageType::Class => "class storage",
-            StorageType::ContractClass => "class definition storage",
+            StorageType::ContractClassData => "class definition storage",
             StorageType::ContractAbi => "class abi storage",
             StorageType::BlockNumber => "block number storage",
             StorageType::BlockHash => "block hash storage",
@@ -129,12 +125,6 @@ pub trait StorageView {
     /// * `key`: identifier used to retrieve the data.
     fn get(self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError>;
 
-    /// Retrieves data from storage at a specific state in the chain.
-    ///
-    /// * `key`: identifier used to retrieve the data.
-    /// * `block_number`: point in the chain at which to sample the data.
-    fn get_at(self, key: &Self::KEY, block_number: u64) -> Result<Option<Self::VALUE>, DeoxysStorageError>;
-
     /// Checks if a value is stored in the backend database for the given key.
     ///
     /// * `key`: identifier use to check for data existence.
@@ -154,7 +144,7 @@ pub trait StorageViewMut {
     ///
     /// * `key`: identifier used to inser data.
     /// * `value`: encodable data to save to the database.
-    fn insert(&mut self, key: &Self::KEY, value: &Self::VALUE) -> Result<(), DeoxysStorageError>;
+    fn insert(&mut self, key: Self::KEY, value: Self::VALUE) -> Result<(), DeoxysStorageError>;
 
     /// Applies all changes up to this point.
     ///
@@ -190,22 +180,6 @@ pub fn contract_storage_trie<'a>() -> ContractStorageTrieView<'a> {
     ContractStorageTrieView(DeoxysBackend::bonsai_storage().read().unwrap())
 }
 
-pub fn contract_class_mut<'a>() -> ContractClassViewMut<'a> {
-    ContractClassViewMut(DeoxysBackend::contract_class().write().unwrap())
-}
-
-pub fn contract_class<'a>() -> ContractClassView<'a> {
-    ContractClassView(DeoxysBackend::contract_class().read().unwrap())
-}
-
-pub fn contract_abi_mut<'a>() -> ContractAbiViewMut<'a> {
-    ContractAbiViewMut(DeoxysBackend::contract_abi().write().unwrap())
-}
-
-pub fn contract_abi<'a>() -> ContractAbiView<'a> {
-    ContractAbiView(DeoxysBackend::contract_abi().read().unwrap())
-}
-
 pub fn class_trie_mut<'a>() -> ClassTrieViewMut<'a> {
     ClassTrieViewMut(DeoxysBackend::bonsai_class().write().unwrap())
 }
@@ -214,44 +188,32 @@ pub fn class_trie<'a>() -> ClassTrieView<'a> {
     ClassTrieView(DeoxysBackend::bonsai_class().read().unwrap())
 }
 
-pub fn class_hash_mut<'a>() -> ClassHashViewMut<'a> {
-    ClassHashViewMut(DeoxysBackend::class_hash().write().unwrap())
+pub fn contract_class_data_mut() -> ContractClassDataViewMut {
+    ContractClassDataViewMut::default()
 }
 
-pub fn class_hash<'a>() -> ClassHashView<'a> {
-    ClassHashView(DeoxysBackend::class_hash().read().unwrap())
+pub fn contract_class_data() -> ContractClassDataView {
+    ContractClassDataView
 }
 
-pub fn block_number_mut<'a>() -> BlockNumberViewMut<'a> {
-    BlockNumberViewMut(DeoxysBackend::block_number().write().unwrap())
+pub fn contract_data_mut() -> ContractDataViewMut {
+    ContractDataViewMut::default()
 }
 
-pub fn block_number<'a>() -> BlockNumberView<'a> {
-    BlockNumberView(DeoxysBackend::block_number().read().unwrap())
+pub fn contract_data() -> ContractDataView {
+    ContractDataView
 }
 
-pub fn block_hash_mut<'a>() -> BlockHashViewMut<'a> {
-    BlockHashViewMut(DeoxysBackend::block_hash().write().unwrap())
+pub fn block_number() -> BlockNumberView {
+    BlockNumberView
 }
 
-pub fn block_hash<'a>() -> BlockHashView<'a> {
-    BlockHashView(DeoxysBackend::block_hash().read().unwrap())
-}
-
-pub fn nonce_mut<'a>() -> NonceViewMut<'a> {
-    NonceViewMut(DeoxysBackend::nonces().write().unwrap())
-}
-
-pub fn nonce<'a>() -> NonceView<'a> {
-    NonceView(DeoxysBackend::nonces().read().unwrap())
+pub fn block_hash<'a>() -> BlockHashView {
+    BlockHashView
 }
 
 fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {
     identifier.0.0.0.as_bytes_ref()
-}
-
-fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
-    key.0.0.0.as_bits()[5..].to_owned()
 }
 
 fn conv_contract_storage_key(key: &StorageKey) -> BitVec<u8, Msb0> {

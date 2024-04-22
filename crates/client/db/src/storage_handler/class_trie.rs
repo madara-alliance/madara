@@ -1,5 +1,8 @@
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
+use bitvec::prelude::Msb0;
+use bitvec::vec::BitVec;
+use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
 use starknet_api::core::ClassHash;
@@ -27,12 +30,6 @@ impl StorageView for ClassTrieView<'_> {
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Class))
     }
 
-    fn get_at(self, class_hash: &Self::KEY, block_number: u64) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        self.0
-            .get_at(bonsai_identifier::CLASS, &conv_class_key(class_hash), BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Class))
-    }
-
     fn contains(self, class_hash: &Self::KEY) -> Result<bool, DeoxysStorageError> {
         self.0
             .contains(bonsai_identifier::CLASS, &conv_class_key(class_hash))
@@ -57,12 +54,6 @@ impl StorageView for ClassTrieViewMut<'_> {
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Class))
     }
 
-    fn get_at(self, class_hash: &Self::KEY, block_number: u64) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        self.0
-            .get_at(bonsai_identifier::CLASS, &conv_class_key(class_hash), BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Class))
-    }
-
     fn contains(self, class_hash: &Self::KEY) -> Result<bool, DeoxysStorageError> {
         self.0
             .contains(bonsai_identifier::CLASS, &conv_class_key(class_hash))
@@ -75,9 +66,9 @@ impl StorageViewMut for ClassTrieViewMut<'_> {
 
     type VALUE = Felt;
 
-    fn insert(&mut self, class_hash: &Self::KEY, leaf_hash: &Self::VALUE) -> Result<(), DeoxysStorageError> {
+    fn insert(&mut self, class_hash: Self::KEY, leaf_hash: Self::VALUE) -> Result<(), DeoxysStorageError> {
         self.0
-            .insert(bonsai_identifier::CLASS, &conv_class_key(class_hash), leaf_hash)
+            .insert(bonsai_identifier::CLASS, &conv_class_key(&class_hash), &leaf_hash)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))
     }
 

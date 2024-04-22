@@ -1,14 +1,15 @@
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
+use bitvec::prelude::Msb0;
+use bitvec::vec::BitVec;
+use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 
-use super::{
-    bonsai_identifier, conv_contract_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut, TrieType,
-};
+use super::{bonsai_identifier, DeoxysStorageError, StorageType, StorageView, StorageViewMut, TrieType};
 use crate::bonsai_db::BonsaiDb;
 
 pub struct ContractTrieView<'a>(pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>);
@@ -24,16 +25,6 @@ impl StorageView for ContractTrieView<'_> {
     fn get(self, contract_address: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
         self.0
             .get(bonsai_identifier::CONTRACT, &conv_contract_key(contract_address))
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))
-    }
-
-    fn get_at(
-        self,
-        contract_address: &Self::KEY,
-        block_number: u64,
-    ) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        self.0
-            .get_at(bonsai_identifier::CONTRACT, &conv_contract_key(contract_address), BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))
     }
 
@@ -61,16 +52,6 @@ impl StorageView for ContractTrieViewMut<'_> {
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))
     }
 
-    fn get_at(
-        self,
-        contract_address: &Self::KEY,
-        block_number: u64,
-    ) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        self.0
-            .get_at(bonsai_identifier::CONTRACT, &conv_contract_key(contract_address), BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))
-    }
-
     fn contains(self, contract_address: &Self::KEY) -> Result<bool, DeoxysStorageError> {
         self.0
             .contains(bonsai_identifier::CONTRACT, &conv_contract_key(contract_address))
@@ -83,9 +64,9 @@ impl StorageViewMut for ContractTrieViewMut<'_> {
 
     type VALUE = Felt;
 
-    fn insert(&mut self, contract_address: &Self::KEY, leaf_hash: &Self::VALUE) -> Result<(), DeoxysStorageError> {
+    fn insert(&mut self, contract_address: Self::KEY, leaf_hash: Self::VALUE) -> Result<(), DeoxysStorageError> {
         self.0
-            .insert(bonsai_identifier::CONTRACT, &conv_contract_key(contract_address), leaf_hash)
+            .insert(bonsai_identifier::CONTRACT, &conv_contract_key(&contract_address), &leaf_hash)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))
     }
 
@@ -111,4 +92,8 @@ impl ContractTrieViewMut<'_> {
 
         Ok(())
     }
+}
+
+fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
+    key.0.0.0.as_bits()[5..].to_owned()
 }

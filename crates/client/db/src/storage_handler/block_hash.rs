@@ -1,24 +1,17 @@
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
-
-use bitvec::order::Msb0;
-use bitvec::vec::BitVec;
-use bitvec::view::BitView;
-use bonsai_trie::id::BasicId;
-use bonsai_trie::RevertibleStorage;
 use mp_felt::Felt252Wrapper;
 use parity_scale_codec::{Decode, Encode};
 
 use super::{DeoxysStorageError, StorageType};
-use crate::bonsai_db::BonsaiDb;
+use crate::{Column, DatabaseExt, DeoxysBackend};
 
-pub struct BlockHashView<'a>(pub(crate) RwLockReadGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
-pub struct BlockHashViewMut<'a>(pub(crate) RwLockWriteGuard<'a, RevertibleStorage<BasicId, BonsaiDb<'static>>>);
+pub struct BlockHashView;
 
-impl BlockHashView<'_> {
+impl BlockHashView {
     pub fn get(self, block_number: u64) -> Result<Option<Felt252Wrapper>, DeoxysStorageError> {
-        let block_hash = self
-            .0
-            .get(&key(block_number))
+        let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Column::BlockNumberToHash);
+        let block_hash = db
+            .get_cf(&column, block_number.encode())
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockHash))?
             .map(|bytes| Felt252Wrapper::decode(&mut &bytes[..]));
 
@@ -30,31 +23,13 @@ impl BlockHashView<'_> {
     }
 
     pub fn contains(self, block_number: u64) -> Result<bool, DeoxysStorageError> {
-        self.0
-            .contains(&key(block_number))
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockHash))
+        Ok(matches!(self.get(block_number)?, Some(_)))
     }
-}
 
-impl BlockHashViewMut<'_> {
     pub fn insert(&mut self, block_number: u64, block_hash: &Felt252Wrapper) -> Result<(), DeoxysStorageError> {
-        self.0.insert(&key(block_number), &block_hash.encode());
-        Ok(())
+        let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Column::BlockNumberToHash);
+        db.put_cf(&column, block_number.encode(), block_hash.encode())
+            .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockHash))
     }
-
-    pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        self.0
-            .commit(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::BlockHash))
-    }
-
-    pub fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        self.0
-            .revert_to(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::BlockHash, block_number))
-    }
-}
-
-fn key(key: u64) -> BitVec<u8, Msb0> {
-    key.to_be_bytes().view_bits()[5..].to_owned()
 }

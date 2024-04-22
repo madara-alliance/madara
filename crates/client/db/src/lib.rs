@@ -127,29 +127,10 @@ pub enum Column {
     BonsaiClassesFlat,
     BonsaiClassesLog,
 
-    ContractClassesTrie,
-    ContractClassesFlat,
-    ContractClassesLog,
-
-    ContractAbiTrie,
-    ContractAbiFlat,
-    ContractAbiLog,
-
-    BlockHashToNumberTrie,
-    BlockHashToNumberFlat,
-    BlockHashToNumberLog,
-
-    BlockNumberToHashTrie,
-    BlockNumberToHashFlat,
-    BlockNumberToHashLog,
-
-    ContractAddressToClassHashTrie,
-    ContractAddressToClassHashFlat,
-    ContractAddressToClassHashLog,
-
-    NonceTrie,
-    NonceFlat,
-    NonceLog,
+    BlockHashToNumber,
+    BlockNumberToHash,
+    ContractClassData,
+    ContractData,
 }
 
 impl fmt::Debug for Column {
@@ -185,24 +166,9 @@ impl Column {
             BonsaiClassesTrie,
             BonsaiClassesFlat,
             BonsaiClassesLog,
-            ContractClassesTrie,
-            ContractClassesFlat,
-            ContractClassesLog,
-            ContractAbiTrie,
-            ContractAbiFlat,
-            ContractAbiLog,
-            BlockHashToNumberTrie,
-            BlockHashToNumberFlat,
-            BlockHashToNumberLog,
-            BlockNumberToHashTrie,
-            BlockNumberToHashFlat,
-            BlockNumberToHashLog,
-            ContractAddressToClassHashTrie,
-            ContractAddressToClassHashFlat,
-            ContractAddressToClassHashLog,
-            NonceTrie,
-            NonceFlat,
-            NonceLog,
+            ContractClassData,
+            BlockHashToNumber,
+            BlockNumberToHash,
         ]
     };
     pub const NUM_COLUMNS: usize = Self::ALL.len();
@@ -226,24 +192,10 @@ impl Column {
             Column::BonsaiClassesTrie => "bonsai_classes_trie",
             Column::BonsaiClassesFlat => "bonsai_classes_flat",
             Column::BonsaiClassesLog => "bonsai_classes_log",
-            Column::ContractClassesTrie => "contract_class_trie",
-            Column::ContractClassesFlat => "contract_class_flat",
-            Column::ContractClassesLog => "contract_class_log",
-            Column::ContractAbiTrie => "contract_abi_trie",
-            Column::ContractAbiFlat => "contract_abi_flat",
-            Column::ContractAbiLog => "contract_abi_log",
-            Column::BlockHashToNumberTrie => "block_hash_to_number_trie",
-            Column::BlockHashToNumberFlat => "block_hash_to_number_flat",
-            Column::BlockHashToNumberLog => "block_hash_to_number_log",
-            Column::BlockNumberToHashTrie => "block_to_hash_trie",
-            Column::BlockNumberToHashFlat => "block_to_hash_flat",
-            Column::BlockNumberToHashLog => "block_to_hash_log",
-            Column::ContractAddressToClassHashTrie => "contract_address_to_class_hash_trie",
-            Column::ContractAddressToClassHashFlat => "contract_address_to_class_hash_flat",
-            Column::ContractAddressToClassHashLog => "contract_address_to_class_hash_log",
-            Column::NonceTrie => "nonce_trie",
-            Column::NonceFlat => "nonce_flat",
-            Column::NonceLog => "nonce_log",
+            Column::BlockHashToNumber => "block_hash_to_number_trie",
+            Column::BlockNumberToHash => "block_to_hash_trie",
+            Column::ContractClassData => "contract_class_data",
+            Column::ContractData => "contract_data",
         }
     }
 
@@ -305,12 +257,6 @@ pub struct DeoxysBackend {
     bonsai_contract: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
     bonsai_storage: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
     bonsai_class: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>>,
-    contract_classes: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
-    contract_abis: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
-    block_hash_to_number: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
-    block_number_to_hash: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
-    contract_address_to_class_hash: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
-    nonces: RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>>,
 }
 
 // Singleton backing instance for `DeoxysBackend`
@@ -378,8 +324,6 @@ impl DeoxysBackend {
             bonsai_config.clone(),
         )
         .unwrap();
-        // TODO: remove  this and handle transactinal state for non-commited storage
-        // directly in storage handler or in the bonsai lib
         bonsai_contract.init_tree(bonsai_identifier::CONTRACT).unwrap();
 
         let bonsai_contract_storage = BonsaiStorage::new(
@@ -409,80 +353,6 @@ impl DeoxysBackend {
         .unwrap();
         bonsai_classes.init_tree(bonsai_identifier::CLASS).unwrap();
 
-        let contract_classes = RevertibleStorage::new(
-            BonsaiDb::new(
-                db,
-                DatabaseKeyMapping {
-                    flat: Column::ContractClassesFlat,
-                    trie: Column::ContractClassesTrie,
-                    log: Column::ContractClassesLog,
-                },
-            ),
-            bonsai_config.clone(),
-        )
-        .unwrap();
-
-        let contract_abis = RevertibleStorage::new(
-            BonsaiDb::new(
-                db,
-                DatabaseKeyMapping {
-                    flat: Column::ContractAbiFlat,
-                    trie: Column::ContractAbiTrie,
-                    log: Column::ContractAbiLog,
-                },
-            ),
-            bonsai_config.clone(),
-        )
-        .unwrap();
-
-        let block_hash_to_number = RevertibleStorage::new(
-            BonsaiDb::new(
-                db,
-                DatabaseKeyMapping {
-                    flat: Column::BlockHashToNumberFlat,
-                    trie: Column::BlockHashToNumberTrie,
-                    log: Column::BlockHashToNumberLog,
-                },
-            ),
-            bonsai_config.clone(),
-        )
-        .unwrap();
-
-        let block_number_to_hash = RevertibleStorage::new(
-            BonsaiDb::new(
-                db,
-                DatabaseKeyMapping {
-                    flat: Column::BlockNumberToHashFlat,
-                    trie: Column::BlockNumberToHashTrie,
-                    log: Column::BlockNumberToHashLog,
-                },
-            ),
-            bonsai_config.clone(),
-        )
-        .unwrap();
-
-        let contract_address_to_class_hash = RevertibleStorage::new(
-            BonsaiDb::new(
-                db,
-                DatabaseKeyMapping {
-                    flat: Column::ContractAddressToClassHashFlat,
-                    trie: Column::ContractAddressToClassHashTrie,
-                    log: Column::ContractAddressToClassHashLog,
-                },
-            ),
-            bonsai_config.clone(),
-        )
-        .unwrap();
-
-        let nonces = RevertibleStorage::new(
-            BonsaiDb::new(
-                db,
-                DatabaseKeyMapping { flat: Column::NonceFlat, trie: Column::NonceTrie, log: Column::NonceLog },
-            ),
-            bonsai_config.clone(),
-        )
-        .unwrap();
-
         Ok(Self {
             mapping: Arc::new(MappingDb::new(Arc::clone(db), cache_more_things)),
             meta: Arc::new(MetaDb::new(Arc::clone(db))),
@@ -491,12 +361,6 @@ impl DeoxysBackend {
             bonsai_contract: RwLock::new(bonsai_contract),
             bonsai_storage: RwLock::new(bonsai_contract_storage),
             bonsai_class: RwLock::new(bonsai_classes),
-            contract_classes: RwLock::new(contract_classes),
-            contract_abis: RwLock::new(contract_abis),
-            block_hash_to_number: RwLock::new(block_hash_to_number),
-            block_number_to_hash: RwLock::new(block_number_to_hash),
-            contract_address_to_class_hash: RwLock::new(contract_address_to_class_hash),
-            nonces: RwLock::new(nonces),
         })
     }
 
@@ -527,28 +391,8 @@ impl DeoxysBackend {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_class).expect("Backend not initialized")
     }
 
-    pub(crate) fn contract_class() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.contract_classes).expect("Backend not initialized")
-    }
-
-    pub(crate) fn contract_abi() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.contract_abis).expect("Backend not initialized")
-    }
-
-    pub(crate) fn block_number() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.block_hash_to_number).expect("Backend not initialized")
-    }
-
-    pub(crate) fn block_hash() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.block_number_to_hash).expect("Backend not initialized")
-    }
-
-    pub(crate) fn class_hash() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.contract_address_to_class_hash).expect("Backend not initialized")
-    }
-
-    pub(crate) fn nonces() -> &'static RwLock<RevertibleStorage<BasicId, BonsaiDb<'static>>> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.nonces).expect("Backend not initialized")
+    pub(crate) fn expose_db() -> &'static Arc<DB> {
+        DB_SINGLETON.get().expect("Databsae not initialized")
     }
 
     /// Return l1 handler tx paid fee database manager
