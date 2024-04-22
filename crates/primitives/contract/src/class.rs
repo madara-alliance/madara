@@ -27,6 +27,8 @@ pub struct ContractClassData {
 pub struct ContractClassWrapper {
     pub contract: ContractClassBlockifier,
     pub abi: ContractAbi,
+    pub sierra_program_length: u64,
+    pub abi_length: u64,
 }
 
 #[cfg(feature = "std")]
@@ -59,7 +61,13 @@ pub mod convert {
                 }
             };
 
-            Ok(Self { contract, abi })
+            let sierra_program_length = match contract_class {
+                ContractClassCore::Sierra(class_sierra) => class_sierra.sierra_program.len(),
+                ContractClassCore::Legacy(class_cairo) => class_cairo.program.len(),
+            } as u64;
+            let abi_length = abi.length() as u64;
+
+            Ok(Self { contract, abi, sierra_program_length, abi_length })
         }
     }
 

@@ -21,6 +21,16 @@ pub enum ContractAbi {
     Cairo(Option<Vec<AbiEntryWrapper>>),
 }
 
+impl ContractAbi {
+    pub fn length(&self) -> usize {
+        match self {
+            ContractAbi::Sierra(abi) => abi.len(),
+            ContractAbi::Cairo(Some(entries)) => entries.len(),
+            ContractAbi::Cairo(None) => 0,
+        }
+    }
+}
+
 #[derive(Debug)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]

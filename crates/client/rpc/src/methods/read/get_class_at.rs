@@ -77,8 +77,11 @@ where
         })?;
 
     // converting from stored Blockifier class to rpc class
-    Ok(ContractClassWrapper { contract: contract_class, abi: contract_abi }.try_into().map_err(|e| {
-        log::error!("Failed to convert contract class at address '{contract_address}' to RPC contract class: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?)
+    // TODO: retrieve sierra_program_length and abi_length when they are stored in the storage
+    Ok(ContractClassWrapper { contract: contract_class, abi: contract_abi, sierra_program_length: 0, abi_length: 0 }
+        .try_into()
+        .map_err(|e| {
+            log::error!("Failed to convert contract class at address '{contract_address}' to RPC contract class: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?)
 }
