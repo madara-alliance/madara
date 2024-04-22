@@ -46,10 +46,9 @@ impl StorageView for ContractClassView<'_> {
     }
 
     fn contains(self, class_hash: &Self::KEY) -> Result<bool, DeoxysStorageError> {
-        Ok(self
-            .0
+        self.0
             .contains(&conv_class_key(class_hash))
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClass))?)
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClass))
     }
 }
 
@@ -59,22 +58,21 @@ impl StorageViewMut for ContractClassViewMut<'_> {
     type VALUE = ContractClass;
 
     fn insert(&mut self, class_hash: &Self::KEY, contract_class: &Self::VALUE) -> Result<(), DeoxysStorageError> {
-        Ok(self.0.insert(&conv_class_key(class_hash), &contract_class.encode()))
+        self.0.insert(&conv_class_key(class_hash), &contract_class.encode());
+        Ok(())
     }
 
     fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        Ok(self
-            .0
+        self.0
             .commit(BasicId::new(block_number + 1))
-            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClass))?)
+            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClass))
     }
 }
 
 impl StorageViewRevetible for ContractClassViewMut<'_> {
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        Ok(self
-            .0
+        self.0
             .revert_to(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractClass, block_number))?)
+            .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractClass, block_number))
     }
 }

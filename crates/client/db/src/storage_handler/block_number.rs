@@ -30,30 +30,28 @@ impl BlockNumberView<'_> {
     }
 
     pub fn contains(self, block_hash: &Felt252Wrapper) -> Result<bool, DeoxysStorageError> {
-        Ok(self
-            .0
+        self.0
             .contains(&key(block_hash))
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockNumber))?)
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockNumber))
     }
 }
 
 impl BlockNumberViewMut<'_> {
     pub fn insert(&mut self, block_hash: &Felt252Wrapper, block_number: u64) -> Result<(), DeoxysStorageError> {
-        Ok(self.0.insert(&key(block_hash), &block_number.encode()))
+        self.0.insert(&key(block_hash), &block_number.encode());
+        Ok(())
     }
 
     pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        Ok(self
-            .0
+        self.0
             .commit(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::BlockNumber))?)
+            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::BlockNumber))
     }
 
     pub fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        Ok(self
-            .0
+        self.0
             .revert_to(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::BlockNumber, block_number))?)
+            .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::BlockNumber, block_number))
     }
 }
 

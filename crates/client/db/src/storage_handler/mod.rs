@@ -114,24 +114,63 @@ impl Display for StorageType {
     }
 }
 
+/// An immutable view on a backend storage interface.
+///
+/// > Multiple immutable views can exist at once for a same storage type.
+/// > You cannot have an immutable view and a mutable view on storage at the same time.
+///
+/// Use this to query data from the backend database in a type-safe way.
 pub trait StorageView {
     type KEY: Encode + Decode;
     type VALUE: Encode + Decode;
 
+    /// Retrieves data from storage for the given key
+    ///
+    /// * `key`: identifier used to retrieve the data.
     fn get(self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError>;
+
+    /// Retrieves data from storage at a specific state in the chain.
+    ///
+    /// * `key`: identifier used to retrieve the data.
+    /// * `block_number`: point in the chain at which to sample the data.
     fn get_at(self, key: &Self::KEY, block_number: u64) -> Result<Option<Self::VALUE>, DeoxysStorageError>;
+
+    /// Checks if a value is stored in the backend database for the given key.
+    ///
+    /// * `key`: identifier use to check for data existence.
     fn contains(self, key: &Self::KEY) -> Result<bool, DeoxysStorageError>;
 }
 
+/// A mutable view on a backend storage interface.
+///
+/// > Note that a single mutable view can exist at once for a same storage type.
+///
+/// Use this to write data to the backend database in a type-safe way.
 pub trait StorageViewMut {
     type KEY: Encode + Decode;
     type VALUE: Encode + Decode;
 
+    /// Insert data into storage.
+    ///
+    /// * `key`: identifier used to inser data.
+    /// * `value`: encodable data to save to the database.
     fn insert(&mut self, key: &Self::KEY, value: &Self::VALUE) -> Result<(), DeoxysStorageError>;
+
+    /// Applies all changes up to this point.
+    ///
+    /// * `block_number`: point in the chain at which to apply the new changes. Must be
+    /// incremental
     fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
+/// A mutable view on a backend storage interface, marking it as revertible in the chain.
+///
+/// This is used to mark data that might be modified from one block to the next, such as contract
+/// storage.
 pub trait StorageViewRevetible: StorageViewMut {
+    /// Reverts to a previous state in the chain.
+    ///
+    /// * `block_number`: point in the chain to revert to.
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
@@ -219,10 +258,10 @@ fn conv_contract_storage_key(key: &StorageKey) -> BitVec<u8, Msb0> {
     key.0.0.0.as_bits()[5..].to_owned()
 }
 
-pub(crate) fn conv_contract_value(value: StarkFelt) -> Felt {
+fn conv_contract_value(value: StarkFelt) -> Felt {
     Felt::from_bytes_be(&value.0)
 }
 
-pub(crate) fn conv_class_key(key: &ClassHash) -> BitVec<u8, Msb0> {
+fn conv_class_key(key: &ClassHash) -> BitVec<u8, Msb0> {
     key.0.0.as_bits()[5..].to_owned()
 }

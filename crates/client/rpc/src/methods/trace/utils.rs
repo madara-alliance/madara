@@ -325,7 +325,7 @@ where
                     let Ok(Some(contract_class)) = storage_handler::contract_class().get_at(&class_hash, block_number)
                     else {
                         log::error!("Failed to retrieve contract class from hash '{class_hash}'");
-                        return Err(StarknetRpcApiError::InternalServerError.into());
+                        return Err(StarknetRpcApiError::InternalServerError);
                     };
 
                     // TODO: fix class info declaration with non defaulted values

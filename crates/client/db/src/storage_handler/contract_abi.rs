@@ -17,10 +17,10 @@ impl StorageView for ContractAbiView<'_> {
 
     type VALUE = ContractAbi;
 
-    fn get(self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+    fn get(self, class_hash: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
         let contract_abi = self
             .0
-            .get(&conv_class_key(key))
+            .get(&conv_class_key(class_hash))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractAbi))?
             .map(|bytes| ContractAbi::decode(&mut &bytes[..]));
 
@@ -31,10 +31,10 @@ impl StorageView for ContractAbiView<'_> {
         }
     }
 
-    fn get_at(self, key: &Self::KEY, block_number: u64) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+    fn get_at(self, class_hash: &Self::KEY, block_number: u64) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
         let contract_abi = self
             .0
-            .get_at(&conv_class_key(key), BasicId::new(block_number))
+            .get_at(&conv_class_key(class_hash), BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractAbi))?
             .map(|bytes| ContractAbi::decode(&mut &bytes[..]));
 
@@ -45,11 +45,10 @@ impl StorageView for ContractAbiView<'_> {
         }
     }
 
-    fn contains(self, key: &Self::KEY) -> Result<bool, DeoxysStorageError> {
-        Ok(self
-            .0
-            .contains(&conv_class_key(&key))
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractAbi))?)
+    fn contains(self, class_hash: &Self::KEY) -> Result<bool, DeoxysStorageError> {
+        self.0
+            .contains(&conv_class_key(class_hash))
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractAbi))
     }
 }
 
@@ -58,23 +57,22 @@ impl StorageViewMut for ContractAbiViewMut<'_> {
 
     type VALUE = ContractAbi;
 
-    fn insert(&mut self, key: &Self::KEY, value: &Self::VALUE) -> Result<(), DeoxysStorageError> {
-        Ok(self.0.insert(&conv_class_key(key), &value.encode()))
+    fn insert(&mut self, class_hash: &Self::KEY, nonce: &Self::VALUE) -> Result<(), DeoxysStorageError> {
+        self.0.insert(&conv_class_key(class_hash), &nonce.encode());
+        Ok(())
     }
 
     fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        Ok(self
-            .0
+        self.0
             .commit(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractAbi))?)
+            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractAbi))
     }
 }
 
 impl StorageViewRevetible for ContractAbiViewMut<'_> {
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        Ok(self
-            .0
+        self.0
             .revert_to(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractAbi, block_number))?)
+            .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractAbi, block_number))
     }
 }

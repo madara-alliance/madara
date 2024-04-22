@@ -52,10 +52,9 @@ impl StorageView for ClassHashView<'_> {
     }
 
     fn contains(self, contract_address: &Self::KEY) -> Result<bool, DeoxysStorageError> {
-        Ok(self
-            .0
+        self.0
             .contains(&conv_key(contract_address))
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?)
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))
     }
 }
 
@@ -65,23 +64,22 @@ impl StorageViewMut for ClassHashViewMut<'_> {
     type VALUE = ClassHash;
 
     fn insert(&mut self, key: &Self::KEY, value: &Self::VALUE) -> Result<(), DeoxysStorageError> {
-        Ok(self.0.insert(&conv_key(key), &value.encode()))
+        self.0.insert(&conv_key(key), &value.encode());
+        Ok(())
     }
 
     fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        Ok(self
-            .0
+        self.0
             .commit(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ClassHash))?)
+            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ClassHash))
     }
 }
 
 impl StorageViewRevetible for ClassHashViewMut<'_> {
     fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        Ok(self
-            .0
+        self.0
             .revert_to(BasicId::new(block_number))
-            .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ClassHash, block_number))?)
+            .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ClassHash, block_number))
     }
 }
 

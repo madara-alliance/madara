@@ -64,7 +64,8 @@ impl StorageViewMut for NonceViewMut<'_> {
     type VALUE = Nonce;
 
     fn insert(&mut self, contract_address: &Self::KEY, nonce: &Self::VALUE) -> Result<(), DeoxysStorageError> {
-        Ok(self.0.insert(&key(contract_address), &nonce.encode()))
+        self.0.insert(&key(contract_address), &nonce.encode());
+        Ok(())
     }
 
     fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
