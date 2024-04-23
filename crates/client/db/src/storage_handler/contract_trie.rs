@@ -62,7 +62,7 @@ impl ContractTrieViewMut<'_> {
 
     pub fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
         self.0
-            .transactional_commit(BasicId::new(block_number))
+            .commit(BasicId::new(block_number))
             .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::Contract))
     }
 

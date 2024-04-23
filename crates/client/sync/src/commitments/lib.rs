@@ -1,7 +1,7 @@
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
-use mc_db::storage_handler::{self, DeoxysStorageError};
+use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
 use mp_block::state_update::StateUpdateWrapper;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
@@ -144,7 +144,6 @@ where
 /// * `CommitmentStateDiff` - The commitment state diff inducing unprocessed state changes.
 /// * `BonsaiDb` - The database responsible for storing computing the state tries.
 ///
-/// # Returns
 ///
 /// The updated state root as a `Felt252Wrapper`.
 pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt252Wrapper {
@@ -192,7 +191,7 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
         .par_bridge()
         .map(|(contract_address, _)| {
             let storage_root = handler_storage.root(contract_address).unwrap();
-            let leaf_hash = contract_state_leaf_hash(csd, contract_address, storage_root, block_number);
+            let leaf_hash = contract_state_leaf_hash(csd, contract_address, storage_root);
 
             (contract_address, leaf_hash)
         })
@@ -205,13 +204,8 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
     Ok(handler_contract.root()?.into())
 }
 
-fn contract_state_leaf_hash(
-    csd: &CommitmentStateDiff,
-    contract_address: &ContractAddress,
-    storage_root: Felt,
-    block_number: u64,
-) -> Felt {
-    let class_hash = class_hash(csd, contract_address, block_number);
+fn contract_state_leaf_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress, storage_root: Felt) -> Felt {
+    let class_hash = class_hash(csd, contract_address);
 
     let storage_root = FieldElement::from_bytes_be(&storage_root.to_bytes_be()).unwrap();
 
@@ -226,12 +220,11 @@ fn contract_state_leaf_hash(
     Felt::from_bytes_be(&contract_state_hash.to_bytes_be())
 }
 
-fn class_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress, block_number: u64) -> FieldElement {
+fn class_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress) -> FieldElement {
     let class_hash = match csd.address_to_class_hash.get(contract_address) {
         Some(class_hash) => *class_hash,
         None => {
-            let Ok(Some(contract_data)) = storage_handler::contract_data().get_at(contract_address, block_number)
-            else {
+            let Ok(Some(contract_data)) = storage_handler::contract_data().get(contract_address) else {
                 return FieldElement::ZERO;
             };
 

@@ -42,6 +42,8 @@ use std::sync::Arc;
 pub use pallet::*;
 /// An adapter for the blockifier state related traits
 pub mod blockifier_state_adapter;
+use mp_contract::class::StorageContractData;
+use starknet_api::core::Nonce;
 
 #[cfg(feature = "std")]
 pub mod genesis_loader;
@@ -274,11 +276,13 @@ pub mod pallet {
                 &StarknetStorageSchemaVersion::V1,
             );
 
-            // let mut handler_class_hash = storage_handler::contract_data_mut();
-            // self.contracts.iter().for_each(|(contract_address, class_hash)| {
-            //     handler_class_hash.insert(contract_address, class_hash).unwrap();
-            // });
-            // handler_class_hash.commit(0).unwrap();
+            let handler_contract_data = storage_handler::contract_data_mut();
+            self.contracts.iter().for_each(|(contract_address, class_hash)| {
+                handler_contract_data
+                    .insert(*contract_address, StorageContractData { class_hash: *class_hash, nonce: Nonce::default() })
+                    .unwrap();
+            });
+            handler_contract_data.commit(0).unwrap();
 
             let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
             self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {

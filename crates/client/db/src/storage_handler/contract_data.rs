@@ -23,10 +23,10 @@ impl StorageView for ContractDataView {
 
         let tree: BTreeMap<u64, StorageContractData> = match db
             .get_cf(&column, contract_address.encode())
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
         {
             Some(bytes) => BTreeMap::decode(&mut &bytes[..])
-                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ClassHash))?,
+                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData))?,
             None => BTreeMap::new(),
         };
 
@@ -39,6 +39,7 @@ impl StorageView for ContractDataView {
 }
 
 impl ContractDataView {
+    // FIXME: retrieve value if it does not exist at the given block number
     pub fn get_at(
         self,
         contract_address: &ContractAddress,
@@ -49,14 +50,43 @@ impl ContractDataView {
 
         let tree: BTreeMap<u64, StorageContractData> = match db
             .get_cf(&column, contract_address.encode())
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
         {
             Some(bytes) => BTreeMap::decode(&mut &bytes[..])
-                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ClassHash))?,
+                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData))?,
             None => BTreeMap::new(),
         };
 
         Ok(tree.get(&block_number).cloned())
+    }
+}
+
+impl StorageView for ContractDataViewMut {
+    type KEY = ContractAddress;
+    type VALUE = StorageContractData;
+
+    fn get(&self, contract_address: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+        if let Some(entry) = self.0.get(contract_address) {
+            return Ok(Some(entry.value().clone()));
+        }
+
+        let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Column::ContractData);
+
+        let tree: BTreeMap<u64, StorageContractData> = match db
+            .get_cf(&column, contract_address.encode())
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
+        {
+            Some(bytes) => BTreeMap::decode(&mut &bytes[..])
+                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData))?,
+            None => BTreeMap::new(),
+        };
+
+        Ok(tree.last_key_value().map(|(_k, v)| v).cloned())
+    }
+
+    fn contains(&self, contract_address: &Self::KEY) -> Result<bool, DeoxysStorageError> {
+        Ok(self.get(contract_address)?.is_some())
     }
 }
 
@@ -76,16 +106,16 @@ impl StorageViewMut for ContractDataViewMut {
         for entry in self.0.iter() {
             let mut tree: BTreeMap<u64, StorageContractData> = match db
                 .get_cf(&column, entry.key().encode())
-                .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?
+                .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
             {
                 Some(bytes) => BTreeMap::decode(&mut &bytes[..])
-                    .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ClassHash))?,
+                    .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData))?,
                 None => BTreeMap::new(),
             };
 
             tree.insert(block_number, entry.value().clone());
             db.put_cf(&column, entry.key().encode(), tree.encode())
-                .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::ClassHash))?;
+                .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::ContractData))?;
         }
 
         Ok(())
@@ -100,14 +130,15 @@ impl StorageViewRevetible for ContractDataViewMut {
         let iterator = db.iterator_cf(&column, IteratorMode::Start);
 
         for data in iterator {
-            let (key, value) = data.map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?;
+            let (key, value) =
+                data.map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?;
             let mut tree: BTreeMap<u64, ClassHash> = BTreeMap::decode(&mut &value[..])
-                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ClassHash))?;
+                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData))?;
 
             tree.retain(|&k, _| k <= block_number);
 
             db.put_cf(&column, key, tree.encode())
-                .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ClassHash, block_number))?;
+                .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractData, block_number))?;
         }
 
         Ok(())
