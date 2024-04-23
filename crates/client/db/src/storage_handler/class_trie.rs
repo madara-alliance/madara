@@ -1,8 +1,5 @@
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
-use bitvec::prelude::Msb0;
-use bitvec::vec::BitVec;
-use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
 use starknet_api::core::ClassHash;

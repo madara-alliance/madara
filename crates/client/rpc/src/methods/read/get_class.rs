@@ -18,8 +18,11 @@ use crate::errors::StarknetRpcApiError;
 ///
 /// Returns the contract class definition if found. In case of an error, returns a
 /// `StarknetRpcApiError` indicating either `BlockNotFound` or `ClassHashNotFound`.
-pub fn get_class(block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass> {
+pub fn get_class(_block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass> {
     let class_hash = Felt252Wrapper(class_hash).into();
+
+    // TODO: is it ok to ignore `block_id` in this case? IE: is `contract_class` revertible on the
+    // chain? @charpao what are your thoughts?
 
     let Ok(Some(contract_class_data)) = storage_handler::contract_class_data().get(&class_hash) else {
         log::error!("Failed to retrieve contract class from hash '{class_hash}'");

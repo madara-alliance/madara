@@ -15,9 +15,7 @@ use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::starknet_sync_worker;
-use mp_block::state_update::StateUpdateWrapper;
 use mp_block::DeoxysBlock;
-use mp_contract::class::ClassUpdateWrapper;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
 };

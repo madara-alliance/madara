@@ -17,7 +17,7 @@ use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use starknet_api::core::{ClassHash, ContractAddress, Nonce, PatriciaKey};
+use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_core::types::{PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
@@ -29,7 +29,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::Duration;
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
-use crate::fetch::fetchers::{fetch_block_and_updates, FetchConfig};
+use crate::fetch::fetchers::fetch_block_and_updates;
 use crate::l1::ETHEREUM_STATE_UPDATE;
 use crate::CommandSink;
 
@@ -265,7 +265,6 @@ pub async fn sync<C>(
                 .collect();
 
                 let mut handler_contract_data = storage_handler::contract_data_mut();
-
                 std::iter::empty()
                     .chain(state_update.state_diff.deployed_contracts)
                     .chain(state_update.state_diff.replaced_classes)
@@ -274,15 +273,29 @@ pub async fn sync<C>(
                         class_hash,
                         nonce: nonce_map.get(&contract_address).cloned().unwrap_or_default(),
                     }).unwrap());
-
                 handler_contract_data.commit(block_number).expect("failed to insert state update data into storage");
+
+                let mut handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
+                state_update
+                    .state_diff
+                    .declared_classes
+                    .into_iter()
+                    .map(|declared_class| {
+                        (
+                            ClassHash(declared_class.class_hash.into()),
+                            CompiledClassHash(declared_class.compiled_class_hash.into()),
+                        )
+                    })
+                    .for_each(|(class_hash, compiled_class_hash)| {
+                          handler_contract_class_hashes.insert(class_hash, compiled_class_hash).unwrap();
+                    });
+                handler_contract_class_hashes.commit(block_number).unwrap();
              }
         } => {},
         // store class udpate
         _ = async {
             while let Some((block_number, class_update)) = pin!(class_update_receiver.recv()).await {
                 let mut handler_contract_cladd_data_mut = storage_handler::contract_class_data_mut();
-
                 class_update.0.into_iter().for_each(
                     |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
                         let ContractClassWrapper { contract: contract_class, abi } = contract_class_wrapper;
@@ -290,7 +303,6 @@ pub async fn sync<C>(
                         handler_contract_cladd_data_mut.insert(class_hash, StorageContractClassData { contract_class, abi }).unwrap();
                     },
                 );
-
                 handler_contract_cladd_data_mut.commit(block_number).expect("failed to commit to storage");
             }
         } => {}

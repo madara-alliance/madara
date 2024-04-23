@@ -15,6 +15,7 @@ use self::block_hash::BlockHashView;
 use self::block_number::BlockNumberView;
 use self::class_trie::{ClassTrieView, ClassTrieViewMut};
 use self::contract_class_data::{ContractClassDataView, ContractClassDataViewMut};
+use self::contract_class_hashes::{ContractClassHashesView, ContractClassHashesViewMut};
 use self::contract_data::{ContractDataView, ContractDataViewMut};
 use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
 use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
@@ -24,6 +25,7 @@ pub mod block_hash;
 pub mod block_number;
 mod class_trie;
 mod contract_class_data;
+mod contract_class_hashes;
 mod contract_data;
 mod contract_storage_trie;
 mod contract_trie;
@@ -78,6 +80,7 @@ pub enum StorageType {
     BlockHash,
     ClassHash,
     Nonce,
+    ContractClassHashes,
 }
 
 impl Display for TrieType {
@@ -104,6 +107,7 @@ impl Display for StorageType {
             StorageType::BlockHash => "block hash storage",
             StorageType::ClassHash => "class hash storage",
             StorageType::Nonce => "nonce storage",
+            StorageType::ContractClassHashes => "contract class hashes storage",
         };
 
         write!(f, "{storage_type}")
@@ -194,6 +198,14 @@ pub fn contract_class_data_mut() -> ContractClassDataViewMut {
 
 pub fn contract_class_data() -> ContractClassDataView {
     ContractClassDataView
+}
+
+pub fn contract_class_hashes_mut() -> ContractClassHashesViewMut {
+    ContractClassHashesViewMut::default()
+}
+
+pub fn contract_class_hashes() -> ContractClassHashesView {
+    ContractClassHashesView
 }
 
 pub fn contract_data_mut() -> ContractDataViewMut {

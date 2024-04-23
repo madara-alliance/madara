@@ -18,7 +18,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 use anyhow::{bail, Context, Result};
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
-use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig, RevertibleStorage};
+use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use da_db::DaDb;
 use l1_handler_tx_fee::L1HandlerTxFeeDb;
 use mapping_db::MappingDb;
@@ -102,6 +102,11 @@ pub enum Column {
     TransactionMapping,
     SyncedMapping,
     Da,
+    BlockHashToNumber,
+    BlockNumberToHash,
+    ContractClassData,
+    ContractData,
+    ContractClassHashes,
 
     /// This column is used to map starknet block hashes to a list of transaction hashes that are
     /// contained in the block.
@@ -129,11 +134,6 @@ pub enum Column {
     BonsaiClassesTrie,
     BonsaiClassesFlat,
     BonsaiClassesLog,
-
-    BlockHashToNumber,
-    BlockNumberToHash,
-    ContractClassData,
-    ContractData,
 }
 
 impl fmt::Debug for Column {
@@ -160,6 +160,11 @@ impl Column {
             StarknetTransactionHashesCache,
             StarknetBlockHashesCache,
             L1HandlerPaidFee,
+            BlockHashToNumber,
+            BlockNumberToHash,
+            ContractClassData,
+            ContractData,
+            ContractClassHashes,
             BonsaiContractsTrie,
             BonsaiContractsFlat,
             BonsaiContractsLog,
@@ -169,10 +174,6 @@ impl Column {
             BonsaiClassesTrie,
             BonsaiClassesFlat,
             BonsaiClassesLog,
-            BlockHashToNumber,
-            BlockNumberToHash,
-            ContractClassData,
-            ContractData,
         ]
     };
     pub const NUM_COLUMNS: usize = Self::ALL.len();
@@ -200,6 +201,7 @@ impl Column {
             Column::BlockNumberToHash => "block_to_hash_trie",
             Column::ContractClassData => "contract_class_data",
             Column::ContractData => "contract_data",
+            Column::ContractClassHashes => "contract_class_hashes",
         }
     }
 

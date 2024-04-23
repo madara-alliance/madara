@@ -1,5 +1,5 @@
 use jsonrpsee::core::RpcResult;
-use mc_db::storage_handler::{self, StorageView};
+use mc_db::storage_handler;
 use mp_felt::Felt252Wrapper;
 use starknet_api::core::{ContractAddress, PatriciaKey};
 use starknet_api::hash::StarkFelt;

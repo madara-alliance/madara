@@ -10,7 +10,7 @@ use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 
-use crate::{Config, Pallet};
+use crate::Config;
 
 /// `BlockifierStateAdapter` is only use to re-executing or simulate transactions.
 /// None of the setters should therefore change the storage persistently,
@@ -109,7 +109,14 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
         match self.compiled_class_hash_update.get(&class_hash) {
             Some(compiled_class_hash) => Ok(*compiled_class_hash),
-            None => Pallet::<T>::compiled_class_hash_by_class_hash(class_hash)
+            None => storage_handler::contract_class_hashes()
+                .get(&class_hash)
+                .map_err(|_| {
+                    StateError::StateReadError(format!(
+                        "failed to retrive compiled class hash at class hash {}",
+                        class_hash.0
+                    ))
+                })?
                 .ok_or(StateError::UndeclaredClassHash(class_hash)),
         }
     }

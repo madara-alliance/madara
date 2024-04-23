@@ -73,7 +73,6 @@ use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
 use mc_db::storage_handler;
 use mc_db::storage_handler::{StorageView, StorageViewMut};
-use mp_block::state_update::StateUpdateWrapper;
 use mp_block::DeoxysBlock;
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_felt::Felt252Wrapper;
@@ -83,7 +82,7 @@ use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
-use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce};
+use starknet_api::core::{ChainId, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
@@ -113,8 +112,6 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
-    use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
-
     use super::*;
 
     #[pallet::pallet]
@@ -184,50 +181,12 @@ pub mod pallet {
 
         /// The block is being initialized. Implement to have something happen.
         fn on_initialize(_: BlockNumberFor<T>) -> Weight {
-            let digest = frame_system::Pallet::<T>::digest();
-            let logs = digest.logs();
-            let block_number =
-                UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
-
-            if !logs.is_empty() {
-                for log_entry in logs {
-                    if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
-                        match *engine_id {
-                            mp_digest_log::STATE_ENGINE_ID => store_state_update::<T>(encoded_data, block_number),
-                            _ => {}
-                        }
-                    }
-                }
-            }
-
             Weight::zero()
         }
 
         /// Perform a module upgrade.
         fn on_runtime_upgrade() -> Weight {
             Weight::zero()
-        }
-    }
-
-    fn store_state_update<T: Config>(encoded_data: &Vec<u8>, block_number: u64) {
-        match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
-            Ok(state_update) => {
-                // during `starknet_getStateUpdate`
-                state_update
-                    .state_diff
-                    .declared_classes
-                    .into_iter()
-                    .map(|declared_class| {
-                        (
-                            ClassHash(declared_class.class_hash.into()),
-                            CompiledClassHash(declared_class.compiled_class_hash.into()),
-                        )
-                    })
-                    .for_each(|(class_hash, compiled_class_hash)| {
-                        <CompiledClassHashes<T>>::insert(class_hash, compiled_class_hash)
-                    });
-            }
-            Err(e) => log!(info, "Decoding error: {:?}", e),
         }
     }
 
@@ -277,14 +236,6 @@ pub mod pallet {
     #[pallet::getter(fn pending_storage_changes)]
     pub(super) type PendingStorageChanges<T: Config> =
         StorageMap<_, Identity, ContractAddress, Vec<StorageSlot>, ValueQuery>;
-
-    /// Mapping from Starknet Sierra class hash to  Casm compiled contract
-    /// class. Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn compiled_class_hash_by_class_hash)]
-    pub(super) type CompiledClassHashes<T: Config> =
-        StorageMap<_, Identity, SierraClassHash, CompiledClassHash, OptionQuery>;
 
     /// The last processed Ethereum block number for L1 messages consumption.
     /// This is used to avoid re-processing the same Ethereum block multiple times.
@@ -367,9 +318,11 @@ pub mod pallet {
             // });
             // handler_class_hash.commit(0).unwrap();
 
+            let mut handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
             self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
-                CompiledClassHashes::<T>::insert(class_hash, CompiledClassHash(compiled_class_hash.0))
+                handler_contract_class_hashes.insert(*class_hash, CompiledClassHash(compiled_class_hash.0)).unwrap();
             });
+            handler_contract_class_hashes.commit(0).unwrap();
 
             LastKnownEthBlock::<T>::set(None);
             // Set the fee token address from the genesis config.
