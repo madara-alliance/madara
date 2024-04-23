@@ -30,7 +30,7 @@ impl StorageView for ContractClassHashesView {
     }
 
     fn contains(&self, class_hash: &Self::KEY) -> Result<bool, super::DeoxysStorageError> {
-        Ok(matches!(self.get(class_hash)?, Some(_)))
+        Ok(self.get(class_hash)?.is_some())
     }
 }
 

@@ -7,9 +7,7 @@ use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Poseidon;
 
-use super::{
-    bonsai_identifier, conv_class_key, DeoxysStorageError, StorageType, StorageView, StorageViewMut, TrieType,
-};
+use super::{bonsai_identifier, conv_class_key, DeoxysStorageError, StorageType, StorageView, TrieType};
 use crate::bonsai_db::BonsaiDb;
 
 pub struct ClassTrieView<'a>(pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>>);

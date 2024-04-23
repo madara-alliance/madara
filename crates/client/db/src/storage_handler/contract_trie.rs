@@ -9,7 +9,7 @@ use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 
-use super::{bonsai_identifier, DeoxysStorageError, StorageType, StorageView, StorageViewMut, TrieType};
+use super::{bonsai_identifier, DeoxysStorageError, StorageType, StorageView, TrieType};
 use crate::bonsai_db::BonsaiDb;
 
 pub struct ContractTrieView<'a>(pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>);

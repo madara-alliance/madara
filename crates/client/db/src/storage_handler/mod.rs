@@ -220,7 +220,7 @@ pub fn block_number() -> BlockNumberView {
     BlockNumberView
 }
 
-pub fn block_hash<'a>() -> BlockHashView {
+pub fn block_hash() -> BlockHashView {
     BlockHashView
 }
 

@@ -23,7 +23,7 @@ impl BlockNumberView {
     }
 
     pub fn contains(&self, block_hash: &Felt252Wrapper) -> Result<bool, DeoxysStorageError> {
-        Ok(matches!(self.get(block_hash)?, Some(_)))
+        Ok(self.get(block_hash)?.is_some())
     }
 
     pub fn insert(&mut self, block_hash: &Felt252Wrapper, block_number: u64) -> Result<(), DeoxysStorageError> {

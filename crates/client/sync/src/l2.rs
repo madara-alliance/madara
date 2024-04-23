@@ -256,7 +256,7 @@ pub async fn sync<C>(
         // store state updates
         _ = async {
             while let Some((block_number, state_update)) = pin!(state_update_receiver.recv()).await {
-                if let Err(_) = store_state_update(block_number, state_update).await {
+                if store_state_update(block_number, state_update).await.is_err() {
                     log::info!("❗ Failed to store state update for block {block_number}");
                 };
             }
@@ -264,7 +264,7 @@ pub async fn sync<C>(
         // store class udpate
         _ = async {
             while let Some((block_number, class_update)) = pin!(class_update_receiver.recv()).await {
-                if let Err(_) = store_class_update(block_number, class_update).await {
+                if store_class_update(block_number, class_update).await.is_err() {
                     log::info!("❗ Failed to store class update for block {block_number}");
                 };
             }

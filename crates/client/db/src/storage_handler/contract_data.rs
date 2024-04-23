@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use crossbeam_skiplist::SkipMap;
 use mp_contract::class::StorageContractData;
@@ -34,7 +34,7 @@ impl StorageView for ContractDataView {
     }
 
     fn contains(&self, contract_address: &Self::KEY) -> Result<bool, DeoxysStorageError> {
-        Ok(matches!(self.get(contract_address)?, Some(_)))
+        Ok(self.get(contract_address)?.is_some())
     }
 }
 
