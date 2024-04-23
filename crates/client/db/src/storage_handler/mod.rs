@@ -21,6 +21,7 @@ use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieVi
 use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
 use crate::DeoxysBackend;
 
+pub mod benchmark;
 pub mod block_hash;
 pub mod block_number;
 mod class_trie;
@@ -73,14 +74,13 @@ pub enum TrieType {
 pub enum StorageType {
     Contract,
     ContractStorage,
-    Class,
     ContractClassData,
+    ContractData,
     ContractAbi,
+    ContractClassHashes,
+    Class,
     BlockNumber,
     BlockHash,
-    ClassHash,
-    Nonce,
-    ContractClassHashes,
 }
 
 impl Display for TrieType {
@@ -105,9 +105,8 @@ impl Display for StorageType {
             StorageType::ContractAbi => "class abi storage",
             StorageType::BlockNumber => "block number storage",
             StorageType::BlockHash => "block hash storage",
-            StorageType::ClassHash => "class hash storage",
-            StorageType::Nonce => "nonce storage",
             StorageType::ContractClassHashes => "contract class hashes storage",
+            StorageType::ContractData => "contract class data storage",
         };
 
         write!(f, "{storage_type}")
