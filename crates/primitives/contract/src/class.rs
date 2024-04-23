@@ -16,8 +16,8 @@ use alloc::vec::Vec;
 pub struct StorageContractClassData {
     pub contract_class: ContractClassBlockifier,
     pub abi: ContractAbi,
-    pub sierra_program_length: u64,
-    pub abi_length: u64,
+    // pub sierra_program_length: u64,
+    // pub abi_length: u64,
 }
 
 #[derive(Debug, Clone)]

@@ -27,7 +27,9 @@ use sc_client_db::DatabaseSource;
 
 mod error;
 mod mapping_db;
-use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, MultiThreaded, OptimisticTransactionDB, Options};
+use rocksdb::{
+    BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, MultiThreaded, OptimisticTransactionDB, Options,
+};
 mod da_db;
 use starknet_api::hash::StarkHash;
 use starknet_types_core::hash::{Pedersen, Poseidon};
@@ -80,6 +82,7 @@ pub(crate) fn open_rocksdb(path: &Path, create: bool) -> Result<OptimisticTransa
     opts.create_missing_column_families(true);
     opts.set_bytes_per_sync(1024 * 1024);
     opts.set_keep_log_file_num(1);
+    opts.set_compression_type(DBCompressionType::Zstd);
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     opts.increase_parallelism(i32::max(cores / 2, 1));
 
@@ -166,9 +169,10 @@ impl Column {
             BonsaiClassesTrie,
             BonsaiClassesFlat,
             BonsaiClassesLog,
-            ContractClassData,
             BlockHashToNumber,
             BlockNumberToHash,
+            ContractClassData,
+            ContractData,
         ]
     };
     pub const NUM_COLUMNS: usize = Self::ALL.len();

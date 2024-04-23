@@ -25,10 +25,10 @@ pub fn get_class_hash_at(block_id: BlockId, contract_address: FieldElement) -> R
     let block_number = block_number_by_id(block_id);
     let key = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
 
-    let Ok(Some(class_hash)) = storage_handler::class_hash().get_at(&key, block_number) else {
+    let Ok(Some(contract_data)) = storage_handler::contract_data().get_at(&key, block_number) else {
         log::error!("Failed to retrieve contract class hash at '{contract_address:?}'");
         return Err(StarknetRpcApiError::ContractNotFound.into());
     };
 
-    Ok(Felt(Felt252Wrapper::from(class_hash).into()))
+    Ok(Felt(Felt252Wrapper::from(contract_data.class_hash).into()))
 }

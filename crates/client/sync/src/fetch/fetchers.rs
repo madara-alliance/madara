@@ -187,5 +187,5 @@ async fn fetch_class(
 /// this means we only need to check for class hashes in the db.
 fn is_missing_class(class_hash: &FieldElement) -> bool {
     let class_hash = ClassHash(StarkFelt(class_hash.to_bytes_be()));
-    storage_handler::contract_class().contains(&class_hash).is_ok()
+    storage_handler::contract_class_data().contains(&class_hash).is_ok()
 }

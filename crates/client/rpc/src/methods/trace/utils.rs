@@ -125,12 +125,13 @@ fn try_get_funtion_invocation_from_call_info(
         *cached_hash
     } else {
         // Compute and cache the class hash
-        let Ok(Some(class_hash)) = storage_handler::class_hash().get_at(&call_info.call.storage_address, block_number)
+        let Ok(Some(contract_data)) =
+            storage_handler::contract_data().get_at(&call_info.call.storage_address, block_number)
         else {
             return Err(TryFuntionInvocationFromCallInfoError::ContractNotFound);
         };
 
-        let computed_hash = FieldElement::from_byte_slice_be(class_hash.0.bytes()).unwrap();
+        let computed_hash = FieldElement::from_byte_slice_be(contract_data.class_hash.0.bytes()).unwrap();
         class_hash_cache.insert(call_info.call.storage_address, computed_hash);
 
         computed_hash
@@ -322,14 +323,13 @@ where
 
             match declare_tx {
                 stx::DeclareTransaction::V0(_) | stx::DeclareTransaction::V1(_) => {
-                    let Ok(Some(contract_class)) = storage_handler::contract_class().get_at(&class_hash, block_number)
-                    else {
+                    let Ok(Some(contract_class_data)) = storage_handler::contract_class_data().get(&class_hash) else {
                         log::error!("Failed to retrieve contract class from hash '{class_hash}'");
                         return Err(StarknetRpcApiError::InternalServerError);
                     };
 
                     // TODO: fix class info declaration with non defaulted values
-                    let class_info = ClassInfo::new(&contract_class, 10, 10).unwrap();
+                    let class_info = ClassInfo::new(&contract_class_data.contract_class, 10, 10).unwrap();
 
                     let tx = btx::transactions::DeclareTransaction::new(
                         declare_tx.clone(),

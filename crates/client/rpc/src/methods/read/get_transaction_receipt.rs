@@ -234,7 +234,7 @@ where
 					tx_deploy_account(deploy_account_tx.clone(), deploy_account_tx.compute_hash::<H>(Felt252Wrapper::from(chain_id.0), false, Some(block_number)), ContractAddress::default())
                 }
                 Transaction::Declare(declare_tx) => {
-					tx_declare(declare_tx.clone(), block_number)
+					tx_declare(declare_tx.clone())
                 }
                 Transaction::L1Handler(l1_handler) => {
 					tx_l1_handler::<H>(chain_id, block_number, l1_handler.clone())
@@ -269,25 +269,22 @@ fn tx_deploy_account(
     ))
 }
 
-fn tx_declare(declare_tx: DeclareTransaction, block_number: u64) -> RpcResult<btx::Transaction> {
+fn tx_declare(declare_tx: DeclareTransaction) -> RpcResult<btx::Transaction> {
     let class_hash = ClassHash(Felt252Wrapper::from(*declare_tx.class_hash()).into());
 
     match declare_tx {
-        DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => tx_declare_v0v1(declare_tx, class_hash, block_number),
+        DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => tx_declare_v0v1(declare_tx, class_hash),
         DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
         DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
     }
 }
 
-fn tx_declare_v0v1(
-    declare_tx: DeclareTransaction,
-    class_hash: ClassHash,
-    block_number: u64,
-) -> RpcResult<btx::Transaction> {
-    let Ok(Some(_contract_class)) = storage_handler::contract_class().get_at(&class_hash, block_number) else {
+fn tx_declare_v0v1(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcResult<btx::Transaction> {
+    let Ok(Some(contract_class_data)) = storage_handler::contract_class_data().get(&class_hash) else {
         log::error!("Failed to retrieve contract class from hash '{class_hash}'");
         return Err(StarknetRpcApiError::InternalServerError.into());
     };
+    let _contract_class = contract_class_data.contract_class;
 
     // let class_info = ClassInfo::new(
     //     &contract_class,
@@ -306,7 +303,7 @@ fn tx_declare_v0v1(
     // )))
     // TODO: Correct this that was used as a place holder to compile
     match declare_tx {
-        DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => tx_declare_v0v1(declare_tx, class_hash, block_number),
+        DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => tx_declare_v0v1(declare_tx, class_hash),
         DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
         DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
     }

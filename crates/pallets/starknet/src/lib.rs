@@ -194,7 +194,6 @@ pub mod pallet {
                     if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
                         match *engine_id {
                             mp_digest_log::STATE_ENGINE_ID => store_state_update::<T>(encoded_data, block_number),
-                            mp_digest_log::CLASS_ENGINE_ID => store_class_update::<T>(encoded_data, block_number),
                             _ => {}
                         }
                     }
@@ -213,29 +212,6 @@ pub mod pallet {
     fn store_state_update<T: Config>(encoded_data: &Vec<u8>, block_number: u64) {
         match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
             Ok(state_update) => {
-                // nonces stored for accessing on `starknet_getNonce` RPC call.
-                let mut handler_nonce = storage_handler::nonce_mut();
-                state_update
-                    .state_diff
-                    .nonces
-                    .into_iter()
-                    .map(|(address, nonce)| (ContractAddress(address.into()), Nonce(nonce.into())))
-                    .for_each(|(contract_address, nonce)| handler_nonce.insert(&contract_address, &nonce).unwrap());
-                handler_nonce.commit(block_number).unwrap();
-
-                // contract address to class hash equivalence (used in
-                // `starknet_getClassHashAt`` rpc call)
-                let mut handler_class_hash = storage_handler::class_hash_mut();
-                core::iter::empty()
-                    .chain(state_update.state_diff.deployed_contracts)
-                    .chain(state_update.state_diff.replaced_classes)
-                    .map(|contract| (ContractAddress(contract.address.into()), ClassHash(contract.class_hash.into())))
-                    .for_each(|(contract_address, class_hash)| {
-                        handler_class_hash.insert(&contract_address, &class_hash).unwrap();
-                    });
-                handler_class_hash.commit(block_number + 1).unwrap();
-
-                // we need to store the entire data from the StateDiff to be able to return it
                 // during `starknet_getStateUpdate`
                 state_update
                     .state_diff
@@ -250,31 +226,6 @@ pub mod pallet {
                     .for_each(|(class_hash, compiled_class_hash)| {
                         <CompiledClassHashes<T>>::insert(class_hash, compiled_class_hash)
                     });
-            }
-            Err(e) => log!(info, "Decoding error: {:?}", e),
-        }
-    }
-
-    fn store_class_update<T: Config>(encoded_data: &Vec<u8>, block_number: u64) {
-        match ClassUpdateWrapper::decode(&mut encoded_data.as_slice()) {
-            Ok(class_update) => {
-                let mut handler_contract_class = storage_handler::contract_class_mut();
-                let mut handler_contract_abi = storage_handler::contract_abi_mut();
-
-                class_update.0.into_iter().for_each(
-                    |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
-                        let ContractClassWrapper { contract: contract_class, abi } = contract_class_wrapper;
-
-                        // Blockifier class and ABI need to be stored separately since Blockifier
-                        // does not store ABI. In the future, it would be better to have a separate
-                        // storage structure which contains both the class data and the ABI
-                        handler_contract_class.insert(&class_hash, &contract_class).unwrap();
-                        handler_contract_abi.insert(&class_hash, &abi).unwrap();
-                    },
-                );
-
-                handler_contract_class.commit(block_number + 1).unwrap();
-                handler_contract_abi.commit(block_number + 1).unwrap();
             }
             Err(e) => log!(info, "Decoding error: {:?}", e),
         }
@@ -410,11 +361,11 @@ pub mod pallet {
                 &StarknetStorageSchemaVersion::V1,
             );
 
-            let mut handler_class_hash = storage_handler::class_hash_mut();
-            self.contracts.iter().for_each(|(contract_address, class_hash)| {
-                handler_class_hash.insert(contract_address, class_hash).unwrap();
-            });
-            handler_class_hash.commit(0).unwrap();
+            // let mut handler_class_hash = storage_handler::contract_data_mut();
+            // self.contracts.iter().for_each(|(contract_address, class_hash)| {
+            //     handler_class_hash.insert(contract_address, class_hash).unwrap();
+            // });
+            // handler_class_hash.commit(0).unwrap();
 
             self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
                 CompiledClassHashes::<T>::insert(class_hash, CompiledClassHash(compiled_class_hash.0))
@@ -926,7 +877,10 @@ impl<T: Config> Pallet<T> {
         // Get current block context
         let block_context = Self::get_block_context();
         // Get class hash
-        let class_hash = storage_handler::class_hash().get(&address).map_err(|_| Error::<T>::ContractNotFound)?;
+        let class_hash = storage_handler::contract_data()
+            .get(&address)
+            .map_err(|_| Error::<T>::ContractNotFound)?
+            .map(|contract_data| contract_data.class_hash);
 
         let entrypoint = CallEntryPoint {
             class_hash,
@@ -993,14 +947,11 @@ impl<T: Config> Pallet<T> {
 
                 let block_hash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
 
-                let mut handler_block_number = storage_handler::block_number_mut();
-                let mut handler_block_hash = storage_handler::block_hash_mut();
+                let mut handler_block_number = storage_handler::block_number();
+                let mut handler_block_hash = storage_handler::block_hash();
 
                 handler_block_number.insert(&block_hash, block_number).unwrap();
                 handler_block_hash.insert(block_number, &block_hash).unwrap();
-
-                handler_block_number.commit(block_number).unwrap();
-                handler_block_hash.commit(block_number).unwrap();
 
                 Pending::<T>::kill();
                 let digest = DigestItem::Consensus(MADARA_ENGINE_ID, mp_digest_log::Log::Block(block).encode());

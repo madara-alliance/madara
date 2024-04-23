@@ -1,7 +1,7 @@
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
-use mc_db::storage_handler::{self, DeoxysStorageError, StorageView, StorageViewMut};
+use mc_db::storage_handler::{self, DeoxysStorageError, StorageViewMut};
 use mp_block::state_update::StateUpdateWrapper;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
@@ -178,7 +178,7 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
         handler_storage.init(contract_address)?;
 
         for (key, value) in updates {
-            handler_storage.insert(contract_address, key, *value)?;
+            handler_storage.insert(*contract_address, *key, *value)?;
         }
     }
 
@@ -230,11 +230,12 @@ fn class_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress, blo
     let class_hash = match csd.address_to_class_hash.get(contract_address) {
         Some(class_hash) => *class_hash,
         None => {
-            let Ok(Some(class_hash)) = storage_handler::class_hash().get_at(contract_address, block_number) else {
+            let Ok(Some(contract_data)) = storage_handler::contract_data().get_at(contract_address, block_number)
+            else {
                 return FieldElement::ZERO;
             };
 
-            class_hash
+            contract_data.class_hash
         }
     };
 

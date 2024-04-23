@@ -422,28 +422,24 @@ pub fn new_full(
     );
 
     let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<DeoxysBlock>(100);
-    let (state_update_sender, state_update_receiver) = tokio::sync::mpsc::channel::<StateUpdateWrapper>(100);
-    let (class_sender, class_receiver) = tokio::sync::mpsc::channel::<ClassUpdateWrapper>(100);
-
-    let sender_config = mc_sync::SenderConfig {
-        block_sender,
-        state_update_sender,
-        command_sink: command_sink.unwrap().clone(),
-        class_sender,
-    };
 
     task_manager.spawn_essential_handle().spawn(
         "starknet-sync-worker",
         Some("madara"),
-        starknet_sync_worker::sync(fetch_config, sender_config, l1_url, Arc::clone(&client), starting_block),
+        starknet_sync_worker::sync(
+            fetch_config,
+            block_sender,
+            command_sink.unwrap().clone(),
+            l1_url,
+            Arc::clone(&client),
+            starting_block,
+        ),
     );
 
     // manual-seal authorship
     if !sealing.is_default() {
         run_manual_seal_authorship(
             block_receiver,
-            state_update_receiver,
-            class_receiver,
             sealing,
             client,
             transaction_pool,
@@ -571,8 +567,6 @@ pub fn new_full(
 #[allow(clippy::too_many_arguments)]
 fn run_manual_seal_authorship(
     block_receiver: tokio::sync::mpsc::Receiver<DeoxysBlock>,
-    state_update_receiver: tokio::sync::mpsc::Receiver<StateUpdateWrapper>,
-    class_receiver: tokio::sync::mpsc::Receiver<ClassUpdateWrapper>,
     sealing: SealingMode,
     client: Arc<FullClient>,
     transaction_pool: Arc<FullPool<DBlockT, FullClient>>,
@@ -633,12 +627,6 @@ where
 
         /// The receiver that we're using to receive blocks.
         block_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<DeoxysBlock>>,
-
-        /// The receiver that we're using to receive state updates.
-        state_update_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StateUpdateWrapper>>,
-
-        /// The receiver that we're using to receive class updates.
-        class_receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<ClassUpdateWrapper>>,
     }
 
     impl<B, C> ConsensusDataProvider<B> for QueryBlockConsensusDataProvider<C>
@@ -655,19 +643,7 @@ where
             let block_digest_item: DigestItem =
                 sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
 
-            // listening for new state
-            let mut lock = self.state_update_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
-            let state_update = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            let state_update_digest_item: DigestItem =
-                sp_runtime::DigestItem::PreRuntime(mp_digest_log::STATE_ENGINE_ID, Encode::encode(&state_update));
-
-            // listening for new classes
-            let mut lock = self.class_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
-            let class = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            let class_digest_item: DigestItem =
-                sp_runtime::DigestItem::PreRuntime(mp_digest_log::CLASS_ENGINE_ID, Encode::encode(&class));
-
-            Ok(Digest { logs: vec![block_digest_item, state_update_digest_item, class_digest_item] })
+            Ok(Digest { logs: vec![block_digest_item] })
         }
 
         fn append_block_import(
@@ -694,8 +670,6 @@ where
                 consensus_data_provider: Some(Box::new(QueryBlockConsensusDataProvider {
                     _client: client,
                     block_receiver: tokio::sync::Mutex::new(block_receiver),
-                    state_update_receiver: tokio::sync::Mutex::new(state_update_receiver),
-                    class_receiver: tokio::sync::Mutex::new(class_receiver),
                 })),
                 create_inherent_data_providers,
             }))

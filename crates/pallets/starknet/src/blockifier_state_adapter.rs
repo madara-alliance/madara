@@ -66,8 +66,8 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
                 let block_number =
                     UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
 
-                match storage_handler::nonce().get_at(&contract_address, block_number) {
-                    Ok(Some(nonce)) => Ok(nonce),
+                match storage_handler::contract_data().get_at(&contract_address, block_number) {
+                    Ok(Some(contract_data)) => Ok(contract_data.nonce),
                     Ok(None) => Ok(Nonce::default()),
                     Err(_) => Err(StateError::StateReadError(format!(
                         "Failed to retrieve nonce for contract {}",
@@ -81,28 +81,28 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
         match self.class_hash_update.get(&contract_address).cloned() {
             Some(class_hash) => Ok(class_hash),
-            None => match storage_handler::class_hash().get(&contract_address) {
-                Ok(Some(class_hash)) => Ok(class_hash),
-                _ => Err(StateError::StateReadError(format!(
-                    "failed to retrive class hash for contract address {}",
-                    contract_address.0.0
-                ))),
-            },
+            None => {
+                let block_number =
+                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
+
+                match storage_handler::contract_data().get_at(&contract_address, block_number) {
+                    Ok(Some(contract_data)) => Ok(contract_data.class_hash),
+                    _ => Err(StateError::StateReadError(format!(
+                        "failed to retrive class hash for contract address {}",
+                        contract_address.0.0
+                    ))),
+                }
+            }
         }
     }
 
     fn get_compiled_contract_class(&self, class_hash: ClassHash) -> StateResult<ContractClass> {
         match self.contract_class_update.get(&class_hash) {
             Some(contract_class) => Ok(contract_class.clone()),
-            None => {
-                let block_number =
-                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
-
-                match storage_handler::contract_class().get_at(&class_hash, block_number) {
-                    Ok(Some(contract_class)) => Ok(contract_class),
-                    _ => Err(StateError::UndeclaredClassHash(class_hash)),
-                }
-            }
+            None => match storage_handler::contract_class_data().get(&class_hash) {
+                Ok(Some(contract_class_data)) => Ok(contract_class_data.contract_class),
+                _ => Err(StateError::UndeclaredClassHash(class_hash)),
+            },
         }
     }
 

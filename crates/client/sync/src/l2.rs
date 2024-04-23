@@ -1,19 +1,24 @@
 //! Contains the code required to sync data from the feeder efficiently.
+use std::collections::HashMap;
 use std::pin::pin;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use futures::prelude::*;
 use lazy_static::lazy_static;
+use mc_db::storage_handler::{self, StorageViewMut};
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::DeoxysBlock;
-use mp_contract::class::ClassUpdateWrapper;
+use mp_contract::class::{
+    ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData, StorageContractData,
+};
 use mp_felt::Felt252Wrapper;
 use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use starknet_api::hash::StarkHash;
+use starknet_api::core::{ClassHash, ContractAddress, Nonce, PatriciaKey};
+use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_core::types::{PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
@@ -120,10 +125,6 @@ pub fn get_pending_state_update() -> Option<PendingStateUpdate> {
 pub struct SenderConfig {
     /// Sender for dispatching fetched blocks.
     pub block_sender: Sender<DeoxysBlock>,
-    /// Sender for dispatching fetched state updates.
-    pub state_update_sender: Sender<StateUpdateWrapper>,
-    /// Sender for dispatching fetched class hashes.
-    pub class_sender: Sender<ClassUpdateWrapper>,
     /// The command sink used to notify the consensus engine that a new block
     /// should be created.
     pub command_sink: CommandSink,
@@ -132,37 +133,28 @@ pub struct SenderConfig {
 /// Spawns workers to fetch blocks and state updates from the feeder.
 /// `n_blocks` is optionally the total number of blocks to sync, for debugging/benchmark purposes.
 pub async fn sync<C>(
-    mut sender_config: SenderConfig,
-    fetch_config: FetchConfig,
+    block_sender: Sender<DeoxysBlock>,
+    mut command_sink: CommandSink,
+    provider: SequencerGatewayProvider,
     first_block: u64,
-    n_blocks: Option<usize>,
+    verify: bool,
     client: Arc<C>,
 ) where
     C: HeaderBackend<DBlockT> + 'static,
 {
-    let SenderConfig { block_sender, state_update_sender, class_sender, command_sink } = &mut sender_config;
-    let provider = Arc::new(SequencerGatewayProvider::new(
-        fetch_config.gateway.clone(),
-        fetch_config.feeder_gateway.clone(),
-        fetch_config.chain_id,
-        fetch_config.api_key,
-    ));
+    let provider = Arc::new(provider);
     let mut last_block_hash = None;
-
-    // TODO: move this somewhere else
-    if first_block == 1 {
-        let state_update =
-            provider.get_state_update(BlockId::Number(0)).await.expect("getting state update for genesis block");
-        verify_l2(0, &state_update).expect("verifying genesis block");
-    }
 
     let fetch_stream = (first_block..).map(|block_n| {
         let provider = Arc::clone(&provider);
         async move { tokio::spawn(fetch_block_and_updates(block_n, provider)).await.expect("tokio join error") }
     });
+
     // Have 10 fetches in parallel at once, using futures Buffered
-    let fetch_stream = stream::iter(fetch_stream.take(n_blocks.unwrap_or(usize::MAX))).buffered(10);
+    let fetch_stream = stream::iter(fetch_stream).buffered(10);
     let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(10);
+    let (state_update_sender, mut state_update_receiver) = mpsc::channel(10);
+    let (class_update_sender, mut class_update_receiver) = mpsc::channel(10);
 
     tokio::select!(
         // update highest block hash and number
@@ -189,6 +181,8 @@ pub async fn sync<C>(
         // apply blocks and updates sequentially
         _ = async {
             let mut block_n = first_block;
+            let block_sender = Arc::new(block_sender);
+
             while let Some(val) = pin!(fetch_stream_receiver.recv()).await {
                 if matches!(val, Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))) {
                     break;
@@ -197,7 +191,6 @@ pub async fn sync<C>(
                 let (block, state_update, class_update) = val.expect("fetching block");
 
                 let (state_update, block_conv) = {
-                    let verify = fetch_config.verify;
                     let state_update = Arc::new(state_update);
                     let state_update_1 = Arc::clone(&state_update);
 
@@ -236,7 +229,7 @@ pub async fn sync<C>(
                     (Arc::try_unwrap(state_update_1).expect("arc should not be aliased"), block_conv)
                 };
 
-                let block_sender = &*block_sender;
+                let block_sender = Arc::clone(&block_sender);
                 tokio::join!(
                     async move {
                         block_sender.send(block_conv).await.expect("block reciever channel is closed");
@@ -245,25 +238,62 @@ pub async fn sync<C>(
                         // Now send state_update, which moves it. This will be received
                         // by QueryBlockConsensusDataProvider in deoxys/crates/node/src/service.rs
                         state_update_sender
-                            .send(StateUpdateWrapper::from(state_update))
+                            .send((block_n, StateUpdateWrapper::from(state_update)))
                             .await
                             .expect("state updater is not running");
                     },
                     async {
                         // do the same to class update
-                        class_sender
-                            .send(ClassUpdateWrapper(class_update))
+                        class_update_sender
+                            .send((block_n, ClassUpdateWrapper(class_update)))
                             .await
                             .expect("class updater is not running");
                     }
                 );
 
                 let start = std::time::Instant::now();
-                create_block(command_sink, &mut last_block_hash).await.expect("creating block");
+                create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
                 log::debug!("end create_block: {:?}", std::time::Instant::now() - start);
                 block_n += 1;
             }
         } => {},
+        // store state updates
+        _ = async {
+            while let Some((block_number, state_update)) = pin!(state_update_receiver.recv()).await {
+                let nonce_map: HashMap<ContractAddress, Nonce> = state_update.state_diff.nonces.into_iter()
+                .map(|(contract_address, nonce)| (ContractAddress(PatriciaKey(StarkFelt(contract_address.0.to_bytes_be()))), Nonce(StarkFelt(nonce.0.to_bytes_be()))))
+                .collect();
+
+                let mut handler_contract_data = storage_handler::contract_data_mut();
+
+                std::iter::empty()
+                    .chain(state_update.state_diff.deployed_contracts)
+                    .chain(state_update.state_diff.replaced_classes)
+                    .map(|contract| (ContractAddress(contract.address.into()), ClassHash(contract.class_hash.into())))
+                    .for_each(|(contract_address, class_hash)| handler_contract_data.insert(contract_address, StorageContractData {
+                        class_hash,
+                        nonce: nonce_map.get(&contract_address).cloned().unwrap_or_default(),
+                    }).unwrap());
+
+                handler_contract_data.commit(block_number).expect("failed to insert state update data into storage");
+             }
+        } => {},
+        // store class udpate
+        _ = async {
+            while let Some((block_number, class_update)) = pin!(class_update_receiver.recv()).await {
+                let mut handler_contract_cladd_data_mut = storage_handler::contract_class_data_mut();
+
+                class_update.0.into_iter().for_each(
+                    |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
+                        let ContractClassWrapper { contract: contract_class, abi } = contract_class_wrapper;
+
+                        handler_contract_cladd_data_mut.insert(class_hash, StorageContractClassData { contract_class, abi }).unwrap();
+                    },
+                );
+
+                handler_contract_cladd_data_mut.commit(block_number).expect("failed to commit to storage");
+            }
+        } => {}
     );
 
     log::debug!("L2 sync finished :)");
