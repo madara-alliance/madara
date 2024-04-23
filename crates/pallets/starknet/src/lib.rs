@@ -190,14 +190,6 @@ pub mod pallet {
         }
     }
 
-    /// The Starknet pallet storage items.
-    /// STORAGE
-    /// Current building block's transactions.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn pending)]
-    pub(super) type Pending<T: Config> = StorageValue<_, Vec<Transaction>, ValueQuery>;
-
     // Keep the hashes of the transactions stored in Pending
     // One should not be updated without the other !!!
     #[pallet::storage]
@@ -809,13 +801,6 @@ impl<T: Config> Pallet<T> {
         timestamp_in_millisecond / 1000
     }
 
-    /// Get the number of transactions in the block.
-    #[inline(always)]
-    pub fn transaction_count() -> u128 {
-        Self::pending().len() as u128
-    }
-
-    /// Get the number of events in the block.
     #[inline(always)]
     pub fn event_count() -> u128 {
         TxEvents::<T>::iter_values().map(|v| v.len() as u128).sum()
@@ -906,7 +891,6 @@ impl<T: Config> Pallet<T> {
                 handler_block_number.insert(&block_hash, block_number).unwrap();
                 handler_block_hash.insert(block_number, &block_hash).unwrap();
 
-                Pending::<T>::kill();
                 let digest = DigestItem::Consensus(MADARA_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
                 frame_system::Pallet::<T>::deposit_log(digest);
             }
