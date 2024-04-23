@@ -54,7 +54,6 @@ pub mod types;
 #[macro_use]
 pub extern crate alloc;
 
-use alloc::collections::BTreeSet;
 use alloc::str::from_utf8_unchecked;
 use alloc::string::String;
 use alloc::vec;
@@ -82,15 +81,15 @@ use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
-use starknet_api::core::{ChainId, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce};
+use starknet_api::core::{ChainId, CompiledClassHash, ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::{Calldata, Event as StarknetEvent, MessageToL1, Transaction, TransactionHash};
+use starknet_api::transaction::{Calldata, Event as StarknetEvent, MessageToL1, TransactionHash};
 use starknet_crypto::FieldElement;
 
 use crate::alloc::string::ToString;
-use crate::types::{CasmClassHash, SierraClassHash, StorageSlot};
+use crate::types::{CasmClassHash, SierraClassHash};
 
 pub(crate) const LOG_TARGET: &str = "runtime::starknet";
 
@@ -190,13 +189,7 @@ pub mod pallet {
         }
     }
 
-    // Keep the hashes of the transactions stored in Pending
-    // One should not be updated without the other !!!
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn pending_hashes)]
-    pub(super) type PendingHashes<T: Config> = StorageValue<_, Vec<TransactionHash>, ValueQuery>;
-
+    // TODO: @charpa is this used in any RPC calls?
     #[pallet::storage]
     #[pallet::unbounded]
     #[pallet::getter(fn tx_events)]
@@ -211,29 +204,13 @@ pub mod pallet {
     #[pallet::unbounded]
     #[pallet::getter(fn tx_revert_error)]
     pub(super) type TxRevertError<T: Config> = StorageMap<_, Identity, TransactionHash, String, OptionQuery>;
-    /// The Starknet pallet storage items.
-    /// STORAGE
-    /// Mapping of contract address to state root.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn contract_state_root_by_address)]
-    pub(super) type ContractsStateRoots<T: Config> =
-        StorageMap<_, Identity, ContractAddress, Felt252Wrapper, OptionQuery>;
-
-    /// Pending storage slot updates
-    /// STORAGE
-    /// Mapping storage key to storage value.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn pending_storage_changes)]
-    pub(super) type PendingStorageChanges<T: Config> =
-        StorageMap<_, Identity, ContractAddress, Vec<StorageSlot>, ValueQuery>;
 
     /// The last processed Ethereum block number for L1 messages consumption.
     /// This is used to avoid re-processing the same Ethereum block multiple times.
     /// This is used by the offchain worker.
     /// # TODO
     /// * Find a more relevant name for this.
+    // TODO: do we actually need this?
     #[pallet::storage]
     #[pallet::unbounded]
     #[pallet::getter(fn last_known_eth_block)]
@@ -256,13 +233,6 @@ pub mod pallet {
     #[pallet::unbounded]
     #[pallet::getter(fn seq_addr_update)]
     pub type SeqAddrUpdate<T: Config> = StorageValue<_, bool, ValueQuery>;
-
-    /// Information about processed L1 Messages
-    /// Based on Nonce value.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn l1_messages)]
-    pub(super) type L1Messages<T: Config> = StorageValue<_, BTreeSet<Nonce>, ValueQuery>;
 
     /// Starknet genesis configuration.
     #[pallet::genesis_config]
@@ -310,7 +280,7 @@ pub mod pallet {
             // });
             // handler_class_hash.commit(0).unwrap();
 
-            let mut handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
+            let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
             self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
                 handler_contract_class_hashes.insert(*class_hash, CompiledClassHash(compiled_class_hash.0)).unwrap();
             });
@@ -403,222 +373,6 @@ pub mod pallet {
             SeqAddrUpdate::<T>::put(true);
             Ok(())
         }
-
-        // /// The invoke transaction is the main transaction type used to invoke contract functions in
-        // /// Starknet.
-        // /// See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#invoke_transaction`.
-        // /// # Arguments
-        // ///
-        // /// * `origin` - The origin of the transaction.
-        // /// * `transaction` - The Starknet transaction.
-        // ///
-        // ///  # Returns
-        // ///
-        // /// * `DispatchResult` - The result of the transaction.
-        // #[pallet::call_index(1)]
-        // #[pallet::weight({0})]
-        // pub fn invoke(origin: OriginFor<T>, transaction: InvokeTransaction) -> DispatchResult {
-        //     // This ensures that the function can only be called via unsigned transaction.
-        //     ensure_none(origin)?;
-
-        //     let sender_address = match &transaction {
-        //         starknet_api::transaction::InvokeTransaction::V0(tx) => tx.contract_address,
-        //         starknet_api::transaction::InvokeTransaction::V1(tx) => tx.sender_address,
-        //         starknet_api::transaction::InvokeTransaction::V3(tx) => tx.sender_address,
-        //     };
-        //     // Check if contract is deployed
-        //     ensure!(ContractClassHashes::<T>::contains_key(sender_address),
-        // Error::<T>::AccountNotDeployed);
-
-        //     // Init caches
-        //     let mut cached_state = Self::init_cached_state();
-
-        //     // Execute
-        //     let tx_execution_infos = ExecutableTransaction::execute(
-        //         blockifier::transaction::account_transaction::AccountTransaction::Invoke(transaction.
-        // clone()),         &mut cached_state,
-        //         &Self::get_block_context(),
-        //         true,
-        //         true,
-        //     )
-        //     .map_err(|_| Error::<T>::TransactionExecutionFailed)?;
-
-        //     Self::emit_and_store_tx_and_fees_events(
-        //         transaction.tx_hash,
-        //         &tx_execution_infos.execute_call_info,
-        //         &tx_execution_infos.fee_transfer_call_info,
-        //     );
-        //     Self::store_transaction(
-        //         transaction.tx_hash,
-        //         Transaction::AccountTransaction(AccountTransaction::Invoke(transaction)),
-        //         tx_execution_infos.revert_error,
-        //     );
-
-        //     Ok(())
-        // }
-
-        // /// The declare transaction is used to introduce new classes into the state of Starknet,
-        // /// enabling other contracts to deploy instances of those classes or using them in a library
-        // /// call. See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#declare_transaction`.
-        // /// # Arguments
-        // ///
-        // /// * `origin` - The origin of the transaction.
-        // /// * `transaction` - The Starknet transaction.
-        // ///
-        // ///  # Returns
-        // ///
-        // /// * `DispatchResult` - The result of the transaction.
-        // #[pallet::call_index(2)]
-        // #[pallet::weight({0})]
-        // pub fn declare(origin: OriginFor<T>, transaction: DeclareTransaction) -> DispatchResult {
-        //     // This ensures that the function can only be called via unsigned transaction.
-        //     ensure_none(origin)?;
-
-        //     // Check class hash is not already declared
-        //     ensure!(
-        //         !ContractClasses::<T>::contains_key(transaction.tx().class_hash()),
-        //         Error::<T>::ClassHashAlreadyDeclared
-        //     );
-        //     // Check if contract is deployed
-        //     ensure!(
-        //         ContractClassHashes::<T>::contains_key(transaction.tx().sender_address()),
-        //         Error::<T>::AccountNotDeployed
-        //     );
-
-        //     // Init caches
-        //     let mut cached_state = Self::init_cached_state();
-
-        //     // Execute
-        //     let tx_execution_infos = ExecutableTransaction::execute(
-        //         blockifier::transaction::account_transaction::AccountTransaction::Declare(transaction.
-        // clone()),         &mut cached_state,
-        //         &Self::get_block_context(),
-        //         true,
-        //         true,
-        //     )
-        //     .map_err(|_| Error::<T>::TransactionExecutionFailed)?;
-
-        //     Self::emit_and_store_tx_and_fees_events(
-        //         transaction.tx_hash,
-        //         &tx_execution_infos.execute_call_info,
-        //         &tx_execution_infos.fee_transfer_call_info,
-        //     );
-        //     Self::store_transaction(
-        //         transaction.tx_hash,
-        //         Transaction::AccountTransaction(AccountTransaction::Declare(transaction)),
-        //         tx_execution_infos.revert_error,
-        //     );
-
-        //     Ok(())
-        // }
-
-        // /// Since Starknet v0.10.1 the deploy_account transaction replaces the deploy transaction
-        // /// for deploying account contracts. To use it, you should first pre-fund your
-        // /// would-be account address so that you could pay the transaction fee (see here for more
-        // /// details) . You can then send the deploy_account transaction. See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#deploy_account_transaction`.
-        // /// # Arguments
-        // ///
-        // /// * `origin` - The origin of the transaction.
-        // /// * `transaction` - The Starknet transaction.
-        // ///
-        // ///  # Returns
-        // ///
-        // /// * `DispatchResult` - The result of the transaction.
-        // #[pallet::call_index(3)]
-        // #[pallet::weight({0})]
-        // pub fn deploy_account(origin: OriginFor<T>, transaction: DeployAccountTransaction) ->
-        // DispatchResult {     // This ensures that the function can only be called via unsigned
-        // transaction.     ensure_none(origin)?;
-
-        //     // Check if contract is deployed
-        //     ensure!(
-        //         !ContractClassHashes::<T>::contains_key(transaction.contract_address),
-        //         Error::<T>::AccountAlreadyDeployed
-        //     );
-
-        //     // Init caches
-        //     let mut cached_state = Self::init_cached_state();
-
-        //     // Execute
-        //     let tx_execution_infos = ExecutableTransaction::execute(
-        //         blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(transaction.clone()),
-        //         &mut cached_state,
-        //         &Self::get_block_context(),
-        //         true,
-        //         true,
-        //     )
-        //     .map_err(|_| Error::<T>::TransactionExecutionFailed)?;
-
-        //     Self::emit_and_store_tx_and_fees_events(
-        //         transaction.tx_hash,
-        //         &tx_execution_infos.execute_call_info,
-        //         &tx_execution_infos.fee_transfer_call_info,
-        //     );
-        //     Self::store_transaction(
-        //         transaction.tx_hash,
-        //         Transaction::AccountTransaction(AccountTransaction::DeployAccount(transaction)),
-        //         tx_execution_infos.revert_error,
-        //     );
-
-        //     Ok(())
-        // }
-
-        // /// Consume a message from L1.
-        // ///
-        // /// # Arguments
-        // ///
-        // /// * `origin` - The origin of the transaction.
-        // /// * `transaction` - The Starknet transaction.
-        // ///
-        // /// # Returns
-        // ///
-        // /// * `DispatchResult` - The result of the transaction.
-        // ///
-        // /// # TODO
-        // /// * Compute weight
-        // #[pallet::call_index(4)]
-        // #[pallet::weight({0})]
-        // pub fn consume_l1_message(origin: OriginFor<T>, transaction: L1HandlerTransaction) ->
-        // DispatchResult {     // This ensures that the function can only be called via unsigned
-        // transaction.     ensure_none(origin)?;
-
-        //     let nonce = transaction.tx.nonce;
-
-        //     // Ensure that L1 Message has not been executed
-        //     Self::ensure_l1_message_not_executed(&nonce).map_err(|_|
-        // Error::<T>::L1MessageAlreadyExecuted)?;
-
-        //     // Store infornamtion about message being processed
-        //     // The next instruction executes the message
-        //     // Either successfully  or not
-        //     L1Messages::<T>::mutate(|nonces| nonces.insert(nonce));
-
-        //     // Init caches
-        //     let mut cached_state = Self::init_cached_state();
-
-        //     // Execute
-        //     let tx_execution_infos = ExecutableTransaction::execute(
-        //         transaction.clone(),
-        //         &mut cached_state,
-        //         &Self::get_block_context(),
-        //         true,
-        //         true,
-        //     )
-        //     .map_err(|_| Error::<T>::TransactionExecutionFailed)?;
-
-        //     Self::emit_and_store_tx_and_fees_events(
-        //         transaction.tx_hash,
-        //         &tx_execution_infos.execute_call_info,
-        //         &tx_execution_infos.fee_transfer_call_info,
-        //     );
-        //     Self::store_transaction(
-        //         transaction.tx_hash,
-        //         Transaction::L1HandlerTransaction(transaction),
-        //         tx_execution_infos.revert_error,
-        //     );
-
-        //     Ok(())
-        // }
     }
 
     #[pallet::inherent]
@@ -639,104 +393,10 @@ pub mod pallet {
             matches!(call, Call::set_sequencer_address { .. })
         }
     }
-
-    //     #[pallet::validate_unsigned]
-    //     impl<T: Config> ValidateUnsigned for Pallet<T> {
-    //         type Call = Call<T>;
-
-    //         /// Validate unsigned call to this module.
-    //         ///
-    //         /// By default unsigned transactions are disallowed, but implementing the validator
-    //         /// here we make sure that some particular calls (in this case all calls)
-    //         /// are being whitelisted and marked as valid.
-    //         // fn validate_unsigned(_source: TransactionSource, call: &Self::Call) ->
-    // TransactionValidity {         //     // The priority right now is the max u64 - nonce
-    // because for unsigned transactions we need to         //     // determine an absolute
-    // priority. For now we use that for the benchmark (lowest nonce goes first)         //
-    // // otherwise we have a nonce error and everything fails.         //     // Once we have a
-    // real fee market this is where we'll chose the most profitable transaction.
-
-    //         //     let transaction = Self::get_call_transaction(call.clone()).map_err(|_|
-    // InvalidTransaction::Call)?;
-
-    //         //     let tx_priority_info = Self::validate_unsigned_tx_nonce(&transaction)?;
-
-    //         //     Self::validate_unsigned_tx(&transaction)?;
-
-    //         //     let mut valid_transaction_builder =
-    // ValidTransaction::with_tag_prefix("starknet")         //         .priority(u64::MAX)
-    //         //         .longevity(T::TransactionLongevity::get())
-    //         //         .propagate(true);
-
-    //         //     match tx_priority_info {
-    //         //         // Make sure txs from same account are executed in correct order (nonce
-    // based ordering)         //         TxPriorityInfo::RegularTxs { sender_address,
-    // transaction_nonce, sender_nonce } => {         //             valid_transaction_builder =
-    //         //                 valid_transaction_builder.and_provides((sender_address,
-    // transaction_nonce));         //             if transaction_nonce > sender_nonce {
-    //         //                 valid_transaction_builder =
-    // valid_transaction_builder.and_requires((         //                     sender_address,
-    //         //                     transaction_nonce
-    //         //                         .try_increment()
-    //         //                         .map_err(|_|
-    // TransactionValidityError::Invalid(InvalidTransaction::BadProof))?,         //
-    // ));         //             }
-    //         //         }
-    //         //         TxPriorityInfo::L1Handler { nonce } => {
-    //         //             valid_transaction_builder =
-    //         //
-    // valid_transaction_builder.and_provides((ContractAddress::default(), nonce));         //
-    // }         //         _ => {}
-    //         //     }
-
-    //         //     valid_transaction_builder.build()
-    //         // }
-
-    //         /// From substrate documentation:
-    //         /// Validate the call right before dispatch.
-    //         /// This method should be used to prevent transactions already in the pool
-    //         /// (i.e. passing validate_unsigned) from being included in blocks in case
-    //         /// they became invalid since being added to the pool.
-    //         ///
-    //         /// In the default implementation of pre_dispatch for the ValidateUnsigned trait,
-    //         /// this function calls the validate_unsigned function in order to verify validity
-    //         /// before dispatch. In our case, since transaction was already validated in
-    //         /// `validate_unsigned` we can just return Ok.
-    //         fn pre_dispatch(_call: &Self::Call) -> Result<(), TransactionValidityError> {
-    //             Ok(())
-    //         }
-    //     }
 }
 
 /// The Starknet pallet internal functions.
 impl<T: Config> Pallet<T> {
-    /// Returns the transaction for the Call
-    ///
-    /// # Arguments
-    ///
-    /// * `call` - The call to get the sender address for
-    ///
-    /// # Returns
-    ///
-    /// The transaction
-    // fn get_call_transaction(call: Call<T>) -> Result<Transaction, ()> {
-    //     let tx = match call {
-    //         Call::<T>::invoke { transaction } => {
-    //             Transaction::AccountTransaction(AccountTransaction::Invoke(transaction))
-    //         }
-    //         Call::<T>::declare { transaction } => {
-    //             Transaction::AccountTransaction(AccountTransaction::Declare(transaction))
-    //         }
-    //         Call::<T>::deploy_account { transaction } => {
-    //             Transaction::AccountTransaction(AccountTransaction::DeployAccount(transaction))
-    //         }
-    //         Call::<T>::consume_l1_message { transaction } => Transaction::L1HandlerTransaction(transaction),
-    //         _ => return Err(()),
-    //     };
-
-    //     Ok(tx)
-    // }
-
     /// Creates a [BlockContext] object. The [BlockContext] is needed by the blockifier to execute
     /// properly the transaction. Substrate caches data so it's fine to call multiple times this
     /// function, only the first transaction/block will be "slow" to load these data.
