@@ -254,7 +254,8 @@ pub mod pallet {
         match ClassUpdateWrapper::decode(&mut encoded_data.as_slice()) {
             Ok(class_update) => {
                 class_update.0.into_iter().for_each(|ContractClassData { hash, contract_class }| {
-                    let ContractClassWrapper { contract, abi, sierra_program_length: _, abi_length: _ } = contract_class;
+                    let ContractClassWrapper { contract, abi, sierra_program_length: _, abi_length: _ } =
+                        contract_class;
 
                     // TODO store the sierra_program_length and abi_length
 

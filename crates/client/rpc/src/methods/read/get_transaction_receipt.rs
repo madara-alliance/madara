@@ -107,7 +107,11 @@ where
     };
 
     // retrieve the transaction index in the block with the transaction hash
-    let (tx_index, _) = block_txs_hashes.into_iter().enumerate().find(|(_, hash)| hash == &transaction_hash).unwrap();
+    let (tx_index, _) =
+        block_txs_hashes.iter().enumerate().find(|(_, hash)| *hash == &transaction_hash).ok_or_else(|| {
+            log::error!("Failed to retrieve transaction index from block with hash {block_hash:?}");
+            StarknetRpcApiError::InternalServerError
+        })?;
 
     let transaction = block.transactions().get(tx_index).ok_or_else(|| {
         log::error!("Failed to retrieve transaction at index {tx_index} from block with hash {block_hash:?}");
@@ -120,7 +124,11 @@ where
         return Err(StarknetRpcApiError::UnimplementedMethod.into());
     }
 
-    let transactions = blockifier_transactions(client, substrate_block_hash, chain_id, &block, block_number, tx_index)?;
+    // create a vector of tuples with the transaction and its hash, up to the current transaction index
+    let transaction_with_hash =
+        block.transactions().iter().cloned().zip(block_txs_hashes.iter().cloned()).take(tx_index + 1).collect();
+
+    let transactions_blockifier = blockifier_transactions(client, substrate_block_hash, transaction_with_hash)?;
 
     let fee_token_address = client.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
         log::error!("Failed to retrieve fee token address: {e}");
@@ -129,7 +137,7 @@ where
     // TODO: convert the real chain_id in String
     let block_context =
         block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
-    let execution_infos = execution_infos(client, previous_block_hash, transactions, &block_context)?;
+    let execution_infos = execution_infos(client, previous_block_hash, transactions_blockifier, &block_context)?;
 
     // TODO(#1291): compute message hash correctly to L1HandlerTransactionReceipt
     let message_hash: Hash256 = Hash256::from_felt(&FieldElement::default());

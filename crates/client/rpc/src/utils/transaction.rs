@@ -1,9 +1,7 @@
 use blockifier::execution::contract_class::ClassInfo;
 use blockifier::transaction::transaction_execution as btx;
 use jsonrpsee::core::RpcResult;
-use mp_block::DeoxysBlock;
 use mp_hashers::HasherT;
-use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_types::block::{DBlockT, DHashT};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -11,18 +9,17 @@ use sc_client_api::BlockBackend;
 use sc_transaction_pool::ChainApi;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
+use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{Transaction, TransactionHash};
+use starknet_ff::FieldElement;
 
 use crate::errors::StarknetRpcApiError;
-use crate::{Felt, Starknet};
+use crate::Starknet;
 
 pub(crate) fn blockifier_transactions<A, BE, G, C, P, H>(
     client: &Starknet<A, BE, G, C, P, H>,
     substrate_block_hash: DHashT,
-    chain_id: Felt,
-    block: &DeoxysBlock,
-    block_number: u64,
-    tx_index: usize,
+    transaction_with_hash: Vec<(Transaction, FieldElement)>,
 ) -> RpcResult<Vec<btx::Transaction>>
 where
     A: ChainApi<Block = DBlockT> + 'static,
@@ -32,12 +29,10 @@ where
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
-    let transactions = block
-            .transactions()
+    let transactions = transaction_with_hash
             .iter()
-            .take(tx_index + 1)
-            .filter(|tx| !matches!(tx, Transaction::Deploy(_))) // deploy transaction was not supported by blockifier
-            .map(|tx| to_blockifier_transactions(client, tx, &tx.compute_hash::<H>(chain_id.0.into(), false, Some(block_number)) , substrate_block_hash))
+            .filter(|(tx, _)| !matches!(tx, Transaction::Deploy(_))) // deploy transaction was not supported by blockifier
+            .map(|(tx, hash)| to_blockifier_transactions(client, tx, &TransactionHash(StarkFelt::new_unchecked(hash.to_bytes_be())), substrate_block_hash))
             .collect::<Result<Vec<_>, _>>()?;
 
     Ok(transactions)
