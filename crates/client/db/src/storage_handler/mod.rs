@@ -127,12 +127,12 @@ pub trait StorageView {
     /// Retrieves data from storage for the given key
     ///
     /// * `key`: identifier used to retrieve the data.
-    fn get(self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError>;
+    fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError>;
 
     /// Checks if a value is stored in the backend database for the given key.
     ///
     /// * `key`: identifier use to check for data existence.
-    fn contains(self, key: &Self::KEY) -> Result<bool, DeoxysStorageError>;
+    fn contains(&self, key: &Self::KEY) -> Result<bool, DeoxysStorageError>;
 }
 
 /// A mutable view on a backend storage interface.
@@ -148,13 +148,13 @@ pub trait StorageViewMut {
     ///
     /// * `key`: identifier used to inser data.
     /// * `value`: encodable data to save to the database.
-    fn insert(&mut self, key: Self::KEY, value: Self::VALUE) -> Result<(), DeoxysStorageError>;
+    fn insert(&self, key: Self::KEY, value: Self::VALUE) -> Result<(), DeoxysStorageError>;
 
     /// Applies all changes up to this point.
     ///
     /// * `block_number`: point in the chain at which to apply the new changes. Must be
     /// incremental
-    fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError>;
+    fn commit(&self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
 /// A mutable view on a backend storage interface, marking it as revertible in the chain.
@@ -165,7 +165,7 @@ pub trait StorageViewRevetible: StorageViewMut {
     /// Reverts to a previous state in the chain.
     ///
     /// * `block_number`: point in the chain to revert to.
-    fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError>;
+    fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
 pub fn contract_trie_mut<'a>() -> ContractTrieViewMut<'a> {

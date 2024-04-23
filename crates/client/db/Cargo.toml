@@ -30,6 +30,7 @@ mp-contract = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-types = { workspace = true }
+mp-block = { workspace = true }
 
 # Starknet crates
 blockifier = { workspace = true, features = ["testing"] }
@@ -51,8 +52,11 @@ arc-swap = { workspace = true }
 bitvec = { workspace = true }
 ethers = { workspace = true }
 log = { workspace = true, default-features = true }
+rayon = { workspace = true }
 rocksdb = { version = "0.21", features = [
   # "multi-threaded-cf",
 ] }
 thiserror = { workspace = true }
+crossbeam-skiplist = { workspace = true }
+tokio = { workspace = true }
 uuid = "1.4.1"

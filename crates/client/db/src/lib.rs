@@ -37,6 +37,7 @@ pub mod bonsai_db;
 mod l1_handler_tx_fee;
 mod meta_db;
 pub mod storage_handler;
+pub mod storage_updates;
 
 pub use error::{BonsaiDbError, DbError};
 pub use mapping_db::MappingCommitment;

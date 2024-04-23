@@ -7,7 +7,7 @@ use crate::{Column, DatabaseExt, DeoxysBackend};
 pub struct BlockNumberView;
 
 impl BlockNumberView {
-    pub fn get(self, block_hash: &Felt252Wrapper) -> Result<Option<u64>, DeoxysStorageError> {
+    pub fn get(&self, block_hash: &Felt252Wrapper) -> Result<Option<u64>, DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockHashToNumber);
         let block_number = db
@@ -22,7 +22,7 @@ impl BlockNumberView {
         }
     }
 
-    pub fn contains(self, block_hash: &Felt252Wrapper) -> Result<bool, DeoxysStorageError> {
+    pub fn contains(&self, block_hash: &Felt252Wrapper) -> Result<bool, DeoxysStorageError> {
         Ok(matches!(self.get(block_hash)?, Some(_)))
     }
 

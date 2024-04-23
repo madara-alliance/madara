@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
+use crossbeam_skiplist::SkipMap;
 use mp_contract::class::StorageContractData;
 use parity_scale_codec::{Decode, Encode};
 use rocksdb::IteratorMode;
@@ -9,14 +10,14 @@ use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut, Storag
 use crate::{Column, DatabaseExt, DeoxysBackend};
 
 #[derive(Default)]
-pub struct ContractDataViewMut(HashMap<ContractAddress, StorageContractData>);
+pub struct ContractDataViewMut(SkipMap<ContractAddress, StorageContractData>);
 pub struct ContractDataView;
 
 impl StorageView for ContractDataView {
     type KEY = ContractAddress;
     type VALUE = StorageContractData;
 
-    fn get(self, contract_address: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+    fn get(&self, contract_address: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractData);
 
@@ -32,7 +33,7 @@ impl StorageView for ContractDataView {
         Ok(tree.last_key_value().map(|(_k, v)| v).cloned())
     }
 
-    fn contains(self, contract_address: &Self::KEY) -> Result<bool, DeoxysStorageError> {
+    fn contains(&self, contract_address: &Self::KEY) -> Result<bool, DeoxysStorageError> {
         Ok(matches!(self.get(contract_address)?, Some(_)))
     }
 }
@@ -63,18 +64,18 @@ impl StorageViewMut for ContractDataViewMut {
     type KEY = ContractAddress;
     type VALUE = StorageContractData;
 
-    fn insert(&mut self, contract_address: Self::KEY, contract_data: Self::VALUE) -> Result<(), DeoxysStorageError> {
+    fn insert(&self, contract_address: Self::KEY, contract_data: Self::VALUE) -> Result<(), DeoxysStorageError> {
         self.0.insert(contract_address, contract_data);
         Ok(())
     }
 
-    fn commit(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
+    fn commit(&self, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractData);
 
-        for (contract_address, contract_data) in self.0.iter() {
+        for entry in self.0.iter() {
             let mut tree: BTreeMap<u64, StorageContractData> = match db
-                .get_cf(&column, contract_address.encode())
+                .get_cf(&column, entry.key().encode())
                 .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ClassHash))?
             {
                 Some(bytes) => BTreeMap::decode(&mut &bytes[..])
@@ -82,8 +83,8 @@ impl StorageViewMut for ContractDataViewMut {
                 None => BTreeMap::new(),
             };
 
-            tree.insert(block_number, contract_data.clone());
-            db.put_cf(&column, contract_address.encode(), tree.encode())
+            tree.insert(block_number, entry.value().clone());
+            db.put_cf(&column, entry.key().encode(), tree.encode())
                 .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::ClassHash))?;
         }
 
@@ -92,7 +93,7 @@ impl StorageViewMut for ContractDataViewMut {
 }
 
 impl StorageViewRevetible for ContractDataViewMut {
-    fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {
+    fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractData);
 

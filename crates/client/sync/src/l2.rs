@@ -1,24 +1,20 @@
 //! Contains the code required to sync data from the feeder efficiently.
-use std::collections::HashMap;
 use std::pin::pin;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use futures::prelude::*;
 use lazy_static::lazy_static;
-use mc_db::storage_handler::{self, StorageViewMut};
+use mc_db::storage_updates::{store_class_update, store_state_update};
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::DeoxysBlock;
-use mp_contract::class::{
-    ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData, StorageContractData,
-};
+use mp_contract::class::ClassUpdateWrapper;
 use mp_felt::Felt252Wrapper;
 use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
-use starknet_api::hash::{StarkFelt, StarkHash};
+use starknet_api::hash::StarkHash;
 use starknet_core::types::{PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
@@ -260,50 +256,17 @@ pub async fn sync<C>(
         // store state updates
         _ = async {
             while let Some((block_number, state_update)) = pin!(state_update_receiver.recv()).await {
-                let nonce_map: HashMap<ContractAddress, Nonce> = state_update.state_diff.nonces.into_iter()
-                .map(|(contract_address, nonce)| (ContractAddress(PatriciaKey(StarkFelt(contract_address.0.to_bytes_be()))), Nonce(StarkFelt(nonce.0.to_bytes_be()))))
-                .collect();
-
-                let mut handler_contract_data = storage_handler::contract_data_mut();
-                std::iter::empty()
-                    .chain(state_update.state_diff.deployed_contracts)
-                    .chain(state_update.state_diff.replaced_classes)
-                    .map(|contract| (ContractAddress(contract.address.into()), ClassHash(contract.class_hash.into())))
-                    .for_each(|(contract_address, class_hash)| handler_contract_data.insert(contract_address, StorageContractData {
-                        class_hash,
-                        nonce: nonce_map.get(&contract_address).cloned().unwrap_or_default(),
-                    }).unwrap());
-                handler_contract_data.commit(block_number).expect("failed to insert state update data into storage");
-
-                let mut handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
-                state_update
-                    .state_diff
-                    .declared_classes
-                    .into_iter()
-                    .map(|declared_class| {
-                        (
-                            ClassHash(declared_class.class_hash.into()),
-                            CompiledClassHash(declared_class.compiled_class_hash.into()),
-                        )
-                    })
-                    .for_each(|(class_hash, compiled_class_hash)| {
-                          handler_contract_class_hashes.insert(class_hash, compiled_class_hash).unwrap();
-                    });
-                handler_contract_class_hashes.commit(block_number).unwrap();
-             }
+                if let Err(_) = store_state_update(block_number, state_update).await {
+                    log::info!("❗ Failed to store state update for block {block_number}");
+                };
+            }
         } => {},
         // store class udpate
         _ = async {
             while let Some((block_number, class_update)) = pin!(class_update_receiver.recv()).await {
-                let mut handler_contract_cladd_data_mut = storage_handler::contract_class_data_mut();
-                class_update.0.into_iter().for_each(
-                    |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
-                        let ContractClassWrapper { contract: contract_class, abi } = contract_class_wrapper;
-
-                        handler_contract_cladd_data_mut.insert(class_hash, StorageContractClassData { contract_class, abi }).unwrap();
-                    },
-                );
-                handler_contract_cladd_data_mut.commit(block_number).expect("failed to commit to storage");
+                if let Err(_) = store_class_update(block_number, class_update).await {
+                    log::info!("❗ Failed to store class update for block {block_number}");
+                };
             }
         } => {}
     );
