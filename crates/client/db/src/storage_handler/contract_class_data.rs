@@ -1,12 +1,16 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
 use crossbeam_skiplist::SkipMap;
 use mp_contract::class::StorageContractClassData;
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::ClassHash;
+use tokio::task::JoinSet;
 
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
 use crate::{Column, DatabaseExt, DeoxysBackend};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ContractClassDataViewMut(SkipMap<ClassHash, StorageContractClassData>);
 pub struct ContractClassDataView;
 
@@ -35,6 +39,7 @@ impl StorageView for ContractClassDataView {
     }
 }
 
+#[async_trait]
 impl StorageViewMut for ContractClassDataViewMut {
     type KEY = ClassHash;
     type VALUE = StorageContractClassData;
@@ -44,13 +49,22 @@ impl StorageViewMut for ContractClassDataViewMut {
         Ok(())
     }
 
-    fn commit(&self, _block_number: u64) -> Result<(), DeoxysStorageError> {
+    async fn commit(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractClassData);
 
-        for entry in self.0.iter() {
-            db.put_cf(&column, entry.key().encode(), entry.value().encode())
-                .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassData))?;
+        let mut set = JoinSet::new();
+        for (key, value) in self.0.into_iter() {
+            let db = Arc::clone(db);
+
+            set.spawn(async move {
+                let colum = db.get_column(Column::ContractClassData);
+                db.put_cf(&colum, key.encode(), value.encode())
+                    .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::ContractClassData))
+            });
+        }
+
+        while let Some(res) = set.join_next().await {
+            res.unwrap()?;
         }
 
         Ok(())

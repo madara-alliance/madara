@@ -49,6 +49,7 @@ starknet_api = { workspace = true, default-features = true }
 # Other crates
 anyhow.workspace = true
 arc-swap = { workspace = true }
+async-trait = { workspace = true }
 bitvec = { workspace = true }
 crossbeam-skiplist = { workspace = true }
 ethers = { workspace = true }

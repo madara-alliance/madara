@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use async_trait::async_trait;
 use bitvec::prelude::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
@@ -139,6 +140,7 @@ pub trait StorageView {
 /// > Note that a single mutable view can exist at once for a same storage type.
 ///
 /// Use this to write data to the backend database in a type-safe way.
+#[async_trait()]
 pub trait StorageViewMut {
     type KEY: Encode + Decode;
     type VALUE: Encode + Decode;
@@ -153,7 +155,7 @@ pub trait StorageViewMut {
     ///
     /// * `block_number`: point in the chain at which to apply the new changes. Must be
     /// incremental
-    fn commit(&self, block_number: u64) -> Result<(), DeoxysStorageError>;
+    async fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
 /// A mutable view on a backend storage interface, marking it as revertible in the chain.
@@ -225,6 +227,10 @@ pub fn block_hash() -> BlockHashView {
 
 fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {
     identifier.0.0.0.as_bytes_ref()
+}
+
+fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
+    key.0.0.0.as_bits()[5..].to_owned()
 }
 
 fn conv_contract_storage_key(key: &StorageKey) -> BitVec<u8, Msb0> {

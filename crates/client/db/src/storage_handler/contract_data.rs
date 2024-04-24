@@ -1,15 +1,18 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use async_trait::async_trait;
 use crossbeam_skiplist::SkipMap;
 use mp_contract::class::StorageContractData;
 use parity_scale_codec::{Decode, Encode};
 use rocksdb::IteratorMode;
 use starknet_api::core::{ClassHash, ContractAddress};
+use tokio::task::JoinSet;
 
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
 use crate::{Column, DatabaseExt, DeoxysBackend};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ContractDataViewMut(SkipMap<ContractAddress, StorageContractData>);
 pub struct ContractDataView;
 
@@ -90,6 +93,7 @@ impl StorageView for ContractDataViewMut {
     }
 }
 
+#[async_trait]
 impl StorageViewMut for ContractDataViewMut {
     type KEY = ContractAddress;
     type VALUE = StorageContractData;
@@ -99,23 +103,39 @@ impl StorageViewMut for ContractDataViewMut {
         Ok(())
     }
 
-    fn commit(&self, block_number: u64) -> Result<(), DeoxysStorageError> {
+    async fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractData);
 
-        for entry in self.0.iter() {
-            let mut tree: BTreeMap<u64, StorageContractData> = match db
-                .get_cf(&column, entry.key().encode())
-                .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
-            {
-                Some(bytes) => BTreeMap::decode(&mut &bytes[..])
-                    .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData))?,
-                None => BTreeMap::new(),
-            };
+        let mut set = JoinSet::new();
+        for (key, value) in self.0.into_iter() {
+            let db = Arc::clone(db);
 
-            tree.insert(block_number, entry.value().clone());
-            db.put_cf(&column, entry.key().encode(), tree.encode())
-                .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::ContractData))?;
+            set.spawn(async move {
+                let column = db.get_column(Column::ContractClassData);
+
+                let Ok(tree) = db.get_cf(&column, key.encode()) else {
+                    return Err(DeoxysStorageError::StorageRetrievalError(StorageType::ContractData));
+                };
+
+                let mut tree: BTreeMap<u64, StorageContractData> = match tree {
+                    Some(bytes) => match BTreeMap::decode(&mut &bytes[..]) {
+                        Ok(tree) => tree,
+                        Err(_) => return Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractData)),
+                    },
+                    None => BTreeMap::new(),
+                };
+
+                tree.insert(block_number, value);
+                if db.put_cf(&column, key.encode(), tree.encode()).is_err() {
+                    return Err(DeoxysStorageError::StorageCommitError(StorageType::ContractData));
+                }
+
+                Ok(())
+            });
+        }
+
+        while let Some(res) = set.join_next().await {
+            res.unwrap()?;
         }
 
         Ok(())
@@ -139,6 +159,30 @@ impl StorageViewRevetible for ContractDataViewMut {
 
             db.put_cf(&column, key, tree.encode())
                 .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractData, block_number))?;
+        }
+
+        Ok(())
+    }
+}
+
+impl ContractDataViewMut {
+    pub fn commit_sync(self, block_number: u64) -> Result<(), DeoxysStorageError> {
+        let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Column::ContractData);
+
+        for (key, value) in self.0.into_iter() {
+            let mut tree: BTreeMap<u64, StorageContractData> = match db
+                .get_cf(&column, key.encode())
+                .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
+            {
+                Some(bytes) => BTreeMap::decode(&mut &bytes[..])
+                    .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData))?,
+                None => BTreeMap::new(),
+            };
+
+            tree.insert(block_number, value);
+            db.put_cf(&column, key.encode(), tree.encode())
+                .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractData))?;
         }
 
         Ok(())

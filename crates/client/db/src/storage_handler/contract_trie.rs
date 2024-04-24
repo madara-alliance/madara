@@ -1,15 +1,12 @@
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
-use bitvec::prelude::Msb0;
-use bitvec::vec::BitVec;
-use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 
-use super::{bonsai_identifier, DeoxysStorageError, StorageType, StorageView, TrieType};
+use super::{bonsai_identifier, conv_contract_key, DeoxysStorageError, StorageType, StorageView, TrieType};
 use crate::bonsai_db::BonsaiDb;
 
 pub struct ContractTrieView<'a>(pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>);
@@ -80,8 +77,4 @@ impl ContractTrieViewMut<'_> {
 
         Ok(())
     }
-}
-
-fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
-    key.0.0.0.as_bits()[5..].to_owned()
 }

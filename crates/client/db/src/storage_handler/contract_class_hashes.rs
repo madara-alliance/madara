@@ -1,11 +1,15 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
 use crossbeam_skiplist::SkipMap;
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::{ClassHash, CompiledClassHash};
+use tokio::task::JoinSet;
 
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
 use crate::{Column, DatabaseExt, DeoxysBackend};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ContractClassHashesViewMut(SkipMap<ClassHash, CompiledClassHash>);
 pub struct ContractClassHashesView;
 
@@ -34,6 +38,7 @@ impl StorageView for ContractClassHashesView {
     }
 }
 
+#[async_trait]
 impl StorageViewMut for ContractClassHashesViewMut {
     type KEY = ClassHash;
     type VALUE = CompiledClassHash;
@@ -43,13 +48,36 @@ impl StorageViewMut for ContractClassHashesViewMut {
         Ok(())
     }
 
-    fn commit(&self, _block_number: u64) -> Result<(), DeoxysStorageError> {
+    async fn commit(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
+        let db = DeoxysBackend::expose_db();
+
+        let mut set = JoinSet::new();
+        for (key, value) in self.0.into_iter() {
+            let db = Arc::clone(db);
+
+            set.spawn(async move {
+                let column = db.get_column(Column::ContractClassHashes);
+                db.put_cf(&column, key.encode(), value.encode())
+                    .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassHashes))
+            });
+        }
+
+        while let Some(res) = set.join_next().await {
+            res.unwrap()?;
+        }
+
+        Ok(())
+    }
+}
+
+impl ContractClassHashesViewMut {
+    pub fn commit_sync(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassHashes);
 
-        for entry in self.0.iter() {
-            db.put_cf(&column, entry.key().encode(), entry.value().encode())
-                .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassHashes))?;
+        for (key, value) in self.0.into_iter() {
+            db.put_cf(&column, key.encode(), value.encode())
+                .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassHashes))?
         }
 
         Ok(())

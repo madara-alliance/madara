@@ -5969,6 +5969,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "async-trait",
  "bitvec",
  "blockifier",
  "bonsai-trie",
@@ -7227,6 +7228,7 @@ dependencies = [
  "starknet-crypto 0.6.2",
  "starknet-ff 0.3.7",
  "starknet_api",
+ "tokio",
 ]
 
 [[package]]
