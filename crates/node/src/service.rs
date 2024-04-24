@@ -423,7 +423,7 @@ pub fn new_full(
 
     task_manager.spawn_essential_handle().spawn(
         "starknet-sync-worker",
-        Some("madara"),
+        Some("deoxys"),
         starknet_sync_worker::sync(
             fetch_config,
             block_sender,
