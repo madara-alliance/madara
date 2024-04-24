@@ -42,7 +42,6 @@ impl StorageView for ContractDataView {
 }
 
 impl ContractDataView {
-    // FIXME: retrieve value if it does not exist at the given block number
     pub fn get_at(
         self,
         contract_address: &ContractAddress,
@@ -60,7 +59,7 @@ impl ContractDataView {
             None => BTreeMap::new(),
         };
 
-        Ok(tree.get(&block_number).cloned())
+        Ok(tree.range(..=block_number).next_back().map(|(_, value)| value).cloned())
     }
 }
 
