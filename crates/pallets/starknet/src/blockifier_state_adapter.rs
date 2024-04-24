@@ -83,7 +83,7 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
             Some(class_hash) => Ok(class_hash),
             None => {
                 let block_number =
-                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
+                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number()) + 1;
 
                 match storage_handler::contract_data().get_at(&contract_address, block_number) {
                     Ok(Some(contract_data)) => Ok(contract_data.class_hash),
