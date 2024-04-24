@@ -16,7 +16,7 @@ macro_rules! mock_runtime {
 			use frame_support::traits::Hooks;
 			use mp_sequencer_address::DEFAULT_SEQUENCER_ADDRESS;
             use mp_felt::Felt252Wrapper;
-			use starknet_api::api_core::{PatriciaKey, ContractAddress};
+			use starknet_api::core::{PatriciaKey, ContractAddress};
 			use starknet_api::hash::StarkFelt;
 			use mp_fee::ResourcePrice;
 

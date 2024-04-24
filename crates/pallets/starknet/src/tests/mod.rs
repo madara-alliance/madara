@@ -3,7 +3,7 @@ use blockifier::state::state_api::State;
 use mp_felt::Felt252Wrapper;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::{DeclareTransaction, DeclareTransactionV1, DeployAccountTransaction, InvokeTransactionV1};
-use starknet_api::api_core::{ContractAddress, Nonce};
+use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 
 use self::mock::default_mock::{MockRuntime, Starknet};

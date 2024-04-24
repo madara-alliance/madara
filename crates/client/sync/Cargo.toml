@@ -55,7 +55,6 @@ sp-runtime = { workspace = true }
 bitvec = { workspace = true }
 bonsai-trie = { workspace = true }
 mc-db = { workspace = true }
-mc-storage = { workspace = true }
 mp-block = { workspace = true }
 mp-contract = { workspace = true }
 mp-felt = { workspace = true }

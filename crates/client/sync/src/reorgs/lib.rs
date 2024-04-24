@@ -1,6 +1,6 @@
 use starknet_providers::sequencer::models::Block as StarknetBlock;
 
-use crate::utility::get_highest_block_hash_and_number;
+use crate::l2::get_highest_block_hash_and_number;
 
 /// Check for a reorg on Starknet and fix the current state if detected.
 ///

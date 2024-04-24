@@ -3,6 +3,7 @@ use blockifier::execution::contract_class::{ContractClass as ContractClassBf, Co
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution as btx;
 use jsonrpsee::core::RpcResult;
+use mc_db::storage_handler::{self, StorageView};
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_block::DeoxysBlock;
@@ -79,7 +80,7 @@ where
         return Err(StarknetRpcApiError::UnimplementedMethod.into());
     }
 
-    let transactions = transactions(client, substrate_block_hash, chain_id, &block, block_number, tx_index)?;
+    let transactions = transactions::<H>(chain_id, &block, block_number, tx_index)?;
 
     let fee_token_address = client.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
         log::error!("Failed to retrieve fee token address: {e}");
@@ -210,22 +211,13 @@ where
     Ok(previous_block_hash)
 }
 
-fn transactions<A, BE, G, C, P, H>(
-    client: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: DHashT,
+fn transactions<H>(
     chain_id: Felt,
     block: &DeoxysBlock,
     block_number: u64,
     tx_index: usize,
 ) -> RpcResult<Vec<btx::Transaction>>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let transactions = block
@@ -242,7 +234,7 @@ where
 					tx_deploy_account(deploy_account_tx.clone(), deploy_account_tx.compute_hash::<H>(Felt252Wrapper::from(chain_id.0), false, Some(block_number)), ContractAddress::default())
                 }
                 Transaction::Declare(declare_tx) => {
-					tx_declare(client, substrate_block_hash, declare_tx.clone())
+					tx_declare(declare_tx.clone())
                 }
                 Transaction::L1Handler(l1_handler) => {
 					tx_l1_handler::<H>(chain_id, block_number, l1_handler.clone())
@@ -277,56 +269,22 @@ fn tx_deploy_account(
     ))
 }
 
-fn tx_declare<A, BE, G, C, P, H>(
-    client: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: DHashT,
-    declare_tx: DeclareTransaction,
-) -> RpcResult<btx::Transaction>
-where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
+fn tx_declare(declare_tx: DeclareTransaction) -> RpcResult<btx::Transaction> {
     let class_hash = ClassHash(Felt252Wrapper::from(*declare_tx.class_hash()).into());
 
     match declare_tx {
-        DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => {
-            tx_declare_v0v1(client, substrate_block_hash, declare_tx, class_hash)
-        }
+        DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => tx_declare_v0v1(declare_tx, class_hash),
         DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
         DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
     }
 }
 
-fn tx_declare_v0v1<A, BE, G, C, P, H>(
-    client: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: DHashT,
-    declare_tx: DeclareTransaction,
-    class_hash: ClassHash,
-) -> RpcResult<btx::Transaction>
-where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let _contract_class = client
-        .overrides
-        .for_block_hash(client.client.as_ref(), substrate_block_hash)
-        .contract_class_by_class_hash(substrate_block_hash, class_hash)
-        .ok_or_else(|| {
-            log::error!("Failed to retrieve contract class from hash '{class_hash}'");
-            StarknetRpcApiError::InternalServerError
-        })?;
+fn tx_declare_v0v1(declare_tx: DeclareTransaction, class_hash: ClassHash) -> RpcResult<btx::Transaction> {
+    let Ok(Some(contract_class_data)) = storage_handler::contract_class_data().get(&class_hash) else {
+        log::error!("Failed to retrieve contract class from hash '{class_hash}'");
+        return Err(StarknetRpcApiError::InternalServerError.into());
+    };
+    let _contract_class = contract_class_data.contract_class;
 
     // let class_info = ClassInfo::new(
     //     &contract_class,
@@ -345,9 +303,7 @@ where
     // )))
     // TODO: Correct this that was used as a place holder to compile
     match declare_tx {
-        DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => {
-            tx_declare_v0v1(client, substrate_block_hash, declare_tx, class_hash)
-        }
+        DeclareTransaction::V0(_) | DeclareTransaction::V1(_) => tx_declare_v0v1(declare_tx, class_hash),
         DeclareTransaction::V2(_) => tx_declare_v2(declare_tx, class_hash),
         DeclareTransaction::V3(_) => todo!("implement DeclareTransaction::V3"),
     }
