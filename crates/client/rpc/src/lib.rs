@@ -47,7 +47,7 @@ use crate::methods::get_block::{
     get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
     get_block_with_txs_pending,
 };
-use crate::utils::utils::to_rpc_state_diff;
+use crate::utils::helpers::to_rpc_state_diff;
 
 // Starknet RPC API trait and types
 //

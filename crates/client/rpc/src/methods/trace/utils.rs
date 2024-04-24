@@ -15,14 +15,10 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::TxType;
-use mp_types::block::{DBlockT, DHashT};
-use sc_client_api::{Backend, BlockBackend, StorageProvider};
-use sc_transaction_pool::ChainApi;
-use sp_blockchain::HeaderBackend;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::transaction as stx;
 use starknet_core::types::{
-    ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
+    BlockId, ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
     DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, InvokeTransactionTrace,
     L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace,
 };
@@ -30,7 +26,6 @@ use starknet_ff::FieldElement;
 
 use super::lib::*;
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
 
 pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core::types::OrderedMessage> {
     call_info
@@ -386,6 +381,7 @@ where
     }
 }
 
+// TODO: move to mod utils
 pub fn block_number_by_id(id: BlockId) -> u64 {
     match id {
         BlockId::Number(number) => number,

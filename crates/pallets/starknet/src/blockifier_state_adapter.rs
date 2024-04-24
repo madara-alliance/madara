@@ -9,7 +9,6 @@ use sp_runtime::traits::UniqueSaturatedInto;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
-use starknet_core::types::BlockId;
 
 use crate::Config;
 

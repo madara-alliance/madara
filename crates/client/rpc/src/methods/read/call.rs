@@ -14,7 +14,7 @@ use starknet_api::transaction::Calldata;
 use starknet_core::types::{BlockId, FunctionCall};
 
 use crate::errors::StarknetRpcApiError;
-use crate::utils::utils::convert_error;
+use crate::utils::helpers::convert_error;
 use crate::{Arc, Starknet};
 
 /// Call a Function in a Contract Without Creating a Transaction

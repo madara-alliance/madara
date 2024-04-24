@@ -20,7 +20,7 @@ use crate::madara_backend_client::get_block_by_block_hash;
 use crate::utils::block::{
     l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, timestamp,
 };
-use crate::utils::utils::{status, tx_conv, tx_hash_compute, tx_hash_retrieve};
+use crate::utils::helpers::{status, tx_conv, tx_hash_compute, tx_hash_retrieve};
 use crate::{Felt, Starknet};
 
 pub(crate) fn get_block_with_tx_hashes_finalized<A, BE, G, C, P, H>(

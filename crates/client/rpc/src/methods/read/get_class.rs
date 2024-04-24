@@ -31,11 +31,11 @@ pub fn get_class(_block_id: BlockId, class_hash: FieldElement) -> RpcResult<Cont
 
     // converting from stored Blockifier class to rpc class
     // TODO: retrieve sierra_program_length and abi_length when they are stored in the storage
-    let StorageContractClassData { contract_class, abi } = contract_class_data;
-    Ok(ContractClassWrapper { contract: contract_class, abi, sierra_program_length: 0, abi_length: 0 }
-        .try_into()
-        .map_err(|e| {
+    let StorageContractClassData { contract_class, abi, sierra_program_length, abi_length } = contract_class_data;
+    Ok(ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }.try_into().map_err(
+        |e| {
             log::error!("Failed to convert contract class from hash '{class_hash}' to RPC contract class: {e}");
             StarknetRpcApiError::InternalServerError
-        })?)
+        },
+    )?)
 }

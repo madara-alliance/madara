@@ -2,7 +2,6 @@ use blockifier::context::BlockContext;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution as btx;
 use jsonrpsee::core::RpcResult;
-use mc_db::storage_handler::{self, StorageView};
 use mc_db::DeoxysBackend;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -26,8 +25,8 @@ use crate::madara_backend_client::get_block_by_block_hash;
 use crate::utils::call_info::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
 };
+use crate::utils::helpers::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
-use crate::utils::utils::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
 use crate::{Felt, Starknet};
 
 /// Get the transaction receipt by the transaction hash.
@@ -129,7 +128,7 @@ where
     let transaction_with_hash =
         block.transactions().iter().cloned().zip(block_txs_hashes.iter().cloned()).take(tx_index + 1).collect();
 
-    let transactions_blockifier = blockifier_transactions(client, substrate_block_hash, transaction_with_hash)?;
+    let transactions_blockifier = blockifier_transactions(transaction_with_hash)?;
 
     let fee_token_address = client.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
         log::error!("Failed to retrieve fee token address: {e}");
