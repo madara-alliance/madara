@@ -69,13 +69,16 @@ where
                 substrate_block_hash,
                 Felt252Wrapper::from(transaction_hash).into(),
             )
-            .unwrap();
+            .map_err(|e| {
+                log::error!("Failed to retrieve transaction receipt: {e}");
+                StarknetRpcApiError::InternalServerError
+            })?;
 
             let receipt = receipt_with_block_info.receipt;
 
-            TransactionWithReceipt { transaction, receipt }
+            Ok::<_, StarknetRpcApiError>(TransactionWithReceipt { transaction, receipt })
         })
-        .collect::<Vec<TransactionWithReceipt>>();
+        .collect::<Result<Vec<TransactionWithReceipt>, StarknetRpcApiError>>()?;
 
     if is_pending {
         let pending_block_with_receipts = PendingBlockWithReceipts {
