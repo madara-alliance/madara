@@ -25,6 +25,7 @@ use crate::madara_backend_client::get_block_by_block_hash;
 use crate::utils::call_info::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
 };
+use crate::utils::execution::re_execute_transactions;
 use crate::utils::helpers::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
 use crate::{Felt, Starknet};
@@ -240,8 +241,8 @@ where
 }
 
 fn execution_infos<A, BE, G, C, P, H>(
-    client: &Starknet<A, BE, G, C, P, H>,
-    previous_block_hash: DHashT,
+    _client: &Starknet<A, BE, G, C, P, H>,
+    _previous_block_hash: DHashT,
     transactions: Vec<btx::Transaction>,
     block_context: &BlockContext,
 ) -> RpcResult<TransactionExecutionInfo>
@@ -258,16 +259,9 @@ where
         None => (transactions, vec![]),
     };
 
-    let execution_infos = client
-        .client
-        .runtime_api()
-        .re_execute_transactions(previous_block_hash, prev, last, block_context)
+    let execution_infos = re_execute_transactions(prev, last, block_context)
         .map_err(|e| {
             log::error!("Failed to execute runtime API call: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .map_err(|e| {
-            log::error!("Failed to reexecute the transactions: {e:?}");
             StarknetRpcApiError::InternalServerError
         })?
         .pop()

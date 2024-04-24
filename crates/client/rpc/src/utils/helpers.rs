@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::io::Write;
-use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use blockifier::execution::contract_class::ContractClass as BlockifierContractClass;
@@ -20,7 +19,6 @@ use sc_client_api::BlockBackend;
 use sc_transaction_pool::ChainApi;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::DispatchError;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::ThinStateDiff;
@@ -272,22 +270,4 @@ fn casm_entry_point_to_compiled_entry_point(value: &CasmContractEntryPoint) -> C
 fn biguint_to_field_element(value: &BigUint) -> FieldElement {
     let bytes = value.to_bytes_be();
     FieldElement::from_byte_slice_be(bytes.as_slice()).unwrap()
-}
-
-pub fn convert_error<C, T>(
-    client: Arc<C>,
-    best_block_hash: DHashT,
-    call_result: Result<T, DispatchError>,
-) -> Result<T, StarknetRpcApiError>
-where
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-{
-    match call_result {
-        Ok(val) => Ok(val),
-        Err(e) => match client.runtime_api().convert_error(best_block_hash, e) {
-            Ok(starknet_error) => Err(starknet_error.into()),
-            Err(_) => Err(StarknetRpcApiError::InternalServerError),
-        },
-    }
 }

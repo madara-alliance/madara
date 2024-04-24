@@ -17,7 +17,7 @@ use super::utils::{map_transaction_to_user_transaction, tx_execution_infos_to_tx
 use crate::errors::StarknetRpcApiError;
 use crate::madara_backend_client::get_block_by_block_hash;
 use crate::methods::trace::utils::block_number_by_id;
-use crate::utils::helpers::previous_substrate_block_hash;
+use crate::utils::execution::re_execute_transactions;
 use crate::Starknet;
 
 pub async fn trace_block_transactions<A, BE, G, C, P, H>(
@@ -48,8 +48,6 @@ where
     let (block_transactions, empty_transactions) =
         map_transaction_to_user_transaction::<H>(starknet_block, chain_id, None)?;
 
-    let previous_block_substrate_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
-
     let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
         log::error!("Failed to retrieve fee token address: '{e}'");
         StarknetRpcApiError::InternalServerError
@@ -60,23 +58,13 @@ where
     let block_context =
         block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
 
-    let execution_infos = starknet
-        .client
-        .runtime_api()
-        .re_execute_transactions(
-            previous_block_substrate_hash,
-            empty_transactions.clone(),
-            block_transactions.clone(),
-            &block_context,
-        )
-        .map_err(|e| {
-            log::error!("Failed to execute runtime API call: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .map_err(|e| {
-            log::error!("Failed to reexecute the block transactions: {e:?}");
-            StarknetRpcApiError::InternalServerError
-        })?;
+    let execution_infos =
+        re_execute_transactions(empty_transactions.clone(), block_transactions.clone(), &block_context).map_err(
+            |e| {
+                log::error!("Failed to reexecute the block transactions: {e:?}");
+                StarknetRpcApiError::InternalServerError
+            },
+        )?;
 
     let block_number = block_number_by_id(block_id);
     let traces = execution_infos
