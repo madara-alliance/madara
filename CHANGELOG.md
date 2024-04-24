@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix: fix crashing cases on `get_block_with_receipts`
 - fix: fix get_events minor issues
 - fix: l1HandlerTx computed for commit
 - refactor: optimise get_events RPC
