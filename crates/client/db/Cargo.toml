@@ -26,6 +26,9 @@ sp-database = { workspace = true, default-features = true }
 sp-runtime = { workspace = true, default-features = true }
 
 # Madara crates
+mp-block = { workspace = true }
+mp-contract = { workspace = true }
+mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-types = { workspace = true }
 
@@ -46,11 +49,15 @@ starknet_api = { workspace = true, default-features = true }
 # Other crates
 anyhow.workspace = true
 arc-swap = { workspace = true }
+async-trait = { workspace = true }
 bitvec = { workspace = true }
+crossbeam-skiplist = { workspace = true }
 ethers = { workspace = true }
 log = { workspace = true, default-features = true }
+rayon = { workspace = true }
 rocksdb = { version = "0.21", features = [
   # "multi-threaded-cf",
 ] }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 uuid = "1.4.1"

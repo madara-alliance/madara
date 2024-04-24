@@ -7,8 +7,9 @@ use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::L1HandlerTransaction;
-use mc_db::DeoxysBackend;
-use mc_storage::StorageOverride;
+use mc_db::storage_handler::StorageView;
+use mc_db::{storage_handler, DeoxysBackend};
+use mc_sync::l2::get_highest_block_hash_and_number;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -20,7 +21,6 @@ use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_transaction_pool::ChainApi;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::transaction as stx;
 use starknet_core::types::{
@@ -82,11 +82,10 @@ fn blockifier_to_starknet_rs_ordered_events(
         .collect()
 }
 
-pub fn try_get_funtion_invocation_from_call_info<B: BlockT>(
-    storage_override: &dyn StorageOverride<B>,
-    substrate_block_hash: B::Hash,
+fn try_get_funtion_invocation_from_call_info(
     call_info: &CallInfo,
     class_hash_cache: &mut HashMap<ContractAddress, FieldElement>,
+    block_number: u64,
 ) -> Result<starknet_core::types::FunctionInvocation, TryFuntionInvocationFromCallInfoError> {
     let messages = collect_call_info_ordered_messages(call_info);
     let events = blockifier_to_starknet_rs_ordered_events(&call_info.execution.events);
@@ -94,9 +93,7 @@ pub fn try_get_funtion_invocation_from_call_info<B: BlockT>(
     let inner_calls = call_info
         .inner_calls
         .iter()
-        .map(|call| {
-            try_get_funtion_invocation_from_call_info(storage_override, substrate_block_hash, call, class_hash_cache)
-        })
+        .map(|call| try_get_funtion_invocation_from_call_info(call, class_hash_cache, block_number))
         .collect::<Result<_, _>>()?;
 
     // TODO: check why this is here
@@ -128,11 +125,13 @@ pub fn try_get_funtion_invocation_from_call_info<B: BlockT>(
         *cached_hash
     } else {
         // Compute and cache the class hash
-        let computed_hash = storage_override
-            .contract_class_hash_by_address(substrate_block_hash, call_info.call.storage_address)
-            .ok_or_else(|| TryFuntionInvocationFromCallInfoError::ContractNotFound)?;
+        let Ok(Some(contract_data)) =
+            storage_handler::contract_data().get_at(&call_info.call.storage_address, block_number)
+        else {
+            return Err(TryFuntionInvocationFromCallInfoError::ContractNotFound);
+        };
 
-        let computed_hash = FieldElement::from_byte_slice_be(computed_hash.0.bytes()).unwrap();
+        let computed_hash = FieldElement::from_byte_slice_be(contract_data.class_hash.0.bytes()).unwrap();
         class_hash_cache.insert(call_info.call.storage_address, computed_hash);
 
         computed_hash
@@ -168,11 +167,10 @@ pub fn try_get_funtion_invocation_from_call_info<B: BlockT>(
     })
 }
 
-pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
-    storage_override: &dyn StorageOverride<B>,
-    substrate_block_hash: B::Hash,
+pub fn tx_execution_infos_to_tx_trace(
     tx_type: TxType,
     tx_exec_info: &TransactionExecutionInfo,
+    block_number: u64,
 ) -> Result<TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
     let mut class_hash_cache: HashMap<ContractAddress, FieldElement> = HashMap::new();
 
@@ -198,28 +196,14 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
     let validate_invocation = tx_exec_info
         .validate_call_info
         .as_ref()
-        .map(|call_info| {
-            try_get_funtion_invocation_from_call_info(
-                storage_override,
-                substrate_block_hash,
-                call_info,
-                &mut class_hash_cache,
-            )
-        })
+        .map(|call_info| try_get_funtion_invocation_from_call_info(call_info, &mut class_hash_cache, block_number))
         .transpose()?;
     // If simulated with `SimulationFlag::SkipFeeCharge` this will be `None`
     // therefore we cannot unwrap it
     let fee_transfer_invocation = tx_exec_info
         .fee_transfer_call_info
         .as_ref()
-        .map(|call_info| {
-            try_get_funtion_invocation_from_call_info(
-                storage_override,
-                substrate_block_hash,
-                call_info,
-                &mut class_hash_cache,
-            )
-        })
+        .map(|call_info| try_get_funtion_invocation_from_call_info(call_info, &mut class_hash_cache, block_number))
         .transpose()?;
 
     let tx_trace = match tx_type {
@@ -229,11 +213,10 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
                 ExecuteInvocation::Reverted(RevertedInvocation { revert_reason: e.clone() })
             } else {
                 ExecuteInvocation::Success(try_get_funtion_invocation_from_call_info(
-                    storage_override,
-                    substrate_block_hash,
                     // Safe to unwrap because is only `None`  for `Declare` txs
                     tx_exec_info.execute_call_info.as_ref().unwrap(),
                     &mut class_hash_cache,
+                    block_number,
                 )?)
             },
             fee_transfer_invocation,
@@ -252,11 +235,10 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
             TransactionTrace::DeployAccount(DeployAccountTransactionTrace {
                 validate_invocation,
                 constructor_invocation: try_get_funtion_invocation_from_call_info(
-                    storage_override,
-                    substrate_block_hash,
                     // Safe to unwrap because is only `None` for `Declare` txs
                     tx_exec_info.execute_call_info.as_ref().unwrap(),
                     &mut class_hash_cache,
+                    block_number,
                 )?,
                 fee_transfer_invocation,
                 // TODO(#1291): Compute state diff correctly
@@ -266,11 +248,10 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
         }
         TxType::L1Handler => TransactionTrace::L1Handler(L1HandlerTransactionTrace {
             function_invocation: try_get_funtion_invocation_from_call_info(
-                storage_override,
-                substrate_block_hash,
                 // Safe to unwrap because is only `None` for `Declare` txs
                 tx_exec_info.execute_call_info.as_ref().unwrap(),
                 &mut class_hash_cache,
+                block_number,
             )?,
             state_diff: None,
             execution_resources,
@@ -280,18 +261,13 @@ pub fn tx_execution_infos_to_tx_trace<B: BlockT>(
     Ok(tx_trace)
 }
 
-pub(crate) fn map_transaction_to_user_transaction<A, BE, G, C, P, H>(
-    starknet: &Starknet<A, BE, G, C, P, H>,
+pub(crate) fn map_transaction_to_user_transaction<H>(
     starknet_block: DeoxysBlock,
-    substrate_block_hash: DHashT,
     chain_id: Felt252Wrapper,
     target_transaction_hash: Option<Felt252Wrapper>,
 ) -> Result<(Vec<Transaction>, Vec<Transaction>), StarknetRpcApiError>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     H: HasherT + Send + Sync + 'static,
-    BE: Backend<DBlockT> + 'static,
 {
     let mut transactions = Vec::new();
     let mut transaction_to_trace = Vec::new();
@@ -301,11 +277,11 @@ where
         let current_tx_hash = tx.compute_hash::<H>(chain_id, false, Some(block_number));
 
         if Some(Felt252Wrapper::from(current_tx_hash)) == target_transaction_hash {
-            let converted_tx = convert_transaction(tx, starknet, substrate_block_hash, chain_id, block_number)?;
+            let converted_tx = convert_transaction::<H>(tx, chain_id, block_number)?;
             transaction_to_trace.push(converted_tx);
             break;
         } else {
-            let converted_tx = convert_transaction(tx, starknet, substrate_block_hash, chain_id, block_number)?;
+            let converted_tx = convert_transaction::<H>(tx, chain_id, block_number)?;
             transactions.push(converted_tx);
         }
     }
@@ -313,18 +289,13 @@ where
     Ok((transactions, transaction_to_trace))
 }
 
-fn convert_transaction<A, BE, G, C, P, H>(
+fn convert_transaction<H>(
     tx: &stx::Transaction,
-    starknet: &Starknet<A, BE, G, C, P, H>,
-    substrate_block_hash: DHashT,
     chain_id: Felt252Wrapper,
     block_number: u64,
 ) -> Result<Transaction, StarknetRpcApiError>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     H: HasherT + Send + Sync + 'static,
-    BE: Backend<DBlockT> + 'static,
 {
     match tx {
         stx::Transaction::Invoke(invoke_tx) => {
@@ -352,17 +323,13 @@ where
 
             match declare_tx {
                 stx::DeclareTransaction::V0(_) | stx::DeclareTransaction::V1(_) => {
-                    let contract_class = starknet
-                        .overrides
-                        .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
-                        .contract_class_by_class_hash(substrate_block_hash, class_hash)
-                        .ok_or_else(|| {
-                            log::error!("Failed to retrieve contract class from hash '{class_hash}'");
-                            StarknetRpcApiError::InternalServerError
-                        })?;
+                    let Ok(Some(contract_class_data)) = storage_handler::contract_class_data().get(&class_hash) else {
+                        log::error!("Failed to retrieve contract class from hash '{class_hash}'");
+                        return Err(StarknetRpcApiError::InternalServerError);
+                    };
 
                     // TODO: fix class info declaration with non defaulted values
-                    let class_info = ClassInfo::new(&contract_class, 10, 10).unwrap();
+                    let class_info = ClassInfo::new(&contract_class_data.contract_class, 10, 10).unwrap();
 
                     let tx = btx::transactions::DeclareTransaction::new(
                         declare_tx.clone(),
@@ -450,4 +417,15 @@ where
         })?;
 
     Ok(substrate_block_hash)
+}
+
+pub fn block_number_by_id(id: BlockId) -> u64 {
+    match id {
+        BlockId::Number(number) => number,
+        BlockId::Hash(block_hash) => match storage_handler::block_number().get(&Felt252Wrapper(block_hash)) {
+            Ok(Some(block_number)) => block_number,
+            _ => get_highest_block_hash_and_number().1,
+        },
+        BlockId::Tag(_) => get_highest_block_hash_and_number().1,
+    }
 }

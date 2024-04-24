@@ -1,6 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
-use mc_db::storage::StorageHandler;
+use mc_db::storage_handler::{self};
 use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -12,6 +12,9 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
+use starknet_api::core::{ContractAddress, PatriciaKey};
+use starknet_api::hash::StarkFelt;
+use starknet_api::state::StorageKey;
 use starknet_core::types::{BlockId, FieldElement};
 
 use crate::errors::StarknetRpcApiError;
@@ -67,19 +70,13 @@ where
         StarknetRpcApiError::BlockNotFound
     })?;
 
-    let contract_address = Felt252Wrapper(contract_address).into();
-    let key = Felt252Wrapper(key).into();
+    let contract_address = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
+    let key = StorageKey(PatriciaKey(StarkFelt(key.to_bytes_be())));
 
-    log::info!("block number: {block_number}");
-
-    let value = StorageHandler::contract_storage_mut(BlockId::Number(block_number))
-        .map_err(|_| StarknetRpcApiError::ContractNotFound)?
-        .get(&contract_address, &key)
-        .unwrap_or(None)
-        .ok_or_else(|| {
-            log::error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}'");
-            StarknetRpcApiError::ContractNotFound
-        })?;
+    let Ok(Some(value)) = storage_handler::contract_storage_trie().get_at(&contract_address, &key, block_number) else {
+        log::error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}'");
+        return Err(StarknetRpcApiError::ContractNotFound.into());
+    };
 
     Ok(Felt(Felt252Wrapper::from(value).into()))
 }

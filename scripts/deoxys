@@ -7,6 +7,7 @@ fi
 
 start_deoxys(){
     local key=$1
+    local key_gateway=$2
     echo "🚀 start deoxys..."
     cargo run \
         --release \
@@ -17,7 +18,8 @@ start_deoxys(){
         --rpc-cors all \
         --pruning archive \
         --cache \
-        --l1-endpoint="$key"
+        --l1-endpoint="$key" \
+        --gateway-key="$key_gateway"
 }
 
 clear_db(){
@@ -53,27 +55,27 @@ ACTION=$1
 
 case $ACTION in
     start)
-        if [ "$#" -ne 2 ]; then
+        if [ "$#" -lt 2 ]; then
             echo "Usage for start: $0 start [KEY]"
             exit 1
         fi
-        start_deoxys "$2"
+        start_deoxys "$2" "$3"
         ;;
     reset)
-        if [ "$#" -ne 1 ]; then
+        if [ "$#" -lt 1 ]; then
             echo "Usage for reset: $0 reset"
             exit 1
         fi
         clear_db
         ;;
     reboot)
-        if [ "$#" -ne 2 ]; then
+        if [ "$#" -lt 2 ]; then
             echo "Usage for reboot: $0 reboot [KEY]"
             exit 1
         fi
         clear_db
         echo
-        start_deoxys "$2"
+        start_deoxys "$2" "$3"
         ;;
     lint)
         lint

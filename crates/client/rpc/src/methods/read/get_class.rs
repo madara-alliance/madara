@@ -1,20 +1,10 @@
 use jsonrpsee::core::RpcResult;
-use mc_genesis_data_provider::GenesisProvider;
-use mp_contract::class::ContractClassWrapper;
+use mc_db::storage_handler::{self, StorageView};
+use mp_contract::class::{ContractClassWrapper, StorageContractClassData};
 use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
-use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sc_transaction_pool::ChainApi;
-use sc_transaction_pool_api::TransactionPool;
-use sp_api::ProvideRuntimeApi;
-use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, ContractClass, FieldElement};
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
 
 /// Get the contract class definition in the given block associated with the given hash.
 ///
@@ -28,49 +18,20 @@ use crate::Starknet;
 ///
 /// Returns the contract class definition if found. In case of an error, returns a
 /// `StarknetRpcApiError` indicating either `BlockNotFound` or `ClassHashNotFound`.
-pub fn get_class<A, BE, G, C, P, H>(
-    starknet: &Starknet<A, BE, G, C, P, H>,
-    block_id: BlockId,
-    class_hash: FieldElement,
-) -> RpcResult<ContractClass>
-where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        log::error!("'{e}'");
-        StarknetRpcApiError::BlockNotFound
-    })?;
-
+pub fn get_class(_block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass> {
     let class_hash = Felt252Wrapper(class_hash).into();
 
-    let contract_class = starknet
-        .overrides
-        .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
-        .contract_class_by_class_hash(substrate_block_hash, class_hash)
-        .ok_or_else(|| {
-            log::error!("Failed to retrieve contract class from hash '{class_hash}'");
-            StarknetRpcApiError::ClassHashNotFound
-        })?;
+    // TODO: is it ok to ignore `block_id` in this case? IE: is `contract_class` revertible on the
+    // chain? @charpao what are your thoughts?
 
-    // Blockifier classes do not store ABI, has to be retrieved separately
-    let contract_abi = starknet
-        .overrides
-        .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
-        .contract_abi_by_class_hash(substrate_block_hash, class_hash)
-        .ok_or_else(|| {
-            log::error!("Failed to retrieve contract ABI from hash '{class_hash}'");
-            StarknetRpcApiError::ClassHashNotFound
-        })?;
+    let Ok(Some(contract_class_data)) = storage_handler::contract_class_data().get(&class_hash) else {
+        log::error!("Failed to retrieve contract class from hash '{class_hash}'");
+        return Err(StarknetRpcApiError::ClassHashNotFound.into());
+    };
 
     // converting from stored Blockifier class to rpc class
-    Ok(ContractClassWrapper { contract: contract_class, abi: contract_abi }.try_into().map_err(|e| {
+    let StorageContractClassData { contract_class, abi } = contract_class_data;
+    Ok(ContractClassWrapper { contract: contract_class, abi }.try_into().map_err(|e| {
         log::error!("Failed to convert contract class from hash '{class_hash}' to RPC contract class: {e}");
         StarknetRpcApiError::InternalServerError
     })?)

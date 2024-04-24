@@ -27,17 +27,21 @@ use sc_client_db::DatabaseSource;
 
 mod error;
 mod mapping_db;
-use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, MultiThreaded, OptimisticTransactionDB, Options};
+use rocksdb::{
+    BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, MultiThreaded, OptimisticTransactionDB, Options,
+};
 mod da_db;
 use starknet_api::hash::StarkHash;
 use starknet_types_core::hash::{Pedersen, Poseidon};
 pub mod bonsai_db;
 mod l1_handler_tx_fee;
 mod meta_db;
-pub mod storage;
+pub mod storage_handler;
+pub mod storage_updates;
 
 pub use error::{BonsaiDbError, DbError};
 pub use mapping_db::MappingCommitment;
+use storage_handler::bonsai_identifier;
 
 const DB_HASH_LEN: usize = 32;
 /// Hash type that this backend uses for the database.
@@ -79,6 +83,7 @@ pub(crate) fn open_rocksdb(path: &Path, create: bool) -> Result<OptimisticTransa
     opts.create_missing_column_families(true);
     opts.set_bytes_per_sync(1024 * 1024);
     opts.set_keep_log_file_num(1);
+    opts.set_compression_type(DBCompressionType::Zstd);
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     opts.increase_parallelism(i32::max(cores / 2, 1));
 
@@ -98,6 +103,11 @@ pub enum Column {
     TransactionMapping,
     SyncedMapping,
     Da,
+    BlockHashToNumber,
+    BlockNumberToHash,
+    ContractClassData,
+    ContractData,
+    ContractClassHashes,
 
     /// This column is used to map starknet block hashes to a list of transaction hashes that are
     /// contained in the block.
@@ -151,6 +161,11 @@ impl Column {
             StarknetTransactionHashesCache,
             StarknetBlockHashesCache,
             L1HandlerPaidFee,
+            BlockHashToNumber,
+            BlockNumberToHash,
+            ContractClassData,
+            ContractData,
+            ContractClassHashes,
             BonsaiContractsTrie,
             BonsaiContractsFlat,
             BonsaiContractsLog,
@@ -183,6 +198,11 @@ impl Column {
             Column::BonsaiClassesTrie => "bonsai_classes_trie",
             Column::BonsaiClassesFlat => "bonsai_classes_flat",
             Column::BonsaiClassesLog => "bonsai_classes_log",
+            Column::BlockHashToNumber => "block_hash_to_number_trie",
+            Column::BlockNumberToHash => "block_to_hash_trie",
+            Column::ContractClassData => "contract_class_data",
+            Column::ContractData => "contract_data",
+            Column::ContractClassHashes => "contract_class_hashes",
         }
     }
 
@@ -202,7 +222,11 @@ pub(crate) trait DatabaseExt {
 
 impl DatabaseExt for DB {
     fn get_column(&self, col: Column) -> Arc<BoundColumnFamily<'_>> {
-        self.cf_handle(col.rocksdb_name()).expect("column not inititalized")
+        let name = col.rocksdb_name();
+        match self.cf_handle(name) {
+            Some(column) => column,
+            None => panic!("column {name} not initialized"),
+        }
     }
 }
 
@@ -301,27 +325,26 @@ impl DeoxysBackend {
                 DatabaseKeyMapping {
                     flat: Column::BonsaiContractsFlat,
                     trie: Column::BonsaiContractsTrie,
-                    trie_log: Column::BonsaiContractsLog,
+                    log: Column::BonsaiContractsLog,
                 },
             ),
             bonsai_config.clone(),
         )
         .unwrap();
-        bonsai_contract.commit(BasicId::new(0)).unwrap();
+        bonsai_contract.init_tree(bonsai_identifier::CONTRACT).unwrap();
 
-        let mut bonsai_contract_storage = BonsaiStorage::new(
+        let bonsai_contract_storage = BonsaiStorage::new(
             BonsaiDb::new(
                 db,
                 DatabaseKeyMapping {
                     flat: Column::BonsaiContractsStorageFlat,
                     trie: Column::BonsaiContractsStorageTrie,
-                    trie_log: Column::BonsaiContractsStorageLog,
+                    log: Column::BonsaiContractsStorageLog,
                 },
             ),
             bonsai_config.clone(),
         )
         .unwrap();
-        bonsai_contract_storage.commit(BasicId::new(0)).unwrap();
 
         let mut bonsai_classes = BonsaiStorage::new(
             BonsaiDb::new(
@@ -329,13 +352,13 @@ impl DeoxysBackend {
                 DatabaseKeyMapping {
                     flat: Column::BonsaiClassesFlat,
                     trie: Column::BonsaiClassesTrie,
-                    trie_log: Column::BonsaiClassesLog,
+                    log: Column::BonsaiClassesLog,
                 },
             ),
             bonsai_config.clone(),
         )
         .unwrap();
-        bonsai_classes.commit(BasicId::new(0)).unwrap();
+        bonsai_classes.init_tree(bonsai_identifier::CLASS).unwrap();
 
         Ok(Self {
             mapping: Arc::new(MappingDb::new(Arc::clone(db), cache_more_things)),
@@ -373,6 +396,10 @@ impl DeoxysBackend {
 
     pub(crate) fn bonsai_class() -> &'static RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>> {
         BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_class).expect("Backend not initialized")
+    }
+
+    pub(crate) fn expose_db() -> &'static Arc<DB> {
+        DB_SINGLETON.get().expect("Databsae not initialized")
     }
 
     /// Return l1 handler tx paid fee database manager

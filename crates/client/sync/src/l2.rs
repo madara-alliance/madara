@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 
 use futures::prelude::*;
 use lazy_static::lazy_static;
-use mc_storage::OverrideHandle;
+use mc_db::storage_updates::{store_class_update, store_state_update};
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::DeoxysBlock;
 use mp_contract::class::ClassUpdateWrapper;
@@ -14,9 +14,6 @@ use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use sp_runtime::generic::{Block as RuntimeBlock, Header};
-use sp_runtime::traits::BlakeTwo256;
-use sp_runtime::OpaqueExtrinsic;
 use starknet_api::hash::StarkHash;
 use starknet_core::types::{PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
@@ -28,9 +25,8 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::Duration;
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
-use crate::fetch::fetchers::{fetch_block_and_updates, FetchConfig};
+use crate::fetch::fetchers::fetch_block_and_updates;
 use crate::l1::ETHEREUM_STATE_UPDATE;
-use crate::utility::block_hash_substrate;
 use crate::CommandSink;
 
 async fn spawn_compute<F, R>(func: F) -> R
@@ -125,55 +121,36 @@ pub fn get_pending_state_update() -> Option<PendingStateUpdate> {
 pub struct SenderConfig {
     /// Sender for dispatching fetched blocks.
     pub block_sender: Sender<DeoxysBlock>,
-    /// Sender for dispatching fetched state updates.
-    pub state_update_sender: Sender<StateUpdateWrapper>,
-    /// Sender for dispatching fetched class hashes.
-    pub class_sender: Sender<ClassUpdateWrapper>,
     /// The command sink used to notify the consensus engine that a new block
     /// should be created.
     pub command_sink: CommandSink,
-    // Storage overrides for accessing stored classes
-    pub overrides: Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
 /// `n_blocks` is optionally the total number of blocks to sync, for debugging/benchmark purposes.
 pub async fn sync<C>(
-    mut sender_config: SenderConfig,
-    fetch_config: FetchConfig,
+    block_sender: Sender<DeoxysBlock>,
+    mut command_sink: CommandSink,
+    provider: SequencerGatewayProvider,
     first_block: u64,
-    n_blocks: Option<usize>,
+    verify: bool,
     client: Arc<C>,
 ) where
     C: HeaderBackend<DBlockT> + 'static,
 {
-    let SenderConfig { block_sender, state_update_sender, class_sender, command_sink, overrides } = &mut sender_config;
-    let provider = Arc::new(SequencerGatewayProvider::new(
-        fetch_config.gateway.clone(),
-        fetch_config.feeder_gateway.clone(),
-        fetch_config.chain_id,
-        fetch_config.api_key,
-    ));
+    let provider = Arc::new(provider);
     let mut last_block_hash = None;
-
-    // TODO: move this somewhere else
-    if first_block == 1 {
-        let state_update =
-            provider.get_state_update(BlockId::Number(0)).await.expect("getting state update for genesis block");
-        verify_l2(0, &state_update, overrides, None).expect("verifying genesis block");
-    }
 
     let fetch_stream = (first_block..).map(|block_n| {
         let provider = Arc::clone(&provider);
-        let overrides = Arc::clone(overrides);
-        let client = Arc::clone(&client);
-        async move {
-            tokio::spawn(fetch_block_and_updates(block_n, provider, overrides, client)).await.expect("tokio join error")
-        }
+        async move { tokio::spawn(fetch_block_and_updates(block_n, provider)).await.expect("tokio join error") }
     });
+
     // Have 10 fetches in parallel at once, using futures Buffered
-    let fetch_stream = stream::iter(fetch_stream.take(n_blocks.unwrap_or(usize::MAX))).buffered(10);
+    let fetch_stream = stream::iter(fetch_stream).buffered(10);
     let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(10);
+    let (state_update_sender, mut state_update_receiver) = mpsc::channel(10);
+    let (class_update_sender, mut class_update_receiver) = mpsc::channel(10);
 
     tokio::select!(
         // update highest block hash and number
@@ -200,6 +177,8 @@ pub async fn sync<C>(
         // apply blocks and updates sequentially
         _ = async {
             let mut block_n = first_block;
+            let block_sender = Arc::new(block_sender);
+
             while let Some(val) = pin!(fetch_stream_receiver.recv()).await {
                 if matches!(val, Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))) {
                     break;
@@ -207,11 +186,7 @@ pub async fn sync<C>(
 
                 let (block, state_update, class_update) = val.expect("fetching block");
 
-                let block_hash = block_hash_substrate(client.as_ref(), block_n - 1);
-
                 let (state_update, block_conv) = {
-                    let verify = fetch_config.verify;
-                    let overrides = Arc::clone(overrides);
                     let state_update = Arc::new(state_update);
                     let state_update_1 = Arc::clone(&state_update);
 
@@ -224,7 +199,7 @@ pub async fn sync<C>(
                         };
                         let ver_l2 = || {
                             let start = std::time::Instant::now();
-                            verify_l2(block_n, &state_update, &overrides, block_hash)
+                            verify_l2(block_n, &state_update)
                                 .expect("verifying block");
                             log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
                         };
@@ -250,7 +225,7 @@ pub async fn sync<C>(
                     (Arc::try_unwrap(state_update_1).expect("arc should not be aliased"), block_conv)
                 };
 
-                let block_sender = &*block_sender;
+                let block_sender = Arc::clone(&block_sender);
                 tokio::join!(
                     async move {
                         block_sender.send(block_conv).await.expect("block reciever channel is closed");
@@ -259,25 +234,41 @@ pub async fn sync<C>(
                         // Now send state_update, which moves it. This will be received
                         // by QueryBlockConsensusDataProvider in deoxys/crates/node/src/service.rs
                         state_update_sender
-                            .send(StateUpdateWrapper::from(state_update))
+                            .send((block_n, StateUpdateWrapper::from(state_update)))
                             .await
                             .expect("state updater is not running");
                     },
                     async {
                         // do the same to class update
-                        class_sender
-                            .send(ClassUpdateWrapper(class_update))
+                        class_update_sender
+                            .send((block_n, ClassUpdateWrapper(class_update)))
                             .await
                             .expect("class updater is not running");
                     }
                 );
 
                 let start = std::time::Instant::now();
-                create_block(command_sink, &mut last_block_hash).await.expect("creating block");
+                create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
                 log::debug!("end create_block: {:?}", std::time::Instant::now() - start);
                 block_n += 1;
             }
         } => {},
+        // store state updates
+        _ = async {
+            while let Some((block_number, state_update)) = pin!(state_update_receiver.recv()).await {
+                if store_state_update(block_number, state_update).await.is_err() {
+                    log::info!("❗ Failed to store state update for block {block_number}");
+                };
+            }
+        } => {},
+        // store class udpate
+        _ = async {
+            while let Some((block_number, class_update)) = pin!(class_update_receiver.recv()).await {
+                if store_class_update(block_number, class_update).await.is_err() {
+                    log::info!("❗ Failed to store class update for block {block_number}");
+                };
+            }
+        } => {}
     );
 
     log::debug!("L2 sync finished :)");
@@ -319,16 +310,11 @@ pub fn update_l2(state_update: L2StateUpdate) {
 }
 
 /// Verify and update the L2 state according to the latest state update
-pub fn verify_l2(
-    block_number: u64,
-    state_update: &StateUpdate,
-    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    substrate_block_hash: Option<H256>,
-) -> Result<(), L2SyncError> {
+pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> Result<(), L2SyncError> {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
 
     let csd = build_commitment_state_diff(state_update_wrapper.clone());
-    let state_root = update_state_root(csd, Arc::clone(overrides), block_number, substrate_block_hash);
+    let state_root = update_state_root(csd, block_number);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
     update_l2(L2StateUpdate {

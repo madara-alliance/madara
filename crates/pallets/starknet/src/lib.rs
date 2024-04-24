@@ -34,7 +34,6 @@
 
 use std::sync::Arc;
 
-use mc_db::storage::StorageHandler;
 /// Starknet pallet.
 /// Definition of the pallet's runtime storage items, events, errors, and dispatchable
 /// functions.
@@ -43,6 +42,8 @@ use mc_db::storage::StorageHandler;
 pub use pallet::*;
 /// An adapter for the blockifier state related traits
 pub mod blockifier_state_adapter;
+use mp_contract::class::StorageContractData;
+use starknet_api::core::Nonce;
 
 #[cfg(feature = "std")]
 pub mod genesis_loader;
@@ -55,7 +56,6 @@ pub mod types;
 #[macro_use]
 pub extern crate alloc;
 
-use alloc::collections::BTreeSet;
 use alloc::str::from_utf8_unchecked;
 use alloc::string::String;
 use alloc::vec;
@@ -64,7 +64,6 @@ use alloc::vec::Vec;
 use blockifier::blockifier::block::{BlockInfo, GasPrices};
 use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses, TransactionContext};
 use blockifier::execution::call_info::CallInfo;
-use blockifier::execution::contract_class::ContractClass;
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
 use blockifier::state::cached_state::{CachedState, GlobalContractCache};
 use blockifier::transaction::objects::{DeprecatedTransactionInfo, TransactionInfo};
@@ -73,9 +72,9 @@ use blockifier_state_adapter::BlockifierStateAdapter;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
-use mp_block::state_update::StateUpdateWrapper;
+use mc_db::storage_handler;
+use mc_db::storage_handler::{StorageView, StorageViewMut};
 use mp_block::DeoxysBlock;
-use mp_contract::ContractAbi;
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -84,17 +83,15 @@ use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
-use starknet_api::core::{
-    ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce, PatriciaKey,
-};
+use starknet_api::core::{ChainId, CompiledClassHash, ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::{Calldata, Event as StarknetEvent, MessageToL1, Transaction, TransactionHash};
+use starknet_api::transaction::{Calldata, Event as StarknetEvent, MessageToL1, TransactionHash};
 use starknet_crypto::FieldElement;
 
 use crate::alloc::string::ToString;
-use crate::types::{CasmClassHash, SierraClassHash, StorageSlot};
+use crate::types::{CasmClassHash, SierraClassHash};
 
 pub(crate) const LOG_TARGET: &str = "runtime::starknet";
 
@@ -116,8 +113,6 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
-    use mp_contract::class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper};
-
     use super::*;
 
     #[pallet::pallet]
@@ -177,29 +172,16 @@ pub mod pallet {
         /// The block is being finalized.
         fn on_finalize(_n: BlockNumberFor<T>) {
             assert!(SeqAddrUpdate::<T>::take(), "Sequencer address must be set for the block");
+
+            let block_number =
+                UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
+
             // Create a new Starknet block and store it.
-            <Pallet<T>>::store_block(UniqueSaturatedInto::<u64>::unique_saturated_into(
-                frame_system::Pallet::<T>::block_number(),
-            ));
+            <Pallet<T>>::store_block(block_number);
         }
 
         /// The block is being initialized. Implement to have something happen.
         fn on_initialize(_: BlockNumberFor<T>) -> Weight {
-            let digest = frame_system::Pallet::<T>::digest();
-            let logs = digest.logs();
-
-            if !logs.is_empty() {
-                for log_entry in logs {
-                    if let DigestItem::PreRuntime(engine_id, encoded_data) = log_entry {
-                        match *engine_id {
-                            mp_digest_log::STATE_ENGINE_ID => store_state_update::<T>(encoded_data),
-                            mp_digest_log::CLASS_ENGINE_ID => store_class_update::<T>(encoded_data),
-                            _ => {}
-                        }
-                    }
-                }
-            }
-
             Weight::zero()
         }
 
@@ -209,79 +191,7 @@ pub mod pallet {
         }
     }
 
-    fn store_state_update<T: Config>(encoded_data: &Vec<u8>) {
-        match StateUpdateWrapper::decode(&mut encoded_data.as_slice()) {
-            Ok(state_update) => {
-                // nonces stored for accessing on `starknet_getNonce` RPC call.
-                state_update
-                    .state_diff
-                    .nonces
-                    .into_iter()
-                    .map(|(address, nonce)| (ContractAddress(address.into()), Nonce(nonce.into())))
-                    .for_each(|(contract_address, nonce)| <Nonces<T>>::insert(contract_address, nonce));
-
-                // contract address to class hash equivalence (used in
-                // `starknet_getClassHashAt`` rpc call)
-                core::iter::empty()
-                    .chain(state_update.state_diff.deployed_contracts)
-                    .chain(state_update.state_diff.replaced_classes)
-                    .map(|contract| (ContractAddress(contract.address.into()), ClassHash(contract.class_hash.into())))
-                    .for_each(|(contract_address, class_hash)| {
-                        <ContractClassHashes<T>>::insert(contract_address, class_hash)
-                    });
-
-                // we need to store the entire data from the StateDiff to be able to return it
-                // during `starknet_getStateUpdate`
-                state_update
-                    .state_diff
-                    .declared_classes
-                    .into_iter()
-                    .map(|declared_class| {
-                        (
-                            ClassHash(declared_class.class_hash.into()),
-                            CompiledClassHash(declared_class.compiled_class_hash.into()),
-                        )
-                    })
-                    .for_each(|(class_hash, compiled_class_hash)| {
-                        <CompiledClassHashes<T>>::insert(class_hash, compiled_class_hash)
-                    });
-            }
-            Err(e) => log!(info, "Decoding error: {:?}", e),
-        }
-    }
-
-    fn store_class_update<T: Config>(encoded_data: &Vec<u8>) {
-        match ClassUpdateWrapper::decode(&mut encoded_data.as_slice()) {
-            Ok(class_update) => {
-                class_update.0.into_iter().for_each(|ContractClassData { hash, contract_class }| {
-                    let ContractClassWrapper { contract, abi } = contract_class;
-
-                    // Blockifier class and ABI need to be stored separately since Blockifier
-                    // does not store ABI. In the future, it would be better to have a separate
-                    // storage structure which contains both the class data and the ABI
-                    <ContractClasses<T>>::insert(hash, contract);
-                    <ContractAbis<T>>::insert(hash, abi);
-                })
-            }
-            Err(e) => log!(info, "Decoding error: {:?}", e),
-        }
-    }
-
-    /// The Starknet pallet storage items.
-    /// STORAGE
-    /// Current building block's transactions.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn pending)]
-    pub(super) type Pending<T: Config> = StorageValue<_, Vec<Transaction>, ValueQuery>;
-
-    // Keep the hashes of the transactions stored in Pending
-    // One should not be updated without the other !!!
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn pending_hashes)]
-    pub(super) type PendingHashes<T: Config> = StorageValue<_, Vec<TransactionHash>, ValueQuery>;
-
+    // TODO: @charpa is this used in any RPC calls?
     #[pallet::storage]
     #[pallet::unbounded]
     #[pallet::getter(fn tx_events)]
@@ -296,73 +206,13 @@ pub mod pallet {
     #[pallet::unbounded]
     #[pallet::getter(fn tx_revert_error)]
     pub(super) type TxRevertError<T: Config> = StorageMap<_, Identity, TransactionHash, String, OptionQuery>;
-    /// The Starknet pallet storage items.
-    /// STORAGE
-    /// Mapping of contract address to state root.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn contract_state_root_by_address)]
-    pub(super) type ContractsStateRoots<T: Config> =
-        StorageMap<_, Identity, ContractAddress, Felt252Wrapper, OptionQuery>;
-
-    /// Pending storage slot updates
-    /// STORAGE
-    /// Mapping storage key to storage value.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn pending_storage_changes)]
-    pub(super) type PendingStorageChanges<T: Config> =
-        StorageMap<_, Identity, ContractAddress, Vec<StorageSlot>, ValueQuery>;
-
-    /// Mapping for block number and hashes.
-    /// Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn block_hash)]
-    pub(super) type BlockHash<T: Config> = StorageMap<_, Identity, u64, Felt252Wrapper, ValueQuery>;
-
-    /// Mapping from Starknet contract address to the contract's class hash.
-    /// Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn contract_class_hash_by_address)]
-    pub(super) type ContractClassHashes<T: Config> =
-        StorageMap<_, Identity, ContractAddress, CasmClassHash, ValueQuery>;
-
-    /// Mapping from Starknet class hash to contract class.
-    /// Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn contract_class_by_class_hash)]
-    pub(super) type ContractClasses<T: Config> = StorageMap<_, Identity, CasmClassHash, ContractClass, OptionQuery>;
-
-    /// Mapping from Starknet Sierra class hash to  Casm compiled contract class.
-    /// Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn contract_abi_by_class_hash)]
-    pub(super) type ContractAbis<T: Config> = StorageMap<_, Identity, CasmClassHash, ContractAbi, OptionQuery>;
-
-    /// Mapping from Starknet Sierra class hash to  Casm compiled contract
-    /// class. Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn compiled_class_hash_by_class_hash)]
-    pub(super) type CompiledClassHashes<T: Config> =
-        StorageMap<_, Identity, SierraClassHash, CompiledClassHash, OptionQuery>;
-
-    /// Mapping from Starknet contract address to its nonce.
-    /// Safe to use `Identity` as the key is already a hash.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn nonce)]
-    pub(super) type Nonces<T: Config> = StorageMap<_, Identity, ContractAddress, Nonce, ValueQuery>;
 
     /// The last processed Ethereum block number for L1 messages consumption.
     /// This is used to avoid re-processing the same Ethereum block multiple times.
     /// This is used by the offchain worker.
     /// # TODO
     /// * Find a more relevant name for this.
+    // TODO: do we actually need this?
     #[pallet::storage]
     #[pallet::unbounded]
     #[pallet::getter(fn last_known_eth_block)]
@@ -385,13 +235,6 @@ pub mod pallet {
     #[pallet::unbounded]
     #[pallet::getter(fn seq_addr_update)]
     pub type SeqAddrUpdate<T: Config> = StorageValue<_, bool, ValueQuery>;
-
-    /// Information about processed L1 Messages
-    /// Based on Nonce value.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn l1_messages)]
-    pub(super) type L1Messages<T: Config> = StorageValue<_, BTreeSet<Nonce>, ValueQuery>;
 
     /// Starknet genesis configuration.
     #[pallet::genesis_config]
@@ -433,13 +276,19 @@ pub mod pallet {
                 &StarknetStorageSchemaVersion::V1,
             );
 
+            let handler_contract_data = storage_handler::contract_data_mut();
             self.contracts.iter().for_each(|(contract_address, class_hash)| {
-                ContractClassHashes::<T>::insert(contract_address, class_hash)
+                handler_contract_data
+                    .insert(*contract_address, StorageContractData { class_hash: *class_hash, nonce: Nonce::default() })
+                    .unwrap();
             });
+            handler_contract_data.commit_sync(0).unwrap();
 
+            let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
             self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
-                CompiledClassHashes::<T>::insert(class_hash, CompiledClassHash(compiled_class_hash.0))
+                handler_contract_class_hashes.insert(*class_hash, CompiledClassHash(compiled_class_hash.0)).unwrap();
             });
+            handler_contract_class_hashes.commit_sync(0).unwrap();
 
             LastKnownEthBlock::<T>::set(None);
             // Set the fee token address from the genesis config.
@@ -528,222 +377,6 @@ pub mod pallet {
             SeqAddrUpdate::<T>::put(true);
             Ok(())
         }
-
-        // /// The invoke transaction is the main transaction type used to invoke contract functions in
-        // /// Starknet.
-        // /// See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#invoke_transaction`.
-        // /// # Arguments
-        // ///
-        // /// * `origin` - The origin of the transaction.
-        // /// * `transaction` - The Starknet transaction.
-        // ///
-        // ///  # Returns
-        // ///
-        // /// * `DispatchResult` - The result of the transaction.
-        // #[pallet::call_index(1)]
-        // #[pallet::weight({0})]
-        // pub fn invoke(origin: OriginFor<T>, transaction: InvokeTransaction) -> DispatchResult {
-        //     // This ensures that the function can only be called via unsigned transaction.
-        //     ensure_none(origin)?;
-
-        //     let sender_address = match &transaction {
-        //         starknet_api::transaction::InvokeTransaction::V0(tx) => tx.contract_address,
-        //         starknet_api::transaction::InvokeTransaction::V1(tx) => tx.sender_address,
-        //         starknet_api::transaction::InvokeTransaction::V3(tx) => tx.sender_address,
-        //     };
-        //     // Check if contract is deployed
-        //     ensure!(ContractClassHashes::<T>::contains_key(sender_address),
-        // Error::<T>::AccountNotDeployed);
-
-        //     // Init caches
-        //     let mut cached_state = Self::init_cached_state();
-
-        //     // Execute
-        //     let tx_execution_infos = ExecutableTransaction::execute(
-        //         blockifier::transaction::account_transaction::AccountTransaction::Invoke(transaction.
-        // clone()),         &mut cached_state,
-        //         &Self::get_block_context(),
-        //         true,
-        //         true,
-        //     )
-        //     .map_err(|_| Error::<T>::TransactionExecutionFailed)?;
-
-        //     Self::emit_and_store_tx_and_fees_events(
-        //         transaction.tx_hash,
-        //         &tx_execution_infos.execute_call_info,
-        //         &tx_execution_infos.fee_transfer_call_info,
-        //     );
-        //     Self::store_transaction(
-        //         transaction.tx_hash,
-        //         Transaction::AccountTransaction(AccountTransaction::Invoke(transaction)),
-        //         tx_execution_infos.revert_error,
-        //     );
-
-        //     Ok(())
-        // }
-
-        // /// The declare transaction is used to introduce new classes into the state of Starknet,
-        // /// enabling other contracts to deploy instances of those classes or using them in a library
-        // /// call. See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#declare_transaction`.
-        // /// # Arguments
-        // ///
-        // /// * `origin` - The origin of the transaction.
-        // /// * `transaction` - The Starknet transaction.
-        // ///
-        // ///  # Returns
-        // ///
-        // /// * `DispatchResult` - The result of the transaction.
-        // #[pallet::call_index(2)]
-        // #[pallet::weight({0})]
-        // pub fn declare(origin: OriginFor<T>, transaction: DeclareTransaction) -> DispatchResult {
-        //     // This ensures that the function can only be called via unsigned transaction.
-        //     ensure_none(origin)?;
-
-        //     // Check class hash is not already declared
-        //     ensure!(
-        //         !ContractClasses::<T>::contains_key(transaction.tx().class_hash()),
-        //         Error::<T>::ClassHashAlreadyDeclared
-        //     );
-        //     // Check if contract is deployed
-        //     ensure!(
-        //         ContractClassHashes::<T>::contains_key(transaction.tx().sender_address()),
-        //         Error::<T>::AccountNotDeployed
-        //     );
-
-        //     // Init caches
-        //     let mut cached_state = Self::init_cached_state();
-
-        //     // Execute
-        //     let tx_execution_infos = ExecutableTransaction::execute(
-        //         blockifier::transaction::account_transaction::AccountTransaction::Declare(transaction.
-        // clone()),         &mut cached_state,
-        //         &Self::get_block_context(),
-        //         true,
-        //         true,
-        //     )
-        //     .map_err(|_| Error::<T>::TransactionExecutionFailed)?;
-
-        //     Self::emit_and_store_tx_and_fees_events(
-        //         transaction.tx_hash,
-        //         &tx_execution_infos.execute_call_info,
-        //         &tx_execution_infos.fee_transfer_call_info,
-        //     );
-        //     Self::store_transaction(
-        //         transaction.tx_hash,
-        //         Transaction::AccountTransaction(AccountTransaction::Declare(transaction)),
-        //         tx_execution_infos.revert_error,
-        //     );
-
-        //     Ok(())
-        // }
-
-        // /// Since Starknet v0.10.1 the deploy_account transaction replaces the deploy transaction
-        // /// for deploying account contracts. To use it, you should first pre-fund your
-        // /// would-be account address so that you could pay the transaction fee (see here for more
-        // /// details) . You can then send the deploy_account transaction. See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#deploy_account_transaction`.
-        // /// # Arguments
-        // ///
-        // /// * `origin` - The origin of the transaction.
-        // /// * `transaction` - The Starknet transaction.
-        // ///
-        // ///  # Returns
-        // ///
-        // /// * `DispatchResult` - The result of the transaction.
-        // #[pallet::call_index(3)]
-        // #[pallet::weight({0})]
-        // pub fn deploy_account(origin: OriginFor<T>, transaction: DeployAccountTransaction) ->
-        // DispatchResult {     // This ensures that the function can only be called via unsigned
-        // transaction.     ensure_none(origin)?;
-
-        //     // Check if contract is deployed
-        //     ensure!(
-        //         !ContractClassHashes::<T>::contains_key(transaction.contract_address),
-        //         Error::<T>::AccountAlreadyDeployed
-        //     );
-
-        //     // Init caches
-        //     let mut cached_state = Self::init_cached_state();
-
-        //     // Execute
-        //     let tx_execution_infos = ExecutableTransaction::execute(
-        //         blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(transaction.clone()),
-        //         &mut cached_state,
-        //         &Self::get_block_context(),
-        //         true,
-        //         true,
-        //     )
-        //     .map_err(|_| Error::<T>::TransactionExecutionFailed)?;
-
-        //     Self::emit_and_store_tx_and_fees_events(
-        //         transaction.tx_hash,
-        //         &tx_execution_infos.execute_call_info,
-        //         &tx_execution_infos.fee_transfer_call_info,
-        //     );
-        //     Self::store_transaction(
-        //         transaction.tx_hash,
-        //         Transaction::AccountTransaction(AccountTransaction::DeployAccount(transaction)),
-        //         tx_execution_infos.revert_error,
-        //     );
-
-        //     Ok(())
-        // }
-
-        // /// Consume a message from L1.
-        // ///
-        // /// # Arguments
-        // ///
-        // /// * `origin` - The origin of the transaction.
-        // /// * `transaction` - The Starknet transaction.
-        // ///
-        // /// # Returns
-        // ///
-        // /// * `DispatchResult` - The result of the transaction.
-        // ///
-        // /// # TODO
-        // /// * Compute weight
-        // #[pallet::call_index(4)]
-        // #[pallet::weight({0})]
-        // pub fn consume_l1_message(origin: OriginFor<T>, transaction: L1HandlerTransaction) ->
-        // DispatchResult {     // This ensures that the function can only be called via unsigned
-        // transaction.     ensure_none(origin)?;
-
-        //     let nonce = transaction.tx.nonce;
-
-        //     // Ensure that L1 Message has not been executed
-        //     Self::ensure_l1_message_not_executed(&nonce).map_err(|_|
-        // Error::<T>::L1MessageAlreadyExecuted)?;
-
-        //     // Store infornamtion about message being processed
-        //     // The next instruction executes the message
-        //     // Either successfully  or not
-        //     L1Messages::<T>::mutate(|nonces| nonces.insert(nonce));
-
-        //     // Init caches
-        //     let mut cached_state = Self::init_cached_state();
-
-        //     // Execute
-        //     let tx_execution_infos = ExecutableTransaction::execute(
-        //         transaction.clone(),
-        //         &mut cached_state,
-        //         &Self::get_block_context(),
-        //         true,
-        //         true,
-        //     )
-        //     .map_err(|_| Error::<T>::TransactionExecutionFailed)?;
-
-        //     Self::emit_and_store_tx_and_fees_events(
-        //         transaction.tx_hash,
-        //         &tx_execution_infos.execute_call_info,
-        //         &tx_execution_infos.fee_transfer_call_info,
-        //     );
-        //     Self::store_transaction(
-        //         transaction.tx_hash,
-        //         Transaction::L1HandlerTransaction(transaction),
-        //         tx_execution_infos.revert_error,
-        //     );
-
-        //     Ok(())
-        // }
     }
 
     #[pallet::inherent]
@@ -764,104 +397,10 @@ pub mod pallet {
             matches!(call, Call::set_sequencer_address { .. })
         }
     }
-
-    //     #[pallet::validate_unsigned]
-    //     impl<T: Config> ValidateUnsigned for Pallet<T> {
-    //         type Call = Call<T>;
-
-    //         /// Validate unsigned call to this module.
-    //         ///
-    //         /// By default unsigned transactions are disallowed, but implementing the validator
-    //         /// here we make sure that some particular calls (in this case all calls)
-    //         /// are being whitelisted and marked as valid.
-    //         // fn validate_unsigned(_source: TransactionSource, call: &Self::Call) ->
-    // TransactionValidity {         //     // The priority right now is the max u64 - nonce
-    // because for unsigned transactions we need to         //     // determine an absolute
-    // priority. For now we use that for the benchmark (lowest nonce goes first)         //
-    // // otherwise we have a nonce error and everything fails.         //     // Once we have a
-    // real fee market this is where we'll chose the most profitable transaction.
-
-    //         //     let transaction = Self::get_call_transaction(call.clone()).map_err(|_|
-    // InvalidTransaction::Call)?;
-
-    //         //     let tx_priority_info = Self::validate_unsigned_tx_nonce(&transaction)?;
-
-    //         //     Self::validate_unsigned_tx(&transaction)?;
-
-    //         //     let mut valid_transaction_builder =
-    // ValidTransaction::with_tag_prefix("starknet")         //         .priority(u64::MAX)
-    //         //         .longevity(T::TransactionLongevity::get())
-    //         //         .propagate(true);
-
-    //         //     match tx_priority_info {
-    //         //         // Make sure txs from same account are executed in correct order (nonce
-    // based ordering)         //         TxPriorityInfo::RegularTxs { sender_address,
-    // transaction_nonce, sender_nonce } => {         //             valid_transaction_builder =
-    //         //                 valid_transaction_builder.and_provides((sender_address,
-    // transaction_nonce));         //             if transaction_nonce > sender_nonce {
-    //         //                 valid_transaction_builder =
-    // valid_transaction_builder.and_requires((         //                     sender_address,
-    //         //                     transaction_nonce
-    //         //                         .try_increment()
-    //         //                         .map_err(|_|
-    // TransactionValidityError::Invalid(InvalidTransaction::BadProof))?,         //
-    // ));         //             }
-    //         //         }
-    //         //         TxPriorityInfo::L1Handler { nonce } => {
-    //         //             valid_transaction_builder =
-    //         //
-    // valid_transaction_builder.and_provides((ContractAddress::default(), nonce));         //
-    // }         //         _ => {}
-    //         //     }
-
-    //         //     valid_transaction_builder.build()
-    //         // }
-
-    //         /// From substrate documentation:
-    //         /// Validate the call right before dispatch.
-    //         /// This method should be used to prevent transactions already in the pool
-    //         /// (i.e. passing validate_unsigned) from being included in blocks in case
-    //         /// they became invalid since being added to the pool.
-    //         ///
-    //         /// In the default implementation of pre_dispatch for the ValidateUnsigned trait,
-    //         /// this function calls the validate_unsigned function in order to verify validity
-    //         /// before dispatch. In our case, since transaction was already validated in
-    //         /// `validate_unsigned` we can just return Ok.
-    //         fn pre_dispatch(_call: &Self::Call) -> Result<(), TransactionValidityError> {
-    //             Ok(())
-    //         }
-    //     }
 }
 
 /// The Starknet pallet internal functions.
 impl<T: Config> Pallet<T> {
-    /// Returns the transaction for the Call
-    ///
-    /// # Arguments
-    ///
-    /// * `call` - The call to get the sender address for
-    ///
-    /// # Returns
-    ///
-    /// The transaction
-    // fn get_call_transaction(call: Call<T>) -> Result<Transaction, ()> {
-    //     let tx = match call {
-    //         Call::<T>::invoke { transaction } => {
-    //             Transaction::AccountTransaction(AccountTransaction::Invoke(transaction))
-    //         }
-    //         Call::<T>::declare { transaction } => {
-    //             Transaction::AccountTransaction(AccountTransaction::Declare(transaction))
-    //         }
-    //         Call::<T>::deploy_account { transaction } => {
-    //             Transaction::AccountTransaction(AccountTransaction::DeployAccount(transaction))
-    //         }
-    //         Call::<T>::consume_l1_message { transaction } => Transaction::L1HandlerTransaction(transaction),
-    //         _ => return Err(()),
-    //     };
-
-    //     Ok(tx)
-    // }
-
     /// Creates a [BlockContext] object. The [BlockContext] is needed by the blockifier to execute
     /// properly the transaction. Substrate caches data so it's fine to call multiple times this
     /// function, only the first transaction/block will be "slow" to load these data.
@@ -908,8 +447,11 @@ impl<T: Config> Pallet<T> {
     ///
     /// The block hash of the parent (previous) block or 0 if the current block is 0.
     #[inline(always)]
-    pub fn parent_block_hash(current_block_number: &u64) -> Felt252Wrapper {
-        if current_block_number == &0 { Felt252Wrapper::ZERO } else { Self::block_hash(current_block_number - 1) }
+    pub fn parent_block_hash(current_block_number: u64) -> Felt252Wrapper {
+        match storage_handler::block_hash().get(current_block_number) {
+            Ok(Some(block_hash)) => block_hash,
+            _ => Felt252Wrapper::ZERO,
+        }
     }
 
     /// Get the current block timestamp in seconds.
@@ -923,13 +465,6 @@ impl<T: Config> Pallet<T> {
         timestamp_in_millisecond / 1000
     }
 
-    /// Get the number of transactions in the block.
-    #[inline(always)]
-    pub fn transaction_count() -> u128 {
-        Self::pending().len() as u128
-    }
-
-    /// Get the number of events in the block.
     #[inline(always)]
     pub fn event_count() -> u128 {
         TxEvents::<T>::iter_values().map(|v| v.len() as u128).sum()
@@ -944,10 +479,13 @@ impl<T: Config> Pallet<T> {
         // Get current block context
         let block_context = Self::get_block_context();
         // Get class hash
-        let class_hash = ContractClassHashes::<T>::try_get(address).map_err(|_| Error::<T>::ContractNotFound)?;
+        let class_hash = storage_handler::contract_data()
+            .get(&address)
+            .map_err(|_| Error::<T>::ContractNotFound)?
+            .map(|contract_data| contract_data.class_hash);
 
         let entrypoint = CallEntryPoint {
-            class_hash: Some(class_hash),
+            class_hash,
             code_address: None,
             entry_point_type: EntryPointType::External,
             entry_point_selector: function_selector,
@@ -987,13 +525,9 @@ impl<T: Config> Pallet<T> {
 
     /// Returns a storage keys and values of a given contract
     pub fn get_storage_from(contract_address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
-        Ok(StorageHandler::contract_storage()
-            .unwrap()
+        Ok(storage_handler::contract_storage_trie()
             .get_storage(&contract_address)
-            .map_err(|_| Error::<T>::ContractNotFound)?
-            .iter()
-            .map(|(k, v)| (StorageKey(PatriciaKey(StarkFelt(k.to_bytes_be()))), StarkFelt(v.to_bytes_be())))
-            .collect())
+            .map_err(|_| Error::<T>::ContractNotFound)?)
     }
 
     /// Store a Starknet block in the blockchain.
@@ -1013,9 +547,14 @@ impl<T: Config> Pallet<T> {
                     }
                 };
 
-                let blockhash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
-                BlockHash::<T>::insert(block_number, blockhash);
-                Pending::<T>::kill();
+                let block_hash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
+
+                let mut handler_block_number = storage_handler::block_number();
+                let mut handler_block_hash = storage_handler::block_hash();
+
+                handler_block_number.insert(&block_hash, block_number).unwrap();
+                handler_block_hash.insert(block_number, &block_hash).unwrap();
+
                 let digest = DigestItem::Consensus(MADARA_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
                 frame_system::Pallet::<T>::deposit_log(digest);
             }

@@ -1,0 +1,246 @@
+use std::fmt::Display;
+
+use async_trait::async_trait;
+use bitvec::prelude::Msb0;
+use bitvec::vec::BitVec;
+use bitvec::view::AsBits;
+use parity_scale_codec::{Decode, Encode};
+use sp_core::hexdisplay::AsBytesRef;
+use starknet_api::core::{ClassHash, ContractAddress};
+use starknet_api::hash::StarkFelt;
+use starknet_api::state::StorageKey;
+use starknet_types_core::felt::Felt;
+use thiserror::Error;
+
+use self::block_hash::BlockHashView;
+use self::block_number::BlockNumberView;
+use self::class_trie::{ClassTrieView, ClassTrieViewMut};
+use self::contract_class_data::{ContractClassDataView, ContractClassDataViewMut};
+use self::contract_class_hashes::{ContractClassHashesView, ContractClassHashesViewMut};
+use self::contract_data::{ContractDataView, ContractDataViewMut};
+use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
+use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
+use crate::DeoxysBackend;
+
+pub mod benchmark;
+pub mod block_hash;
+pub mod block_number;
+mod class_trie;
+mod contract_class_data;
+mod contract_class_hashes;
+mod contract_data;
+mod contract_storage_trie;
+mod contract_trie;
+pub mod query;
+
+pub mod bonsai_identifier {
+    pub const CONTRACT: &[u8] = "0xcontract".as_bytes();
+    pub const CLASS: &[u8] = "0xclass".as_bytes();
+    pub const TRANSACTION: &[u8] = "0xtransaction".as_bytes();
+    pub const EVENT: &[u8] = "0xevent".as_bytes();
+}
+
+#[derive(Error, Debug)]
+pub enum DeoxysStorageError {
+    #[error("failed to initialize trie for {0}")]
+    TrieInitError(TrieType),
+    #[error("failed to compute trie root for {0}")]
+    TrieRootError(TrieType),
+    #[error("failed to merge transactional state back into {0}")]
+    TrieMergeError(TrieType),
+    #[error("failed to retrieve latest id for {0}")]
+    TrieIdError(TrieType),
+    #[error("failed to retrieve storage view for {0}")]
+    StoraveViewError(StorageType),
+    #[error("failed to insert data into {0}")]
+    StorageInsertionError(StorageType),
+    #[error("failed to retrive data from {0}")]
+    StorageRetrievalError(StorageType),
+    #[error("failed to commit to {0}")]
+    StorageCommitError(StorageType),
+    #[error("failed to decode {0}")]
+    StorageDecodeError(StorageType),
+    #[error("failed to revert {0} to block {1}")]
+    StorageRevertError(StorageType, u64),
+}
+
+#[derive(Debug)]
+pub enum TrieType {
+    Contract,
+    ContractStorage,
+    Class,
+}
+
+#[derive(Debug)]
+pub enum StorageType {
+    Contract,
+    ContractStorage,
+    ContractClassData,
+    ContractData,
+    ContractAbi,
+    ContractClassHashes,
+    Class,
+    BlockNumber,
+    BlockHash,
+}
+
+impl Display for TrieType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let trie_type = match self {
+            TrieType::Contract => "contract trie",
+            TrieType::ContractStorage => "contract storage trie",
+            TrieType::Class => "class trie",
+        };
+
+        write!(f, "{trie_type}")
+    }
+}
+
+impl Display for StorageType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let storage_type = match self {
+            StorageType::Contract => "contract",
+            StorageType::ContractStorage => "contract storage",
+            StorageType::Class => "class storage",
+            StorageType::ContractClassData => "class definition storage",
+            StorageType::ContractAbi => "class abi storage",
+            StorageType::BlockNumber => "block number storage",
+            StorageType::BlockHash => "block hash storage",
+            StorageType::ContractClassHashes => "contract class hashes storage",
+            StorageType::ContractData => "contract class data storage",
+        };
+
+        write!(f, "{storage_type}")
+    }
+}
+
+/// An immutable view on a backend storage interface.
+///
+/// > Multiple immutable views can exist at once for a same storage type.
+/// > You cannot have an immutable view and a mutable view on storage at the same time.
+///
+/// Use this to query data from the backend database in a type-safe way.
+pub trait StorageView {
+    type KEY: Encode + Decode;
+    type VALUE: Encode + Decode;
+
+    /// Retrieves data from storage for the given key
+    ///
+    /// * `key`: identifier used to retrieve the data.
+    fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError>;
+
+    /// Checks if a value is stored in the backend database for the given key.
+    ///
+    /// * `key`: identifier use to check for data existence.
+    fn contains(&self, key: &Self::KEY) -> Result<bool, DeoxysStorageError>;
+}
+
+/// A mutable view on a backend storage interface.
+///
+/// > Note that a single mutable view can exist at once for a same storage type.
+///
+/// Use this to write data to the backend database in a type-safe way.
+#[async_trait()]
+pub trait StorageViewMut {
+    type KEY: Encode + Decode;
+    type VALUE: Encode + Decode;
+
+    /// Insert data into storage.
+    ///
+    /// * `key`: identifier used to inser data.
+    /// * `value`: encodable data to save to the database.
+    fn insert(&self, key: Self::KEY, value: Self::VALUE) -> Result<(), DeoxysStorageError>;
+
+    /// Applies all changes up to this point.
+    ///
+    /// * `block_number`: point in the chain at which to apply the new changes. Must be
+    /// incremental
+    async fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError>;
+}
+
+/// A mutable view on a backend storage interface, marking it as revertible in the chain.
+///
+/// This is used to mark data that might be modified from one block to the next, such as contract
+/// storage.
+pub trait StorageViewRevetible: StorageViewMut {
+    /// Reverts to a previous state in the chain.
+    ///
+    /// * `block_number`: point in the chain to revert to.
+    fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError>;
+}
+
+pub fn contract_trie_mut<'a>() -> ContractTrieViewMut<'a> {
+    ContractTrieViewMut(DeoxysBackend::bonsai_contract().write().unwrap())
+}
+
+pub fn contract_trie<'a>() -> ContractTrieView<'a> {
+    ContractTrieView(DeoxysBackend::bonsai_contract().read().unwrap())
+}
+
+pub fn contract_storage_trie_mut<'a>() -> ContractStorageTrieViewMut<'a> {
+    ContractStorageTrieViewMut(DeoxysBackend::bonsai_storage().write().unwrap())
+}
+
+pub fn contract_storage_trie<'a>() -> ContractStorageTrieView<'a> {
+    ContractStorageTrieView(DeoxysBackend::bonsai_storage().read().unwrap())
+}
+
+pub fn class_trie_mut<'a>() -> ClassTrieViewMut<'a> {
+    ClassTrieViewMut(DeoxysBackend::bonsai_class().write().unwrap())
+}
+
+pub fn class_trie<'a>() -> ClassTrieView<'a> {
+    ClassTrieView(DeoxysBackend::bonsai_class().read().unwrap())
+}
+
+pub fn contract_class_data_mut() -> ContractClassDataViewMut {
+    ContractClassDataViewMut::default()
+}
+
+pub fn contract_class_data() -> ContractClassDataView {
+    ContractClassDataView
+}
+
+pub fn contract_class_hashes_mut() -> ContractClassHashesViewMut {
+    ContractClassHashesViewMut::default()
+}
+
+pub fn contract_class_hashes() -> ContractClassHashesView {
+    ContractClassHashesView
+}
+
+pub fn contract_data_mut() -> ContractDataViewMut {
+    ContractDataViewMut::default()
+}
+
+pub fn contract_data() -> ContractDataView {
+    ContractDataView
+}
+
+pub fn block_number() -> BlockNumberView {
+    BlockNumberView
+}
+
+pub fn block_hash() -> BlockHashView {
+    BlockHashView
+}
+
+fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {
+    identifier.0.0.0.as_bytes_ref()
+}
+
+fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
+    key.0.0.0.as_bits()[5..].to_owned()
+}
+
+fn conv_contract_storage_key(key: &StorageKey) -> BitVec<u8, Msb0> {
+    key.0.0.0.as_bits()[5..].to_owned()
+}
+
+fn conv_contract_value(value: StarkFelt) -> Felt {
+    Felt::from_bytes_be(&value.0)
+}
+
+fn conv_class_key(key: &ClassHash) -> BitVec<u8, Msb0> {
+    key.0.0.as_bits()[5..].to_owned()
+}

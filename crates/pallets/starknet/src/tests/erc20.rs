@@ -3,7 +3,7 @@ use frame_support::assert_ok;
 use lazy_static::lazy_static;
 use mp_felt::Felt252Wrapper;
 use mp_transactions::InvokeTransactionV1;
-use starknet_api::api_core::{ContractAddress, PatriciaKey};
+use starknet_api::core::{ContractAddress, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Event as StarknetEvent, EventContent, EventData, EventKey};

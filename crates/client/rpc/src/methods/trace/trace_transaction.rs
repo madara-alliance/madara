@@ -45,16 +45,12 @@ where
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
     let block_header = starknet_block.header().clone();
+    let block_number = block_header.block_number;
     let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
     let transaction_hash_to_trace: Felt252Wrapper = transaction_hash.into();
 
-    let (txs_to_execute_before, tx_to_trace) = map_transaction_to_user_transaction(
-        starknet,
-        starknet_block,
-        substrate_block_hash,
-        chain_id,
-        Some(transaction_hash_to_trace),
-    )?;
+    let (txs_to_execute_before, tx_to_trace) =
+        map_transaction_to_user_transaction::<H>(starknet_block, chain_id, Some(transaction_hash_to_trace))?;
 
     let previous_block_substrate_hash = get_previous_block_substrate_hash(starknet, substrate_block_hash)?;
 
@@ -84,16 +80,9 @@ where
             StarknetRpcApiError::InternalServerError
         })?;
 
-    let storage_override = starknet.overrides.for_block_hash(starknet.client.as_ref(), substrate_block_hash);
-    let _chain_id = Felt252Wrapper(starknet.chain_id()?.0);
-
-    let trace = tx_execution_infos_to_tx_trace(
-        &**storage_override,
-        substrate_block_hash,
-        TxType::from(tx_to_trace.get(0).unwrap()),
-        &execution_infos[0],
-    )
-    .unwrap();
+    let trace =
+        tx_execution_infos_to_tx_trace(TxType::from(tx_to_trace.get(0).unwrap()), &execution_infos[0], block_number)
+            .unwrap();
 
     let tx_trace = TransactionTraceWithHash { transaction_hash, trace_root: trace };
 
