@@ -4,14 +4,14 @@ use std::collections::{HashMap, HashSet};
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
-use mc_db::storage::StorageHandler;
+use mc_db::storage_handler::{self, StorageView};
 use sp_runtime::traits::UniqueSaturatedInto;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_core::types::BlockId;
 
-use crate::{Config, Pallet};
+use crate::Config;
 
 /// `BlockifierStateAdapter` is only use to re-executing or simulate transactions.
 /// None of the setters should therefore change the storage persistently,
@@ -45,15 +45,13 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
         match self.storage_update.get(&(contract_address, key)) {
             Some(value) => Ok(*value),
             None => {
-                match StorageHandler::contract_storage_mut(BlockId::Number(
-                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number()),
-                ))
-                .unwrap()
-                .get(&contract_address, &key)
-                {
+                let block_number =
+                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
+
+                match storage_handler::contract_storage_trie().get_at(&contract_address, &key, block_number) {
                     Ok(Some(value)) => Ok(StarkFelt(value.to_bytes_be())),
-                    Ok(None) => Ok(StarkFelt::default()),
-                    _ => Err(StateError::StateReadError(format!(
+                    Ok(None) => Ok(StarkFelt::ZERO),
+                    Err(_) => Err(StateError::StateReadError(format!(
                         "Failed to retrieve storage value for contract {} at key {}",
                         contract_address.0.0, key.0.0
                     ))),
@@ -63,30 +61,63 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     }
 
     fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
-        Ok(self.nonce_update.get(&contract_address).cloned().unwrap_or_else(|| Pallet::<T>::nonce(contract_address)))
+        match self.nonce_update.get(&contract_address) {
+            Some(nonce) => Ok(*nonce),
+            None => {
+                let block_number =
+                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
+
+                match storage_handler::contract_data().get_at(&contract_address, block_number) {
+                    Ok(Some(contract_data)) => Ok(contract_data.nonce),
+                    Ok(None) => Ok(Nonce::default()),
+                    Err(_) => Err(StateError::StateReadError(format!(
+                        "Failed to retrieve nonce for contract {}",
+                        contract_address.0.0
+                    ))),
+                }
+            }
+        }
     }
 
     fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
-        Ok(self
-            .class_hash_update
-            .get(&contract_address)
-            .cloned()
-            .unwrap_or_else(|| Pallet::<T>::contract_class_hash_by_address(contract_address)))
+        match self.class_hash_update.get(&contract_address).cloned() {
+            Some(class_hash) => Ok(class_hash),
+            None => {
+                let block_number =
+                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
+
+                match storage_handler::contract_data().get_at(&contract_address, block_number) {
+                    Ok(Some(contract_data)) => Ok(contract_data.class_hash),
+                    _ => Err(StateError::StateReadError(format!(
+                        "failed to retrive class hash for contract address {}",
+                        contract_address.0.0
+                    ))),
+                }
+            }
+        }
     }
 
     fn get_compiled_contract_class(&self, class_hash: ClassHash) -> StateResult<ContractClass> {
         match self.contract_class_update.get(&class_hash) {
             Some(contract_class) => Ok(contract_class.clone()),
-            None => {
-                Pallet::<T>::contract_class_by_class_hash(class_hash).ok_or(StateError::UndeclaredClassHash(class_hash))
-            }
+            None => match storage_handler::contract_class_data().get(&class_hash) {
+                Ok(Some(contract_class_data)) => Ok(contract_class_data.contract_class),
+                _ => Err(StateError::UndeclaredClassHash(class_hash)),
+            },
         }
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
         match self.compiled_class_hash_update.get(&class_hash) {
             Some(compiled_class_hash) => Ok(*compiled_class_hash),
-            None => Pallet::<T>::compiled_class_hash_by_class_hash(class_hash)
+            None => storage_handler::contract_class_hashes()
+                .get(&class_hash)
+                .map_err(|_| {
+                    StateError::StateReadError(format!(
+                        "failed to retrive compiled class hash at class hash {}",
+                        class_hash.0
+                    ))
+                })?
                 .ok_or(StateError::UndeclaredClassHash(class_hash)),
         }
     }
@@ -115,7 +146,8 @@ impl<T: Config> State for BlockifierStateAdapter<T> {
     fn set_class_hash_at(&mut self, contract_address: ContractAddress, class_hash: ClassHash) -> StateResult<()> {
         self.class_hash_update.insert(contract_address, class_hash);
 
-        Ok(())
+        // TODO: see with @charpa how to implement this with the new storage
+        todo!("see with @charpa how to implement this with the new storage")
     }
 
     fn set_contract_class(&mut self, class_hash: ClassHash, contract_class: ContractClass) -> StateResult<()> {

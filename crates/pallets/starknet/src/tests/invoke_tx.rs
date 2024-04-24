@@ -8,7 +8,7 @@ use sp_runtime::traits::ValidateUnsigned;
 use sp_runtime::transaction_validity::{
     InvalidTransaction, TransactionSource, TransactionValidityError, ValidTransaction,
 };
-use starknet_api::api_core::{ContractAddress, Nonce, PatriciaKey};
+use starknet_api::core::{ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Event as StarknetEvent, EventContent, EventData, EventKey, TransactionHash};

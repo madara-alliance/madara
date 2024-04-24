@@ -15,7 +15,7 @@ pub type RocksDBTransaction = WriteBatchWithTransaction<true>;
 pub(crate) struct DatabaseKeyMapping {
     pub(crate) flat: Column,
     pub(crate) trie: Column,
-    pub(crate) trie_log: Column,
+    pub(crate) log: Column,
 }
 
 impl DatabaseKeyMapping {
@@ -23,7 +23,7 @@ impl DatabaseKeyMapping {
         match key {
             DatabaseKey::Trie(_) => self.trie,
             DatabaseKey::Flat(_) => self.flat,
-            DatabaseKey::TrieLog(_) => self.trie_log,
+            DatabaseKey::TrieLog(_) => self.log,
         }
     }
 }

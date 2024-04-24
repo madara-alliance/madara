@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_storage::OverrideHandle;
 use sc_network_sync::SyncingService;
 use sp_api::BlockT;
 use sp_runtime::traits::Header as HeaderT;
@@ -13,8 +12,6 @@ pub struct StarknetDeps<C, G: GenesisProvider, B: BlockT> {
     pub client: Arc<C>,
     /// Madara Backend.
     pub madara_backend: Arc<DeoxysBackend>,
-    /// Starknet data access overrides.
-    pub overrides: Arc<OverrideHandle<B>>,
     /// The Substrate client sync service.
     pub sync_service: Arc<SyncingService<B>>,
     /// The starting block for the syncing.
@@ -28,7 +25,6 @@ impl<C, G: GenesisProvider, B: BlockT> Clone for StarknetDeps<C, G, B> {
         Self {
             client: self.client.clone(),
             madara_backend: self.madara_backend.clone(),
-            overrides: self.overrides.clone(),
             sync_service: self.sync_service.clone(),
             starting_block: self.starting_block,
             genesis_provider: self.genesis_provider.clone(),

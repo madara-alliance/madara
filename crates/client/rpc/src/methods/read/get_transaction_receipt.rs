@@ -2,6 +2,7 @@ use blockifier::context::BlockContext;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution as btx;
 use jsonrpsee::core::RpcResult;
+use mc_db::storage_handler::{self, StorageView};
 use mc_db::DeoxysBackend;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;

@@ -78,7 +78,6 @@ hex = { workspace = true }
 mc-db = { workspace = true }
 mc-mapping-sync = { workspace = true }
 mc-rpc = { workspace = true }
-mc-storage = { workspace = true }
 pallet-starknet = { workspace = true }
 pallet-starknet-runtime-api = { workspace = true }
 starknet-core = { workspace = true }
@@ -99,7 +98,7 @@ mp-types = { workspace = true }
 try-runtime-cli = { optional = true, git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
 #Deoxys
-deoxys-tui = { optional = true, path = "../deoxys-tui" }
+deoxys-tui = { optional = true, path = "../tui" }
 mc-sync = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true }

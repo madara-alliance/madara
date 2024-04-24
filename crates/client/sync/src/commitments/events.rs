@@ -2,7 +2,7 @@ use bitvec::vec::BitVec;
 use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use mc_db::storage::bonsai_identifier;
+use mc_db::storage_handler::bonsai_identifier;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;

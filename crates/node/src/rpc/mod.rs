@@ -71,7 +71,6 @@ where
     module.merge(System::new(client.clone(), pool.clone(), deny_unsafe).into_rpc())?;
     module.merge(StarknetReadRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, DHasherT>::new(
         client.clone(),
-        starknet_params.overrides.clone(),
         pool.clone(),
         graph.clone(),
         starknet_params.sync_service.clone(),
@@ -80,7 +79,6 @@ where
     )))?;
     module.merge(StarknetWriteRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, DHasherT>::new(
         client.clone(),
-        starknet_params.overrides.clone(),
         pool.clone(),
         graph.clone(),
         starknet_params.sync_service.clone(),
@@ -89,7 +87,6 @@ where
     )))?;
     module.merge(StarknetTraceRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, DHasherT>::new(
         client,
-        starknet_params.overrides,
         pool,
         graph,
         starknet_params.sync_service,

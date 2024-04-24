@@ -972,7 +972,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/bonsai-trie.git?branch=oss#6efb6727663ca924814784bed3865eba013220bc"
+source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=snapshot#ce25b11497371a5a81135f0652d1a9183ec0bd3f"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -2301,6 +2301,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-skiplist"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df29de440c58ca2cc6e587ec3d22347551a32435fbde9d2bff64e78a9ffa151b"
+dependencies = [
+ "crossbeam-epoch",
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.8.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2578,7 +2588,6 @@ dependencies = [
  "mc-genesis-data-provider",
  "mc-mapping-sync",
  "mc-rpc",
- "mc-storage",
  "mc-sync",
  "mp-block",
  "mp-contract",
@@ -5960,14 +5969,20 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "async-trait",
  "bitvec",
  "blockifier",
  "bonsai-trie",
+ "crossbeam-skiplist",
  "ethers",
  "log",
+ "mp-block",
+ "mp-contract",
+ "mp-felt",
  "mp-hashers",
  "mp-types",
  "parity-scale-codec",
+ "rayon",
  "rocksdb",
  "sc-client-db",
  "sp-core",
@@ -5978,6 +5993,7 @@ dependencies = [
  "starknet-types-core",
  "starknet_api",
  "thiserror",
+ "tokio",
  "uuid 1.6.1",
 ]
 
@@ -6005,7 +6021,6 @@ dependencies = [
  "log",
  "mc-db",
  "mc-rpc",
- "mc-storage",
  "mc-sync",
  "mp-digest-log",
  "mp-felt",
@@ -6040,7 +6055,6 @@ dependencies = [
  "log",
  "mc-db",
  "mc-genesis-data-provider",
- "mc-storage",
  "mc-sync",
  "mp-block",
  "mp-contract",
@@ -6075,29 +6089,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-storage"
-version = "0.1.0"
-dependencies = [
- "blockifier",
- "deoxys-runtime",
- "frame-support",
- "frame-system",
- "log",
- "mc-db",
- "mp-contract",
- "mp-storage",
- "pallet-starknet-runtime-api",
- "parity-scale-codec",
- "sc-client-api",
- "sp-api",
- "sp-blockchain",
- "sp-io",
- "sp-runtime",
- "sp-storage",
- "starknet_api",
-]
-
-[[package]]
 name = "mc-sync"
 version = "0.1.0"
 dependencies = [
@@ -6114,7 +6105,6 @@ dependencies = [
  "lazy_static",
  "log",
  "mc-db",
- "mc-storage",
  "mp-block",
  "mp-contract",
  "mp-felt",
@@ -6976,7 +6966,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
 dependencies = [
- "proc-macro-crate 1.1.3",
+ "proc-macro-crate 2.0.0",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -11375,7 +11365,7 @@ dependencies = [
 [[package]]
 name = "starknet-types-core"
 version = "0.1.0"
-source = "git+https://github.com/starknet-io/types-rs.git?branch=main#3921cb9eaa923539bd67ee477e0de15f1dfb0d79"
+source = "git+https://github.com/starknet-io/types-rs.git?branch=main#ea3ec65fa0b276c5c00197383a283e53928cf24b"
 dependencies = [
  "bitvec",
  "lambdaworks-crypto",
@@ -12387,7 +12377,7 @@ checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
  "digest 0.10.7",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 

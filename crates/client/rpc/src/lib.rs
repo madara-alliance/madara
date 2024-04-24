@@ -17,7 +17,6 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use mc_db::DeoxysBackend;
-use mc_storage::OverrideHandle;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
@@ -213,7 +212,6 @@ pub trait StarknetTraceRpcApi {
 #[allow(dead_code)]
 pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
     client: Arc<C>,
-    overrides: Arc<OverrideHandle<DBlockT>>,
     #[allow(dead_code)]
     pool: Arc<P>,
     #[allow(dead_code)]
@@ -229,14 +227,13 @@ pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
 impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
     pub fn new(
         client: Arc<C>,
-        overrides: Arc<OverrideHandle<DBlockT>>,
         pool: Arc<P>,
         graph: Arc<Pool<A>>,
         sync_service: Arc<SyncingService<DBlockT>>,
         starting_block: <DHeaderT as HeaderT>::Number,
         genesis_provider: Arc<G>,
     ) -> Self {
-        Self { client, overrides, pool, graph, sync_service, starting_block, genesis_provider, _marker: PhantomData }
+        Self { client, pool, graph, sync_service, starting_block, genesis_provider, _marker: PhantomData }
     }
 }
 

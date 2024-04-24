@@ -4,7 +4,7 @@ use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::DeployAccountTransaction;
 use sp_runtime::traits::ValidateUnsigned;
 use sp_runtime::transaction_validity::{InvalidTransaction, TransactionSource, TransactionValidityError};
-use starknet_api::api_core::{ContractAddress, Nonce};
+use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{Event as StarknetEvent, EventContent, EventData, EventKey};
 use starknet_core::utils::get_selector_from_name;

@@ -3,6 +3,14 @@ git # Deoxys Changelog
 ## Next release
 
 - feat(rpc): remove duplicated code, add mod 'utils'
+- feat(storage): started migrating storage to the bonsai-lib
+- fix: fix crashing cases on `get_block_with_receipts`
+- fix: fix get_events minor issues
+- fix: l1HandlerTx computed for commit
+- refactor: optimise get_events RPC
+- fix(root): fixed state commitments broken due to genesis loader
+- feat(docker): add dockerfile and docker-compose
+- fix: fix implementation `get_storage_at()` for `BlockifierStateAdapter`
 - fix(sync): Fix end condition of the l2 sync
 - fix(rpc): fix chain id method for mainnet
 - fix(class): Fix Sierra classes conversion (missing abis)

@@ -3,18 +3,13 @@ use core::time::Duration;
 use std::sync::Arc;
 
 use itertools::Itertools;
-use mc_storage::OverrideHandle;
+use mc_db::storage_handler;
+use mc_db::storage_handler::StorageView;
 use mp_block::DeoxysBlock;
 use mp_contract::class::{ContractClassData, ContractClassWrapper};
-use mp_felt::Felt252Wrapper;
-use mp_storage::StarknetStorageSchemaVersion;
-use mp_types::block::DBlockT;
-use sp_blockchain::HeaderBackend;
-use sp_core::{H160, H256};
-use sp_runtime::generic::{Block as RuntimeBlock, Header};
-use sp_runtime::traits::BlakeTwo256;
-use sp_runtime::OpaqueExtrinsic;
+use sp_core::H160;
 use starknet_api::core::ClassHash;
+use starknet_api::hash::StarkFelt;
 use starknet_core::types::BlockId as BlockIdCore;
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
@@ -25,7 +20,7 @@ use tokio::task::JoinSet;
 use url::Url;
 
 use crate::l2::L2SyncError;
-use crate::utility::{block_hash_deoxys, block_hash_substrate};
+use crate::utility::block_hash_deoxys;
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
 /// feeder.
@@ -55,15 +50,10 @@ pub async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -
     Ok(block)
 }
 
-pub async fn fetch_block_and_updates<C>(
+pub async fn fetch_block_and_updates(
     block_n: u64,
     provider: Arc<SequencerGatewayProvider>,
-    overrides: Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    client: Arc<C>,
-) -> Result<(p::Block, StateUpdate, Vec<ContractClassData>), L2SyncError>
-where
-    C: HeaderBackend<DBlockT>,
-{
+) -> Result<(p::Block, StateUpdate, Vec<ContractClassData>), L2SyncError> {
     const MAX_RETRY: u32 = 15;
     let mut attempt = 0;
     let base_delay = Duration::from_secs(1);
@@ -71,7 +61,7 @@ where
     loop {
         log::debug!("fetch_block_and_updates {}", block_n);
         let block = fetch_block(&provider, block_n);
-        let state_update = fetch_state_and_class_update(&provider, block_n, &overrides, client.as_ref());
+        let state_update = fetch_state_and_class_update(&provider, block_n);
         let (block, state_update) = tokio::join!(block, state_update);
         log::debug!("fetch_block_and_updates: done {block_n}");
 
@@ -108,19 +98,14 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBloc
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn fetch_state_and_class_update<C>(
+async fn fetch_state_and_class_update(
     provider: &SequencerGatewayProvider,
     block_number: u64,
-    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    client: &C,
-) -> Result<(StateUpdate, Vec<ContractClassData>), L2SyncError>
-where
-    C: HeaderBackend<DBlockT>,
-{
+) -> Result<(StateUpdate, Vec<ContractClassData>), L2SyncError> {
     // Children tasks need StateUpdate as an Arc, because of task spawn 'static requirement
     // We make an Arc, and then unwrap the StateUpdate out of the Arc
     let state_update = Arc::new(fetch_state_update(provider, block_number).await?);
-    let class_update = fetch_class_update(provider, &state_update, overrides, block_number, client).await?;
+    let class_update = fetch_class_update(provider, &state_update).await?;
     let state_update = Arc::try_unwrap(state_update).expect("arc should not be aliased");
 
     Ok((state_update, class_update))
@@ -137,75 +122,11 @@ async fn fetch_state_update(
 }
 
 /// retrieves class updates from Starknet sequencer
-async fn fetch_class_update<C>(
+async fn fetch_class_update(
     provider: &SequencerGatewayProvider,
     state_update: &Arc<StateUpdate>,
-    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    block_number: u64,
-    client: &C,
-) -> Result<Vec<ContractClassData>, L2SyncError>
-where
-    C: HeaderBackend<DBlockT>,
-{
-    // defaults to downloading ALL classes if a substrate block hash could not be determined
-    let missing_classes = match block_hash_substrate(client, block_number) {
-        Some(block_hash_substrate) => fetch_missing_classes(state_update, overrides, block_hash_substrate),
-        None => aggregate_classes(state_update),
-    };
-
-    let arc_provider = Arc::new(provider.clone());
-    let mut task_set = missing_classes.into_iter().fold(JoinSet::new(), |mut set, class_hash| {
-        let provider = Arc::clone(&arc_provider);
-        let state_update = Arc::clone(state_update);
-        let class_hash = *class_hash;
-        set.spawn(async move { fetch_class(class_hash, block_hash_deoxys(&state_update), &provider).await });
-        set
-    });
-
-    // WARNING: all class downloads will abort if even a single class fails to download.
-    let mut classes = vec![];
-    while let Some(res) = task_set.join_next().await {
-        classes.push(res.expect("Join error")?);
-        // No need to `abort_all()` the `task_set` in cast of errors, as dropping the `task_set`
-        // will abort all the tasks.
-    }
-
-    Ok(classes)
-}
-
-/// Downloads a class definition from the Starknet sequencer. Note that because
-/// of the current type hell this needs to be converted into a blockifier equivalent
-async fn fetch_class(
-    class_hash: FieldElement,
-    block_hash: FieldElement,
-    provider: &SequencerGatewayProvider,
-) -> Result<ContractClassData, L2SyncError> {
-    let core_class = provider.get_class(BlockIdCore::Hash(block_hash), class_hash).await?;
-    Ok(ContractClassData {
-        hash: ClassHash(Felt252Wrapper::from(class_hash).into()),
-        // TODO: remove this expect when ContractClassWrapper::try_from does proper error handling using
-        // thiserror
-        contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
-    })
-}
-
-/// Filters out class declarations in the Starknet sequencer state update
-/// and retains only those which are not stored in the local Substrate db.
-fn fetch_missing_classes<'a>(
-    state_update: &'a StateUpdate,
-    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    block_hash_substrate: H256,
-) -> Vec<&'a FieldElement> {
-    aggregate_classes(state_update)
-        .into_iter()
-        .filter(|class_hash| is_missing_class(overrides, block_hash_substrate, Felt252Wrapper::from(**class_hash)))
-        .collect()
-}
-
-/// Retrieves all class hashes from state update. This includes newly deployed
-/// contract class hashes, Sierra class hashes and Cairo class hashes
-fn aggregate_classes(state_update: &StateUpdate) -> Vec<&FieldElement> {
-    std::iter::empty()
+) -> Result<Vec<ContractClassData>, L2SyncError> {
+    let missing_classes: Vec<&FieldElement> = std::iter::empty()
         .chain(
             state_update
                 .state_diff
@@ -221,20 +142,50 @@ fn aggregate_classes(state_update: &StateUpdate) -> Vec<&FieldElement> {
                 .map(|DeclaredContract { class_hash, compiled_class_hash: _ }| class_hash),
         )
         .unique()
-        .collect()
+        .filter(|class_hash| is_missing_class(class_hash))
+        .collect();
+
+    let arc_provider = Arc::new(provider.clone());
+
+    let mut task_set = missing_classes.into_iter().fold(JoinSet::new(), |mut set, class_hash| {
+        let provider = Arc::clone(&arc_provider);
+        let state_update = Arc::clone(state_update);
+        let class_hash = *class_hash;
+        set.spawn(async move { fetch_class(class_hash, block_hash_deoxys(&state_update), &provider).await });
+        set
+    });
+
+    // WARNING: all class downloads will abort if even a single class fails to download.
+    let mut classes = vec![];
+    while let Some(res) = task_set.join_next().await {
+        classes.push(res.expect("Join error")?);
+    }
+
+    Ok(classes)
+}
+
+/// Downloads a class definition from the Starknet sequencer. Note that because
+/// of the current type hell this needs to be converted into a blockifier equivalent
+async fn fetch_class(
+    class_hash: FieldElement,
+    block_hash: FieldElement,
+    provider: &SequencerGatewayProvider,
+) -> Result<ContractClassData, L2SyncError> {
+    let core_class = provider.get_class(BlockIdCore::Hash(block_hash), class_hash).await?;
+
+    // Core classes have to be converted into Blockifier classes to gain support
+    // for Substrate [`Encode`] and [`Decode`] traits
+    Ok(ContractClassData {
+        hash: ClassHash(StarkFelt(class_hash.to_bytes_be())),
+        contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
+    })
 }
 
 /// Check if a class is stored in the local Substrate db.
 ///
 /// Since a change in class definition will result in a change in class hash,
 /// this means we only need to check for class hashes in the db.
-fn is_missing_class(
-    overrides: &Arc<OverrideHandle<RuntimeBlock<Header<u32, BlakeTwo256>, OpaqueExtrinsic>>>,
-    block_hash_substrate: H256,
-    class_hash: Felt252Wrapper,
-) -> bool {
-    overrides
-        .for_schema_version(&StarknetStorageSchemaVersion::Undefined)
-        .contract_class_by_class_hash(block_hash_substrate, ClassHash::from(class_hash))
-        .is_none()
+fn is_missing_class(class_hash: &FieldElement) -> bool {
+    let class_hash = ClassHash(StarkFelt(class_hash.to_bytes_be()));
+    storage_handler::contract_class_data().contains(&class_hash).is_ok()
 }

@@ -1,20 +1,12 @@
 use jsonrpsee::core::RpcResult;
-use mc_genesis_data_provider::GenesisProvider;
+use mc_db::storage_handler::query::{contract_abi_by_address, contract_class_by_address};
 use mp_contract::class::ContractClassWrapper;
-use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
-use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sc_transaction_pool::ChainApi;
-use sc_transaction_pool_api::TransactionPool;
-use sp_api::ProvideRuntimeApi;
-use sp_blockchain::HeaderBackend;
+use starknet_api::core::{ContractAddress, PatriciaKey};
+use starknet_api::hash::StarkFelt;
 use starknet_core::types::{BlockId, ContractClass, FieldElement};
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
+use crate::methods::trace::utils::block_number_by_id;
 
 /// Get the Contract Class Definition at a Given Address in a Specific Block
 ///
@@ -35,46 +27,20 @@ use crate::Starknet;
 /// This method may return the following errors:
 /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
 /// * `CONTRACT_NOT_FOUND` - If the specified contract address does not exist.
-pub fn get_class_at<A, BE, G, C, P, H>(
-    starknet: &Starknet<A, BE, G, C, P, H>,
-    block_id: BlockId,
-    contract_address: FieldElement,
-) -> RpcResult<ContractClass>
-where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        log::error!("'{e}'");
-        StarknetRpcApiError::BlockNotFound
-    })?;
+pub fn get_class_at(block_id: BlockId, contract_address: FieldElement) -> RpcResult<ContractClass> {
+    let block_number = block_number_by_id(block_id);
+    let key = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
 
-    let contract_address_wrapped = Felt252Wrapper(contract_address).into();
-
-    let contract_class = starknet
-        .overrides
-        .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
-        .contract_class_by_address(substrate_block_hash, contract_address_wrapped)
-        .ok_or_else(|| {
-            log::error!("Failed to retrieve contract class at '{contract_address}'");
-            StarknetRpcApiError::ContractNotFound
-        })?;
+    let Ok(Some(contract_class)) = contract_class_by_address(&key, block_number) else {
+        log::error!("Failed to retrieve contract class at '{contract_address}'");
+        return Err(StarknetRpcApiError::ContractNotFound.into());
+    };
 
     // Blockifier classes do not store ABI, has to be retrieved separately
-    let contract_abi = starknet
-        .overrides
-        .for_block_hash(starknet.client.as_ref(), substrate_block_hash)
-        .contract_abi_by_address(substrate_block_hash, contract_address_wrapped)
-        .ok_or_else(|| {
-            log::error!("Failed to retrieve contract ABI at '{contract_address}'");
-            StarknetRpcApiError::ContractNotFound
-        })?;
+    let Ok(Some(contract_abi)) = contract_abi_by_address(&key, block_number) else {
+        log::error!("Failed to retrieve contract ABI at '{contract_address}'");
+        return Err(StarknetRpcApiError::ContractNotFound.into());
+    };
 
     // converting from stored Blockifier class to rpc class
     // TODO: retrieve sierra_program_length and abi_length when they are stored in the storage

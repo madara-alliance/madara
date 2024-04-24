@@ -1,7 +1,6 @@
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
-use mc_storage::StorageOverride;
 use mp_hashers::HasherT;
 use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
 use mp_transactions::from_broadcasted_transactions::ToAccountTransaction;
@@ -13,14 +12,12 @@ use sc_transaction_pool::ChainApi;
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulatedTransaction, SimulationFlag,
 };
-use starknet_ff::FieldElement;
 
 use super::lib::ConvertCallInfoToExecuteInvocationError;
-use super::utils::tx_execution_infos_to_tx_trace;
+use super::utils::{block_number_by_id, tx_execution_infos_to_tx_trace};
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
@@ -71,28 +68,25 @@ where
             StarknetRpcApiError::ContractError
         })?;
 
-    let storage_override = starknet.overrides.for_block_hash(starknet.client.as_ref(), substrate_block_hash);
+    let block_number = block_number_by_id(block_id);
     let simulated_transactions =
-        tx_execution_infos_to_simulated_transactions(&**storage_override, substrate_block_hash, tx_types, res)
-            .map_err(StarknetRpcApiError::from)?;
+        tx_execution_infos_to_simulated_transactions(tx_types, res, block_number).map_err(StarknetRpcApiError::from)?;
 
     Ok(simulated_transactions)
 }
 
-fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
-    storage_override: &dyn StorageOverride<B>,
-    substrate_block_hash: B::Hash,
+fn tx_execution_infos_to_simulated_transactions(
     tx_types: Vec<TxType>,
     transaction_execution_results: Vec<
         Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>,
     >,
+    block_number: u64,
 ) -> Result<Vec<SimulatedTransaction>, ConvertCallInfoToExecuteInvocationError> {
     let mut results = vec![];
     for (tx_type, res) in tx_types.into_iter().zip(transaction_execution_results.into_iter()) {
         match res {
             Ok(tx_exec_info) => {
-                let transaction_trace =
-                    tx_execution_infos_to_tx_trace(storage_override, substrate_block_hash, tx_type, &tx_exec_info)?;
+                let transaction_trace = tx_execution_infos_to_tx_trace(tx_type, &tx_exec_info, block_number)?;
                 let gas = tx_exec_info.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
                 let fee = tx_exec_info.actual_fee.0;
                 // TODO: Shouldn't the gas price be taken from the block header instead?
@@ -103,8 +97,8 @@ fn tx_execution_infos_to_simulated_transactions<B: BlockT>(
                 let overall_fee = fee.into();
 
                 let unit: PriceUnit = PriceUnit::Wei; //TODO(Tbelleng) : Get Price Unit from Tx
-                let data_gas_consumed = FieldElement::default();
-                let data_gas_price = FieldElement::default();
+                let data_gas_consumed = tx_exec_info.da_gas.l1_data_gas.into();
+                let data_gas_price = tx_exec_info.da_gas.l1_gas.into();
 
                 results.push(SimulatedTransaction {
                     transaction_trace,
