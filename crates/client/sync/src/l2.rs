@@ -9,6 +9,7 @@ use mc_db::storage_updates::{store_class_update, store_state_update};
 use mp_block::state_update::StateUpdateWrapper;
 use mp_block::DeoxysBlock;
 use mp_contract::class::ClassUpdateWrapper;
+use mp_convert::state_update::ToStateUpdateCore;
 use mp_felt::Felt252Wrapper;
 use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;
@@ -232,7 +233,7 @@ pub async fn sync<C>(
                         // Now send state_update, which moves it. This will be received
                         // by QueryBlockConsensusDataProvider in deoxys/crates/node/src/service.rs
                         state_update_sender
-                            .send((block_n, StateUpdateWrapper::from(state_update)))
+                            .send((block_n, state_update.to_state_update_core()))
                             .await
                             .expect("state updater is not running");
                     },
