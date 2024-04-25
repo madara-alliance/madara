@@ -79,7 +79,7 @@ pub mod convert {
 
             let sierra_program_length = match contract_class {
                 ContractClassCore::Sierra(class_sierra) => class_sierra.sierra_program.len(),
-                ContractClassCore::Legacy(class_cairo) => class_cairo.program.len(),
+                ContractClassCore::Legacy(_) => 0,
             } as u64;
             let abi_length = abi.length() as u64;
 
