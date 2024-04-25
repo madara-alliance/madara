@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use self::block_hash::BlockHashView;
 use self::block_number::BlockNumberView;
+use self::block_state_diff::BlockStateDiffView;
 use self::class_trie::{ClassTrieView, ClassTrieViewMut};
 use self::contract_class_data::{ContractClassDataView, ContractClassDataViewMut};
 use self::contract_class_hashes::{ContractClassHashesView, ContractClassHashesViewMut};
@@ -25,6 +26,7 @@ use crate::DeoxysBackend;
 pub mod benchmark;
 pub mod block_hash;
 pub mod block_number;
+pub mod block_state_diff;
 mod class_trie;
 mod contract_class_data;
 mod contract_class_hashes;
@@ -82,6 +84,7 @@ pub enum StorageType {
     Class,
     BlockNumber,
     BlockHash,
+    BlockStateDiff,
 }
 
 impl Display for TrieType {
@@ -106,6 +109,7 @@ impl Display for StorageType {
             StorageType::ContractAbi => "class abi storage",
             StorageType::BlockNumber => "block number storage",
             StorageType::BlockHash => "block hash storage",
+            StorageType::BlockStateDiff => "block state diff storage",
             StorageType::ContractClassHashes => "contract class hashes storage",
             StorageType::ContractData => "contract class data storage",
         };
@@ -223,6 +227,10 @@ pub fn block_number() -> BlockNumberView {
 
 pub fn block_hash() -> BlockHashView {
     BlockHashView
+}
+
+pub fn block_state_diff() -> BlockStateDiffView {
+    BlockStateDiffView
 }
 
 fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {

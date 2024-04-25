@@ -7,6 +7,13 @@ use crate::{Column, DatabaseExt, DeoxysBackend};
 pub struct BlockNumberView;
 
 impl BlockNumberView {
+    pub fn insert(&mut self, block_hash: &Felt252Wrapper, block_number: u64) -> Result<(), DeoxysStorageError> {
+        let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Column::BlockHashToNumber);
+
+        db.put_cf(&column, block_hash.encode(), block_number.encode())
+            .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockNumber))
+    }
     pub fn get(&self, block_hash: &Felt252Wrapper) -> Result<Option<u64>, DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockHashToNumber);
@@ -23,14 +30,12 @@ impl BlockNumberView {
     }
 
     pub fn contains(&self, block_hash: &Felt252Wrapper) -> Result<bool, DeoxysStorageError> {
-        Ok(self.get(block_hash)?.is_some())
-    }
-
-    pub fn insert(&mut self, block_hash: &Felt252Wrapper, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockHashToNumber);
 
-        db.put_cf(&column, block_hash.encode(), block_number.encode())
-            .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockNumber))
+        match db.key_may_exist_cf(&column, block_hash.encode()) {
+            true => Ok(self.get(block_hash)?.is_some()),
+            false => Ok(false),
+        }
     }
 }

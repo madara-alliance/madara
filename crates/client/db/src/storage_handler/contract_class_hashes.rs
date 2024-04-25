@@ -34,7 +34,13 @@ impl StorageView for ContractClassHashesView {
     }
 
     fn contains(&self, class_hash: &Self::KEY) -> Result<bool, super::DeoxysStorageError> {
-        Ok(self.get(class_hash)?.is_some())
+        let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Column::ContractClassHashes);
+
+        match db.key_may_exist_cf(&column, class_hash.encode()) {
+            true => Ok(self.get(class_hash)?.is_some()),
+            false => Ok(false),
+        }
     }
 }
 
