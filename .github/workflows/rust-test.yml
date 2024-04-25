@@ -1,5 +1,5 @@
 ---
-name: Task - Run check
+name: Task - Run Cargo tests
 
 on:
   workflow_dispatch:
@@ -20,4 +20,4 @@ jobs:
 
       - name: Check the project
         run: |
-          cargo check --release --workspace
+          cargo test
