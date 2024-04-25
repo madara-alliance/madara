@@ -34,5 +34,3 @@ jobs:
     name: Run Cargo tests
     uses: ./.github/workflows/rust-test.yml
     needs: rust_check
-
-  
