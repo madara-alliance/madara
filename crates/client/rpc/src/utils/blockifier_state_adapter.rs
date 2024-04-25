@@ -1,98 +1,79 @@
-use core::marker::PhantomData;
 use std::collections::{HashMap, HashSet};
 
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
 use mc_db::storage_handler::{self, StorageView};
-use sp_runtime::traits::UniqueSaturatedInto;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 
-use crate::Config;
-
 /// `BlockifierStateAdapter` is only use to re-executing or simulate transactions.
 /// None of the setters should therefore change the storage persistently,
 /// all changes are temporary stored in the struct and are discarded after the execution
-pub struct BlockifierStateAdapter<T: Config> {
+pub struct BlockifierStateAdapter {
+    block_number: u64,
     storage_update: HashMap<(ContractAddress, StorageKey), StarkFelt>,
     nonce_update: HashMap<ContractAddress, Nonce>,
     class_hash_update: HashMap<ContractAddress, ClassHash>,
     compiled_class_hash_update: HashMap<ClassHash, CompiledClassHash>,
     contract_class_update: HashMap<ClassHash, ContractClass>,
     visited_pcs: HashMap<ClassHash, HashSet<usize>>,
-    _phantom: PhantomData<T>,
 }
 
-impl<T: Config> Default for BlockifierStateAdapter<T> {
-    fn default() -> Self {
+impl BlockifierStateAdapter {
+    pub fn new(block_number: u64) -> Self {
         Self {
+            block_number,
             storage_update: HashMap::default(),
             nonce_update: HashMap::default(),
             class_hash_update: HashMap::default(),
             compiled_class_hash_update: HashMap::default(),
             contract_class_update: HashMap::default(),
             visited_pcs: HashMap::default(),
-            _phantom: PhantomData,
         }
     }
 }
 
-impl<T: Config> StateReader for BlockifierStateAdapter<T> {
+impl StateReader for BlockifierStateAdapter {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
         match self.storage_update.get(&(contract_address, key)) {
             Some(value) => Ok(*value),
-            None => {
-                let block_number =
-                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
-
-                match storage_handler::contract_storage_trie().get_at(&contract_address, &key, block_number) {
-                    Ok(Some(value)) => Ok(StarkFelt(value.to_bytes_be())),
-                    Ok(None) => Ok(StarkFelt::ZERO),
-                    Err(_) => Err(StateError::StateReadError(format!(
-                        "Failed to retrieve storage value for contract {} at key {}",
-                        contract_address.0.0, key.0.0
-                    ))),
-                }
-            }
+            None => match storage_handler::contract_storage_trie().get_at(&contract_address, &key, self.block_number) {
+                Ok(Some(value)) => Ok(StarkFelt(value.to_bytes_be())),
+                Ok(None) => Ok(StarkFelt::ZERO),
+                Err(_) => Err(StateError::StateReadError(format!(
+                    "Failed to retrieve storage value for contract {} at key {}",
+                    contract_address.0.0, key.0.0
+                ))),
+            },
         }
     }
 
     fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
         match self.nonce_update.get(&contract_address) {
             Some(nonce) => Ok(*nonce),
-            None => {
-                let block_number =
-                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
-
-                match storage_handler::contract_data().get_at(&contract_address, block_number) {
-                    Ok(Some(contract_data)) => Ok(contract_data.nonce),
-                    Ok(None) => Ok(Nonce::default()),
-                    Err(_) => Err(StateError::StateReadError(format!(
-                        "Failed to retrieve nonce for contract {}",
-                        contract_address.0.0
-                    ))),
-                }
-            }
+            None => match storage_handler::contract_data().get_at(&contract_address, self.block_number) {
+                Ok(Some(contract_data)) => Ok(contract_data.nonce),
+                Ok(None) => Ok(Nonce::default()),
+                Err(_) => Err(StateError::StateReadError(format!(
+                    "Failed to retrieve nonce for contract {}",
+                    contract_address.0.0
+                ))),
+            },
         }
     }
 
     fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
         match self.class_hash_update.get(&contract_address).cloned() {
             Some(class_hash) => Ok(class_hash),
-            None => {
-                let block_number =
-                    UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
-
-                match storage_handler::contract_data().get_at(&contract_address, block_number) {
-                    Ok(Some(contract_data)) => Ok(contract_data.class_hash),
-                    _ => Err(StateError::StateReadError(format!(
-                        "failed to retrive class hash for contract address {}",
-                        contract_address.0.0
-                    ))),
-                }
-            }
+            None => match storage_handler::contract_data().get_at(&contract_address, self.block_number) {
+                Ok(Some(contract_data)) => Ok(contract_data.class_hash),
+                _ => Err(StateError::StateReadError(format!(
+                    "failed to retrive class hash for contract address {}",
+                    contract_address.0.0
+                ))),
+            },
         }
     }
 
@@ -122,7 +103,7 @@ impl<T: Config> StateReader for BlockifierStateAdapter<T> {
     }
 }
 
-impl<T: Config> State for BlockifierStateAdapter<T> {
+impl State for BlockifierStateAdapter {
     fn set_storage_at(
         &mut self,
         contract_address: ContractAddress,

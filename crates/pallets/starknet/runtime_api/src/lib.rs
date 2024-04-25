@@ -6,20 +6,13 @@
 #![allow(clippy::extra_unused_type_parameters)]
 
 use blockifier::context::{BlockContext, FeeTokenAddresses};
-use blockifier::transaction::account_transaction::AccountTransaction;
-use blockifier::transaction::objects::TransactionExecutionInfo;
-use blockifier::transaction::transaction_execution::Transaction;
-use blockifier::transaction::transactions::L1HandlerTransaction;
 use mp_felt::Felt252Wrapper;
 pub extern crate alloc;
 use alloc::vec::Vec;
 
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlagForEstimateFee, SimulationFlags};
-use pallet_starknet::types::FeeEstimate;
 use sp_runtime::DispatchError;
-use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::hash::StarkHash;
-use starknet_api::transaction::{Calldata, Event as StarknetEvent, MessageToL1, TransactionHash};
+use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
 
 #[derive(parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
 pub enum StarknetTransactionExecutionError {
@@ -32,8 +25,6 @@ pub enum StarknetTransactionExecutionError {
 
 sp_api::decl_runtime_apis! {
     pub trait StarknetRuntimeApi {
-        /// Returns a `Call` response.
-        fn call(address: ContractAddress, function_selector: EntryPointSelector, calldata: Calldata) -> Result<Vec<Felt252Wrapper>, DispatchError>;
         /// Returns the chain id.
         fn chain_id() -> Felt252Wrapper;
         /// Returns the Starknet OS Cairo program hash.
@@ -42,39 +33,8 @@ sp_api::decl_runtime_apis! {
         fn config_hash() -> StarkHash;
         /// Returns the fee token address.
         fn fee_token_addresses() -> FeeTokenAddresses;
-        /// Returns fee estimate
-        fn estimate_fee(transactions: Vec<AccountTransaction>, simulation_flags: Vec<SimulationFlagForEstimateFee>,) -> Result<Vec<FeeEstimate>, DispatchError>;
-        /// Returns message fee estimate
-        fn estimate_message_fee(message: L1HandlerTransaction) -> Result<FeeEstimate, DispatchError>;
-        /// Simulates single L1 Message and returns its trace
-        fn simulate_message(message: L1HandlerTransaction, simulation_flags: SimulationFlags) -> Result<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError>;
-        /// Simulates transactions and returns their trace
-        fn simulate_transactions(transactions: Vec<AccountTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError>;
-
-        /// Filters extrinsic transactions to return only Starknet transactions
-        ///
-        /// To support runtime upgrades, the client must be unaware of the specific extrinsic
-        /// details. To achieve this, the client uses an OpaqueExtrinsic type to represent and
-        /// manipulate extrinsics. However, the client cannot decode and filter extrinsics due to
-        /// this limitation. The solution is to offload decoding and filtering to the RuntimeApi in
-        /// the runtime itself, accomplished through the extrinsic_filter method. This enables the
-        /// client to operate seamlessly while abstracting the extrinsic complexity.
-        // fn extrinsic_filter(xts: Vec<<Block as BlockT>::Extrinsic>) -> Vec<Transaction>;
-        /// Used to re-execute transactions from a past block and return their trace
-        ///
-        /// # Arguments
-        ///
-        /// * `transactions_before` - The first txs of the block. We don't want to trace those, but we need to execute them to rebuild the exact same state
-        /// * `transactions_to_trace` - The transactions we want to trace (can be a complete block of transactions or a subset of it)
-        ///
-        /// # Return
-        ///
-        /// Idealy, the execution traces of all of `transactions_to_trace`.
-        /// If any of the transactions (from both arguments) fails, an error is returned.
-        fn re_execute_transactions(transactions_before: Vec<Transaction>, transactions_to_trace: Vec<Transaction>, block_context: &BlockContext) -> Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution>;
 
         fn get_events_for_tx_by_hash(tx_hash: TransactionHash) -> Vec<StarknetEvent>;
-        // fn get_index_and_tx_for_tx_hash(xts: Vec<<Block as BlockT>::Extrinsic>, chain_id: Felt252Wrapper, tx_hash: TransactionHash) -> Option<(u32, Transaction)>;
 
         /// Return the outcome of the tx execution
         fn get_tx_execution_outcome(tx_hash: TransactionHash) -> Option<Vec<u8>>;
@@ -87,12 +47,6 @@ sp_api::decl_runtime_apis! {
     }
 
     pub trait ConvertTransactionRuntimeApi {
-        /// Converts the transaction to an UncheckedExtrinsic for submission to the pool.
-        // fn convert_transaction(transaction: UserTransaction) -> <Block as BlockT>::Extrinsic;
-
-        /// Converts the L1 Message transaction to an UncheckedExtrinsic for submission to the pool.
-        // fn convert_l1_transaction(transaction: L1HandlerTransaction) -> <Block as BlockT>::Extrinsic;
-
         /// Converts the DispatchError to an understandable error for the client
         fn convert_error(error: DispatchError) -> StarknetTransactionExecutionError;
     }

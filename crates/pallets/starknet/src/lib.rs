@@ -32,23 +32,18 @@
 // Ensure we're `no_std` when compiling for Wasm.
 #![allow(clippy::large_enum_variant)]
 
-use std::sync::Arc;
-
+/// An adapter for the blockifier state related traits
+use mp_contract::class::StorageContractData;
 /// Starknet pallet.
 /// Definition of the pallet's runtime storage items, events, errors, and dispatchable
 /// functions.
 /// Learn more about FRAME and the core library of Substrate FRAME pallets:
 /// <https://docs.substrate.io/reference/frame-pallets/>
 pub use pallet::*;
-/// An adapter for the blockifier state related traits
-pub mod blockifier_state_adapter;
-use mp_contract::class::StorageContractData;
 use starknet_api::core::Nonce;
 
 #[cfg(feature = "std")]
 pub mod genesis_loader;
-/// Simulation, estimations and execution trace logic.
-pub mod simulations;
 
 /// The Starknet pallet's runtime custom types.
 pub mod types;
@@ -62,18 +57,14 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use blockifier::blockifier::block::{BlockInfo, GasPrices};
-use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses, TransactionContext};
+use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
 use blockifier::execution::call_info::CallInfo;
-use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
-use blockifier::state::cached_state::{CachedState, GlobalContractCache};
-use blockifier::transaction::objects::{DeprecatedTransactionInfo, TransactionInfo};
 use blockifier::versioned_constants::VersionedConstants;
-use blockifier_state_adapter::BlockifierStateAdapter;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
 use mc_db::storage_handler;
-use mc_db::storage_handler::{StorageView, StorageViewMut};
+use mc_db::storage_handler::StorageViewMut;
 use mp_block::DeoxysBlock;
 use mp_digest_log::MADARA_ENGINE_ID;
 use mp_felt::Felt252Wrapper;
@@ -83,11 +74,10 @@ use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
-use starknet_api::core::{ChainId, CompiledClassHash, ContractAddress, EntryPointSelector};
-use starknet_api::deprecated_contract_class::EntryPointType;
+use starknet_api::core::{ChainId, CompiledClassHash, ContractAddress};
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::{Calldata, Event as StarknetEvent, MessageToL1, TransactionHash};
+use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
 use starknet_crypto::FieldElement;
 
 use crate::alloc::string::ToString;
@@ -470,59 +460,6 @@ impl<T: Config> Pallet<T> {
         TxEvents::<T>::iter_values().map(|v| v.len() as u128).sum()
     }
 
-    /// Call a smart contract function.
-    pub fn call_contract(
-        address: ContractAddress,
-        function_selector: EntryPointSelector,
-        calldata: Calldata,
-    ) -> Result<Vec<Felt252Wrapper>, DispatchError> {
-        // Get current block context
-        let block_context = Self::get_block_context();
-        // Get class hash
-        let class_hash = storage_handler::contract_data()
-            .get(&address)
-            .map_err(|_| Error::<T>::ContractNotFound)?
-            .map(|contract_data| contract_data.class_hash);
-
-        let entrypoint = CallEntryPoint {
-            class_hash,
-            code_address: None,
-            entry_point_type: EntryPointType::External,
-            entry_point_selector: function_selector,
-            calldata,
-            storage_address: address,
-            caller_address: ContractAddress::default(),
-            call_type: CallType::Call,
-            initial_gas: VersionedConstants::latest_constants().tx_initial_gas(),
-        };
-
-        let mut resources = cairo_vm::vm::runners::cairo_runner::ExecutionResources::default();
-        let mut entry_point_execution_context = EntryPointExecutionContext::new_invoke(
-            Arc::new(TransactionContext {
-                block_context,
-                tx_info: TransactionInfo::Deprecated(DeprecatedTransactionInfo::default()),
-            }),
-            false,
-        )
-        .map_err(|_| Error::<T>::TransactionExecutionFailed)?;
-
-        match entrypoint.execute(
-            &mut BlockifierStateAdapter::<T>::default(),
-            &mut resources,
-            &mut entry_point_execution_context,
-        ) {
-            Ok(v) => {
-                log!(debug, "Successfully called a smart contract function: {:?}", v);
-                let result = v.execution.retdata.0.iter().map(|x| (*x).into()).collect();
-                Ok(result)
-            }
-            Err(e) => {
-                log!(error, "failed to call smart contract {:?}", e);
-                Err(Error::<T>::TransactionExecutionFailed.into())
-            }
-        }
-    }
-
     /// Returns a storage keys and values of a given contract
     pub fn get_storage_from(contract_address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
         Ok(storage_handler::contract_storage_trie()
@@ -694,9 +631,5 @@ impl<T: Config> Pallet<T> {
 
     pub fn is_transaction_fee_disabled() -> bool {
         T::DisableTransactionFee::get()
-    }
-
-    fn init_cached_state() -> CachedState<BlockifierStateAdapter<T>> {
-        CachedState::new(BlockifierStateAdapter::<T>::default(), GlobalContractCache::new(10))
     }
 }

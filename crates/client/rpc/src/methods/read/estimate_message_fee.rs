@@ -21,7 +21,8 @@ use starknet_api::transaction::{Calldata, Fee, TransactionVersion};
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 
 use crate::errors::StarknetRpcApiError;
-use crate::{Starknet, StarknetReadRpcApiServer};
+use crate::madara_backend_client::get_block_by_block_hash;
+use crate::{utils, Starknet, StarknetReadRpcApiServer};
 
 /// Estimate the L2 fee of a message sent on L1
 ///
@@ -58,6 +59,17 @@ where
         log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
+
+    // create a block context from block header
+    let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
+        log::error!("Failed to retrieve fee token address: {e}");
+        StarknetRpcApiError::InternalServerError
+    })?;
+    let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let block_header = block.header().clone();
+    let block_context =
+        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
+
     let block_number = starknet.block_number().map_err(|e| {
         log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
@@ -66,26 +78,18 @@ where
 
     let transaction = convert_message_into_tx::<H>(message, chain_id, Some(block_number));
 
-    let message_fee = starknet
-        .client
-        .runtime_api()
-        .estimate_message_fee(substrate_block_hash, transaction)
-        .map_err(|e| {
-            error!("Runtime Api error: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .map_err(|e| {
-            error!("Function execution failed: {:#?}", e);
-            StarknetRpcApiError::ContractError
-        })?;
+    let message_fee = utils::execution::estimate_message_fee(transaction, &block_context).map_err(|e| {
+        error!("Function execution failed: {:#?}", e);
+        StarknetRpcApiError::ContractError
+    })?;
 
     let estimate_message_fee = FeeEstimate {
-        gas_consumed: message_fee.gas_consumed.0,
-        gas_price: message_fee.gas_price.0,
-        data_gas_consumed: message_fee.data_gas_consumed.0,
-        data_gas_price: message_fee.data_gas_price.0,
-        overall_fee: message_fee.overall_fee.0,
-        unit: message_fee.unit.into(),
+        gas_consumed: message_fee.gas_consumed,
+        gas_price: message_fee.gas_price,
+        data_gas_consumed: message_fee.data_gas_consumed,
+        data_gas_price: message_fee.data_gas_price,
+        overall_fee: message_fee.overall_fee,
+        unit: message_fee.unit,
     };
 
     Ok(estimate_message_fee)
