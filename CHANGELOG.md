@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix: verify_l2
 - feat(rpc): remove duplicated code, add mod 'utils'
 - feat(storage): started migrating storage to the bonsai-lib
 - fix: fix crashing cases on `get_block_with_receipts`
