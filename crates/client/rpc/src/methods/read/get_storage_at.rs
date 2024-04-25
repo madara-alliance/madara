@@ -1,15 +1,12 @@
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_db::storage_handler::{self};
-use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sc_transaction_pool::ChainApi;
-use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::core::{ContractAddress, PatriciaKey};
@@ -49,20 +46,17 @@ use crate::{Felt, Starknet};
 ///   given `contract_address` in the specified block.
 /// * `STORAGE_KEY_NOT_FOUND` - If the specified storage key does not exist within the given
 ///   contract.
-pub fn get_storage_at<A, BE, G, C, P, H>(
-    starknet: &Starknet<A, BE, G, C, P, H>,
+pub fn get_storage_at<BE, C, H>(
+    starknet: &Starknet<BE, C, H>,
     contract_address: FieldElement,
     key: FieldElement,
     block_id: BlockId,
 ) -> RpcResult<Felt>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let block_number = starknet.substrate_block_number_from_starknet_block(block_id).map_err(|e| {

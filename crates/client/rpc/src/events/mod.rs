@@ -6,7 +6,6 @@ use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sc_transaction_pool::ChainApi;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent};
@@ -16,7 +15,7 @@ use crate::errors::StarknetRpcApiError;
 use crate::madara_backend_client::get_block_by_block_hash;
 use crate::Starknet;
 
-impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
+impl<BE, C, H> Starknet<BE, C, H>
 where
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,

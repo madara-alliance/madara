@@ -1,7 +1,6 @@
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
-use mc_genesis_data_provider::GenesisProvider;
 use mc_sync::l2::get_pending_state_update;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
@@ -10,8 +9,6 @@ use mp_types::block::{DBlockT, DHashT};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sc_transaction_pool::ChainApi;
-use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::block::BlockHash as APIBlockHash;
@@ -21,18 +18,15 @@ use crate::errors::StarknetRpcApiError;
 use crate::madara_backend_client::get_block_by_block_hash;
 use crate::Starknet;
 
-fn get_state_update_finalized<A, BE, G, C, P, H>(
-    server: &Starknet<A, BE, G, C, P, H>,
+fn get_state_update_finalized<BE, C, H>(
+    server: &Starknet<BE, C, H>,
     substrate_block_hash: DHashT,
 ) -> RpcResult<MaybePendingStateUpdate>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let starknet_block = get_block_by_block_hash(server.client.as_ref(), substrate_block_hash)?;
@@ -59,15 +53,12 @@ fn get_state_update_pending() -> RpcResult<MaybePendingStateUpdate> {
     }
 }
 
-fn state_diff<A, BE, G, C, P, H>(block: &DeoxysBlock, server: &Starknet<A, BE, G, C, P, H>) -> RpcResult<StateDiff>
+fn state_diff<BE, C, H>(block: &DeoxysBlock, server: &Starknet<BE, C, H>) -> RpcResult<StateDiff>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let starknet_block_hash = APIBlockHash(block.header().hash::<H>().into());
@@ -96,18 +87,15 @@ where
 /// the state of the network as a result of the block's execution. This can include a confirmed
 /// state update or a pending state update. If the block is not found, returns a
 /// `StarknetRpcApiError` with `BlockNotFound`.
-pub fn get_state_update<A, BE, G, C, P, H>(
-    starknet: &Starknet<A, BE, G, C, P, H>,
+pub fn get_state_update<BE, C, H>(
+    starknet: &Starknet<BE, C, H>,
     block_id: BlockId,
 ) -> RpcResult<MaybePendingStateUpdate>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {

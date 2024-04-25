@@ -1,13 +1,10 @@
 use jsonrpsee::core::RpcResult;
-use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sc_transaction_pool::ChainApi;
-use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage};
@@ -38,18 +35,12 @@ use crate::Starknet;
 /// block in which they occurred, and the transaction that triggered them. In case of
 /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
 /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
-pub async fn get_events<A, BE, G, C, P, H>(
-    starknet: &Starknet<A, BE, G, C, P, H>,
-    filter: EventFilterWithPage,
-) -> RpcResult<EventsPage>
+pub async fn get_events<BE, C, H>(starknet: &Starknet<BE, C, H>, filter: EventFilterWithPage) -> RpcResult<EventsPage>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let from_address = filter.event_filter.address.map(Felt252Wrapper::from);
@@ -129,19 +120,16 @@ fn event_match_filter(event: &EmittedEvent, address: Option<Felt252Wrapper>, key
     match_from_address && match_keys
 }
 
-fn block_range<A, BE, G, C, P, H>(
+fn block_range<BE, C, H>(
     from_block: Option<BlockId>,
     to_block: Option<BlockId>,
-    starknet: &Starknet<A, BE, G, C, P, H>,
+    starknet: &Starknet<BE, C, H>,
 ) -> Result<(u64, u64, u64), StarknetRpcApiError>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let latest = starknet.substrate_block_number_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
