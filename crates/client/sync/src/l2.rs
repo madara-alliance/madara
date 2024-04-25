@@ -309,7 +309,7 @@ pub fn update_l2(state_update: L2StateUpdate) {
 pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> StarkFelt {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
 
-    let csd = build_commitment_state_diff(state_update_wrapper.clone());
+    let csd = build_commitment_state_diff(state_update_wrapper);
     let state_root = update_state_root(csd, block_number);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
