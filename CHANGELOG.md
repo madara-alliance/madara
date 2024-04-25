@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- CI: add `cargo test` on PR
 - refactor: remove dead code on `Struct Starknet<..>`
 - fix: verify_l2
 - feat(rpc): remove duplicated code, add mod 'utils'
