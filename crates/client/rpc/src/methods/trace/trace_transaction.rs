@@ -1,14 +1,11 @@
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
-use mc_genesis_data_provider::GenesisProvider;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::TxType;
 use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
-use sc_transaction_pool::ChainApi;
-use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::TransactionTraceWithHash;
@@ -20,18 +17,15 @@ use crate::madara_backend_client::get_block_by_block_hash;
 use crate::utils::execution::re_execute_transactions;
 use crate::Starknet;
 
-pub async fn trace_transaction<A, BE, G, C, P, H>(
-    starknet: &Starknet<A, BE, G, C, P, H>,
+pub async fn trace_transaction<BE, C, H>(
+    starknet: &Starknet<BE, C, H>,
     transaction_hash: FieldElement,
 ) -> RpcResult<TransactionTraceWithHash>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
-    G: GenesisProvider + Send + Sync + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    P: TransactionPool<Block = DBlockT> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = DeoxysBackend::mapping()

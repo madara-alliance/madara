@@ -66,32 +66,23 @@ where
     use substrate_frame_rpc_system::{System, SystemApiServer};
 
     let mut module = RpcModule::new(());
-    let FullDeps { client, pool, deny_unsafe, starknet: starknet_params, command_sink, graph, .. } = deps;
+    let FullDeps { client, pool, deny_unsafe, starknet: starknet_params, command_sink, .. } = deps;
 
     module.merge(System::new(client.clone(), pool.clone(), deny_unsafe).into_rpc())?;
-    module.merge(StarknetReadRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, DHasherT>::new(
+    module.merge(StarknetReadRpcApiServer::into_rpc(Starknet::<_, _, DHasherT>::new(
         client.clone(),
-        pool.clone(),
-        graph.clone(),
         starknet_params.sync_service.clone(),
         starknet_params.starting_block,
-        starknet_params.genesis_provider.clone(),
     )))?;
-    module.merge(StarknetWriteRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, DHasherT>::new(
+    module.merge(StarknetWriteRpcApiServer::into_rpc(Starknet::<_, _, DHasherT>::new(
         client.clone(),
-        pool.clone(),
-        graph.clone(),
         starknet_params.sync_service.clone(),
         starknet_params.starting_block,
-        starknet_params.genesis_provider.clone(),
     )))?;
-    module.merge(StarknetTraceRpcApiServer::into_rpc(Starknet::<_, _, _, _, _, DHasherT>::new(
+    module.merge(StarknetTraceRpcApiServer::into_rpc(Starknet::<_, _, DHasherT>::new(
         client,
-        pool,
-        graph,
         starknet_params.sync_service,
         starknet_params.starting_block,
-        starknet_params.genesis_provider,
     )))?;
 
     if let Some(command_sink) = command_sink {

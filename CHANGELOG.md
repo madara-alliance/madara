@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- refactor: remove dead code on `Struct Starknet<..>`
 - fix: verify_l2
 - feat(rpc): remove duplicated code, add mod 'utils'
 - feat(storage): started migrating storage to the bonsai-lib

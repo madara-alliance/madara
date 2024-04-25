@@ -22,7 +22,6 @@ use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_network_sync::SyncingService;
-use sc_transaction_pool::{ChainApi, Pool};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sp_api::ProvideRuntimeApi;
@@ -208,42 +207,32 @@ pub trait StarknetTraceRpcApi {
     async fn trace_transaction(&self, transaction_hash: FieldElement) -> RpcResult<TransactionTraceWithHash>;
 }
 
-/// A Starknet RPC server for Madara
-#[allow(dead_code)]
-pub struct Starknet<A: ChainApi, BE, G, C, P, H> {
+/// A Starknet RPC server for Deoxys
+pub struct Starknet<BE, C, H> {
     client: Arc<C>,
-    #[allow(dead_code)]
-    pool: Arc<P>,
-    #[allow(dead_code)]
-    graph: Arc<Pool<A>>,
     sync_service: Arc<SyncingService<DBlockT>>,
     starting_block: <DHeaderT as HeaderT>::Number,
-    #[allow(dead_code)]
-    genesis_provider: Arc<G>,
     _marker: PhantomData<(DBlockT, BE, H)>,
 }
 
 #[allow(clippy::too_many_arguments)]
-impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
+impl<BE, C, H> Starknet<BE, C, H> {
     pub fn new(
         client: Arc<C>,
-        pool: Arc<P>,
-        graph: Arc<Pool<A>>,
         sync_service: Arc<SyncingService<DBlockT>>,
         starting_block: <DHeaderT as HeaderT>::Number,
-        genesis_provider: Arc<G>,
     ) -> Self {
-        Self { client, pool, graph, sync_service, starting_block, genesis_provider, _marker: PhantomData }
+        Self { client, sync_service, starting_block, _marker: PhantomData }
     }
 }
 
-impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H> {
+impl<BE, C, H> Starknet<BE, C, H> {
     fn chain_id(&self) -> RpcResult<Felt> {
         methods::read::chain_id::chain_id()
     }
 }
 
-impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
+impl<BE, C, H> Starknet<BE, C, H>
 where
     C: HeaderBackend<DBlockT> + 'static,
 {
@@ -252,7 +241,7 @@ where
     }
 }
 
-impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
+impl<BE, C, H> Starknet<BE, C, H>
 where
     C: HeaderBackend<DBlockT> + 'static,
 {
@@ -261,7 +250,7 @@ where
     }
 }
 
-impl<A: ChainApi, BE, G, C, P, H> Starknet<A, BE, G, C, P, H>
+impl<BE, C, H> Starknet<BE, C, H>
 where
     C: HeaderBackend<DBlockT> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
