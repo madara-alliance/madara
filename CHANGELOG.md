@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- feat(storage): state diff are now stored for each block
 - feat(storage): started migrating storage to the bonsai-lib
 - fix: fix crashing cases on `get_block_with_receipts`
 - fix: fix get_events minor issues

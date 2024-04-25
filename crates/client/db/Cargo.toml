@@ -58,6 +58,7 @@ rayon = { workspace = true }
 rocksdb = { version = "0.21", features = [
   # "multi-threaded-cf",
 ] }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 uuid = "1.4.1"

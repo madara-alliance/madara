@@ -37,7 +37,13 @@ impl StorageView for ContractDataView {
     }
 
     fn contains(&self, contract_address: &Self::KEY) -> Result<bool, DeoxysStorageError> {
-        Ok(self.get(contract_address)?.is_some())
+        let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Column::ContractData);
+
+        match db.key_may_exist_cf(&column, contract_address.encode()) {
+            true => Ok(self.get(contract_address)?.is_some()),
+            false => Ok(false),
+        }
     }
 }
 
@@ -88,7 +94,13 @@ impl StorageView for ContractDataViewMut {
     }
 
     fn contains(&self, contract_address: &Self::KEY) -> Result<bool, DeoxysStorageError> {
-        Ok(self.get(contract_address)?.is_some())
+        let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Column::ContractData);
+
+        match db.key_may_exist_cf(&column, contract_address.encode()) {
+            true => Ok(self.get(contract_address)?.is_some()),
+            false => Ok(false),
+        }
     }
 }
 
@@ -110,7 +122,7 @@ impl StorageViewMut for ContractDataViewMut {
             let db = Arc::clone(db);
 
             set.spawn(async move {
-                let column = db.get_column(Column::ContractClassData);
+                let column = db.get_column(Column::ContractData);
 
                 let Ok(tree) = db.get_cf(&column, key.encode()) else {
                     return Err(DeoxysStorageError::StorageRetrievalError(StorageType::ContractData));
