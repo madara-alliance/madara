@@ -7,20 +7,19 @@ use mc_db::storage_handler;
 use mc_db::storage_handler::StorageView;
 use mp_block::DeoxysBlock;
 use mp_contract::class::{ContractClassData, ContractClassWrapper};
+use mp_convert::state_update::ToStateUpdateCore;
 use sp_core::H160;
 use starknet_api::core::ClassHash;
 use starknet_api::hash::StarkFelt;
-use starknet_core::types::BlockId as BlockIdCore;
+use starknet_core::types::{BlockId as BlockIdCore, DeclaredClassItem, DeployedContractItem, StateUpdate};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models as p;
-use starknet_providers::sequencer::models::state_update::{DeclaredContract, DeployedContract};
-use starknet_providers::sequencer::models::{BlockId, StateUpdate};
+use starknet_providers::sequencer::models::BlockId;
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use tokio::task::JoinSet;
 use url::Url;
 
 use crate::l2::L2SyncError;
-use crate::utility::block_hash_deoxys;
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
 /// feeder.
@@ -104,9 +103,8 @@ async fn fetch_state_and_class_update(
 ) -> Result<(StateUpdate, Vec<ContractClassData>), L2SyncError> {
     // Children tasks need StateUpdate as an Arc, because of task spawn 'static requirement
     // We make an Arc, and then unwrap the StateUpdate out of the Arc
-    let state_update = Arc::new(fetch_state_update(provider, block_number).await?);
-    let class_update = fetch_class_update(provider, &state_update).await?;
-    let state_update = Arc::try_unwrap(state_update).expect("arc should not be aliased");
+    let state_update = fetch_state_update(provider, block_number).await?;
+    let class_update = fetch_class_update(provider, &state_update, block_number).await?;
 
     Ok((state_update, class_update))
 }
@@ -118,13 +116,14 @@ async fn fetch_state_update(
 ) -> Result<StateUpdate, L2SyncError> {
     let state_update = provider.get_state_update(BlockId::Number(block_number)).await?;
 
-    Ok(state_update)
+    Ok(state_update.to_state_update_core())
 }
 
 /// retrieves class updates from Starknet sequencer
 async fn fetch_class_update(
     provider: &SequencerGatewayProvider,
-    state_update: &Arc<StateUpdate>,
+    state_update: &StateUpdate,
+    block_number: u64,
 ) -> Result<Vec<ContractClassData>, L2SyncError> {
     let missing_classes: Vec<&FieldElement> = std::iter::empty()
         .chain(
@@ -132,14 +131,14 @@ async fn fetch_class_update(
                 .state_diff
                 .deployed_contracts
                 .iter()
-                .map(|DeployedContract { address: _, class_hash }| class_hash),
+                .map(|DeployedContractItem { address: _, class_hash }| class_hash),
         )
         .chain(
             state_update
                 .state_diff
                 .declared_classes
                 .iter()
-                .map(|DeclaredContract { class_hash, compiled_class_hash: _ }| class_hash),
+                .map(|DeclaredClassItem { class_hash, compiled_class_hash: _ }| class_hash),
         )
         .unique()
         .filter(|class_hash| is_missing_class(class_hash))
@@ -149,9 +148,8 @@ async fn fetch_class_update(
 
     let mut task_set = missing_classes.into_iter().fold(JoinSet::new(), |mut set, class_hash| {
         let provider = Arc::clone(&arc_provider);
-        let state_update = Arc::clone(state_update);
         let class_hash = *class_hash;
-        set.spawn(async move { fetch_class(class_hash, block_hash_deoxys(&state_update), &provider).await });
+        set.spawn(async move { fetch_class(class_hash, block_number, &provider).await });
         set
     });
 
@@ -168,10 +166,10 @@ async fn fetch_class_update(
 /// of the current type hell this needs to be converted into a blockifier equivalent
 async fn fetch_class(
     class_hash: FieldElement,
-    block_hash: FieldElement,
+    block_number: u64,
     provider: &SequencerGatewayProvider,
 ) -> Result<ContractClassData, L2SyncError> {
-    let core_class = provider.get_class(BlockIdCore::Hash(block_hash), class_hash).await?;
+    let core_class = provider.get_class(BlockIdCore::Number(block_number), class_hash).await?;
 
     // Core classes have to be converted into Blockifier classes to gain support
     // for Substrate [`Encode`] and [`Decode`] traits
