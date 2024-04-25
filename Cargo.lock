@@ -5985,6 +5985,7 @@ dependencies = [
  "rayon",
  "rocksdb",
  "sc-client-db",
+ "serde_json",
  "sp-core",
  "sp-database",
  "sp-runtime",
@@ -6108,6 +6109,7 @@ dependencies = [
  "mc-db",
  "mp-block",
  "mp-contract",
+ "mp-convert",
  "mp-felt",
  "mp-hashers",
  "mp-storage",
@@ -6374,6 +6376,7 @@ dependencies = [
  "scale-info",
  "serde_json",
  "starknet-core 0.10.0",
+ "starknet-ff 0.3.7",
  "starknet-providers 0.10.0",
  "starknet_api",
 ]

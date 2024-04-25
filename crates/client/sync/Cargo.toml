@@ -57,6 +57,7 @@ bonsai-trie = { workspace = true }
 mc-db = { workspace = true }
 mp-block = { workspace = true }
 mp-contract = { workspace = true }
+mp-convert = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-storage = { workspace = true, default-features = true }

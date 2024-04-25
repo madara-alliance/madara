@@ -2,6 +2,9 @@ git # Deoxys Changelog
 
 ## Next release
 
+- refactor: remove dead code on `Struct Starknet<..>`
+- feat(storage): state diff are now stored for each block
+- fix: verify_l2
 - feat(rpc): remove duplicated code, add mod 'utils'
 - feat(storage): started migrating storage to the bonsai-lib
 - fix: fix crashing cases on `get_block_with_receipts`

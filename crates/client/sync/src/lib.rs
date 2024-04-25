@@ -55,7 +55,7 @@ pub mod starknet_sync_worker {
         if starting_block == 1 {
             let state_update =
                 provider.get_state_update(BlockId::Number(0)).await.expect("getting state update for genesis block");
-            verify_l2(0, &state_update).expect("verifying genesis block");
+            verify_l2(0, &state_update);
         }
 
         let _ = tokio::join!(
