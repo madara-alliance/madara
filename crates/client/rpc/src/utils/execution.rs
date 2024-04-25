@@ -16,8 +16,7 @@ use blockifier::versioned_constants::VersionedConstants;
 use mc_db::storage_handler;
 use mc_db::storage_handler::StorageView;
 use mp_felt::Felt252Wrapper;
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlagForEstimateFee, SimulationFlags};
-use sp_runtime::DispatchError;
+use mp_simulations::{SimulationFlagForEstimateFee, SimulationFlags};
 use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::transaction::Calldata;
@@ -110,24 +109,6 @@ pub fn call_contract(
             Err(())
         }
     }
-}
-
-#[allow(dead_code)]
-pub fn simulate_message(
-    message: L1HandlerTransaction,
-    simulation_flags: &SimulationFlags,
-    block_context: &BlockContext,
-) -> Result<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {
-    let mut cached_state = init_cached_state(block_context);
-
-    let tx_execution_result = message
-        .execute(&mut cached_state, block_context, simulation_flags.charge_fee, simulation_flags.validate)
-        .map_err(|e| {
-            log::error!("Transaction execution failed during simulation: {e}");
-            PlaceHolderErrorTypeForFailedStarknetExecution
-        });
-
-    Ok(tx_execution_result)
 }
 
 pub fn estimate_fee(
