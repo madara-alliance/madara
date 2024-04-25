@@ -295,15 +295,13 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
 
 /// Update the L2 state with the latest data
 pub fn update_l2(state_update: L2StateUpdate) {
-    let mut last_l2_state_update =
-        STARKNET_STATE_UPDATE.write().expect("Failed to acquire write lock on STARKNET_STATE_UPDATE");
-    *last_l2_state_update = state_update.clone();
+    *STARKNET_STATE_UPDATE.write().expect("Failed to acquire write lock on STARKNET_STATE_UPDATE") =
+        state_update.clone();
 
-    let last_l1_state_update =
-        ETHEREUM_STATE_UPDATE.read().expect("Failed to acquire read lock on ETHEREUM_STATE_UPDATE");
-    if state_update.block_number >= last_l1_state_update.block_number {
-        let mut sync_status = SYNC_STATUS.write().expect("Failed to acquire write lock on SYNC_STATUS");
-        *sync_status = SyncStatus::SyncUnverifiedState;
+    let last_l1_state_update_block =
+        ETHEREUM_STATE_UPDATE.read().expect("Failed to acquire read lock on ETHEREUM_STATE_UPDATE").block_number;
+    if state_update.block_number >= last_l1_state_update_block {
+        *SYNC_STATUS.write().expect("Failed to acquire write lock on SYNC_STATUS") = SyncStatus::SyncUnverifiedState;
     }
 }
 
@@ -321,7 +319,7 @@ pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> StarkFelt {
         block_hash: Felt252Wrapper::from(block_hash).into(),
     });
 
-    StarkFelt::new_unchecked(state_root.0.to_bytes_be())
+    state_root.into()
 }
 
 async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
