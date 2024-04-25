@@ -2,7 +2,7 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::RpcResult;
 use mc_genesis_data_provider::GenesisProvider;
 use mp_hashers::HasherT;
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlags};
+use mp_simulations::SimulationFlags;
 use mp_transactions::from_broadcasted_transactions::ToAccountTransaction;
 use mp_transactions::TxType;
 use mp_types::block::DBlockT;
@@ -19,7 +19,8 @@ use starknet_core::types::{
 use super::lib::ConvertCallInfoToExecuteInvocationError;
 use super::utils::{block_number_by_id, tx_execution_infos_to_tx_trace};
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
+use crate::madara_backend_client::get_block_by_block_hash;
+use crate::{utils, Starknet};
 
 pub async fn simulate_transactions<A, BE, G, C, P, H>(
     starknet: &Starknet<A, BE, G, C, P, H>,
@@ -40,6 +41,16 @@ where
     let substrate_block_hash =
         starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|_e| StarknetRpcApiError::BlockNotFound)?;
 
+    // create a block context from block header
+    let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
+        log::error!("Failed to retrieve fee token address: {e}");
+        StarknetRpcApiError::InternalServerError
+    })?;
+    let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let block_header = block.header().clone();
+    let block_context =
+        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
+
     let tx_type_and_tx_iterator = transactions.into_iter().map(|tx| match tx {
         BroadcastedTransaction::Invoke(_) => tx.to_account_transaction().map(|tx| (TxType::Invoke, tx)),
         BroadcastedTransaction::Declare(_) => tx.to_account_transaction().map(|tx| (TxType::Declare, tx)),
@@ -55,15 +66,8 @@ where
 
     let simulation_flags = SimulationFlags::from(simulation_flags);
 
-    let res = starknet
-        .client
-        .runtime_api()
-        .simulate_transactions(substrate_block_hash, user_transactions, simulation_flags)
-        .map_err(|e| {
-            log::error!("Request parameters error: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .map_err(|e| {
+    let res =
+        utils::execution::simulate_transactions(user_transactions, &simulation_flags, &block_context).map_err(|e| {
             log::error!("Failed to call function: {:#?}", e);
             StarknetRpcApiError::ContractError
         })?;
@@ -77,46 +81,36 @@ where
 
 fn tx_execution_infos_to_simulated_transactions(
     tx_types: Vec<TxType>,
-    transaction_execution_results: Vec<
-        Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>,
-    >,
+    transaction_execution_results: Vec<TransactionExecutionInfo>,
     block_number: u64,
 ) -> Result<Vec<SimulatedTransaction>, ConvertCallInfoToExecuteInvocationError> {
     let mut results = vec![];
     for (tx_type, res) in tx_types.into_iter().zip(transaction_execution_results.into_iter()) {
-        match res {
-            Ok(tx_exec_info) => {
-                let transaction_trace = tx_execution_infos_to_tx_trace(tx_type, &tx_exec_info, block_number)?;
-                let gas = tx_exec_info.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
-                let fee = tx_exec_info.actual_fee.0;
-                // TODO: Shouldn't the gas price be taken from the block header instead?
-                let price = if gas > 0 { fee / gas as u128 } else { 0 };
+        let transaction_trace = tx_execution_infos_to_tx_trace(tx_type, &res, block_number)?;
+        let gas = res.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
+        let fee = res.actual_fee.0;
+        // TODO: Shouldn't the gas price be taken from the block header instead?
+        let price = if gas > 0 { fee / gas as u128 } else { 0 };
 
-                let gas_consumed = gas.into();
-                let gas_price = price.into();
-                let overall_fee = fee.into();
+        let gas_consumed = gas.into();
+        let gas_price = price.into();
+        let overall_fee = fee.into();
 
-                let unit: PriceUnit = PriceUnit::Wei; //TODO(Tbelleng) : Get Price Unit from Tx
-                let data_gas_consumed = tx_exec_info.da_gas.l1_data_gas.into();
-                let data_gas_price = tx_exec_info.da_gas.l1_gas.into();
+        let unit: PriceUnit = PriceUnit::Wei; //TODO(Tbelleng) : Get Price Unit from Tx
+        let data_gas_consumed = res.da_gas.l1_data_gas.into();
+        let data_gas_price = res.da_gas.l1_gas.into();
 
-                results.push(SimulatedTransaction {
-                    transaction_trace,
-                    fee_estimation: FeeEstimate {
-                        gas_consumed,
-                        data_gas_consumed,
-                        data_gas_price,
-                        gas_price,
-                        overall_fee,
-                        unit,
-                    },
-                });
-            }
-            Err(_) => {
-                return Err(ConvertCallInfoToExecuteInvocationError::TransactionExecutionFailed);
-            }
-        }
+        results.push(SimulatedTransaction {
+            transaction_trace,
+            fee_estimation: FeeEstimate {
+                gas_consumed,
+                data_gas_consumed,
+                data_gas_price,
+                gas_price,
+                overall_fee,
+                unit,
+            },
+        });
     }
-
     Ok(results)
 }

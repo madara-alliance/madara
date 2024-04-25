@@ -110,7 +110,7 @@ impl StorageViewMut for ContractDataViewMut {
             let db = Arc::clone(db);
 
             set.spawn(async move {
-                let column = db.get_column(Column::ContractClassData);
+                let column = db.get_column(Column::ContractData);
 
                 let Ok(tree) = db.get_cf(&column, key.encode()) else {
                     return Err(DeoxysStorageError::StorageRetrievalError(StorageType::ContractData));

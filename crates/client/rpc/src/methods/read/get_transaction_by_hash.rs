@@ -16,7 +16,7 @@ use sp_blockchain::HeaderBackend;
 use starknet_core::types::{FieldElement, Transaction};
 
 use crate::errors::StarknetRpcApiError;
-use crate::utils::get_block_by_block_hash;
+use crate::madara_backend_client::get_block_by_block_hash;
 use crate::Starknet;
 
 /// Get the details and status of a submitted transaction.

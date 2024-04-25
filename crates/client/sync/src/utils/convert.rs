@@ -260,12 +260,6 @@ fn call_data(call_data: Vec<starknet_ff::FieldElement>) -> starknet_api::transac
     starknet_api::transaction::Calldata(Arc::new(call_data.into_iter().map(felt).collect()))
 }
 
-// TODO: is this function needed?
-#[allow(dead_code)]
-fn tx_hash(tx_hash: starknet_ff::FieldElement) -> starknet_api::transaction::TransactionHash {
-    starknet_api::transaction::TransactionHash(felt(tx_hash))
-}
-
 fn nonce(nonce: starknet_ff::FieldElement) -> starknet_api::core::Nonce {
     starknet_api::core::Nonce(felt(nonce))
 }

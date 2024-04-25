@@ -19,10 +19,11 @@ use starknet_core::types::{
 
 use super::get_transaction_receipt::get_transaction_receipt_finalized;
 use crate::errors::StarknetRpcApiError;
-use crate::utils::{
-    get_block_by_block_hash, l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address,
-    starknet_version, status, timestamp,
+use crate::madara_backend_client::get_block_by_block_hash;
+use crate::utils::block::{
+    l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, timestamp,
 };
+use crate::utils::helpers::status;
 use crate::Starknet;
 
 pub fn get_block_with_receipts<A, BE, G, C, P, H>(

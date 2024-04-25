@@ -14,11 +14,10 @@ use sp_blockchain::HeaderBackend;
 use starknet_core::types::TransactionTraceWithHash;
 use starknet_ff::FieldElement;
 
-use super::utils::{
-    get_previous_block_substrate_hash, map_transaction_to_user_transaction, tx_execution_infos_to_tx_trace,
-};
+use super::utils::{map_transaction_to_user_transaction, tx_execution_infos_to_tx_trace};
 use crate::errors::StarknetRpcApiError;
-use crate::utils::get_block_by_block_hash;
+use crate::madara_backend_client::get_block_by_block_hash;
+use crate::utils::execution::re_execute_transactions;
 use crate::Starknet;
 
 pub async fn trace_transaction<A, BE, G, C, P, H>(
@@ -52,8 +51,6 @@ where
     let (txs_to_execute_before, tx_to_trace) =
         map_transaction_to_user_transaction::<H>(starknet_block, chain_id, Some(transaction_hash_to_trace))?;
 
-    let previous_block_substrate_hash = get_previous_block_substrate_hash(starknet, substrate_block_hash)?;
-
     let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
         log::error!("Failed to retrieve fee token address: {e}");
         StarknetRpcApiError::InternalServerError
@@ -62,23 +59,11 @@ where
     let block_context =
         block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
 
-    let execution_infos = starknet
-        .client
-        .runtime_api()
-        .re_execute_transactions(
-            previous_block_substrate_hash,
-            txs_to_execute_before.clone(),
-            tx_to_trace.clone(),
-            &block_context,
-        )
+    let execution_infos = re_execute_transactions(txs_to_execute_before.clone(), tx_to_trace.clone(), &block_context)
         .map_err(|e| {
-            log::error!("Failed to execute runtime API call: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .map_err(|e| {
-            log::error!("Failed to reexecute the block transactions: {e:?}");
-            StarknetRpcApiError::InternalServerError
-        })?;
+        log::error!("Failed to reexecute the block transactions: {e:?}");
+        StarknetRpcApiError::InternalServerError
+    })?;
 
     let trace =
         tx_execution_infos_to_tx_trace(TxType::from(tx_to_trace.get(0).unwrap()), &execution_infos[0], block_number)

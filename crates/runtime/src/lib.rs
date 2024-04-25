@@ -16,11 +16,7 @@ pub mod opaque;
 mod pallets;
 mod runtime_tests;
 
-use blockifier::context::{BlockContext, FeeTokenAddresses};
-use blockifier::transaction::account_transaction::AccountTransaction;
-use blockifier::transaction::objects::TransactionExecutionInfo;
-use blockifier::transaction::transaction_execution::Transaction;
-use blockifier::transaction::transactions::L1HandlerTransaction;
+use blockifier::context::FeeTokenAddresses;
 pub use config::*;
 pub use frame_support::traits::{ConstU128, ConstU32, ConstU64, ConstU8, KeyOwnerProofSystem, Randomness, StorageInfo};
 pub use frame_support::weights::constants::{
@@ -30,7 +26,6 @@ pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
 use mp_felt::Felt252Wrapper;
-use mp_simulations::{PlaceHolderErrorTypeForFailedStarknetExecution, SimulationFlagForEstimateFee, SimulationFlags};
 use mp_types::account::{DAccountAddressT, DAccountIdT};
 use mp_types::block::DHeaderT;
 use mp_types::transactions::{DTxIndexT, DTxSignatureT};
@@ -38,7 +33,6 @@ use pallet_grandpa::{fg_primitives, AuthorityId as GrandpaId, AuthorityList as G
 /// Import the Starknet pallet.
 pub use pallet_starknet;
 use pallet_starknet::pallet::Error as PalletError;
-use pallet_starknet::types::FeeEstimate;
 use pallet_starknet_runtime_api::StarknetTransactionExecutionError;
 pub use pallet_timestamp::Call as TimestampCall;
 use sp_api::impl_runtime_apis;
@@ -53,9 +47,8 @@ use sp_runtime::{generic, ApplyExtrinsicResult, DispatchError};
 pub use sp_runtime::{Perbill, Permill};
 use sp_std::prelude::*;
 use sp_version::RuntimeVersion;
-use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::hash::StarkHash;
-use starknet_api::transaction::{Calldata, Event as StarknetEvent, MessageToL1, TransactionHash};
+use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
@@ -229,9 +222,6 @@ impl_runtime_apis! {
     }
 
     impl pallet_starknet_runtime_api::StarknetRuntimeApi<Block> for Runtime {
-        fn call(address: ContractAddress, function_selector: EntryPointSelector, calldata: Calldata) -> Result<Vec<Felt252Wrapper>, DispatchError> {
-            Starknet::call_contract(address, function_selector, calldata)
-        }
 
         fn chain_id() -> Felt252Wrapper {
             Starknet::chain_id()
@@ -253,61 +243,6 @@ impl_runtime_apis! {
             Starknet::is_transaction_fee_disabled()
         }
 
-        fn estimate_fee(transactions: Vec<AccountTransaction>, simulation_flags: Vec<SimulationFlagForEstimateFee>) -> Result<Vec<FeeEstimate>, DispatchError> {
-            Starknet::estimate_fee(transactions, &simulation_flags)
-        }
-
-        fn re_execute_transactions(transactions_before: Vec<Transaction>, transactions_to_trace: Vec<Transaction>, block_context: &BlockContext) -> Result<Vec<TransactionExecutionInfo>, PlaceHolderErrorTypeForFailedStarknetExecution> {
-            Starknet::re_execute_transactions(transactions_before, transactions_to_trace, block_context)
-        }
-
-        fn estimate_message_fee(message: L1HandlerTransaction) -> Result<FeeEstimate, DispatchError> {
-            Starknet::estimate_message_fee(message)
-        }
-
-        fn simulate_transactions(transactions: Vec<AccountTransaction>, simulation_flags: SimulationFlags) -> Result<Vec<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>>, DispatchError> {
-            Starknet::simulate_transactions(transactions, &simulation_flags)
-        }
-
-        fn simulate_message(message: L1HandlerTransaction, simulation_flags: SimulationFlags) -> Result<Result<TransactionExecutionInfo, PlaceHolderErrorTypeForFailedStarknetExecution>, DispatchError> {
-            Starknet::simulate_message(message, &simulation_flags)
-        }
-
-        // fn extrinsic_filter(xts: Vec<<Block as BlockT>::Extrinsic>) -> Vec<Transaction> {
-        //     xts.into_iter().filter_map(|xt| match xt.function {
-        //         RuntimeCall::Starknet( invoke { transaction }) => Some(Transaction::AccountTransaction(AccountTransaction::Invoke(transaction))),
-        //         RuntimeCall::Starknet( declare { transaction }) => Some(Transaction::AccountTransaction(AccountTransaction::Declare(transaction))),
-        //         RuntimeCall::Starknet( deploy_account { transaction }) => Some(Transaction::AccountTransaction(AccountTransaction::DeployAccount(transaction))),
-        //         RuntimeCall::Starknet( consume_l1_message { transaction }) => Some(Transaction::L1HandlerTransaction(transaction)),
-        //         _ => None,
-        //     }).collect::<Vec<Transaction>>()
-        // }
-
-        // fn get_index_and_tx_for_tx_hash(extrinsics: Vec<<Block as BlockT>::Extrinsic>, chain_id: Felt252Wrapper, tx_hash: TransactionHash) -> Option<(u32, Transaction)> {
-        //     // Find our tx and it's index
-        //     let (tx_index, tx) =  extrinsics.into_iter().enumerate().find(|(_, xt)| {
-        //         let computed_tx_hash = match &xt.function {
-        //             RuntimeCall::Starknet( invoke { transaction }) => transaction.tx_hash,
-        //             RuntimeCall::Starknet( declare { transaction, .. }) => transaction.tx_hash,
-        //             RuntimeCall::Starknet( deploy_account { transaction }) => transaction.tx_hash,
-        //             RuntimeCall::Starknet( consume_l1_message { transaction, .. }) => transaction.tx_hash,
-        //             _ => return false
-        //         };
-
-        //         computed_tx_hash == tx_hash
-        //     })?;
-        //     let transaction = match tx.function {
-        //         RuntimeCall::Starknet( invoke { transaction }) => Transaction::AccountTransaction(AccountTransaction::Invoke(transaction)),
-        //         RuntimeCall::Starknet( declare { transaction }) => Transaction::AccountTransaction(AccountTransaction::Declare(transaction)),
-        //         RuntimeCall::Starknet( deploy_account { transaction }) => Transaction::AccountTransaction(AccountTransaction::DeployAccount(transaction)),
-        //         RuntimeCall::Starknet( consume_l1_message { transaction }) => Transaction::L1HandlerTransaction(transaction),
-        //         _ => unreachable!("The previous match made sure that at this point tx is one of those starknet calls"),
-        //     };
-
-        //     let tx_index = u32::try_from(tx_index).expect("More that u32::MAX extrinsics have been passed. That's too much. You should not be doing that.");
-        //     Some((tx_index, transaction))
-        // }
-
         fn get_tx_messages_to_l1(tx_hash: TransactionHash) -> Vec<MessageToL1> {
             Starknet::tx_messages(tx_hash)
         }
@@ -326,27 +261,6 @@ impl_runtime_apis! {
     }
 
     impl pallet_starknet_runtime_api::ConvertTransactionRuntimeApi<Block> for Runtime {
-        // fn convert_transaction(transaction: AccountTransaction) -> UncheckedExtrinsic {
-        //     let call = match transaction {
-        //         AccountTransaction::Declare(tx) => {
-        //             pallet_starknet::Call::declare { transaction: tx }
-        //         }
-        //         AccountTransaction::DeployAccount(tx) => {
-        //             pallet_starknet::Call::deploy_account { transaction: tx  }
-        //         }
-        //         AccountTransaction::Invoke(tx) => {
-        //             pallet_starknet::Call::invoke { transaction: tx  }
-        //         }
-        //     };
-
-        //     UncheckedExtrinsic::new_unsigned(call.into())
-        // }
-
-        // fn convert_l1_transaction(transaction: L1HandlerTransaction) -> UncheckedExtrinsic {
-        //     let call =  pallet_starknet::Call::<Runtime>::consume_l1_message { transaction };
-
-        //     UncheckedExtrinsic::new_unsigned(call.into())
-        // }
 
         fn convert_error(error: DispatchError) -> StarknetTransactionExecutionError {
             if error == PalletError::<Runtime>::ContractNotFound.into() {
