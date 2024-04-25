@@ -14,8 +14,8 @@ use starknet_api::transaction::Calldata;
 use starknet_core::types::{BlockId, FunctionCall};
 
 use crate::errors::StarknetRpcApiError;
-use crate::utils::convert_error;
-use crate::{Arc, Starknet};
+use crate::madara_backend_client::get_block_by_block_hash;
+use crate::{utils, Arc, Starknet};
 
 /// Call a Function in a Contract Without Creating a Transaction
 ///
@@ -57,23 +57,30 @@ where
         StarknetRpcApiError::BlockNotFound
     })?;
 
-    let runtime_api = starknet.client.runtime_api();
+    // create a block context from block header
+    let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
+        log::error!("Failed to retrieve fee token address: {e}");
+        StarknetRpcApiError::InternalServerError
+    })?;
+    let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let block_header = block.header().clone();
+    let block_context =
+        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
 
     let calldata = Calldata(Arc::new(request.calldata.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()));
 
-    let result = runtime_api
-        .call(
-            substrate_block_hash,
-            Felt252Wrapper(request.contract_address).into(),
-            Felt252Wrapper(request.entry_point_selector).into(),
-            calldata,
-        )
-        .map_err(|e| {
-            log::error!("Request parameters error: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
+    let result = utils::execution::call_contract(
+        Felt252Wrapper(request.contract_address).into(),
+        Felt252Wrapper(request.entry_point_selector).into(),
+        calldata,
+        &block_context,
+    )
+    .map_err(|_| {
+        log::error!("Request parameters error");
+        StarknetRpcApiError::InternalServerError
+    })?;
 
-    let result = convert_error(starknet.client.clone(), substrate_block_hash, result)?;
+    // let result = convert_error(starknet.client.clone(), substrate_block_hash, result)?;
 
     Ok(result.iter().map(|x| format!("{:#x}", x.0)).collect())
 }

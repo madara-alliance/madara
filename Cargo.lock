@@ -6047,6 +6047,7 @@ dependencies = [
  "cairo-lang-starknet",
  "cairo-lang-starknet-classes",
  "cairo-lang-utils",
+ "cairo-vm",
  "deoxys-runtime",
  "flate2",
  "hex",

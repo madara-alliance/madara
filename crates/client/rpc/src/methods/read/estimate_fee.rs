@@ -17,7 +17,8 @@ use starknet_core::types::{
 };
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
+use crate::madara_backend_client::get_block_by_block_hash;
+use crate::{utils, Starknet};
 
 /// Estimate the fee associated with transaction
 ///
@@ -50,6 +51,16 @@ where
         StarknetRpcApiError::BlockNotFound
     })?;
 
+    // create a block context from block header
+    let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
+        log::error!("Failed to retrieve fee token address: {e}");
+        StarknetRpcApiError::InternalServerError
+    })?;
+    let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let block_header = block.header().clone();
+    let block_context =
+        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
+
     let transactions = request
         .into_iter()
         .map(|tx| tx.to_account_transaction())
@@ -64,14 +75,7 @@ where
 
     let simulation_flags = convert_flags(simulation_flags);
 
-    let fee_estimates = starknet
-        .client
-        .runtime_api()
-        .estimate_fee(substrate_block_hash, account_transactions, simulation_flags)
-        .map_err(|e| {
-            log::error!("Request parameters error: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
+    let fee_estimates = utils::execution::estimate_fee(account_transactions, &simulation_flags, &block_context)
         .map_err(|e| {
             log::error!("Failed to call function: {:#?}", e);
             StarknetRpcApiError::ContractError
@@ -81,7 +85,7 @@ where
             .into_iter()
 			// FIXME: https://github.com/keep-starknet-strange/madara/issues/329
             // TODO: reflect right estimation
-            .map(|x| FeeEstimate { gas_consumed: x.gas_consumed.0 , gas_price: x.gas_price.0, data_gas_consumed: x.data_gas_consumed.0, data_gas_price: x.data_gas_price.0, overall_fee: x.overall_fee.0, unit: x.unit.into()})
+            .map(|x| FeeEstimate { gas_consumed: x.gas_consumed , gas_price: x.gas_price, data_gas_consumed: x.data_gas_consumed, data_gas_price: x.data_gas_price, overall_fee: x.overall_fee, unit: x.unit})
             .collect();
 
     Ok(estimates)

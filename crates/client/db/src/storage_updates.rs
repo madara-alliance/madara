@@ -116,10 +116,14 @@ pub async fn store_class_update(block_number: u64, class_update: ClassUpdateWrap
     spawn_blocking(move || {
         class_update.0.into_par_iter().for_each(
             |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
-                let ContractClassWrapper { contract: contract_class, abi } = contract_class_wrapper;
+                let ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length } =
+                    contract_class_wrapper;
 
                 handler_contract_class_data_mut_1
-                    .insert(class_hash, StorageContractClassData { contract_class, abi })
+                    .insert(
+                        class_hash,
+                        StorageContractClassData { contract_class, abi, sierra_program_length, abi_length },
+                    )
                     .unwrap();
             },
         );

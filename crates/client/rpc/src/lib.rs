@@ -5,7 +5,7 @@
 mod constants;
 mod errors;
 mod events;
-mod madara_backend_client;
+pub mod madara_backend_client;
 mod methods;
 mod types;
 pub mod utils;
@@ -42,11 +42,12 @@ use starknet_core::types::{
     SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
 
+use crate::madara_backend_client::get_block_by_block_hash;
 use crate::methods::get_block::{
     get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
     get_block_with_txs_pending,
 };
-use crate::utils::*;
+use crate::utils::helpers::to_rpc_state_diff;
 
 // Starknet RPC API trait and types
 //

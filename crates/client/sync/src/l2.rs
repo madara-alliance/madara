@@ -15,7 +15,7 @@ use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use starknet_api::hash::StarkHash;
+use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_core::types::{PendingStateUpdate, StarknetError};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{BlockId, StateUpdate};
@@ -200,19 +200,17 @@ pub async fn sync<C>(
                         };
                         let ver_l2 = || {
                             let start = std::time::Instant::now();
-                            verify_l2(block_n, &state_update)
-                                .expect("verifying block");
+                            let state_root = verify_l2(block_n, &state_update);
                             log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
+                            state_root
                         };
 
                         if verify {
-                            let (_, block_conv) = rayon::join(ver_l2, || convert_block(block));
-                            let last_l2_state_update =
-                                STARKNET_STATE_UPDATE.read().expect("Failed to acquire read lock on STARKNET_STATE_UPDATE");
-                            if (block_conv.header().global_state_root) != last_l2_state_update.global_root {
+                            let (state_root, block_conv) = rayon::join(ver_l2, || convert_block(block));
+                            if (block_conv.header().global_state_root) != state_root {
                                 log::info!(
                                     "❗ Verified state: {} doesn't match fetched state: {}",
-                                    last_l2_state_update.global_root,
+                                    state_root,
                                     block_conv.header().global_state_root
                                 );
                             }
@@ -298,23 +296,21 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
 
 /// Update the L2 state with the latest data
 pub fn update_l2(state_update: L2StateUpdate) {
-    let mut last_l2_state_update =
-        STARKNET_STATE_UPDATE.write().expect("Failed to acquire write lock on STARKNET_STATE_UPDATE");
-    *last_l2_state_update = state_update.clone();
+    *STARKNET_STATE_UPDATE.write().expect("Failed to acquire write lock on STARKNET_STATE_UPDATE") =
+        state_update.clone();
 
-    let last_l1_state_update =
-        ETHEREUM_STATE_UPDATE.read().expect("Failed to acquire read lock on ETHEREUM_STATE_UPDATE");
-    if state_update.block_number >= last_l1_state_update.block_number {
-        let mut sync_status = SYNC_STATUS.write().expect("Failed to acquire write lock on SYNC_STATUS");
-        *sync_status = SyncStatus::SyncUnverifiedState;
+    let last_l1_state_update_block =
+        ETHEREUM_STATE_UPDATE.read().expect("Failed to acquire read lock on ETHEREUM_STATE_UPDATE").block_number;
+    if state_update.block_number >= last_l1_state_update_block {
+        *SYNC_STATUS.write().expect("Failed to acquire write lock on SYNC_STATUS") = SyncStatus::SyncUnverifiedState;
     }
 }
 
 /// Verify and update the L2 state according to the latest state update
-pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> Result<(), L2SyncError> {
+pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> StarkFelt {
     let state_update_wrapper = StateUpdateWrapper::from(state_update);
 
-    let csd = build_commitment_state_diff(state_update_wrapper.clone());
+    let csd = build_commitment_state_diff(state_update_wrapper);
     let state_root = update_state_root(csd, block_number);
     let block_hash = state_update.block_hash.expect("Block hash not found in state update");
 
@@ -324,7 +320,7 @@ pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> Result<(), L2
         block_hash: Felt252Wrapper::from(block_hash).into(),
     });
 
-    Ok(())
+    state_root.into()
 }
 
 async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
