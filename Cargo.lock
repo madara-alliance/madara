@@ -2301,6 +2301,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-queue"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df0346b5d5e76ac2fe4e327c5fd1118d6be7c51dfb18f9b7922923f287471e35"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-skiplist"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5970,9 +5979,11 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "async-trait",
+ "bincode 1.3.3",
  "bitvec",
  "blockifier",
  "bonsai-trie",
+ "crossbeam-queue",
  "crossbeam-skiplist",
  "ethers",
  "log",
@@ -5985,6 +5996,7 @@ dependencies = [
  "rayon",
  "rocksdb",
  "sc-client-db",
+ "serde",
  "serde_json",
  "sp-core",
  "sp-database",

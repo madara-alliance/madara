@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
-use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
+use mc_db::storage_handler::{self, DeoxysStorageError, StorageView, StorageViewMut};
 use mp_block::state_update::StateUpdateWrapper;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
@@ -146,11 +148,15 @@ where
 ///
 ///
 /// The updated state root as a `Felt252Wrapper`.
-pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt252Wrapper {
+pub async fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt252Wrapper {
     // Update contract and its storage tries
-    let (contract_trie_root, class_trie_root) = rayon::join(
-        || contract_trie_root(&csd, block_number).expect("Failed to compute contract root"),
-        || class_trie_root(&csd, block_number).expect("Failed to compute class root"),
+    let csd = Arc::new(csd);
+    let csd1 = Arc::clone(&csd);
+    let csd2 = Arc::clone(&csd);
+
+    let (contract_trie_root, class_trie_root) = tokio::join!(
+        async move { contract_trie_root(csd1.as_ref(), block_number).await.expect("Failed to compute contract root") },
+        async move { class_trie_root(csd2.as_ref(), block_number).expect("Failed to compute class root") },
     );
     calculate_state_root::<PoseidonHasher>(contract_trie_root, class_trie_root)
 }
@@ -166,23 +172,29 @@ pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt252
 /// # Returns
 ///
 /// The contract root.
-fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
+async fn contract_trie_root(
+    csd: &CommitmentStateDiff,
+    block_number: u64,
+) -> Result<Felt252Wrapper, DeoxysStorageError> {
     // NOTE: handlers implicitely acquire a lock on their respective tries
     // for the duration of their livetimes
     let mut handler_contract = storage_handler::contract_trie_mut();
-    let mut handler_storage = storage_handler::contract_storage_trie_mut();
+    let mut handler_storage_trie = storage_handler::contract_storage_trie_mut();
+    let mut handler_storage = storage_handler::contract_storage_mut();
 
     // First we insert the contract storage changes
     for (contract_address, updates) in csd.storage_updates.iter() {
-        handler_storage.init(contract_address)?;
+        handler_storage_trie.init(contract_address)?;
 
         for (key, value) in updates {
-            handler_storage.insert(*contract_address, *key, *value)?;
+            handler_storage_trie.insert(*contract_address, *key, *value)?;
+            handler_storage.insert((*contract_address, *key), *value)?;
         }
     }
 
     // Then we commit them
-    handler_storage.commit(block_number)?;
+    handler_storage_trie.commit(block_number)?;
+    handler_storage.commit(block_number).await?;
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
     let updates = csd
@@ -190,7 +202,7 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
         .iter()
         .par_bridge()
         .map(|(contract_address, _)| {
-            let storage_root = handler_storage.root(contract_address).unwrap();
+            let storage_root = handler_storage_trie.root(contract_address).unwrap();
             let leaf_hash = contract_state_leaf_hash(csd, contract_address, storage_root);
 
             (contract_address, leaf_hash)

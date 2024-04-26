@@ -109,6 +109,7 @@ pub enum Column {
     ContractClassData,
     ContractData,
     ContractClassHashes,
+    ContractStorage,
 
     /// This column is used to map starknet block hashes to a list of transaction hashes that are
     /// contained in the block.
@@ -167,6 +168,7 @@ impl Column {
             BlockStateDiff,
             ContractClassData,
             ContractData,
+            ContractStorage,
             ContractClassHashes,
             BonsaiContractsTrie,
             BonsaiContractsFlat,
@@ -206,6 +208,7 @@ impl Column {
             Column::ContractClassData => "contract_class_data",
             Column::ContractData => "contract_data",
             Column::ContractClassHashes => "contract_class_hashes",
+            Column::ContractStorage => "contrac_storage",
         }
     }
 
