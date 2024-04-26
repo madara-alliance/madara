@@ -208,14 +208,14 @@ bonsai-trie = { default-features = false, git = "https://github.com/trantorian1/
   "std",
 ] }
 
-# Madara pallets
+# Deoxys pallets
 pallet-starknet = { path = "crates/pallets/starknet", default-features = false, features = [
   "std",
 ] }
 pallet-starknet-runtime-api = { path = "crates/pallets/starknet/runtime_api", default-features = false, features = [
   "std",
 ] }
-# Madara primtitives
+# Deoxys primtitives
 mp-block = { path = "crates/primitives/block", default-features = false }
 mp-chain-id = { path = "crates/primitives/chain-id", default-features = false }
 mp-contract = { path = "crates/primitives/contract", default-features = false }
@@ -233,14 +233,14 @@ mp-storage = { path = "crates/primitives/storage", default-features = false }
 mp-transactions = { path = "crates/primitives/transactions", default-features = false }
 mp-types = { path = "crates/primitives/types", default-features = false }
 
-# Madara client
+# Deoxys client
 mc-db = { path = "crates/client/db" }
 mc-genesis-data-provider = { path = "crates/client/genesis-data-provider" }
 mc-mapping-sync = { path = "crates/client/mapping-sync" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-sync = { path = "crates/client/sync" }
 
-# Madara runtime
+# Deoxys runtime
 deoxys-runtime = { path = "crates/runtime" }
 
 # TUI Dashboard

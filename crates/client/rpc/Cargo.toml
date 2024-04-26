@@ -1,30 +1,31 @@
 [package]
 authors = [
+  "Kasar <https://github.com/kasarlabs>",
+  "Keep Starknet Strange <https://github.com/keep-starknet-strange>",
   "Substrate DevHub <https://github.com/substrate-developer-hub>",
-  "Timothée Delabrouille <https://github.com/tdelabro>",
 ]
 description = "Starknet RPC compatibility layer for Substrate"
 edition.workspace = true
-homepage = "https://github.com/keep-starknet-strange/madara"
+homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
 name = "mc-rpc"
 publish = false
-repository = "https://github.com/keep-starknet-strange/madara"
+repository = "https://github.com/kasarlabs/deoxys"
 version.workspace = true
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
-# Madara utils
+# Deoxys utils
 mc-genesis-data-provider = { workspace = true }
 
-# Madara runtime
+# Deoxys runtime
 deoxys-runtime = { workspace = true }
 pallet-starknet = { workspace = true, default-features = true }
 pallet-starknet-runtime-api = { workspace = true, default-features = true }
 
-# Madara client
+# Deoxys client
 mc-db = { workspace = true }
 mc-sync = { workspace = true }
 

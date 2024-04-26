@@ -23,7 +23,7 @@ use reqwest::Url;
 use sc_basic_authorship::ProposerFactory;
 use sc_client_api::{BlockchainEvents, HeaderBackend};
 use sc_consensus::{BasicQueue, BlockImportParams};
-use sc_consensus_grandpa::{GrandpaBlockImport};
+use sc_consensus_grandpa::GrandpaBlockImport;
 use sc_consensus_manual_seal::{ConsensusDataProvider, Error};
 pub use sc_executor::NativeElseWasmExecutor;
 use sc_service::error::Error as ServiceError;

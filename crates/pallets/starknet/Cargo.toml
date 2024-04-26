@@ -1,12 +1,16 @@
 [package]
-authors = ["Abdelhamid Bakhta <@abdelhamidbakhta>"]
+authors = [
+  "Kasar <https://github.com/kasarlabs>",
+  "Keep Starknet Strange <https://github.com/keep-starknet-strange>",
+  "Substrate DevHub <https://github.com/substrate-developer-hub>",
+]
 description = "FRAME pallet to execute Starknet contracts."
 edition.workspace = true
-homepage = "https://github.com/keep-starknet-strange/madara"
+homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
 name = "pallet-starknet"
 publish = false
-repository = "https://github.com/keep-starknet-strange/madara"
+repository = "https://github.com/kasarlabs/deoxys"
 version.workspace = true
 
 [package.metadata.docs.rs]

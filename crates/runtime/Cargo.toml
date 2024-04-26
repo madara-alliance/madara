@@ -5,11 +5,11 @@ authors = [
 ]
 description = "Madara runtime."
 edition.workspace = true
-homepage = "https://github.com/keep-starknet-strange/madara"
+homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
 name = "deoxys-runtime"
 publish = false
-repository = "https://github.com/keep-starknet-strange/madara"
+repository = "https://github.com/kasarlabs/deoxys"
 version.workspace = true
 
 [package.metadata.docs.rs]

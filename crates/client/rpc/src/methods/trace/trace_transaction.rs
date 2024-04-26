@@ -13,7 +13,7 @@ use starknet_ff::FieldElement;
 
 use super::utils::{map_transaction_to_user_transaction, tx_execution_infos_to_tx_trace};
 use crate::errors::StarknetRpcApiError;
-use crate::madara_backend_client::get_block_by_block_hash;
+use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::utils::execution::re_execute_transactions;
 use crate::Starknet;
 

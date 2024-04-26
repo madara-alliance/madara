@@ -19,7 +19,7 @@ use starknet_core::types::{
 };
 
 use crate::errors::StarknetRpcApiError;
-use crate::madara_backend_client::get_block_by_block_hash;
+use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::{Felt, Starknet};
 
 pub(crate) fn tx_hash_retrieve(tx_hashes: Vec<StarkFelt>) -> Vec<FieldElement> {

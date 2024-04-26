@@ -13,7 +13,7 @@ use crate::{configs, constants};
 /// Define a way to retrieve an index.json file
 
 /// The index.json must follow the format of the official index.json
-/// (https://github.com/keep-starknet-strange/madara/blob/main/configs/index.json)
+/// (https://github.com/kasarlabs/deoxys/blob/main/configs/index.json)
 /// Where the `sha3_256` and `url` fields are optional
 #[derive(Debug, clap::Args)]
 #[group(required = true, multiple = false)]

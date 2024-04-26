@@ -119,7 +119,7 @@ impl frame_system::Config for Runtime {
 // We want to support multiple flavors of consensus algorithms.
 // Specifically we want to implement some proposals defined in the Starknet community forum.
 // For more information see: https://community.starknet.io/t/starknet-decentralized-protocol-i-introduction/2671
-// You can also follow this issue on github: https://github.com/keep-starknet-strange/madara/issues/83
+// You can also follow this issue on github: https://github.com/kasarlabs/deoxys/issues/83
 
 /// Authority-based consensus protocol used for block production.
 /// TODO: Comment and explain the rationale behind the configuration items.

@@ -13,7 +13,7 @@ use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, FieldElement, Transaction};
 
 use crate::errors::StarknetRpcApiError;
-use crate::madara_backend_client::get_block_by_block_hash;
+use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::Starknet;
 
 /// Get the details of a transaction by a given block id and index.
