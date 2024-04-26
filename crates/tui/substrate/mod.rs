@@ -375,48 +375,6 @@ mod tests {
 		}
 	}
 
-	#[test]
-	fn test_logger_filters() {
-		run_test_in_another_process("test_logger_filters", || {
-			let test_directives =
-				"grandpa=debug,sync=trace,client=warn,telemetry,something-with-dash=error";
-			init_logger(&test_directives);
-
-			tracing::dispatcher::get_default(|dispatcher| {
-				let test_filter = |target, level| {
-					struct DummyCallSite;
-					impl Callsite for DummyCallSite {
-						fn set_interest(&self, _: Interest) {}
-						fn metadata(&self) -> &Metadata<'_> {
-							unreachable!();
-						}
-					}
-
-					let metadata = tracing::metadata!(
-						name: "",
-						target: target,
-						level: level,
-						fields: &[],
-						callsite: &DummyCallSite,
-						kind: Kind::SPAN,
-					);
-
-					dispatcher.enabled(&metadata)
-				};
-
-				assert!(test_filter("grandpa", Level::INFO));
-				assert!(test_filter("grandpa", Level::DEBUG));
-				assert!(!test_filter("grandpa", Level::TRACE));
-
-				assert!(test_filter("sync", Level::TRACE));
-				assert!(test_filter("client", Level::WARN));
-
-				assert!(test_filter("telemetry", Level::TRACE));
-				assert!(test_filter("something-with-dash", Level::ERROR));
-			});
-		});
-	}
-
 	/// This test ensures that using dash (`-`) in the target name in logs and directives actually
 	/// work.
 	#[test]

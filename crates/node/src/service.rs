@@ -23,12 +23,11 @@ use reqwest::Url;
 use sc_basic_authorship::ProposerFactory;
 use sc_client_api::{BlockchainEvents, HeaderBackend};
 use sc_consensus::{BasicQueue, BlockImportParams};
-use sc_consensus_grandpa::GrandpaBlockImport;
 use sc_consensus_manual_seal::{ConsensusDataProvider, Error};
 pub use sc_executor::NativeElseWasmExecutor;
 use sc_service::error::Error as ServiceError;
 use sc_service::{new_db_backend, Configuration, TaskManager};
-use sc_telemetry::{Telemetry, TelemetryHandle, TelemetryWorker};
+use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool::FullPool;
 use sp_api::{ConstructRuntimeApi, ProvideRuntimeApi};
 use sp_inherents::InherentData;
@@ -68,10 +67,6 @@ type FullSelectChain = sc_consensus::LongestChain<FullBackend, DBlockT>;
 
 type BasicImportQueue = sc_consensus::DefaultImportQueue<DBlockT>;
 type BoxBlockImport = sc_consensus::BoxBlockImport<DBlockT>;
-
-/// The minimum period of blocks on which justifications will be
-/// imported and generated.
-const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
 
 #[allow(clippy::type_complexity)]
 pub fn new_partial<BIQ>(

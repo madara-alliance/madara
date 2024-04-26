@@ -1,7 +1,7 @@
 [package]
 authors = [
   "Kasar <https://github.com/kasarlabs>",
-  "Keep Starknet Strange <https://github.com/keep-starknet-strange>",
+  "KSS <https://github.com/keep-starknet-strange>",
   "Substrate DevHub <https://github.com/substrate-developer-hub>",
 ]
 description = "Deoxys runtime."

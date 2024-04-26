@@ -5,7 +5,7 @@ edition.workspace = true
 description = "Starknet database backend"
 authors = [
   "Kasar <https://github.com/kasarlabs>",
-  "Keep Starknet Strange <https://github.com/keep-starknet-strange>",
+  "KSS <https://github.com/keep-starknet-strange>",
   "Substrate DevHub <https://github.com/substrate-developer-hub>",
 ]
 homepage = "https://github.com/kasarlabs/deoxys"

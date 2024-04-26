@@ -3,10 +3,7 @@ use pallet_starknet::genesis_loader::GenesisData;
 use pallet_starknet::GenesisConfig;
 use sc_service::ChainType;
 use serde::{Deserialize, Serialize};
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::storage::Storage;
-use sp_core::{Pair, Public};
 use sp_state_machine::BasicExternalities;
 use starknet_providers::sequencer::models::BlockId;
 use starknet_providers::SequencerGatewayProvider;
@@ -38,16 +35,6 @@ impl sp_runtime::BuildStorage for DevGenesisExt {
     }
 }
 
-/// Generate a crypto pair from seed.
-pub fn get_from_seed<TPublic: Public>(seed: &str) -> <TPublic::Pair as Pair>::Public {
-    TPublic::Pair::from_string(&format!("//{seed}"), None).expect("static values are valid; qed").public()
-}
-
-/// Generate an Aura authority key.
-pub fn authority_keys_from_seed(s: &str) -> (AuraId, GrandpaId) {
-    (get_from_seed::<AuraId>(s), get_from_seed::<GrandpaId>(s))
-}
-
 pub fn deoxys_config(sealing: SealingMode, chain_id: &str) -> Result<DevChainSpec, String> {
     let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
     let genesis_loader = load_genesis_state()?;
@@ -64,9 +51,6 @@ pub fn deoxys_config(sealing: SealingMode, chain_id: &str) -> Result<DevChainSpe
                 genesis_config: testnet_genesis(
                     genesis_loader.clone(),
                     wasm_binary,
-                    // Initial PoA authorities
-                    vec![authority_keys_from_seed("Alice")],
-                    true,
                 ),
                 sealing: sealing.clone(),
             }
@@ -76,7 +60,7 @@ pub fn deoxys_config(sealing: SealingMode, chain_id: &str) -> Result<DevChainSpe
         // Telemetry
         None,
         // Protocol ID
-        None,
+        Some("Starknet"),
         None,
         // Properties
         None,
@@ -104,9 +88,7 @@ fn load_genesis_state() -> Result<GenesisData, String> {
 /// Configure initial storage state for FRAME modules.
 fn testnet_genesis(
     genesis_loader: GenesisData,
-    wasm_binary: &[u8],
-    initial_authorities: Vec<(AuraId, GrandpaId)>,
-    _enable_println: bool,
+    wasm_binary: &[u8]
 ) -> RuntimeGenesisConfig {
     let starknet_genesis_config = GenesisConfig::from(genesis_loader);
 
@@ -117,10 +99,10 @@ fn testnet_genesis(
             _config: Default::default(),
         },
         // Authority-based consensus protocol used for block production
-        aura: AuraConfig { authorities: initial_authorities.iter().map(|x| (x.0.clone())).collect() },
+        aura: AuraConfig { authorities: vec![] },
         // Deterministic finality mechanism used for block finalization
         grandpa: GrandpaConfig {
-            authorities: initial_authorities.iter().map(|x| (x.1.clone(), 1)).collect(),
+            authorities: vec![],
             _config: Default::default(),
         },
         // Starknet Genesis configuration.
