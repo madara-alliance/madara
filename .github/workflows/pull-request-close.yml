@@ -1,0 +1,14 @@
+---
+name: Workflow - Pull Request (on Close)
+
+on:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  cleanup:
+    runs-on: self-hosted
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
