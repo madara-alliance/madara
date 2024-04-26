@@ -35,10 +35,6 @@ impl SubstrateCli for Cli {
 
     fn load_spec(&self, id: &str) -> Result<Box<dyn ChainSpec>, String> {
         Ok(match id {
-            DEV_CHAIN_ID => {
-                let sealing = self.run.sealing.map(Into::into).unwrap_or_default();
-                Box::new(chain_spec::development_config(sealing)?)
-            }
             "starknet" => {
                 let sealing = self.run.sealing.map(Into::into).unwrap_or_default();
                 Box::new(chain_spec::deoxys_config(sealing, id)?)

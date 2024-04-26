@@ -30,10 +30,7 @@ pub struct DevGenesisExt {
 }
 
 /// The `sealing` from the `DevGenesisExt` is passed to the runtime via the storage. The runtime
-/// can then use this information to adjust accordingly. This is just a common way to pass
-/// information from the chain spec to the runtime.
-///
-/// NOTE: if `sealing` is `None`, then the runtime will use the default sealing mode.
+/// can then use this information to adjust accordingly.
 impl sp_runtime::BuildStorage for DevGenesisExt {
     fn assimilate_storage(&self, storage: &mut Storage) -> Result<(), String> {
         BasicExternalities::execute_with_storage(storage, || {
@@ -51,43 +48,6 @@ pub fn get_from_seed<TPublic: Public>(seed: &str) -> <TPublic::Pair as Pair>::Pu
 /// Generate an Aura authority key.
 pub fn authority_keys_from_seed(s: &str) -> (AuraId, GrandpaId) {
     (get_from_seed::<AuraId>(s), get_from_seed::<GrandpaId>(s))
-}
-
-pub fn development_config(sealing: SealingMode) -> Result<DevChainSpec, String> {
-    let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
-    let chain_id = DEV_CHAIN_ID;
-    let genesis_loader = load_genesis()?;
-
-    Ok(DevChainSpec::from_genesis(
-        // Name
-        "Development",
-        // ID
-        chain_id,
-        ChainType::Development,
-        move || {
-            DevGenesisExt {
-                genesis_config: testnet_genesis(
-                    genesis_loader.clone(),
-                    wasm_binary,
-                    // Initial PoA authorities
-                    vec![authority_keys_from_seed("Alice")],
-                    true,
-                ),
-                sealing: sealing.clone(),
-            }
-        },
-        // Bootnodes
-        vec![],
-        // Telemetry
-        None,
-        // Protocol ID
-        None,
-        None,
-        // Properties
-        None,
-        // Extensions
-        None,
-    ))
 }
 
 pub fn deoxys_config(sealing: SealingMode, chain_id: &str) -> Result<DevChainSpec, String> {
