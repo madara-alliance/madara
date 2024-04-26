@@ -1,4 +1,7 @@
 use serde::Deserialize;
+use std::path::PathBuf;
+
+use sc_service::Configuration;
 
 #[derive(Deserialize)]
 pub struct Configs {
@@ -11,4 +14,9 @@ pub struct FileInfos {
     pub name: String,
     pub sha3_256: Option<String>,
     pub url: Option<String>,
+}
+
+/// Returns the path to the database of the node.
+pub fn db_config_dir(config: &Configuration) -> PathBuf {
+    config.base_path.config_dir(config.chain_spec.id())
 }

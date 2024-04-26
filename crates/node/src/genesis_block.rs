@@ -12,8 +12,8 @@ use sp_core::storage::{StateVersion, Storage};
 use sp_runtime::traits::{Block as BlockT, Hash as HashT, Header as HeaderT, Zero};
 use sp_runtime::{BuildStorage, Digest, DigestItem};
 
-/// Custom genesis block builder for Madara.
-pub struct MadaraGenesisBlockBuilder<Block: BlockT, B, E> {
+/// Custom genesis block builder for Deoxys.
+pub struct DeoxysGenesisBlockBuilder<Block: BlockT, B, E> {
     genesis_storage: Storage,
     commit_genesis_state: bool,
     backend: Arc<B>,
@@ -22,8 +22,8 @@ pub struct MadaraGenesisBlockBuilder<Block: BlockT, B, E> {
     genesis_block: DeoxysBlock,
 }
 
-impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> MadaraGenesisBlockBuilder<Block, B, E> {
-    /// Constructs a new instance of [`MadaraGenesisBlockBuilder`].
+impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> DeoxysGenesisBlockBuilder<Block, B, E> {
+    /// Constructs a new instance of [`DeoxysGenesisBlockBuilder`].
     pub fn new(
         build_genesis_storage: &dyn BuildStorage,
         commit_genesis_state: bool,
@@ -44,7 +44,7 @@ impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> MadaraGenesisBlockBu
 }
 
 impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> BuildGenesisBlock<Block>
-    for MadaraGenesisBlockBuilder<Block, B, E>
+    for DeoxysGenesisBlockBuilder<Block, B, E>
 {
     type BlockImportOperation = <B as Backend<Block>>::BlockImportOperation;
 

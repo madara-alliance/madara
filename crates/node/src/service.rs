@@ -36,9 +36,9 @@ use sp_runtime::testing::Digest;
 use sp_runtime::traits::Block as BlockT;
 use sp_runtime::DigestItem;
 
-use crate::genesis_block::MadaraGenesisBlockBuilder;
+use crate::genesis_block::DeoxysGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
-use crate::starknet::{db_config_dir, MadaraBackend};
+use crate::configs::db_config_dir;
 // Our native executor instance.
 pub struct ExecutorDispatch;
 
@@ -90,7 +90,7 @@ pub fn new_partial<BIQ>(
             BoxBlockImport,
             sc_consensus_grandpa::LinkHalf<DBlockT, FullClient, FullSelectChain>,
             Option<Telemetry>,
-            Arc<MadaraBackend>,
+            Arc<DeoxysBackend>,
         ),
     >,
     ServiceError,
@@ -104,7 +104,7 @@ where
         &TaskManager,
         Option<TelemetryHandle>,
         GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
-        Arc<MadaraBackend>,
+        Arc<DeoxysBackend>,
     ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>,
 {
     let deoxys_backend = DeoxysBackend::open(&config.database, &db_config_dir(config), cache_more_things).unwrap();
@@ -124,7 +124,7 @@ where
 
     let backend = new_db_backend(config.db_config())?;
 
-    let genesis_block_builder = MadaraGenesisBlockBuilder::<DBlockT, _, _>::new(
+    let genesis_block_builder = DeoxysGenesisBlockBuilder::<DBlockT, _, _>::new(
         config.chain_spec.as_storage_builder(),
         true,
         backend.clone(),
@@ -137,7 +137,7 @@ where
         DBlockT,
         RuntimeApi,
         _,
-        MadaraGenesisBlockBuilder<DBlockT, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
+        DeoxysGenesisBlockBuilder<DBlockT, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
     >(
         config,
         telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
@@ -199,7 +199,7 @@ pub fn build_manual_seal_import_queue(
     task_manager: &TaskManager,
     _telemetry: Option<TelemetryHandle>,
     _grandpa_block_import: GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
-    _deoxys_backend: Arc<MadaraBackend>,
+    _deoxys_backend: Arc<DeoxysBackend>,
 ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>
 where
     RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
@@ -502,7 +502,7 @@ where
 }
 
 type ChainOpsResult =
-    Result<(Arc<FullClient>, Arc<FullBackend>, BasicQueue<DBlockT>, TaskManager, Arc<MadaraBackend>), ServiceError>;
+    Result<(Arc<FullClient>, Arc<FullBackend>, BasicQueue<DBlockT>, TaskManager, Arc<DeoxysBackend>), ServiceError>;
 
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
