@@ -1,12 +1,12 @@
 ---
-name: Task - Run check
+name: Task - Run Cargo tests
 
 on:
   workflow_dispatch:
   workflow_call:
 
 jobs:
-  rust_check:
+  rust_test:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
@@ -15,6 +15,6 @@ jobs:
         with:
           shared-key: "cache"
 
-      - name: Check the project
+      - name: Run unit tests
         run: |
-          cargo check --release --workspace
+          cargo test

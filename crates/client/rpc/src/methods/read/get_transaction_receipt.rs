@@ -9,7 +9,6 @@ use mp_types::block::{DBlockT, DHashT};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sc_transaction_pool::ChainApi;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::transaction::Transaction;
@@ -52,12 +51,11 @@ use crate::{Felt, Starknet};
 ///
 /// The function may return a `TXN_HASH_NOT_FOUND` error if the specified transaction hash is
 /// not found.
-pub async fn get_transaction_receipt<A, BE, G, C, P, H>(
-    starknet: &Starknet<A, BE, G, C, P, H>,
+pub async fn get_transaction_receipt<BE, C, H>(
+    starknet: &Starknet<BE, C, H>,
     transaction_hash: FieldElement,
 ) -> RpcResult<TransactionReceiptWithBlockInfo>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
@@ -78,14 +76,13 @@ where
     get_transaction_receipt_finalized(starknet, chain_id, substrate_block_hash, transaction_hash)
 }
 
-pub fn get_transaction_receipt_finalized<A, BE, G, C, P, H>(
-    client: &Starknet<A, BE, G, C, P, H>,
+pub fn get_transaction_receipt_finalized<BE, C, H>(
+    client: &Starknet<BE, C, H>,
     chain_id: Felt,
     substrate_block_hash: DHashT,
     transaction_hash: FieldElement,
 ) -> RpcResult<TransactionReceiptWithBlockInfo>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
@@ -240,14 +237,13 @@ where
     Ok(TransactionReceiptWithBlockInfo { receipt, block: block_info })
 }
 
-fn execution_infos<A, BE, G, C, P, H>(
-    _client: &Starknet<A, BE, G, C, P, H>,
+fn execution_infos<BE, C, H>(
+    _client: &Starknet<BE, C, H>,
     _previous_block_hash: DHashT,
     transactions: Vec<btx::Transaction>,
     block_context: &BlockContext,
 ) -> RpcResult<TransactionExecutionInfo>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,

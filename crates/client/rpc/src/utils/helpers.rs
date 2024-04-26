@@ -8,7 +8,6 @@ use mp_types::block::{DBlockT, DHashT};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sc_transaction_pool::ChainApi;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::hash::StarkFelt;
@@ -54,17 +53,16 @@ pub(crate) fn status(block_number: u64) -> BlockStatus {
     }
 }
 
-pub fn previous_substrate_block_hash<A, BE, G, C, P, H>(
-    starknet: &Starknet<A, BE, G, C, P, H>,
+pub fn previous_substrate_block_hash<BE, C, H>(
+    starknet: &Starknet<BE, C, H>,
     substrate_block_hash: DHashT,
 ) -> Result<DHashT, StarknetRpcApiError>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
+    BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
-    BE: Backend<DBlockT> + 'static,
 {
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
         log::error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
