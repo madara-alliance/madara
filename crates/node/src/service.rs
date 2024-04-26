@@ -88,7 +88,6 @@ pub fn new_partial<BIQ>(
         sc_transaction_pool::FullPool<DBlockT, FullClient>,
         (
             BoxBlockImport,
-            sc_consensus_grandpa::LinkHalf<DBlockT, FullClient, FullSelectChain>,
             Option<Telemetry>,
             Arc<DeoxysBackend>,
         ),
@@ -102,9 +101,6 @@ where
         Arc<FullClient>,
         &Configuration,
         &TaskManager,
-        Option<TelemetryHandle>,
-        GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
-        Arc<DeoxysBackend>,
     ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>,
 {
     let deoxys_backend = DeoxysBackend::open(&config.database, &db_config_dir(config), cache_more_things).unwrap();
@@ -163,21 +159,10 @@ where
         client.clone(),
     );
 
-    let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
-        client.clone(),
-        GRANDPA_JUSTIFICATION_PERIOD,
-        &client as &Arc<_>,
-        select_chain.clone(),
-        telemetry.as_ref().map(|x| x.handle()),
-    )?;
-
     let (import_queue, block_import) = build_import_queue(
         client.clone(),
         config,
-        &task_manager,
-        telemetry.as_ref().map(|x| x.handle()),
-        grandpa_block_import,
-        Arc::clone(deoxys_backend),
+        &task_manager
     )?;
 
     Ok(sc_service::PartialComponents {
@@ -188,7 +173,7 @@ where
         keystore_container,
         select_chain,
         transaction_pool,
-        other: (block_import, grandpa_link, telemetry, Arc::clone(deoxys_backend)),
+        other: (block_import, telemetry, Arc::clone(deoxys_backend)),
     })
 }
 
@@ -197,9 +182,6 @@ pub fn build_manual_seal_import_queue(
     client: Arc<FullClient>,
     config: &Configuration,
     task_manager: &TaskManager,
-    _telemetry: Option<TelemetryHandle>,
-    _grandpa_block_import: GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
-    _deoxys_backend: Arc<DeoxysBackend>,
 ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>
 where
     RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
@@ -238,7 +220,7 @@ pub fn new_full(
         keystore_container,
         select_chain,
         transaction_pool,
-        other: (block_import, _grandpa_link, mut telemetry, deoxys_backend),
+        other: (block_import, mut telemetry, deoxys_backend),
     } = new_partial(&config, build_import_queue, cache_more_things, genesis_block)?;
 
     let net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
@@ -508,5 +490,5 @@ pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> Cha
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
         new_partial::<_>(config, build_manual_seal_import_queue, cache_more_things, DeoxysBlock::default())?;
-    Ok((client, backend, import_queue, task_manager, other.3))
+    Ok((client, backend, import_queue, task_manager, other.2))
 }

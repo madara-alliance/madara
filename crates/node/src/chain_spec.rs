@@ -12,8 +12,6 @@ use starknet_providers::sequencer::models::BlockId;
 use starknet_providers::SequencerGatewayProvider;
 use tokio::runtime::Runtime;
 
-pub const DEV_CHAIN_ID: &str = "dev";
-
 /// Specialized `ChainSpec`. This is a specialization of the general Substrate ChainSpec type.
 pub type ChainSpec = sc_service::GenericChainSpec<RuntimeGenesisConfig>;
 
@@ -52,14 +50,15 @@ pub fn authority_keys_from_seed(s: &str) -> (AuraId, GrandpaId) {
 
 pub fn deoxys_config(sealing: SealingMode, chain_id: &str) -> Result<DevChainSpec, String> {
     let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
-    let genesis_loader = load_genesis()?;
+    let genesis_loader = load_genesis_state()?;
 
     Ok(DevChainSpec::from_genesis(
         // Name
         "Starknet",
-        // ID
+        // Chain ID
         chain_id,
-        ChainType::Development,
+        // Chain Type
+        ChainType::Live,
         move || {
             DevGenesisExt {
                 genesis_config: testnet_genesis(
@@ -87,7 +86,7 @@ pub fn deoxys_config(sealing: SealingMode, chain_id: &str) -> Result<DevChainSpe
 }
 
 #[allow(deprecated)]
-fn load_genesis() -> Result<GenesisData, String> {
+fn load_genesis_state() -> Result<GenesisData, String> {
     log::info!("🧪 Fetching genesis block");
     let runtime = Runtime::new().unwrap();
     let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
