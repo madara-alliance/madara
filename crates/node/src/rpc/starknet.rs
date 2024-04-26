@@ -11,7 +11,7 @@ pub struct StarknetDeps<C, G: GenesisProvider, B: BlockT> {
     /// The client instance to use.
     pub client: Arc<C>,
     /// Madara Backend.
-    pub madara_backend: Arc<DeoxysBackend>,
+    pub deoxys_backend: Arc<DeoxysBackend>,
     /// The Substrate client sync service.
     pub sync_service: Arc<SyncingService<B>>,
     /// The starting block for the syncing.
@@ -24,7 +24,7 @@ impl<C, G: GenesisProvider, B: BlockT> Clone for StarknetDeps<C, G, B> {
     fn clone(&self) -> Self {
         Self {
             client: self.client.clone(),
-            madara_backend: self.madara_backend.clone(),
+            deoxys_backend: self.deoxys_backend.clone(),
             sync_service: self.sync_service.clone(),
             starting_block: self.starting_block,
             genesis_provider: self.genesis_provider.clone(),

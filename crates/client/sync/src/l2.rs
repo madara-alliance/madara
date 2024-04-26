@@ -279,7 +279,7 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
 
     cmds.try_send(sc_consensus_manual_seal::rpc::EngineCommand::SealNewBlock {
         create_empty: true,
-        finalize: true,
+        finalize: false,
         parent_hash: None,
         sender: Some(sender),
     })
