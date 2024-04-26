@@ -1,7 +1,7 @@
-use serde::Deserialize;
 use std::path::PathBuf;
 
 use sc_service::Configuration;
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct Configs {

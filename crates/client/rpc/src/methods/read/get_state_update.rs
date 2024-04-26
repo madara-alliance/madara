@@ -14,8 +14,8 @@ use sp_blockchain::HeaderBackend;
 use starknet_api::block::BlockHash as APIBlockHash;
 use starknet_core::types::{BlockId, BlockTag, FieldElement, MaybePendingStateUpdate, StateDiff, StateUpdate};
 
-use crate::errors::StarknetRpcApiError;
 use crate::deoxys_backend_client::get_block_by_block_hash;
+use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
 fn get_state_update_finalized<BE, C, H>(

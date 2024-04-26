@@ -13,8 +13,8 @@ use starknet_core::types::{
     BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee as EstimateFeeFlag,
 };
 
-use crate::errors::StarknetRpcApiError;
 use crate::deoxys_backend_client::get_block_by_block_hash;
+use crate::errors::StarknetRpcApiError;
 use crate::{utils, Starknet};
 
 /// Estimate the fee associated with transaction

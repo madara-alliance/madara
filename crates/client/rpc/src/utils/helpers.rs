@@ -18,8 +18,8 @@ use starknet_core::types::{
     ReplacedClassItem, StateDiff, StorageEntry,
 };
 
-use crate::errors::StarknetRpcApiError;
 use crate::deoxys_backend_client::get_block_by_block_hash;
+use crate::errors::StarknetRpcApiError;
 use crate::{Felt, Starknet};
 
 pub(crate) fn tx_hash_retrieve(tx_hashes: Vec<StarkFelt>) -> Vec<FieldElement> {

@@ -1,9 +1,10 @@
 [package]
 authors = [
+  "Kasar <https://github.com/kasarlabs>",
+  "Keep Starknet Strange <https://github.com/keep-starknet-strange>",
   "Substrate DevHub <https://github.com/substrate-developer-hub>",
-  "anti Bakhta <@abdelhamidbakhta>",
 ]
-description = "Madara runtime."
+description = "Deoxys runtime."
 edition.workspace = true
 homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
@@ -46,12 +47,12 @@ frame-system-rpc-runtime-api = { workspace = true }
 frame-benchmarking = { workspace = true, optional = true }
 frame-system-benchmarking = { workspace = true, optional = true }
 
-# Madara Local Dependencies
-# Madara Pallets
+# Deoxys Local Dependencies
+# Deoxys Pallets
 pallet-starknet = { workspace = true }
 pallet-starknet-runtime-api = { workspace = true }
 
-# Madara Primitives
+# Deoxys Primitives
 mp-block = { workspace = true }
 mp-chain-id = { workspace = true }
 mp-contract = { workspace = true }
@@ -70,7 +71,6 @@ starknet_api = { workspace = true }
 [features]
 default = ["std"]
 disable-transaction-fee = []
-madara-state-root = []
 runtime-benchmarks = [
   "frame-benchmarking/runtime-benchmarks",
   "frame-support/runtime-benchmarks",
@@ -79,11 +79,11 @@ runtime-benchmarks = [
   "pallet-grandpa/runtime-benchmarks",
   "pallet-timestamp/runtime-benchmarks",
   "sp-runtime/runtime-benchmarks",
-  # Madara pallets
+  # Deoxys pallets
   "pallet-starknet/runtime-benchmarks",
 ]
 std = [
-  # Madara pallets
+  # Deoxys pallets
   "pallet-starknet/std",
   # Frame dependencies
   "frame-benchmarking?/std",
@@ -119,6 +119,6 @@ try-runtime = [
   "pallet-aura/try-runtime",
   "pallet-grandpa/try-runtime",
   "pallet-timestamp/try-runtime",
-  # Madara pallets
+  # Deoxys pallets
   "pallet-starknet/try-runtime",
 ]

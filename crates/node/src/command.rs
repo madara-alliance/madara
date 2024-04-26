@@ -3,9 +3,9 @@ use frame_benchmarking_cli::{BenchmarkCmd, ExtrinsicFactory, SUBSTRATE_REFERENCE
 use sc_cli::{ChainSpec, SubstrateCli};
 
 use crate::benchmarking::{inherent_benchmark_data, RemarkBuilder};
+use crate::chain_spec::DEV_CHAIN_ID;
 use crate::cli::{Cli, Subcommand};
 use crate::commands::run_node;
-use crate::constants::DEV_CHAIN_ID;
 use crate::{chain_spec, service};
 
 impl SubstrateCli for Cli {

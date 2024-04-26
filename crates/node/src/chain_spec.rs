@@ -12,9 +12,7 @@ use starknet_providers::sequencer::models::BlockId;
 use starknet_providers::SequencerGatewayProvider;
 use tokio::runtime::Runtime;
 
-use crate::constants::DEV_CHAIN_ID;
-
-pub const GENESIS_ASSETS_DIR: &str = "genesis-assets/";
+pub const DEV_CHAIN_ID: &str = "dev";
 
 /// Specialized `ChainSpec`. This is a specialization of the general Substrate ChainSpec type.
 pub type ChainSpec = sc_service::GenericChainSpec<RuntimeGenesisConfig>;

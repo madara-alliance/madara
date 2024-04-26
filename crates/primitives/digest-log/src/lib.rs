@@ -1,6 +1,6 @@
 //! Utility to read the Starknet block form the Substrate block digest
 //!
-//! Following the wrapper block model, each one of the madara block contains a starknet block.
+//! Following the wrapper block model, each one of the deoxys block contains a starknet block.
 //! This block is not only stored in the chain storage, but also pushed inton the wrapper block
 //! itself.
 //!
@@ -48,12 +48,12 @@ pub fn find_starknet_block(digest: &Digest) -> Result<DeoxysBlock, FindLogError>
     })
 }
 
-/// Return the Madara [Log] contained in a given [Digest]
+/// Return the Deoxys [Log] contained in a given [Digest]
 pub fn find_log(digest: &Digest) -> Result<Log, FindLogError> {
     _find_log(digest, OpaqueDigestItemId::Consensus(&DEOXYS_ENGINE_ID))
 }
 
-/// Ensure there is a single valid Madara [Log] in a given [Digest]
+/// Ensure there is a single valid Deoxys [Log] in a given [Digest]
 ///
 /// It can be used to check if the wrapper block does contains the wrapped block
 /// without reading the wrapped block itself

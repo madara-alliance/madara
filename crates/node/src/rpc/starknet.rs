@@ -10,7 +10,7 @@ use sp_runtime::traits::Header as HeaderT;
 pub struct StarknetDeps<C, G: GenesisProvider, B: BlockT> {
     /// The client instance to use.
     pub client: Arc<C>,
-    /// Madara Backend.
+    /// Deoxys Backend.
     pub deoxys_backend: Arc<DeoxysBackend>,
     /// The Substrate client sync service.
     pub sync_service: Arc<SyncingService<B>>,

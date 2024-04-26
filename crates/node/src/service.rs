@@ -36,9 +36,9 @@ use sp_runtime::testing::Digest;
 use sp_runtime::traits::Block as BlockT;
 use sp_runtime::DigestItem;
 
+use crate::configs::db_config_dir;
 use crate::genesis_block::DeoxysGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
-use crate::configs::db_config_dir;
 // Our native executor instance.
 pub struct ExecutorDispatch;
 
@@ -238,10 +238,10 @@ pub fn new_full(
         keystore_container,
         select_chain,
         transaction_pool,
-        other: (block_import, grandpa_link, mut telemetry, deoxys_backend),
+        other: (block_import, _grandpa_link, mut telemetry, deoxys_backend),
     } = new_partial(&config, build_import_queue, cache_more_things, genesis_block)?;
 
-    let mut net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
+    let net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
     let (network, system_rpc_tx, tx_handler_controller, network_starter, sync_service) =
         sc_service::build_network(sc_service::BuildNetworkParams {
@@ -378,7 +378,7 @@ fn run_manual_seal_authorship(
     task_manager: &TaskManager,
     prometheus_registry: Option<&Registry>,
     commands_stream: Option<mpsc::Receiver<sc_consensus_manual_seal::rpc::EngineCommand<DHashT>>>,
-    telemetry: Option<Telemetry>,
+    _telemetry: Option<Telemetry>,
 ) -> Result<(), ServiceError>
 where
     RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,

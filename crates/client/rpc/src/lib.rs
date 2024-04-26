@@ -3,9 +3,9 @@
 //! It uses the deoxys client and backend in order to answer queries.
 
 mod constants;
+pub mod deoxys_backend_client;
 mod errors;
 mod events;
-pub mod deoxys_backend_client;
 mod methods;
 mod types;
 pub mod utils;

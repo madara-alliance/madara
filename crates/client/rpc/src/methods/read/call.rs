@@ -10,8 +10,8 @@ use sp_blockchain::HeaderBackend;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{BlockId, FunctionCall};
 
-use crate::errors::StarknetRpcApiError;
 use crate::deoxys_backend_client::get_block_by_block_hash;
+use crate::errors::StarknetRpcApiError;
 use crate::{utils, Arc, Starknet};
 
 /// Call a Function in a Contract Without Creating a Transaction
