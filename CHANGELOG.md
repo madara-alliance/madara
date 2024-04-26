@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- CI: add `cargo test` on PR
 - refactor: remove dead code on `Struct Starknet<..>`
 - feat(storage): state diff are now stored for each block
 - fix: verify_l2
