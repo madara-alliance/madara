@@ -4,6 +4,7 @@ git # Deoxys Changelog
 
 - feat(storage): removed dependance on `StateUpdateWrapper`
 - feat(storage): state diff are now stored for each block
+- CI: fix toolchain
 - CI: add `cargo test` on PR
 - refactor: remove dead code on `Struct Starknet<..>`
 - fix: verify_l2
