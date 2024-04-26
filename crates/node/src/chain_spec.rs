@@ -46,14 +46,9 @@ pub fn deoxys_config(sealing: SealingMode, chain_id: &str) -> Result<DevChainSpe
         chain_id,
         // Chain Type
         ChainType::Live,
-        move || {
-            DevGenesisExt {
-                genesis_config: testnet_genesis(
-                    genesis_loader.clone(),
-                    wasm_binary,
-                ),
-                sealing: sealing.clone(),
-            }
+        move || DevGenesisExt {
+            genesis_config: testnet_genesis(genesis_loader.clone(), wasm_binary),
+            sealing: sealing.clone(),
         },
         // Bootnodes
         vec![],
@@ -86,10 +81,7 @@ fn load_genesis_state() -> Result<GenesisData, String> {
 }
 
 /// Configure initial storage state for FRAME modules.
-fn testnet_genesis(
-    genesis_loader: GenesisData,
-    wasm_binary: &[u8]
-) -> RuntimeGenesisConfig {
+fn testnet_genesis(genesis_loader: GenesisData, wasm_binary: &[u8]) -> RuntimeGenesisConfig {
     let starknet_genesis_config = GenesisConfig::from(genesis_loader);
 
     RuntimeGenesisConfig {
@@ -101,10 +93,7 @@ fn testnet_genesis(
         // Authority-based consensus protocol used for block production
         aura: AuraConfig { authorities: vec![] },
         // Deterministic finality mechanism used for block finalization
-        grandpa: GrandpaConfig {
-            authorities: vec![],
-            _config: Default::default(),
-        },
+        grandpa: GrandpaConfig { authorities: vec![], _config: Default::default() },
         // Starknet Genesis configuration.
         starknet: starknet_genesis_config,
     }

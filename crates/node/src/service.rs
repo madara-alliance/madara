@@ -81,11 +81,7 @@ pub fn new_partial<BIQ>(
         FullSelectChain,
         sc_consensus::DefaultImportQueue<DBlockT>,
         sc_transaction_pool::FullPool<DBlockT, FullClient>,
-        (
-            BoxBlockImport,
-            Option<Telemetry>,
-            Arc<DeoxysBackend>,
-        ),
+        (BoxBlockImport, Option<Telemetry>, Arc<DeoxysBackend>),
     >,
     ServiceError,
 >
@@ -154,11 +150,7 @@ where
         client.clone(),
     );
 
-    let (import_queue, block_import) = build_import_queue(
-        client.clone(),
-        config,
-        &task_manager
-    )?;
+    let (import_queue, block_import) = build_import_queue(client.clone(), config, &task_manager)?;
 
     Ok(sc_service::PartialComponents {
         client,

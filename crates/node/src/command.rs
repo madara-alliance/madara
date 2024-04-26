@@ -86,8 +86,7 @@ pub fn run() -> sc_cli::Result<()> {
             runner.sync_run(|config| cmd.run(config.database))
         }
         // TODO: This does not handle reverts correctly
-        Some(Subcommand::Revert(ref _cmd)) => Err("Subcommand Revert is not implemented."
-            .into()),
+        Some(Subcommand::Revert(ref _cmd)) => Err("Subcommand Revert is not implemented.".into()),
         Some(Subcommand::Benchmark(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
 
