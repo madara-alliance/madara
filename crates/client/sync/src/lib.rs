@@ -23,6 +23,7 @@ pub mod starknet_sync_worker {
     use std::sync::Arc;
 
     use mp_block::DeoxysBlock;
+    use mp_convert::state_update::ToStateUpdateCore;
     use reqwest::Url;
     use sp_blockchain::HeaderBackend;
     use starknet_providers::sequencer::models::BlockId;
@@ -53,8 +54,11 @@ pub mod starknet_sync_worker {
         );
 
         if starting_block == 1 {
-            let state_update =
-                provider.get_state_update(BlockId::Number(0)).await.expect("getting state update for genesis block");
+            let state_update = provider
+                .get_state_update(BlockId::Number(0))
+                .await
+                .expect("getting state update for genesis block")
+                .to_state_update_core();
             verify_l2(0, &state_update);
         }
 
