@@ -49,16 +49,11 @@ pub fn calculate_commitments(
     )
 }
 
-/// Builds a `CommitmentStateDiff` from the `StateUpdateWrapper`.
+/// Aggregates all the changes from last state update in a way that is easy to access
+/// when computing the state root
 ///
-/// # Arguments
-///
-/// * `StateUpdateWrapper` - The last state update fetched and formated.
-///
-/// # Returns
-///
-/// The commitment state diff as a `CommitmentStateDiff`.
-pub fn build_commitment_state_diff(state_update_wrapper: &StateUpdate) -> CommitmentStateDiff {
+/// * `state_update`: The last state update fetched from the sequencer
+pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStateDiff {
     let mut commitment_state_diff = CommitmentStateDiff {
         address_to_class_hash: IndexMap::new(),
         address_to_nonce: IndexMap::new(),
@@ -66,7 +61,7 @@ pub fn build_commitment_state_diff(state_update_wrapper: &StateUpdate) -> Commit
         class_hash_to_compiled_class_hash: IndexMap::new(),
     };
 
-    for DeployedContractItem { address, class_hash } in state_update_wrapper.state_diff.deployed_contracts.iter() {
+    for DeployedContractItem { address, class_hash } in state_update.state_diff.deployed_contracts.iter() {
         let address = ContractAddress::from_field_element(address);
         let class_hash = if address == ContractAddress::from_field_element(FieldElement::ZERO) {
             // System contracts doesnt have class hashes
@@ -77,13 +72,13 @@ pub fn build_commitment_state_diff(state_update_wrapper: &StateUpdate) -> Commit
         commitment_state_diff.address_to_class_hash.insert(address, class_hash);
     }
 
-    for NonceUpdate { contract_address, nonce } in state_update_wrapper.state_diff.nonces.iter() {
+    for NonceUpdate { contract_address, nonce } in state_update.state_diff.nonces.iter() {
         let contract_address = ContractAddress::from_field_element(contract_address);
         let nonce_value = Nonce::from_field_element(nonce);
         commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
     }
 
-    for ContractStorageDiffItem { address, storage_entries } in state_update_wrapper.state_diff.storage_diffs.iter() {
+    for ContractStorageDiffItem { address, storage_entries } in state_update.state_diff.storage_diffs.iter() {
         let contract_address = ContractAddress::from_field_element(address);
         let mut storage_map = IndexMap::new();
         for StorageEntry { key, value } in storage_entries.iter() {
@@ -94,8 +89,7 @@ pub fn build_commitment_state_diff(state_update_wrapper: &StateUpdate) -> Commit
         commitment_state_diff.storage_updates.insert(contract_address, storage_map);
     }
 
-    for DeclaredClassItem { class_hash, compiled_class_hash } in state_update_wrapper.state_diff.declared_classes.iter()
-    {
+    for DeclaredClassItem { class_hash, compiled_class_hash } in state_update.state_diff.declared_classes.iter() {
         let class_hash = ClassHash::from_field_element(class_hash);
         let compiled_class_hash = CompiledClassHash::from_field_element(compiled_class_hash);
         commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
