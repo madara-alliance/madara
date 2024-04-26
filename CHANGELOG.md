@@ -2,7 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
-- feat(RPC): refacto `trace_transaction` 
+- feat(RPC): refacto `trace_transaction`
 - feat(storage): removed dependance on `StateUpdateWrapper`
 - feat(storage): state diff are now stored for each block
 - CI: fix toolchain
