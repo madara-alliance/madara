@@ -237,7 +237,7 @@ where
     Ok(TransactionReceiptWithBlockInfo { receipt, block: block_info })
 }
 
-fn execution_infos<BE, C, H>(
+pub(crate) fn execution_infos<BE, C, H>(
     _client: &Starknet<BE, C, H>,
     _previous_block_hash: DHashT,
     transactions: Vec<btx::Transaction>,
