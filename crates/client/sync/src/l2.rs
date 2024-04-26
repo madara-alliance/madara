@@ -6,19 +6,17 @@ use std::sync::{Arc, RwLock};
 use futures::prelude::*;
 use lazy_static::lazy_static;
 use mc_db::storage_updates::{store_class_update, store_state_update};
-use mp_block::state_update::StateUpdateWrapper;
 use mp_block::DeoxysBlock;
 use mp_contract::class::ClassUpdateWrapper;
-use mp_convert::state_update::ToStateUpdateCore;
 use mp_felt::Felt252Wrapper;
 use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use starknet_api::hash::{StarkFelt, StarkHash};
-use starknet_core::types::{PendingStateUpdate, StarknetError};
+use starknet_core::types::{PendingStateUpdate, StarknetError, StateUpdate};
 use starknet_ff::FieldElement;
-use starknet_providers::sequencer::models::{BlockId, StateUpdate};
+use starknet_providers::sequencer::models::BlockId;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -233,7 +231,7 @@ pub async fn sync<C>(
                         // Now send state_update, which moves it. This will be received
                         // by QueryBlockConsensusDataProvider in deoxys/crates/node/src/service.rs
                         state_update_sender
-                            .send((block_n, state_update.to_state_update_core()))
+                            .send((block_n, state_update))
                             .await
                             .expect("state updater is not running");
                     },
@@ -308,11 +306,9 @@ pub fn update_l2(state_update: L2StateUpdate) {
 
 /// Verify and update the L2 state according to the latest state update
 pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> StarkFelt {
-    let state_update_wrapper = StateUpdateWrapper::from(state_update);
-
-    let csd = build_commitment_state_diff(state_update_wrapper);
+    let csd = build_commitment_state_diff(state_update);
     let state_root = update_state_root(csd, block_number);
-    let block_hash = state_update.block_hash.expect("Block hash not found in state update");
+    let block_hash = state_update.block_hash;
 
     update_l2(L2StateUpdate {
         block_number,
