@@ -66,7 +66,7 @@ use frame_system::pallet_prelude::*;
 use mc_db::storage_handler;
 use mc_db::storage_handler::StorageViewMut;
 use mp_block::DeoxysBlock;
-use mp_digest_log::MADARA_ENGINE_ID;
+use mp_digest_log::DEOXYS_ENGINE_ID;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRESS, INHERENT_IDENTIFIER};
@@ -475,7 +475,7 @@ impl<T: Config> Pallet<T> {
     fn store_block(block_number: u64) {
         let block: DeoxysBlock;
         match &frame_system::Pallet::<T>::digest().logs()[0] {
-            DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, encoded_data) => {
+            DigestItem::PreRuntime(mp_digest_log::DEOXYS_ENGINE_ID, encoded_data) => {
                 block = match DeoxysBlock::decode(&mut encoded_data.as_slice()) {
                     Ok(b) => b,
                     Err(e) => {
@@ -492,7 +492,7 @@ impl<T: Config> Pallet<T> {
                 handler_block_number.insert(&block_hash, block_number).unwrap();
                 handler_block_hash.insert(block_number, &block_hash).unwrap();
 
-                let digest = DigestItem::Consensus(MADARA_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
+                let digest = DigestItem::Consensus(DEOXYS_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
                 frame_system::Pallet::<T>::deposit_log(digest);
             }
             _ => {

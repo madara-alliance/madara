@@ -35,32 +35,6 @@ pub struct SetupSource {
     pub from_local: Option<String>,
 }
 
-#[derive(Debug, clap::Args)]
-pub struct SetupCmd {
-    #[arg(long, value_name = "CHAIN_SPEC")]
-    pub chain: Option<String>,
-
-    /// Specify custom base path.
-    #[arg(long, short = 'd', value_name = "PATH")]
-    pub base_path: Option<PathBuf>,
-
-    #[clap(flatten)]
-    pub source: SetupSource,
-}
-
-impl SetupCmd {
-    fn chain_id(&self) -> String {
-        match self.chain {
-            Some(ref chain) => chain.clone(),
-            None => "".into(),
-        }
-    }
-
-    fn base_path(&self) -> Option<BasePath> {
-        self.base_path.as_ref().map(|bp| BasePath::from(bp.clone()))
-    }
-}
-
 enum ConfigSource {
     Local(PathBuf),
     Remote(Url),
@@ -137,67 +111,6 @@ impl ConfigSource {
         };
 
         Ok(file_as_bytes)
-    }
-}
-
-impl SetupCmd {
-    pub fn run(&self) -> Result<()> {
-        log::info!("setup cmd: {:?}", self);
-        let dest_config_dir_path = {
-            let chain_id = self.chain_id();
-            let base_path = self.base_path().unwrap_or_else(|| BasePath::from_project("", "", &Cli::executable_name()));
-            base_path.config_dir(&chain_id)
-        };
-        log::info!("Setting up madara config at '{}'", dest_config_dir_path.display());
-
-        let config_source = if let Some(src_cfg_dir_path) = &self.source.from_local {
-            let path = PathBuf::from(src_cfg_dir_path);
-            ConfigSource::Local(path)
-        } else if let Some(src_cfg_dir_url) = &self.source.from_remote {
-            let url = Url::parse(src_cfg_dir_url)
-                .map_err(|e| Error::Input(format!("invalid input for 'fetch_madara_configs': {}", e)))?;
-            ConfigSource::Remote(url)
-        } else {
-            unreachable!(
-                "clap::Args is derived upon `SetupSource` in a way that guarantee that either `from_remote` or \
-                 `from_local` is present"
-            );
-        };
-
-        let configs_file_content = config_source.load_config()?;
-        // Make sure it is valid data before writing it to disk
-        let configs: configs::Configs =
-            serde_json::from_slice(&configs_file_content).map_err(|e| Error::Application(Box::new(e)))?;
-        write_content_to_disk(configs_file_content, dest_config_dir_path.join("index.json").as_path())?;
-
-        let assets_dir_dest_path = &dest_config_dir_path.join(GENESIS_ASSETS_DIR);
-        for asset in &configs.genesis_assets {
-            let asset_file_content = config_source.load_asset(asset)?;
-
-            // Verify it's sha3_256
-            if let Some(file_hash) = &asset.sha3_256 {
-                let mut hasher = Sha3_256::new();
-                hasher.update(&asset_file_content);
-                let digest = hasher.finalize();
-                let hash = format!("{:x}", digest);
-                if hash != *file_hash {
-                    return Err(Error::Input(format!(
-                        "Hash mismatch for file '{}': {} != {}",
-                        asset.name, hash, file_hash
-                    )));
-                }
-            }
-
-            let asset_dest_path = assets_dir_dest_path.join(&asset.name);
-            println!(
-                "Copying '{}' to '{}'",
-                config_source.display(Some(vec![&GENESIS_ASSETS_DIR, &asset.name]))?,
-                asset_dest_path.display()
-            );
-            write_content_to_disk(&asset_file_content, &asset_dest_path)?;
-        }
-
-        Ok(())
     }
 }
 

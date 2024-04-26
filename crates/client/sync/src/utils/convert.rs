@@ -1,4 +1,4 @@
-//! Converts types from [`starknet_providers`] to madara's expected types.
+//! Converts types from [`starknet_providers`] to deoxys's expected types.
 
 use std::collections::HashMap;
 use std::num::NonZeroU128;

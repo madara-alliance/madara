@@ -27,7 +27,7 @@ where
     BE: Backend<DBlockT>,
     H: HasherT,
 {
-    // Before storing the new block in the Madara backend database, we want to make sure that the
+    // Before storing the new block in the Deoxys backend database, we want to make sure that the
     // wrapped Starknet block it contains is the same that we can find in the storage at this height.
     // Then we will store the two block hashes (wrapper and wrapped) alongside in our db.
 
@@ -43,7 +43,7 @@ where
                     // Ensure the two blocks sources (chain storage and block digest) agree on the block content
                     if digest_starknet_block_hash != storage_starknet_block_hash {
                         Err(anyhow::anyhow!(
-                            "Starknet block hash mismatch: madara consensus digest ({digest_starknet_block_hash:?}), \
+                            "Starknet block hash mismatch: deoxys consensus digest ({digest_starknet_block_hash:?}), \
                              db state ({storage_starknet_block_hash:?})"
                         ))
                     } else {

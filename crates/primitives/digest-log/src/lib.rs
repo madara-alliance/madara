@@ -25,7 +25,7 @@ use parity_scale_codec::{Decode, Encode};
 use sp_runtime::generic::{Digest, OpaqueDigestItemId};
 use sp_runtime::ConsensusEngineId;
 
-pub const MADARA_ENGINE_ID: ConsensusEngineId = [b'm', b'a', b'd', b'a'];
+pub const DEOXYS_ENGINE_ID: ConsensusEngineId = [b'd', b'e', b'o', b'x'];
 
 pub const BLOCK_ENGINE_ID: ConsensusEngineId = [b'b', b'l', b'o', b'c'];
 pub const STATE_ENGINE_ID: ConsensusEngineId = [b's', b't', b'a', b't'];
@@ -50,7 +50,7 @@ pub fn find_starknet_block(digest: &Digest) -> Result<DeoxysBlock, FindLogError>
 
 /// Return the Madara [Log] contained in a given [Digest]
 pub fn find_log(digest: &Digest) -> Result<Log, FindLogError> {
-    _find_log(digest, OpaqueDigestItemId::Consensus(&MADARA_ENGINE_ID))
+    _find_log(digest, OpaqueDigestItemId::Consensus(&DEOXYS_ENGINE_ID))
 }
 
 /// Ensure there is a single valid Madara [Log] in a given [Digest]

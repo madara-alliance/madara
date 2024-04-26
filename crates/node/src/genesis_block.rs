@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use mp_block::DeoxysBlock;
-use mp_digest_log::{Log, MADARA_ENGINE_ID};
+use mp_digest_log::{Log, DEOXYS_ENGINE_ID};
 use sc_client_api::backend::Backend;
 use sc_client_api::BlockImportOperation;
 use sc_executor::RuntimeVersionOf;
@@ -69,9 +69,7 @@ fn construct_genesis_block<Block: BlockT>(
     let extrinsics_root =
         <<<Block as BlockT>::Header as HeaderT>::Hashing as HashT>::trie_root(Vec::new(), state_version);
 
-    // Load first block from genesis folders
-    // TODO remove unecessary code from madara for genesis build
-    let digest = vec![DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(genesis_block.clone()).encode())];
+    let digest = vec![DigestItem::Consensus(DEOXYS_ENGINE_ID, Log::Block(genesis_block.clone()).encode())];
 
     Block::new(
         <<Block as BlockT>::Header as HeaderT>::new(

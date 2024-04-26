@@ -1,4 +1,4 @@
-//! Madara node command line.
+//! Deoxys node command line.
 #![warn(missing_docs)]
 
 #[macro_use]

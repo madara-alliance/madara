@@ -1,6 +1,6 @@
 //! Starknet RPC server API implementation
 //!
-//! It uses the madara client and backend in order to answer queries.
+//! It uses the deoxys client and backend in order to answer queries.
 
 mod constants;
 mod errors;

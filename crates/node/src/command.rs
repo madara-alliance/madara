@@ -6,8 +6,6 @@ use crate::benchmarking::{inherent_benchmark_data, RemarkBuilder};
 use crate::cli::{Cli, Subcommand};
 use crate::commands::run_node;
 use crate::constants::DEV_CHAIN_ID;
-#[cfg(feature = "sharingan")]
-use crate::constants::SHARINGAN_CHAIN_ID;
 use crate::{chain_spec, service};
 
 impl SubstrateCli for Cli {
@@ -172,7 +170,6 @@ pub fn run() -> sc_cli::Result<()> {
             let runner = cli.create_runner(cmd)?;
             runner.sync_run(|config| cmd.run::<Block>(&config))
         }
-        Some(Subcommand::Setup(ref cmd)) => cmd.run(),
         None => run_node(cli),
     }
 }
