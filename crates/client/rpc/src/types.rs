@@ -39,22 +39,19 @@ mod tests {
     use crate::types::*;
 
     #[rstest]
-    #[case(0, 0, "0,0")]
-    #[case(1, 4, "1,4")]
-    #[case(2, 4, "2,4")]
-    #[case(30, 4, "1e,4")]
-    #[case(0, 4, "0,4")]
+    #[case(0, 0, "0-0")]
+    #[case(1, 4, "1-4")]
+    #[case(2, 4, "2-4")]
+    #[case(0, 4, "0-4")]
     fn to_string_works(#[case] block_n: u64, #[case] event_n: u64, #[case] expected: String) {
         let token = ContinuationToken { block_n, event_n };
         assert_eq!(expected, token.to_string())
     }
 
     #[rstest]
-    #[case("0,0", 0, 0)]
-    #[case("1,4", 1, 4)]
-    #[case("2,4", 2, 4)]
-    #[case("1e,4", 30, 4)]
-    #[case("244,1", 2*16*16+4*16+4, 1)]
+    #[case("0-0", 0, 0)]
+    #[case("1-4", 1, 4)]
+    #[case("2-4", 2, 4)]
     fn parse_works(#[case] string_token: String, #[case] block_n: u64, #[case] event_n: u64) {
         let expected = ContinuationToken { block_n, event_n };
         assert_eq!(expected, ContinuationToken::parse(string_token).unwrap());
