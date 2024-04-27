@@ -345,7 +345,7 @@ fn run_manual_seal_authorship(
     select_chain: FullSelectChain,
     block_import: BoxBlockImport,
     task_manager: &TaskManager,
-    prometheus_registry: Option<&Registry>,
+    _prometheus_registry: Option<&Registry>,
     commands_stream: Option<mpsc::Receiver<sc_consensus_manual_seal::rpc::EngineCommand<DHashT>>>,
     _telemetry: Option<Telemetry>,
 ) -> Result<(), ServiceError>
@@ -357,7 +357,7 @@ where
         task_manager.spawn_handle(),
         client.clone(),
         transaction_pool.clone(),
-        prometheus_registry,
+        None,
         None,
     );
 
