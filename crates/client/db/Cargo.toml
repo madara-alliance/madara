@@ -50,10 +50,12 @@ starknet_api = { workspace = true, default-features = true }
 anyhow.workspace = true
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
+bincode = { workspace = true }
 bitvec = { workspace = true }
-crossbeam-skiplist = { workspace = true }
 crossbeam-queue = { workspace = true }
+crossbeam-skiplist = { workspace = true }
 ethers = { workspace = true }
+itertools = { workspace = true }
 log = { workspace = true, default-features = true }
 rayon = { workspace = true }
 rocksdb = { version = "0.21", features = [
@@ -64,4 +66,3 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 uuid = "1.4.1"
-bincode = { workspace = true }

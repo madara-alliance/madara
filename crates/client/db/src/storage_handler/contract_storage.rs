@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use crossbeam_skiplist::{SkipMap, SkipSet};
+use itertools::izip;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use rocksdb::{IteratorMode, ReadOptions};
+use rocksdb::{IteratorMode, ReadOptions, WriteBatchWithTransaction};
 use starknet_api::core::ContractAddress;
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -78,7 +79,7 @@ impl StorageView for ContractStorageViewMut {
     type VALUE = StarkFelt;
 
     fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        if let Some(value) = self.0.get(key).map(|entry| entry.value().clone()) {
+        if let Some(value) = self.0.get(key).map(|entry| *entry.value()) {
             return Ok(Some(value));
         }
 
@@ -132,7 +133,7 @@ impl StorageViewRevetible for ContractStorageViewMut {
         // First, we aggregate all storage changes from the latest [StateDiff]
         // up to the target block number. We use a non-blocking set and perform this asychronously.
         // TODO: buffer this
-        let keys = [block_number..block_number_max].into_iter().map(|key| bincode::serialize(&key).unwrap());
+        let keys = (block_number..block_number_max).map(|key| bincode::serialize(&key).unwrap());
         let change_set = Arc::new(SkipSet::new());
         for entry in db.batched_multi_get_cf(&db.get_column(Column::BlockStateDiff), keys, true) {
             let state_diff = match entry {
@@ -226,6 +227,37 @@ impl ContractStorageViewMut {
         };
 
         Ok(history.get_at(block_number).copied())
+    }
+
+    pub fn commit_sync(self, block_number: u64) -> Result<(), DeoxysStorageError> {
+        let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Column::ContractStorage);
+
+        let (keys, values): (Vec<_>, Vec<_>) = self.0.into_iter().unzip();
+        let keys_cf: Vec<_> = keys.iter().map(|key| (&column, bincode::serialize(key).unwrap())).collect();
+        let histories: Result<Vec<History<StarkFelt>>, _> = db
+            .multi_get_cf(keys_cf)
+            .into_iter()
+            .map(|result| {
+                result.map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage)).and_then(
+                    |option| match option {
+                        Some(bytes) => bincode::deserialize(&bytes)
+                            .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
+                        None => Ok(History::default()),
+                    },
+                )
+            })
+            .collect();
+
+        let mut batch = WriteBatchWithTransaction::<true>::default();
+        for (key, mut history, value) in izip!(keys, histories?, values) {
+            let _ = history.push(block_number, value);
+            batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&history).unwrap());
+        }
+
+        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractStorage))?;
+
+        Ok(())
     }
 }
 

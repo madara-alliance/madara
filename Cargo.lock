@@ -5986,6 +5986,7 @@ dependencies = [
  "crossbeam-queue",
  "crossbeam-skiplist",
  "ethers",
+ "itertools 0.12.1",
  "log",
  "mp-block",
  "mp-contract",

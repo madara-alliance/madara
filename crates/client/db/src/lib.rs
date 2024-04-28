@@ -323,7 +323,11 @@ impl DeoxysBackend {
     fn new(config: &DatabaseSettings, cache_more_things: bool) -> Result<Self> {
         DB_SINGLETON.set(Arc::new(open_database(config)?)).unwrap();
         let db = DB_SINGLETON.get().unwrap();
-        let bonsai_config = BonsaiStorageConfig::from(config);
+        let bonsai_config = BonsaiStorageConfig {
+            max_saved_trie_logs: Some(0),
+            max_saved_snapshots: Some(0),
+            snapshot_interval: u64::MAX,
+        };
 
         let mut bonsai_contract = BonsaiStorage::new(
             BonsaiDb::new(
