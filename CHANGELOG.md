@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix: exec on receipt
 - fix(proposer_factory): Removed and clean a lot of stuff on Client side, mostly node crate
 - feat(storage): removed the use of `BonsaiStorage` logs
 - feat(storage): removed dependance on `StateUpdateWrapper`
