@@ -41,7 +41,7 @@ where
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-    let block_header = starknet_block.header().clone();
+    let block_header = starknet_block.header();
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
     let block_number = block_header.block_number;
     let chain_id = starknet.chain_id()?;

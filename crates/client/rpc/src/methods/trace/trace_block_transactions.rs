@@ -39,7 +39,7 @@ where
         log::error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
         StarknetRpcApiError::InternalServerError
     })?;
-    let block_header = starknet_block.header().clone();
+    let block_header = starknet_block.header();
     let block_number = block_header.block_number;
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
     let previous_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
