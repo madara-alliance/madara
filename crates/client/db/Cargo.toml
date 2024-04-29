@@ -4,13 +4,14 @@ version.workspace = true
 edition.workspace = true
 description = "Starknet database backend"
 authors = [
-  "Timothée Delabrouille <https://github.com/tdelabro>",
+  "Kasar <https://github.com/kasarlabs>",
+  "KSS <https://github.com/keep-starknet-strange>",
   "Substrate DevHub <https://github.com/substrate-developer-hub>",
 ]
-homepage = "https://github.com/keep-starknet-strange/madara"
+homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
 publish = false
-repository = "https://github.com/keep-starknet-strange/madara"
+repository = "https://github.com/kasarlabs/deoxys"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
@@ -25,7 +26,7 @@ sp-core = { workspace = true }
 sp-database = { workspace = true, default-features = true }
 sp-runtime = { workspace = true, default-features = true }
 
-# Madara crates
+# Deoxys crates
 mp-block = { workspace = true }
 mp-contract = { workspace = true }
 mp-felt = { workspace = true }

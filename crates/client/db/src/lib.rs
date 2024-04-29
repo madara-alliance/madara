@@ -1,4 +1,4 @@
-//! A database backend storing data about madara chain
+//! A database backend storing data about deoxys chain
 //!
 //! # Usefulness
 //! Starknet RPC methods use Starknet block hash as arguments to access on-chain values.

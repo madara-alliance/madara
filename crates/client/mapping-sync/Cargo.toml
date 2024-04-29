@@ -2,15 +2,16 @@
 name = "mc-mapping-sync"
 version.workspace = true
 edition.workspace = true
-description = "Mapping sync logic for Madara"
+description = "Mapping sync logic for Deoxys"
 authors = [
-  "Timothée Delabrouille <https://github.com/tdelabro>",
+  "Kasar <https://github.com/kasarlabs>",
+  "KSS <https://github.com/keep-starknet-strange>",
   "Substrate DevHub <https://github.com/substrate-developer-hub>",
 ]
-homepage = "https://github.com/keep-starknet-strange/madara"
+homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
 publish = false
-repository = "https://github.com/keep-starknet-strange/madara"
+repository = "https://github.com/kasarlabs/deoxys"
 
 [dependencies]
 anyhow = { workspace = true, default-features = true }

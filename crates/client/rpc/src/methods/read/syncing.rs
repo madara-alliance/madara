@@ -10,7 +10,7 @@ use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{SyncStatus, SyncStatusType};
 
-use crate::{madara_backend_client, Starknet};
+use crate::{deoxys_backend_client, Starknet};
 
 /// Returns an object about the sync status, or false if the node is not synching
 ///
@@ -41,18 +41,18 @@ where
             let highest_number = best_seen_block.unwrap_or(best_number);
 
             // get a starknet block from the starting substrate block number
-            let starting_block = madara_backend_client::starknet_block_from_substrate_hash(
+            let starting_block = deoxys_backend_client::starknet_block_from_substrate_hash(
                 starknet.client.as_ref(),
                 starknet.starting_block,
             );
 
             // get a starknet block from the current substrate block number
             let current_block =
-                madara_backend_client::starknet_block_from_substrate_hash(starknet.client.as_ref(), best_number);
+                deoxys_backend_client::starknet_block_from_substrate_hash(starknet.client.as_ref(), best_number);
 
             // get a starknet block from the highest substrate block number
             let highest_block =
-                madara_backend_client::starknet_block_from_substrate_hash(starknet.client.as_ref(), highest_number);
+                deoxys_backend_client::starknet_block_from_substrate_hash(starknet.client.as_ref(), highest_number);
 
             if starting_block.is_ok() && current_block.is_ok() && highest_block.is_ok() {
                 // Convert block numbers and hashes to the respective type required by the `syncing` endpoint.

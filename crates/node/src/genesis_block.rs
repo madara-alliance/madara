@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use mp_block::DeoxysBlock;
-use mp_digest_log::{Log, MADARA_ENGINE_ID};
+use mp_digest_log::{Log, DEOXYS_ENGINE_ID};
 use sc_client_api::backend::Backend;
 use sc_client_api::BlockImportOperation;
 use sc_executor::RuntimeVersionOf;
@@ -12,8 +12,8 @@ use sp_core::storage::{StateVersion, Storage};
 use sp_runtime::traits::{Block as BlockT, Hash as HashT, Header as HeaderT, Zero};
 use sp_runtime::{BuildStorage, Digest, DigestItem};
 
-/// Custom genesis block builder for Madara.
-pub struct MadaraGenesisBlockBuilder<Block: BlockT, B, E> {
+/// Custom genesis block builder for Deoxys.
+pub struct DeoxysGenesisBlockBuilder<Block: BlockT, B, E> {
     genesis_storage: Storage,
     commit_genesis_state: bool,
     backend: Arc<B>,
@@ -22,8 +22,8 @@ pub struct MadaraGenesisBlockBuilder<Block: BlockT, B, E> {
     genesis_block: DeoxysBlock,
 }
 
-impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> MadaraGenesisBlockBuilder<Block, B, E> {
-    /// Constructs a new instance of [`MadaraGenesisBlockBuilder`].
+impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> DeoxysGenesisBlockBuilder<Block, B, E> {
+    /// Constructs a new instance of [`DeoxysGenesisBlockBuilder`].
     pub fn new(
         build_genesis_storage: &dyn BuildStorage,
         commit_genesis_state: bool,
@@ -44,7 +44,7 @@ impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> MadaraGenesisBlockBu
 }
 
 impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> BuildGenesisBlock<Block>
-    for MadaraGenesisBlockBuilder<Block, B, E>
+    for DeoxysGenesisBlockBuilder<Block, B, E>
 {
     type BlockImportOperation = <B as Backend<Block>>::BlockImportOperation;
 
@@ -69,9 +69,7 @@ fn construct_genesis_block<Block: BlockT>(
     let extrinsics_root =
         <<<Block as BlockT>::Header as HeaderT>::Hashing as HashT>::trie_root(Vec::new(), state_version);
 
-    // Load first block from genesis folders
-    // TODO remove unecessary code from madara for genesis build
-    let digest = vec![DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(genesis_block.clone()).encode())];
+    let digest = vec![DigestItem::Consensus(DEOXYS_ENGINE_ID, Log::Block(genesis_block.clone()).encode())];
 
     Block::new(
         <<Block as BlockT>::Header as HeaderT>::new(

@@ -17,8 +17,8 @@ use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{Calldata, Fee, TransactionVersion};
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 
+use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
-use crate::madara_backend_client::get_block_by_block_hash;
 use crate::{utils, Starknet, StarknetReadRpcApiServer};
 
 /// Estimate the L2 fee of a message sent on L1
