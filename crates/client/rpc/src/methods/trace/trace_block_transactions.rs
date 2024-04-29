@@ -2,7 +2,6 @@ use blockifier::transaction::account_transaction::AccountTransaction;
 use jsonrpsee::core::RpcResult;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use mp_transactions::getters::Hash;
 use mp_transactions::TxType;
 use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -13,11 +12,9 @@ use starknet_api::transaction::Transaction;
 use starknet_core::types::{BlockId, TransactionTraceWithHash};
 
 use super::super::read::get_transaction_receipt::execution_infos;
-use super::utils::{map_transaction_to_user_transaction, tx_execution_infos_to_tx_trace};
+use super::utils::tx_execution_infos_to_tx_trace;
 use crate::errors::StarknetRpcApiError;
 use crate::madara_backend_client::get_block_by_block_hash;
-use crate::methods::trace::utils::block_number_by_id;
-use crate::utils::execution::re_execute_transactions;
 use crate::utils::helpers::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
 use crate::Starknet;
@@ -56,8 +53,8 @@ where
 
     let transactions = starknet_block.transactions();
     if transactions.is_empty() {
-        log::error!("Failed to retrieve transactions from block with hash {block_hash:?}");
-        StarknetRpcApiError::InternalServerError;
+        log::error!("Failed to retrieve transaction from block with hash {block_hash:?}");
+        return Err(StarknetRpcApiError::InternalServerError.into());
     }
 
     if starknet_block.transactions().iter().any(|transaction| matches!(transaction, Transaction::Deploy(_))) {
@@ -81,8 +78,10 @@ where
 
     let mut transaction_traces = Vec::new();
 
-    for transaction_with_hash in transactions_blockifier {
-        let tx_type = match transaction_with_hash {
+    for (index, transaction) in transactions_blockifier.iter().enumerate() {
+        let transaction_hash = block_txs_hashes[index].clone();
+
+        let tx_type = match transaction {
             blockifier::transaction::transaction_execution::Transaction::AccountTransaction(account_tx) => {
                 match account_tx {
                     AccountTransaction::Declare(_) => TxType::Declare,
@@ -94,13 +93,14 @@ where
         };
 
         let execution_infos =
-            execution_infos(starknet, previous_block_hash, vec![transaction_with_hash.clone()], &block_context)?;
+            execution_infos(starknet, previous_block_hash, vec![transaction.clone()], &block_context)?;
 
-        if let Some(trace) = tx_execution_infos_to_tx_trace(tx_type, &execution_infos, block_number) {
-            let transaction_hash = transaction_with_hash;
-            let tx_trace = TransactionTraceWithHash { transaction_hash, trace_root: trace };
-            transaction_traces.push(tx_trace);
-        }
+        let trace = tx_execution_infos_to_tx_trace(tx_type, &execution_infos, block_number).map_err(|e| {
+            log::error!("Failed to generate trace: {}", e);
+            StarknetRpcApiError::InternalServerError
+        })?;
+        let tx_trace = TransactionTraceWithHash { transaction_hash, trace_root: trace };
+        transaction_traces.push(tx_trace);
     }
 
     Ok(transaction_traces)
