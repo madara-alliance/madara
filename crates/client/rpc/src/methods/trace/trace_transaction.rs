@@ -65,23 +65,13 @@ where
             StarknetRpcApiError::InternalServerError
         })?;
 
-    let transaction = starknet_block.transactions().get(tx_index).ok_or_else(|| {
-        log::error!("Failed to retrieve transaction at index {tx_index} from block with hash {block_hash:?}");
-        StarknetRpcApiError::InternalServerError
-    })?;
-
-    // deploy transaction was not supported by blockifier
-    if let Transaction::Deploy(_) = transaction {
-        log::error!("re-executing a deploy transaction is not supported");
-        return Err(StarknetRpcApiError::UnimplementedMethod.into());
-    }
-
     // create a vector of tuples with the transaction and its hash, up to the current transaction index
     let transaction_with_hash = starknet_block
         .transactions()
         .iter()
         .cloned()
         .zip(block_txs_hashes.iter().cloned())
+        .filter(|(tx, _)| !matches!(tx, Transaction::Deploy(_)))
         .take(tx_index + 1)
         .collect();
 

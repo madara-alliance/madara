@@ -1,4 +1,3 @@
-use blockifier::transaction::account_transaction::AccountTransaction;
 use jsonrpsee::core::RpcResult;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -11,11 +10,10 @@ use sp_blockchain::HeaderBackend;
 use starknet_api::transaction::Transaction;
 use starknet_core::types::{BlockId, TransactionTraceWithHash};
 
-use super::super::read::get_transaction_receipt::execution_infos;
 use super::utils::tx_execution_infos_to_tx_trace;
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
-use crate::utils::execution::block_context;
+use crate::utils::execution::{block_context, re_execute_transactions};
 use crate::utils::helpers::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
 use crate::Starknet;
@@ -59,41 +57,43 @@ where
         return Err(StarknetRpcApiError::InternalServerError.into());
     }
 
-    if starknet_block.transactions().iter().any(|transaction| matches!(transaction, Transaction::Deploy(_))) {
-        log::error!("Re-executing a deploy transaction is not supported");
-        return Err(StarknetRpcApiError::UnimplementedMethod.into());
-    }
+    let transaction_with_hash: Vec<_> = starknet_block
+        .transactions()
+        .iter()
+        .cloned()
+        .zip(block_txs_hashes.iter().cloned())
+        .filter(|(tx, _)| !matches!(tx, Transaction::Deploy(_)))
+        .collect();
 
-    let transaction_with_hash =
-        starknet_block.transactions().iter().cloned().zip(block_txs_hashes.iter().cloned()).collect();
+    let transactions_blockifier = blockifier_transactions(transaction_with_hash.clone())?;
 
-    let transactions_blockifier = blockifier_transactions(transaction_with_hash)?;
+    let mut transactions_traces = Vec::new();
 
-    let mut transaction_traces = Vec::new();
+    let transactions_info = re_execute_transactions(vec![], transactions_blockifier, &block_context).map_err(|e| {
+        log::error!("Failed to re-execute transactions: '{e}'");
+        StarknetRpcApiError::InternalServerError
+    })?;
 
-    for (index, transaction) in transactions_blockifier.iter().enumerate() {
-        let transaction_hash = block_txs_hashes[index];
-
+    for (index, (transaction, tx_hash)) in transaction_with_hash.iter().enumerate() {
         let tx_type = match transaction {
-            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(account_tx) => {
-                match account_tx {
-                    AccountTransaction::Declare(_) => TxType::Declare,
-                    AccountTransaction::DeployAccount(_) => TxType::DeployAccount,
-                    AccountTransaction::Invoke(_) => TxType::Invoke,
-                }
-            }
-            blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(_) => TxType::L1Handler,
+            Transaction::Declare(_) => TxType::Declare,
+            Transaction::DeployAccount(_) => TxType::DeployAccount,
+            Transaction::Invoke(_) => TxType::Invoke,
+            Transaction::L1Handler(_) => TxType::L1Handler,
+            Transaction::Deploy(_) => unreachable!(),
         };
 
-        let execution_infos = execution_infos(vec![transaction.clone()], &block_context)?;
-
-        let trace = tx_execution_infos_to_tx_trace(tx_type, &execution_infos, block_number).map_err(|e| {
-            log::error!("Failed to generate trace: {}", e);
-            StarknetRpcApiError::InternalServerError
-        })?;
-        let tx_trace = TransactionTraceWithHash { transaction_hash, trace_root: trace };
-        transaction_traces.push(tx_trace);
+        match tx_execution_infos_to_tx_trace(tx_type, &transactions_info[index], block_number) {
+            Ok(trace) => {
+                let transaction_trace = TransactionTraceWithHash { trace_root: trace, transaction_hash: *tx_hash };
+                transactions_traces.push(transaction_trace);
+            }
+            Err(e) => {
+                log::error!("Failed to generate trace: {}", e);
+                return Err(StarknetRpcApiError::InternalServerError.into());
+            }
+        }
     }
 
-    Ok(transaction_traces)
+    Ok(transactions_traces)
 }
