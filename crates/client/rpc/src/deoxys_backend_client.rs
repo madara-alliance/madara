@@ -70,13 +70,19 @@ where
 }
 
 /// Returns the current Starknet block from the block header's digest
-pub fn get_block_by_block_hash<B, C>(client: &C, block_hash: <B as BlockT>::Hash) -> anyhow::Result<DeoxysBlock>
+pub fn get_block_by_block_hash<B, C>(
+    client: &C,
+    substrate_block_hash: <B as BlockT>::Hash,
+) -> anyhow::Result<DeoxysBlock>
 where
     B: BlockT,
     C: HeaderBackend<B>,
 {
-    let header =
-        client.header(block_hash).ok().flatten().ok_or_else(|| anyhow::Error::msg("Failed to retrieve header"))?;
+    let header = client
+        .header(substrate_block_hash)
+        .ok()
+        .flatten()
+        .ok_or_else(|| anyhow::Error::msg("Failed to retrieve header"))?;
     let digest = header.digest();
     let block = find_starknet_block(digest)?;
     Ok(block)

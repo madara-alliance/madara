@@ -13,8 +13,9 @@ use starknet_core::types::{BlockId, TransactionTraceWithHash};
 
 use super::super::read::get_transaction_receipt::execution_infos;
 use super::utils::tx_execution_infos_to_tx_trace;
-use crate::errors::StarknetRpcApiError;
 use crate::deoxys_backend_client::get_block_by_block_hash;
+use crate::errors::StarknetRpcApiError;
+use crate::utils::execution::block_context;
 use crate::utils::helpers::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
 use crate::Starknet;
@@ -42,8 +43,9 @@ where
     let block_header = starknet_block.header();
     let block_number = block_header.block_number;
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
-    let previous_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
     let chain_id = starknet.chain_id()?;
+    let previous_substrate_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
+    let block_context = block_context(starknet.client.as_ref(), previous_substrate_block_hash)?;
 
     let block_txs_hashes = if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(block_hash.into()) {
         tx_hash_retrieve(tx_hashes)
@@ -67,15 +69,6 @@ where
 
     let transactions_blockifier = blockifier_transactions(transaction_with_hash)?;
 
-    let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
-        log::error!("Failed to retrieve fee token address: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?;
-
-    // TODO(@Tbelleng): check with JB for the good block_contrext
-    let block_context =
-        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
-
     let mut transaction_traces = Vec::new();
 
     for (index, transaction) in transactions_blockifier.iter().enumerate() {
@@ -92,8 +85,7 @@ where
             blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(_) => TxType::L1Handler,
         };
 
-        let execution_infos =
-            execution_infos(starknet, previous_block_hash, vec![transaction.clone()], &block_context)?;
+        let execution_infos = execution_infos(vec![transaction.clone()], &block_context)?;
 
         let trace = tx_execution_infos_to_tx_trace(tx_type, &execution_infos, block_number).map_err(|e| {
             log::error!("Failed to generate trace: {}", e);

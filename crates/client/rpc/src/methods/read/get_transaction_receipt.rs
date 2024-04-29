@@ -11,6 +11,7 @@ use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
+use starknet_api::core::{calculate_contract_address, ContractAddress};
 use starknet_api::transaction::Transaction;
 use starknet_core::types::{
     ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionReceipt,
@@ -24,7 +25,7 @@ use crate::errors::StarknetRpcApiError;
 use crate::utils::call_info::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
 };
-use crate::utils::execution::re_execute_transactions;
+use crate::utils::execution::{block_context, re_execute_transactions};
 use crate::utils::helpers::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
 use crate::{Felt, Starknet};
@@ -90,12 +91,13 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let block = get_block_by_block_hash(client.client.as_ref(), substrate_block_hash)?;
-    let block_header = block.header().clone();
+    let block_header = block.header();
     let block_number = block_header.block_number;
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
 
-    // computes the previous SUBSTRATE block hash
-    let previous_block_hash = previous_substrate_block_hash(client, substrate_block_hash)?;
+    // computes the previous SUBSTRATE block hash and creates a block context
+    let previous_substrate_block_hash = previous_substrate_block_hash(client, substrate_block_hash)?;
+    let block_context = block_context(client.client.as_ref(), previous_substrate_block_hash)?;
 
     // retrieve all transaction hashes from the block in the cache or compute them
     let block_txs_hashes = if let Some(tx_hashes) = client.get_cached_transaction_hashes(block_hash.into()) {
@@ -128,19 +130,46 @@ where
 
     let transactions_blockifier = blockifier_transactions(transaction_with_hash)?;
 
-    let fee_token_address = client.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
-        log::error!("Failed to retrieve fee token address: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?;
-    // TODO: convert the real chain_id in String
-    let block_context =
-        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
-    let execution_infos = execution_infos(client, previous_block_hash, transactions_blockifier, &block_context)?;
+    let execution_infos = execution_infos(transactions_blockifier, &block_context)?;
 
-    // TODO(#1291): compute message hash correctly to L1HandlerTransactionReceipt
+    let receipt = receipt(transaction, &execution_infos, transaction_hash, block_number)?;
+
+    let block_info = starknet_core::types::ReceiptBlock::Block { block_hash: block_hash.0, block_number };
+
+    Ok(TransactionReceiptWithBlockInfo { receipt, block: block_info })
+}
+
+pub(crate) fn execution_infos(
+    transactions: Vec<btx::Transaction>,
+    block_context: &BlockContext,
+) -> RpcResult<TransactionExecutionInfo> {
+    let (last, prev) = match transactions.split_last() {
+        Some((last, prev)) => (vec![last.clone()], prev.to_vec()),
+        None => (transactions, vec![]),
+    };
+
+    let execution_infos = re_execute_transactions(prev, last, block_context)
+        .map_err(|e| {
+            log::error!("Failed to re-execute transactions: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?
+        .pop()
+        .ok_or_else(|| {
+            log::error!("No execution info returned for the last transaction");
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+    Ok(execution_infos)
+}
+
+pub fn receipt(
+    transaction: &Transaction,
+    execution_infos: &TransactionExecutionInfo,
+    transaction_hash: FieldElement,
+    block_number: u64,
+) -> RpcResult<TransactionReceipt> {
     let message_hash: Hash256 = Hash256::from_felt(&FieldElement::default());
 
-    // TODO: implement fee in Fri when Blockifier will support it
     let actual_fee = starknet_core::types::FeePayment {
         amount: execution_infos.actual_fee.0.into(),
         unit: starknet_core::types::PriceUnit::Wei,
@@ -179,14 +208,13 @@ where
         },
     };
 
-    let events = match execution_infos.execute_call_info {
-        Some(ref call_info) => extract_events_from_call_info(call_info),
-        None => vec![],
-    };
-
-    let messages_sent = match execution_infos.execute_call_info {
-        Some(ref call_info) => extract_messages_from_call_info(call_info),
-        None => vec![],
+    // no events or messages sent for declare transactions
+    let (events, messages_sent) = match transaction {
+        Transaction::Declare(_) => (vec![], vec![]),
+        _ => {
+            let call_info = execution_infos.execute_call_info.as_ref().unwrap();
+            (extract_events_from_call_info(call_info), extract_messages_from_call_info(call_info))
+        }
     };
 
     let receipt = match transaction {
@@ -199,17 +227,29 @@ where
             execution_resources,
             execution_result,
         }),
-        Transaction::DeployAccount(_) => TransactionReceipt::DeployAccount(DeployAccountTransactionReceipt {
-            transaction_hash,
-            actual_fee,
-            finality_status,
-            messages_sent,
-            events,
-            execution_resources,
-            execution_result,
-            // TODO: retrieve account address
-            contract_address: FieldElement::default(),
-        }),
+        Transaction::DeployAccount(deploy_account) => {
+            let contract_address = calculate_contract_address(
+                deploy_account.contract_address_salt(),
+                deploy_account.class_hash(),
+                &deploy_account.constructor_calldata(),
+                ContractAddress::default(),
+            )
+            .map_err(|e| {
+                log::error!("Failed to calculate contract address: {e}");
+                StarknetRpcApiError::InternalServerError
+            })?;
+            TransactionReceipt::DeployAccount(DeployAccountTransactionReceipt {
+                transaction_hash,
+                actual_fee,
+                finality_status,
+                messages_sent,
+                events,
+                execution_resources,
+                execution_result,
+                // Safe to unwrap because StarkFelt is same as FieldElement
+                contract_address: FieldElement::from_bytes_be(&contract_address.0.0.0).unwrap(),
+            })
+        }
         Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {
             transaction_hash,
             actual_fee,
@@ -232,39 +272,5 @@ where
         _ => unreachable!("Deploy transactions are not supported"),
     };
 
-    let block_info = starknet_core::types::ReceiptBlock::Block { block_hash: block_hash.0, block_number };
-
-    Ok(TransactionReceiptWithBlockInfo { receipt, block: block_info })
-}
-
-pub(crate) fn execution_infos<BE, C, H>(
-    _client: &Starknet<BE, C, H>,
-    _previous_block_hash: DHashT,
-    transactions: Vec<btx::Transaction>,
-    block_context: &BlockContext,
-) -> RpcResult<TransactionExecutionInfo>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    H: HasherT + Send + Sync + 'static,
-{
-    let (last, prev) = match transactions.split_last() {
-        Some((last, prev)) => (vec![last.clone()], prev.to_vec()),
-        None => (transactions, vec![]),
-    };
-
-    let execution_infos = re_execute_transactions(prev, last, block_context)
-        .map_err(|e| {
-            log::error!("Failed to execute runtime API call: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .pop()
-        .ok_or_else(|| {
-            log::error!("No execution info returned for the last transaction");
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-    Ok(execution_infos)
+    Ok(receipt)
 }
