@@ -50,12 +50,8 @@ impl ContractDataView {
     }
 
     pub fn get_class_hash(self, contract_address: &ContractAddress) -> Result<Option<ClassHash>, DeoxysStorageError> {
-        self.get(contract_address).map(|option| {
-            option.and_then(|contract_data| match contract_data.class_hash.get().cloned() {
-                Some(class_hash) => Some(class_hash),
-                None => None,
-            })
-        })
+        self.get(contract_address)
+            .map(|option| option.and_then(|contract_data| contract_data.class_hash.get().cloned()))
     }
 
     pub fn get_nonce_at(
@@ -99,7 +95,6 @@ impl ContractDataView {
     }
 }
 
-#[async_trait]
 impl StorageViewMut for ContractDataViewMut {
     type KEY = ContractAddress;
     type VALUE = (Option<ClassHash>, Option<Nonce>);
@@ -109,7 +104,7 @@ impl StorageViewMut for ContractDataViewMut {
         Ok(())
     }
 
-    async fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError> {
+    fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractData);
         let (keys, values): (Vec<_>, Vec<_>) = self.0.into_iter().unzip();
@@ -141,42 +136,6 @@ impl StorageViewMut for ContractDataViewMut {
             batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&contract_data).unwrap());
         }
         db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractData))
-
-        // let mut set = JoinSet::new();
-        // for (key, value) in self.0.into_iter() {
-        //     let db = Arc::clone(db);
-        //
-        //     set.spawn(async move {
-        //         let column = db.get_column(Column::ContractData);
-        //
-        //         let Ok(tree) = db.get_cf(&column, key.encode()) else {
-        //             return
-        // Err(DeoxysStorageError::StorageRetrievalError(StorageType::ContractData));
-        //         };
-        //
-        //         let mut tree: BTreeMap<u64, StorageContractData> = match tree {
-        //             Some(bytes) => match BTreeMap::decode(&mut &bytes[..]) {
-        //                 Ok(tree) => tree,
-        //                 Err(_) => return
-        // Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractData)),
-        //             },
-        //             None => BTreeMap::new(),
-        //         };
-        //
-        //         tree.insert(block_number, value);
-        //         if db.put_cf(&column, key.encode(), tree.encode()).is_err() {
-        //             return
-        // Err(DeoxysStorageError::StorageCommitError(StorageType::ContractData));         }
-        //
-        //         Ok(())
-        //     });
-        // }
-        //
-        // while let Some(res) = set.join_next().await {
-        //     res.unwrap()?;
-        // }
-        //
-        // Ok(())
     }
 }
 
@@ -253,39 +212,5 @@ impl ContractDataViewMut {
         class_hash: ClassHash,
     ) -> Result<(), DeoxysStorageError> {
         self.insert(contract_address, (Some(class_hash), None))
-    }
-
-    pub fn commit_sync(self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractData);
-        let (keys, values): (Vec<_>, Vec<_>) = self.0.into_iter().unzip();
-        let keys_cf = keys.iter().map(|key| (&column, bincode::serialize(key).unwrap()));
-        let histories = db
-            .multi_get_cf(keys_cf)
-            .into_iter()
-            .map(|result| {
-                result.map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData)).and_then(
-                    |option| match option {
-                        Some(bytes) => bincode::deserialize::<StorageContractData>(&bytes)
-                            .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData)),
-                        None => Ok(StorageContractData::default()),
-                    },
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let mut batch = WriteBatchWithTransaction::<true>::default();
-        for (key, mut contract_data, (class_hash, nonce)) in izip!(keys, histories, values) {
-            if let Some(class_hash) = class_hash {
-                contract_data.class_hash.push(block_number, class_hash).unwrap();
-            }
-
-            if let Some(nonce) = nonce {
-                contract_data.nonce.push(block_number, nonce).unwrap();
-            }
-
-            batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&contract_data).unwrap());
-        }
-        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractData))
     }
 }

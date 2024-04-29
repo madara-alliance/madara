@@ -14,7 +14,6 @@ use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use blockifier::versioned_constants::VersionedConstants;
 use mc_db::storage_handler;
-use mc_db::storage_handler::StorageView;
 use mp_felt::Felt252Wrapper;
 use mp_simulations::{SimulationFlagForEstimateFee, SimulationFlags};
 use starknet_api::core::{ContractAddress, EntryPointSelector};

@@ -29,6 +29,11 @@ pub fn run_db_bench() -> Result<(), DeoxysStorageError> {
     let bytes = bench_db_column(Column::ContractClassHashes)?;
     log::info!("contract class hashes: {bytes} bytes");
 
+    // State diffs
+
+    let bytes = bench_db_column(Column::BlockStateDiff)?;
+    log::info!("State diffs: {bytes} bytes");
+
     // Bonsai contract
 
     let bytes = bench_db_column(Column::BonsaiContractsTrie)?;
@@ -50,6 +55,9 @@ pub fn run_db_bench() -> Result<(), DeoxysStorageError> {
 
     let bytes = bench_db_column(Column::BonsaiContractsStorageLog)?;
     log::info!("bonsai contract storage log: {bytes} bytes");
+
+    let bytes = bench_db_column(Column::ContractStorage)?;
+    log::info!("contract storage log: {bytes} bytes");
 
     // Bonsai class
 

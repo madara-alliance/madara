@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use crossbeam_skiplist::SkipMap;
 use rocksdb::WriteBatchWithTransaction;
 use starknet_api::core::{ClassHash, CompiledClassHash};
@@ -41,7 +40,6 @@ impl StorageView for ContractClassHashesView {
     }
 }
 
-#[async_trait]
 impl StorageViewMut for ContractClassHashesViewMut {
     type KEY = ClassHash;
     type VALUE = CompiledClassHash;
@@ -51,7 +49,7 @@ impl StorageViewMut for ContractClassHashesViewMut {
         Ok(())
     }
 
-    async fn commit(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
+    fn commit(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassHashes);
 
@@ -60,36 +58,5 @@ impl StorageViewMut for ContractClassHashesViewMut {
             batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&value).unwrap());
         }
         db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassHashes))
-
-        // let mut set = JoinSet::new();
-        // for (key, value) in self.0.into_iter() {
-        //     let db = Arc::clone(db);
-        //
-        //     set.spawn(async move {
-        //         let column = db.get_column(Column::ContractClassHashes);
-        //         db.put_cf(&column, key.encode(), value.encode())
-        //             .map_err(|_|
-        // DeoxysStorageError::StorageCommitError(StorageType::ContractClassHashes))     });
-        // }
-        //
-        // while let Some(res) = set.join_next().await {
-        //     res.unwrap()?;
-        // }
-        //
-        // Ok(())
-    }
-}
-
-impl ContractClassHashesViewMut {
-    pub fn commit_sync(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractClassHashes);
-
-        for (key, value) in self.0.into_iter() {
-            db.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&value).unwrap())
-                .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassHashes))?
-        }
-
-        Ok(())
     }
 }

@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use bitvec::prelude::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
-use parity_scale_codec::{Decode, Encode};
 use sp_core::hexdisplay::AsBytesRef;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
@@ -148,7 +147,6 @@ pub trait StorageView {
 /// > Note that a single mutable view can exist at once for a same storage type.
 ///
 /// Use this to write data to the backend database in a type-safe way.
-#[async_trait()]
 pub trait StorageViewMut {
     type KEY;
     type VALUE;
@@ -163,7 +161,7 @@ pub trait StorageViewMut {
     ///
     /// * `block_number`: point in the chain at which to apply the new changes. Must be
     /// incremental
-    async fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError>;
+    fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
 /// A mutable view on a backend storage interface, marking it as revertible in the chain.

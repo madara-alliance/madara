@@ -1,7 +1,7 @@
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
-use mc_db::storage_handler::{self, DeoxysStorageError, StorageView, StorageViewMut};
+use mc_db::storage_handler::{self, DeoxysStorageError, StorageViewMut};
 use mp_convert::field_element::FromFieldElement;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;

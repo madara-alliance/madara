@@ -25,6 +25,7 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
         .collect();
 
     let (result1, result2, result3, result4) = tokio::join!(
+        // Contract address to class hash and nonce update
         async move {
             let handler_contract_data = storage_handler::contract_data_mut();
 
@@ -50,8 +51,9 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
                 handler_contract_data.insert(contract_address, (class_hash, nonce)).unwrap()
             });
 
-            handler_contract_data.commit(block_number).await
+            handler_contract_data.commit(block_number)
         },
+        // Class hash to compiled class hash update
         async move {
             let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
 
@@ -69,10 +71,12 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
                     handler_contract_class_hashes.insert(class_hash, compiled_class_hash).unwrap();
                 });
 
-            handler_contract_class_hashes.commit(block_number).await
+            handler_contract_class_hashes.commit(block_number)
         },
+        // Block number to state diff update
         async move { storage_handler::block_state_diff().insert(block_number, state_diff) },
-        async move { storage_handler::contract_storage_mut().commit(block_number).await }
+        // Contract address to contract storage update
+        async move { storage_handler::contract_storage_mut().commit(block_number) }
     );
 
     match (result1, result2, result3, result4) {
@@ -98,5 +102,5 @@ pub async fn store_class_update(block_number: u64, class_update: ClassUpdateWrap
         },
     );
 
-    handler_contract_class_data_mut.commit(block_number).await
+    handler_contract_class_data_mut.commit(block_number)
 }

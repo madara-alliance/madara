@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use crossbeam_skiplist::SkipMap;
 use parity_scale_codec::{Decode, Encode};
 use rocksdb::WriteBatchWithTransaction;
@@ -43,7 +42,6 @@ impl StorageView for ContractClassDataView {
     }
 }
 
-#[async_trait]
 impl StorageViewMut for ContractClassDataViewMut {
     type KEY = ClassHash;
     type VALUE = StorageContractClassData;
@@ -53,7 +51,7 @@ impl StorageViewMut for ContractClassDataViewMut {
         Ok(())
     }
 
-    async fn commit(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
+    fn commit(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassData);
 
@@ -62,20 +60,5 @@ impl StorageViewMut for ContractClassDataViewMut {
             batch.put_cf(&column, bincode::serialize(&key).unwrap(), value.encode());
         }
         db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassData))
-
-        // let mut set = JoinSet::new();
-        // for (key, value) in self.0.into_iter() {
-        //     let db = Arc::clone(db);
-        //
-        //     set.spawn(async move {
-        //         let colum = db.get_column(Column::ContractClassData);
-        //         db.put_cf(&colum, key.encode(), value.encode())
-        //             .map_err(|_|
-        // DeoxysStorageError::StorageInsertionError(StorageType::ContractClassData))     });
-        // }
-        //
-        // while let Some(res) = set.join_next().await {
-        //     res.unwrap()?;
-        // }
     }
 }
