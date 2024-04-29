@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix: get_state_update with new storage
 - up: starknet-rs
 - fix: exec on receipt
 - feat(RPC): refacto `trace_transaction` and `trace_block_transaction`
