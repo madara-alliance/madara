@@ -1,6 +1,6 @@
 [package]
 authors = ["Antiyro <https://github.com/antiyro>"]
-description = "Deoxys crate for Madara"
+description = "This crate is responsible to sync data"
 edition = "2021"
 homepage = "https://github.com/KasarLabs/deoxys"
 license = "MIT"

@@ -15,8 +15,8 @@ use starknet_core::types::{
 
 use super::lib::ConvertCallInfoToExecuteInvocationError;
 use super::utils::{block_number_by_id, tx_execution_infos_to_tx_trace};
+use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
-use crate::madara_backend_client::get_block_by_block_hash;
 use crate::{utils, Starknet};
 
 pub async fn simulate_transactions<BE, C, H>(

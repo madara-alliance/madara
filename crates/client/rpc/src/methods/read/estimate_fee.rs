@@ -13,8 +13,8 @@ use starknet_core::types::{
     BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee as EstimateFeeFlag,
 };
 
+use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
-use crate::madara_backend_client::get_block_by_block_hash;
 use crate::{utils, Starknet};
 
 /// Estimate the fee associated with transaction
@@ -76,11 +76,16 @@ where
         })?;
 
     let estimates = fee_estimates
-            .into_iter()
-			// FIXME: https://github.com/keep-starknet-strange/madara/issues/329
-            // TODO: reflect right estimation
-            .map(|x| FeeEstimate { gas_consumed: x.gas_consumed , gas_price: x.gas_price, data_gas_consumed: x.data_gas_consumed, data_gas_price: x.data_gas_price, overall_fee: x.overall_fee, unit: x.unit})
-            .collect();
+        .into_iter()
+        .map(|x| FeeEstimate {
+            gas_consumed: x.gas_consumed,
+            gas_price: x.gas_price,
+            data_gas_consumed: x.data_gas_consumed,
+            data_gas_price: x.data_gas_price,
+            overall_fee: x.overall_fee,
+            unit: x.unit,
+        })
+        .collect();
 
     Ok(estimates)
 }

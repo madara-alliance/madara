@@ -1,4 +1,4 @@
-use crate::commands::{ExtendedRunCmd, SetupCmd};
+use crate::commands::ExtendedRunCmd;
 
 #[derive(Debug, clap::Parser)]
 pub struct Cli {
@@ -43,9 +43,6 @@ pub enum Subcommand {
 
     /// Revert the chain to a previous state.
     Revert(sc_cli::RevertCmd),
-
-    /// Setup madara node
-    Setup(SetupCmd),
 
     /// Try some command against runtime state.
     #[cfg(feature = "try-runtime")]

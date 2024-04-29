@@ -5,9 +5,6 @@ use sc_cli::{ChainSpec, SubstrateCli};
 use crate::benchmarking::{inherent_benchmark_data, RemarkBuilder};
 use crate::cli::{Cli, Subcommand};
 use crate::commands::run_node;
-use crate::constants::DEV_CHAIN_ID;
-#[cfg(feature = "sharingan")]
-use crate::constants::SHARINGAN_CHAIN_ID;
 use crate::{chain_spec, service};
 
 impl SubstrateCli for Cli {
@@ -32,15 +29,11 @@ impl SubstrateCli for Cli {
     }
 
     fn copyright_start_year() -> i32 {
-        2017
+        2023
     }
 
     fn load_spec(&self, id: &str) -> Result<Box<dyn ChainSpec>, String> {
         Ok(match id {
-            DEV_CHAIN_ID => {
-                let sealing = self.run.sealing.map(Into::into).unwrap_or_default();
-                Box::new(chain_spec::development_config(sealing)?)
-            }
             "starknet" => {
                 let sealing = self.run.sealing.map(Into::into).unwrap_or_default();
                 Box::new(chain_spec::deoxys_config(sealing, id)?)
@@ -92,17 +85,8 @@ pub fn run() -> sc_cli::Result<()> {
             let runner = cli.create_runner(cmd)?;
             runner.sync_run(|config| cmd.run(config.database))
         }
-        Some(Subcommand::Revert(ref cmd)) => {
-            let runner = cli.create_runner(cmd)?;
-            runner.async_run(|mut config| {
-                let (client, backend, _, task_manager, _) = service::new_chain_ops(&mut config, cli.run.cache)?;
-                let aux_revert = Box::new(|client, _, blocks| {
-                    sc_consensus_grandpa::revert(client, blocks)?;
-                    Ok(())
-                });
-                Ok((cmd.run(client, backend, Some(aux_revert)), task_manager))
-            })
-        }
+        // TODO: This does not handle reverts correctly
+        Some(Subcommand::Revert(ref _cmd)) => Err("Subcommand Revert is not implemented.".into()),
         Some(Subcommand::Benchmark(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
 
@@ -172,7 +156,6 @@ pub fn run() -> sc_cli::Result<()> {
             let runner = cli.create_runner(cmd)?;
             runner.sync_run(|config| cmd.run::<Block>(&config))
         }
-        Some(Subcommand::Setup(ref cmd)) => cmd.run(),
         None => run_node(cli),
     }
 }

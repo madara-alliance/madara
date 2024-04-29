@@ -212,7 +212,7 @@ impl ComputeTransactionHash for InvokeTransaction {
         }
     }
 }
-// TODO: Check this implem, Madara-wip do it using another way, a function insted of an implem
+
 impl ComputeTransactionHash for DeclareTransactionV0V1 {
     fn compute_hash<H: HasherT>(
         &self,
