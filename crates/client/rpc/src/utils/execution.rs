@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use blockifier::context::{BlockContext, TransactionContext};
+use blockifier::context::{BlockContext, FeeTokenAddresses, TransactionContext};
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
 use blockifier::execution::errors::EntryPointExecutionError;
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
@@ -16,14 +16,44 @@ use blockifier::versioned_constants::VersionedConstants;
 use mc_db::storage_handler;
 use mc_db::storage_handler::StorageView;
 use mp_felt::Felt252Wrapper;
+use mp_genesis_config::{ETH_TOKEN_ADDR, STRK_TOKEN_ADDR};
 use mp_simulations::{SimulationFlagForEstimateFee, SimulationFlags};
+use sp_blockchain::HeaderBackend;
+use sp_runtime::traits::Block as BlockT;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
+use starknet_api::hash::StarkHash;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{FeeEstimate, PriceUnit};
 use starknet_ff::FieldElement;
 
 use super::blockifier_state_adapter::BlockifierStateAdapter;
+use crate::errors::StarknetRpcApiError;
+use crate::madara_backend_client::get_block_by_block_hash;
+
+pub fn block_context<B, C>(
+    client: &C,
+    substrate_block_hash: <B as BlockT>::Hash,
+) -> Result<BlockContext, StarknetRpcApiError>
+where
+    B: BlockT,
+    C: HeaderBackend<B>,
+{
+    let block = get_block_by_block_hash(client, substrate_block_hash).map_err(|e| {
+        log::error!("Failed to retrieve block by block hash: {e}");
+        StarknetRpcApiError::BlockNotFound
+    })?;
+    let block_header = block.header();
+
+    // safe unwrap because address is always valid and static
+    let fee_token_address = FeeTokenAddresses {
+        strk_fee_token_address: StarkHash::new_unchecked(STRK_TOKEN_ADDR.0.to_bytes_be()).try_into().unwrap(),
+        eth_fee_token_address: StarkHash::new_unchecked(ETH_TOKEN_ADDR.0.to_bytes_be()).try_into().unwrap(),
+    };
+    let chain_id = starknet_api::core::ChainId("SN_MAIN".to_string());
+
+    Ok(block_header.into_block_context(fee_token_address, chain_id))
+}
 
 pub fn re_execute_transactions(
     transactions_before: Vec<Transaction>,
