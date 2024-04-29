@@ -1,6 +1,6 @@
 use jsonrpsee::core::RpcResult;
+use mc_db::storage_handler::primitives::contract_class::ContractClassWrapper;
 use mc_db::storage_handler::query::{contract_abi_by_address, contract_class_by_address};
-use mp_contract::class::ContractClassWrapper;
 use starknet_api::core::{ContractAddress, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{BlockId, ContractClass, FieldElement};

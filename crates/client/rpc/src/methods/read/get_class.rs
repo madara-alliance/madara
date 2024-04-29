@@ -1,6 +1,6 @@
 use jsonrpsee::core::RpcResult;
+use mc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
 use mc_db::storage_handler::{self, StorageView};
-use mp_contract::class::{ContractClassWrapper, StorageContractClassData};
 use mp_felt::Felt252Wrapper;
 use starknet_core::types::{BlockId, ContractClass, FieldElement};
 

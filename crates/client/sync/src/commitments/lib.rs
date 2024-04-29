@@ -224,13 +224,11 @@ fn contract_state_leaf_hash(csd: &CommitmentStateDiff, contract_address: &Contra
 fn class_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress) -> FieldElement {
     let class_hash = match csd.address_to_class_hash.get(contract_address) {
         Some(class_hash) => *class_hash,
-        None => {
-            let Ok(Some(contract_data)) = storage_handler::contract_data().get(contract_address) else {
-                return FieldElement::ZERO;
-            };
-
-            contract_data.class_hash
-        }
+        None => match storage_handler::contract_data().get_class_hash(contract_address) {
+            Ok(Some(class_hash)) => class_hash,
+            // TODO: is it a failure case for no class to be found
+            _ => return FieldElement::ZERO,
+        },
     };
 
     FieldElement::from_byte_slice_be(class_hash.0.bytes()).unwrap()

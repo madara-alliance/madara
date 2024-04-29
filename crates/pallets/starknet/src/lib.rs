@@ -33,7 +33,7 @@
 #![allow(clippy::large_enum_variant)]
 
 /// An adapter for the blockifier state related traits
-use mp_contract::class::StorageContractData;
+use mc_db::storage_handler::primitives::contract_class::StorageContractData;
 /// Starknet pallet.
 /// Definition of the pallet's runtime storage items, events, errors, and dispatchable
 /// functions.
@@ -268,9 +268,7 @@ pub mod pallet {
 
             let handler_contract_data = storage_handler::contract_data_mut();
             self.contracts.iter().for_each(|(contract_address, class_hash)| {
-                handler_contract_data
-                    .insert(*contract_address, StorageContractData { class_hash: *class_hash, nonce: Nonce::default() })
-                    .unwrap();
+                handler_contract_data.insert_class_hash(*contract_address, *class_hash).unwrap();
             });
             handler_contract_data.commit_sync(0).unwrap();
 

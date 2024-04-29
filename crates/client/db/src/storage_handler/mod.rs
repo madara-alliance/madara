@@ -36,6 +36,7 @@ mod contract_storage;
 mod contract_storage_trie;
 mod contract_trie;
 mod history;
+pub mod primitives;
 pub mod query;
 
 pub mod bonsai_identifier {
@@ -128,8 +129,8 @@ impl Display for StorageType {
 ///
 /// Use this to query data from the backend database in a type-safe way.
 pub trait StorageView {
-    type KEY: Encode + Decode;
-    type VALUE: Encode + Decode;
+    type KEY;
+    type VALUE;
 
     /// Retrieves data from storage for the given key
     ///
@@ -149,8 +150,8 @@ pub trait StorageView {
 /// Use this to write data to the backend database in a type-safe way.
 #[async_trait()]
 pub trait StorageViewMut {
-    type KEY: Encode + Decode;
-    type VALUE: Encode + Decode;
+    type KEY;
+    type VALUE;
 
     /// Insert data into storage.
     ///

@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use mp_contract::class::{
-    ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData, StorageContractData,
-};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate};
+use storage_handler::primitives::contract_class::{
+    ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData, StorageContractData,
+};
 use tokio::task::{self, spawn_blocking};
 
 use crate::storage_handler::{self, DeoxysStorageError, StorageView, StorageViewMut};
@@ -50,20 +50,11 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
 
             task::spawn_blocking(move || {
                 iter_depoyed.chain(iter_replaced).for_each(|(contract_address, class_hash)| {
+                    let class_hash = Some(class_hash);
                     let previous_nonce = handler_contract_data_1.get(&contract_address).unwrap().map(|data| data.nonce);
+                    let nonce = previous_nonce.unwrap_or_default().get().cloned();
 
-                    handler_contract_data_1
-                        .insert(
-                            contract_address,
-                            StorageContractData {
-                                class_hash,
-                                nonce: match nonce_map.get(&contract_address) {
-                                    Some(nonce) => *nonce,
-                                    None => previous_nonce.unwrap_or_default(),
-                                },
-                            },
-                        )
-                        .unwrap()
+                    handler_contract_data_1.insert(contract_address, (class_hash, nonce)).unwrap()
                 });
             })
             .await

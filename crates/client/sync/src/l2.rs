@@ -5,9 +5,9 @@ use std::sync::{Arc, RwLock};
 
 use futures::prelude::*;
 use lazy_static::lazy_static;
+use mc_db::storage_handler::primitives::contract_class::ClassUpdateWrapper;
 use mc_db::storage_updates::{store_class_update, store_state_update};
 use mp_block::DeoxysBlock;
-use mp_contract::class::ClassUpdateWrapper;
 use mp_felt::Felt252Wrapper;
 use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;

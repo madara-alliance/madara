@@ -1,9 +1,10 @@
 use async_trait::async_trait;
 use crossbeam_skiplist::SkipMap;
-use mp_contract::class::StorageContractClassData;
+use parity_scale_codec::{Decode, Encode};
 use rocksdb::WriteBatchWithTransaction;
 use starknet_api::core::ClassHash;
 
+use super::primitives::contract_class::StorageContractClassData;
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
 use crate::{Column, DatabaseExt, DeoxysBackend};
 
@@ -22,7 +23,7 @@ impl StorageView for ContractClassDataView {
         let contract_class_data = db
             .get_cf(&column, bincode::serialize(&class_hash).unwrap())
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassData))?
-            .map(|bytes| bincode::deserialize::<StorageContractClassData>(&bytes[..]));
+            .map(|bytes| StorageContractClassData::decode(&mut &bytes[..]));
 
         match contract_class_data {
             Some(Ok(contract_class_data)) => Ok(Some(contract_class_data)),
@@ -58,7 +59,7 @@ impl StorageViewMut for ContractClassDataViewMut {
 
         let mut batch = WriteBatchWithTransaction::<true>::default();
         for (key, value) in self.0.into_iter() {
-            batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&value).unwrap());
+            batch.put_cf(&column, bincode::serialize(&key).unwrap(), value.encode());
         }
         db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassData))
 
