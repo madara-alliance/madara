@@ -277,7 +277,7 @@ pub fn from_tx_info_and_gas_price(
     }
 }
 
-pub(crate) fn init_cached_state(block_context: &BlockContext) -> CachedState<BlockifierStateAdapter> {
+fn init_cached_state(block_context: &BlockContext) -> CachedState<BlockifierStateAdapter> {
     let block_number = block_context.block_info().block_number.0;
     CachedState::new(BlockifierStateAdapter::new(block_number), GlobalContractCache::new(10))
 }
