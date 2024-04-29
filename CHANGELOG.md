@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- feat(storage): removed the use of `BonsaiStorage` logs
 - feat(storage): removed dependance on `StateUpdateWrapper`
 - feat(storage): state diff are now stored for each block
 - CI: fix toolchain
