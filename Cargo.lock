@@ -6074,6 +6074,7 @@ dependencies = [
  "mp-convert",
  "mp-digest-log",
  "mp-felt",
+ "mp-genesis-config",
  "mp-hashers",
  "mp-simulations",
  "mp-transactions",
