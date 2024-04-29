@@ -139,7 +139,7 @@ where
     Ok(TransactionReceiptWithBlockInfo { receipt, block: block_info })
 }
 
-fn execution_infos(
+pub(crate) fn execution_infos(
     transactions: Vec<btx::Transaction>,
     block_context: &BlockContext,
 ) -> RpcResult<TransactionExecutionInfo> {
