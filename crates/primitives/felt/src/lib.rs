@@ -53,7 +53,6 @@ pub fn trim_hash(hash: &Felt252Wrapper, length: usize) -> String {
     format!("{}...{}", prefix, suffix)
 }
 
-
 impl fmt::Debug for Felt252Wrapper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:#x}", &self.0)

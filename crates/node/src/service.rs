@@ -353,13 +353,8 @@ where
     RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
     RuntimeApi: Send + Sync + 'static,
 {
-    let proposer_factory = ProposerFactory::new(
-        task_manager.spawn_handle(),
-        client.clone(),
-        transaction_pool.clone(),
-        None,
-        None,
-    );
+    let proposer_factory =
+        ProposerFactory::new(task_manager.spawn_handle(), client.clone(), transaction_pool.clone(), None, None);
 
     thread_local!(static TIMESTAMP: RefCell<u64> = RefCell::new(0));
 

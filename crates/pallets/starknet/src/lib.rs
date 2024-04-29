@@ -495,7 +495,12 @@ impl<T: Config> Pallet<T> {
 
                 let digest = DigestItem::Consensus(DEOXYS_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
                 frame_system::Pallet::<T>::deposit_log(digest);
-                log::info!("✨ Imported #{} ({}) and updated state root ({})", block_number, trim_hash(&block_hash, 10) , trim_hash(&state_root, 10));
+                log::info!(
+                    "✨ Imported #{} ({}) and updated state root ({})",
+                    block_number,
+                    trim_hash(&block_hash, 10),
+                    trim_hash(&state_root, 10)
+                );
             }
             _ => {
                 log!(info, "Block not found in store_block")
