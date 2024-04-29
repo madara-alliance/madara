@@ -70,7 +70,7 @@ where
     let transactions_blockifier = blockifier_transactions(transaction_with_hash.clone())?;
 
     let execution_infos = re_execute_transactions(vec![], transactions_blockifier, &block_context).map_err(|e| {
-        log::error!("Failed to execute runtime API call: {e}");
+        log::error!("Failed to re-execute transactions: '{e}'");
         StarknetRpcApiError::InternalServerError
     })?;
 

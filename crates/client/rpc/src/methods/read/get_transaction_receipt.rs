@@ -150,7 +150,7 @@ fn execution_infos(
 
     let execution_infos = re_execute_transactions(prev, last, block_context)
         .map_err(|e| {
-            log::error!("Failed to execute runtime API call: {e}");
+            log::error!("Failed to re-execute transactions: {e}");
             StarknetRpcApiError::InternalServerError
         })?
         .pop()
