@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use crossbeam_skiplist::SkipMap;
 use mp_contract::class::StorageContractData;
 use parity_scale_codec::{Decode, Encode};
-use rocksdb::IteratorMode;
+use rocksdb::{IteratorMode, WriteBatchWithTransaction};
 use starknet_api::core::{ClassHash, ContractAddress};
 use tokio::task::JoinSet;
 
@@ -116,6 +116,16 @@ impl StorageViewMut for ContractDataViewMut {
 
     async fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
+        // let column = db.get_column(Column::ContractData);
+        // let (keys, value): (Vec<_>, Vec<_>) = self.0.into_iter().unzip();
+        // let keys_cf = keys.iter().map(|key| (&column, bincode::serialize(key).unwrap()));
+        // let histories = db.multi_get_cf(keys_cf).into_iter().map(|result| {
+        //     result.and_then(|option| match option {
+        //         Some(bytes) => bincode::deserialize(&bytes)
+        //             .map_err(|_|
+        // DeoxysStorageError::StorageDecodeError(StorageType::ContractData)),         None
+        // => todo!(),     })
+        // });
 
         let mut set = JoinSet::new();
         for (key, value) in self.0.into_iter() {

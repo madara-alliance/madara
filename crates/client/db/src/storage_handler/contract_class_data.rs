@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use crossbeam_skiplist::SkipMap;
 use mp_contract::class::StorageContractClassData;
 use parity_scale_codec::{Decode, Encode};
+use rocksdb::WriteBatch;
 use starknet_api::core::ClassHash;
 use tokio::task::JoinSet;
 
@@ -25,7 +26,7 @@ impl StorageView for ContractClassDataView {
         let contract_class_data = db
             .get_cf(&column, class_hash.encode())
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassData))?
-            .map(|bytes| StorageContractClassData::decode(&mut &bytes[..]));
+            .map(|bytes| bincode::deserialize::<StorageContractClassData>(&bytes[..]));
 
         match contract_class_data {
             Some(Ok(contract_class_data)) => Ok(Some(contract_class_data)),
@@ -57,22 +58,27 @@ impl StorageViewMut for ContractClassDataViewMut {
 
     async fn commit(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Column::ContractClassData);
 
-        let mut set = JoinSet::new();
+        let mut batch = WriteBatch::default();
         for (key, value) in self.0.into_iter() {
-            let db = Arc::clone(db);
-
-            set.spawn(async move {
-                let colum = db.get_column(Column::ContractClassData);
-                db.put_cf(&colum, key.encode(), value.encode())
-                    .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::ContractClassData))
-            });
+            batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&value).unwrap());
         }
+        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassData))
 
-        while let Some(res) = set.join_next().await {
-            res.unwrap()?;
-        }
-
-        Ok(())
+        // let mut set = JoinSet::new();
+        // for (key, value) in self.0.into_iter() {
+        //     let db = Arc::clone(db);
+        //
+        //     set.spawn(async move {
+        //         let colum = db.get_column(Column::ContractClassData);
+        //         db.put_cf(&colum, key.encode(), value.encode())
+        //             .map_err(|_|
+        // DeoxysStorageError::StorageInsertionError(StorageType::ContractClassData))     });
+        // }
+        //
+        // while let Some(res) = set.join_next().await {
+        //     res.unwrap()?;
+        // }
     }
 }
