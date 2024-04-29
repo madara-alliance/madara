@@ -85,12 +85,11 @@ pub async fn fetch_block_and_updates(
 }
 
 pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBlock, String> {
-    let client = SequencerGatewayProvider::new(
-        config.gateway.clone(),
-        config.feeder_gateway.clone(),
-        config.chain_id,
-        config.api_key.clone(),
-    );
+    let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
+    let client = match &config.api_key {
+        Some(api_key) => client.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
+        None => client,
+    };
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
     Ok(crate::convert::block(block).await)
