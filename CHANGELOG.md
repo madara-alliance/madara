@@ -3,6 +3,8 @@ git # Deoxys Changelog
 ## Next release
 
 - feat(RPC): refacto `trace_transaction` and `trace_block_transaction`
+- fix(proposer_factory): Removed and clean a lot of stuff on Client side, mostly node crate
+- feat(storage): removed the use of `BonsaiStorage` logs
 - feat(storage): removed dependance on `StateUpdateWrapper`
 - feat(storage): state diff are now stored for each block
 - CI: fix toolchain

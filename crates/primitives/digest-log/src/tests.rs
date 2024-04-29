@@ -8,7 +8,7 @@ fn log_is_found() {
     let mut digest = Digest::default();
     let block = DeoxysBlock::default();
 
-    digest.push(DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(block.clone()).encode()));
+    digest.push(DigestItem::Consensus(DEOXYS_ENGINE_ID, Log::Block(block.clone()).encode()));
 
     assert!(ensure_log(&digest).is_ok());
 }
@@ -18,8 +18,8 @@ fn multiple_logs() {
     let mut digest = Digest::default();
     let block = DeoxysBlock::default();
 
-    digest.push(DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(block.clone()).encode()));
-    digest.push(DigestItem::Consensus(MADARA_ENGINE_ID, Log::Block(block).encode()));
+    digest.push(DigestItem::Consensus(DEOXYS_ENGINE_ID, Log::Block(block.clone()).encode()));
+    digest.push(DigestItem::Consensus(DEOXYS_ENGINE_ID, Log::Block(block).encode()));
 
     assert_matches!(ensure_log(&digest), Err(FindLogError::MultipleLogs));
     assert_matches!(find_log(&digest), Err(FindLogError::MultipleLogs));

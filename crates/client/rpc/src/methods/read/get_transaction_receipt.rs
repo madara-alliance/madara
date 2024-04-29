@@ -19,8 +19,8 @@ use starknet_core::types::{
     TransactionReceiptWithBlockInfo,
 };
 
+use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
-use crate::madara_backend_client::get_block_by_block_hash;
 use crate::utils::call_info::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
 };

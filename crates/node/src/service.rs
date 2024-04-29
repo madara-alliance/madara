@@ -16,41 +16,32 @@ use mc_mapping_sync::MappingSyncWorker;
 use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::starknet_sync_worker;
 use mp_block::DeoxysBlock;
-use mp_sequencer_address::{
-    InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
-};
 use mp_types::block::{DBlockT, DHashT, DHasherT};
 use parity_scale_codec::Encode;
 use prometheus_endpoint::Registry;
 use reqwest::Url;
 use sc_basic_authorship::ProposerFactory;
-use sc_client_api::{Backend, BlockBackend, BlockchainEvents, HeaderBackend};
+use sc_client_api::{BlockchainEvents, HeaderBackend};
 use sc_consensus::{BasicQueue, BlockImportParams};
-use sc_consensus_aura::{SlotProportion, StartAuraParams};
-use sc_consensus_grandpa::{GrandpaBlockImport, SharedVoterState};
 use sc_consensus_manual_seal::{ConsensusDataProvider, Error};
 pub use sc_executor::NativeElseWasmExecutor;
 use sc_service::error::Error as ServiceError;
-use sc_service::{new_db_backend, Configuration, TaskManager, WarpSyncParams};
-use sc_telemetry::{Telemetry, TelemetryHandle, TelemetryWorker};
+use sc_service::{new_db_backend, Configuration, TaskManager};
+use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool::FullPool;
-use sc_transaction_pool_api::OffchainTransactionPoolFactory;
-use sp_api::offchain::OffchainStorage;
 use sp_api::{ConstructRuntimeApi, ProvideRuntimeApi};
-use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_inherents::InherentData;
-use sp_offchain::STORAGE_PREFIX;
 use sp_runtime::testing::Digest;
 use sp_runtime::traits::Block as BlockT;
 use sp_runtime::DigestItem;
 
-use crate::genesis_block::MadaraGenesisBlockBuilder;
+use crate::configs::db_config_dir;
+use crate::genesis_block::DeoxysGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
-use crate::starknet::{db_config_dir, MadaraBackend};
 // Our native executor instance.
 pub struct ExecutorDispatch;
 
-const MADARA_TASK_GROUP: &str = "madara";
+const DEOXYS_TASK_GROUP: &str = "deoxys";
 
 impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
     /// Only enable the benchmarking host functions when we actually want to
@@ -77,10 +68,6 @@ type FullSelectChain = sc_consensus::LongestChain<FullBackend, DBlockT>;
 type BasicImportQueue = sc_consensus::DefaultImportQueue<DBlockT>;
 type BoxBlockImport = sc_consensus::BoxBlockImport<DBlockT>;
 
-/// The minimum period of blocks on which justifications will be
-/// imported and generated.
-const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
-
 #[allow(clippy::type_complexity)]
 pub fn new_partial<BIQ>(
     config: &Configuration,
@@ -94,12 +81,7 @@ pub fn new_partial<BIQ>(
         FullSelectChain,
         sc_consensus::DefaultImportQueue<DBlockT>,
         sc_transaction_pool::FullPool<DBlockT, FullClient>,
-        (
-            BoxBlockImport,
-            sc_consensus_grandpa::LinkHalf<DBlockT, FullClient, FullSelectChain>,
-            Option<Telemetry>,
-            Arc<MadaraBackend>,
-        ),
+        (BoxBlockImport, Option<Telemetry>, Arc<DeoxysBackend>),
     >,
     ServiceError,
 >
@@ -110,9 +92,6 @@ where
         Arc<FullClient>,
         &Configuration,
         &TaskManager,
-        Option<TelemetryHandle>,
-        GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
-        Arc<MadaraBackend>,
     ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>,
 {
     let deoxys_backend = DeoxysBackend::open(&config.database, &db_config_dir(config), cache_more_things).unwrap();
@@ -132,7 +111,7 @@ where
 
     let backend = new_db_backend(config.db_config())?;
 
-    let genesis_block_builder = MadaraGenesisBlockBuilder::<DBlockT, _, _>::new(
+    let genesis_block_builder = DeoxysGenesisBlockBuilder::<DBlockT, _, _>::new(
         config.chain_spec.as_storage_builder(),
         true,
         backend.clone(),
@@ -145,7 +124,7 @@ where
         DBlockT,
         RuntimeApi,
         _,
-        MadaraGenesisBlockBuilder<DBlockT, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
+        DeoxysGenesisBlockBuilder<DBlockT, FullBackend, NativeElseWasmExecutor<ExecutorDispatch>>,
     >(
         config,
         telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
@@ -171,22 +150,7 @@ where
         client.clone(),
     );
 
-    let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
-        client.clone(),
-        GRANDPA_JUSTIFICATION_PERIOD,
-        &client as &Arc<_>,
-        select_chain.clone(),
-        telemetry.as_ref().map(|x| x.handle()),
-    )?;
-
-    let (import_queue, block_import) = build_import_queue(
-        client.clone(),
-        config,
-        &task_manager,
-        telemetry.as_ref().map(|x| x.handle()),
-        grandpa_block_import,
-        Arc::clone(deoxys_backend),
-    )?;
+    let (import_queue, block_import) = build_import_queue(client.clone(), config, &task_manager)?;
 
     Ok(sc_service::PartialComponents {
         client,
@@ -196,49 +160,8 @@ where
         keystore_container,
         select_chain,
         transaction_pool,
-        other: (block_import, grandpa_link, telemetry, Arc::clone(deoxys_backend)),
+        other: (block_import, telemetry, Arc::clone(deoxys_backend)),
     })
-}
-
-/// Build the import queue for the template runtime (aura + grandpa).
-pub fn build_aura_grandpa_import_queue(
-    client: Arc<FullClient>,
-    config: &Configuration,
-    task_manager: &TaskManager,
-    telemetry: Option<TelemetryHandle>,
-    grandpa_block_import: GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
-    _madara_backend: Arc<MadaraBackend>,
-) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>
-where
-    RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
-    RuntimeApi: Send + Sync + 'static,
-{
-    let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
-
-    let create_inherent_data_providers = move |_, ()| async move {
-        let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
-        let slot = sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
-            *timestamp,
-            slot_duration,
-        );
-        Ok((slot, timestamp))
-    };
-
-    let import_queue =
-        sc_consensus_aura::import_queue::<AuraPair, _, _, _, _, _>(sc_consensus_aura::ImportQueueParams {
-            block_import: grandpa_block_import.clone(),
-            justification_import: Some(Box::new(grandpa_block_import.clone())),
-            client,
-            create_inherent_data_providers,
-            spawner: &task_manager.spawn_essential_handle(),
-            registry: config.prometheus_registry(),
-            check_for_equivocation: Default::default(),
-            telemetry,
-            compatibility_mode: sc_consensus_aura::CompatibilityMode::None,
-        })
-        .map_err::<ServiceError, _>(Into::into)?;
-
-    Ok((import_queue, Box::new(grandpa_block_import)))
 }
 
 /// Build the import queue for the template runtime (manual seal).
@@ -246,9 +169,6 @@ pub fn build_manual_seal_import_queue(
     client: Arc<FullClient>,
     config: &Configuration,
     task_manager: &TaskManager,
-    _telemetry: Option<TelemetryHandle>,
-    _grandpa_block_import: GrandpaBlockImport<FullBackend, DBlockT, FullClient, FullSelectChain>,
-    _madara_backend: Arc<MadaraBackend>,
 ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>
 where
     RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
@@ -277,8 +197,7 @@ pub fn new_full(
     fetch_config: FetchConfig,
     genesis_block: DeoxysBlock,
 ) -> Result<TaskManager, ServiceError> {
-    let build_import_queue =
-        if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
+    let build_import_queue = build_manual_seal_import_queue;
 
     let sc_service::PartialComponents {
         client,
@@ -288,28 +207,10 @@ pub fn new_full(
         keystore_container,
         select_chain,
         transaction_pool,
-        other: (block_import, grandpa_link, mut telemetry, madara_backend),
+        other: (block_import, mut telemetry, deoxys_backend),
     } = new_partial(&config, build_import_queue, cache_more_things, genesis_block)?;
 
-    let mut net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
-
-    let grandpa_protocol_name = sc_consensus_grandpa::protocol_standard_name(
-        &client.block_hash(0).ok().flatten().expect("Genesis block exists; qed"),
-        &config.chain_spec,
-    );
-
-    let warp_sync_params = if sealing.is_default() {
-        net_config
-            .add_notification_protocol(sc_consensus_grandpa::grandpa_peers_set_config(grandpa_protocol_name.clone()));
-        let warp_sync = Arc::new(sc_consensus_grandpa::warp_proof::NetworkProvider::new(
-            backend.clone(),
-            grandpa_link.shared_authority_set().clone(),
-            Vec::default(),
-        ));
-        Some(WarpSyncParams::WithProvider(warp_sync))
-    } else {
-        None
-    };
+    let net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
     let (network, system_rpc_tx, tx_handler_controller, network_starter, sync_service) =
         sc_service::build_network(sc_service::BuildNetworkParams {
@@ -320,34 +221,10 @@ pub fn new_full(
             spawn_handle: task_manager.spawn_handle(),
             import_queue,
             block_announce_validator_builder: None,
-            warp_sync_params,
+            warp_sync_params: None,
             block_relay: None,
         })?;
 
-    if config.offchain_worker.enabled {
-        task_manager.spawn_handle().spawn(
-            "offchain-workers-runner",
-            "offchain-worker",
-            sc_offchain::OffchainWorkers::new(sc_offchain::OffchainWorkerOptions {
-                runtime_api_provider: client.clone(),
-                is_validator: config.role.is_authority(),
-                keystore: Some(keystore_container.keystore()),
-                offchain_db: backend.offchain_storage(),
-                transaction_pool: Some(OffchainTransactionPoolFactory::new(transaction_pool.clone())),
-                network_provider: network.clone(),
-                enable_http_requests: true,
-                custom_extensions: |_| vec![],
-            })
-            .run(client.clone(), task_manager.spawn_handle())
-            .boxed(),
-        );
-    }
-
-    let role = config.role.clone();
-    let force_authoring = config.force_authoring;
-    let backoff_authoring_blocks: Option<()> = None;
-    let name = config.network.node_name.clone();
-    let enable_grandpa = !config.disable_grandpa && sealing.is_default();
     let prometheus_registry = config.prometheus_registry().cloned();
     let starting_block = client.info().best_number;
 
@@ -364,7 +241,7 @@ pub fn new_full(
     let genesis_data = OnDiskGenesisConfig(config_dir);
     let starknet_rpc_params = StarknetDeps {
         client: client.clone(),
-        madara_backend: madara_backend.clone(),
+        deoxys_backend: deoxys_backend.clone(),
         sync_service: sync_service.clone(),
         starting_block,
         genesis_provider: genesis_data.into(),
@@ -406,7 +283,7 @@ pub fn new_full(
 
     task_manager.spawn_essential_handle().spawn(
         "mc-mapping-sync-worker",
-        Some(MADARA_TASK_GROUP),
+        Some(DEOXYS_TASK_GROUP),
         MappingSyncWorker::<_, _, DHasherT>::new(
             client.import_notification_stream(),
             Duration::new(6, 0),
@@ -423,7 +300,7 @@ pub fn new_full(
 
     task_manager.spawn_essential_handle().spawn(
         "starknet-sync-worker",
-        Some("deoxys"),
+        Some(DEOXYS_TASK_GROUP),
         starknet_sync_worker::sync(
             fetch_config,
             block_sender,
@@ -454,109 +331,6 @@ pub fn new_full(
         return Ok(task_manager);
     }
 
-    if role.is_authority() {
-        let proposer_factory = ProposerFactory::new(
-            task_manager.spawn_handle(),
-            client.clone(),
-            transaction_pool.clone(),
-            prometheus_registry.as_ref(),
-            telemetry.as_ref().map(|x| x.handle()),
-        );
-
-        let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
-
-        let aura = sc_consensus_aura::start_aura::<AuraPair, _, _, _, _, _, _, _, _, _, _>(StartAuraParams {
-            slot_duration,
-            client: client.clone(),
-            select_chain,
-            block_import,
-            proposer_factory,
-            create_inherent_data_providers: move |_, ()| {
-                let offchain_storage = backend.offchain_storage();
-                async move {
-                    let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
-
-                    let slot = sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
-                        *timestamp,
-                        slot_duration,
-                    );
-
-                    let ocw_storage = offchain_storage.clone();
-                    let prefix = &STORAGE_PREFIX;
-                    let key = SEQ_ADDR_STORAGE_KEY;
-
-                    let sequencer_address = if let Some(storage) = ocw_storage {
-                        SeqAddrInherentDataProvider::try_from(
-                            storage.get(prefix, key).unwrap_or(DEFAULT_SEQUENCER_ADDRESS.to_vec()),
-                        )
-                        .unwrap_or_default()
-                    } else {
-                        SeqAddrInherentDataProvider::default()
-                    };
-
-                    Ok((slot, timestamp, sequencer_address))
-                }
-            },
-            force_authoring,
-            backoff_authoring_blocks,
-            keystore: keystore_container.keystore(),
-            sync_oracle: sync_service.clone(),
-            justification_sync_link: sync_service.clone(),
-            block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
-            max_block_proposal_slot_portion: None,
-            telemetry: telemetry.as_ref().map(|x| x.handle()),
-            compatibility_mode: Default::default(),
-        })?;
-
-        // the AURA authoring task is considered essential, i.e. if it
-        // fails we take down the service with it.
-        task_manager.spawn_essential_handle().spawn_blocking("aura", Some("block-authoring"), aura);
-    }
-
-    if enable_grandpa {
-        // if the node isn't actively participating in consensus then it doesn't
-        // need a keystore, regardless of which protocol we use below.
-        let keystore = if role.is_authority() { Some(keystore_container.keystore()) } else { None };
-
-        let grandpa_config = sc_consensus_grandpa::Config {
-            // FIXME #1578 make this available through chainspec
-            gossip_duration: Duration::from_millis(333),
-            justification_generation_period: GRANDPA_JUSTIFICATION_PERIOD,
-            name: Some(name),
-            observer_enabled: false,
-            keystore,
-            local_role: role,
-            telemetry: telemetry.as_ref().map(|x| x.handle()),
-            protocol_name: grandpa_protocol_name,
-        };
-
-        // start the full GRANDPA voter
-        // NOTE: non-authorities could run the GRANDPA observer protocol, but at
-        // this point the full voter should provide better guarantees of block
-        // and vote data availability than the observer. The observer has not
-        // been tested extensively yet and having most nodes in a network run it
-        // could lead to finality stalls.
-        let grandpa_config = sc_consensus_grandpa::GrandpaParams {
-            config: grandpa_config,
-            link: grandpa_link,
-            network,
-            sync: Arc::new(sync_service),
-            voting_rule: sc_consensus_grandpa::VotingRulesBuilder::default().build(),
-            prometheus_registry,
-            shared_voter_state: SharedVoterState::empty(),
-            telemetry: telemetry.as_ref().map(|x| x.handle()),
-            offchain_tx_pool_factory: OffchainTransactionPoolFactory::new(transaction_pool.clone()),
-        };
-
-        // the GRANDPA voter task is considered infallible, i.e.
-        // if it fails we take down the service with it.
-        task_manager.spawn_essential_handle().spawn_blocking(
-            "grandpa-voter",
-            None,
-            sc_consensus_grandpa::run_grandpa_voter(grandpa_config)?,
-        );
-    }
-
     network_starter.start_network();
 
     Ok(task_manager)
@@ -571,21 +345,16 @@ fn run_manual_seal_authorship(
     select_chain: FullSelectChain,
     block_import: BoxBlockImport,
     task_manager: &TaskManager,
-    prometheus_registry: Option<&Registry>,
+    _prometheus_registry: Option<&Registry>,
     commands_stream: Option<mpsc::Receiver<sc_consensus_manual_seal::rpc::EngineCommand<DHashT>>>,
-    telemetry: Option<Telemetry>,
+    _telemetry: Option<Telemetry>,
 ) -> Result<(), ServiceError>
 where
     RuntimeApi: ConstructRuntimeApi<DBlockT, FullClient>,
     RuntimeApi: Send + Sync + 'static,
 {
-    let proposer_factory = ProposerFactory::new(
-        task_manager.spawn_handle(),
-        client.clone(),
-        transaction_pool.clone(),
-        prometheus_registry,
-        telemetry.as_ref().map(|x| x.handle()),
-    );
+    let proposer_factory =
+        ProposerFactory::new(task_manager.spawn_handle(), client.clone(), transaction_pool.clone(), None, None);
 
     thread_local!(static TIMESTAMP: RefCell<u64> = RefCell::new(0));
 
@@ -639,7 +408,7 @@ where
             let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
             let block_digest_item: DigestItem =
-                sp_runtime::DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, Encode::encode(&block));
+                sp_runtime::DigestItem::PreRuntime(mp_digest_log::DEOXYS_ENGINE_ID, Encode::encode(&block));
 
             Ok(Digest { logs: vec![block_digest_item] })
         }
@@ -697,11 +466,11 @@ where
 }
 
 type ChainOpsResult =
-    Result<(Arc<FullClient>, Arc<FullBackend>, BasicQueue<DBlockT>, TaskManager, Arc<MadaraBackend>), ServiceError>;
+    Result<(Arc<FullClient>, Arc<FullBackend>, BasicQueue<DBlockT>, TaskManager, Arc<DeoxysBackend>), ServiceError>;
 
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things, DeoxysBlock::default())?;
-    Ok((client, backend, import_queue, task_manager, other.3))
+        new_partial::<_>(config, build_manual_seal_import_queue, cache_more_things, DeoxysBlock::default())?;
+    Ok((client, backend, import_queue, task_manager, other.2))
 }

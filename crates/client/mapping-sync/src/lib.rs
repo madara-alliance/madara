@@ -1,12 +1,12 @@
-//! A worker syncing the Madara db
+//! A worker syncing the Deoxys db
 //!
 //! # Role
 //! The `MappingSyncWorker` listen to new Substrate blocks and read their digest to find
-//! `pallet-starknet` logs. Those logs should contain the data necessary to update the Madara
+//! `pallet-starknet` logs. Those logs should contain the data necessary to update the Deoxys
 //! mapping db: a starknet block header.
 //!
 //! # Usage
-//! The madara node should spawn a `MappingSyncWorker` among it's services.
+//! The Deoxys node should spawn a `MappingSyncWorker` among it's services.
 
 mod block_metrics;
 mod sync_blocks;
@@ -32,7 +32,7 @@ use sp_runtime::traits::Header as HeaderT;
 
 use crate::block_metrics::BlockMetrics;
 
-/// The worker in charge of syncing the Madara db when it receive a new Substrate block
+/// The worker in charge of syncing the Deoxys db when it receive a new Substrate block
 pub struct MappingSyncWorker<C, BE, H> {
     import_notifications: ImportNotifications<DBlockT>,
     timeout: Duration,

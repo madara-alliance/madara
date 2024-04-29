@@ -1,4 +1,4 @@
-//! Madara node command line.
+//! Deoxys node command line.
 #![warn(missing_docs)]
 
 #[macro_use]
@@ -9,10 +9,8 @@ mod cli;
 mod command;
 mod commands;
 mod configs;
-mod constants;
 mod genesis_block;
 mod rpc;
-mod starknet;
 
 fn main() -> sc_cli::Result<()> {
     command::run()

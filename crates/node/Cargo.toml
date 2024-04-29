@@ -1,5 +1,9 @@
 [package]
-authors = ["Kasar <@kasarLabs>", "KSS <@keep-starknet-strange>"]
+authors = [
+  "Kasar <https://github.com/kasarlabs>",
+  "KSS <https://github.com/keep-starknet-strange>",
+  "Substrate DevHub <https://github.com/substrate-developer-hub>",
+]
 build = "build.rs"
 description = "Deoxys node."
 edition.workspace = true
@@ -30,8 +34,6 @@ sc-basic-authorship = { workspace = true }
 sc-cli = { workspace = true }
 sc-client-api = { workspace = true }
 sc-consensus = { workspace = true }
-sc-consensus-aura = { workspace = true }
-sc-consensus-grandpa = { workspace = true }
 sc-consensus-manual-seal = { workspace = true }
 sc-executor = { workspace = true }
 sc-network = { workspace = true }
@@ -83,7 +85,7 @@ pallet-starknet-runtime-api = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 
-# Madara utils
+# Deoxys utils
 mc-genesis-data-provider = { workspace = true }
 
 serde_json = "1.0.64"
@@ -95,7 +97,7 @@ mp-sequencer-address = { workspace = true, features = ["client"] }
 mp-types = { workspace = true }
 
 # CLI-specific dependencies
-try-runtime-cli = { optional = true, git = "https://github.com/massalabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
+try-runtime-cli = { optional = true, git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
 #Deoxys
 deoxys-tui = { optional = true, path = "../tui" }
@@ -119,7 +121,4 @@ runtime-benchmarks = [
 # in the near future.
 disable-transaction-fee = ["deoxys-runtime/disable-transaction-fee"]
 try-runtime = ["deoxys-runtime/try-runtime", "try-runtime-cli/try-runtime"]
-# Load sharingan chain-specs during the compilation
-# This is the way to run a sharingan chain
-sharingan = []
 tui = ["deoxys-tui"]

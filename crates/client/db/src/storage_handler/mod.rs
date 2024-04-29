@@ -19,6 +19,7 @@ use self::class_trie::{ClassTrieView, ClassTrieViewMut};
 use self::contract_class_data::{ContractClassDataView, ContractClassDataViewMut};
 use self::contract_class_hashes::{ContractClassHashesView, ContractClassHashesViewMut};
 use self::contract_data::{ContractDataView, ContractDataViewMut};
+use self::contract_storage::{ContractStorageView, ContractStorageViewMut};
 use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
 use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
 use crate::DeoxysBackend;
@@ -31,8 +32,10 @@ mod class_trie;
 mod contract_class_data;
 mod contract_class_hashes;
 mod contract_data;
+mod contract_storage;
 mod contract_storage_trie;
 mod contract_trie;
+mod history;
 pub mod query;
 
 pub mod bonsai_identifier {
@@ -166,11 +169,12 @@ pub trait StorageViewMut {
 ///
 /// This is used to mark data that might be modified from one block to the next, such as contract
 /// storage.
+#[async_trait]
 pub trait StorageViewRevetible: StorageViewMut {
     /// Reverts to a previous state in the chain.
     ///
     /// * `block_number`: point in the chain to revert to.
-    fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError>;
+    async fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
 pub fn contract_trie_mut<'a>() -> ContractTrieViewMut<'a> {
@@ -187,6 +191,14 @@ pub fn contract_storage_trie_mut<'a>() -> ContractStorageTrieViewMut<'a> {
 
 pub fn contract_storage_trie<'a>() -> ContractStorageTrieView<'a> {
     ContractStorageTrieView(DeoxysBackend::bonsai_storage().read().unwrap())
+}
+
+pub fn contract_storage_mut() -> ContractStorageViewMut {
+    ContractStorageViewMut::default()
+}
+
+pub fn contract_storage() -> ContractStorageView {
+    ContractStorageView
 }
 
 pub fn class_trie_mut<'a>() -> ClassTrieViewMut<'a> {

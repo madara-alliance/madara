@@ -14,7 +14,7 @@ use starknet_core::types::{BlockId, TransactionTraceWithHash};
 use super::super::read::get_transaction_receipt::execution_infos;
 use super::utils::tx_execution_infos_to_tx_trace;
 use crate::errors::StarknetRpcApiError;
-use crate::madara_backend_client::get_block_by_block_hash;
+use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::utils::helpers::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
 use crate::Starknet;

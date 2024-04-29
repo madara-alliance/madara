@@ -1,11 +1,11 @@
 //! Starknet RPC server API implementation
 //!
-//! It uses the madara client and backend in order to answer queries.
+//! It uses the deoxys client and backend in order to answer queries.
 
 mod constants;
+pub mod deoxys_backend_client;
 mod errors;
 mod events;
-pub mod madara_backend_client;
 mod methods;
 mod types;
 pub mod utils;
@@ -41,7 +41,7 @@ use starknet_core::types::{
     SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
 
-use crate::madara_backend_client::get_block_by_block_hash;
+use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::methods::get_block::{
     get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
     get_block_with_txs_pending,
@@ -246,7 +246,7 @@ where
     C: HeaderBackend<DBlockT> + 'static,
 {
     pub fn current_spec_version(&self) -> RpcResult<String> {
-        Ok("0.7.0".to_string())
+        Ok("0.7.1".to_string())
     }
 }
 
@@ -270,7 +270,7 @@ where
     /// Returns the substrate block hash corresponding to the given Starknet block id
     fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<DHashT, StarknetRpcApiError> {
         match block_id {
-            BlockId::Hash(h) => madara_backend_client::load_hash(self.client.as_ref(), Felt252Wrapper::from(h).into())
+            BlockId::Hash(h) => deoxys_backend_client::load_hash(self.client.as_ref(), Felt252Wrapper::from(h).into())
                 .map_err(|e| {
                     log::error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
                     StarknetRpcApiError::BlockNotFound

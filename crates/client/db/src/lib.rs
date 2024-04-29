@@ -1,4 +1,4 @@
-//! A database backend storing data about madara chain
+//! A database backend storing data about deoxys chain
 //!
 //! # Usefulness
 //! Starknet RPC methods use Starknet block hash as arguments to access on-chain values.
@@ -109,6 +109,7 @@ pub enum Column {
     ContractClassData,
     ContractData,
     ContractClassHashes,
+    ContractStorage,
 
     /// This column is used to map starknet block hashes to a list of transaction hashes that are
     /// contained in the block.
@@ -167,6 +168,7 @@ impl Column {
             BlockStateDiff,
             ContractClassData,
             ContractData,
+            ContractStorage,
             ContractClassHashes,
             BonsaiContractsTrie,
             BonsaiContractsFlat,
@@ -206,6 +208,7 @@ impl Column {
             Column::ContractClassData => "contract_class_data",
             Column::ContractData => "contract_data",
             Column::ContractClassHashes => "contract_class_hashes",
+            Column::ContractStorage => "contrac_storage",
         }
     }
 
@@ -320,7 +323,11 @@ impl DeoxysBackend {
     fn new(config: &DatabaseSettings, cache_more_things: bool) -> Result<Self> {
         DB_SINGLETON.set(Arc::new(open_database(config)?)).unwrap();
         let db = DB_SINGLETON.get().unwrap();
-        let bonsai_config = BonsaiStorageConfig::from(config);
+        let bonsai_config = BonsaiStorageConfig {
+            max_saved_trie_logs: Some(0),
+            max_saved_snapshots: Some(0),
+            snapshot_interval: u64::MAX,
+        };
 
         let mut bonsai_contract = BonsaiStorage::new(
             BonsaiDb::new(
