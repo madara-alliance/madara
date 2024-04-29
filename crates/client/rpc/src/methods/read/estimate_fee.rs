@@ -76,11 +76,16 @@ where
         })?;
 
     let estimates = fee_estimates
-            .into_iter()
-			// FIXME: https://github.com/kasarlabs/deoxys/issues/329
-            // TODO: reflect right estimation
-            .map(|x| FeeEstimate { gas_consumed: x.gas_consumed , gas_price: x.gas_price, data_gas_consumed: x.data_gas_consumed, data_gas_price: x.data_gas_price, overall_fee: x.overall_fee, unit: x.unit})
-            .collect();
+        .into_iter()
+        .map(|x| FeeEstimate {
+            gas_consumed: x.gas_consumed,
+            gas_price: x.gas_price,
+            data_gas_consumed: x.data_gas_consumed,
+            data_gas_price: x.data_gas_price,
+            overall_fee: x.overall_fee,
+            unit: x.unit,
+        })
+        .collect();
 
     Ok(estimates)
 }

@@ -28,10 +28,9 @@ pub fn from_rpc_contract_class(contract_class: ContractClassCore) -> anyhow::Res
     }
 }
 
-// TODO: implement this
 pub fn to_contract_class_sierra(_: &ContractClassV1, abi: String) -> anyhow::Result<ContractClassCore> {
     Ok(ContractClassCore::Sierra(FlattenedSierraClass {
-        sierra_program: vec![], // FIXME: https://github.com/kasarlabs/deoxys/issues/775
+        sierra_program: vec![], // TODO: implement this
         contract_class_version: option_env!("COMPILER_VERSION").unwrap_or("0.11.2").into(),
         entry_points_by_type: EntryPointsByType { constructor: vec![], external: vec![], l1_handler: vec![] }, /* TODO: add entry_points_by_type */
         abi,
