@@ -72,7 +72,7 @@ where
     let mut transaction_traces = Vec::new();
 
     for (index, transaction) in transactions_blockifier.iter().enumerate() {
-        let transaction_hash = block_txs_hashes[index].clone();
+        let transaction_hash = block_txs_hashes[index];
 
         let tx_type = match transaction {
             blockifier::transaction::transaction_execution::Transaction::AccountTransaction(account_tx) => {
