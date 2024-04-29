@@ -1,22 +1,12 @@
 use std::collections::HashMap;
 
 use blockifier::execution::call_info::CallInfo;
-use blockifier::execution::contract_class::{ClassInfo, ContractClass, ContractClassV1};
-use blockifier::transaction as btx;
-use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use blockifier::transaction::transaction_execution::Transaction;
-use blockifier::transaction::transactions::L1HandlerTransaction;
-use mc_db::storage_handler::StorageView;
-use mc_db::{storage_handler, DeoxysBackend};
+use mc_db::storage_handler;
 use mc_sync::l2::get_highest_block_hash_and_number;
-use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
-use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::TxType;
-use starknet_api::core::{ClassHash, ContractAddress};
-use starknet_api::transaction as stx;
+use starknet_api::core::ContractAddress;
 use starknet_core::types::{
     BlockId, ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
     DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, InvokeTransactionTrace,
@@ -25,7 +15,6 @@ use starknet_core::types::{
 use starknet_ff::FieldElement;
 
 use super::lib::*;
-use crate::errors::StarknetRpcApiError;
 
 pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core::types::OrderedMessage> {
     call_info
@@ -251,134 +240,6 @@ pub fn tx_execution_infos_to_tx_trace(
     };
 
     Ok(tx_trace)
-}
-
-pub(crate) fn map_transaction_to_user_transaction<H>(
-    starknet_block: DeoxysBlock,
-    chain_id: Felt252Wrapper,
-    target_transaction_hash: Option<Felt252Wrapper>,
-) -> Result<(Vec<Transaction>, Vec<Transaction>), StarknetRpcApiError>
-where
-    H: HasherT + Send + Sync + 'static,
-{
-    let mut transactions = Vec::new();
-    let mut transaction_to_trace = Vec::new();
-    let block_number = starknet_block.header().block_number;
-
-    for tx in starknet_block.transactions() {
-        let current_tx_hash = tx.compute_hash::<H>(chain_id, false, Some(block_number));
-
-        if Some(Felt252Wrapper::from(current_tx_hash)) == target_transaction_hash {
-            let converted_tx = convert_transaction::<H>(tx, chain_id, block_number)?;
-            transaction_to_trace.push(converted_tx);
-            break;
-        } else {
-            let converted_tx = convert_transaction::<H>(tx, chain_id, block_number)?;
-            transactions.push(converted_tx);
-        }
-    }
-
-    Ok((transactions, transaction_to_trace))
-}
-
-fn convert_transaction<H>(
-    tx: &stx::Transaction,
-    chain_id: Felt252Wrapper,
-    block_number: u64,
-) -> Result<Transaction, StarknetRpcApiError>
-where
-    H: HasherT + Send + Sync + 'static,
-{
-    match tx {
-        stx::Transaction::Invoke(invoke_tx) => {
-            let tx = btx::transactions::InvokeTransaction {
-                tx: invoke_tx.clone(),
-                tx_hash: invoke_tx.compute_hash::<H>(chain_id, false, Some(block_number)),
-                // TODO: Check if this is correct
-                only_query: false,
-            };
-            Ok(Transaction::AccountTransaction(AccountTransaction::Invoke(tx)))
-        }
-        stx::Transaction::DeployAccount(deploy_account_tx) => {
-            let tx = btx::transactions::DeployAccountTransaction {
-                tx: deploy_account_tx.clone(),
-                tx_hash: deploy_account_tx.compute_hash::<H>(chain_id, false, Some(block_number)),
-                // TODO: Fill this with non default contract address
-                contract_address: ContractAddress::default(),
-                // TODO: Check if this is correct
-                only_query: false,
-            };
-            Ok(Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)))
-        }
-        stx::Transaction::Declare(declare_tx) => {
-            let class_hash = ClassHash::from(Felt252Wrapper::from(*declare_tx.class_hash()));
-
-            match declare_tx {
-                stx::DeclareTransaction::V0(_) | stx::DeclareTransaction::V1(_) => {
-                    let Ok(Some(contract_class_data)) = storage_handler::contract_class_data().get(&class_hash) else {
-                        log::error!("Failed to retrieve contract class from hash '{class_hash}'");
-                        return Err(StarknetRpcApiError::InternalServerError);
-                    };
-
-                    // TODO: fix class info declaration with non defaulted values
-                    let class_info = ClassInfo::new(&contract_class_data.contract_class, 10, 10).unwrap();
-
-                    let tx = btx::transactions::DeclareTransaction::new(
-                        declare_tx.clone(),
-                        declare_tx.compute_hash::<H>(chain_id, false, Some(block_number)),
-                        class_info,
-                    )
-                    .unwrap();
-
-                    Ok(Transaction::AccountTransaction(AccountTransaction::Declare(tx)))
-                }
-                stx::DeclareTransaction::V2(_tx) => {
-                    // TODO: change this contract class to the correct one
-                    let contract_class = starknet_api::state::ContractClass::default();
-                    let contract_class = mp_transactions::utils::sierra_to_casm_contract_class(contract_class)
-                        .map_err(|e| {
-                            log::error!("Failed to convert the SierraContractClass to CasmContractClass: {e}");
-                            StarknetRpcApiError::InternalServerError
-                        })?;
-                    let contract_class = ContractClass::V1(ContractClassV1::try_from(contract_class).map_err(|e| {
-                        log::error!(
-                            "Failed to convert the compiler CasmContractClass to blockifier CasmContractClass: {e}"
-                        );
-                        StarknetRpcApiError::InternalServerError
-                    })?);
-
-                    // TODO: fix class info declaration with non defaulted values
-                    let class_info = ClassInfo::new(&contract_class, 10, 10).unwrap();
-
-                    let tx = btx::transactions::DeclareTransaction::new(
-                        declare_tx.clone(),
-                        declare_tx.compute_hash::<H>(chain_id, false, Some(block_number)),
-                        class_info,
-                    )
-                    .unwrap();
-
-                    Ok(Transaction::AccountTransaction(AccountTransaction::Declare(tx)))
-                }
-                stx::DeclareTransaction::V3(_) => todo!(),
-            }
-        }
-        stx::Transaction::L1Handler(handle_l1_message_tx) => {
-            let tx_hash = handle_l1_message_tx.compute_hash::<H>(chain_id, false, Some(block_number));
-            let paid_fee_on_l1: starknet_api::transaction::Fee = DeoxysBackend::l1_handler_paid_fee()
-                .get_fee_paid_for_l1_handler_tx(Felt252Wrapper::from(tx_hash).into())
-                .map_err(|e| {
-                    log::error!("Failed to retrieve fee paid on l1 for tx with hash `{tx_hash:?}`: {e}");
-                    StarknetRpcApiError::InternalServerError
-                })?;
-
-            Ok(Transaction::L1HandlerTransaction(L1HandlerTransaction {
-                tx: handle_l1_message_tx.clone(),
-                tx_hash,
-                paid_fee_on_l1,
-            }))
-        }
-        stx::Transaction::Deploy(_) => todo!(),
-    }
 }
 
 // TODO: move to mod utils

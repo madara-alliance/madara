@@ -6058,6 +6058,7 @@ dependencies = [
  "mp-convert",
  "mp-digest-log",
  "mp-felt",
+ "mp-genesis-config",
  "mp-hashers",
  "mp-simulations",
  "mp-transactions",
@@ -11071,7 +11072,7 @@ dependencies = [
 [[package]]
 name = "starknet-core"
 version = "0.10.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#d5af8dee02e36706ef06574db580f6773e23d37d"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
 dependencies = [
  "base64 0.21.5",
  "flate2",
@@ -11128,7 +11129,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto"
 version = "0.6.2"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#d5af8dee02e36706ef06574db580f6773e23d37d"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
 dependencies = [
  "crypto-bigint",
  "hex",
@@ -11158,7 +11159,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto-codegen"
 version = "0.3.3"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#d5af8dee02e36706ef06574db580f6773e23d37d"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
 dependencies = [
  "starknet-curve 0.4.2",
  "starknet-ff 0.3.7",
@@ -11186,7 +11187,7 @@ dependencies = [
 [[package]]
 name = "starknet-curve"
 version = "0.4.2"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#d5af8dee02e36706ef06574db580f6773e23d37d"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
 dependencies = [
  "starknet-ff 0.3.7",
 ]
@@ -11209,7 +11210,7 @@ dependencies = [
 [[package]]
 name = "starknet-ff"
 version = "0.3.7"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#d5af8dee02e36706ef06574db580f6773e23d37d"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
 dependencies = [
  "ark-ff",
  "bigdecimal",
@@ -11252,7 +11253,7 @@ dependencies = [
 [[package]]
 name = "starknet-providers"
 version = "0.10.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#d5af8dee02e36706ef06574db580f6773e23d37d"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
 dependencies = [
  "async-trait",
  "auto_impl",

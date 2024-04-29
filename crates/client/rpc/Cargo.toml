@@ -19,6 +19,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 # Deoxys utils
 mc-genesis-data-provider = { workspace = true }
+mp-genesis-config = { workspace = true }
+
 
 # Deoxys runtime
 deoxys-runtime = { workspace = true }

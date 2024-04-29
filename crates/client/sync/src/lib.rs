@@ -50,8 +50,11 @@ pub mod starknet_sync_worker {
             fetch_config.gateway.clone(),
             fetch_config.feeder_gateway.clone(),
             fetch_config.chain_id,
-            fetch_config.api_key,
         );
+        let provider = match &fetch_config.api_key {
+            Some(api_key) => provider.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
+            None => provider,
+        };
 
         if starting_block == 1 {
             let state_update = provider
