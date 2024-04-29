@@ -8,12 +8,13 @@ use alloc::vec::Vec;
 
 #[cfg(feature = "parity-scale-codec")]
 use parity_scale_codec::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 
 pub mod class;
 
 // TODO: move this somewhere more sensible? Would be a good idea to decouple
 // publicly available storage data from wrapper classes
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub enum ContractAbi {
@@ -31,7 +32,7 @@ impl ContractAbi {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub enum AbiEntryWrapper {
@@ -40,7 +41,7 @@ pub enum AbiEntryWrapper {
     Struct(AbiStructEntryWrapper),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub struct AbiFunctionEntryWrapper {
@@ -56,7 +57,7 @@ pub struct AbiFunctionEntryWrapper {
     pub state_mutability: Option<AbiFunctionStateMutabilityWrapper>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub struct AbiEventEntryWrapper {
@@ -70,7 +71,7 @@ pub struct AbiEventEntryWrapper {
     pub data: Vec<AbiTypedParameterWrapper>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub struct AbiStructEntryWrapper {
@@ -80,7 +81,7 @@ pub struct AbiStructEntryWrapper {
     pub members: Vec<AbiStructMemberWrapper>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub struct AbiStructMemberWrapper {
@@ -92,7 +93,7 @@ pub struct AbiStructMemberWrapper {
     pub offset: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub enum AbiFunctionTypeWrapper {
@@ -101,28 +102,28 @@ pub enum AbiFunctionTypeWrapper {
     Constructor,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub enum AbiEventTypeWrapper {
     Event,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub enum AbiStructTypeWrapper {
     Struct,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub enum AbiFunctionStateMutabilityWrapper {
     View,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "parity-scale-codec", derive(Encode, Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub struct AbiTypedParameterWrapper {

@@ -1,11 +1,7 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use crossbeam_skiplist::SkipMap;
-use parity_scale_codec::{Decode, Encode};
 use rocksdb::WriteBatchWithTransaction;
 use starknet_api::core::{ClassHash, CompiledClassHash};
-use tokio::task::JoinSet;
 
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
 use crate::{Column, DatabaseExt, DeoxysBackend};
@@ -23,7 +19,7 @@ impl StorageView for ContractClassHashesView {
         let column = db.get_column(Column::ContractClassHashes);
 
         let compiled_class_hash = db
-            .get_cf(&column, class_hash.encode())
+            .get_cf(&column, bincode::serialize(&class_hash).unwrap())
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassHashes))?
             .map(|bytes| bincode::deserialize::<CompiledClassHash>(&bytes[..]));
 
@@ -38,7 +34,7 @@ impl StorageView for ContractClassHashesView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassHashes);
 
-        match db.key_may_exist_cf(&column, class_hash.encode()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&class_hash).unwrap()) {
             true => Ok(self.get(class_hash)?.is_some()),
             false => Ok(false),
         }
@@ -59,11 +55,11 @@ impl StorageViewMut for ContractClassHashesViewMut {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassHashes);
 
-        let batch = WriteBatchWithTransaction::<true>::default();
+        let mut batch = WriteBatchWithTransaction::<true>::default();
         for (key, value) in self.0.into_iter() {
             batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&value).unwrap());
         }
-        db.write(batch).map(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassHashes))
+        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassHashes))
 
         // let mut set = JoinSet::new();
         // for (key, value) in self.0.into_iter() {
@@ -90,7 +86,7 @@ impl ContractClassHashesViewMut {
         let column = db.get_column(Column::ContractClassHashes);
 
         for (key, value) in self.0.into_iter() {
-            db.put_cf(&column, key.encode(), value.encode())
+            db.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&value).unwrap())
                 .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassHashes))?
         }
 

@@ -163,8 +163,9 @@ impl StorageViewMut for ContractDataViewMut {
     }
 }
 
+#[async_trait()]
 impl StorageViewRevetible for ContractDataViewMut {
-    fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError> {
+    async fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractData);
 

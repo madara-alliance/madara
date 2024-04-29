@@ -1,12 +1,8 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use crossbeam_skiplist::SkipMap;
 use mp_contract::class::StorageContractClassData;
-use parity_scale_codec::{Decode, Encode};
-use rocksdb::WriteBatch;
+use rocksdb::WriteBatchWithTransaction;
 use starknet_api::core::ClassHash;
-use tokio::task::JoinSet;
 
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
 use crate::{Column, DatabaseExt, DeoxysBackend};
@@ -24,7 +20,7 @@ impl StorageView for ContractClassDataView {
         let column = db.get_column(Column::ContractClassData);
 
         let contract_class_data = db
-            .get_cf(&column, class_hash.encode())
+            .get_cf(&column, bincode::serialize(&class_hash).unwrap())
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassData))?
             .map(|bytes| bincode::deserialize::<StorageContractClassData>(&bytes[..]));
 
@@ -39,7 +35,7 @@ impl StorageView for ContractClassDataView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassData);
 
-        match db.key_may_exist_cf(&column, class_hash.encode()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&class_hash).unwrap()) {
             true => Ok(self.get(class_hash)?.is_some()),
             false => Ok(false),
         }
@@ -60,7 +56,7 @@ impl StorageViewMut for ContractClassDataViewMut {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassData);
 
-        let mut batch = WriteBatch::default();
+        let mut batch = WriteBatchWithTransaction::<true>::default();
         for (key, value) in self.0.into_iter() {
             batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&value).unwrap());
         }
