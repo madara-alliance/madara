@@ -35,6 +35,7 @@ mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-types = { workspace = true }
 mp-transactions = { workspace = true }
+mp-convert = { workspace = true }
 
 # Starknet crates
 blockifier = { workspace = true, features = ["testing"] }

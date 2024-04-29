@@ -5971,6 +5971,7 @@ dependencies = [
  "itertools 0.12.1",
  "log",
  "mp-block",
+ "mp-convert",
  "mp-felt",
  "mp-hashers",
  "mp-transactions",

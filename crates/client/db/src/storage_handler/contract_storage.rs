@@ -42,35 +42,62 @@ impl StorageViewMut for ContractStorageViewMut {
     #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
     async fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = Arc::new(DeoxysBackend::expose_db());
+        let column = db.get_column(Column::ContractStorage);
 
-        let mut set = JoinSet::new();
-        for (key, value) in self.0.into_iter() {
-            let db = Arc::clone(&db);
-            set.spawn(async move {
-                let column = db.get_column(Column::ContractStorage);
-
-                let mut history: History<StarkFelt> = match db.get_cf(&column, bincode::serialize(&key).unwrap()) {
-                    Ok(Some(bytes)) => match bincode::deserialize(&bytes) {
-                        Ok(history) => history,
-                        Err(_) => return Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
+        let (keys, values): (Vec<_>, Vec<_>) = self.0.into_iter().unzip();
+        let keys_cf: Vec<_> = keys.iter().map(|key| (&column, bincode::serialize(key).unwrap())).collect();
+        let histories = db
+            .multi_get_cf(keys_cf)
+            .into_iter()
+            .map(|result| {
+                result.map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage)).and_then(
+                    |option| match option {
+                        Some(bytes) => bincode::deserialize::<History<StarkFelt>>(&bytes)
+                            .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
+                        None => Ok(History::default()),
                     },
-                    Ok(None) => History::default(),
-                    Err(_) => return Err(DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage)),
-                };
-                if history.push(block_number, value).is_err() {
-                    return Err(DeoxysStorageError::StorageCommitError(StorageType::ContractStorage));
-                }
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
-                db.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&history).unwrap())
-                    .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractStorage))
-            });
+        let mut batch = WriteBatchWithTransaction::<true>::default();
+        for (key, mut history, value) in izip!(keys, histories, values) {
+            history.push(block_number, value).unwrap();
+            batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&history).unwrap());
         }
+        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractStorage))
 
-        while let Some(res) = set.join_next().await {
-            res.unwrap()?;
-        }
-
-        Ok(())
+        // let mut set = JoinSet::new();
+        // for (key, value) in self.0.into_iter() {
+        //     let db = Arc::clone(&db);
+        //     set.spawn(async move {
+        //         let column = db.get_column(Column::ContractStorage);
+        //
+        //         let mut history: History<StarkFelt> = match db.get_cf(&column,
+        // bincode::serialize(&key).unwrap()) {             Ok(Some(bytes)) => match
+        // bincode::deserialize(&bytes) {                 Ok(history) => history,
+        //                 Err(_) => return
+        // Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
+        //             },
+        //             Ok(None) => History::default(),
+        //             Err(_) => return
+        // Err(DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage)),
+        //         };
+        //         if history.push(block_number, value).is_err() {
+        //             return
+        // Err(DeoxysStorageError::StorageCommitError(StorageType::ContractStorage));
+        //         }
+        //
+        //         db.put_cf(&column, bincode::serialize(&key).unwrap(),
+        // bincode::serialize(&history).unwrap())             .map_err(|_|
+        // DeoxysStorageError::StorageCommitError(StorageType::ContractStorage))     });
+        // }
+        //
+        // while let Some(res) = set.join_next().await {
+        //     res.unwrap()?;
+        // }
+        //
+        // Ok(())
     }
 }
 

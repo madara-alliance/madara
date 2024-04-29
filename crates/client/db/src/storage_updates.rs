@@ -1,14 +1,12 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use mp_convert::field_element::FromFieldElement;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate};
 use storage_handler::primitives::contract_class::{
-    ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData, StorageContractData,
+    ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData,
 };
-use tokio::task::{self, spawn_blocking};
 
 use crate::storage_handler::{self, DeoxysStorageError, StorageView, StorageViewMut};
 
@@ -26,101 +24,79 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
         })
         .collect();
 
-    let (result1, result2, result3) = tokio::join!(
+    let (result1, result2, result3, result4) = tokio::join!(
         async move {
-            let handler_contract_data = Arc::new(storage_handler::contract_data_mut());
-            let handler_contract_data_1 = Arc::clone(&handler_contract_data);
+            let handler_contract_data = storage_handler::contract_data_mut();
 
-            let iter_depoyed = state_update.state_diff.deployed_contracts.into_par_iter().map(
+            let iter_depoyed = state_update.state_diff.deployed_contracts.into_iter().map(
                 |DeployedContractItem { address, class_hash }| {
-                    (
-                        ContractAddress(PatriciaKey(StarkFelt::new_unchecked(address.to_bytes_be()))),
-                        ClassHash(StarkFelt::new_unchecked(class_hash.to_bytes_be())),
-                    )
+                    (ContractAddress::from_field_element(address), ClassHash::from_field_element(class_hash))
                 },
             );
-            let iter_replaced = state_update.state_diff.replaced_classes.into_par_iter().map(
+            let iter_replaced = state_update.state_diff.replaced_classes.into_iter().map(
                 |ReplacedClassItem { contract_address, class_hash }| {
-                    (
-                        ContractAddress(PatriciaKey(StarkFelt::new_unchecked(contract_address.to_bytes_be()))),
-                        ClassHash(StarkFelt::new_unchecked(class_hash.to_bytes_be())),
-                    )
+                    (ContractAddress::from_field_element(contract_address), ClassHash::from_field_element(class_hash))
                 },
             );
 
-            task::spawn_blocking(move || {
-                iter_depoyed.chain(iter_replaced).for_each(|(contract_address, class_hash)| {
-                    let class_hash = Some(class_hash);
-                    let previous_nonce = handler_contract_data_1.get(&contract_address).unwrap().map(|data| data.nonce);
-                    let nonce = previous_nonce.unwrap_or_default().get().cloned();
+            iter_depoyed.chain(iter_replaced).for_each(|(contract_address, class_hash)| {
+                let class_hash = Some(class_hash);
+                let previous_nonce = handler_contract_data.get(&contract_address).unwrap().map(|data| data.nonce);
+                let nonce = match previous_nonce.unwrap_or_default().get().copied() {
+                    Some(nonce) => Some(nonce),
+                    None => nonce_map.get(&contract_address).copied(),
+                };
 
-                    handler_contract_data_1.insert(contract_address, (class_hash, nonce)).unwrap()
-                });
-            })
-            .await
-            .unwrap();
+                handler_contract_data.insert(contract_address, (class_hash, nonce)).unwrap()
+            });
 
-            Arc::try_unwrap(handler_contract_data).expect("arc should not be aliased").commit(block_number).await
+            handler_contract_data.commit(block_number).await
         },
         async move {
-            let handler_contract_class_hashes = Arc::new(storage_handler::contract_class_hashes_mut());
-            let handler_contract_class_hashes_1 = Arc::clone(&handler_contract_class_hashes);
+            let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
 
-            task::spawn_blocking(move || {
-                state_update
-                    .state_diff
-                    .declared_classes
-                    .into_par_iter()
-                    .map(|DeclaredClassItem { class_hash, compiled_class_hash }| {
-                        (
-                            ClassHash(StarkFelt::new_unchecked(class_hash.to_bytes_be())),
-                            CompiledClassHash(StarkFelt::new_unchecked(compiled_class_hash.to_bytes_be())),
-                        )
-                    })
-                    .for_each(|(class_hash, compiled_class_hash)| {
-                        handler_contract_class_hashes_1.insert(class_hash, compiled_class_hash).unwrap();
-                    });
-            })
-            .await
-            .unwrap();
+            state_update
+                .state_diff
+                .declared_classes
+                .into_iter()
+                .map(|DeclaredClassItem { class_hash, compiled_class_hash }| {
+                    (
+                        ClassHash(StarkFelt::new_unchecked(class_hash.to_bytes_be())),
+                        CompiledClassHash(StarkFelt::new_unchecked(compiled_class_hash.to_bytes_be())),
+                    )
+                })
+                .for_each(|(class_hash, compiled_class_hash)| {
+                    handler_contract_class_hashes.insert(class_hash, compiled_class_hash).unwrap();
+                });
 
-            Arc::try_unwrap(handler_contract_class_hashes)
-                .expect("arc should not be aliased")
-                .commit(block_number)
-                .await
+            handler_contract_class_hashes.commit(block_number).await
         },
-        async move { storage_handler::block_state_diff().insert(block_number, state_diff) }
+        async move { storage_handler::block_state_diff().insert(block_number, state_diff) },
+        async move { storage_handler::contract_storage_mut().commit(block_number).await }
     );
 
-    match (result1, result2, result3) {
-        (Err(err), _, _) => Err(err),
-        (_, Err(err), _) => Err(err),
-        (_, _, Err(err)) => Err(err),
+    match (result1, result2, result3, result4) {
+        (Err(err), _, _, _) => Err(err),
+        (_, Err(err), _, _) => Err(err),
+        (_, _, Err(err), _) => Err(err),
+        (_, _, _, Err(err)) => Err(err),
         _ => Ok(()),
     }
 }
 
 pub async fn store_class_update(block_number: u64, class_update: ClassUpdateWrapper) -> Result<(), DeoxysStorageError> {
-    let handler_contract_class_data_mut = Arc::new(storage_handler::contract_class_data_mut());
-    let handler_contract_class_data_mut_1 = Arc::clone(&handler_contract_class_data_mut);
+    let handler_contract_class_data_mut = storage_handler::contract_class_data_mut();
 
-    spawn_blocking(move || {
-        class_update.0.into_par_iter().for_each(
-            |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
-                let ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length } =
-                    contract_class_wrapper;
+    class_update.0.into_iter().for_each(
+        |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
+            let ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length } =
+                contract_class_wrapper;
 
-                handler_contract_class_data_mut_1
-                    .insert(
-                        class_hash,
-                        StorageContractClassData { contract_class, abi, sierra_program_length, abi_length },
-                    )
-                    .unwrap();
-            },
-        );
-    })
-    .await
-    .unwrap();
+            handler_contract_class_data_mut
+                .insert(class_hash, StorageContractClassData { contract_class, abi, sierra_program_length, abi_length })
+                .unwrap();
+        },
+    );
 
-    Arc::try_unwrap(handler_contract_class_data_mut).expect("arch should not be aliased").commit(block_number).await
+    handler_contract_class_data_mut.commit(block_number).await
 }
