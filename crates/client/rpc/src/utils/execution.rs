@@ -29,7 +29,7 @@ use starknet_ff::FieldElement;
 
 use super::blockifier_state_adapter::BlockifierStateAdapter;
 use crate::errors::StarknetRpcApiError;
-use crate::madara_backend_client::get_block_by_block_hash;
+use crate::get_block_by_block_hash;
 
 pub fn block_context<B, C>(
     client: &C,
