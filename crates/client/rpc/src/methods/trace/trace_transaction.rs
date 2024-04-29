@@ -102,7 +102,7 @@ where
         StarknetRpcApiError::InternalServerError
     })?;
     // TODO: convert the real chain_id in String
-    // TODO: check with JB for the good block_contrext
+    // TODO(@Tbelleng): check with JB for the good block_contrext
     let block_context =
         block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
 

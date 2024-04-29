@@ -1,3 +1,4 @@
+use blockifier::transaction::account_transaction::AccountTransaction;
 use jsonrpsee::core::RpcResult;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -8,13 +9,17 @@ use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeA
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
+use starknet_api::transaction::Transaction;
 use starknet_core::types::{BlockId, TransactionTraceWithHash};
 
+use super::super::read::get_transaction_receipt::execution_infos;
 use super::utils::{map_transaction_to_user_transaction, tx_execution_infos_to_tx_trace};
 use crate::errors::StarknetRpcApiError;
 use crate::madara_backend_client::get_block_by_block_hash;
 use crate::methods::trace::utils::block_number_by_id;
 use crate::utils::execution::re_execute_transactions;
+use crate::utils::helpers::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
+use crate::utils::transaction::blockifier_transactions;
 use crate::Starknet;
 
 pub async fn trace_block_transactions<BE, C, H>(
@@ -37,47 +42,66 @@ where
         log::error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
         StarknetRpcApiError::InternalServerError
     })?;
-    let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
+    let block_header = starknet_block.header().clone();
+    let block_number = block_header.block_number;
+    let block_hash: Felt252Wrapper = block_header.hash::<H>();
+    let previous_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
+    let chain_id = starknet.chain_id()?;
 
-    let (block_transactions, empty_transactions) =
-        map_transaction_to_user_transaction::<H>(starknet_block, chain_id, None)?;
+    let block_txs_hashes = if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(block_hash.into()) {
+        tx_hash_retrieve(tx_hashes)
+    } else {
+        tx_hash_compute::<H>(&starknet_block, chain_id)
+    };
+
+    let transactions = starknet_block.transactions();
+    if transactions.is_empty() {
+        log::error!("Failed to retrieve transactions from block with hash {block_hash:?}");
+        StarknetRpcApiError::InternalServerError;
+    }
+
+    if starknet_block.transactions().iter().any(|transaction| matches!(transaction, Transaction::Deploy(_))) {
+        log::error!("Re-executing a deploy transaction is not supported");
+        return Err(StarknetRpcApiError::UnimplementedMethod.into());
+    }
+
+    let transaction_with_hash =
+        starknet_block.transactions().iter().cloned().zip(block_txs_hashes.iter().cloned()).collect();
+
+    let transactions_blockifier = blockifier_transactions(transaction_with_hash)?;
 
     let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
-        log::error!("Failed to retrieve fee token address: '{e}'");
+        log::error!("Failed to retrieve fee token address: {e}");
         StarknetRpcApiError::InternalServerError
     })?;
-    let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-    let block_header = block.header();
-    // TODO: convert the real chain_id in String
+
+    // TODO(@Tbelleng): check with JB for the good block_contrext
     let block_context =
         block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
 
-    let execution_infos =
-        re_execute_transactions(empty_transactions.clone(), block_transactions.clone(), &block_context).map_err(
-            |e| {
-                log::error!("Failed to reexecute the block transactions: {e:?}");
-                StarknetRpcApiError::InternalServerError
-            },
-        )?;
+    let mut transaction_traces = Vec::new();
 
-    let block_number = block_number_by_id(block_id);
-    let traces = execution_infos
-        .into_iter()
-        .enumerate()
-        .map(|(tx_idx, tx_exec_info)| {
-            tx_execution_infos_to_tx_trace(
-                // Safe to unwrap coz re_execute returns exactly one ExecutionInfo for each tx
-                TxType::from(block_transactions.get(tx_idx).unwrap()),
-                &tx_exec_info,
-                block_number,
-            )
-            .map(|trace_root| TransactionTraceWithHash {
-                transaction_hash: Felt252Wrapper::from(block_transactions[tx_idx].tx_hash().unwrap()).into(),
-                trace_root,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(StarknetRpcApiError::from)?;
+    for transaction_with_hash in transactions_blockifier {
+        let tx_type = match transaction_with_hash {
+            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(account_tx) => {
+                match account_tx {
+                    AccountTransaction::Declare(_) => TxType::Declare,
+                    AccountTransaction::DeployAccount(_) => TxType::DeployAccount,
+                    AccountTransaction::Invoke(_) => TxType::Invoke,
+                }
+            }
+            blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(_) => TxType::L1Handler,
+        };
 
-    Ok(traces)
+        let execution_infos =
+            execution_infos(starknet, previous_block_hash, vec![transaction_with_hash.clone()], &block_context)?;
+
+        if let Some(trace) = tx_execution_infos_to_tx_trace(tx_type, &execution_infos, block_number) {
+            let transaction_hash = transaction_with_hash;
+            let tx_trace = TransactionTraceWithHash { transaction_hash, trace_root: trace };
+            transaction_traces.push(tx_trace);
+        }
+    }
+
+    Ok(transaction_traces)
 }
