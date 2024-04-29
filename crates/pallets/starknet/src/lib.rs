@@ -498,8 +498,8 @@ impl<T: Config> Pallet<T> {
                 log::info!(
                     "✨ Imported #{} ({}) and updated state root ({})",
                     block_number,
-                    trim_hash(&block_hash, 10),
-                    trim_hash(&state_root, 10)
+                    trim_hash(&block_hash),
+                    trim_hash(&state_root)
                 );
             }
             _ => {

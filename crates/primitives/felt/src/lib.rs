@@ -39,13 +39,9 @@ pub use crate::with_serde::*;
 #[repr(transparent)]
 pub struct Felt252Wrapper(pub FieldElement);
 
-pub fn trim_hash(hash: &Felt252Wrapper, length: usize) -> String {
+pub fn trim_hash(hash: &Felt252Wrapper) -> String {
     let hash_str = format!("{:#x}", hash.0);
     let hash_len = hash_str.len();
-
-    if hash_len <= length {
-        return hash_str;
-    }
 
     let prefix = &hash_str[..6 + 2];
     let suffix = &hash_str[hash_len - 6..];
