@@ -7,7 +7,6 @@ use alloc::vec::Vec;
 
 mod header;
 mod ordered_events;
-pub mod state_update;
 pub use header::Header;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;

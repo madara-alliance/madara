@@ -41,7 +41,7 @@ where
 
 // Get a starknet block from a substrate hash.
 // # Arguments
-// * `client` - The Madara client
+// * `client` - The Deoxys client
 // * `overrides` - The OverrideHandle
 // * `target_number` - A substrate block hash
 //

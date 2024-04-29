@@ -10,10 +10,12 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install nightly-2023-08-24 --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "cache"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2023-08-24
 
       - name: Run unit tests
         run: |

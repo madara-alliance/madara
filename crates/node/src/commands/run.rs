@@ -182,9 +182,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         fetch_block_config.sound = cli.run.sound;
         fetch_block_config.verify = !cli.run.disable_root;
         fetch_block_config.api_key = cli.run.gateway_key.clone();
-
         update_config(&fetch_block_config);
-        log::debug!("Using fetch block config: {:?}", fetch_block_config);
 
         let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
 

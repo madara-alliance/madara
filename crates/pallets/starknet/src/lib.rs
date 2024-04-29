@@ -66,8 +66,8 @@ use frame_system::pallet_prelude::*;
 use mc_db::storage_handler;
 use mc_db::storage_handler::StorageViewMut;
 use mp_block::DeoxysBlock;
-use mp_digest_log::MADARA_ENGINE_ID;
-use mp_felt::Felt252Wrapper;
+use mp_digest_log::DEOXYS_ENGINE_ID;
+use mp_felt::{trim_hash, Felt252Wrapper};
 use mp_hashers::HasherT;
 use mp_sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRESS, INHERENT_IDENTIFIER};
 use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
@@ -475,7 +475,7 @@ impl<T: Config> Pallet<T> {
     fn store_block(block_number: u64) {
         let block: DeoxysBlock;
         match &frame_system::Pallet::<T>::digest().logs()[0] {
-            DigestItem::PreRuntime(mp_digest_log::MADARA_ENGINE_ID, encoded_data) => {
+            DigestItem::PreRuntime(mp_digest_log::DEOXYS_ENGINE_ID, encoded_data) => {
                 block = match DeoxysBlock::decode(&mut encoded_data.as_slice()) {
                     Ok(b) => b,
                     Err(e) => {
@@ -485,6 +485,7 @@ impl<T: Config> Pallet<T> {
                 };
 
                 let block_hash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
+                let state_root = Felt252Wrapper::try_from(block.header().global_state_root).unwrap();
 
                 let mut handler_block_number = storage_handler::block_number();
                 let mut handler_block_hash = storage_handler::block_hash();
@@ -492,8 +493,14 @@ impl<T: Config> Pallet<T> {
                 handler_block_number.insert(&block_hash, block_number).unwrap();
                 handler_block_hash.insert(block_number, &block_hash).unwrap();
 
-                let digest = DigestItem::Consensus(MADARA_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
+                let digest = DigestItem::Consensus(DEOXYS_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
                 frame_system::Pallet::<T>::deposit_log(digest);
+                log::info!(
+                    "✨ Imported #{} ({}) and updated state root ({})",
+                    block_number,
+                    trim_hash(&block_hash),
+                    trim_hash(&state_root)
+                );
             }
             _ => {
                 log!(info, "Block not found in store_block")

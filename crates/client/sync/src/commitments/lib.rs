@@ -1,8 +1,8 @@
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
-use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
-use mp_block::state_update::StateUpdateWrapper;
+use mc_db::storage_handler::{self, DeoxysStorageError, StorageView, StorageViewMut};
+use mp_convert::field_element::FromFieldElement;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::poseidon::PoseidonHasher;
@@ -12,6 +12,9 @@ use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Event, Transaction};
+use starknet_core::types::{
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, StateUpdate, StorageEntry,
+};
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 
@@ -46,16 +49,11 @@ pub fn calculate_commitments(
     )
 }
 
-/// Builds a `CommitmentStateDiff` from the `StateUpdateWrapper`.
+/// Aggregates all the changes from last state update in a way that is easy to access
+/// when computing the state root
 ///
-/// # Arguments
-///
-/// * `StateUpdateWrapper` - The last state update fetched and formated.
-///
-/// # Returns
-///
-/// The commitment state diff as a `CommitmentStateDiff`.
-pub fn build_commitment_state_diff(state_update_wrapper: StateUpdateWrapper) -> CommitmentStateDiff {
+/// * `state_update`: The last state update fetched from the sequencer
+pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStateDiff {
     let mut commitment_state_diff = CommitmentStateDiff {
         address_to_class_hash: IndexMap::new(),
         address_to_nonce: IndexMap::new(),
@@ -63,37 +61,37 @@ pub fn build_commitment_state_diff(state_update_wrapper: StateUpdateWrapper) -> 
         class_hash_to_compiled_class_hash: IndexMap::new(),
     };
 
-    for deployed_contract in state_update_wrapper.state_diff.deployed_contracts.iter() {
-        let address = ContractAddress::from(deployed_contract.address);
-        let class_hash = if address == ContractAddress::from(Felt252Wrapper::ONE) {
+    for DeployedContractItem { address, class_hash } in state_update.state_diff.deployed_contracts.iter() {
+        let address = ContractAddress::from_field_element(address);
+        let class_hash = if address == ContractAddress::from_field_element(FieldElement::ZERO) {
             // System contracts doesnt have class hashes
-            ClassHash::from(Felt252Wrapper::ZERO)
+            ClassHash::from_field_element(FieldElement::ZERO)
         } else {
-            ClassHash::from(deployed_contract.class_hash)
+            ClassHash::from_field_element(class_hash)
         };
         commitment_state_diff.address_to_class_hash.insert(address, class_hash);
     }
 
-    for (address, nonce) in state_update_wrapper.state_diff.nonces.iter() {
-        let contract_address = ContractAddress::from(*address);
-        let nonce_value = Nonce::from(*nonce);
+    for NonceUpdate { contract_address, nonce } in state_update.state_diff.nonces.iter() {
+        let contract_address = ContractAddress::from_field_element(contract_address);
+        let nonce_value = Nonce::from_field_element(nonce);
         commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
     }
 
-    for (address, storage_diffs) in state_update_wrapper.state_diff.storage_diffs.iter() {
-        let contract_address = ContractAddress::from(*address);
+    for ContractStorageDiffItem { address, storage_entries } in state_update.state_diff.storage_diffs.iter() {
+        let contract_address = ContractAddress::from_field_element(address);
         let mut storage_map = IndexMap::new();
-        for storage_diff in storage_diffs.iter() {
-            let key = StorageKey::from(storage_diff.key);
-            let value = StarkFelt::from(storage_diff.value);
+        for StorageEntry { key, value } in storage_entries.iter() {
+            let key = StorageKey::from_field_element(key);
+            let value = StarkFelt::from_field_element(value);
             storage_map.insert(key, value);
         }
         commitment_state_diff.storage_updates.insert(contract_address, storage_map);
     }
 
-    for declared_class in state_update_wrapper.state_diff.declared_classes.iter() {
-        let class_hash = ClassHash::from(declared_class.class_hash);
-        let compiled_class_hash = CompiledClassHash::from(declared_class.compiled_class_hash);
+    for DeclaredClassItem { class_hash, compiled_class_hash } in state_update.state_diff.declared_classes.iter() {
+        let class_hash = ClassHash::from_field_element(class_hash);
+        let compiled_class_hash = CompiledClassHash::from_field_element(compiled_class_hash);
         commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
     }
 
@@ -170,19 +168,22 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
     // NOTE: handlers implicitely acquire a lock on their respective tries
     // for the duration of their livetimes
     let mut handler_contract = storage_handler::contract_trie_mut();
-    let mut handler_storage = storage_handler::contract_storage_trie_mut();
+    let mut handler_storage_trie = storage_handler::contract_storage_trie_mut();
+    let handler_storage = storage_handler::contract_storage_mut();
 
     // First we insert the contract storage changes
     for (contract_address, updates) in csd.storage_updates.iter() {
-        handler_storage.init(contract_address)?;
+        handler_storage_trie.init(contract_address)?;
 
         for (key, value) in updates {
-            handler_storage.insert(*contract_address, *key, *value)?;
+            handler_storage_trie.insert(*contract_address, *key, *value)?;
+            handler_storage.insert((*contract_address, *key), *value)?;
         }
     }
 
     // Then we commit them
-    handler_storage.commit(block_number)?;
+    handler_storage_trie.commit(block_number)?;
+    handler_storage.commit_sync(block_number)?;
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
     let updates = csd
@@ -190,7 +191,7 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
         .iter()
         .par_bridge()
         .map(|(contract_address, _)| {
-            let storage_root = handler_storage.root(contract_address).unwrap();
+            let storage_root = handler_storage_trie.root(contract_address).unwrap();
             let leaf_hash = contract_state_leaf_hash(csd, contract_address, storage_root);
 
             (contract_address, leaf_hash)

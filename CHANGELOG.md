@@ -2,9 +2,13 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix(proposer_factory): Removed and clean a lot of stuff on Client side, mostly node crate
+- feat(storage): removed the use of `BonsaiStorage` logs
+- feat(storage): removed dependance on `StateUpdateWrapper`
+- feat(storage): state diff are now stored for each block
+- CI: fix toolchain
 - CI: add `cargo test` on PR
 - refactor: remove dead code on `Struct Starknet<..>`
-- feat(storage): state diff are now stored for each block
 - fix: verify_l2
 - feat(rpc): remove duplicated code, add mod 'utils'
 - feat(storage): started migrating storage to the bonsai-lib

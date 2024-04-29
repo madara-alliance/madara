@@ -12,5 +12,5 @@ version.workspace = true
 sp-core = { workspace = true }
 sp-runtime = { workspace = true }
 
-# Madara primitives
+# Deoxys primitives
 mp-hashers = { workspace = true }
