@@ -170,9 +170,6 @@ async fn fetch_class(
     provider: &SequencerGatewayProvider,
 ) -> Result<ContractClassData, L2SyncError> {
     let core_class = provider.get_class(BlockIdCore::Number(block_number), class_hash).await?;
-
-    // Core classes have to be converted into Blockifier classes to gain support
-    // for Substrate [`Encode`] and [`Decode`] traits
     Ok(ContractClassData {
         hash: ClassHash(StarkFelt(class_hash.to_bytes_be())),
         contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),

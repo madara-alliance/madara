@@ -484,6 +484,7 @@ impl<T: Config> Pallet<T> {
                     }
                 };
 
+                let actual_block_number = block.header().block_number;
                 let block_hash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
                 let state_root = Felt252Wrapper::try_from(block.header().global_state_root).unwrap();
 
@@ -497,7 +498,7 @@ impl<T: Config> Pallet<T> {
                 frame_system::Pallet::<T>::deposit_log(digest);
                 log::info!(
                     "✨ Imported #{} ({}) and updated state root ({})",
-                    block_number,
+                    actual_block_number,
                     trim_hash(&block_hash),
                     trim_hash(&state_root)
                 );

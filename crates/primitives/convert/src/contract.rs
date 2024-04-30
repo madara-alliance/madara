@@ -6,25 +6,28 @@ use anyhow::anyhow;
 use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
 };
+use cairo_lang_starknet_classes::casm_contract_class::{CasmContractClass, StarknetSierraCompilationError};
+use cairo_lang_starknet_classes::contract_class::{ContractClass, ContractEntryPoint, ContractEntryPoints};
+use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use indexmap::IndexMap;
-use mp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
+use num_bigint::{BigInt, BigUint, Sign};
 use starknet_api::core::EntryPointSelector;
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
     CompressedLegacyContractClass, ContractClass as ContractClassCore, EntryPointsByType, FieldElement,
     FlattenedSierraClass, FromByteArrayError, LegacyContractAbiEntry, LegacyContractEntryPoint,
-    LegacyEntryPointsByType,
+    LegacyEntryPointsByType, SierraEntryPoint,
 };
 
 /// Returns a [`BlockifierContractClass`] from a [`ContractClass`]
 pub fn from_rpc_contract_class(contract_class: ContractClassCore) -> anyhow::Result<ContractClassBlockifier> {
     match contract_class {
-        ContractClassCore::Sierra(contract_class) => from_contract_class_sierra(contract_class),
         ContractClassCore::Legacy(contract_class) => from_contract_class_cairo(contract_class),
+        ContractClassCore::Sierra(contract_class) => from_contract_class_sierra(contract_class),
     }
 }
 
@@ -37,12 +40,55 @@ pub fn to_contract_class_sierra(_: &ContractClassV1, abi: String) -> anyhow::Res
     }))
 }
 
+/// Converts a [FieldElement] to a [BigUintAsHex]
+fn field_element_to_big_uint_as_hex(value: &FieldElement) -> BigUintAsHex {
+    BigUintAsHex { value: field_element_to_big_uint(value) }
+}
+
+/// Converts a [FieldElement] to a [BigUint]
+fn field_element_to_big_uint(value: &FieldElement) -> BigUint {
+    BigInt::from_bytes_be(Sign::Plus, &value.to_bytes_be()).to_biguint().unwrap()
+}
+
+/// Converts a [EntryPointsByType] to a [ContractEntryPoints]
+fn entry_points_by_type_to_contract_entry_points(value: EntryPointsByType) -> ContractEntryPoints {
+    fn sierra_entry_point_to_contract_entry_point(value: SierraEntryPoint) -> ContractEntryPoint {
+        ContractEntryPoint {
+            function_idx: value.function_idx.try_into().unwrap(),
+            selector: field_element_to_big_uint(&value.selector),
+        }
+    }
+    ContractEntryPoints {
+        constructor: value.constructor.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+        external: value.external.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+        l1_handler: value.l1_handler.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+    }
+}
+
+/// Converts a [FlattenedSierraClass] to a [CasmContractClass]
+pub fn flattened_sierra_to_casm_contract_class(
+    flattened_sierra: FlattenedSierraClass,
+) -> Result<CasmContractClass, StarknetSierraCompilationError> {
+    let sierra_contract_class = ContractClass {
+        sierra_program: flattened_sierra.sierra_program.iter().map(field_element_to_big_uint_as_hex).collect(),
+        sierra_program_debug_info: None, // TODO: implement a correct sierra program debug info conversion
+        contract_class_version: flattened_sierra.contract_class_version.clone(),
+        entry_points_by_type: entry_points_by_type_to_contract_entry_points(
+            flattened_sierra.entry_points_by_type.clone(),
+        ),
+        // abi: serde_json::from_str(&flattened_sierra.abi).expect("Failed to deserialize abi")
+        abi: None
+    };
+    let casm_contract_class = CasmContractClass::from_contract_class(sierra_contract_class, false, usize::MAX)?;
+    Ok(casm_contract_class)
+}
+
 /// Converts a [FlattenedSierraClass] to a [ContractClassBlockifier]
 ///
 /// Note: The conversion between the different legacy class versions is handled by an intermediate
 /// json representation.
 pub fn from_contract_class_sierra(contract_class: FlattenedSierraClass) -> anyhow::Result<ContractClassBlockifier> {
-    let raw_casm_contract = flattened_sierra_to_casm_contract_class(&Arc::new(contract_class))?;
+    let raw_casm_contract = flattened_sierra_to_casm_contract_class(contract_class)?;
     let blockifier_contract = ContractClassV1::try_from(raw_casm_contract).unwrap();
     anyhow::Ok(ContractClassBlockifier::V1(blockifier_contract))
 }
@@ -148,3 +194,4 @@ fn from_legacy_entry_point(entry_point: &LegacyContractEntryPoint) -> EntryPoint
     let offset = EntryPointOffset(entry_point.offset);
     EntryPoint { selector, offset }
 }
+

@@ -6381,6 +6381,7 @@ dependencies = [
  "cairo-vm",
  "flate2",
  "indexmap 2.2.6",
+ "log",
  "mp-felt",
  "mp-transactions",
  "num-bigint",

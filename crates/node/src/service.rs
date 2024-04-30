@@ -196,6 +196,7 @@ pub fn new_full(
     cache_more_things: bool,
     fetch_config: FetchConfig,
     genesis_block: DeoxysBlock,
+    starting_block: Option<u32>,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue = build_manual_seal_import_queue;
 
@@ -226,7 +227,13 @@ pub fn new_full(
         })?;
 
     let prometheus_registry = config.prometheus_registry().cloned();
-    let starting_block = client.info().best_number;
+
+    let best_block = client.info().best_number;
+    let on_block = if starting_block.is_some() && starting_block >= Some(best_block) {
+        starting_block
+    } else {
+        Some(best_block)
+    };
 
     // Channel for the rpc handler to communicate with the authorship task.
     let (command_sink, commands_stream) = match sealing {
@@ -243,7 +250,7 @@ pub fn new_full(
         client: client.clone(),
         deoxys_backend: deoxys_backend.clone(),
         sync_service: sync_service.clone(),
-        starting_block,
+        starting_block: on_block.unwrap(),
         genesis_provider: genesis_data.into(),
     };
 
@@ -307,7 +314,7 @@ pub fn new_full(
             command_sink.unwrap().clone(),
             l1_url,
             Arc::clone(&client),
-            starting_block,
+            on_block.unwrap(),
         ),
     );
 
