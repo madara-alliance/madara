@@ -2567,7 +2567,6 @@ name = "deoxys"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "blockifier",
  "clap",
  "deoxys-runtime",
  "deoxys-tui",
@@ -2575,7 +2574,6 @@ dependencies = [
  "frame-benchmarking-cli",
  "frame-system",
  "futures",
- "hex",
  "jsonrpsee",
  "log",
  "mc-db",
@@ -2585,7 +2583,6 @@ dependencies = [
  "mc-sync",
  "mp-block",
  "mp-digest-log",
- "mp-sequencer-address",
  "mp-types",
  "pallet-starknet",
  "pallet-starknet-runtime-api",
@@ -2599,24 +2596,18 @@ dependencies = [
  "sc-executor",
  "sc-network",
  "sc-network-sync",
- "sc-offchain",
  "sc-rpc-api",
  "sc-service",
  "sc-telemetry",
  "sc-transaction-pool",
  "sc-transaction-pool-api",
  "serde",
- "serde_json",
- "sha3",
  "sp-api",
  "sp-block-builder",
  "sp-blockchain",
- "sp-consensus-aura",
- "sp-consensus-grandpa",
  "sp-core",
  "sp-inherents",
  "sp-keyring",
- "sp-offchain",
  "sp-runtime",
  "sp-state-machine",
  "sp-statement-store",
@@ -2642,13 +2633,9 @@ dependencies = [
  "frame-system",
  "frame-system-benchmarking",
  "frame-system-rpc-runtime-api",
- "mp-block",
  "mp-chain-id",
  "mp-felt",
- "mp-hashers",
  "mp-program-hash",
- "mp-simulations",
- "mp-transactions",
  "mp-types",
  "pallet-aura",
  "pallet-grandpa",
@@ -2669,8 +2656,6 @@ dependencies = [
  "sp-std",
  "sp-transaction-pool",
  "sp-version",
- "starknet-core 0.10.0",
- "starknet-ff 0.3.7",
  "starknet_api",
 ]
 
@@ -5965,15 +5950,12 @@ dependencies = [
  "bonsai-trie",
  "cairo-vm",
  "crossbeam-skiplist",
- "ethers",
  "flate2",
  "indexmap 2.2.6",
  "itertools 0.12.1",
  "log",
- "mp-block",
  "mp-convert",
  "mp-felt",
- "mp-hashers",
  "mp-transactions",
  "mp-types",
  "parity-scale-codec",
@@ -5981,9 +5963,7 @@ dependencies = [
  "rocksdb",
  "sc-client-db",
  "serde",
- "serde_json",
  "sp-core",
- "sp-database",
  "sp-runtime",
  "starknet-core 0.10.0",
  "starknet-ff 0.3.7",
@@ -6012,13 +5992,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "blockifier",
- "deoxys-runtime",
  "futures",
  "futures-timer",
  "log",
  "mc-db",
  "mc-rpc",
- "mc-sync",
  "mp-digest-log",
  "mp-felt",
  "mp-hashers",
@@ -6038,21 +6016,12 @@ name = "mc-rpc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bitvec",
  "blockifier",
- "cairo-lang-starknet",
- "cairo-lang-starknet-classes",
- "cairo-lang-utils",
  "cairo-vm",
- "deoxys-runtime",
- "flate2",
- "hex",
- "indexmap 2.2.6",
  "itertools 0.12.1",
  "jsonrpsee",
  "log",
  "mc-db",
- "mc-genesis-data-provider",
  "mc-sync",
  "mp-block",
  "mp-convert",
@@ -6063,16 +6032,11 @@ dependencies = [
  "mp-simulations",
  "mp-transactions",
  "mp-types",
- "num-bigint",
- "pallet-starknet",
  "pallet-starknet-runtime-api",
  "rstest 0.18.2",
  "sc-client-api",
  "sc-network-sync",
- "sc-transaction-pool",
- "sc-transaction-pool-api",
  "serde",
- "serde_json",
  "serde_with",
  "sp-api",
  "sp-arithmetic",
@@ -6094,7 +6058,6 @@ dependencies = [
  "bitvec",
  "blockifier",
  "bonsai-trie",
- "deoxys-runtime",
  "ethers",
  "futures",
  "hex",
@@ -6107,10 +6070,8 @@ dependencies = [
  "mp-convert",
  "mp-felt",
  "mp-hashers",
- "mp-storage",
  "mp-transactions",
  "mp-types",
- "parity-scale-codec",
  "primitive-types",
  "rand 0.8.5",
  "rayon",
@@ -6121,7 +6082,6 @@ dependencies = [
  "serde_json",
  "sp-blockchain",
  "sp-core",
- "sp-runtime",
  "starknet-core 0.10.0",
  "starknet-ff 0.3.7",
  "starknet-providers 0.10.0",
@@ -6327,7 +6287,6 @@ dependencies = [
  "serde_json",
  "sp-core",
  "starknet-core 0.10.0",
- "starknet-providers 0.10.0",
  "starknet_api",
 ]
 
@@ -6350,6 +6309,7 @@ dependencies = [
  "cairo-vm",
  "flate2",
  "indexmap 2.2.6",
+ "log",
  "mp-felt",
  "mp-transactions",
  "num-bigint",
@@ -6399,7 +6359,6 @@ dependencies = [
  "lazy_static",
  "mp-felt",
  "serde",
- "serde_json",
  "serde_with",
  "starknet-core 0.10.0",
  "starknet-crypto 0.6.2",
@@ -6441,10 +6400,6 @@ dependencies = [
 name = "mp-simulations"
 version = "0.1.0"
 dependencies = [
- "blockifier",
- "derive_more",
- "mp-felt",
- "mp-transactions",
  "parity-scale-codec",
  "scale-info",
  "starknet-core 0.10.0",
@@ -6466,15 +6421,11 @@ version = "0.1.0"
 dependencies = [
  "assert_matches",
  "blockifier",
- "cairo-lang-starknet",
  "cairo-lang-starknet-classes",
  "cairo-lang-utils",
  "cairo-vm",
- "derive_more",
  "flate2",
  "indexmap 2.2.6",
- "lazy_static",
- "log",
  "mp-felt",
  "mp-hashers",
  "num-bigint",
@@ -6482,7 +6433,6 @@ dependencies = [
  "scale-info",
  "serde",
  "serde_json",
- "spin 0.9.8",
  "starknet-core 0.10.0",
  "starknet-crypto 0.6.2",
  "starknet-ff 0.3.7",
@@ -7174,14 +7124,9 @@ dependencies = [
  "assert_matches",
  "blockifier",
  "cairo-lang-starknet-classes",
- "cairo-vm",
- "derive_more",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "hex",
- "indexmap 2.2.6",
- "itertools 0.12.1",
  "lazy_static",
  "log",
  "mc-db",
@@ -7191,20 +7136,13 @@ dependencies = [
  "mp-genesis-config",
  "mp-hashers",
  "mp-sequencer-address",
- "mp-simulations",
  "mp-storage",
  "mp-transactions",
  "parity-scale-codec",
- "reqwest",
  "scale-info",
  "serde",
  "serde_json",
- "serde_with",
- "sp-api",
- "sp-arithmetic",
  "sp-core",
- "sp-inherents",
- "sp-io",
  "sp-runtime",
  "sp-std",
  "starknet-core 0.10.0",
@@ -7218,15 +7156,10 @@ name = "pallet-starknet-runtime-api"
 version = "0.1.0"
 dependencies = [
  "blockifier",
- "hashbrown 0.14.3",
  "mp-felt",
- "mp-simulations",
- "mp-transactions",
- "pallet-starknet",
  "parity-scale-codec",
  "scale-info",
  "sp-api",
- "sp-arithmetic",
  "sp-runtime",
  "starknet_api",
 ]
@@ -9332,40 +9265,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sc-offchain"
-version = "4.0.0-dev"
-source = "git+https://github.com/kasarlabs/polkadot-sdk?branch=release-polkadot-v1.3.0-std#c78d3ab6ffec9e4fd28a0ee853c3291b68d27246"
-dependencies = [
- "array-bytes 6.2.2",
- "bytes",
- "fnv",
- "futures",
- "futures-timer",
- "hyper",
- "hyper-rustls",
- "libp2p",
- "log",
- "num_cpus",
- "once_cell",
- "parity-scale-codec",
- "parking_lot 0.12.1",
- "rand 0.8.5",
- "sc-client-api",
- "sc-network",
- "sc-network-common",
- "sc-transaction-pool-api",
- "sc-utils",
- "sp-api",
- "sp-core",
- "sp-externalities",
- "sp-keystore",
- "sp-offchain",
- "sp-runtime",
- "threadpool",
- "tracing",
-]
-
-[[package]]
 name = "sc-proposer-metrics"
 version = "0.10.0-dev"
 source = "git+https://github.com/kasarlabs/polkadot-sdk?branch=release-polkadot-v1.3.0-std#c78d3ab6ffec9e4fd28a0ee853c3291b68d27246"
@@ -10933,9 +10832,6 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
-dependencies = [
- "lock_api",
-]
 
 [[package]]
 name = "spinners"
@@ -11759,15 +11655,6 @@ checksum = "3fdd6f064ccff2d6567adcb3873ca630700f00b5ad3f060c25b5dcfd9a4ce152"
 dependencies = [
  "cfg-if",
  "once_cell",
-]
-
-[[package]]
-name = "threadpool"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
-dependencies = [
- "num_cpus",
 ]
 
 [[package]]

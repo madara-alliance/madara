@@ -151,8 +151,8 @@ pub struct AbiTypedParameterWrapper {
 /// Returns a [`BlockifierContractClass`] from a [`ContractClass`]
 pub fn from_rpc_contract_class(contract_class: ContractClassCore) -> anyhow::Result<ContractClassBlockifier> {
     match contract_class {
-        ContractClassCore::Sierra(contract_class) => from_contract_class_sierra(contract_class),
         ContractClassCore::Legacy(contract_class) => from_contract_class_cairo(contract_class),
+        ContractClassCore::Sierra(contract_class) => from_contract_class_sierra(contract_class),
     }
 }
 
@@ -290,10 +290,10 @@ impl TryFrom<ContractClassCore> for ContractClassWrapper {
     fn try_from(contract_class: ContractClassCore) -> Result<Self, Self::Error> {
         let contract = from_rpc_contract_class(contract_class.clone())?;
         let abi = match &contract_class {
-            ContractClassCore::Sierra(class_sierra) => ContractAbi::Sierra(class_sierra.abi.clone()),
             ContractClassCore::Legacy(class_cairo) => {
                 ContractAbi::Cairo(from_rpc_contract_abi(class_cairo.abi.clone()))
             }
+            ContractClassCore::Sierra(class_sierra) => ContractAbi::Sierra(class_sierra.abi.clone()),
         };
 
         let sierra_program_length = match contract_class {
@@ -311,18 +311,18 @@ impl TryInto<ContractClassCore> for ContractClassWrapper {
 
     fn try_into(self) -> Result<ContractClassCore, Self::Error> {
         match self.abi {
-            ContractAbi::Sierra(abi_sierra) => {
-                if let ContractClassBlockifier::V1(contract) = self.contract {
-                    to_contract_class_sierra(&contract, abi_sierra)
-                } else {
-                    unreachable!("should not mix Sierra abi with Cairo contract")
-                }
-            }
             ContractAbi::Cairo(abi_cairo) => {
                 if let ContractClassBlockifier::V0(contract) = self.contract {
                     to_contract_class_cairo(&contract, to_rpc_contract_abi(abi_cairo))
                 } else {
                     unreachable!("should not mix Cairo abi with Sierra contract")
+                }
+            }
+            ContractAbi::Sierra(abi_sierra) => {
+                if let ContractClassBlockifier::V1(contract) = self.contract {
+                    to_contract_class_sierra(&contract, abi_sierra)
+                } else {
+                    unreachable!("should not mix Sierra abi with Cairo contract")
                 }
             }
         }

@@ -25,10 +25,6 @@ mp-felt = { workspace = true, features = ["parity-scale-codec", "serde"] }
 mp-genesis-config = { workspace = true, default-features = false }
 mp-hashers = { workspace = true }
 mp-sequencer-address = { workspace = true, features = ["parity-scale-codec"] }
-mp-simulations = { workspace = true, features = [
-  "parity-scale-codec",
-  "scale-info",
-] }
 mp-storage = { workspace = true, features = ["parity-scale-codec"] }
 mp-transactions = { workspace = true, features = ["scale-info"] }
 
@@ -43,32 +39,18 @@ frame-benchmarking = { workspace = true, optional = true }
 frame-support = { workspace = true }
 frame-system = { workspace = true }
 # Substrate primitives
-cairo-vm = { workspace = true }
-sp-api = { workspace = true }
-sp-arithmetic = { workspace = true }
 sp-core = { workspace = true }
-sp-inherents = { workspace = true }
-sp-io = { workspace = true }
 sp-runtime = { workspace = true }
 sp-std = { workspace = true }
 # Frame pallets
 
 # Other third party dependencies
 cairo-lang-starknet-classes = { workspace = true, optional = true }
-derive_more = { workspace = true }
-hex = { workspace = true }
-indexmap = { workspace = true }
-itertools = { workspace = true }
 log = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
-reqwest = { workspace = true, optional = true, features = [
-  "blocking",
-  "rustls-tls",
-] }
 scale-info = { workspace = true, features = ["derive"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
@@ -84,8 +66,6 @@ std = [
   "frame-support/std",
   "frame-system/std",
   "scale-info/std",
-  "sp-inherents/std",
-  "sp-io/std",
   "sp-runtime/std",
   # Starknet
   "mp-felt/std",
@@ -93,9 +73,7 @@ std = [
   "mp-sequencer-address/std",
   "starknet-crypto/std",
   # Other third party dependencies
-  "dep:reqwest",
   "mp-block/std",
-  "mp-simulations/std",
   "parity-scale-codec/std",
   "starknet-core/std",
   "cairo-lang-starknet-classes",

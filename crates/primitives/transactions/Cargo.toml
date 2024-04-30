@@ -12,20 +12,15 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 blockifier = { workspace = true }
-derive_more = { workspace = true, features = ["from"] }
 indexmap = { workspace = true }
-lazy_static = { workspace = true }
-log = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
-spin = "0.9.8"
 starknet-core = { workspace = true }
 starknet-crypto = { workspace = true, features = ["alloc"] }
 starknet-ff = { workspace = true, features = ["alloc"] }
 starknet_api = { workspace = true }
 
 # Optional (client)
-cairo-lang-starknet = { workspace = true, optional = true }
 cairo-lang-starknet-classes = { workspace = true, optional = true }
 cairo-lang-utils = { workspace = true, optional = true }
 cairo-vm = { workspace = true, optional = true }
@@ -61,7 +56,6 @@ std = [
 client = [
   "std",
   "dep:flate2",
-  "dep:cairo-lang-starknet",
   "dep:cairo-lang-utils",
   "dep:num-bigint",
   "dep:serde_json",

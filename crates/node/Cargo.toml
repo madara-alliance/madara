@@ -26,7 +26,6 @@ clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true, features = ["thread-pool"] }
 log = { workspace = true }
 serde = { workspace = true }
-sha3 = { workspace = true }
 tokio = { workspace = true }
 
 frame-system = { workspace = true }
@@ -38,17 +37,13 @@ sc-consensus-manual-seal = { workspace = true }
 sc-executor = { workspace = true }
 sc-network = { workspace = true }
 sc-network-sync = { workspace = true }
-sc-offchain = { workspace = true }
 sc-service = { workspace = true }
 sc-telemetry = { workspace = true }
 sc-transaction-pool = { workspace = true }
 sc-transaction-pool-api = { workspace = true }
-sp-consensus-aura = { workspace = true }
-sp-consensus-grandpa = { workspace = true }
 sp-core = { workspace = true }
 sp-inherents = { workspace = true }
 sp-keyring = { workspace = true }
-sp-offchain = { workspace = true }
 sp-runtime = { workspace = true }
 sp-state-machine = { workspace = true }
 sp-statement-store = { workspace = true }
@@ -74,9 +69,7 @@ frame-benchmarking = { workspace = true }
 frame-benchmarking-cli = { workspace = true }
 
 # Starknet
-blockifier = { workspace = true }
 deoxys-runtime = { workspace = true }
-hex = { workspace = true }
 mc-db = { workspace = true }
 mc-mapping-sync = { workspace = true }
 mc-rpc = { workspace = true }
@@ -88,11 +81,9 @@ starknet-providers = { workspace = true }
 # Deoxys utils
 mc-genesis-data-provider = { workspace = true }
 
-serde_json = "1.0.64"
 # Primitives
 mp-block = { workspace = true }
 mp-digest-log = { workspace = true }
-mp-sequencer-address = { workspace = true, features = ["client"] }
 mp-types = { workspace = true }
 
 # CLI-specific dependencies

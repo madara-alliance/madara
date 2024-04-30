@@ -13,6 +13,7 @@ cairo-lang-utils = { workspace = true }
 cairo-vm = { workspace = true }
 flate2 = { workspace = true }
 indexmap = { workspace = true }
+log = { workspace = true }
 mp-felt = { workspace = true }
 mp-transactions = { workspace = true }
 num-bigint = { workspace = true }

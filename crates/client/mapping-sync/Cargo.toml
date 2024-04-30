@@ -16,13 +16,11 @@ repository = "https://github.com/kasarlabs/deoxys"
 [dependencies]
 anyhow = { workspace = true, default-features = true }
 blockifier = { workspace = true }
-deoxys-runtime = { workspace = true }
 futures = { workspace = true, default-features = true }
 futures-timer = { workspace = true }
 log = { workspace = true, default-features = true }
 mc-db = { workspace = true }
 mc-rpc = { workspace = true }
-mc-sync = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }

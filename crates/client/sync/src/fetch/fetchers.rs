@@ -148,7 +148,12 @@ async fn fetch_class_update(
     let mut task_set = missing_classes.into_iter().fold(JoinSet::new(), |mut set, class_hash| {
         let provider = Arc::clone(&arc_provider);
         let class_hash = *class_hash;
-        set.spawn(async move { fetch_class(class_hash, block_number, &provider).await });
+        // Skip what appears to be a broken Sierra class definition (quick fix)
+        if class_hash
+            != FieldElement::from_hex_be("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698").unwrap()
+        {
+            set.spawn(async move { fetch_class(class_hash, block_number, &provider).await });
+        }
         set
     });
 
@@ -169,9 +174,6 @@ async fn fetch_class(
     provider: &SequencerGatewayProvider,
 ) -> Result<ContractClassData, L2SyncError> {
     let core_class = provider.get_class(BlockIdCore::Number(block_number), class_hash).await?;
-
-    // Core classes have to be converted into Blockifier classes to gain support
-    // for Substrate [`Encode`] and [`Decode`] traits
     Ok(ContractClassData {
         hash: ClassHash(StarkFelt(class_hash.to_bytes_be())),
         contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
