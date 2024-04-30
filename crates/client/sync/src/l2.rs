@@ -141,6 +141,7 @@ pub async fn sync<C>(
     let provider = Arc::new(provider);
     let mut last_block_hash = None;
 
+    // Fetch blocks and updates in parallel one time before looping
     let fetch_stream = (first_block..).map(|block_n| {
         let provider = Arc::clone(&provider);
         async move { tokio::spawn(fetch_block_and_updates(block_n, provider)).await.expect("tokio join error") }
@@ -153,7 +154,7 @@ pub async fn sync<C>(
     let (class_update_sender, mut class_update_receiver) = mpsc::channel(10);
 
     tokio::select!(
-        // update highest block hash and number
+        // update highest block hash and number, update pending block and state update
         _ = async {
             let mut interval = tokio::time::interval(Duration::from_secs(5));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
