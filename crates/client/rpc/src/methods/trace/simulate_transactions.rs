@@ -1,4 +1,4 @@
-use blockifier::transaction::objects::TransactionExecutionInfo;
+use blockifier::transaction::objects::{FeeType, HasRelatedFeeType, TransactionExecutionInfo};
 use jsonrpsee::core::RpcResult;
 use mp_hashers::HasherT;
 use mp_simulations::SimulationFlags;
@@ -15,8 +15,9 @@ use starknet_core::types::{
 
 use super::lib::ConvertCallInfoToExecuteInvocationError;
 use super::utils::{block_number_by_id, tx_execution_infos_to_tx_trace};
-use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
+use crate::utils::execution::block_context;
+use crate::utils::helpers::previous_substrate_block_hash;
 use crate::{utils, Starknet};
 
 pub async fn simulate_transactions<BE, C, H>(
@@ -35,15 +36,9 @@ where
     let substrate_block_hash =
         starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|_e| StarknetRpcApiError::BlockNotFound)?;
 
-    // create a block context from block header
-    let fee_token_address = starknet.client.runtime_api().fee_token_addresses(substrate_block_hash).map_err(|e| {
-        log::error!("Failed to retrieve fee token address: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?;
-    let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-    let block_header = block.header().clone();
-    let block_context =
-        block_header.into_block_context(fee_token_address, starknet_api::core::ChainId("SN_MAIN".to_string()));
+    let previous_substrate_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
+    let block_context = block_context(starknet.client.as_ref(), previous_substrate_block_hash)?;
+    let block_number = block_number_by_id(block_id);
 
     let tx_type_and_tx_iterator = transactions.into_iter().map(|tx| match tx {
         BroadcastedTransaction::Invoke(_) => tx.to_account_transaction().map(|tx| (TxType::Invoke, tx)),
@@ -60,15 +55,21 @@ where
 
     let simulation_flags = SimulationFlags::from(simulation_flags);
 
+    let fee_types = user_transactions.iter().map(|tx| tx.fee_type()).collect::<Vec<_>>();
+
     let res =
         utils::execution::simulate_transactions(user_transactions, &simulation_flags, &block_context).map_err(|e| {
             log::error!("Failed to call function: {:#?}", e);
             StarknetRpcApiError::ContractError
         })?;
 
-    let block_number = block_number_by_id(block_id);
-    let simulated_transactions =
-        tx_execution_infos_to_simulated_transactions(tx_types, res, block_number).map_err(StarknetRpcApiError::from)?;
+    if res.len() != fee_types.len() {
+        log::error!("Failed to convert one or more transactions to simulated transactions: {:#?}", res);
+        return Err(StarknetRpcApiError::InternalServerError.into());
+    }
+
+    let simulated_transactions = tx_execution_infos_to_simulated_transactions(tx_types, res, block_number, fee_types)
+        .map_err(StarknetRpcApiError::from)?;
 
     Ok(simulated_transactions)
 }
@@ -77,20 +78,27 @@ fn tx_execution_infos_to_simulated_transactions(
     tx_types: Vec<TxType>,
     transaction_execution_results: Vec<TransactionExecutionInfo>,
     block_number: u64,
+    fee_types: Vec<FeeType>,
 ) -> Result<Vec<SimulatedTransaction>, ConvertCallInfoToExecuteInvocationError> {
     let mut results = vec![];
-    for (tx_type, res) in tx_types.into_iter().zip(transaction_execution_results.into_iter()) {
+
+    for ((tx_type, res), fee_type) in
+        tx_types.into_iter().zip(transaction_execution_results.into_iter()).zip(fee_types.into_iter())
+    {
         let transaction_trace = tx_execution_infos_to_tx_trace(tx_type, &res, block_number)?;
         let gas = res.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
         let fee = res.actual_fee.0;
-        // TODO: Shouldn't the gas price be taken from the block header instead?
         let price = if gas > 0 { fee / gas as u128 } else { 0 };
 
         let gas_consumed = gas.into();
         let gas_price = price.into();
         let overall_fee = fee.into();
 
-        let unit: PriceUnit = PriceUnit::Wei; //TODO(Tbelleng) : Get Price Unit from Tx
+        let unit = match fee_type {
+            FeeType::Eth => PriceUnit::Wei,
+            FeeType::Strk => PriceUnit::Fri,
+        };
+
         let data_gas_consumed = res.da_gas.l1_data_gas.into();
         let data_gas_price = res.da_gas.l1_gas.into();
 
