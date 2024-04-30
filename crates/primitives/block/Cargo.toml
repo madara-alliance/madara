@@ -27,7 +27,6 @@ parity-scale-codec = { workspace = true, features = [
   "derive",
 ], optional = true }
 scale-info = { workspace = true, features = ["derive"], optional = true }
-starknet-providers = { workspace = true, optional = true }
 
 [dev-dependencies]
 mp-felt = { workspace = true }
@@ -51,5 +50,4 @@ std = [
   "anyhow",
   "parity-scale-codec?/std",
   "scale-info?/std",
-  "starknet-providers",
 ]

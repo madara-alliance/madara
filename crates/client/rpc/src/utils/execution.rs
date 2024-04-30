@@ -64,12 +64,12 @@ pub fn re_execute_transactions(
 
     transactions_before
         .into_iter()
-        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, false))
+        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, true))
         .collect::<Result<Vec<_>, _>>()?;
 
     let transactions_exec_infos = transactions_to_trace
         .into_iter()
-        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, false))
+        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, true))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(transactions_exec_infos)
@@ -79,12 +79,13 @@ pub fn simulate_transactions(
     transactions: Vec<AccountTransaction>,
     simulation_flags: &SimulationFlags,
     block_context: &BlockContext,
+    charge_fee: bool,
 ) -> Result<Vec<TransactionExecutionInfo>, TransactionExecutionError> {
     let mut cached_state = init_cached_state(block_context);
 
     let tx_execution_results = transactions
         .into_iter()
-        .map(|tx| tx.execute(&mut cached_state, block_context, simulation_flags.charge_fee, simulation_flags.validate))
+        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, simulation_flags.validate))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(tx_execution_results)

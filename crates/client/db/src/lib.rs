@@ -400,6 +400,10 @@ impl DeoxysBackend {
         DB_SINGLETON.get().expect("Databsae not initialized")
     }
 
+    pub fn compact() {
+        Self::expose_db().compact_range(None::<&[u8]>, None::<&[u8]>);
+    }
+
     /// Return l1 handler tx paid fee database manager
     pub fn l1_handler_paid_fee() -> &'static Arc<L1HandlerTxFeeDb> {
         BACKEND_SINGLETON.get().map(|backend| &backend.l1_handler_paid_fee).expect("Backend not initialized")

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 /// A simple history implementation that stores values at a given index.
 #[derive(Serialize, Deserialize, Default)]
 #[serde(bound = "T: Serialize + DeserializeOwned")]
-pub struct History<T>(Vec<(u64, T)>);
+pub struct History<T>(pub Vec<(u64, T)>);
 
 /// A simple history implementation that stores values at a given index.
 /// It allows to get the value at a given index, push a new value with an index,
@@ -69,5 +69,49 @@ where
             write!(f, "{:?} => {:?}, ", index, value)?;
         }
         write!(f, "}}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_history() {
+        let mut history = History::<u64>::default();
+
+        assert_eq!(history.get(), None);
+        assert_eq!(history.get_at(0), None);
+
+        history.push(0, 0).unwrap();
+        assert_eq!(history.get(), Some(&0));
+        assert_eq!(history.get_at(0), Some(&0));
+        assert_eq!(history.get_at(1), Some(&0));
+
+        history.push(1, 1).unwrap();
+        assert_eq!(history.get(), Some(&1));
+        assert_eq!(history.get_at(0), Some(&0));
+        assert_eq!(history.get_at(1), Some(&1));
+        assert_eq!(history.get_at(2), Some(&1));
+
+        history.push(2, 2).unwrap();
+        assert_eq!(history.get(), Some(&2));
+        assert_eq!(history.get_at(0), Some(&0));
+        assert_eq!(history.get_at(1), Some(&1));
+        assert_eq!(history.get_at(2), Some(&2));
+        assert_eq!(history.get_at(3), Some(&2));
+
+        history.push(1, 3).unwrap_err();
+        assert_eq!(history.get(), Some(&2));
+        assert_eq!(history.get_at(0), Some(&0));
+        assert_eq!(history.get_at(1), Some(&1));
+        assert_eq!(history.get_at(2), Some(&2));
+        assert_eq!(history.get_at(3), Some(&2));
+
+        history.revert_to(1);
+        assert_eq!(history.get(), Some(&1));
+        assert_eq!(history.get_at(0), Some(&0));
+        assert_eq!(history.get_at(1), Some(&1));
+        assert_eq!(history.get_at(2), Some(&1));
     }
 }
