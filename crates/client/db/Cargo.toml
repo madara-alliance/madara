@@ -18,6 +18,9 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 # Substrate crates
+cairo-vm = { workspace = true }
+flate2 = { workspace = true }
+indexmap = { workspace = true }
 parity-scale-codec = { workspace = true, default-features = true, features = [
   "derive",
 ] }
@@ -28,9 +31,10 @@ sp-runtime = { workspace = true, default-features = true }
 
 # Deoxys crates
 mp-block = { workspace = true }
-mp-contract = { workspace = true }
+mp-convert = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
+mp-transactions = { workspace = true }
 mp-types = { workspace = true }
 
 # Starknet crates
@@ -49,11 +53,9 @@ starknet_api = { workspace = true, default-features = true }
 
 # Other crates
 anyhow.workspace = true
-arc-swap = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
-crossbeam-queue = { workspace = true }
 crossbeam-skiplist = { workspace = true }
 ethers = { workspace = true }
 itertools = { workspace = true }

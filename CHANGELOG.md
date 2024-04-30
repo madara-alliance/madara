@@ -2,6 +2,12 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix(classes): Fixed sierra exception on block 31625
+- feat(rocksdb): replaced most async database operations iwth multigets and batched inserts
+- fix: get_state_update with new storage
+- up: starknet-rs
+- fix: exec on receipt
+- feat(RPC): refacto `trace_transaction` and `trace_block_transaction`
 - fix(proposer_factory): Removed and clean a lot of stuff on Client side, mostly node crate
 - feat(storage): removed the use of `BonsaiStorage` logs
 - feat(storage): removed dependance on `StateUpdateWrapper`

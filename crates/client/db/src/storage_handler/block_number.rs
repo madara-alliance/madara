@@ -1,5 +1,4 @@
 use mp_felt::Felt252Wrapper;
-use parity_scale_codec::{Decode, Encode};
 
 use super::{DeoxysStorageError, StorageType};
 use crate::{Column, DatabaseExt, DeoxysBackend};
@@ -11,16 +10,16 @@ impl BlockNumberView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockHashToNumber);
 
-        db.put_cf(&column, block_hash.encode(), block_number.encode())
+        db.put_cf(&column, bincode::serialize(&block_hash).unwrap(), bincode::serialize(&block_number).unwrap())
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockNumber))
     }
     pub fn get(&self, block_hash: &Felt252Wrapper) -> Result<Option<u64>, DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockHashToNumber);
         let block_number = db
-            .get_cf(&column, block_hash.encode())
+            .get_cf(&column, bincode::serialize(&block_hash).unwrap())
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockNumber))?
-            .map(|bytes| u64::decode(&mut &bytes[..]));
+            .map(|bytes| bincode::deserialize::<u64>(&bytes[..]));
 
         match block_number {
             Some(Ok(block_number)) => Ok(Some(block_number)),
@@ -33,7 +32,7 @@ impl BlockNumberView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockHashToNumber);
 
-        match db.key_may_exist_cf(&column, block_hash.encode()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&block_hash).unwrap()) {
             true => Ok(self.get(block_hash)?.is_some()),
             false => Ok(false),
         }

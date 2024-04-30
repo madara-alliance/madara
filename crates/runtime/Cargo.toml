@@ -55,7 +55,6 @@ pallet-starknet-runtime-api = { workspace = true }
 # Deoxys Primitives
 mp-block = { workspace = true }
 mp-chain-id = { workspace = true }
-mp-contract = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-program-hash = { workspace = true }

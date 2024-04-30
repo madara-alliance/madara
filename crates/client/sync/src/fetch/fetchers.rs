@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use mc_db::storage_handler;
+use mc_db::storage_handler::primitives::contract_class::{ContractClassData, ContractClassWrapper};
 use mc_db::storage_handler::StorageView;
 use mp_block::DeoxysBlock;
-use mp_contract::class::{ContractClassData, ContractClassWrapper};
 use mp_convert::state_update::ToStateUpdateCore;
 use sp_core::H160;
 use starknet_api::core::ClassHash;
@@ -85,12 +85,11 @@ pub async fn fetch_block_and_updates(
 }
 
 pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBlock, String> {
-    let client = SequencerGatewayProvider::new(
-        config.gateway.clone(),
-        config.feeder_gateway.clone(),
-        config.chain_id,
-        config.api_key.clone(),
-    );
+    let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
+    let client = match &config.api_key {
+        Some(api_key) => client.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
+        None => client,
+    };
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
     Ok(crate::convert::block(block).await)
@@ -149,7 +148,12 @@ async fn fetch_class_update(
     let mut task_set = missing_classes.into_iter().fold(JoinSet::new(), |mut set, class_hash| {
         let provider = Arc::clone(&arc_provider);
         let class_hash = *class_hash;
-        set.spawn(async move { fetch_class(class_hash, block_number, &provider).await });
+        // Skip what appears to be a broken Sierra class definition (quick fix)
+        if class_hash
+            != FieldElement::from_hex_be("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698").unwrap()
+        {
+            set.spawn(async move { fetch_class(class_hash, block_number, &provider).await });
+        }
         set
     });
 

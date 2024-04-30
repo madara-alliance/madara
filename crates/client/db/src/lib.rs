@@ -19,7 +19,6 @@ use anyhow::{bail, Context, Result};
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use da_db::DaDb;
 use l1_handler_tx_fee::L1HandlerTxFeeDb;
 use mapping_db::MappingDb;
 use meta_db::MetaDb;
@@ -30,7 +29,6 @@ mod mapping_db;
 use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, MultiThreaded, OptimisticTransactionDB, Options,
 };
-mod da_db;
 use starknet_api::hash::StarkHash;
 use starknet_types_core::hash::{Pedersen, Poseidon};
 pub mod bonsai_db;
@@ -102,7 +100,6 @@ pub enum Column {
     BlockMapping,
     TransactionMapping,
     SyncedMapping,
-    Da,
     BlockHashToNumber,
     BlockNumberToHash,
     BlockStateDiff,
@@ -159,7 +156,6 @@ impl Column {
             BlockMapping,
             TransactionMapping,
             SyncedMapping,
-            Da,
             StarknetTransactionHashesCache,
             StarknetBlockHashesCache,
             L1HandlerPaidFee,
@@ -189,7 +185,6 @@ impl Column {
             Column::BlockMapping => "block_mapping",
             Column::TransactionMapping => "transaction_mapping",
             Column::SyncedMapping => "synced_mapping",
-            Column::Da => "da",
             Column::StarknetTransactionHashesCache => "starknet_transaction_hashes_cache",
             Column::StarknetBlockHashesCache => "starnet_block_hashes_cache",
             Column::L1HandlerPaidFee => "l1_handler_paid_fee",
@@ -265,7 +260,6 @@ pub fn starknet_database_dir(db_config_dir: &Path, db_path: &str) -> PathBuf {
 pub struct DeoxysBackend {
     meta: Arc<MetaDb>,
     mapping: Arc<MappingDb>,
-    da: Arc<DaDb>,
     l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
     bonsai_contract: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
     bonsai_storage: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
@@ -373,7 +367,6 @@ impl DeoxysBackend {
         Ok(Self {
             mapping: Arc::new(MappingDb::new(Arc::clone(db), cache_more_things)),
             meta: Arc::new(MetaDb::new(Arc::clone(db))),
-            da: Arc::new(DaDb::new(Arc::clone(db))),
             l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb::new(Arc::clone(db))),
             bonsai_contract: RwLock::new(bonsai_contract),
             bonsai_storage: RwLock::new(bonsai_contract_storage),
@@ -389,11 +382,6 @@ impl DeoxysBackend {
     /// Return the meta database manager
     pub fn meta() -> &'static Arc<MetaDb> {
         BACKEND_SINGLETON.get().map(|backend| &backend.meta).expect("Backend not initialized")
-    }
-
-    /// Return the da database manager
-    pub fn da() -> &'static Arc<DaDb> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.da).expect("Backend not initialized")
     }
 
     pub(crate) fn bonsai_contract() -> &'static RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>> {

@@ -229,11 +229,8 @@ pub fn new_full(
     let prometheus_registry = config.prometheus_registry().cloned();
 
     let best_block = client.info().best_number;
-    let on_block = if starting_block.is_some() && starting_block >= Some(best_block) {
-        starting_block
-    } else {
-        Some(best_block)
-    };
+    let on_block =
+        if starting_block.is_some() && starting_block >= Some(best_block) { starting_block } else { Some(best_block) };
 
     // Channel for the rpc handler to communicate with the authorship task.
     let (command_sink, commands_stream) = match sealing {

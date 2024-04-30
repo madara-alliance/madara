@@ -29,10 +29,10 @@ pub fn get_nonce(block_id: BlockId, contract_address: FieldElement) -> RpcResult
     let key = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
 
     let block_number = block_number_by_id(block_id);
-    let Ok(Some(contract_data)) = storage_handler::contract_data().get_at(&key, block_number) else {
+    let Ok(Some(nonce)) = storage_handler::contract_data().get_nonce_at(&key, block_number) else {
         log::error!("Failed to get nonce at '{contract_address:?}'");
         return Err(StarknetRpcApiError::ContractNotFound.into());
     };
 
-    Ok(Felt(Felt252Wrapper::from(contract_data.nonce).into()))
+    Ok(Felt(Felt252Wrapper::from(nonce).into()))
 }

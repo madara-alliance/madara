@@ -33,14 +33,12 @@
 #![allow(clippy::large_enum_variant)]
 
 /// An adapter for the blockifier state related traits
-use mp_contract::class::StorageContractData;
 /// Starknet pallet.
 /// Definition of the pallet's runtime storage items, events, errors, and dispatchable
 /// functions.
 /// Learn more about FRAME and the core library of Substrate FRAME pallets:
 /// <https://docs.substrate.io/reference/frame-pallets/>
 pub use pallet::*;
-use starknet_api::core::Nonce;
 
 #[cfg(feature = "std")]
 pub mod genesis_loader;
@@ -268,17 +266,15 @@ pub mod pallet {
 
             let handler_contract_data = storage_handler::contract_data_mut();
             self.contracts.iter().for_each(|(contract_address, class_hash)| {
-                handler_contract_data
-                    .insert(*contract_address, StorageContractData { class_hash: *class_hash, nonce: Nonce::default() })
-                    .unwrap();
+                handler_contract_data.insert_class_hash(*contract_address, *class_hash).unwrap();
             });
-            handler_contract_data.commit_sync(0).unwrap();
+            handler_contract_data.commit(0).unwrap();
 
             let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
             self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
                 handler_contract_class_hashes.insert(*class_hash, CompiledClassHash(compiled_class_hash.0)).unwrap();
             });
-            handler_contract_class_hashes.commit_sync(0).unwrap();
+            handler_contract_class_hashes.commit(0).unwrap();
 
             LastKnownEthBlock::<T>::set(None);
             // Set the fee token address from the genesis config.

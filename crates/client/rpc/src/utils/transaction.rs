@@ -2,8 +2,8 @@ use blockifier::execution::contract_class::ClassInfo;
 use blockifier::transaction::transaction_execution as btx;
 use jsonrpsee::core::RpcResult;
 use mc_db::storage_handler;
+use mc_db::storage_handler::primitives::contract_class::StorageContractClassData;
 use mc_db::storage_handler::StorageView;
-use mp_contract::class::StorageContractClassData;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{Transaction, TransactionHash};
 use starknet_ff::FieldElement;
@@ -46,7 +46,6 @@ pub(crate) fn to_blockifier_transactions(
 
             let StorageContractClassData { contract_class, sierra_program_length, abi_length, .. } = class_data;
 
-            // TODO: retrieve sierra_program_length and abi_length when they are stored in the storage
             Some(ClassInfo::new(&contract_class, sierra_program_length as usize, abi_length as usize).map_err(
                 |_| {
                     log::error!("Mismatch between the length of the sierra program and the class version");
