@@ -28,6 +28,7 @@ pub mod block_hash;
 pub mod block_number;
 pub mod block_state_diff;
 mod class_trie;
+mod codec;
 mod contract_class_data;
 mod contract_class_hashes;
 mod contract_data;
@@ -63,6 +64,8 @@ pub enum DeoxysStorageError {
     StorageRetrievalError(StorageType),
     #[error("failed to commit to {0}")]
     StorageCommitError(StorageType),
+    #[error("failed to encode {0}")]
+    StorageEncodeError(StorageType),
     #[error("failed to decode {0}")]
     StorageDecodeError(StorageType),
     #[error("failed to revert {0} to block {1}")]

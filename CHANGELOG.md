@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix(db): with new implementation ContractStorage
 - feat(rocksdb): replaced most async database operations iwth multigets and batched inserts
 - fix: get_state_update with new storage
 - up: starknet-rs
