@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn test_encode_decode_starkfelt() {
-        let value = StarkFelt::from(42 as u64);
+        let value = StarkFelt::from(42_u64);
         let bytes = value.encode().unwrap();
         let decoded = StarkFelt::decode(&bytes).unwrap();
         assert_eq!(value, decoded);
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn test_encode_decode_history() {
         let mut history = History::default();
-        history.push(0, StarkFelt::from(42 as u64)).unwrap();
+        history.push(0, StarkFelt::from(42_u64)).unwrap();
         history
             .push(
                 42,
