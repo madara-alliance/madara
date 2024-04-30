@@ -56,9 +56,10 @@ where
     let simulation_flags = SimulationFlags::from(simulation_flags);
 
     let fee_types = user_transactions.iter().map(|tx| tx.fee_type()).collect::<Vec<_>>();
+    let charge_fee = block_context.block_info().gas_prices.eth_l1_gas_price.get() != 1;
 
-    let res =
-        utils::execution::simulate_transactions(user_transactions, &simulation_flags, &block_context).map_err(|e| {
+    let res = utils::execution::simulate_transactions(user_transactions, &simulation_flags, &block_context, charge_fee)
+        .map_err(|e| {
             log::error!("Failed to call function: {:#?}", e);
             StarknetRpcApiError::ContractError
         })?;
