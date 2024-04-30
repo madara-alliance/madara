@@ -70,7 +70,6 @@ jsonrpsee = { workspace = true, default-features = true, features = [
 ] }
 log = { workspace = true, default-features = true }
 mp-block = { workspace = true, default-features = true }
-mp-contract = { workspace = true, default-features = true }
 mp-convert = { workspace = true, default-features = true }
 mp-digest-log = { workspace = true }
 mp-felt = { workspace = true, default-features = true }

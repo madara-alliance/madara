@@ -14,7 +14,6 @@ use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use blockifier::versioned_constants::VersionedConstants;
 use mc_db::storage_handler;
-use mc_db::storage_handler::StorageView;
 use mp_felt::Felt252Wrapper;
 use mp_genesis_config::{ETH_TOKEN_ADDR, STRK_TOKEN_ADDR};
 use mp_simulations::{SimulationFlagForEstimateFee, SimulationFlags};
@@ -99,8 +98,7 @@ pub fn call_contract(
     block_context: &BlockContext,
 ) -> Result<Vec<Felt252Wrapper>, ()> {
     // Get class hash
-    let class_hash =
-        storage_handler::contract_data().get(&address).map_err(|_| ())?.map(|contract_data| contract_data.class_hash);
+    let class_hash = storage_handler::contract_data().get_class_hash(&address).map_err(|_| ())?;
 
     let entrypoint = CallEntryPoint {
         class_hash,

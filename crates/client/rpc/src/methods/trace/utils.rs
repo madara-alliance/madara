@@ -106,13 +106,13 @@ fn try_get_funtion_invocation_from_call_info(
         *cached_hash
     } else {
         // Compute and cache the class hash
-        let Ok(Some(contract_data)) =
-            storage_handler::contract_data().get_at(&call_info.call.storage_address, block_number)
+        let Ok(Some(class_hash)) =
+            storage_handler::contract_data().get_class_hash_at(&call_info.call.storage_address, block_number)
         else {
             return Err(TryFuntionInvocationFromCallInfoError::ContractNotFound);
         };
 
-        let computed_hash = FieldElement::from_byte_slice_be(contract_data.class_hash.0.bytes()).unwrap();
+        let computed_hash = FieldElement::from_byte_slice_be(class_hash.0.bytes()).unwrap();
         class_hash_cache.insert(call_info.call.storage_address, computed_hash);
 
         computed_hash

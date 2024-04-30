@@ -91,7 +91,6 @@ mc-genesis-data-provider = { workspace = true }
 serde_json = "1.0.64"
 # Primitives
 mp-block = { workspace = true }
-mp-contract = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-sequencer-address = { workspace = true, features = ["client"] }
 mp-types = { workspace = true }

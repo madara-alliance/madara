@@ -7,10 +7,6 @@ version = "0.1.0"
 
 [dependencies]
 # Deoxys primitives
-mp-contract = { workspace = true, features = [
-  "parity-scale-codec",
-  "scale-info",
-] }
 mp-felt = { workspace = true, features = ["parity-scale-codec", "serde"] }
 mp-simulations = { workspace = true, features = [
   "parity-scale-codec",
@@ -37,7 +33,6 @@ sp-runtime = { workspace = true }
 [features]
 default = ["std"]
 std = [
-  "mp-contract/std",
   "mp-felt/std",
   "mp-simulations/std",
   "mp-transactions/std",

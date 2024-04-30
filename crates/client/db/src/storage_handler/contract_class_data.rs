@@ -1,12 +1,9 @@
-use std::sync::Arc;
-
-use async_trait::async_trait;
 use crossbeam_skiplist::SkipMap;
-use mp_contract::class::StorageContractClassData;
 use parity_scale_codec::{Decode, Encode};
+use rocksdb::WriteBatchWithTransaction;
 use starknet_api::core::ClassHash;
-use tokio::task::JoinSet;
 
+use super::primitives::contract_class::StorageContractClassData;
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
 use crate::{Column, DatabaseExt, DeoxysBackend};
 
@@ -23,7 +20,7 @@ impl StorageView for ContractClassDataView {
         let column = db.get_column(Column::ContractClassData);
 
         let contract_class_data = db
-            .get_cf(&column, class_hash.encode())
+            .get_cf(&column, bincode::serialize(&class_hash).unwrap())
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassData))?
             .map(|bytes| StorageContractClassData::decode(&mut &bytes[..]));
 
@@ -38,14 +35,13 @@ impl StorageView for ContractClassDataView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassData);
 
-        match db.key_may_exist_cf(&column, class_hash.encode()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&class_hash).unwrap()) {
             true => Ok(self.get(class_hash)?.is_some()),
             false => Ok(false),
         }
     }
 }
 
-#[async_trait]
 impl StorageViewMut for ContractClassDataViewMut {
     type KEY = ClassHash;
     type VALUE = StorageContractClassData;
@@ -55,24 +51,14 @@ impl StorageViewMut for ContractClassDataViewMut {
         Ok(())
     }
 
-    async fn commit(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
+    fn commit(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Column::ContractClassData);
 
-        let mut set = JoinSet::new();
+        let mut batch = WriteBatchWithTransaction::<true>::default();
         for (key, value) in self.0.into_iter() {
-            let db = Arc::clone(db);
-
-            set.spawn(async move {
-                let colum = db.get_column(Column::ContractClassData);
-                db.put_cf(&colum, key.encode(), value.encode())
-                    .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::ContractClassData))
-            });
+            batch.put_cf(&column, bincode::serialize(&key).unwrap(), value.encode());
         }
-
-        while let Some(res) = set.join_next().await {
-            res.unwrap()?;
-        }
-
-        Ok(())
+        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassData))
     }
 }

@@ -234,12 +234,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arc-swap"
-version = "1.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69f7f8c3906b62b754cd5326047894316021dcfe5a194c8ea52bdd94934a3457"
-
-[[package]]
 name = "ark-bls12-377"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2301,15 +2295,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-queue"
-version = "0.3.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df0346b5d5e76ac2fe4e327c5fd1118d6be7c51dfb18f9b7922923f287471e35"
-dependencies = [
- "crossbeam-utils",
-]
-
-[[package]]
 name = "crossbeam-skiplist"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2599,7 +2584,6 @@ dependencies = [
  "mc-rpc",
  "mc-sync",
  "mp-block",
- "mp-contract",
  "mp-digest-log",
  "mp-sequencer-address",
  "mp-types",
@@ -2660,7 +2644,6 @@ dependencies = [
  "frame-system-rpc-runtime-api",
  "mp-block",
  "mp-chain-id",
- "mp-contract",
  "mp-felt",
  "mp-hashers",
  "mp-program-hash",
@@ -5975,21 +5958,23 @@ name = "mc-db"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "arc-swap",
  "async-trait",
  "bincode 1.3.3",
  "bitvec",
  "blockifier",
  "bonsai-trie",
- "crossbeam-queue",
+ "cairo-vm",
  "crossbeam-skiplist",
  "ethers",
+ "flate2",
+ "indexmap 2.2.6",
  "itertools 0.12.1",
  "log",
  "mp-block",
- "mp-contract",
+ "mp-convert",
  "mp-felt",
  "mp-hashers",
+ "mp-transactions",
  "mp-types",
  "parity-scale-codec",
  "rayon",
@@ -6070,7 +6055,6 @@ dependencies = [
  "mc-genesis-data-provider",
  "mc-sync",
  "mp-block",
- "mp-contract",
  "mp-convert",
  "mp-digest-log",
  "mp-felt",
@@ -6120,7 +6104,6 @@ dependencies = [
  "log",
  "mc-db",
  "mp-block",
- "mp-contract",
  "mp-convert",
  "mp-felt",
  "mp-hashers",
@@ -6354,21 +6337,6 @@ version = "0.1.0"
 dependencies = [
  "mp-felt",
  "starknet-ff 0.3.7",
-]
-
-[[package]]
-name = "mp-contract"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "blockifier",
- "log",
- "mp-convert",
- "mp-felt",
- "parity-scale-codec",
- "scale-info",
- "starknet-core 0.10.0",
- "starknet_api",
 ]
 
 [[package]]
@@ -7218,7 +7186,6 @@ dependencies = [
  "log",
  "mc-db",
  "mp-block",
- "mp-contract",
  "mp-digest-log",
  "mp-felt",
  "mp-genesis-config",
@@ -7252,7 +7219,6 @@ version = "0.1.0"
 dependencies = [
  "blockifier",
  "hashbrown 0.14.3",
- "mp-contract",
  "mp-felt",
  "mp-simulations",
  "mp-transactions",
