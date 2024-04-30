@@ -64,12 +64,12 @@ pub fn re_execute_transactions(
 
     transactions_before
         .into_iter()
-        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, false))
+        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, true))
         .collect::<Result<Vec<_>, _>>()?;
 
     let transactions_exec_infos = transactions_to_trace
         .into_iter()
-        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, false))
+        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, true))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(transactions_exec_infos)

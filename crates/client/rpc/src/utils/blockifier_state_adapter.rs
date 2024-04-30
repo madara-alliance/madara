@@ -39,9 +39,9 @@ impl StateReader for BlockifierStateAdapter {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
         match self.storage_update.get(&(contract_address, key)) {
             Some(value) => Ok(*value),
-            None => match storage_handler::contract_storage_trie().get_at(&contract_address, &key, self.block_number) {
-                Ok(Some(value)) => Ok(StarkFelt(value.to_bytes_be())),
-                Ok(None) => Ok(StarkFelt::ZERO),
+            None => match storage_handler::contract_storage().get_at(&(contract_address, key), self.block_number) {
+                Ok(Some(value)) => Ok(value),
+                Ok(None) => Ok(StarkFelt::default()),
                 Err(_) => Err(StateError::StateReadError(format!(
                     "Failed to retrieve storage value for contract {} at key {}",
                     contract_address.0.0, key.0.0
@@ -67,13 +67,15 @@ impl StateReader for BlockifierStateAdapter {
     fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
         match self.class_hash_update.get(&contract_address).cloned() {
             Some(class_hash) => Ok(class_hash),
-            None => match storage_handler::contract_data().get_class_hash_at(&contract_address, self.block_number) {
-                Ok(Some(class_hash)) => Ok(class_hash),
-                _ => Err(StateError::StateReadError(format!(
-                    "failed to retrive class hash for contract address {}",
-                    contract_address.0.0
-                ))),
-            },
+            None => {
+                match storage_handler::contract_data().get_class_hash_at(&contract_address, self.block_number + 1) {
+                    Ok(Some(class_hash)) => Ok(class_hash),
+                    _ => Err(StateError::StateReadError(format!(
+                        "failed to retrive class hash for contract address {}",
+                        contract_address.0.0
+                    ))),
+                }
+            }
         }
     }
 
@@ -126,8 +128,7 @@ impl State for BlockifierStateAdapter {
     fn set_class_hash_at(&mut self, contract_address: ContractAddress, class_hash: ClassHash) -> StateResult<()> {
         self.class_hash_update.insert(contract_address, class_hash);
 
-        // TODO: see with @charpa how to implement this with the new storage
-        todo!("see with @charpa how to implement this with the new storage")
+        Ok(())
     }
 
     fn set_contract_class(&mut self, class_hash: ClassHash, contract_class: ContractClass) -> StateResult<()> {

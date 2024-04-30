@@ -199,7 +199,7 @@ impl StorageViewRevetible for ContractStorageViewMut {
     }
 }
 
-impl ContractStorageViewMut {
+impl ContractStorageView {
     pub fn get_at(
         &self,
         key: &(ContractAddress, StorageKey),

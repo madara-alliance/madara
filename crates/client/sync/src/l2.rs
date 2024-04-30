@@ -7,6 +7,7 @@ use futures::prelude::*;
 use lazy_static::lazy_static;
 use mc_db::storage_handler::primitives::contract_class::ClassUpdateWrapper;
 use mc_db::storage_updates::{store_class_update, store_state_update};
+use mc_db::DeoxysBackend;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_types::block::{DBlockT, DHashT};
@@ -248,6 +249,11 @@ pub async fn sync<C>(
                 create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
                 log::debug!("end create_block: {:?}", std::time::Instant::now() - start);
                 block_n += 1;
+
+                // compact DB every 1k blocks
+                if block_n % 1000 == 0 {
+                    DeoxysBackend::compact();
+                }
             }
         } => {},
         // store state updates

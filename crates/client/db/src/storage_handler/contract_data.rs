@@ -44,18 +44,18 @@ impl StorageView for ContractDataView {
 }
 
 impl ContractDataView {
-    pub fn get_nonce(self, contract_address: &ContractAddress) -> Result<Option<Nonce>, DeoxysStorageError> {
+    pub fn get_nonce(&self, contract_address: &ContractAddress) -> Result<Option<Nonce>, DeoxysStorageError> {
         self.get(contract_address)
             .map(|option| option.map(|contract_data| contract_data.nonce.get().cloned().unwrap_or_default()))
     }
 
-    pub fn get_class_hash(self, contract_address: &ContractAddress) -> Result<Option<ClassHash>, DeoxysStorageError> {
+    pub fn get_class_hash(&self, contract_address: &ContractAddress) -> Result<Option<ClassHash>, DeoxysStorageError> {
         self.get(contract_address)
             .map(|option| option.and_then(|contract_data| contract_data.class_hash.get().cloned()))
     }
 
     pub fn get_nonce_at(
-        self,
+        &self,
         contract_address: &ContractAddress,
         block_number: u64,
     ) -> Result<Option<Nonce>, DeoxysStorageError> {
@@ -75,7 +75,7 @@ impl ContractDataView {
     }
 
     pub fn get_class_hash_at(
-        self,
+        &self,
         contract_address: &ContractAddress,
         block_number: u64,
     ) -> Result<Option<ClassHash>, DeoxysStorageError> {
