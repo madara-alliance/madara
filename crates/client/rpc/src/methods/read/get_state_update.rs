@@ -1,8 +1,7 @@
 use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
-use mc_db::DeoxysBackend;
+use mc_db::{storage_handler, DeoxysBackend};
 use mc_sync::l2::get_pending_state_update;
-use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHashT};
@@ -11,8 +10,7 @@ use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_api::block::BlockHash as APIBlockHash;
-use starknet_core::types::{BlockId, BlockTag, FieldElement, MaybePendingStateUpdate, StateDiff, StateUpdate};
+use starknet_core::types::{BlockId, BlockTag, FieldElement, MaybePendingStateUpdate, StateUpdate};
 
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
@@ -33,6 +31,8 @@ where
 
     let block_hash = starknet_block.header().hash::<H>().into();
 
+    let block_number = starknet_block.header().block_number;
+
     let new_root = Felt252Wrapper::from(starknet_block.header().global_state_root).into();
 
     let old_root = if starknet_block.header().block_number > 0 {
@@ -41,7 +41,16 @@ where
         FieldElement::default()
     };
 
-    let state_diff = state_diff(&starknet_block, server)?;
+    let state_diff = storage_handler::block_state_diff()
+        .get(block_number)
+        .map_err(|e| {
+            log::error!("Failed to get state diff: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?
+        .ok_or({
+            log::error!("State diff not found for block number: {block_number}");
+            StarknetRpcApiError::InternalServerError
+        })?;
 
     Ok(MaybePendingStateUpdate::Update(StateUpdate { block_hash, old_root, new_root, state_diff }))
 }
@@ -51,22 +60,6 @@ fn get_state_update_pending() -> RpcResult<MaybePendingStateUpdate> {
         Some(state_update) => Ok(MaybePendingStateUpdate::PendingUpdate(state_update)),
         None => Err(Error::Custom("Failed to retrieve pending state update, node not yet synchronized".to_string())),
     }
-}
-
-fn state_diff<BE, C, H>(block: &DeoxysBlock, server: &Starknet<BE, C, H>) -> RpcResult<StateDiff>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
-    H: HasherT + Send + Sync + 'static,
-{
-    let starknet_block_hash = APIBlockHash(block.header().hash::<H>().into());
-
-    Ok(server.get_state_diff(&starknet_block_hash).map_err(|e| {
-        log::error!("Failed to get state diff. Starknet block hash: {starknet_block_hash}, error: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?)
 }
 
 /// Get the information about the result of executing the requested block.

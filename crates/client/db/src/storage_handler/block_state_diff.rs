@@ -1,4 +1,3 @@
-use parity_scale_codec::Encode;
 use starknet_core::types::StateDiff;
 
 use super::{DeoxysStorageError, StorageType};
@@ -11,9 +10,7 @@ impl BlockStateDiffView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockStateDiff);
 
-        let bytes = serde_json::to_vec(&state_diff)
-            .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockStateDiff))?;
-        db.put_cf(&column, block_number.encode(), bytes)
+        db.put_cf(&column, bincode::serialize(&block_number).unwrap(), bincode::serialize(&state_diff).unwrap())
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockStateDiff))
     }
 
@@ -22,9 +19,9 @@ impl BlockStateDiffView {
         let column = db.get_column(Column::BlockStateDiff);
 
         let state_diff = db
-            .get_cf(&column, block_number.encode())
+            .get_cf(&column, bincode::serialize(&block_number).unwrap())
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockStateDiff))?
-            .map(|bytes| serde_json::from_slice(&bytes));
+            .map(|bytes| bincode::deserialize::<StateDiff>(&bytes[..]));
 
         match state_diff {
             Some(Ok(state_diff)) => Ok(Some(state_diff)),
@@ -37,7 +34,7 @@ impl BlockStateDiffView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockStateDiff);
 
-        match db.key_may_exist_cf(&column, block_number.encode()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&block_number).unwrap()) {
             true => Ok(self.get(block_number)?.is_some()),
             false => Ok(false),
         }

@@ -1,7 +1,6 @@
 use anyhow::Result;
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
 use mp_block::DeoxysBlock;
-use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_types::block::{DBlockT, DHashT};
@@ -11,12 +10,8 @@ use sc_client_api::BlockBackend;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::hash::StarkFelt;
-use starknet_api::state::ThinStateDiff;
 use starknet_api::transaction as stx;
-use starknet_core::types::{
-    BlockId, BlockStatus, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, FieldElement, NonceUpdate,
-    ReplacedClassItem, StateDiff, StorageEntry,
-};
+use starknet_core::types::{BlockId, BlockStatus, FieldElement};
 
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
@@ -80,71 +75,4 @@ where
         })?;
 
     Ok(substrate_block_hash)
-}
-
-/// Returns a [`StateDiff`] from a [`ThinStateDiff`]
-pub(crate) fn to_rpc_state_diff(thin_state_diff: ThinStateDiff) -> StateDiff {
-    let nonces = thin_state_diff
-        .nonces
-        .iter()
-        .map(|x| NonceUpdate {
-            contract_address: Felt252Wrapper::from(x.0.0.0).into(),
-            nonce: Felt252Wrapper::from(x.1.0).into(),
-        })
-        .collect();
-
-    let storage_diffs = thin_state_diff
-        .storage_diffs
-        .iter()
-        .map(|x| ContractStorageDiffItem {
-            address: Felt252Wrapper::from(x.0.0.0).into(),
-            storage_entries: x
-                .1
-                .iter()
-                .map(|y| StorageEntry {
-                    key: Felt252Wrapper::from(y.0.0.0).into(),
-                    value: Felt252Wrapper::from(*y.1).into(),
-                })
-                .collect(),
-        })
-        .collect();
-
-    let deprecated_declared_classes =
-        thin_state_diff.deprecated_declared_classes.iter().map(|x| Felt252Wrapper::from(x.0).into()).collect();
-
-    let declared_classes = thin_state_diff
-        .declared_classes
-        .iter()
-        .map(|x| DeclaredClassItem {
-            class_hash: Felt252Wrapper::from(x.0.0).into(),
-            compiled_class_hash: Felt252Wrapper::from(x.1.0).into(),
-        })
-        .collect();
-
-    let deployed_contracts = thin_state_diff
-        .deployed_contracts
-        .iter()
-        .map(|x| DeployedContractItem {
-            address: Felt252Wrapper::from(x.0.0.0).into(),
-            class_hash: Felt252Wrapper::from(x.1.0).into(),
-        })
-        .collect();
-
-    let replaced_classes = thin_state_diff
-        .replaced_classes
-        .iter()
-        .map(|x| ReplacedClassItem {
-            contract_address: Felt252Wrapper::from(x.0.0.0).into(),
-            class_hash: Felt252Wrapper::from(x.1.0).into(),
-        })
-        .collect();
-
-    StateDiff {
-        nonces,
-        storage_diffs,
-        deprecated_declared_classes,
-        declared_classes,
-        deployed_contracts,
-        replaced_classes,
-    }
 }

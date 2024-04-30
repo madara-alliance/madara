@@ -29,7 +29,6 @@ use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use sp_runtime::traits::Header as HeaderT;
-use starknet_api::block::BlockHash as APIBlockHash;
 use starknet_api::hash::StarkHash;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_core::types::{
@@ -37,7 +36,7 @@ use starknet_core::types::{
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
     InvokeTransactionResult, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
-    MaybePendingStateUpdate, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee, StateDiff,
+    MaybePendingStateUpdate, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
     SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
 
@@ -46,7 +45,6 @@ use crate::methods::get_block::{
     get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
     get_block_with_txs_pending,
 };
-use crate::utils::helpers::to_rpc_state_diff;
 
 // Starknet RPC API trait and types
 //
@@ -319,21 +317,5 @@ where
             log::error!("Failed to read from cache: {err}");
             None
         })
-    }
-
-    /// Returns the state diff for the given block.
-    ///
-    /// # Arguments
-    ///
-    /// * `starknet_block_hash` - The hash of the block containing the state diff (starknet block).
-    fn get_state_diff(&self, starknet_block_hash: &APIBlockHash) -> Result<StateDiff, StarknetRpcApiError> {
-        let state_diff = DeoxysBackend::da().state_diff(starknet_block_hash).map_err(|e| {
-            log::error!("Failed to retrieve state diff from cache for block with hash {}: {e}", starknet_block_hash);
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-        let rpc_state_diff = to_rpc_state_diff(state_diff);
-
-        Ok(rpc_state_diff)
     }
 }
