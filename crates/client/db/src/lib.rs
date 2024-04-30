@@ -306,9 +306,9 @@ impl DeoxysBackend {
                     },
                     _ => bail!("Supported db sources: `rocksdb` | `paritydb` | `auto`"),
                 },
-                max_saved_trie_logs: None,
-                max_saved_snapshots: None,
-                snapshot_interval: 100,
+                max_saved_trie_logs: Some(0),
+                max_saved_snapshots: Some(0),
+                snapshot_interval: u64::MAX,
             },
             cache_more_things,
         )

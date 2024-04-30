@@ -23,7 +23,9 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
             )
         })
         .collect();
-
+    
+    log::debug!("💾 update state: block_number: {}", block_number);
+    
     let (result1, result2, result3, result4) = tokio::join!(
         // Contract address to class hash and nonce update
         async move {
