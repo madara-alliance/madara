@@ -23,7 +23,6 @@ lazy_static = { workspace = true }
 reqwest = { workspace = true }
 serde_json = "1"
 
-
 blockifier = { workspace = true, features = ["testing"] }
 futures = { workspace = true, default-features = true }
 hex = { workspace = true }
@@ -37,8 +36,6 @@ serde = { workspace = true, default-features = true }
 tokio = { workspace = true, features = ["macros", "parking_lot", "test-util"] }
 url = { workspace = true }
 
-deoxys-runtime = { workspace = true }
-parity-scale-codec = { workspace = true, features = ["derive"] }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true, default-features = false, features = [
   "alloc",
@@ -50,7 +47,6 @@ starknet_api = { workspace = true }
 sc-consensus-manual-seal.workspace = true
 sp-blockchain = { workspace = true, default-features = true }
 sp-core = { workspace = true, features = ["std"] }
-sp-runtime = { workspace = true }
 
 bitvec = { workspace = true }
 bonsai-trie = { workspace = true }
@@ -59,7 +55,6 @@ mp-block = { workspace = true }
 mp-convert = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
-mp-storage = { workspace = true, default-features = true }
 mp-transactions = { workspace = true, features = ["client"] }
 mp-types = { workspace = true }
 rayon = { workspace = true }

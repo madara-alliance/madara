@@ -111,6 +111,10 @@ pub struct ExtendedRunCmd {
     #[clap(long, value_parser = parse_url)]
     pub l1_endpoint: Option<Url>,
 
+    /// The block you want to start syncing from.
+    #[clap(long)]
+    pub starting_block: Option<u32>,
+
     /// The network type to connect to.
     #[clap(long, short, default_value = "integration")]
     pub network: NetworkType,
@@ -178,6 +182,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
     runner.run_node_until_exit(|config| async move {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
+        let starting_block = cli.run.starting_block;
         let mut fetch_block_config = cli.run.network.block_fetch_config();
         fetch_block_config.sound = cli.run.sound;
         fetch_block_config.verify = !cli.run.disable_root;
@@ -186,7 +191,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
 
         let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
 
-        service::new_full(config, sealing, l1_endpoint, cache, fetch_block_config, genesis_block)
+        service::new_full(config, sealing, l1_endpoint, cache, fetch_block_config, genesis_block, starting_block)
             .map_err(sc_cli::Error::Service)
     })
 }

@@ -3,7 +3,9 @@ git # Deoxys Changelog
 ## Next release
 
 - fix: crash build genesis on restart
+- fix(classes): Fixed sierra exception on block 31625 and added --starting-block arg
 - fix(db): with new implementation ContractStorage
+- fix: fee_type for `simulate_transactions` rpc call
 - feat(rocksdb): replaced most async database operations iwth multigets and batched inserts
 - fix: get_state_update with new storage
 - up: starknet-rs
