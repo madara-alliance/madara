@@ -12,7 +12,7 @@ use flate2::write::GzEncoder;
 use indexmap::IndexMap;
 use mp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
 use parity_scale_codec::{Decode, Encode};
-use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
+use starknet_api::core::{ClassHash, EntryPointSelector};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
@@ -27,12 +27,6 @@ pub struct StorageContractClassData {
     pub abi: ContractAbi,
     pub sierra_program_length: u64,
     pub abi_length: u64,
-}
-
-#[derive(Debug, Clone, Encode, Decode)]
-pub struct StorageContractData {
-    pub class_hash: ClassHash,
-    pub nonce: Nonce,
 }
 
 #[derive(Debug, Encode, Decode)]
