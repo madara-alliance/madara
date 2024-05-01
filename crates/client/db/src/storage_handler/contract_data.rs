@@ -42,14 +42,14 @@ impl ContractDataView {
         block_number: u64,
     ) -> Result<Option<Nonce>, DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractData);
+        let column = db.get_column(Self::storage_column());
 
         let contract_data = match db
             .get_cf(&column, bincode::serialize(&contract_address).unwrap())
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(Self::storage_type()))?
         {
             Some(bytes) => bincode::deserialize::<StorageContractData>(&bytes[..])
-                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData))?,
+                .map_err(|_| DeoxysStorageError::StorageDecodeError(Self::storage_type()))?,
             None => StorageContractData::default(),
         };
 
@@ -62,14 +62,14 @@ impl ContractDataView {
         block_number: u64,
     ) -> Result<Option<ClassHash>, DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractData);
+        let column = db.get_column(Self::storage_column());
 
         let contract_data = match db
             .get_cf(&column, bincode::serialize(&contract_address).unwrap())
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(Self::storage_type()))?
         {
             Some(bytes) => bincode::deserialize::<StorageContractData>(&bytes[..])
-                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData))?,
+                .map_err(|_| DeoxysStorageError::StorageDecodeError(Self::storage_type()))?,
             None => StorageContractData::default(),
         };
 
@@ -88,20 +88,20 @@ impl StorageViewMut for ContractDataViewMut {
 
     fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractData);
+        let column = db.get_column(Self::storage_column());
         let (keys, values): (Vec<_>, Vec<_>) = self.0.into_iter().unzip();
         let keys_cf = keys.iter().map(|key| (&column, bincode::serialize(key).unwrap()));
         let histories = db
             .multi_get_cf(keys_cf)
             .into_iter()
             .map(|result| {
-                result.map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData)).and_then(
-                    |option| match option {
+                result.map_err(|_| DeoxysStorageError::StorageRetrievalError(Self::storage_type())).and_then(|option| {
+                    match option {
                         Some(bytes) => bincode::deserialize::<StorageContractData>(&bytes)
-                            .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData)),
+                            .map_err(|_| DeoxysStorageError::StorageDecodeError(Self::storage_type())),
                         None => Ok(StorageContractData::default()),
-                    },
-                )
+                    }
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -117,7 +117,7 @@ impl StorageViewMut for ContractDataViewMut {
 
             batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&contract_data).unwrap());
         }
-        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractData))
+        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(Self::storage_type()))
     }
 }
 
@@ -138,15 +138,14 @@ impl StorageView for ContractDataViewMut {
 impl StorageViewRevetible for ContractDataViewMut {
     async fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractData);
+        let column = db.get_column(Self::storage_column());
 
         let iterator = db.iterator_cf(&column, IteratorMode::Start);
 
         for data in iterator {
-            let (key, value) =
-                data.map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?;
+            let (key, value) = data.map_err(|_| DeoxysStorageError::StorageRetrievalError(Self::storage_type()))?;
             let mut contract_data = bincode::deserialize::<StorageContractData>(&value[..])
-                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData))?;
+                .map_err(|_| DeoxysStorageError::StorageDecodeError(Self::storage_type()))?;
 
             contract_data.class_hash.revert_to(block_number);
             contract_data.nonce.revert_to(block_number);
@@ -154,10 +153,10 @@ impl StorageViewRevetible for ContractDataViewMut {
             match (contract_data.class_hash.is_empty(), contract_data.nonce.is_empty()) {
                 (true, true) => db
                     .delete(key)
-                    .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractData, block_number))?,
+                    .map_err(|_| DeoxysStorageError::StorageRevertError(Self::storage_type(), block_number))?,
                 _ => db
                     .put_cf(&column, key, bincode::serialize(&contract_data).unwrap())
-                    .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractData, block_number))?,
+                    .map_err(|_| DeoxysStorageError::StorageRevertError(Self::storage_type(), block_number))?,
             }
         }
 

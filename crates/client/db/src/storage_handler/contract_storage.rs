@@ -47,13 +47,13 @@ impl StorageViewMut for ContractStorageViewMut {
             .multi_get_cf(keys_cf)
             .into_iter()
             .map(|result| {
-                result.map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage)).and_then(
-                    |option| match option {
+                result.map_err(|_| DeoxysStorageError::StorageRetrievalError(Self::storage_type())).and_then(|option| {
+                    match option {
                         Some(bytes) => bincode::deserialize::<History<StarkFelt>>(&bytes)
-                            .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
+                            .map_err(|_| DeoxysStorageError::StorageDecodeError(Self::storage_type())),
                         None => Ok(History::default()),
-                    },
-                )
+                    }
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -62,7 +62,7 @@ impl StorageViewMut for ContractStorageViewMut {
             history.push(block_number, value).unwrap();
             batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&history).unwrap());
         }
-        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractStorage))
+        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(Self::storage_type()))
     }
 }
 
@@ -93,8 +93,8 @@ impl StorageViewRevetible for ContractStorageViewMut {
         let mut iter = db.iterator_cf_opt(&db.get_column(Column::BlockStateDiff), read_options, IteratorMode::End);
         let block_number_max = match iter.next() {
             Some(Ok((bytes, _))) => bincode::deserialize(&bytes)
-                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage))?,
-            Some(Err(_)) => return Err(DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage)),
+                .map_err(|_| DeoxysStorageError::StorageDecodeError(Self::storage_type()))?,
+            Some(Err(_)) => return Err(DeoxysStorageError::StorageRetrievalError(Self::storage_type())),
             None => 0,
         };
         assert!(block_number <= block_number_max);
@@ -134,11 +134,11 @@ impl StorageViewRevetible for ContractStorageViewMut {
             set.spawn(async move {
                 let column = db.get_column(Column::ContractStorage);
                 let Ok(result) = db.get_cf(&column, key.clone()) else {
-                    return Err(DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage));
+                    return Err(DeoxysStorageError::StorageRetrievalError(Self::storage_type()));
                 };
                 let mut history: History<StarkFelt> = match result.map(|bytes| bincode::deserialize(&bytes)) {
                     Some(Ok(history)) => history,
-                    Some(Err(_)) => return Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
+                    Some(Err(_)) => return Err(DeoxysStorageError::StorageDecodeError(Self::storage_type())),
                     None => unreachable!("Reverting contract storage should only use existing contract addresses"),
                 };
 
@@ -148,18 +148,12 @@ impl StorageViewRevetible for ContractStorageViewMut {
                 match history.is_empty() {
                     true => {
                         if db.delete(key.clone()).is_err() {
-                            return Err(DeoxysStorageError::StorageRevertError(
-                                StorageType::ContractStorage,
-                                block_number,
-                            ));
+                            return Err(DeoxysStorageError::StorageRevertError(Self::storage_type(), block_number));
                         }
                     }
                     false => {
                         if db.put_cf(&column, key.clone(), bincode::serialize(&history).unwrap()).is_err() {
-                            return Err(DeoxysStorageError::StorageRevertError(
-                                StorageType::ContractStorage,
-                                block_number,
-                            ));
+                            return Err(DeoxysStorageError::StorageRevertError(Self::storage_type(), block_number));
                         }
                     }
                 }
@@ -187,11 +181,11 @@ impl ContractStorageView {
 
         let history: History<StarkFelt> = match db
             .get_cf(&column, bincode::serialize(key).unwrap())
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(Self::storage_type()))?
             .map(|bytes| bincode::deserialize(&bytes))
         {
             Some(Ok(history)) => history,
-            Some(Err(_)) => return Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
+            Some(Err(_)) => return Err(DeoxysStorageError::StorageDecodeError(Self::storage_type())),
             None => History::default(),
         };
 
