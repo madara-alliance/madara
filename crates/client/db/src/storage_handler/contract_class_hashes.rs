@@ -13,30 +13,12 @@ impl StorageView for ContractClassHashesView {
     type KEY = ClassHash;
     type VALUE = CompiledClassHash;
 
-    fn get(&self, class_hash: &Self::KEY) -> Result<Option<Self::VALUE>, super::DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractClassHashes);
-
-        let compiled_class_hash = db
-            .get_cf(&column, bincode::serialize(&class_hash).unwrap())
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassHashes))?
-            .map(|bytes| bincode::deserialize::<CompiledClassHash>(&bytes[..]));
-
-        match compiled_class_hash {
-            Some(Ok(compiled_class_hash)) => Ok(Some(compiled_class_hash)),
-            Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractClassHashes)),
-            None => Ok(None),
-        }
+    fn storage_type() -> StorageType {
+        StorageType::ContractClassHashes
     }
 
-    fn contains(&self, class_hash: &Self::KEY) -> Result<bool, super::DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractClassHashes);
-
-        match db.key_may_exist_cf(&column, bincode::serialize(&class_hash).unwrap()) {
-            true => Ok(self.get(class_hash)?.is_some()),
-            false => Ok(false),
-        }
+    fn storage_column() -> Column {
+        Column::ContractClassHashes
     }
 }
 

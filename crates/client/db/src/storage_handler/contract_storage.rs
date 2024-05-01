@@ -70,35 +70,12 @@ impl StorageView for ContractStorageViewMut {
     type KEY = (ContractAddress, StorageKey);
     type VALUE = StarkFelt;
 
-    fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        if let Some(value) = self.0.get(key).map(|entry| *entry.value()) {
-            return Ok(Some(value));
-        }
-
-        let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractStorage);
-
-        let history: History<StarkFelt> = match db
-            .get_cf(&column, bincode::serialize(key).unwrap())
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
-            .map(|bytes| bincode::deserialize(&bytes))
-        {
-            Some(Ok(history)) => history,
-            Some(Err(_)) => return Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
-            None => History::default(),
-        };
-
-        Ok(history.get().copied())
+    fn storage_type() -> StorageType {
+        StorageType::ContractStorage
     }
 
-    fn contains(&self, key: &Self::KEY) -> Result<bool, DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractStorage);
-
-        match db.key_may_exist_cf(&column, bincode::serialize(&key).unwrap()) {
-            true => Ok(self.get(key)?.is_some()),
-            false => Ok(false),
-        }
+    fn storage_column() -> Column {
+        Column::ContractStorage
     }
 }
 
@@ -226,30 +203,11 @@ impl StorageView for ContractStorageView {
     type KEY = (ContractAddress, StorageKey);
     type VALUE = StarkFelt;
 
-    fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractStorage);
-
-        let history: History<StarkFelt> = match db
-            .get_cf(&column, bincode::serialize(key).unwrap())
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
-            .map(|bytes| bincode::deserialize(&bytes))
-        {
-            Some(Ok(history)) => history,
-            Some(Err(_)) => return Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
-            None => History::default(),
-        };
-
-        Ok(history.get().copied())
+    fn storage_type() -> StorageType {
+        StorageType::ContractStorage
     }
 
-    fn contains(&self, key: &Self::KEY) -> Result<bool, DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractStorage);
-
-        match db.key_may_exist_cf(&column, bincode::serialize(&key).unwrap()) {
-            true => Ok(self.get(key)?.is_some()),
-            false => Ok(false),
-        }
+    fn storage_column() -> Column {
+        Column::ContractStorage
     }
 }

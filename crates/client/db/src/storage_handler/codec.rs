@@ -1,8 +1,12 @@
 use std::io::{self, Cursor, Read, Write};
 
+use parity_scale_codec::{Decode as DecodeParity, Encode as EncodeParity};
+use starknet_api::core::{ClassHash, CompiledClassHash, Nonce};
 use starknet_api::hash::StarkFelt;
 
 use super::history::History;
+use super::primitives::contract::StorageContractData;
+use super::primitives::contract_class::StorageContractClassData;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -100,6 +104,68 @@ fn deserialize_vlq(reader: &mut impl Read) -> io::Result<u64> {
     Ok(value)
 }
 
+impl Encode for ClassHash {
+    fn encode(&self) -> Result<Vec<u8>, Error> {
+        Encode::encode(&self.0)
+    }
+}
+
+impl Decode for CompiledClassHash {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        Ok(CompiledClassHash(Decode::decode(bytes)?))
+    }
+}
+
+impl Encode for CompiledClassHash {
+    fn encode(&self) -> Result<Vec<u8>, Error> {
+        Encode::encode(&self.0)
+    }
+}
+
+impl Decode for ClassHash {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        Ok(ClassHash(Decode::decode(bytes)?))
+    }
+}
+
+impl Encode for Nonce {
+    fn encode(&self) -> Result<Vec<u8>, Error> {
+        Encode::encode(&self.0)
+    }
+}
+
+impl Decode for Nonce {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        Ok(Nonce(Decode::decode(bytes)?))
+    }
+}
+
+impl Encode for StorageContractClassData {
+    fn encode(&self) -> Result<Vec<u8>, Error> {
+        Ok(self::EncodeParity::encode(&self))
+    }
+}
+
+impl Decode for StorageContractClassData {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        self::DecodeParity::decode(&mut &bytes[..]).map_err(|_| Error::DecodeError)
+    }
+}
+
+// TODO: use encode and decode on History<StarkFelt> instead of bincode
+impl Encode for StorageContractData {
+    fn encode(&self) -> Result<Vec<u8>, Error> {
+        bincode::serialize(self).map_err(|_| Error::EncodeError)
+    }
+}
+
+// TODO: use encode and decode on History<StarkFelt> instead of bincode
+impl Decode for StorageContractData {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        bincode::deserialize(bytes).map_err(|_| Error::DecodeError)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,7 +210,7 @@ mod tests {
     fn test_encode_decode_starkfelt() {
         let value = StarkFelt::from(42_u64);
         let bytes = value.encode().unwrap();
-        let decoded = StarkFelt::decode(&bytes).unwrap();
+        let decoded: StarkFelt = StarkFelt::decode(&bytes).unwrap();
         assert_eq!(value, decoded);
     }
 

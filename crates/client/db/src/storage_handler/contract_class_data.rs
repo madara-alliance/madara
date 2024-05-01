@@ -1,5 +1,5 @@
 use crossbeam_skiplist::SkipMap;
-use parity_scale_codec::{Decode, Encode};
+use parity_scale_codec::Encode;
 use rocksdb::WriteBatchWithTransaction;
 use starknet_api::core::ClassHash;
 
@@ -15,30 +15,12 @@ impl StorageView for ContractClassDataView {
     type KEY = ClassHash;
     type VALUE = StorageContractClassData;
 
-    fn get(&self, class_hash: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractClassData);
-
-        let contract_class_data = db
-            .get_cf(&column, bincode::serialize(&class_hash).unwrap())
-            .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassData))?
-            .map(|bytes| StorageContractClassData::decode(&mut &bytes[..]));
-
-        match contract_class_data {
-            Some(Ok(contract_class_data)) => Ok(Some(contract_class_data)),
-            Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::Class)),
-            None => Ok(None),
-        }
+    fn storage_type() -> StorageType {
+        StorageType::ContractClassData
     }
 
-    fn contains(&self, class_hash: &Self::KEY) -> Result<bool, DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
-        let column = db.get_column(Column::ContractClassData);
-
-        match db.key_may_exist_cf(&column, bincode::serialize(&class_hash).unwrap()) {
-            true => Ok(self.get(class_hash)?.is_some()),
-            false => Ok(false),
-        }
+    fn storage_column() -> Column {
+        Column::ContractClassData
     }
 }
 

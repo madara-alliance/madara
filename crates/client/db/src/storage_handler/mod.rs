@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use bitvec::prelude::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
+use serde::Serialize;
 use sp_core::hexdisplay::AsBytesRef;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
@@ -21,7 +22,9 @@ use self::contract_data::{ContractDataView, ContractDataViewMut};
 use self::contract_storage::{ContractStorageView, ContractStorageViewMut};
 use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
 use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
-use crate::DeoxysBackend;
+use crate::{Column, DatabaseExt, DeoxysBackend};
+use crate::storage_handler::codec::Decode;
+
 
 pub mod benchmark;
 pub mod block_hash;
@@ -134,15 +137,51 @@ pub trait StorageView {
     type KEY;
     type VALUE;
 
+    fn storage_type() -> StorageType;
+    fn storage_column() -> Column;
+
     /// Retrieves data from storage for the given key
     ///
     /// * `key`: identifier used to retrieve the data.
-    fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError>;
+    fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError>
+    where
+        Self::KEY: Serialize,
+        Self::VALUE: codec::Decode,
+    {
+        let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Self::storage_column());
+
+        let value = db
+            .get_cf(
+                &column,
+                bincode::serialize(&key).map_err(|_| DeoxysStorageError::StorageEncodeError(Self::storage_type()))?,
+            )
+            .map_err(|_| DeoxysStorageError::StorageRetrievalError(Self::storage_type()))?
+            .map(|bytes| Self::VALUE::decode(&bytes[..]));
+
+        match value {
+            Some(Ok(val)) => Ok(Some(val)),
+            Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::Class)),
+            None => Ok(None),
+        }
+    }
 
     /// Checks if a value is stored in the backend database for the given key.
     ///
     /// * `key`: identifier use to check for data existence.
-    fn contains(&self, key: &Self::KEY) -> Result<bool, DeoxysStorageError>;
+    fn contains(&self, key: &Self::KEY) -> Result<bool, DeoxysStorageError>
+    where
+        Self::KEY: Serialize,
+        Self::VALUE: codec::Decode,
+    {
+        let db = DeoxysBackend::expose_db();
+        let column = db.get_column(Self::storage_column());
+
+        match db.key_may_exist_cf(&column, bincode::serialize(&key).map_err(|_| DeoxysStorageError::StorageEncodeError(Self::storage_type()))?) {
+            true => Ok(self.get(key)?.is_some()),
+            false => Ok(false),
+        }
+    }
 }
 
 /// A mutable view on a backend storage interface.
@@ -173,6 +212,61 @@ pub trait StorageViewMut {
 /// storage.
 #[async_trait]
 pub trait StorageViewRevetible: StorageViewMut {
+    /// Reverts to a previous state in the chain.
+    ///
+    /// * `block_number`: point in the chain to revert to.
+    async fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError>;
+}
+
+/// An immutable view on a backend storage interface.
+///
+/// > Multiple immutable views can exist at once for a same storage type.
+/// > You cannot have an immutable view and a mutable view on storage at the same time.
+///
+/// Use this to query data from the backend database in a type-safe way.
+pub trait BonsaiStorageView {
+    type KEY;
+    type VALUE;
+
+    /// Retrieves data from storage for the given key
+    ///
+    /// * `key`: identifier used to retrieve the data.
+    fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError>;
+
+    /// Checks if a value is stored in the backend database for the given key.
+    ///
+    /// * `key`: identifier use to check for data existence.
+    fn contains(&self, key: &Self::KEY) -> Result<bool, DeoxysStorageError>;
+}
+
+/// A mutable view on a backend storage interface.
+///
+/// > Note that a single mutable view can exist at once for a same storage type.
+///
+/// Use this to write data to the backend database in a type-safe way.
+pub trait BonsaiStorageViewMut {
+    type KEY;
+    type VALUE;
+
+    /// Insert data into storage.
+    ///
+    /// * `key`: identifier used to inser data.
+    /// * `value`: encodable data to save to the database.
+    fn insert(&self, key: Self::KEY, value: Self::VALUE) -> Result<(), DeoxysStorageError>;
+
+    /// Applies all changes up to this point.
+    ///
+    /// * `block_number`: point in the chain at which to apply the new changes. Must be
+    /// incremental
+    fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError>;
+}
+
+/// A mutable view on a backend storage interface, marking it as revertible in the chain.
+///
+/// This is used to mark data that might be modified from one block to the next, such as contract
+/// storage.
+#[async_trait]
+pub trait BonsaiStorageViewRevetible: StorageViewMut {
     /// Reverts to a previous state in the chain.
     ///
     /// * `block_number`: point in the chain to revert to.

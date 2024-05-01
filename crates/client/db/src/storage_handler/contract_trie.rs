@@ -6,7 +6,7 @@ use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 
-use super::{bonsai_identifier, conv_contract_key, DeoxysStorageError, StorageType, StorageView, TrieType};
+use super::{bonsai_identifier, conv_contract_key, BonsaiStorageView, DeoxysStorageError, StorageType, TrieType};
 use crate::bonsai_db::BonsaiDb;
 
 pub struct ContractTrieView<'a>(pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>);
@@ -14,7 +14,7 @@ pub struct ContractTrieViewMut<'a>(
     pub(crate) RwLockWriteGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
 );
 
-impl StorageView for ContractTrieView<'_> {
+impl BonsaiStorageView for ContractTrieView<'_> {
     type KEY = ContractAddress;
 
     type VALUE = Felt;
