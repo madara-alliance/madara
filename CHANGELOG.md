@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix: remove boilerplate on DB `View`
 - fix: crash build genesis on restart
 - fix(classes): Fixed sierra exception on block 31625 and added --starting-block arg
 - fix(db): with new implementation ContractStorage
