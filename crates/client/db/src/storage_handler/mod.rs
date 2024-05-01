@@ -22,9 +22,8 @@ use self::contract_data::{ContractDataView, ContractDataViewMut};
 use self::contract_storage::{ContractStorageView, ContractStorageViewMut};
 use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
 use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
-use crate::{Column, DatabaseExt, DeoxysBackend};
 use crate::storage_handler::codec::Decode;
-
+use crate::{Column, DatabaseExt, DeoxysBackend};
 
 pub mod benchmark;
 pub mod block_hash;
@@ -177,7 +176,10 @@ pub trait StorageView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Self::storage_column());
 
-        match db.key_may_exist_cf(&column, bincode::serialize(&key).map_err(|_| DeoxysStorageError::StorageEncodeError(Self::storage_type()))?) {
+        match db.key_may_exist_cf(
+            &column,
+            bincode::serialize(&key).map_err(|_| DeoxysStorageError::StorageEncodeError(Self::storage_type()))?,
+        ) {
             true => Ok(self.get(key)?.is_some()),
             false => Ok(false),
         }
