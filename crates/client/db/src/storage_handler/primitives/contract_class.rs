@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{Read, Write};
 use std::sync::Arc;
 
@@ -197,7 +197,8 @@ pub fn to_contract_class_cairo(
     let entry_points_by_type: HashMap<_, _> =
         contract_class.entry_points_by_type.iter().map(|(k, v)| (*k, v.clone())).collect();
     let entry_points_by_type = to_legacy_entry_points_by_type(&entry_points_by_type)?;
-    let compressed_program = compress(&contract_class.program.serialize()?)?;
+    let ordered_program = order_program(&contract_class.program);
+    let compressed_program = compress(&ordered_program.serialize()?)?;
     Ok(ContractClassCore::Legacy(CompressedLegacyContractClass {
         program: compressed_program,
         entry_points_by_type,
@@ -237,6 +238,50 @@ pub(crate) fn decompress(data: &[u8]) -> anyhow::Result<Vec<u8>> {
     let mut buf = Vec::<u8>::new();
     gzip_decoder.read_to_end(&mut buf)?;
     anyhow::Ok(buf)
+}
+
+/// Orders all the HashMaps in the Program structure, replacing them with BTreeMaps
+pub fn order_program(program: &Program) -> Program {
+    let shared_program_data = &program.shared_program_data;
+    
+    // Ordering the identifiers HashMap
+    let ordered_identifiers = shared_program_data.identifiers
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<BTreeMap<_, _>>();
+
+    // Ordering the instruction locations HashMap if it exists
+    let ordered_instruction_locations = shared_program_data.instruction_locations.as_ref()
+        .map(|locations| {
+            locations.iter()
+                .map(|(key, value)| (*key, value.clone()))
+                .collect::<BTreeMap<_, _>>()
+        });
+
+    // Creating a new SharedProgramData with ordered maps
+    let new_shared_program_data = SharedProgramData {
+        data: shared_program_data.data.clone(),
+        hints_collection: shared_program_data.hints_collection.clone(),
+        main: shared_program_data.main,
+        start: shared_program_data.start,
+        end: shared_program_data.end,
+        error_message_attributes: shared_program_data.error_message_attributes.clone(),
+        instruction_locations: ordered_instruction_locations,
+        identifiers: ordered_identifiers,
+        reference_manager: shared_program_data.reference_manager.clone(),
+    };
+
+    // Ordering the constants HashMap
+    let ordered_constants = program.constants
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<BTreeMap<_, _>>();
+
+    Program {
+        shared_program_data: Arc::new(new_shared_program_data),
+        constants: ordered_constants,
+        builtins: program.builtins.clone(),
+    }
 }
 
 /// Returns a [anyhow::Result<LegacyEntryPointsByType>] (starknet-rs type) from
