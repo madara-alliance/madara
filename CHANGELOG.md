@@ -4,6 +4,7 @@ git # Deoxys Changelog
 
 - fix: class and store updates and block desync after ctrl+c
 - fix: compile without libm
+- fix: genesis state_update
 - refactor: optimize get_class_at
 - fix: crash build genesis on restart
 - fix(classes): Fixed sierra exception on block 31625 and added --starting-block arg
