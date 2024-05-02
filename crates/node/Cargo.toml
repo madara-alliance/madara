@@ -100,7 +100,8 @@ url = { workspace = true }
 substrate-build-script-utils = { workspace = true }
 
 [features]
-default = []
+default = ["sound"]
+sound = ["mc-sync/m"]
 # Dependencies that are only required if runtime benchmarking should be build.
 runtime-benchmarks = [
   "frame-benchmarking-cli/runtime-benchmarks",

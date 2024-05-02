@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix: compile without libm
 - refactor: optimize get_class_at
 - fix: crash build genesis on restart
 - fix(classes): Fixed sierra exception on block 31625 and added --starting-block arg

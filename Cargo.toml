@@ -236,7 +236,7 @@ mc-db = { path = "crates/client/db" }
 mc-genesis-data-provider = { path = "crates/client/genesis-data-provider" }
 mc-mapping-sync = { path = "crates/client/mapping-sync" }
 mc-rpc = { path = "crates/client/rpc" }
-mc-sync = { path = "crates/client/sync" }
+mc-sync = { path = "crates/client/sync", default-features = false }
 
 # Deoxys runtime
 deoxys-runtime = { path = "crates/runtime" }
