@@ -4,12 +4,13 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use blockifier::execution::contract_class::{
-    ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
+    ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1, EntryPointV1,
 };
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use indexmap::IndexMap;
+use mp_felt::Felt252Wrapper;
 use mp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
@@ -18,7 +19,7 @@ use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
     CompressedLegacyContractClass, ContractClass as ContractClassCore, EntryPointsByType, FieldElement,
     FlattenedSierraClass, FromByteArrayError, LegacyContractAbiEntry, LegacyContractEntryPoint,
-    LegacyEntryPointsByType,
+    LegacyEntryPointsByType, SierraEntryPoint,
 };
 
 #[derive(Debug, Encode, Decode)]
@@ -156,19 +157,33 @@ pub fn from_rpc_contract_class(contract_class: ContractClassCore) -> anyhow::Res
     }
 }
 
-pub fn to_contract_class_sierra(_: &ContractClassV1, abi: String) -> anyhow::Result<ContractClassCore> {
+/// Converts a [ContractClassBlockifier] to a [ContractClassCore]
+///
+/// This is after extracting the contract classes.
+pub fn to_contract_class_sierra(sierra_class: &ContractClassV1, abi: String) -> anyhow::Result<ContractClassCore> {
+    let entry_points_by_type: HashMap<_, _> =
+        sierra_class.entry_points_by_type.iter().map(|(k, v)| (*k, v.clone())).collect();
+    let entry_points_by_type = to_entry_points_by_type(&entry_points_by_type)?;
+
+    let sierra_program = sierra_class
+        .program
+        .iter_data()
+        .filter_map(|maybe_relocatable| {
+            maybe_relocatable.get_int_ref().map(|felt| Felt252Wrapper::from((*felt).clone()))
+        })
+        .collect::<Vec<Felt252Wrapper>>();
+
     Ok(ContractClassCore::Sierra(FlattenedSierraClass {
-        sierra_program: vec![], // TODO: implement this
-        contract_class_version: option_env!("COMPILER_VERSION").unwrap_or("0.11.2").into(),
-        entry_points_by_type: EntryPointsByType { constructor: vec![], external: vec![], l1_handler: vec![] }, /* TODO: add entry_points_by_type */
+        sierra_program: sierra_program.into_iter().map(Into::into).collect(),
+        contract_class_version: "1".to_string(),
+        entry_points_by_type,
         abi,
     }))
 }
 
 /// Converts a [FlattenedSierraClass] to a [ContractClassBlockifier]
 ///
-/// Note: The conversion between the different legacy class versions is handled by an intermediate
-/// json representation.
+/// This is used before storing the contract classes.
 pub fn from_contract_class_sierra(contract_class: FlattenedSierraClass) -> anyhow::Result<ContractClassBlockifier> {
     let raw_casm_contract = flattened_sierra_to_casm_contract_class(&Arc::new(contract_class))?;
     let blockifier_contract = ContractClassV1::try_from(raw_casm_contract).unwrap();
@@ -248,6 +263,29 @@ fn to_legacy_entry_points_by_type(
     Ok(LegacyEntryPointsByType { constructor, external, l1_handler })
 }
 
+/// Returns a [anyhow::Result<LegacyEntryPointsByType>] (starknet-rs type) from
+/// a [HashMap<EntryPointType, Vec<EntryPoinV1>>]
+fn to_entry_points_by_type(entries: &HashMap<EntryPointType, Vec<EntryPointV1>>) -> anyhow::Result<EntryPointsByType> {
+    fn collect_entry_points(
+        entries: &HashMap<EntryPointType, Vec<EntryPointV1>>,
+        entry_point_type: EntryPointType,
+    ) -> anyhow::Result<Vec<SierraEntryPoint>> {
+        Ok(entries
+            .get(&entry_point_type)
+            .ok_or(anyhow!("Missing {:?} entry point", entry_point_type))?
+            .iter()
+            .enumerate()
+            .map(|(index, e)| to_entry_point(e.clone(), index.try_into().unwrap()))
+            .collect::<Result<Vec<SierraEntryPoint>, FromByteArrayError>>()?)
+    }
+
+    let constructor = collect_entry_points(entries, EntryPointType::Constructor).unwrap_or_default();
+    let external = collect_entry_points(entries, EntryPointType::External)?;
+    let l1_handler = collect_entry_points(entries, EntryPointType::L1Handler).unwrap_or_default();
+
+    Ok(EntryPointsByType { constructor, external, l1_handler })
+}
+
 /// Returns a [IndexMap<EntryPointType, Vec<EntryPoint>>] from a
 /// [LegacyEntryPointsByType]
 fn from_legacy_entry_points_by_type(entries: &LegacyEntryPointsByType) -> IndexMap<EntryPointType, Vec<EntryPoint>> {
@@ -267,6 +305,14 @@ fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryP
     let selector = FieldElement::from_bytes_be(&entry_point.selector.0.0)?;
     let offset = entry_point.offset.0;
     Ok(LegacyContractEntryPoint { selector, offset })
+}
+
+/// Returns a [SierraEntryPoint] (starknet-rs) from a [EntryPointV1]
+/// (starknet-api)
+fn to_entry_point(entry_point: EntryPointV1, index: u64) -> Result<SierraEntryPoint, FromByteArrayError> {
+    let selector = FieldElement::from_bytes_be(&entry_point.selector.0.0)?;
+    let function_idx = index;
+    Ok(SierraEntryPoint { selector, function_idx })
 }
 
 /// Returns a [EntryPoint] (starknet-api) from a [LegacyContractEntryPoint]
