@@ -281,7 +281,6 @@ ethers = { git = "https://github.com/gakonst/ethers-rs" }
 
 # Other third party dependencies
 anyhow = "1.0.75"
-assert = "0.0.4"
 assert_matches = "1.5.0"
 async-trait = "0.1.74"
 bitvec = { version = "1.0.1", default-features = false, features = ["std"] }
