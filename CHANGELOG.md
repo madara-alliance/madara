@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix: class and store updates and block desync after ctrl+c
 - fix: compile without libm
 - refactor: optimize get_class_at
 - fix: crash build genesis on restart
