@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix: storage nonce
 - fix: class and store updates and block desync after ctrl+c
 - fix: compile without libm
 - fix: genesis state_update

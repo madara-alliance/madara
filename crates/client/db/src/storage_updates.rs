@@ -12,7 +12,7 @@ use crate::storage_handler::{self, DeoxysStorageError, StorageView, StorageViewM
 
 pub async fn store_state_update(block_number: u64, state_update: StateUpdate) -> Result<(), DeoxysStorageError> {
     let state_diff = state_update.state_diff.clone();
-    let nonce_map: HashMap<ContractAddress, Nonce> = state_update
+    let mut nonce_map: HashMap<ContractAddress, Nonce> = state_update
         .state_diff
         .nonces
         .into_iter()
@@ -47,10 +47,14 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
                 let previous_nonce = handler_contract_data.get(&contract_address).unwrap().map(|data| data.nonce);
                 let nonce = match previous_nonce.unwrap_or_default().get().copied() {
                     Some(nonce) => Some(nonce),
-                    None => nonce_map.get(&contract_address).copied(),
+                    None => nonce_map.remove(&contract_address),
                 };
 
                 handler_contract_data.insert(contract_address, (class_hash, nonce)).unwrap()
+            });
+
+            nonce_map.into_iter().for_each(|(contract_address, nonce)| {
+                handler_contract_data.insert(contract_address, (None, Some(nonce))).unwrap()
             });
 
             handler_contract_data.commit(block_number)
