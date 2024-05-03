@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 use futures::prelude::*;
 use lazy_static::lazy_static;
 use mc_db::storage_handler::primitives::contract_class::ClassUpdateWrapper;
-use mc_db::storage_updates::{store_class_update, store_state_update};
+use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
@@ -150,8 +150,6 @@ pub async fn sync<C>(
     // Have 10 fetches in parallel at once, using futures Buffered
     let fetch_stream = stream::iter(fetch_stream).buffered(10);
     let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(10);
-    let (state_update_sender, mut state_update_receiver) = mpsc::channel(10);
-    let (class_update_sender, mut class_update_receiver) = mpsc::channel(10);
 
     tokio::select!(
         // update highest block hash and number, update pending block and state update
@@ -195,7 +193,7 @@ pub async fn sync<C>(
                         let convert_block = |block| {
                             let start = std::time::Instant::now();
                             let block_conv = crate::convert::convert_block_sync(block);
-                            log::debug!("convert::convert_block_sync: {:?}", std::time::Instant::now() - start);
+                            log::debug!("convert::convert_block_sync {}: {:?}",block_n, std::time::Instant::now() - start);
                             block_conv
                         };
                         let ver_l2 = || {
@@ -225,30 +223,38 @@ pub async fn sync<C>(
                 };
 
                 let block_sender = Arc::clone(&block_sender);
+                let storage_diffs = state_update.state_diff.storage_diffs.clone();
                 tokio::join!(
                     async move {
                         block_sender.send(block_conv).await.expect("block reciever channel is closed");
                     },
                     async {
-                        // Now send state_update, which moves it. This will be received
-                        // by QueryBlockConsensusDataProvider in deoxys/crates/node/src/service.rs
-                        state_update_sender
-                            .send((block_n, state_update))
-                            .await
-                            .expect("state updater is not running");
+                        let start = std::time::Instant::now();
+                        if store_state_update(block_n, state_update).await.is_err() {
+                            log::info!("❗ Failed to store state update for block {block_n}");
+                        };
+                        log::debug!("end store_state {}: {:?}",block_n, std::time::Instant::now() - start);
                     },
                     async {
-                        // do the same to class update
-                        class_update_sender
-                            .send((block_n, ClassUpdateWrapper(class_update)))
-                            .await
-                            .expect("class updater is not running");
+                        let start = std::time::Instant::now();
+                        if store_class_update(block_n, ClassUpdateWrapper(class_update)).await.is_err() {
+                            log::info!("❗ Failed to store class update for block {block_n}");
+                        };
+                        log::debug!("end store_class {}: {:?}", block_n, std::time::Instant::now() - start);
+                    },
+                    async {
+                            let start = std::time::Instant::now();
+                            if store_key_update(block_n, &storage_diffs).await.is_err() {
+                                log::info!("❗ Failed to store key update for block {block_n}");
+                            };
+                            log::debug!("end store_key {}: {:?}", block_n, std::time::Instant::now() - start);
+                    },
+                    async {
+                        let start = std::time::Instant::now();
+                        create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
+                        log::debug!("end create_block {}: {:?}", block_n, std::time::Instant::now() - start);
                     }
                 );
-
-                let start = std::time::Instant::now();
-                create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
-                log::debug!("end create_block: {:?}", std::time::Instant::now() - start);
                 block_n += 1;
 
                 // compact DB every 1k blocks
@@ -257,22 +263,6 @@ pub async fn sync<C>(
                 }
             }
         } => {},
-        // store state updates
-        _ = async {
-            while let Some((block_number, state_update)) = pin!(state_update_receiver.recv()).await {
-                if store_state_update(block_number, state_update).await.is_err() {
-                    log::info!("❗ Failed to store state update for block {block_number}");
-                };
-            }
-        } => {},
-        // store class udpate
-        _ = async {
-            while let Some((block_number, class_update)) = pin!(class_update_receiver.recv()).await {
-                if store_class_update(block_number, class_update).await.is_err() {
-                    log::info!("❗ Failed to store class update for block {block_number}");
-                };
-            }
-        } => {}
     );
 
     log::debug!("L2 sync finished :)");
