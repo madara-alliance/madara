@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 use futures::prelude::*;
 use lazy_static::lazy_static;
 use mc_db::storage_handler::primitives::contract_class::ClassUpdateWrapper;
-use mc_db::storage_updates::{store_class_update, store_state_update};
+use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
@@ -188,6 +188,7 @@ pub async fn sync<C>(
                 let (state_update, block_conv) = {
                     let state_update = Arc::new(state_update);
                     let state_update_1 = Arc::clone(&state_update);
+                    let state_update_2 = Arc::clone(&state_update);
 
                     let block_conv = spawn_compute(move || {
                         let convert_block = |block| {
@@ -203,6 +204,13 @@ pub async fn sync<C>(
                             state_root
                         };
 
+                        let store_key = || {
+                            let start = std::time::Instant::now();
+                            let store_key = store_key_update(block_n, &state_update_2.state_diff.storage_diffs);
+                            log::debug!("store_key_update: {:?}", std::time::Instant::now() - start);
+                            store_key
+                        };
+
                         if verify {
                             let (state_root, block_conv) = rayon::join(ver_l2, || convert_block(block));
                             if (block_conv.header().global_state_root) != state_root {
@@ -214,7 +222,9 @@ pub async fn sync<C>(
                             }
                             block_conv
                         } else {
-                            convert_block(block)
+                            let (_key, block_conv) = rayon::join(store_key, || convert_block(block));
+
+                            block_conv
                         }
                     })
                     .await;

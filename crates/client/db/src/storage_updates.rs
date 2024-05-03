@@ -3,7 +3,11 @@ use std::collections::HashMap;
 use mp_convert::field_element::FromFieldElement;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
-use starknet_core::types::{DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate};
+use starknet_api::state::StorageKey;
+use starknet_core::types::{
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate,
+    StorageEntry,
+};
 use storage_handler::primitives::contract_class::{
     ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData,
 };
@@ -106,4 +110,26 @@ pub async fn store_class_update(block_number: u64, class_update: ClassUpdateWrap
     );
 
     handler_contract_class_data_mut.commit(block_number)
+}
+
+// this function used only in `--disable-root` mode
+// in `--disable-root` mode, keys are stored in `contract_trie_root` function
+pub fn store_key_update(
+    block_number: u64,
+    storage_diffs: &Vec<ContractStorageDiffItem>,
+) -> Result<(), DeoxysStorageError> {
+    let handler_storage = storage_handler::contract_storage_mut();
+
+    for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
+        let contract_address = ContractAddress::from_field_element(address);
+        for StorageEntry { key, value } in storage_entries {
+            let key = StorageKey::from_field_element(key);
+            let value = StarkFelt::from_field_element(value);
+            handler_storage.insert((contract_address, key), value)?;
+        }
+    }
+
+    handler_storage.commit(block_number)?;
+
+    Ok(())
 }
