@@ -139,12 +139,7 @@ async fn fetch_class_update(
                 .iter()
                 .map(|DeclaredClassItem { class_hash, compiled_class_hash: _ }| class_hash),
         )
-        .chain(
-            state_update
-                .state_diff
-                .deprecated_declared_classes
-                .iter()
-        )
+        .chain(state_update.state_diff.deprecated_declared_classes.iter())
         .unique()
         .filter(|class_hash| is_missing_class(class_hash))
         .collect();
