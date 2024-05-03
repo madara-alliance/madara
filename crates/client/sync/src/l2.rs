@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 use futures::prelude::*;
 use lazy_static::lazy_static;
 use mc_db::storage_handler::primitives::contract_class::ClassUpdateWrapper;
-use mc_db::storage_updates::{store_class_update, store_state_update};
+use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
@@ -193,7 +193,7 @@ pub async fn sync<C>(
                         let convert_block = |block| {
                             let start = std::time::Instant::now();
                             let block_conv = crate::convert::convert_block_sync(block);
-                            log::debug!("convert::convert_block_sync: {:?}", std::time::Instant::now() - start);
+                            log::debug!("convert::convert_block_sync {}: {:?}",block_n, std::time::Instant::now() - start);
                             block_conv
                         };
                         let ver_l2 = || {
@@ -223,24 +223,36 @@ pub async fn sync<C>(
                 };
 
                 let block_sender = Arc::clone(&block_sender);
+                let storage_diffs = state_update.state_diff.storage_diffs.clone();
                 tokio::join!(
                     async move {
                         block_sender.send(block_conv).await.expect("block reciever channel is closed");
                     },
                     async {
+                        let start = std::time::Instant::now();
                         if store_state_update(block_n, state_update).await.is_err() {
                             log::info!("❗ Failed to store state update for block {block_n}");
                         };
+                        log::debug!("end store_state {}: {:?}",block_n, std::time::Instant::now() - start);
                     },
                     async {
+                        let start = std::time::Instant::now();
                         if store_class_update(block_n, ClassUpdateWrapper(class_update)).await.is_err() {
                             log::info!("❗ Failed to store class update for block {block_n}");
                         };
+                        log::debug!("end store_class {}: {:?}", block_n, std::time::Instant::now() - start);
+                    },
+                    async {
+                            let start = std::time::Instant::now();
+                            if store_key_update(block_n, &storage_diffs).await.is_err() {
+                                log::info!("❗ Failed to store key update for block {block_n}");
+                            };
+                            log::debug!("end store_key {}: {:?}", block_n, std::time::Instant::now() - start);
                     },
                     async {
                         let start = std::time::Instant::now();
                         create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
-                        log::debug!("end create_block: {:?}", std::time::Instant::now() - start);
+                        log::debug!("end create_block {}: {:?}", block_n, std::time::Instant::now() - start);
                     }
                 );
                 block_n += 1;
