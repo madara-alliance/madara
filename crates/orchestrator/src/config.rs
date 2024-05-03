@@ -16,8 +16,29 @@ use std::sync::Arc;
 use tokio::sync::OnceCell;
 use async_trait::async_trait;
 
+pub struct MockProvider {
+    // You can add state here that might be useful for your tests
+}
+
+impl MockProvider {
+    pub fn new() -> Self {
+        MockProvider {
+            // Initialize with any necessary state
+        }
+    }
+}
+
+#[async_trait]
+impl Provider for MockProvider {
+    async fn spec_version(&self) -> Result<String, ProviderError> {
+        Ok("mock_version".to_string())
+    }
+    // Mock other methods similarly...
+}
+
 pub enum ProviderEnum {
     JsonRpcClient(JsonRpcClient<HttpTransport>),
+    MockProvider(MockProvider),  // Mock implementation
 }
 
 #[async_trait]
@@ -25,8 +46,8 @@ impl Provider for ProviderEnum {
     async fn spec_version(&self) -> Result<String, ProviderError> {
         match self {
             ProviderEnum::JsonRpcClient(client) => client.spec_version().await,
+            ProviderEnum::MockProvider(mock) => mock.spec_version().await,
         }
-        // Implement other methods similarly
     }
     // Continue implementing other Provider trait methods...
 }
@@ -84,7 +105,8 @@ async fn init_config() -> AppConfig {
     dotenv().ok();
 
     let url = Url::parse(&get_env_var_or_panic("MADARA_RPC_URL")).expect("Failed to parse URL");
-    let starknet_provider = Box::new(ProviderEnum::JsonRpcClient(JsonRpcClient::new(HttpTransport::new(url))));
+    // let starknet_provider = Box::new(ProviderEnum::JsonRpcClient(JsonRpcClient::new(HttpTransport::new(url))));
+    let starknet_provider = Box::new(ProviderEnum::MockProvider(MockProvider::new()));
 
     let database = Box::new(MongoDb::new(MongoDbConfig::new_from_env()).await);
     let queue = Box::new(SqsQueue {});
