@@ -78,7 +78,7 @@ pub enum JobType {
     StateUpdation,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]
 pub enum JobStatus {
     /// An acknowledgement that the job has been received by the
     /// orchestrator and is waiting to be processed

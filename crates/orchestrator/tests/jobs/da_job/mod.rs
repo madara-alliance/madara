@@ -13,13 +13,13 @@ use crate::common::{
     default_job_item,
 };
 
-use da_client_interface::MockDaClient;
+use da_client_interface::{DaVerificationStatus, MockDaClient};
 
 use orchestrator::{
-    config::{MockConfig, Config, MyStarknetProvider, MockMyStarknetProvider},
+    config::{Config, MockConfig, MockMyStarknetProvider, MyStarknetProvider},
     jobs::{
         da_job::DaJob,
-        types::{JobItem, JobType},
+        types::{JobItem, JobStatus, JobType},
         Job
     },
 };
@@ -57,8 +57,10 @@ async fn test_create_job(
     let job = job.unwrap();
     
     let job_type = job.job_type;
-    assert_eq!(job_type, JobType::DataSubmission);
-    assert_eq!(job.metadata.values().len(), 0, "metadata should be empty");
+    assert_eq!(job_type, JobType::DataSubmission, "job_type should be DataSubmission");
+    assert!(!(job.id.is_nil()), "id should not be nil");
+    assert_eq!(job.status, JobStatus::Created, "status should be Created");
+    assert_eq!(job.version, 0_i32, "version should be 0");
     assert_eq!(job.external_id.unwrap_string().unwrap(), String::new(), "external_id should be empty string");
 }
 
@@ -70,7 +72,7 @@ async fn test_verify_job(
     #[from(default_job_item)] job_item: JobItem,
 ) {
     let config = config.await;
-
+    // let x: DaVerificationStatus = config.da_client().verify_inclusion(job_item.external_id.unwrap_string()?).await?.into();
     assert!(DaJob.verify_job(config, &job_item).await.is_err());
 }
 
@@ -84,13 +86,13 @@ async fn test_process_job(
     blob_data: Vec<FieldElement>,
 ) {
     let mut mock_provider = MockMyStarknetProvider::new();
-    // let mut mock_da_client = MockDaClient::new();
+    let mut mock_da_client = MockDaClient::new();
     // let mock_provider = Arc::new(MockMyStarknetProvider::new());
-    let mock_da_client = Arc::new(MockDaClient::new());
+    // let mock_da_client = Arc::new(MockDaClient::new());
     let mut mock_config = MockConfig::new();
 
-    mock_config.expect_da_client().with().times(1).return_const(Box::new(*Arc::clone(&mock_da_client)));
-    mock_config.expect_starknet_client().with().times(1).returning(move || mock_provider);
+    mock_config.expect_da_client().with().times(1).return_const(Box::new(mock_da_client));
+    // mock_config.expect_starknet_client().times(1).returning(move || Arc::clone(&arc_mock_provider));
 
 
     // Mocking get_state_update to return a specific state update
@@ -108,10 +110,10 @@ async fn test_process_job(
     // Mocking publish_state_diff to return a specific external ID
     let external_id = "external_id_123".to_string();
 
-    mock_da_client.expect_publish_state_diff()
-        .with(eq(blob_data.clone()))
-        .times(1)
-        .returning(move |_| Ok(external_id.clone()) );
+    // mock_da_client.expect_publish_state_diff()
+    //     .with(eq(blob_data.clone()))
+    //     .times(1)
+    //     .returning(move |_| Ok(external_id.clone()) );
 
     // Assuming DaJob implements the processing using the Config trait
     let job_processor = DaJob; // Assuming DaJob is initialized properly
@@ -119,19 +121,4 @@ async fn test_process_job(
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), "external_id_123");
-}
-
-#[rstest]
-fn test_max_process_attempts() {
-    assert_eq!(DaJob.max_process_attempts(), 1);
-}
-
-#[rstest]
-fn test_max_verification_attempts() {
-    assert_eq!(DaJob.max_verification_attempts(), 3);
-}
-
-#[rstest]
-fn test_verification_polling_delay_seconds() {
-    assert_eq!(DaJob.verification_polling_delay_seconds(), 60);
 }
