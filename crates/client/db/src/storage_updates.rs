@@ -114,7 +114,7 @@ pub async fn store_class_update(block_number: u64, class_update: ClassUpdateWrap
 
 // this function used only in `--disable-root` mode
 // in `--disable-root` mode, keys are stored in `contract_trie_root` function
-pub fn store_key_update(
+pub async fn store_key_update(
     block_number: u64,
     storage_diffs: &Vec<ContractStorageDiffItem>,
 ) -> Result<(), DeoxysStorageError> {

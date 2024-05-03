@@ -188,13 +188,12 @@ pub async fn sync<C>(
                 let (state_update, block_conv) = {
                     let state_update = Arc::new(state_update);
                     let state_update_1 = Arc::clone(&state_update);
-                    let state_update_2 = Arc::clone(&state_update);
 
                     let block_conv = spawn_compute(move || {
                         let convert_block = |block| {
                             let start = std::time::Instant::now();
                             let block_conv = crate::convert::convert_block_sync(block);
-                            log::debug!("convert::convert_block_sync: {:?}", std::time::Instant::now() - start);
+                            log::debug!("convert::convert_block_sync {}: {:?}",block_n, std::time::Instant::now() - start);
                             block_conv
                         };
                         let ver_l2 = || {
@@ -202,13 +201,6 @@ pub async fn sync<C>(
                             let state_root = verify_l2(block_n, &state_update);
                             log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
                             state_root
-                        };
-
-                        let store_key = || {
-                            let start = std::time::Instant::now();
-                            let store_key = store_key_update(block_n, &state_update_2.state_diff.storage_diffs);
-                            log::debug!("store_key_update: {:?}", std::time::Instant::now() - start);
-                            store_key
                         };
 
                         if verify {
@@ -222,9 +214,7 @@ pub async fn sync<C>(
                             }
                             block_conv
                         } else {
-                            let (_key, block_conv) = rayon::join(store_key, || convert_block(block));
-
-                            block_conv
+                            convert_block(block)
                         }
                     })
                     .await;
@@ -233,24 +223,40 @@ pub async fn sync<C>(
                 };
 
                 let block_sender = Arc::clone(&block_sender);
+                let storage_diffs = state_update.state_diff.storage_diffs.clone();
                 tokio::join!(
                     async move {
                         block_sender.send(block_conv).await.expect("block reciever channel is closed");
                     },
                     async {
+                        let start = std::time::Instant::now();
                         if store_state_update(block_n, state_update).await.is_err() {
                             log::info!("❗ Failed to store state update for block {block_n}");
                         };
+                        log::debug!("end store_state {}: {:?}",block_n, std::time::Instant::now() - start);
                     },
                     async {
+                        let start = std::time::Instant::now();
                         if store_class_update(block_n, ClassUpdateWrapper(class_update)).await.is_err() {
                             log::info!("❗ Failed to store class update for block {block_n}");
                         };
+                        log::debug!("end store_class {}: {:?}", block_n, std::time::Instant::now() - start);
+                    },
+                    async {
+                        // store key update only if not verifying
+                        // because we already stored the key update in verify_l2
+                        if !verify {
+                            let start = std::time::Instant::now();
+                            if store_key_update(block_n, &storage_diffs).await.is_err() {
+                                log::info!("❗ Failed to store key update for block {block_n}");
+                            };
+                            log::debug!("end store_key {}: {:?}", block_n, std::time::Instant::now() - start);
+                        }
                     },
                     async {
                         let start = std::time::Instant::now();
                         create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
-                        log::debug!("end create_block: {:?}", std::time::Instant::now() - start);
+                        log::debug!("end create_block {}: {:?}", block_n, std::time::Instant::now() - start);
                     }
                 );
                 block_n += 1;
