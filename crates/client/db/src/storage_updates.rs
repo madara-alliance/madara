@@ -12,7 +12,7 @@ use crate::storage_handler::{self, DeoxysStorageError, StorageView, StorageViewM
 
 pub async fn store_state_update(block_number: u64, state_update: StateUpdate) -> Result<(), DeoxysStorageError> {
     let state_diff = state_update.state_diff.clone();
-    let nonce_map: HashMap<ContractAddress, Nonce> = state_update
+    let mut nonce_map: HashMap<ContractAddress, Nonce> = state_update
         .state_diff
         .nonces
         .into_iter()
@@ -26,7 +26,7 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
 
     log::debug!("💾 update state: block_number: {}", block_number);
 
-    let (result1, result2, result3, result4) = tokio::join!(
+    let (result1, result2, result3) = tokio::join!(
         // Contract address to class hash and nonce update
         async move {
             let handler_contract_data = storage_handler::contract_data_mut();
@@ -47,10 +47,14 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
                 let previous_nonce = handler_contract_data.get(&contract_address).unwrap().map(|data| data.nonce);
                 let nonce = match previous_nonce.unwrap_or_default().get().copied() {
                     Some(nonce) => Some(nonce),
-                    None => nonce_map.get(&contract_address).copied(),
+                    None => nonce_map.remove(&contract_address),
                 };
 
                 handler_contract_data.insert(contract_address, (class_hash, nonce)).unwrap()
+            });
+
+            nonce_map.into_iter().for_each(|(contract_address, nonce)| {
+                handler_contract_data.insert(contract_address, (None, Some(nonce))).unwrap()
             });
 
             handler_contract_data.commit(block_number)
@@ -77,15 +81,12 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
         },
         // Block number to state diff update
         async move { storage_handler::block_state_diff().insert(block_number, state_diff) },
-        // Contract address to contract storage update
-        async move { storage_handler::contract_storage_mut().commit(block_number) }
     );
 
-    match (result1, result2, result3, result4) {
-        (Err(err), _, _, _) => Err(err),
-        (_, Err(err), _, _) => Err(err),
-        (_, _, Err(err), _) => Err(err),
-        (_, _, _, Err(err)) => Err(err),
+    match (result1, result2, result3) {
+        (Err(err), _, _) => Err(err),
+        (_, Err(err), _) => Err(err),
+        (_, _, Err(err)) => Err(err),
         _ => Ok(()),
     }
 }
