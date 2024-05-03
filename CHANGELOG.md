@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix: class update
 - feat: store key/value in `--disble-root` mode
 - fix: storage nonce and key/value
 - fix: class and store updates and block desync after ctrl+c
