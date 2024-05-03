@@ -1,7 +1,7 @@
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
-use mc_db::storage_handler::{self, DeoxysStorageError, StorageViewMut};
+use mc_db::storage_handler::{self, DeoxysStorageError};
 use mp_convert::field_element::FromFieldElement;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
@@ -169,7 +169,6 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
     // for the duration of their livetimes
     let mut handler_contract = storage_handler::contract_trie_mut();
     let mut handler_storage_trie = storage_handler::contract_storage_trie_mut();
-    let handler_storage = storage_handler::contract_storage_mut();
 
     // First we insert the contract storage changes
     for (contract_address, updates) in csd.storage_updates.iter() {
@@ -177,13 +176,11 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
 
         for (key, value) in updates {
             handler_storage_trie.insert(*contract_address, *key, *value)?;
-            handler_storage.insert((*contract_address, *key), *value)?;
         }
     }
 
     // Then we commit them
     handler_storage_trie.commit(block_number)?;
-    handler_storage.commit(block_number)?;
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
     let updates = csd

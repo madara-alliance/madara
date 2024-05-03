@@ -243,15 +243,11 @@ pub async fn sync<C>(
                         log::debug!("end store_class {}: {:?}", block_n, std::time::Instant::now() - start);
                     },
                     async {
-                        // store key update only if not verifying
-                        // because we already stored the key update in verify_l2
-                        if !verify {
                             let start = std::time::Instant::now();
                             if store_key_update(block_n, &storage_diffs).await.is_err() {
                                 log::info!("❗ Failed to store key update for block {block_n}");
                             };
                             log::debug!("end store_key {}: {:?}", block_n, std::time::Instant::now() - start);
-                        }
                     },
                     async {
                         let start = std::time::Instant::now();
