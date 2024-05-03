@@ -67,10 +67,24 @@ where
     let contract_address = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
     let key = StorageKey(PatriciaKey(StarkFelt(key.to_bytes_be())));
 
-    let Ok(Some(value)) = storage_handler::contract_storage_trie().get_at(&contract_address, &key, block_number) else {
-        log::error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}'");
-        return Err(StarknetRpcApiError::ContractNotFound.into());
-    };
+    // Check if the contract exists at the given address in the specified block.
+    match storage_handler::contract_data().is_contract_deployed_at(&contract_address, block_number) {
+        Err(e) => {
+            error!("Failed to check if contract exists at '{contract_address:?}': {e}");
+            return Err(StarknetRpcApiError::InternalServerError.into());
+        }
+        Ok(false) => {
+            return Err(StarknetRpcApiError::ContractNotFound.into());
+        }
+        Ok(true) => {}
+    }
 
-    Ok(Felt(Felt252Wrapper::from(value).into()))
+    match storage_handler::contract_storage().get_at(&(contract_address, key), block_number) {
+        Ok(Some(value)) => Ok(Felt(Felt252Wrapper::from(value).into())),
+        Ok(None) => Ok(Felt(FieldElement::default())), // all keys are initialized to 0
+        Err(e) => {
+            error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}': {e}");
+            Err(StarknetRpcApiError::InternalServerError.into())
+        }
+    }
 }

@@ -26,7 +26,7 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
 
     log::debug!("💾 update state: block_number: {}", block_number);
 
-    let (result1, result2, result3, result4) = tokio::join!(
+    let (result1, result2, result3) = tokio::join!(
         // Contract address to class hash and nonce update
         async move {
             let handler_contract_data = storage_handler::contract_data_mut();
@@ -81,15 +81,12 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
         },
         // Block number to state diff update
         async move { storage_handler::block_state_diff().insert(block_number, state_diff) },
-        // Contract address to contract storage update
-        async move { storage_handler::contract_storage_mut().commit(block_number) }
     );
 
-    match (result1, result2, result3, result4) {
-        (Err(err), _, _, _) => Err(err),
-        (_, Err(err), _, _) => Err(err),
-        (_, _, Err(err), _) => Err(err),
-        (_, _, _, Err(err)) => Err(err),
+    match (result1, result2, result3) {
+        (Err(err), _, _) => Err(err),
+        (_, Err(err), _) => Err(err),
+        (_, _, Err(err)) => Err(err),
         _ => Ok(()),
     }
 }

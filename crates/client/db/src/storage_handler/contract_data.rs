@@ -93,6 +93,17 @@ impl ContractDataView {
 
         Ok(contract_data.class_hash.get_at(block_number).cloned())
     }
+
+    pub fn is_contract_deployed_at(
+        &self,
+        contract_address: &ContractAddress,
+        block_number: u64,
+    ) -> Result<bool, DeoxysStorageError> {
+        match self.get(contract_address)? {
+            Some(contract_data) => Ok(contract_data.class_hash.get_at(block_number).is_some()),
+            None => Ok(false),
+        }
+    }
 }
 
 impl StorageViewMut for ContractDataViewMut {

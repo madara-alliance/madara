@@ -183,6 +183,7 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
 
     // Then we commit them
     handler_storage_trie.commit(block_number)?;
+    handler_storage.commit(block_number)?;
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
     let updates = csd
