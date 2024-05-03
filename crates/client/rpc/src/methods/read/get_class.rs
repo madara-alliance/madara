@@ -29,8 +29,6 @@ pub fn get_class(_block_id: BlockId, class_hash: FieldElement) -> RpcResult<Cont
         return Err(StarknetRpcApiError::ClassHashNotFound.into());
     };
 
-    log::info!("class_hash: {:?}, contract_class_data: {:?}", class_hash, contract_class_data);
-
     // converting from stored Blockifier class to rpc class
     // TODO: retrieve sierra_program_length and abi_length when they are stored in the storage
     let StorageContractClassData { contract_class, abi, sierra_program_length, abi_length } = contract_class_data;
