@@ -175,7 +175,7 @@ pub fn to_contract_class_sierra(sierra_class: &ContractClassV1, abi: String) -> 
 
     Ok(ContractClassCore::Sierra(FlattenedSierraClass {
         sierra_program: sierra_program.into_iter().map(Into::into).collect(),
-        contract_class_version: "1".to_string(),
+        contract_class_version: "0.1.0".to_string(),
         entry_points_by_type,
         abi,
     }))
