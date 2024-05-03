@@ -112,8 +112,6 @@ pub async fn store_class_update(block_number: u64, class_update: ClassUpdateWrap
     handler_contract_class_data_mut.commit(block_number)
 }
 
-// this function used only in `--disable-root` mode
-// in `--disable-root` mode, keys are stored in `contract_trie_root` function
 pub async fn store_key_update(
     block_number: u64,
     storage_diffs: &Vec<ContractStorageDiffItem>,
