@@ -1,6 +1,6 @@
 use jsonrpsee::core::RpcResult;
-use mc_db::storage_handler::primitives::contract_class::ContractClassWrapper;
-use mc_db::storage_handler::query::{contract_abi_by_address, contract_class_by_address};
+use mc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
+use mc_db::storage_handler::{self, StorageView};
 use starknet_api::core::{ContractAddress, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{BlockId, ContractClass, FieldElement};
@@ -31,23 +31,29 @@ pub fn get_class_at(block_id: BlockId, contract_address: FieldElement) -> RpcRes
     let block_number = block_number_by_id(block_id);
     let key = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
 
-    let Ok(Some(contract_class)) = contract_class_by_address(&key, block_number) else {
-        log::error!("Failed to retrieve contract class at '{contract_address}'");
-        return Err(StarknetRpcApiError::ContractNotFound.into());
+    let class_hash = match storage_handler::contract_data().get_class_hash_at(&key, block_number) {
+        Err(e) => {
+            log::error!("Failed to retrieve contract class: {e}");
+            return Err(StarknetRpcApiError::InternalServerError.into());
+        }
+        Ok(None) => {
+            return Err(StarknetRpcApiError::ContractNotFound.into());
+        }
+        Ok(Some(val)) => val,
     };
 
-    // Blockifier classes do not store ABI, has to be retrieved separately
-    let Ok(Some(contract_abi)) = contract_abi_by_address(&key, block_number) else {
-        log::error!("Failed to retrieve contract ABI at '{contract_address}'");
-        return Err(StarknetRpcApiError::ContractNotFound.into());
+    // The class need to be stored
+    let Ok(Some(contract_class_data)) = storage_handler::contract_class_data().get(&class_hash) else {
+        log::error!("Failed to retrieve contract class from hash: '{}'", class_hash.0);
+        return Err(StarknetRpcApiError::InternalServerError.into());
     };
 
     // converting from stored Blockifier class to rpc class
-    // TODO: retrieve sierra_program_length and abi_length when they are stored in the storage
-    Ok(ContractClassWrapper { contract: contract_class, abi: contract_abi, sierra_program_length: 0, abi_length: 0 }
-        .try_into()
-        .map_err(|e| {
-            log::error!("Failed to convert contract class at address '{contract_address}' to RPC contract class: {e}");
+    let StorageContractClassData { contract_class, abi, sierra_program_length, abi_length } = contract_class_data;
+    Ok(ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }.try_into().map_err(
+        |e| {
+            log::error!("Failed to convert contract class from hash '{class_hash}' to RPC contract class: {e}");
             StarknetRpcApiError::InternalServerError
-        })?)
+        },
+    )?)
 }

@@ -3,6 +3,13 @@ git # Deoxys Changelog
 ## Next release
 
 - fix(classes): Fixed classes on the RPC level by adding ordering and complete deserialisation
+- fix: class update
+- feat: store key/value in `--disble-root` mode
+- fix: storage nonce and key/value
+- fix: class and store updates and block desync after ctrl+c
+- fix: compile without libm
+- fix: genesis state_update
+- refactor: optimize get_class_at
 - fix: crash build genesis on restart
 - fix(classes): Fixed sierra exception on block 31625 and added --starting-block arg
 - fix(db): with new implementation ContractStorage

@@ -264,7 +264,7 @@ pub mod pallet {
                 &StarknetStorageSchemaVersion::V1,
             );
 
-            if storage_handler::block_hash().get(0).is_err() {
+            if storage_handler::block_hash().get(1).unwrap().is_none() {
                 let handler_contract_data = storage_handler::contract_data_mut();
                 self.contracts.iter().for_each(|(contract_address, class_hash)| {
                     handler_contract_data.insert_class_hash(*contract_address, *class_hash).unwrap();
