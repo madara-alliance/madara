@@ -246,7 +246,7 @@ deoxys-tui = { path = "crates/tui" }
 
 # Starknet dependencies
 # Cairo Virtual Machine
-cairo-vm = { git = "https://github.com/bidzyyys/cairo-vm", branch = "feature/scale-codec", default-features = false, features = [
+cairo-vm = { git = "https://github.com/kasarlabs/cairo-vm", branch = "feature/scale-codec", default-features = false, features = [
   "cairo-1-hints",
   "parity-scale-codec",
   "std",
@@ -264,17 +264,17 @@ starknet-signers = { git = "https://github.com/kasarlabs/starknet-rs.git", branc
 
 starknet-types-core = { git = "https://github.com/starknet-io/types-rs.git", branch = "main", default-features = false }
 
-blockifier = { git = "https://github.com/bidzyyys/blockifier", branch = "feature/scale-codec" }
+blockifier = { git = "https://github.com/kasarlabs/blockifier", branch = "feature/scale-codec" }
 starknet_api = { git = "https://github.com/bidzyyys/starknet-api", branch = "feature/scale-codec", features = [
   "testing",
   "parity-scale-codec",
 ] }
 
 # Cairo lang
-cairo-lang-starknet = { git = "https://github.com/bidzyyys/cairo.git", branch = "feature/scale-codec" }
-cairo-lang-starknet-classes = { git = "https://github.com/bidzyyys/cairo.git", branch = "feature/scale-codec" }
-cairo-lang-casm = { git = "https://github.com/bidzyyys/cairo.git", branch = "feature/scale-codec" }
-cairo-lang-utils = { git = "https://github.com/bidzyyys/cairo.git", branch = "feature/scale-codec" }
+cairo-lang-starknet = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
+cairo-lang-starknet-classes = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
+cairo-lang-casm = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
+cairo-lang-utils = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
 
 # Ethers: using the same versions as in Anvil
 ethers = { git = "https://github.com/gakonst/ethers-rs" }
@@ -284,6 +284,7 @@ anyhow = "1.0.75"
 assert_matches = "1.5.0"
 async-trait = "0.1.74"
 bitvec = { version = "1.0.1", default-features = false, features = ["std"] }
+base64 = "0.13.1"
 clap = { version = "4.4.8", default-features = false, features = ["std"] }
 derive_more = { version = "0.99.17", default-features = false }
 flate2 = "1.0.28"

@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- fix(classes): Fixed classes on the RPC level by adding ordering and complete deserialisation
 - fix: class update
 - feat: store key/value in `--disble-root` mode
 - fix: storage nonce and key/value
