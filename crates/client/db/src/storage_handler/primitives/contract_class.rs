@@ -201,7 +201,7 @@ pub fn to_contract_class_cairo(
     // result due to HashMap disruptions
     let ordered_program = order_program(&contract_class.program);
     let compressed_program = compress(&serialize_program(&ordered_program)?)?;
-    let encoded_program = base64::encode(&compressed_program);
+    let encoded_program = base64::encode(compressed_program);
     Ok(ContractClassCore::Legacy(CompressedLegacyContractClass {
         program: encoded_program.into(),
         entry_points_by_type,

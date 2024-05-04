@@ -130,7 +130,7 @@ pub fn order_program(program: &Program) -> ProgramWrapper {
                 code: hint.code.clone(),
                 accessible_scopes: hint.accessible_scopes.clone(),
                 flow_tracking_data: FlowTrackingDataWrapper {
-                    ap_tracking: hint.flow_tracking_data.ap_tracking.clone(),
+                    ap_tracking: hint.flow_tracking_data.ap_tracking,
                     reference_ids: hint
                         .flow_tracking_data
                         .reference_ids
