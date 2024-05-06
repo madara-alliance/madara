@@ -21,7 +21,7 @@ impl StorageView for ContractDataView {
         let column = db.get_column(Column::ContractData);
 
         match db
-            .get_cf(&column, bincode::serialize(&contract_address).unwrap())
+            .get_cf(&column, bincode::serialize(&contract_address)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
         {
             Some(bytes) => Ok(Some(
@@ -36,7 +36,7 @@ impl StorageView for ContractDataView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractData);
 
-        match db.key_may_exist_cf(&column, bincode::serialize(&contract_address).unwrap()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&contract_address)?) {
             true => Ok(self.get(contract_address)?.is_some()),
             false => Ok(false),
         }
@@ -63,11 +63,10 @@ impl ContractDataView {
         let column = db.get_column(Column::ContractData);
 
         let contract_data = match db
-            .get_cf(&column, bincode::serialize(&contract_address).unwrap())
+            .get_cf(&column, bincode::serialize(&contract_address)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
         {
-            Some(bytes) => bincode::deserialize::<StorageContractData>(&bytes[..])
-                .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractData))?,
+            Some(bytes) => bincode::deserialize::<StorageContractData>(&bytes[..])?,
             None => StorageContractData::default(),
         };
 
@@ -83,7 +82,7 @@ impl ContractDataView {
         let column = db.get_column(Column::ContractData);
 
         let contract_data = match db
-            .get_cf(&column, bincode::serialize(&contract_address).unwrap())
+            .get_cf(&column, bincode::serialize(&contract_address)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
         {
             Some(bytes) => bincode::deserialize::<StorageContractData>(&bytes[..])
@@ -137,14 +136,14 @@ impl StorageViewMut for ContractDataViewMut {
         let mut batch = WriteBatchWithTransaction::<true>::default();
         for (key, mut contract_data, (class_hash, nonce)) in izip!(keys, histories, values) {
             if let Some(class_hash) = class_hash {
-                contract_data.class_hash.push(block_number, class_hash).unwrap();
+                contract_data.class_hash.push(block_number, class_hash)?;
             }
 
             if let Some(nonce) = nonce {
-                contract_data.nonce.push(block_number, nonce).unwrap();
+                contract_data.nonce.push(block_number, nonce)?;
             }
 
-            batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&contract_data).unwrap());
+            batch.put_cf(&column, bincode::serialize(&key)?, bincode::serialize(&contract_data)?);
         }
         db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractData))
     }
@@ -159,7 +158,7 @@ impl StorageView for ContractDataViewMut {
         let column = db.get_column(Column::ContractData);
 
         match db
-            .get_cf(&column, bincode::serialize(&contract_address).unwrap())
+            .get_cf(&column, bincode::serialize(&contract_address)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
         {
             Some(bytes) => Ok(Some(
@@ -174,7 +173,7 @@ impl StorageView for ContractDataViewMut {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractData);
 
-        match db.key_may_exist_cf(&column, bincode::serialize(&contract_address).unwrap()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&contract_address)?) {
             true => Ok(self.get(contract_address)?.is_some()),
             false => Ok(false),
         }
@@ -203,7 +202,7 @@ impl StorageViewRevetible for ContractDataViewMut {
                     .delete(key)
                     .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractData, block_number))?,
                 _ => db
-                    .put_cf(&column, key, bincode::serialize(&contract_data).unwrap())
+                    .put_cf(&column, key, bincode::serialize(&contract_data)?)
                     .map_err(|_| DeoxysStorageError::StorageRevertError(StorageType::ContractData, block_number))?,
             }
         }

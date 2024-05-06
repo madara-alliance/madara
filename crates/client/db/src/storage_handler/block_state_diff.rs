@@ -10,7 +10,7 @@ impl BlockStateDiffView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockStateDiff);
 
-        db.put_cf(&column, bincode::serialize(&block_number).unwrap(), bincode::serialize(&state_diff).unwrap())
+        db.put_cf(&column, bincode::serialize(&block_number)?, bincode::serialize(&state_diff)?)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockStateDiff))
     }
 
@@ -19,7 +19,7 @@ impl BlockStateDiffView {
         let column = db.get_column(Column::BlockStateDiff);
 
         let state_diff = db
-            .get_cf(&column, bincode::serialize(&block_number).unwrap())
+            .get_cf(&column, bincode::serialize(&block_number)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockStateDiff))?
             .map(|bytes| bincode::deserialize::<StateDiff>(&bytes[..]));
 
@@ -34,7 +34,7 @@ impl BlockStateDiffView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockStateDiff);
 
-        match db.key_may_exist_cf(&column, bincode::serialize(&block_number).unwrap()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&block_number)?) {
             true => Ok(self.get(block_number)?.is_some()),
             false => Ok(false),
         }
