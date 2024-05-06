@@ -73,23 +73,32 @@ pub async fn fetch_block_and_updates(
         let (block, state_update) = tokio::join!(block, state_update);
         log::debug!("fetch_block_and_updates: done {block_n}");
 
-        match block.as_ref().err().or(state_update.as_ref().err()) {
-            Some(L2SyncError::Provider(ProviderError::RateLimited)) => {
-                log::info!("The fetching process has been rate limited");
-                log::debug!("The fetching process has been rate limited, retrying in {:?} seconds", base_delay);
-                attempt += 1;
-                if attempt >= MAX_RETRY {
-                    return Err(L2SyncError::FetchRetryLimit);
-                }
+        match (block, state_update) {
+            (Err(L2SyncError::Provider(err)), _) | (_, Err(L2SyncError::Provider(err))) => {
                 // Exponential backoff with a cap on the delay
                 let delay = base_delay * 2_u32.pow(attempt - 1).min(6); // Cap to prevent overly long delays
+                match err {
+                    ProviderError::RateLimited => {
+                        log::info!("The fetching process has been rate limited, retrying in {:?} seconds", delay)
+                    }
+                    // sometimes the sequencer just errors out when trying to rate limit us (??) so retry in that case
+                    _ => log::info!("The provider has returned an error, retrying in {:?} seconds", delay),
+                }
+                attempt += 1;
+                if attempt >= MAX_RETRY {
+                    return Err(if matches!(err, ProviderError::RateLimited) {
+                        L2SyncError::FetchRetryLimit
+                    } else {
+                        L2SyncError::Provider(err)
+                    });
+                }
                 tokio::time::sleep(delay).await;
             }
-            _ => {
-                let (block, (state_update, class_update)) = (block?, state_update?);
+            (Err(err), _) | (_, Err(err)) => return Err(err),
+            (Ok(block), Ok((state_update, class_update))) => {
                 return Ok(L2BlockAndUpdates { block_n, block, state_update, class_update });
             }
-        }
+        };
     }
 }
 
