@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(bound = "T: Serialize + DeserializeOwned")]
 pub struct History<T>(pub Vec<(u64, T)>);
 
+#[derive(Debug)]
 pub enum HistoryError {
     ValueNotOrdered,
 }
