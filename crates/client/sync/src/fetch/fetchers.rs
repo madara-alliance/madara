@@ -41,6 +41,8 @@ pub struct FetchConfig {
     pub verify: bool,
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.
     pub api_key: Option<String>,
+    /// Polling interval
+    pub pending_polling_interval: Duration,
 }
 
 pub async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -> Result<p::Block, L2SyncError> {
@@ -49,10 +51,17 @@ pub async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -
     Ok(block)
 }
 
+pub struct L2BlockAndUpdates {
+    pub block_n: u64,
+    pub block: p::Block,
+    pub state_update: StateUpdate,
+    pub class_update: Vec<ContractClassData>,
+}
+
 pub async fn fetch_block_and_updates(
     block_n: u64,
     provider: Arc<SequencerGatewayProvider>,
-) -> Result<(p::Block, StateUpdate, Vec<ContractClassData>), L2SyncError> {
+) -> Result<L2BlockAndUpdates, L2SyncError> {
     const MAX_RETRY: u32 = 15;
     let mut attempt = 0;
     let base_delay = Duration::from_secs(1);
@@ -78,7 +87,7 @@ pub async fn fetch_block_and_updates(
             }
             _ => {
                 let (block, (state_update, class_update)) = (block?, state_update?);
-                return Ok((block, state_update, class_update));
+                return Ok(L2BlockAndUpdates { block_n, block, state_update, class_update });
             }
         }
     }

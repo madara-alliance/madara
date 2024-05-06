@@ -67,9 +67,19 @@ pub mod starknet_sync_worker {
             verify_l2(0, &state_update);
         }
 
-        let _ = tokio::join!(
+        let (_, l2_res) = tokio::join!(
             l1::sync(l1_url.clone()),
-            l2::sync(block_sender, command_sink, provider, starting_block.into(), fetch_config.verify, client)
+            l2::sync(
+                block_sender,
+                command_sink,
+                provider,
+                starting_block.into(),
+                fetch_config.verify,
+                client,
+                fetch_config.pending_polling_interval
+            )
         );
+
+        l2_res.unwrap(); // TODO: error handling
     }
 }
