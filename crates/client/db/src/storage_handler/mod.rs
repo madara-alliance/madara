@@ -73,7 +73,7 @@ pub enum DeoxysStorageError {
     #[error("failed to revert {0} to block {1}")]
     StorageRevertError(StorageType, u64),
     #[error("failed to push new value in history")]
-    StorageHistoryError
+    StorageHistoryError,
 }
 
 impl From<bincode::Error> for DeoxysStorageError {
