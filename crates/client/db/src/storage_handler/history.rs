@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 #[serde(bound = "T: Serialize + DeserializeOwned")]
 pub struct History<T>(pub Vec<(u64, T)>);
 
+pub enum HistoryError {
+    ValueNotOrdered,
+}
+
 /// A simple history implementation that stores values at a given index.
 /// It allows to get the value at a given index, push a new value with an index,
 /// and revert the history to a given index.
@@ -17,9 +21,9 @@ where
 {
     /// Push a new value with an index.
     /// If the index is smaller or equal to the last index, it will return an error.
-    pub fn push(&mut self, index: u64, value: T) -> Result<(), ()> {
+    pub fn push(&mut self, index: u64, value: T) -> Result<(), HistoryError> {
         match self.0.last() {
-            Some((last_index, _)) if index <= *last_index => Err(()),
+            Some((last_index, _)) if index <= *last_index => Err(HistoryError::ValueNotOrdered),
             _ => {
                 self.0.push((index, value));
                 Ok(())

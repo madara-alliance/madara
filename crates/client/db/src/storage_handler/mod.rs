@@ -68,8 +68,24 @@ pub enum DeoxysStorageError {
     StorageEncodeError(StorageType),
     #[error("failed to decode {0}")]
     StorageDecodeError(StorageType),
+    #[error("failed to serialize/deserialize")]
+    StorageSerdeError,
     #[error("failed to revert {0} to block {1}")]
     StorageRevertError(StorageType, u64),
+    #[error("failed to push new value in history")]
+    StorageHistoryError
+}
+
+impl From<bincode::Error> for DeoxysStorageError {
+    fn from(_: bincode::Error) -> Self {
+        DeoxysStorageError::StorageSerdeError
+    }
+}
+
+impl From<history::HistoryError> for DeoxysStorageError {
+    fn from(_: history::HistoryError) -> Self {
+        DeoxysStorageError::StorageHistoryError
+    }
 }
 
 #[derive(Debug)]

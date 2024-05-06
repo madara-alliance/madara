@@ -59,8 +59,8 @@ impl StorageViewMut for ContractStorageViewMut {
 
         let mut batch = WriteBatchWithTransaction::<true>::default();
         for (key, mut history, value) in izip!(keys, histories, values) {
-            history.push(block_number, value).unwrap();
-            batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&history).unwrap());
+            history.push(block_number, value)?;
+            batch.put_cf(&column, bincode::serialize(&key)?, bincode::serialize(&history)?);
         }
         db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractStorage))
     }
@@ -79,7 +79,7 @@ impl StorageView for ContractStorageViewMut {
         let column = db.get_column(Column::ContractStorage);
 
         let history: History<StarkFelt> = match db
-            .get_cf(&column, bincode::serialize(key).unwrap())
+            .get_cf(&column, bincode::serialize(key)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .map(|bytes| bincode::deserialize(&bytes))
         {
@@ -95,7 +95,7 @@ impl StorageView for ContractStorageViewMut {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractStorage);
 
-        match db.key_may_exist_cf(&column, bincode::serialize(&key).unwrap()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&key)?) {
             true => Ok(self.get(key)?.is_some()),
             false => Ok(false),
         }
@@ -108,7 +108,7 @@ impl StorageViewRevetible for ContractStorageViewMut {
         let db = Arc::new(DeoxysBackend::expose_db());
 
         let mut read_options = ReadOptions::default();
-        read_options.set_iterate_lower_bound(bincode::serialize(&block_number).unwrap());
+        read_options.set_iterate_lower_bound(bincode::serialize(&block_number)?);
 
         // Currently we only use this iterator to retrieve the latest block number. A better way to
         // do this would be to decouple the highest block lazy_static in `l2.rs`, but in the
@@ -152,7 +152,7 @@ impl StorageViewRevetible for ContractStorageViewMut {
         let change_set = Arc::try_unwrap(change_set).expect("Arc should not be aliased");
         for key in change_set.into_iter() {
             let db = Arc::clone(&db);
-            let key = bincode::serialize(&key).unwrap();
+            let key = bincode::serialize(&key)?;
 
             set.spawn(async move {
                 let column = db.get_column(Column::ContractStorage);
@@ -178,7 +178,7 @@ impl StorageViewRevetible for ContractStorageViewMut {
                         }
                     }
                     false => {
-                        if db.put_cf(&column, key.clone(), bincode::serialize(&history).unwrap()).is_err() {
+                        if db.put_cf(&column, key.clone(), bincode::serialize(&history)?).is_err() {
                             return Err(DeoxysStorageError::StorageRevertError(
                                 StorageType::ContractStorage,
                                 block_number,
@@ -209,7 +209,7 @@ impl ContractStorageView {
         let column = db.get_column(Column::ContractStorage);
 
         let history: History<StarkFelt> = match db
-            .get_cf(&column, bincode::serialize(key).unwrap())
+            .get_cf(&column, bincode::serialize(key)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .map(|bytes| bincode::deserialize(&bytes))
         {
@@ -231,7 +231,7 @@ impl StorageView for ContractStorageView {
         let column = db.get_column(Column::ContractStorage);
 
         let history: History<StarkFelt> = match db
-            .get_cf(&column, bincode::serialize(key).unwrap())
+            .get_cf(&column, bincode::serialize(key)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .map(|bytes| bincode::deserialize(&bytes))
         {
@@ -247,7 +247,7 @@ impl StorageView for ContractStorageView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractStorage);
 
-        match db.key_may_exist_cf(&column, bincode::serialize(&key).unwrap()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&key)?) {
             true => Ok(self.get(key)?.is_some()),
             false => Ok(false),
         }
