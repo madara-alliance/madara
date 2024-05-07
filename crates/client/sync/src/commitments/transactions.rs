@@ -7,7 +7,7 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use rayon::prelude::*;
+use rayon::{join, prelude::*};
 use starknet_api::transaction::Transaction;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
@@ -36,46 +36,51 @@ where
 {
     let include_signature = block_number >= 61394;
 
-    let signature_hash = match transaction {
-        Transaction::Invoke(invoke_tx) => {
-            // Include signatures for Invoke transactions or for all transactions
-            let signature = invoke_tx.signature();
-
-            H::compute_hash_on_elements(
-                &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
-            )
-        }
-        Transaction::Declare(declare_tx) => {
-            // Include signatures for Declare transactions if the block number is greater than 61394 (mainnet)
-            if include_signature {
-                let signature = declare_tx.signature();
+    let (signature_hash, tx_hash) = join(
+        || match transaction {
+            Transaction::Invoke(invoke_tx) => {
+                // Include signatures for Invoke transactions or for all transactions
+                let signature = invoke_tx.signature();
 
                 H::compute_hash_on_elements(
-                    &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                    &signature.0.par_iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                 )
-            } else {
-                H::compute_hash_on_elements(&[])
             }
-        }
-        Transaction::DeployAccount(deploy_account_tx) => {
-            // Include signatures for DeployAccount transactions if the block number is greater than 61394
-            // (mainnet)
-            if include_signature {
-                let signature = deploy_account_tx.signature();
+            Transaction::Declare(declare_tx) => {
+                // Include signatures for Declare transactions if the block number is greater than 61394 (mainnet)
+                if include_signature {
+                    let signature = declare_tx.signature();
 
-                H::compute_hash_on_elements(
-                    &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
-                )
-            } else {
-                H::compute_hash_on_elements(&[])
+                    H::compute_hash_on_elements(
+                        &signature.0.par_iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                    )
+                } else {
+                    H::compute_hash_on_elements(&[])
+                }
             }
-        }
-        Transaction::L1Handler(_) => H::compute_hash_on_elements(&[]),
-        _ => H::compute_hash_on_elements(&[]),
-    };
+            Transaction::DeployAccount(deploy_account_tx) => {
+                // Include signatures for DeployAccount transactions if the block number is greater than 61394
+                // (mainnet)
+                if include_signature {
+                    let signature = deploy_account_tx.signature();
+
+                    H::compute_hash_on_elements(
+                        &signature.0.par_iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                    )
+                } else {
+                    H::compute_hash_on_elements(&[])
+                }
+            }
+            Transaction::L1Handler(_) => H::compute_hash_on_elements(&[]),
+            _ => H::compute_hash_on_elements(&[]),
+        },
+        || {
+            Felt252Wrapper::from(transaction.compute_hash::<H>(chain_id, false, Some(block_number)).0).into()
+        },
+    );
 
     H::hash_elements(
-        Felt252Wrapper::from(transaction.compute_hash::<H>(chain_id, false, Some(block_number)).0).into(),
+        tx_hash,
         signature_hash,
     )
 }

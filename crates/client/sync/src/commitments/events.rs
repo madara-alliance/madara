@@ -6,7 +6,7 @@ use mc_db::storage_handler::bonsai_identifier;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
-use rayon::prelude::*;
+use rayon::{join, prelude::*};
 use starknet_api::transaction::Event;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
@@ -22,22 +22,24 @@ use starknet_types_core::hash::Pedersen;
 ///
 /// The event hash as `FieldElement`.
 pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
-    let keys_hash = H::compute_hash_on_elements(
-        &event
-            .content
-            .keys
-            .iter()
-            .map(|key| FieldElement::from(Felt252Wrapper::from(key.0)))
-            .collect::<Vec<FieldElement>>(),
-    );
-    let data_hash = H::compute_hash_on_elements(
-        &event
-            .content
-            .data
-            .0
-            .iter()
-            .map(|data| FieldElement::from(Felt252Wrapper::from(*data)))
-            .collect::<Vec<FieldElement>>(),
+    let (keys_hash, data_hash) = join(
+        || H::compute_hash_on_elements(
+            &event
+                .content
+                .keys
+                .par_iter()
+                .map(|key| FieldElement::from(Felt252Wrapper::from(key.0)))
+                .collect::<Vec<FieldElement>>(),
+        ),
+        || H::compute_hash_on_elements(
+            &event
+                .content
+                .data
+                .0
+                .par_iter()
+                .map(|data| FieldElement::from(Felt252Wrapper::from(*data)))
+                .collect::<Vec<FieldElement>>(),
+        )
     );
     let from_address = FieldElement::from(Felt252Wrapper::from(event.from_address.0.0));
     H::compute_hash_on_elements(&[from_address, keys_hash, data_hash])
