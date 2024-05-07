@@ -3,6 +3,7 @@ git # Deoxys Changelog
 ## Next release
 
 - feat(l2 sync): polling to get new blocks once sync has caught up with the chain
+- fix: sync, remove `unwrap` in storage
 - fix(classes): Fixed classes on the RPC level by adding ordering and complete deserialisation
 - fix: class update
 - feat: store key/value in `--disble-root` mode

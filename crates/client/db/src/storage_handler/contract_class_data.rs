@@ -20,13 +20,13 @@ impl StorageView for ContractClassDataView {
         let column = db.get_column(Column::ContractClassData);
 
         let contract_class_data = db
-            .get_cf(&column, bincode::serialize(&class_hash).unwrap())
+            .get_cf(&column, bincode::serialize(&class_hash)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassData))?
             .map(|bytes| StorageContractClassData::decode(&mut &bytes[..]));
 
         match contract_class_data {
             Some(Ok(contract_class_data)) => Ok(Some(contract_class_data)),
-            Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::Class)),
+            Some(Err(_)) => Err(DeoxysStorageError::StorageSerdeError),
             None => Ok(None),
         }
     }
@@ -35,7 +35,7 @@ impl StorageView for ContractClassDataView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassData);
 
-        match db.key_may_exist_cf(&column, bincode::serialize(&class_hash).unwrap()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&class_hash)?) {
             true => Ok(self.get(class_hash)?.is_some()),
             false => Ok(false),
         }
@@ -57,7 +57,7 @@ impl StorageViewMut for ContractClassDataViewMut {
 
         let mut batch = WriteBatchWithTransaction::<true>::default();
         for (key, value) in self.0.into_iter() {
-            batch.put_cf(&column, bincode::serialize(&key).unwrap(), value.encode());
+            batch.put_cf(&column, bincode::serialize(&key)?, value.encode());
         }
         db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassData))
     }
