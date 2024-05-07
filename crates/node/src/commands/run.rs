@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::result::Result as StdResult;
+use std::time::Duration;
 
 use deoxys_runtime::SealingMode;
 use mc_sync::fetch::fetchers::{fetch_apply_genesis_block, FetchConfig};
@@ -90,6 +91,7 @@ impl NetworkType {
             l1_core_address,
             verify: true,
             api_key: None,
+            pending_polling_interval: Duration::from_secs(2),
         }
     }
 }
@@ -143,6 +145,10 @@ pub struct ExtendedRunCmd {
     #[clap(long)]
     pub gateway_key: Option<String>,
 
+    /// Polling interval, in seconds.
+    #[clap(long, default_value = "2")]
+    pub pending_polling_interval: u64,
+
     /// A flag to run the TUI dashboard
     #[cfg(feature = "tui")]
     #[clap(long)]
@@ -187,6 +193,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         fetch_block_config.sound = cli.run.sound;
         fetch_block_config.verify = !cli.run.disable_root;
         fetch_block_config.api_key = cli.run.gateway_key.clone();
+        fetch_block_config.pending_polling_interval = Duration::from_secs(cli.run.pending_polling_interval);
         update_config(&fetch_block_config);
 
         let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();

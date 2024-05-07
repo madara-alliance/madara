@@ -3,7 +3,6 @@ use std::pin::pin;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use futures::prelude::*;
 use lazy_static::lazy_static;
 use mc_db::storage_handler::primitives::contract_class::ClassUpdateWrapper;
 use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
@@ -15,7 +14,7 @@ use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use starknet_api::hash::{StarkFelt, StarkHash};
-use starknet_core::types::{PendingStateUpdate, StarknetError, StateUpdate};
+use starknet_core::types::{PendingStateUpdate, StateUpdate};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::BlockId;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
@@ -25,10 +24,13 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::Duration;
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
-use crate::fetch::fetchers::fetch_block_and_updates;
+use crate::fetch::fetchers::L2BlockAndUpdates;
+use crate::fetch::l2_fetch_task;
 use crate::l1::ETHEREUM_STATE_UPDATE;
 use crate::CommandSink;
 
+/// Prefer this compared to [`tokio::spawn_blocking`], as spawn_blocking creates new OS threads and
+/// we don't really need that
 async fn spawn_compute<F, R>(func: F) -> R
 where
     F: FnOnce() -> R + Send + 'static,
@@ -126,33 +128,130 @@ pub struct SenderConfig {
     pub command_sink: CommandSink,
 }
 
+async fn l2_verify_and_apply_task(
+    mut fetch_stream_receiver: mpsc::Receiver<L2BlockAndUpdates>,
+    block_sender: Sender<DeoxysBlock>,
+    mut command_sink: CommandSink,
+    verify: bool,
+) -> Result<(), L2SyncError> {
+    let block_sender = Arc::new(block_sender);
+
+    let mut last_block_hash = None;
+
+    while let Some(L2BlockAndUpdates { block_n, block, state_update, class_update }) =
+        pin!(fetch_stream_receiver.recv()).await
+    {
+        let (state_update, block_conv) = {
+            let state_update = Arc::new(state_update);
+            let state_update_1 = Arc::clone(&state_update);
+
+            let block_conv = spawn_compute(move || {
+                let convert_block = |block| {
+                    let start = std::time::Instant::now();
+                    let block_conv = crate::convert::convert_block_sync(block);
+                    log::debug!("convert::convert_block_sync {}: {:?}", block_n, std::time::Instant::now() - start);
+                    block_conv
+                };
+                let ver_l2 = || {
+                    let start = std::time::Instant::now();
+                    let state_root = verify_l2(block_n, &state_update);
+                    log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
+                    state_root
+                };
+
+                if verify {
+                    let (state_root, block_conv) = rayon::join(ver_l2, || convert_block(block));
+                    if (block_conv.header().global_state_root) != state_root {
+                        log::info!(
+                            "❗ Verified state: {} doesn't match fetched state: {}",
+                            state_root,
+                            block_conv.header().global_state_root
+                        );
+                    }
+                    block_conv
+                } else {
+                    convert_block(block)
+                }
+            })
+            .await;
+
+            // UNWRAP: we need a 'static future as we are spawning tokio tasks further down the line
+            //         this is a hack to achieve that, we put the update in an arc and then unwrap it at the end
+            //         this will not panic as the Arc should not be aliased.
+            let state_update = Arc::try_unwrap(state_update_1).unwrap();
+            (state_update, block_conv)
+        };
+
+        let block_sender = Arc::clone(&block_sender);
+        let storage_diffs = state_update.state_diff.storage_diffs.clone();
+        tokio::join!(
+            async move {
+                block_sender.send(block_conv).await.expect("block reciever channel is closed");
+            },
+            async {
+                let start = std::time::Instant::now();
+                if store_state_update(block_n, state_update).await.is_err() {
+                    log::info!("❗ Failed to store state update for block {block_n}");
+                };
+                log::debug!("end store_state {}: {:?}", block_n, std::time::Instant::now() - start);
+            },
+            async {
+                let start = std::time::Instant::now();
+                if store_class_update(block_n, ClassUpdateWrapper(class_update)).await.is_err() {
+                    log::info!("❗ Failed to store class update for block {block_n}");
+                };
+                log::debug!("end store_class {}: {:?}", block_n, std::time::Instant::now() - start);
+            },
+            async {
+                let start = std::time::Instant::now();
+                if store_key_update(block_n, &storage_diffs).await.is_err() {
+                    log::info!("❗ Failed to store key update for block {block_n}");
+                };
+                log::debug!("end store_key {}: {:?}", block_n, std::time::Instant::now() - start);
+            },
+            async {
+                let start = std::time::Instant::now();
+                create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
+                log::debug!("end create_block {}: {:?}", block_n, std::time::Instant::now() - start);
+            }
+        );
+
+        // compact DB every 1k blocks
+        if block_n % 1000 == 0 {
+            DeoxysBackend::compact();
+        }
+    }
+
+    Ok(())
+}
+
 /// Spawns workers to fetch blocks and state updates from the feeder.
 /// `n_blocks` is optionally the total number of blocks to sync, for debugging/benchmark purposes.
 pub async fn sync<C>(
     block_sender: Sender<DeoxysBlock>,
-    mut command_sink: CommandSink,
+    command_sink: CommandSink,
     provider: SequencerGatewayProvider,
     first_block: u64,
     verify: bool,
     client: Arc<C>,
-) where
+    pending_polling_interval: Duration,
+) -> Result<(), L2SyncError>
+where
     C: HeaderBackend<DBlockT> + 'static,
 {
+    let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(10);
     let provider = Arc::new(provider);
-    let mut last_block_hash = None;
 
-    // Fetch blocks and updates in parallel one time before looping
-    let fetch_stream = (first_block..).map(|block_n| {
-        let provider = Arc::clone(&provider);
-        async move { tokio::spawn(fetch_block_and_updates(block_n, provider)).await.expect("tokio join error") }
-    });
+    // [Fetch task] ==new blocks and updates=> [Verification and apply task]
+    // Fetch task does parallel fetching, verification is sequential and does all the compute and db
+    // updates
 
-    // Have 10 fetches in parallel at once, using futures Buffered
-    let fetch_stream = stream::iter(fetch_stream).buffered(10);
-    let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(10);
-
+    // TODO: make it cancel-safe, tasks outlive their parent here when error occurs here
+    // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
+    // starves the tokio worker
     tokio::select!(
         // update highest block hash and number, update pending block and state update
+        // TODO: remove
         _ = async {
             let mut interval = tokio::time::interval(Duration::from_secs(5));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -162,110 +261,14 @@ pub async fn sync<C>(
                     log::error!("Failed to update highest block hash and number: {}", e);
                 }
             }
-        } => {},
+        } => Ok(()),
         // fetch blocks and updates in parallel
-        _ = async {
-            fetch_stream.for_each(|val| async {
-                fetch_stream_sender.send(val).await.expect("receiver is closed");
-            }).await;
-
-            drop(fetch_stream_sender); // dropping the channel makes the recieving task stop once the queue is empty.
-
-            std::future::pending().await
-        } => {},
+        res = tokio::spawn(l2_fetch_task(first_block, fetch_stream_sender, Arc::clone(&provider), pending_polling_interval)) => res.expect("join error"),
         // apply blocks and updates sequentially
-        _ = async {
-            let mut block_n = first_block;
-            let block_sender = Arc::new(block_sender);
+        res = tokio::spawn(l2_verify_and_apply_task(fetch_stream_receiver, block_sender, command_sink, verify)) => res.expect("join error"),
+    )?;
 
-            while let Some(val) = pin!(fetch_stream_receiver.recv()).await {
-                if matches!(val, Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))) {
-                    break;
-                }
-
-                let (block, state_update, class_update) = val.expect("fetching block");
-
-                let (state_update, block_conv) = {
-                    let state_update = Arc::new(state_update);
-                    let state_update_1 = Arc::clone(&state_update);
-
-                    let block_conv = spawn_compute(move || {
-                        let convert_block = |block| {
-                            let start = std::time::Instant::now();
-                            let block_conv = crate::convert::convert_block_sync(block);
-                            log::debug!("convert::convert_block_sync {}: {:?}",block_n, std::time::Instant::now() - start);
-                            block_conv
-                        };
-                        let ver_l2 = || {
-                            let start = std::time::Instant::now();
-                            let state_root = verify_l2(block_n, &state_update);
-                            log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
-                            state_root
-                        };
-
-                        if verify {
-                            let (state_root, block_conv) = rayon::join(ver_l2, || convert_block(block));
-                            if (block_conv.header().global_state_root) != state_root {
-                                log::info!(
-                                    "❗ Verified state: {} doesn't match fetched state: {}",
-                                    state_root,
-                                    block_conv.header().global_state_root
-                                );
-                            }
-                            block_conv
-                        } else {
-                            convert_block(block)
-                        }
-                    })
-                    .await;
-
-                    (Arc::try_unwrap(state_update_1).expect("arc should not be aliased"), block_conv)
-                };
-
-                let block_sender = Arc::clone(&block_sender);
-                let storage_diffs = state_update.state_diff.storage_diffs.clone();
-                tokio::join!(
-                    async move {
-                        block_sender.send(block_conv).await.expect("block reciever channel is closed");
-                    },
-                    async {
-                        let start = std::time::Instant::now();
-                        if store_state_update(block_n, state_update).await.is_err() {
-                            log::info!("❗ Failed to store state update for block {block_n}");
-                        };
-                        log::debug!("end store_state {}: {:?}",block_n, std::time::Instant::now() - start);
-                    },
-                    async {
-                        let start = std::time::Instant::now();
-                        if store_class_update(block_n, ClassUpdateWrapper(class_update)).await.is_err() {
-                            log::info!("❗ Failed to store class update for block {block_n}");
-                        };
-                        log::debug!("end store_class {}: {:?}", block_n, std::time::Instant::now() - start);
-                    },
-                    async {
-                            let start = std::time::Instant::now();
-                            if store_key_update(block_n, &storage_diffs).await.is_err() {
-                                log::info!("❗ Failed to store key update for block {block_n}");
-                            };
-                            log::debug!("end store_key {}: {:?}", block_n, std::time::Instant::now() - start);
-                    },
-                    async {
-                        let start = std::time::Instant::now();
-                        create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
-                        log::debug!("end create_block {}: {:?}", block_n, std::time::Instant::now() - start);
-                    }
-                );
-                block_n += 1;
-
-                // compact DB every 1k blocks
-                if block_n % 1000 == 0 {
-                    DeoxysBackend::compact();
-                }
-            }
-        } => {},
-    );
-
-    log::debug!("L2 sync finished :)");
+    Ok(())
 }
 
 /// Notifies the consensus engine that a new block should be created.
