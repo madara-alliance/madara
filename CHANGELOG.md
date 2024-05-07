@@ -2,6 +2,7 @@ git # Deoxys Changelog
 
 ## Next release
 
+- perf: store key
 - fix: sync, remove `unwrap` in storage
 - fix(classes): Fixed classes on the RPC level by adding ordering and complete deserialisation
 - fix: class update

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use mp_convert::field_element::FromFieldElement;
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -118,14 +119,14 @@ pub async fn store_key_update(
 ) -> Result<(), DeoxysStorageError> {
     let handler_storage = storage_handler::contract_storage_mut();
 
-    for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
-        let contract_address = ContractAddress::from_field_element(address);
-        for StorageEntry { key, value } in storage_entries {
+    storage_diffs.into_par_iter().try_for_each(|ContractStorageDiffItem { address, storage_entries }| {
+        let contract_address = ContractAddress::from_field_element(*address);
+        storage_entries.iter().try_for_each(|StorageEntry { key, value }| -> Result<(), DeoxysStorageError> {
             let key = StorageKey::from_field_element(key);
             let value = StarkFelt::from_field_element(value);
-            handler_storage.insert((contract_address, key), value)?;
-        }
-    }
+            handler_storage.insert((contract_address, key), value)
+        })
+    })?;
 
     handler_storage.commit(block_number)?;
 
