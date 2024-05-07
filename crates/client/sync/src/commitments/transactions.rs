@@ -43,7 +43,7 @@ where
                 let signature = invoke_tx.signature();
 
                 H::compute_hash_on_elements(
-                    &signature.0.par_iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                    &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                 )
             }
             Transaction::Declare(declare_tx) => {
@@ -52,7 +52,7 @@ where
                     let signature = declare_tx.signature();
 
                     H::compute_hash_on_elements(
-                        &signature.0.par_iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                        &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                     )
                 } else {
                     H::compute_hash_on_elements(&[])
@@ -65,7 +65,7 @@ where
                     let signature = deploy_account_tx.signature();
 
                     H::compute_hash_on_elements(
-                        &signature.0.par_iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
+                        &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                     )
                 } else {
                     H::compute_hash_on_elements(&[])

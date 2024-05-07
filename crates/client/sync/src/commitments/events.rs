@@ -27,7 +27,7 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
             &event
                 .content
                 .keys
-                .par_iter()
+                .iter()
                 .map(|key| FieldElement::from(Felt252Wrapper::from(key.0)))
                 .collect::<Vec<FieldElement>>(),
         ),
@@ -36,7 +36,7 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
                 .content
                 .data
                 .0
-                .par_iter()
+                .iter()
                 .map(|data| FieldElement::from(Felt252Wrapper::from(*data)))
                 .collect::<Vec<FieldElement>>(),
         )
