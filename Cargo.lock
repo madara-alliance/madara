@@ -7315,7 +7315,6 @@ dependencies = [
 name = "pallet-starknet-runtime-api"
 version = "0.1.0"
 dependencies = [
- "blockifier",
  "mp-felt",
  "parity-scale-codec",
  "scale-info",

@@ -10,7 +10,6 @@ version = "0.1.0"
 mp-felt = { workspace = true, features = ["parity-scale-codec", "serde"] }
 
 # Starknet
-blockifier = { workspace = true }
 starknet_api = { workspace = true }
 
 # Substrate
