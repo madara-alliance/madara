@@ -121,7 +121,7 @@ pub async fn store_key_update(
 
     storage_diffs.into_par_iter().try_for_each(|ContractStorageDiffItem { address, storage_entries }| {
         let contract_address = ContractAddress::from_field_element(*address);
-        storage_entries.into_iter().try_for_each(|StorageEntry { key, value }| -> Result<(), DeoxysStorageError> {
+        storage_entries.iter().try_for_each(|StorageEntry { key, value }| -> Result<(), DeoxysStorageError> {
             let key = StorageKey::from_field_element(key);
             let value = StarkFelt::from_field_element(value);
             handler_storage.insert((contract_address, key), value)
