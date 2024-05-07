@@ -54,7 +54,6 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use blockifier::blockifier::block::GasPrices;
 use blockifier::context::FeeTokenAddresses;
 use blockifier::execution::call_info::CallInfo;
 use frame_support::pallet_prelude::*;
@@ -115,9 +114,6 @@ pub mod pallet {
         type SystemHash: HasherT;
         /// The block time
         type TimestampProvider: Time;
-        /// The gas price
-        #[pallet::constant]
-        type L1GasPrices: Get<GasPrices>;
         /// A configuration for base priority of unsigned transactions.
         ///
         /// This is exposed so that it can be tuned for particular runtime, when

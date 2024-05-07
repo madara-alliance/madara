@@ -1,9 +1,6 @@
 //! Configuration of the pallets used in the runtime.
 //! The pallets used in the runtime are configured here.
 //! This file is used to generate the `construct_runtime!` macro.
-use std::num::NonZeroU128;
-
-use blockifier::blockifier::block::GasPrices;
 pub use frame_support::traits::{
     ConstBool, ConstU128, ConstU32, ConstU64, ConstU8, KeyOwnerProofSystem, OnTimestampSet, Randomness, StorageInfo,
 };
@@ -52,7 +49,6 @@ impl pallet_starknet::Config for Runtime {
     type ChainId = ChainId;
     type MaxRecursionDepth = MaxRecursionDepth;
     type ProgramHash = ProgramHash;
-    type L1GasPrices = L1GasPrices;
 }
 
 /// --------------------------------------
@@ -168,7 +164,6 @@ parameter_types! {
     pub const ChainId: Felt252Wrapper = mp_chain_id::SN_MAIN_CHAIN_ID;
     pub const MaxRecursionDepth: u32 = 50;
     pub const ProgramHash: Felt252Wrapper = SN_OS_PROGRAM_HASH;
-    pub const L1GasPrices: GasPrices = GasPrices { eth_l1_gas_price: unsafe { NonZeroU128::new_unchecked(10) }, strk_l1_gas_price: unsafe { NonZeroU128::new_unchecked(10) }, eth_l1_data_gas_price: unsafe { NonZeroU128::new_unchecked(10) }, strk_l1_data_gas_price: unsafe { NonZeroU128::new_unchecked(10) } };
 }
 
 /// Implement the OnTimestampSet trait to override the default Aura.

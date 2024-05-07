@@ -2783,7 +2783,6 @@ dependencies = [
 name = "deoxys-runtime"
 version = "0.1.0"
 dependencies = [
- "blockifier",
  "frame-benchmarking",
  "frame-executive",
  "frame-support",
