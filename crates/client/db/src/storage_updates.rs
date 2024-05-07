@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{self, AtomicBool};
+use std::sync::Arc;
 
 use mp_convert::field_element::FromFieldElement;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
@@ -122,10 +122,8 @@ pub async fn store_key_update(
     let handler_storage = storage_handler::contract_storage_mut();
     let error_occured = Arc::new(AtomicBool::new(false));
 
-    let start = std::time::Instant::now();
-
     storage_diffs.into_par_iter().for_each(|ContractStorageDiffItem { address, storage_entries }| {
-        if error_occured.load(std::sync::atomic::Ordering::Relaxed) {
+        if error_occured.load(atomic::Ordering::Relaxed) {
             return;
         }
         let contract_address = ContractAddress::from_field_element(*address);
@@ -134,23 +132,18 @@ pub async fn store_key_update(
             let value = StarkFelt::from_field_element(value);
             let result = handler_storage.insert((contract_address, key), value);
             if let Err(err) = result {
-                error_occured.store(true, std::sync::atomic::Ordering::Relaxed);
+                error_occured.store(true, atomic::Ordering::Relaxed);
                 log::error!("🔑 storage error: {:?}", err);
                 return;
             }
         }
     });
 
-    let inter = std::time::Instant::now();
-    log::debug!("🔑 aggregate key: {:?}", inter - start);
-
-    if error_occured.load(std::sync::atomic::Ordering::Relaxed) {
+    if error_occured.load(atomic::Ordering::Relaxed) {
         return Err(DeoxysStorageError::StorageInsertionError(storage_handler::StorageType::ContractStorage));
     }
 
     handler_storage.commit(block_number)?;
-
-    log::debug!("🔑 commit key: {:?}", std::time::Instant::now() - inter);
 
     Ok(())
 }
