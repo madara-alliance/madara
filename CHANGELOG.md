@@ -1,4 +1,4 @@
-git # Deoxys Changelog
+# Deoxys Changelog
 
 ## Next release
 

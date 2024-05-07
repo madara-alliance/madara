@@ -36,7 +36,7 @@ pub async fn l2_fetch_task(
 
             match val {
                 Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
-                    break block_n as u64;
+                    break block_n;
                 }
                 val => fetch_stream_sender.send(val?).await.expect("reciever task is closed"),
             }
