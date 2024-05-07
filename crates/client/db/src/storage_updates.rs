@@ -1,6 +1,9 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 use mp_convert::field_element::FromFieldElement;
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -117,17 +120,37 @@ pub async fn store_key_update(
     storage_diffs: &Vec<ContractStorageDiffItem>,
 ) -> Result<(), DeoxysStorageError> {
     let handler_storage = storage_handler::contract_storage_mut();
+    let error_occured = Arc::new(AtomicBool::new(false));
 
-    for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
-        let contract_address = ContractAddress::from_field_element(address);
+    let start = std::time::Instant::now();
+
+    storage_diffs.into_par_iter().for_each(|ContractStorageDiffItem { address, storage_entries }| {
+        if error_occured.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+        let contract_address = ContractAddress::from_field_element(*address);
         for StorageEntry { key, value } in storage_entries {
             let key = StorageKey::from_field_element(key);
             let value = StarkFelt::from_field_element(value);
-            handler_storage.insert((contract_address, key), value)?;
+            let result = handler_storage.insert((contract_address, key), value);
+            if let Err(err) = result {
+                error_occured.store(true, std::sync::atomic::Ordering::Relaxed);
+                log::error!("🔑 storage error: {:?}", err);
+                return;
+            }
         }
+    });
+
+    let inter = std::time::Instant::now();
+    println!("🔑 aggregate key: {:?}", inter - start);
+
+    if error_occured.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(DeoxysStorageError::StorageInsertionError(storage_handler::StorageType::ContractStorage));
     }
 
     handler_storage.commit(block_number)?;
+
+    println!("🔑 commit key: {:?}", std::time::Instant::now() - inter);
 
     Ok(())
 }
