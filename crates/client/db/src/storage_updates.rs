@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::sync::atomic::{self, AtomicBool};
-use std::sync::Arc;
 
 use mp_convert::field_element::FromFieldElement;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
@@ -120,28 +118,15 @@ pub async fn store_key_update(
     storage_diffs: &Vec<ContractStorageDiffItem>,
 ) -> Result<(), DeoxysStorageError> {
     let handler_storage = storage_handler::contract_storage_mut();
-    let error_occured = Arc::new(AtomicBool::new(false));
 
-    storage_diffs.into_par_iter().for_each(|ContractStorageDiffItem { address, storage_entries }| {
-        if error_occured.load(atomic::Ordering::Relaxed) {
-            return;
-        }
+    storage_diffs.into_par_iter().try_for_each(|ContractStorageDiffItem { address, storage_entries }| {
         let contract_address = ContractAddress::from_field_element(*address);
-        for StorageEntry { key, value } in storage_entries {
+        storage_entries.into_iter().try_for_each(|StorageEntry { key, value }| -> Result<(), DeoxysStorageError> {
             let key = StorageKey::from_field_element(key);
             let value = StarkFelt::from_field_element(value);
-            let result = handler_storage.insert((contract_address, key), value);
-            if let Err(err) = result {
-                error_occured.store(true, atomic::Ordering::Relaxed);
-                log::error!("🔑 storage error: {:?}", err);
-                return;
-            }
-        }
-    });
-
-    if error_occured.load(atomic::Ordering::Relaxed) {
-        return Err(DeoxysStorageError::StorageInsertionError(storage_handler::StorageType::ContractStorage));
-    }
+            handler_storage.insert((contract_address, key), value)
+        })
+    })?;
 
     handler_storage.commit(block_number)?;
 
