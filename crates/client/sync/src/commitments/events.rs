@@ -6,7 +6,6 @@ use mc_db::storage_handler::bonsai_identifier;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
-use rayon::join;
 use rayon::prelude::*;
 use starknet_api::transaction::Event;
 use starknet_ff::FieldElement;
@@ -23,7 +22,7 @@ use starknet_types_core::hash::Pedersen;
 ///
 /// The event hash as `FieldElement`.
 pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
-    let (keys_hash, data_hash) = join(
+    let (keys_hash, data_hash) = rayon::join(
         || {
             H::compute_hash_on_elements(
                 &event

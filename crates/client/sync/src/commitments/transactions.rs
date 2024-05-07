@@ -7,7 +7,6 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use rayon::join;
 use rayon::prelude::*;
 use starknet_api::transaction::Transaction;
 use starknet_ff::FieldElement;
@@ -37,7 +36,7 @@ where
 {
     let include_signature = block_number >= 61394;
 
-    let (signature_hash, tx_hash) = join(
+    let (signature_hash, tx_hash) = rayon::join(
         || match transaction {
             Transaction::Invoke(invoke_tx) => {
                 // Include signatures for Invoke transactions or for all transactions
