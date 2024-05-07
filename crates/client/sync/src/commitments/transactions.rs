@@ -7,7 +7,8 @@ use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
-use rayon::{join, prelude::*};
+use rayon::join;
+use rayon::prelude::*;
 use starknet_api::transaction::Transaction;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
@@ -74,15 +75,10 @@ where
             Transaction::L1Handler(_) => H::compute_hash_on_elements(&[]),
             _ => H::compute_hash_on_elements(&[]),
         },
-        || {
-            Felt252Wrapper::from(transaction.compute_hash::<H>(chain_id, false, Some(block_number)).0).into()
-        },
+        || Felt252Wrapper::from(transaction.compute_hash::<H>(chain_id, false, Some(block_number)).0).into(),
     );
 
-    H::hash_elements(
-        tx_hash,
-        signature_hash,
-    )
+    H::hash_elements(tx_hash, signature_hash)
 }
 
 /// Calculate the transaction commitment in memory using HashMapDb (which is more efficient for this
