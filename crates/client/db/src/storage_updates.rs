@@ -142,7 +142,7 @@ pub async fn store_key_update(
     });
 
     let inter = std::time::Instant::now();
-    println!("🔑 aggregate key: {:?}", inter - start);
+    log::debug!("🔑 aggregate key: {:?}", inter - start);
 
     if error_occured.load(std::sync::atomic::Ordering::Relaxed) {
         return Err(DeoxysStorageError::StorageInsertionError(storage_handler::StorageType::ContractStorage));
@@ -150,7 +150,7 @@ pub async fn store_key_update(
 
     handler_storage.commit(block_number)?;
 
-    println!("🔑 commit key: {:?}", std::time::Instant::now() - inter);
+    log::debug!("🔑 commit key: {:?}", std::time::Instant::now() - inter);
 
     Ok(())
 }
