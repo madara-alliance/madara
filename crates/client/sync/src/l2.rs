@@ -3,8 +3,9 @@ use std::pin::pin;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
+use futures::{stream, StreamExt, TryStreamExt};
 use lazy_static::lazy_static;
-use mc_db::storage_handler::primitives::contract_class::ClassUpdateWrapper;
+use mc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
 use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
 use mp_block::DeoxysBlock;
@@ -24,6 +25,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::Duration;
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
+use crate::convert::convert_block;
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::l1::ETHEREUM_STATE_UPDATE;
@@ -129,7 +131,7 @@ pub struct SenderConfig {
 }
 
 async fn l2_verify_and_apply_task(
-    mut fetch_stream_receiver: mpsc::Receiver<L2BlockAndUpdates>,
+    mut updates_receiver: mpsc::Receiver<L2ConvertedBlockAndUpdates>,
     block_sender: Sender<DeoxysBlock>,
     mut command_sink: CommandSink,
     verify: bool,
@@ -138,55 +140,43 @@ async fn l2_verify_and_apply_task(
 
     let mut last_block_hash = None;
 
-    while let Some(L2BlockAndUpdates { block_n, block, state_update, class_update }) =
-        pin!(fetch_stream_receiver.recv()).await
+    while let Some(L2ConvertedBlockAndUpdates { block_n, block, state_update, class_update }) =
+        pin!(updates_receiver.recv()).await
     {
-        let (state_update, block_conv) = {
+        let (state_update, block) = {
             let state_update = Arc::new(state_update);
             let state_update_1 = Arc::clone(&state_update);
+            let block = Arc::new(block);
+            let block_1 = Arc::clone(&block);
 
-            let block_conv = spawn_compute(move || {
-                let convert_block = |block| {
-                    let start = std::time::Instant::now();
-                    let block_conv = crate::convert::convert_block_sync(block);
-                    log::debug!("convert::convert_block_sync {}: {:?}", block_n, std::time::Instant::now() - start);
-                    block_conv
-                };
-                let ver_l2 = || {
+            if verify {
+                spawn_compute(move || {
                     let start = std::time::Instant::now();
                     let state_root = verify_l2(block_n, &state_update);
                     log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
-                    state_root
-                };
 
-                if verify {
-                    let (state_root, block_conv) = rayon::join(ver_l2, || convert_block(block));
-                    if (block_conv.header().global_state_root) != state_root {
+                    if (block.header().global_state_root) != state_root {
                         log::info!(
                             "❗ Verified state: {} doesn't match fetched state: {}",
                             state_root,
-                            block_conv.header().global_state_root
+                            block.header().global_state_root
                         );
                     }
-                    block_conv
-                } else {
-                    convert_block(block)
-                }
-            })
-            .await;
+                })
+                .await;
+            }
 
             // UNWRAP: we need a 'static future as we are spawning tokio tasks further down the line
             //         this is a hack to achieve that, we put the update in an arc and then unwrap it at the end
             //         this will not panic as the Arc should not be aliased.
-            let state_update = Arc::try_unwrap(state_update_1).unwrap();
-            (state_update, block_conv)
+            (Arc::try_unwrap(state_update_1).unwrap(), Arc::try_unwrap(block_1).unwrap())
         };
 
         let block_sender = Arc::clone(&block_sender);
         let storage_diffs = state_update.state_diff.storage_diffs.clone();
         tokio::join!(
             async move {
-                block_sender.send(block_conv).await.expect("block reciever channel is closed");
+                block_sender.send(block).await.expect("block reciever channel is closed");
             },
             async {
                 let start = std::time::Instant::now();
@@ -225,6 +215,39 @@ async fn l2_verify_and_apply_task(
     Ok(())
 }
 
+pub struct L2ConvertedBlockAndUpdates {
+    pub block_n: u64,
+    pub block: DeoxysBlock,
+    pub state_update: StateUpdate,
+    pub class_update: Vec<ContractClassData>,
+}
+
+async fn l2_block_conversion_task(
+    updates_receiver: mpsc::Receiver<L2BlockAndUpdates>,
+    output: mpsc::Sender<L2ConvertedBlockAndUpdates>,
+) -> Result<(), L2SyncError> {
+    // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
+    // using futures buffered.
+    let conversion_stream = stream::unfold(updates_receiver, |mut updates_recv| async {
+        updates_recv.recv().await.map(|L2BlockAndUpdates { block_n, block, state_update, class_update }| {
+            (
+                spawn_compute(move || {
+                    Ok(L2ConvertedBlockAndUpdates { block_n, block: convert_block(block)?, state_update, class_update })
+                }),
+                updates_recv,
+            )
+        })
+    });
+
+    conversion_stream
+        .buffered(10)
+        .try_for_each(|block| async {
+            output.send(block).await.expect("downstream task is not running");
+            Ok(())
+        })
+        .await
+}
+
 /// Spawns workers to fetch blocks and state updates from the feeder.
 /// `n_blocks` is optionally the total number of blocks to sync, for debugging/benchmark purposes.
 pub async fn sync<C>(
@@ -240,11 +263,15 @@ where
     C: HeaderBackend<DBlockT> + 'static,
 {
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(10);
+    let (block_conv_sender, block_conv_receiver) = mpsc::channel(10);
     let provider = Arc::new(provider);
 
-    // [Fetch task] ==new blocks and updates=> [Verification and apply task]
-    // Fetch task does parallel fetching, verification is sequential and does all the compute and db
-    // updates
+    // [Fetch task] ==new blocks and updates=> [Block conversion task] ======> [Verification and apply
+    // task]
+    // - Fetch task does parallel fetching
+    // - Block conversion is compute heavy and parallel wrt. the next few blocks,
+    // - Verification is sequential and does a lot of compute when state root verification is enabled.
+    //   DB updates happen here too.
 
     // TODO: make it cancel-safe, tasks outlive their parent here when error occurs here
     // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
@@ -262,10 +289,9 @@ where
                 }
             }
         } => Ok(()),
-        // fetch blocks and updates in parallel
         res = tokio::spawn(l2_fetch_task(first_block, fetch_stream_sender, Arc::clone(&provider), pending_polling_interval)) => res.expect("join error"),
-        // apply blocks and updates sequentially
-        res = tokio::spawn(l2_verify_and_apply_task(fetch_stream_receiver, block_sender, command_sink, verify)) => res.expect("join error"),
+        res = tokio::spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender)) => res.expect("join error"),
+        res = tokio::spawn(l2_verify_and_apply_task(block_conv_receiver, block_sender, command_sink, verify)) => res.expect("join error"),
     )?;
 
     Ok(())
@@ -340,7 +366,7 @@ where
             .map_err(|e| format!("Failed to get pending state update: {e}"))?;
 
         *STARKNET_PENDING_BLOCK.write().expect("Failed to acquire write lock on STARKNET_PENDING_BLOCK") =
-            Some(crate::convert::block(block).await);
+            Some(spawn_compute(|| crate::convert::convert_block(block)).await.unwrap());
 
         *STARKNET_PENDING_STATE_UPDATE.write().expect("Failed to aquire write lock on STARKNET_PENDING_STATE_UPDATE") =
             Some(crate::convert::state_update(state_update));

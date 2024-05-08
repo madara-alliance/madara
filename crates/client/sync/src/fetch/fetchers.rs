@@ -110,7 +110,7 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBloc
     };
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    Ok(crate::convert::block(block).await)
+    Ok(crate::convert::convert_block(block).expect("invalid genesis block"))
 }
 
 #[allow(clippy::too_many_arguments)]
