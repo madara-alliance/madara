@@ -10,7 +10,6 @@ pub extern crate alloc;
 use alloc::vec::Vec;
 
 use sp_runtime::DispatchError;
-use starknet_api::hash::StarkHash;
 use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
 
 #[derive(parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
@@ -28,8 +27,6 @@ sp_api::decl_runtime_apis! {
         fn chain_id() -> Felt252Wrapper;
         /// Returns the Starknet OS Cairo program hash.
         fn program_hash() -> Felt252Wrapper;
-        /// Returns the Starknet config hash.
-        fn config_hash() -> StarkHash;
 
         fn get_events_for_tx_by_hash(tx_hash: TransactionHash) -> Vec<StarknetEvent>;
 

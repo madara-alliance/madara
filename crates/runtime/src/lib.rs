@@ -44,7 +44,6 @@ use sp_runtime::{generic, ApplyExtrinsicResult, DispatchError};
 pub use sp_runtime::{Perbill, Permill};
 use sp_std::prelude::*;
 use sp_version::RuntimeVersion;
-use starknet_api::hash::StarkHash;
 use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -186,10 +185,6 @@ impl_runtime_apis! {
 
         fn program_hash() -> Felt252Wrapper {
             Starknet::program_hash()
-        }
-
-        fn config_hash() -> StarkHash {
-            Starknet::config_hash()
         }
 
         fn is_transaction_fee_disabled() -> bool {
