@@ -16,7 +16,6 @@ pub mod opaque;
 mod pallets;
 mod runtime_tests;
 
-use blockifier::context::FeeTokenAddresses;
 pub use config::*;
 pub use frame_support::traits::{ConstU128, ConstU32, ConstU64, ConstU8, KeyOwnerProofSystem, Randomness, StorageInfo};
 pub use frame_support::weights::constants::{
@@ -193,10 +192,6 @@ impl_runtime_apis! {
             Starknet::config_hash()
         }
 
-        fn fee_token_addresses() -> FeeTokenAddresses {
-            Starknet::fee_token_addresses()
-        }
-
         fn is_transaction_fee_disabled() -> bool {
             Starknet::is_transaction_fee_disabled()
         }
@@ -211,10 +206,6 @@ impl_runtime_apis! {
 
         fn get_tx_execution_outcome(tx_hash: TransactionHash) -> Option<Vec<u8>> {
             Starknet::tx_revert_error(tx_hash).map(|s| s.into_bytes())
-        }
-
-        fn get_block_context() -> blockifier::context::BlockContext {
-           Starknet::get_block_context()
         }
     }
 

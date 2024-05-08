@@ -54,10 +54,8 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use blockifier::blockifier::block::{BlockInfo, GasPrices};
-use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
+use blockifier::context::FeeTokenAddresses;
 use blockifier::execution::call_info::CallInfo;
-use blockifier::versioned_constants::VersionedConstants;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
@@ -71,8 +69,7 @@ use mp_sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRES
 use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
-use starknet_api::block::{BlockNumber, BlockTimestamp};
-use starknet_api::core::{ChainId, CompiledClassHash, ContractAddress};
+use starknet_api::core::{CompiledClassHash, ContractAddress};
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
@@ -117,9 +114,6 @@ pub mod pallet {
         type SystemHash: HasherT;
         /// The block time
         type TimestampProvider: Time;
-        /// The gas price
-        #[pallet::constant]
-        type L1GasPrices: Get<GasPrices>;
         /// A configuration for base priority of unsigned transactions.
         ///
         /// This is exposed so that it can be tuned for particular runtime, when
@@ -391,36 +385,6 @@ pub mod pallet {
 
 /// The Starknet pallet internal functions.
 impl<T: Config> Pallet<T> {
-    /// Creates a [BlockContext] object. The [BlockContext] is needed by the blockifier to execute
-    /// properly the transaction. Substrate caches data so it's fine to call multiple times this
-    /// function, only the first transaction/block will be "slow" to load these data.
-    pub fn get_block_context() -> BlockContext {
-        let block_number = UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
-        let block_timestamp = Self::block_timestamp();
-
-        let fee_token_addresses = Self::fee_token_addresses();
-        let sequencer_address = Self::sequencer_address();
-
-        let chain_id = ChainId(Self::chain_id_str());
-        let gas_prices = T::L1GasPrices::get();
-
-        BlockContext::new_unchecked(
-            &BlockInfo {
-                block_number: BlockNumber(block_number),
-                block_timestamp: BlockTimestamp(block_timestamp),
-                sequencer_address,
-                gas_prices,
-                // TODO
-                // I have no idea what this is, let's say we did not use any for now
-                use_kzg_da: false,
-            },
-            &ChainInfo { chain_id, fee_token_addresses },
-            // TODO
-            // I'm clueless on what those values should be
-            VersionedConstants::latest_constants(),
-        )
-    }
-
     /// convert chain_id
     #[inline(always)]
     pub fn chain_id_str() -> String {
