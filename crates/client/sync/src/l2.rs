@@ -29,7 +29,8 @@ use crate::convert::convert_block;
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::l1::ETHEREUM_STATE_UPDATE;
-use crate::CommandSink;
+use crate::utils::PerfStopwatch;
+use crate::{stopwatch_end, CommandSink};
 
 /// Prefer this compared to [`tokio::spawn_blocking`], as spawn_blocking creates new OS threads and
 /// we don't really need that
@@ -151,9 +152,9 @@ async fn l2_verify_and_apply_task(
 
             if verify {
                 spawn_compute(move || {
-                    let start = std::time::Instant::now();
+                    let sw = PerfStopwatch::new();
                     let state_root = verify_l2(block_n, &state_update);
-                    log::debug!("verify_l2: {:?}", std::time::Instant::now() - start);
+                    stopwatch_end!(sw, "verify_l2: {:?}");
 
                     if (block.header().global_state_root) != state_root {
                         log::info!(
@@ -179,30 +180,30 @@ async fn l2_verify_and_apply_task(
                 block_sender.send(block).await.expect("block reciever channel is closed");
             },
             async {
-                let start = std::time::Instant::now();
+                let sw = PerfStopwatch::new();
                 if store_state_update(block_n, state_update).await.is_err() {
                     log::info!("❗ Failed to store state update for block {block_n}");
                 };
-                log::debug!("end store_state {}: {:?}", block_n, std::time::Instant::now() - start);
+                stopwatch_end!(sw, "end store_state {}: {:?}", block_n);
             },
             async {
-                let start = std::time::Instant::now();
+                let sw = PerfStopwatch::new();
                 if store_class_update(block_n, ClassUpdateWrapper(class_update)).await.is_err() {
                     log::info!("❗ Failed to store class update for block {block_n}");
                 };
-                log::debug!("end store_class {}: {:?}", block_n, std::time::Instant::now() - start);
+                stopwatch_end!(sw, "end store_class {}: {:?}", block_n);
             },
             async {
-                let start = std::time::Instant::now();
+                let sw = PerfStopwatch::new();
                 if store_key_update(block_n, &storage_diffs).await.is_err() {
                     log::info!("❗ Failed to store key update for block {block_n}");
                 };
-                log::debug!("end store_key {}: {:?}", block_n, std::time::Instant::now() - start);
+                stopwatch_end!(sw, "end store_key {}: {:?}", block_n);
             },
             async {
-                let start = std::time::Instant::now();
+                let sw = PerfStopwatch::new();
                 create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
-                log::debug!("end create_block {}: {:?}", block_n, std::time::Instant::now() - start);
+                stopwatch_end!(sw, "end create_block {}: {:?}", block_n);
             }
         );
 
@@ -232,7 +233,10 @@ async fn l2_block_conversion_task(
         updates_recv.recv().await.map(|L2BlockAndUpdates { block_n, block, state_update, class_update }| {
             (
                 spawn_compute(move || {
-                    Ok(L2ConvertedBlockAndUpdates { block_n, block: convert_block(block)?, state_update, class_update })
+                    let sw = PerfStopwatch::new();
+                    let block = convert_block(block)?;
+                    stopwatch_end!(sw, "convert_block: {:?}");
+                    Ok(L2ConvertedBlockAndUpdates { block_n, block, state_update, class_update })
                 }),
                 updates_recv,
             )
