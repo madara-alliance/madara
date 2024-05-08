@@ -58,7 +58,6 @@ mp-felt = { workspace = true }
 mp-program-hash = { workspace = true }
 mp-types = { workspace = true }
 # Starknet dependencies
-blockifier = { workspace = true }
 starknet_api = { workspace = true }
 
 [features]
