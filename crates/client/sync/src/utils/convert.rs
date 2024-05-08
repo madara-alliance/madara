@@ -23,13 +23,11 @@ use starknet_providers::sequencer::models::state_update::{
 use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
 
 use crate::commitments::lib::calculate_commitments;
+use crate::l2::L2SyncError;
 use crate::utility::get_config;
 
-pub async fn block(block: p::Block) -> DeoxysBlock {
-    tokio::task::spawn_blocking(|| convert_block_sync(block)).await.expect("join error")
-}
-
-pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
+/// Compute heavy, this should only be called in a rayon ctx
+pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
@@ -72,7 +70,7 @@ pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
         .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
         .collect();
 
-    DeoxysBlock::new(header, transactions, ordered_events)
+    Ok(DeoxysBlock::new(header, transactions, ordered_events))
 }
 
 fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {
