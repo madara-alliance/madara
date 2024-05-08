@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor: remove blockifier dependencie
 - feat(l2 sync): polling to get new blocks once sync has caught up with the chain
 - perf: store key
 - fix: sync, remove `unwrap` in storage
