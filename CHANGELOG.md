@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: up blockifier to v0.6.0-rc.2
 - refactor: remove blockifier dependencie
 - perf: convert blocks in parallel
 - feat(commitments): Joined hash computation in event and tx commitments
