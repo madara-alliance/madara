@@ -144,33 +144,28 @@ async fn l2_verify_and_apply_task(
     while let Some(L2ConvertedBlockAndUpdates { block_n, block, state_update, class_update }) =
         pin!(updates_receiver.recv()).await
     {
-        let (state_update, block) = {
+        let state_update = if verify {
             let state_update = Arc::new(state_update);
             let state_update_1 = Arc::clone(&state_update);
-            let block = Arc::new(block);
-            let block_1 = Arc::clone(&block);
+            let global_state_root = block.header().global_state_root;
 
-            if verify {
-                spawn_compute(move || {
-                    let sw = PerfStopwatch::new();
-                    let state_root = verify_l2(block_n, &state_update);
-                    stopwatch_end!(sw, "verify_l2: {:?}");
+            spawn_compute(move || {
+                let sw = PerfStopwatch::new();
+                let state_root = verify_l2(block_n, &state_update);
+                stopwatch_end!(sw, "verify_l2: {:?}");
 
-                    if (block.header().global_state_root) != state_root {
-                        log::info!(
-                            "❗ Verified state: {} doesn't match fetched state: {}",
-                            state_root,
-                            block.header().global_state_root
-                        );
-                    }
-                })
-                .await;
-            }
+                if global_state_root != state_root {
+                    log::info!("❗ Verified state: {} doesn't match fetched state: {}", state_root, global_state_root);
+                }
+            })
+            .await;
 
             // UNWRAP: we need a 'static future as we are spawning tokio tasks further down the line
             //         this is a hack to achieve that, we put the update in an arc and then unwrap it at the end
             //         this will not panic as the Arc should not be aliased.
-            (Arc::try_unwrap(state_update_1).unwrap(), Arc::try_unwrap(block_1).unwrap())
+            Arc::try_unwrap(state_update_1).unwrap()
+        } else {
+            state_update
         };
 
         let block_sender = Arc::clone(&block_sender);
