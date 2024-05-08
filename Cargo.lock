@@ -966,7 +966,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=snapshot#ce25b11497371a5a81135f0652d1a9183ec0bd3f"
+source = "git+https://github.com/antiyro/bonsai-trie.git?branch=fix#5a3b165201edab5abc55277daf165c54729c6300"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -976,7 +976,7 @@ dependencies = [
  "rayon",
  "serde",
  "smallvec",
- "starknet-types-core",
+ "starknet-types-core 0.1.1",
 ]
 
 [[package]]
@@ -4461,6 +4461,7 @@ checksum = "290f1a1d9242c78d09ce40a5e87e7554ee637af1351968159f4952f028f75604"
 dependencies = [
  "ahash 0.8.7",
  "allocator-api2",
+ "rayon",
  "serde",
 ]
 
@@ -5300,7 +5301,18 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "458fee521f12d0aa97a2e06eaf134398a5d2ae7b2074af77eb402b0d93138c47"
 dependencies = [
- "lambdaworks-math",
+ "lambdaworks-math 0.6.0",
+ "sha2 0.10.8",
+ "sha3",
+]
+
+[[package]]
+name = "lambdaworks-crypto"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fb5d4f22241504f7c7b8d2c3a7d7835d7c07117f10bff2a7d96a9ef6ef217c3"
+dependencies = [
+ "lambdaworks-math 0.7.0",
  "serde",
  "sha2 0.10.8",
  "sha3",
@@ -5311,6 +5323,12 @@ name = "lambdaworks-math"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c74ce6f0d9cb672330b6ca59e85a6c3607a3329e0372ab0d3fe38c2d38e50f9"
+
+[[package]]
+name = "lambdaworks-math"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "358e172628e713b80a530a59654154bfc45783a6ed70ea284839800cebdf8f97"
 dependencies = [
  "serde",
  "serde_json",
@@ -6127,7 +6145,7 @@ dependencies = [
  "sp-runtime",
  "starknet-core 0.10.0",
  "starknet-ff 0.3.7",
- "starknet-types-core",
+ "starknet-types-core 0.1.0",
  "starknet_api",
  "thiserror",
  "tokio",
@@ -6245,7 +6263,7 @@ dependencies = [
  "starknet-core 0.10.0",
  "starknet-ff 0.3.7",
  "starknet-providers 0.10.0",
- "starknet-types-core",
+ "starknet-types-core 0.1.0",
  "starknet_api",
  "thiserror",
  "tokio",
@@ -6504,7 +6522,7 @@ dependencies = [
  "sp-core",
  "starknet-core 0.10.0",
  "starknet-ff 0.3.7",
- "starknet-types-core",
+ "starknet-types-core 0.1.0",
  "starknet_api",
  "thiserror-no-std",
 ]
@@ -7060,7 +7078,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
 dependencies = [
- "proc-macro-crate 2.0.0",
+ "proc-macro-crate 1.1.3",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -11347,8 +11365,21 @@ version = "0.1.0"
 source = "git+https://github.com/starknet-io/types-rs.git?branch=main#ea3ec65fa0b276c5c00197383a283e53928cf24b"
 dependencies = [
  "bitvec",
- "lambdaworks-crypto",
- "lambdaworks-math",
+ "lambdaworks-crypto 0.6.0",
+ "lambdaworks-math 0.6.0",
+ "num-bigint",
+ "num-integer",
+ "num-traits 0.2.18",
+ "parity-scale-codec",
+]
+
+[[package]]
+name = "starknet-types-core"
+version = "0.1.1"
+source = "git+https://github.com/starknet-io/types-rs#a867774c753c38597ff0c2f252da8c68242a46f3"
+dependencies = [
+ "lambdaworks-crypto 0.7.0",
+ "lambdaworks-math 0.7.0",
  "num-bigint",
  "num-integer",
  "num-traits 0.2.18",
