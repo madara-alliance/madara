@@ -1,7 +1,16 @@
-git # Deoxys Changelog
+# Deoxys Changelog
 
 ## Next release
 
+- feat: up blockifier to v0.6.0-rc.2
+- fix: change bonsai-trie fork location
+- refactor: remove L1HandlerTxFee
+- refactor: remove blockifier dependencie
+- perf: convert blocks in parallel
+- feat(commitments): Joined hash computation in event and tx commitments
+- feat(l2 sync): polling to get new blocks once sync has caught up with the chain
+- perf: store key
+- fix: sync, remove `unwrap` in storage
 - fix(classes): Fixed classes on the RPC level by adding ordering and complete deserialisation
 - fix: class update
 - feat: store key/value in `--disble-root` mode

@@ -924,8 +924,8 @@ dependencies = [
 
 [[package]]
 name = "blockifier"
-version = "0.5.0-rc.3"
-source = "git+https://github.com/kasarlabs/blockifier?branch=feature/scale-codec#f758daf0a11a1bf5c5b91b486e410a40e28a8ae9"
+version = "0.6.0-rc.2"
+source = "git+https://github.com/kasarlabs/blockifier?branch=feature/scale-codec-v6#48ab6208811eca4b09ca529d79ef9fc5c16f178a"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -934,10 +934,10 @@ dependencies = [
  "ark-secp256r1",
  "cached",
  "cairo-felt 0.9.1 (git+https://github.com/kasarlabs/cairo-vm?branch=feature/scale-codec)",
- "cairo-lang-casm 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-casm 2.6.0",
  "cairo-lang-runner",
- "cairo-lang-starknet-classes 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-starknet-classes 2.6.0",
+ "cairo-lang-utils 2.6.0",
  "cairo-vm",
  "derive_more",
  "indexmap 2.2.6",
@@ -946,7 +946,6 @@ dependencies = [
  "log",
  "num-bigint",
  "num-integer",
- "num-rational",
  "num-traits 0.2.18",
  "once_cell",
  "parity-scale-codec",
@@ -966,7 +965,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=snapshot#ce25b11497371a5a81135f0652d1a9183ec0bd3f"
+source = "git+https://github.com/cchudant/bonsai-trie.git?branch=tranto/snapshot#ce25b11497371a5a81135f0652d1a9183ec0bd3f"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -1156,7 +1155,7 @@ name = "cairo-lang-casm"
 version = "2.6.0-rc.0"
 source = "git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec#8aceb3b55e7fb9dcfd1c00a37a62235fab4b4916"
 dependencies = [
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0-rc.0",
  "indoc",
  "num-bigint",
  "num-traits 0.2.18",
@@ -1166,10 +1165,10 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-casm"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "indoc",
  "num-bigint",
  "num-traits 0.2.18",
@@ -1180,8 +1179,8 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-compiler"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "anyhow",
  "cairo-lang-defs",
@@ -1191,10 +1190,10 @@ dependencies = [
  "cairo-lang-parser",
  "cairo-lang-project",
  "cairo-lang-semantic",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-sierra 2.6.0",
  "cairo-lang-sierra-generator",
  "cairo-lang-syntax",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "salsa",
  "smol_str",
  "thiserror",
@@ -1202,23 +1201,23 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-debug"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
 ]
 
 [[package]]
 name = "cairo-lang-defs"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-lang-debug",
  "cairo-lang-diagnostics",
  "cairo-lang-filesystem",
  "cairo-lang-parser",
  "cairo-lang-syntax",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "itertools 0.11.0",
  "salsa",
  "smol_str",
@@ -1226,12 +1225,12 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-diagnostics"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-lang-debug",
  "cairo-lang-filesystem",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "itertools 0.11.0",
 ]
 
@@ -1240,26 +1239,26 @@ name = "cairo-lang-eq-solver"
 version = "2.6.0-rc.0"
 source = "git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec#8aceb3b55e7fb9dcfd1c00a37a62235fab4b4916"
 dependencies = [
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0-rc.0",
  "good_lp",
 ]
 
 [[package]]
 name = "cairo-lang-eq-solver"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "good_lp",
 ]
 
 [[package]]
 name = "cairo-lang-filesystem"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-lang-debug",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "path-clean",
  "salsa",
  "serde",
@@ -1268,8 +1267,8 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-lowering"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-lang-debug",
  "cairo-lang-defs",
@@ -1279,7 +1278,7 @@ dependencies = [
  "cairo-lang-proc-macros",
  "cairo-lang-semantic",
  "cairo-lang-syntax",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "id-arena",
  "itertools 0.11.0",
  "log",
@@ -1292,14 +1291,14 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-parser"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-lang-diagnostics",
  "cairo-lang-filesystem",
  "cairo-lang-syntax",
  "cairo-lang-syntax-codegen",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "colored",
  "itertools 0.11.0",
  "num-bigint",
@@ -1311,15 +1310,15 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-plugins"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-lang-defs",
  "cairo-lang-diagnostics",
  "cairo-lang-filesystem",
  "cairo-lang-parser",
  "cairo-lang-syntax",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "indent",
  "indoc",
  "itertools 0.11.0",
@@ -1329,8 +1328,8 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-proc-macros"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-lang-debug",
  "quote",
@@ -1339,11 +1338,11 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-project"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-lang-filesystem",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "serde",
  "smol_str",
  "thiserror",
@@ -1352,22 +1351,23 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-runner"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "ark-ff",
  "ark-secp256k1",
  "ark-secp256r1",
  "ark-std",
  "cairo-felt 0.9.1 (git+https://github.com/kasarlabs/cairo-vm?branch=feature/scale-codec)",
- "cairo-lang-casm 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-ap-change 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-casm 2.6.0",
+ "cairo-lang-lowering",
+ "cairo-lang-sierra 2.6.0",
+ "cairo-lang-sierra-ap-change 2.6.0",
  "cairo-lang-sierra-generator",
- "cairo-lang-sierra-to-casm 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-type-size 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-sierra-to-casm 2.6.0",
+ "cairo-lang-sierra-type-size 2.6.0",
  "cairo-lang-starknet",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "cairo-vm",
  "itertools 0.11.0",
  "keccak",
@@ -1381,8 +1381,8 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-semantic"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-lang-debug",
  "cairo-lang-defs",
@@ -1392,7 +1392,7 @@ dependencies = [
  "cairo-lang-plugins",
  "cairo-lang-proc-macros",
  "cairo-lang-syntax",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "id-arena",
  "indoc",
  "itertools 0.11.0",
@@ -1410,7 +1410,7 @@ source = "git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec#8
 dependencies = [
  "anyhow",
  "cairo-felt 0.9.1 (git+https://github.com/bidzyyys/cairo-vm?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0-rc.0",
  "const-fnv1a-hash",
  "convert_case 0.6.0",
  "derivative",
@@ -1430,12 +1430,12 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-sierra"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "anyhow",
  "cairo-felt 0.9.1 (git+https://github.com/kasarlabs/cairo-vm?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "const-fnv1a-hash",
  "convert_case 0.6.0",
  "derivative",
@@ -1458,10 +1458,10 @@ name = "cairo-lang-sierra-ap-change"
 version = "2.6.0-rc.0"
 source = "git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec#8aceb3b55e7fb9dcfd1c00a37a62235fab4b4916"
 dependencies = [
- "cairo-lang-eq-solver 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-type-size 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-eq-solver 2.6.0-rc.0",
+ "cairo-lang-sierra 2.6.0-rc.0",
+ "cairo-lang-sierra-type-size 2.6.0-rc.0",
+ "cairo-lang-utils 2.6.0-rc.0",
  "itertools 0.11.0",
  "num-traits 0.2.18",
  "thiserror",
@@ -1469,13 +1469,13 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-sierra-ap-change"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
- "cairo-lang-eq-solver 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-type-size 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-eq-solver 2.6.0",
+ "cairo-lang-sierra 2.6.0",
+ "cairo-lang-sierra-type-size 2.6.0",
+ "cairo-lang-utils 2.6.0",
  "itertools 0.11.0",
  "num-traits 0.2.18",
  "thiserror",
@@ -1486,10 +1486,10 @@ name = "cairo-lang-sierra-gas"
 version = "2.6.0-rc.0"
 source = "git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec#8aceb3b55e7fb9dcfd1c00a37a62235fab4b4916"
 dependencies = [
- "cairo-lang-eq-solver 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-type-size 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-eq-solver 2.6.0-rc.0",
+ "cairo-lang-sierra 2.6.0-rc.0",
+ "cairo-lang-sierra-type-size 2.6.0-rc.0",
+ "cairo-lang-utils 2.6.0-rc.0",
  "itertools 0.11.0",
  "num-traits 0.2.18",
  "thiserror",
@@ -1497,13 +1497,13 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-sierra-gas"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
- "cairo-lang-eq-solver 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-type-size 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-eq-solver 2.6.0",
+ "cairo-lang-sierra 2.6.0",
+ "cairo-lang-sierra-type-size 2.6.0",
+ "cairo-lang-utils 2.6.0",
  "itertools 0.11.0",
  "num-traits 0.2.18",
  "thiserror",
@@ -1511,8 +1511,8 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-sierra-generator"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-lang-debug",
  "cairo-lang-defs",
@@ -1521,11 +1521,11 @@ dependencies = [
  "cairo-lang-lowering",
  "cairo-lang-parser",
  "cairo-lang-semantic",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-sierra 2.6.0",
  "cairo-lang-syntax",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "itertools 0.11.0",
- "num-bigint",
+ "num-traits 0.2.18",
  "once_cell",
  "salsa",
  "smol_str",
@@ -1538,12 +1538,12 @@ source = "git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec#8
 dependencies = [
  "assert_matches",
  "cairo-felt 0.9.1 (git+https://github.com/bidzyyys/cairo-vm?branch=feature/scale-codec)",
- "cairo-lang-casm 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-ap-change 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-gas 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-type-size 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-casm 2.6.0-rc.0",
+ "cairo-lang-sierra 2.6.0-rc.0",
+ "cairo-lang-sierra-ap-change 2.6.0-rc.0",
+ "cairo-lang-sierra-gas 2.6.0-rc.0",
+ "cairo-lang-sierra-type-size 2.6.0-rc.0",
+ "cairo-lang-utils 2.6.0-rc.0",
  "indoc",
  "itertools 0.11.0",
  "num-bigint",
@@ -1553,17 +1553,17 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-sierra-to-casm"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "assert_matches",
  "cairo-felt 0.9.1 (git+https://github.com/kasarlabs/cairo-vm?branch=feature/scale-codec)",
- "cairo-lang-casm 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-ap-change 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-gas 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-type-size 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-casm 2.6.0",
+ "cairo-lang-sierra 2.6.0",
+ "cairo-lang-sierra-ap-change 2.6.0",
+ "cairo-lang-sierra-gas 2.6.0",
+ "cairo-lang-sierra-type-size 2.6.0",
+ "cairo-lang-utils 2.6.0",
  "indoc",
  "itertools 0.11.0",
  "num-bigint",
@@ -1576,23 +1576,23 @@ name = "cairo-lang-sierra-type-size"
 version = "2.6.0-rc.0"
 source = "git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec#8aceb3b55e7fb9dcfd1c00a37a62235fab4b4916"
 dependencies = [
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-sierra 2.6.0-rc.0",
+ "cairo-lang-utils 2.6.0-rc.0",
 ]
 
 [[package]]
 name = "cairo-lang-sierra-type-size"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-sierra 2.6.0",
+ "cairo-lang-utils 2.6.0",
 ]
 
 [[package]]
 name = "cairo-lang-starknet"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "anyhow",
  "cairo-felt 0.9.1 (git+https://github.com/kasarlabs/cairo-vm?branch=feature/scale-codec)",
@@ -1603,11 +1603,11 @@ dependencies = [
  "cairo-lang-lowering",
  "cairo-lang-plugins",
  "cairo-lang-semantic",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-sierra 2.6.0",
  "cairo-lang-sierra-generator",
- "cairo-lang-starknet-classes 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-starknet-classes 2.6.0",
  "cairo-lang-syntax",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "const_format",
  "indent",
  "indoc",
@@ -1625,10 +1625,10 @@ version = "2.6.0-rc.0"
 source = "git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec#8aceb3b55e7fb9dcfd1c00a37a62235fab4b4916"
 dependencies = [
  "cairo-felt 0.9.1 (git+https://github.com/bidzyyys/cairo-vm?branch=feature/scale-codec)",
- "cairo-lang-casm 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-to-casm 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-casm 2.6.0-rc.0",
+ "cairo-lang-sierra 2.6.0-rc.0",
+ "cairo-lang-sierra-to-casm 2.6.0-rc.0",
+ "cairo-lang-utils 2.6.0-rc.0",
  "convert_case 0.6.0",
  "itertools 0.11.0",
  "num-bigint",
@@ -1646,14 +1646,14 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-starknet-classes"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-felt 0.9.1 (git+https://github.com/kasarlabs/cairo-vm?branch=feature/scale-codec)",
- "cairo-lang-casm 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-sierra-to-casm 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-casm 2.6.0",
+ "cairo-lang-sierra 2.6.0",
+ "cairo-lang-sierra-to-casm 2.6.0",
+ "cairo-lang-utils 2.6.0",
  "convert_case 0.6.0",
  "itertools 0.11.0",
  "num-bigint",
@@ -1672,12 +1672,12 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-syntax"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "cairo-lang-debug",
  "cairo-lang-filesystem",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-utils 2.6.0",
  "num-bigint",
  "num-traits 0.2.18",
  "salsa",
@@ -1687,8 +1687,8 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-syntax-codegen"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "genco",
  "xshell",
@@ -1710,8 +1710,8 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-utils"
-version = "2.6.0-rc.0"
-source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#723a90654d2a6f77abefa3148a09d9e207c3593e"
+version = "2.6.0"
+source = "git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec#d98b557d3ee436a1ab0d4c8ec0f46f682fa93913"
 dependencies = [
  "hashbrown 0.14.3",
  "indexmap 2.2.6",
@@ -1735,8 +1735,8 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "bitvec",
  "cairo-felt 0.9.1 (git+https://github.com/kasarlabs/cairo-vm?branch=feature/scale-codec)",
- "cairo-lang-casm 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-starknet-classes 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-casm 2.6.0-rc.0",
+ "cairo-lang-starknet-classes 2.6.0-rc.0",
  "generic-array 0.14.7",
  "hashbrown 0.14.3",
  "hex",
@@ -2783,7 +2783,6 @@ dependencies = [
 name = "deoxys-runtime"
 version = "0.1.0"
 dependencies = [
- "blockifier",
  "frame-benchmarking",
  "frame-executive",
  "frame-support",
@@ -4665,7 +4664,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite 0.2.13",
- "socket2 0.5.5",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -6106,7 +6105,7 @@ dependencies = [
  "bitvec",
  "blockifier",
  "bonsai-trie",
- "cairo-lang-starknet-classes 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-starknet-classes 2.6.0",
  "cairo-vm",
  "crossbeam-skiplist",
  "flate2",
@@ -6178,6 +6177,7 @@ dependencies = [
  "anyhow",
  "blockifier",
  "cairo-vm",
+ "indexmap 2.2.6",
  "itertools 0.12.1",
  "jsonrpsee",
  "log",
@@ -6464,8 +6464,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "blockifier",
- "cairo-lang-starknet-classes 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-starknet-classes 2.6.0",
+ "cairo-lang-utils 2.6.0",
  "cairo-vm",
  "flate2",
  "indexmap 2.2.6",
@@ -6581,8 +6581,8 @@ version = "0.1.0"
 dependencies = [
  "assert_matches",
  "blockifier",
- "cairo-lang-starknet-classes 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
- "cairo-lang-utils 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-starknet-classes 2.6.0",
+ "cairo-lang-utils 2.6.0",
  "cairo-vm",
  "flate2",
  "indexmap 2.2.6",
@@ -6992,7 +6992,6 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits 0.2.18",
- "serde",
 ]
 
 [[package]]
@@ -7283,7 +7282,7 @@ version = "0.1.0"
 dependencies = [
  "assert_matches",
  "blockifier",
- "cairo-lang-starknet-classes 2.6.0-rc.0 (git+https://github.com/kasarlabs/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-starknet-classes 2.6.0",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
@@ -7315,7 +7314,6 @@ dependencies = [
 name = "pallet-starknet-runtime-api"
 version = "0.1.0"
 dependencies = [
- "blockifier",
  "mp-felt",
  "parity-scale-codec",
  "scale-info",
@@ -11358,10 +11356,10 @@ dependencies = [
 
 [[package]]
 name = "starknet_api"
-version = "0.8.0"
-source = "git+https://github.com/bidzyyys/starknet-api?branch=feature/scale-codec#902daafe539f040f12f80505f2a8c11011c68b83"
+version = "0.10.0"
+source = "git+https://github.com/kasarlabs/starknet-api?branch=feature/scale-codec#0b2633d5acf7c2e4e4688bf0235ca9b15dc805a7"
 dependencies = [
- "cairo-lang-starknet-classes 2.6.0-rc.0 (git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec)",
+ "cairo-lang-starknet-classes 2.6.0",
  "derive_more",
  "hex",
  "indexmap 2.2.6",

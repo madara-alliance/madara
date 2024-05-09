@@ -203,7 +203,7 @@ pallet-grandpa = { default-features = true, git = "https://github.com/kasarlabs/
 pallet-timestamp = { default-features = true, git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/trantorian1/bonsai-trie.git", branch = "snapshot", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "tranto/snapshot", features = [
   "std",
 ] }
 
@@ -264,8 +264,8 @@ starknet-signers = { git = "https://github.com/kasarlabs/starknet-rs.git", branc
 
 starknet-types-core = { git = "https://github.com/starknet-io/types-rs.git", branch = "main", default-features = false }
 
-blockifier = { git = "https://github.com/kasarlabs/blockifier", branch = "feature/scale-codec" }
-starknet_api = { git = "https://github.com/bidzyyys/starknet-api", branch = "feature/scale-codec", features = [
+blockifier = { git = "https://github.com/kasarlabs/blockifier", branch = "feature/scale-codec-v6" }
+starknet_api = { git = "https://github.com/kasarlabs/starknet-api", branch = "feature/scale-codec", features = [
   "testing",
   "parity-scale-codec",
 ] }
