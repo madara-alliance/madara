@@ -1,6 +1,6 @@
 use core::num::NonZeroU128;
 
-use blockifier::blockifier::block::{BlockInfo, GasPrices};
+use blockifier::block::{BlockInfo, GasPrices};
 use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
 use blockifier::versioned_constants::VersionedConstants;
 use mp_felt::Felt252Wrapper;

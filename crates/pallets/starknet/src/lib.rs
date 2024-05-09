@@ -54,7 +54,6 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use blockifier::context::FeeTokenAddresses;
 use blockifier::execution::call_info::CallInfo;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
@@ -70,10 +69,9 @@ use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
 use starknet_api::core::{CompiledClassHash, ContractAddress};
-use starknet_api::hash::{StarkFelt, StarkHash};
+use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
-use starknet_crypto::FieldElement;
 
 use crate::alloc::string::ToString;
 use crate::types::{CasmClassHash, SierraClassHash};
@@ -200,12 +198,6 @@ pub mod pallet {
     #[pallet::getter(fn last_known_eth_block)]
     pub(super) type LastKnownEthBlock<T: Config> = StorageValue<_, u64>;
 
-    /// The address of the fee token ERC20 contract.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn fee_token_addresses)]
-    pub(super) type FeeTokens<T: Config> = StorageValue<_, FeeTokenAddresses, ValueQuery>;
-
     /// Current sequencer address.
     #[pallet::storage]
     #[pallet::unbounded]
@@ -275,11 +267,6 @@ pub mod pallet {
             }
 
             LastKnownEthBlock::<T>::set(None);
-            // Set the fee token address from the genesis config.
-            FeeTokens::<T>::set(FeeTokenAddresses {
-                strk_fee_token_address: self.strk_fee_token_address,
-                eth_fee_token_address: self.eth_fee_token_address,
-            });
             SeqAddrUpdate::<T>::put(true);
         }
     }
@@ -590,15 +577,6 @@ impl<T: Config> Pallet<T> {
 
     pub fn program_hash() -> Felt252Wrapper {
         T::ProgramHash::get()
-    }
-
-    pub fn config_hash() -> StarkHash {
-        Felt252Wrapper::from(T::SystemHash::compute_hash_on_elements(&[
-            FieldElement::from_byte_slice_be(SN_OS_CONFIG_HASH_VERSION.as_bytes()).unwrap(),
-            T::ChainId::get().into(),
-            Felt252Wrapper::from(Self::fee_token_addresses().eth_fee_token_address.0.0).0,
-        ]))
-        .into()
     }
 
     pub fn is_transaction_fee_disabled() -> bool {
