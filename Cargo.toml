@@ -264,7 +264,7 @@ starknet-signers = { git = "https://github.com/kasarlabs/starknet-rs.git", branc
 
 starknet-types-core = { git = "https://github.com/starknet-io/types-rs.git", branch = "main", default-features = false }
 
-blockifier = { git = "https://github.com/kasarlabs/blockifier", branch = "update" }
+blockifier = { git = "https://github.com/jbcaron/blockifier", branch = "update" }
 starknet_api = { git = "https://github.com/kasarlabs/starknet-api", branch = "feature/scale-codec", features = [
   "testing",
   "parity-scale-codec",
