@@ -965,7 +965,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/trantorian1/bonsai-trie.git?branch=snapshot#ce25b11497371a5a81135f0652d1a9183ec0bd3f"
+source = "git+https://github.com/cchudant/bonsai-trie.git?branch=tranto/snapshot#ce25b11497371a5a81135f0652d1a9183ec0bd3f"
 dependencies = [
  "bitvec",
  "derive_more",
