@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, RwLock};
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use ethers::contract::{abigen, EthEvent};
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::types::transaction::eip2718::TypedTransaction;
@@ -17,8 +17,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use starknet_api::hash::StarkHash;
 
-use crate::l2::STARKNET_STATE_UPDATE;
-use crate::utility::{convert_log_state_update, get_config, get_state_update_at};
+use crate::utility::{convert_log_state_update, get_config};
 use crate::utils::constant::LOG_STATE_UPDTATE_TOPIC;
 
 lazy_static! {
@@ -73,15 +72,15 @@ impl EthereumClient {
     }
 
     /// Retrieves the latest Ethereum block number
-    pub async fn get_latest_block_number(&self) -> Result<U64, Box<dyn std::error::Error>> {
+    pub async fn get_latest_block_number(&self) -> anyhow::Result<U64> {
         let block_number = self.provider.get_block_number().await?;
         Ok(block_number.as_u64().into())
     }
 
     /// Get the block number of the last occurrence of a given event.
-    pub async fn get_last_event_block_number(&self) -> Result<u64, Box<dyn std::error::Error>> {
+    pub async fn get_last_event_block_number(&self) -> anyhow::Result<u64> {
         let topic = H256::from_slice(&hex::decode(&LOG_STATE_UPDTATE_TOPIC[2..])?);
-        let address = get_config()?.l1_core_address;
+        let address = get_config().expect("config not set").l1_core_address;
         let latest_block = self.get_latest_block_number().await.expect("Failed to retrieve latest block number");
 
         // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurence in the last ~24h
@@ -94,17 +93,17 @@ impl EthereumClient {
         let logs = self.provider.get_logs(&filter).await?;
 
         if let Some(last_log) = logs.last() {
-            let last_block = last_log.block_number.ok_or("No block number in log")?;
+            let last_block = last_log.block_number.context("no block number in log")?;
             Ok(last_block.as_u64())
         } else {
-            Err("No events found".into())
+            bail!("no event found")
         }
     }
 
     /// Get the last Starknet block number verified on L1
-    pub async fn get_last_block_number(&self) -> Result<u64> {
+    pub async fn get_last_block_number(&self) -> anyhow::Result<u64> {
         let data = decode("35befa5d")?;
-        let to: Address = get_config().expect("Failed to get config").l1_core_address;
+        let to: Address = get_config().expect("config not set").l1_core_address;
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last block number");
@@ -118,7 +117,7 @@ impl EthereumClient {
     /// Get the last Starknet state root verified on L1
     pub async fn get_last_state_root(&self) -> Result<StarkHash> {
         let data = decode("9588eca2")?;
-        let to: Address = get_config().expect("Failed to get config").l1_core_address;
+        let to: Address = get_config().expect("config not set").l1_core_address;
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last state root");
@@ -128,7 +127,7 @@ impl EthereumClient {
     /// Get the last Starknet block hash verified on L1
     pub async fn get_last_block_hash(&self) -> Result<StarkHash> {
         let data = decode("0x382d83e3")?;
-        let to: Address = get_config().expect("Failed to get config").l1_core_address;
+        let to: Address = get_config().expect("config not set").l1_core_address;
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last block hash");
@@ -136,25 +135,19 @@ impl EthereumClient {
     }
 
     /// Get the last Starknet state update verified on the L1
-    pub async fn get_initial_state(client: &EthereumClient) -> Result<L1StateUpdate, ()> {
-        let block_number = client.get_last_block_number().await.map_err(|e| {
-            log::error!("Failed to get last block number: {}", e);
-        })?;
-        let block_hash = client.get_last_block_hash().await.map_err(|e| {
-            log::error!("Failed to get last block hash: {}", e);
-        })?;
-        let global_root = client.get_last_state_root().await.map_err(|e| {
-            log::error!("Failed to get last state root: {}", e);
-        })?;
+    pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1StateUpdate> {
+        let block_number = client.get_last_block_number().await?;
+        let block_hash = client.get_last_block_hash().await?;
+        let global_root = client.get_last_state_root().await?;
 
         Ok(L1StateUpdate { global_root, block_number, block_hash })
     }
 
     /// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
     /// verified state
-    pub async fn listen_and_update_state(&self, start_block: u64) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn listen_and_update_state(&self, start_block: u64) -> anyhow::Result<()> {
         let client = self.provider.clone();
-        let address: Address = get_config().expect("Failed to get config").l1_core_address;
+        let address: Address = get_config().expect("config not set").l1_core_address;
         abigen!(
             StarknetCore,
             "crates/client/sync/src/utils/abis/starknet_core.json",
@@ -164,17 +157,13 @@ impl EthereumClient {
 
         let event_filter = contract.event::<LogStateUpdate>().from_block(start_block).to_block(EthBlockNumber::Latest);
 
-        let mut event_stream = event_filter.stream().await.expect("Failed to initiate event stream");
+        let mut event_stream = event_filter.stream().await.context("initiatializing event stream")?;
 
         while let Some(event_result) = event_stream.next().await {
-            match event_result {
-                Ok(log) => {
-                    let format_event =
-                        convert_log_state_update(log.clone()).expect("Failed to format event into an L1StateUpdate");
-                    update_l1(format_event);
-                }
-                Err(e) => log::error!("Error while listening for events: {:?}", e),
-            }
+            let log = event_result.context("listening for events")?;
+            let format_event =
+                convert_log_state_update(log.clone()).context("formatting event into an L1StateUpdate")?;
+            update_l1(format_event);
         }
 
         Ok(())
@@ -193,61 +182,62 @@ pub fn update_l1(state_update: L1StateUpdate) {
     {
         let last_state_update = ETHEREUM_STATE_UPDATE.clone();
         let mut new_state_update =
-            last_state_update.write().expect("Failed to acquire write lock on ETHEREUM_STATE_UPDATE");
+            last_state_update.write().expect("poisoned lock");
         *new_state_update = state_update.clone();
     }
 }
 
-/// Verify the L1 state with the latest data
-pub async fn verify_l1(state_update: L1StateUpdate, rpc_port: u16) -> Result<(), String> {
-    let starknet_state_block_number = STARKNET_STATE_UPDATE.read().map_err(|e| e.to_string())?.block_number;
+// /// Verify the L1 state with the latest data
+// pub async fn verify_l1(state_update: L1StateUpdate, rpc_port: u16) -> anyhow::Result<()> {
+//     let starknet_state_block_number = STARKNET_STATE_UPDATE.read().expect("poisoned lock").block_number;
 
-    // Check if the node reached the latest verified state on Ethereum
-    if state_update.block_number > starknet_state_block_number {
-        return Err("🚨 L1 state verification failed: Node still syncing".into());
-    }
+//     // Check if the node reached the latest verified state on Ethereum
+//     if state_update.block_number > starknet_state_block_number {
+//         bail!("L1 state verification failed: Node still syncing");
+//     }
 
-    if state_update.block_number <= starknet_state_block_number {
-        let current_state_update = get_state_update_at(rpc_port, state_update.block_number)
-            .await
-            .map_err(|e| format!("Error retrieving state update: {}", e))?;
+//     if state_update.block_number <= starknet_state_block_number {
+//         let current_state_update = get_state_update_at(rpc_port, state_update.block_number)
+//             .await
+//             .context("retrieving state update")?;
 
-        // Verifying Block Number, Block Hash and State Root against L2
-        if current_state_update.block_number != state_update.block_number
-            || current_state_update.global_root != state_update.global_root
-            || current_state_update.block_hash != state_update.block_hash
-        {
-            return Err("🚨 L1 state verification failed: Verification mismatch".into());
-        }
+//         // Verifying Block Number, Block Hash and State Root against L2
+//         if current_state_update.block_number != state_update.block_number
+//             || current_state_update.global_root != state_update.global_root
+//             || current_state_update.block_hash != state_update.block_hash
+//         {
+//             bail!("L1 state verification failed: Verification mismatch");
+//         }
 
-        log::info!(
-            "✅ Verified L2 state via L1: #{}, Hash: {}, Root: {}",
-            state_update.block_number,
-            state_update.block_hash,
-            state_update.global_root
-        );
-    }
+//         log::info!(
+//             "✅ Verified L2 state via L1: #{}, Hash: {}, Root: {}",
+//             state_update.block_number,
+//             state_update.block_hash,
+//             state_update.global_root
+//         );
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 /// Syncronize with the L1 latest state updates
-pub async fn sync(l1_url: Url) {
-    let client = EthereumClient::new(l1_url).await.expect("Failed to create EthereumClient");
+pub async fn sync(l1_url: Url) -> anyhow::Result<()> {
+    let client = EthereumClient::new(l1_url).await.context("creating ethereum client")?;
 
     log::info!("🚀 Subscribed to L1 state verification");
 
     // Get and store the latest verified state
-    let initial_state = match EthereumClient::get_initial_state(&client).await {
-        Ok(state) => state,
-        Err(_) => return,
-    };
+    let initial_state = EthereumClient::get_initial_state(&client).await.context("getting initial ethereum state")?;
     update_l1(initial_state);
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
     let start_block =
-        EthereumClient::get_last_event_block_number(&client).await.expect("Failed to retrieve last event block number");
-    EthereumClient::listen_and_update_state(&client, start_block).await.unwrap();
+        EthereumClient::get_last_event_block_number(&client).await.context("retrieving the last event block number")?;
+    EthereumClient::listen_and_update_state(&client, start_block)
+        .await
+        .context("subscribing to the LogStateUpdate event")?;
+
+    Ok(())
 }
 
 #[cfg(test)]

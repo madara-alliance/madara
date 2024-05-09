@@ -24,6 +24,7 @@ type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc:
 pub mod starknet_sync_worker {
     use std::sync::Arc;
 
+    use anyhow::Context;
     use mp_block::DeoxysBlock;
     use mp_convert::state_update::ToStateUpdateCore;
     use reqwest::Url;
@@ -43,7 +44,8 @@ pub mod starknet_sync_worker {
         l1_url: Url,
         client: Arc<C>,
         starting_block: u32,
-    ) where
+    ) -> anyhow::Result<()>
+    where
         C: HeaderBackend<DBlockT> + 'static,
     {
         let starting_block = starting_block + 1;
@@ -62,24 +64,25 @@ pub mod starknet_sync_worker {
             let state_update = provider
                 .get_state_update(BlockId::Number(0))
                 .await
-                .expect("getting state update for genesis block")
+                .context("getting state update for genesis block")?
                 .to_state_update_core();
             verify_l2(0, &state_update);
         }
 
-        let (_, l2_res) = tokio::join!(
-            l1::sync(l1_url.clone()),
-            l2::sync(
+        tokio::select!(
+            res = l1::sync(l1_url.clone()) => res.context("syncing L1 state")?,
+            res = l2::sync(
                 block_sender,
                 command_sink,
                 provider,
                 starting_block.into(),
+                fetch_config.n_blocks_to_sync,
                 fetch_config.verify,
                 client,
-                fetch_config.pending_polling_interval
-            )
+                fetch_config.sync_polling_interval
+            ) => res.context("syncing L2 state")?
         );
 
-        l2_res.unwrap(); // TODO: error handling
+        Ok(())
     }
 }

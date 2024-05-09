@@ -3,6 +3,7 @@ use std::pin::pin;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
+use anyhow::Context;
 use futures::{stream, StreamExt, TryStreamExt};
 use lazy_static::lazy_static;
 use mc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
@@ -177,21 +178,21 @@ async fn l2_verify_and_apply_task(
             async {
                 let sw = PerfStopwatch::new();
                 if store_state_update(block_n, state_update).await.is_err() {
-                    log::info!("❗ Failed to store state update for block {block_n}");
+                    log::error!("❗ Failed to store state update for block {block_n}");
                 };
                 stopwatch_end!(sw, "end store_state {}: {:?}", block_n);
             },
             async {
                 let sw = PerfStopwatch::new();
                 if store_class_update(block_n, ClassUpdateWrapper(class_update)).await.is_err() {
-                    log::info!("❗ Failed to store class update for block {block_n}");
+                    log::error!("❗ Failed to store class update for block {block_n}");
                 };
                 stopwatch_end!(sw, "end store_class {}: {:?}", block_n);
             },
             async {
                 let sw = PerfStopwatch::new();
                 if store_key_update(block_n, &storage_diffs).await.is_err() {
-                    log::info!("❗ Failed to store key update for block {block_n}");
+                    log::error!("❗ Failed to store key update for block {block_n}");
                 };
                 stopwatch_end!(sw, "end store_key {}: {:?}", block_n);
             },
@@ -254,10 +255,11 @@ pub async fn sync<C>(
     command_sink: CommandSink,
     provider: SequencerGatewayProvider,
     first_block: u64,
+    n_blocks_to_sync: Option<u64>,
     verify: bool,
     client: Arc<C>,
-    pending_polling_interval: Duration,
-) -> Result<(), L2SyncError>
+    sync_polling_interval: Option<Duration>,
+) -> anyhow::Result<()>
 where
     C: HeaderBackend<DBlockT> + 'static,
 {
@@ -272,9 +274,20 @@ where
     // - Verification is sequential and does a lot of compute when state root verification is enabled.
     //   DB updates happen here too.
 
-    // TODO: make it cancel-safe, tasks outlive their parent here when error occurs here
     // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
     // starves the tokio worker
+
+    let mut fetch_task = tokio::spawn(l2_fetch_task(
+        first_block,
+        n_blocks_to_sync,
+        fetch_stream_sender,
+        Arc::clone(&provider),
+        sync_polling_interval,
+    ));
+    let mut block_conversion_task = tokio::spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender));
+    let mut verify_and_apply_task =
+        tokio::spawn(l2_verify_and_apply_task(block_conv_receiver, block_sender, command_sink, verify));
+
     tokio::select!(
         // update highest block hash and number, update pending block and state update
         // TODO: remove
@@ -288,11 +301,17 @@ where
                 }
             }
         } => Ok(()),
-        res = tokio::spawn(l2_fetch_task(first_block, fetch_stream_sender, Arc::clone(&provider), pending_polling_interval)) => res.expect("join error"),
-        res = tokio::spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender)) => res.expect("join error"),
-        res = tokio::spawn(l2_verify_and_apply_task(block_conv_receiver, block_sender, command_sink, verify)) => res.expect("join error"),
+        res = &mut fetch_task => res.context("task was canceled")?,
+        res = &mut block_conversion_task => res.context("task was canceled")?,
+        res = &mut verify_and_apply_task => res.context("task was canceled")?,
+        _ = tokio::signal::ctrl_c() => Ok(()), // graceful shutdown
     )?;
 
+    // one of the task exited, which means it has dropped its channel and downstream tasks should be
+    // able to detect that and gracefully finish their business this ensures no task outlive their
+    // parent
+    let (a, b, c) = tokio::join!(fetch_task, block_conversion_task, verify_and_apply_task);
+    a.context("task was canceled")?.and(b.context("task was canceled")?).and(c.context("task was canceled")?)?;
     Ok(())
 }
 
