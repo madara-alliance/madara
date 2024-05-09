@@ -69,15 +69,14 @@ impl StateReader for BlockifierStateAdapter {
     fn get_class_hash_at(&mut self, contract_address: ContractAddress) -> StateResult<ClassHash> {
         match self.class_hash_update.get(&contract_address).cloned() {
             Some(class_hash) => Ok(class_hash),
-            None => {
-                match storage_handler::contract_data().get_class_hash_at(&contract_address, self.block_number + 1) {
-                    Ok(Some(class_hash)) => Ok(class_hash),
-                    _ => Err(StateError::StateReadError(format!(
-                        "failed to retrive class hash for contract address {}",
-                        contract_address.0.0
-                    ))),
-                }
-            }
+            None => match storage_handler::contract_data().get_class_hash_at(&contract_address, self.block_number) {
+                Ok(Some(class_hash)) => Ok(class_hash),
+                Ok(None) => Ok(ClassHash::default()),
+                Err(_) => Err(StateError::StateReadError(format!(
+                    "Failed to retrieve class hash for contract {}",
+                    contract_address.0.0
+                ))),
+            },
         }
     }
 

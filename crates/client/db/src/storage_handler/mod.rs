@@ -88,6 +88,12 @@ impl From<history::HistoryError> for DeoxysStorageError {
     }
 }
 
+impl From<codec::Error> for DeoxysStorageError {
+    fn from(_: codec::Error) -> Self {
+        DeoxysStorageError::StorageSerdeError
+    }
+}
+
 #[derive(Debug)]
 pub enum TrieType {
     Contract,
