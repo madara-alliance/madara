@@ -925,7 +925,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.6.0-rc.2"
-source = "git+https://github.com/jbcaron/blockifier?branch=update#d6cb9f5741c5958056293915a0545b0d527a8e4e"
+source = "git+https://github.com/kasarlabs/blockifier?branch=feature/scale-codec-v6#48ab6208811eca4b09ca529d79ef9fc5c16f178a"
 dependencies = [
  "anyhow",
  "ark-ec",
