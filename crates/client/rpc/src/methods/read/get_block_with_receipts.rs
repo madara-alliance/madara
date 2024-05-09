@@ -21,7 +21,7 @@ use crate::utils::block::{
     l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, timestamp,
 };
 use crate::utils::execution::{block_context, re_execute_transactions};
-use crate::utils::helpers::{previous_substrate_block_hash, status, tx_hash_compute, tx_hash_retrieve};
+use crate::utils::helpers::{status, tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
 use crate::Starknet;
 
@@ -46,9 +46,7 @@ where
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
     let chain_id = starknet.chain_id()?;
 
-    // computes the previous SUBSTRATE block hash and creates a block context
-    let previous_substrate_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
-    let block_context = block_context(starknet.client.as_ref(), previous_substrate_block_hash)?;
+    let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
     // retrieve all transaction hashes from the block in the cache or compute them
     let block_txs_hashes = if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(block_hash.into()) {
