@@ -174,4 +174,3 @@ impl State for BlockifierStateAdapter {
         }
     }
 }
-
