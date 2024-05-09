@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: change bonsai-trie fork location
 - refactor: remove blockifier dependencie
 - perf: convert blocks in parallel
 - feat(commitments): Joined hash computation in event and tx commitments
