@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor: remove L1HandlerTxFee
 - refactor: remove blockifier dependencie
 - perf: convert blocks in parallel
 - feat(commitments): Joined hash computation in event and tx commitments
