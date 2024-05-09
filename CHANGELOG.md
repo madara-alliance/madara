@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: bloc context blockifier
 - feat: up blockifier to v0.6.0-rc.2
 - fix: change bonsai-trie fork location
 - refactor: remove L1HandlerTxFee
