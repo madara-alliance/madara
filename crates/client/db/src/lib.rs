@@ -19,7 +19,6 @@ use anyhow::{bail, Context, Result};
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use l1_handler_tx_fee::L1HandlerTxFeeDb;
 use mapping_db::MappingDb;
 use meta_db::MetaDb;
 use sc_client_db::DatabaseSource;
@@ -32,7 +31,6 @@ use rocksdb::{
 use starknet_api::hash::StarkHash;
 use starknet_types_core::hash::{Pedersen, Poseidon};
 pub mod bonsai_db;
-mod l1_handler_tx_fee;
 mod meta_db;
 pub mod storage_handler;
 pub mod storage_updates;
@@ -119,9 +117,6 @@ pub enum Column {
     /// This column should only be accessed if the `--cache` flag is enabled.
     StarknetBlockHashesCache,
 
-    // TODO: remove this
-    L1HandlerPaidFee,
-
     // Each bonsai storage has 3 columns
     BonsaiContractsTrie,
     BonsaiContractsFlat,
@@ -158,7 +153,6 @@ impl Column {
             SyncedMapping,
             StarknetTransactionHashesCache,
             StarknetBlockHashesCache,
-            L1HandlerPaidFee,
             BlockHashToNumber,
             BlockNumberToHash,
             BlockStateDiff,
@@ -187,7 +181,6 @@ impl Column {
             Column::SyncedMapping => "synced_mapping",
             Column::StarknetTransactionHashesCache => "starknet_transaction_hashes_cache",
             Column::StarknetBlockHashesCache => "starnet_block_hashes_cache",
-            Column::L1HandlerPaidFee => "l1_handler_paid_fee",
             Column::BonsaiContractsTrie => "bonsai_contracts_trie",
             Column::BonsaiContractsFlat => "bonsai_contracts_flat",
             Column::BonsaiContractsLog => "bonsai_contracts_log",
@@ -253,14 +246,12 @@ pub fn starknet_database_dir(db_config_dir: &Path, db_path: &str) -> PathBuf {
 /// * `da`: store Data Availability info that needs to be written to the Ethereum L1.
 /// * `messaging`: Stores Ethereum L1 messaging data.
 /// * `sierra_classes`: @antyro what is this for?
-/// * `l1_handler_paid_fee`: @antyro what is this for?
 /// * `bonsai_contract`: Bezu-bonsai trie used to compute the contract root.
 /// * `bonsai_storage`: Bezu-bonsai trie used to compute the storage root for each contract.
 /// * `bonsai_class`: Bezu-bonsai trie used to compute the class root.
 pub struct DeoxysBackend {
     meta: Arc<MetaDb>,
     mapping: Arc<MappingDb>,
-    l1_handler_paid_fee: Arc<L1HandlerTxFeeDb>,
     bonsai_contract: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
     bonsai_storage: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
     bonsai_class: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>>,
@@ -367,7 +358,6 @@ impl DeoxysBackend {
         Ok(Self {
             mapping: Arc::new(MappingDb::new(Arc::clone(db), cache_more_things)),
             meta: Arc::new(MetaDb::new(Arc::clone(db))),
-            l1_handler_paid_fee: Arc::new(L1HandlerTxFeeDb::new(Arc::clone(db))),
             bonsai_contract: RwLock::new(bonsai_contract),
             bonsai_storage: RwLock::new(bonsai_contract_storage),
             bonsai_class: RwLock::new(bonsai_classes),
@@ -402,11 +392,6 @@ impl DeoxysBackend {
 
     pub fn compact() {
         Self::expose_db().compact_range(None::<&[u8]>, None::<&[u8]>);
-    }
-
-    /// Return l1 handler tx paid fee database manager
-    pub fn l1_handler_paid_fee() -> &'static Arc<L1HandlerTxFeeDb> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.l1_handler_paid_fee).expect("Backend not initialized")
     }
 
     /// In the future, we will compute the block global state root asynchronously in the client,
