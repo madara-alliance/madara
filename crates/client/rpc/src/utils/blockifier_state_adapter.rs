@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::cached_state::CommitmentStateDiff;
@@ -15,31 +15,31 @@ use starknet_api::state::StorageKey;
 /// all changes are temporary stored in the struct and are discarded after the execution
 pub struct BlockifierStateAdapter {
     block_number: u64,
-    storage_update: HashMap<(ContractAddress, StorageKey), StarkFelt>,
-    nonce_update: HashMap<ContractAddress, Nonce>,
-    class_hash_update: HashMap<ContractAddress, ClassHash>,
-    compiled_class_hash_update: HashMap<ClassHash, CompiledClassHash>,
-    contract_class_update: HashMap<ClassHash, ContractClass>,
-    visited_pcs: HashMap<ClassHash, HashSet<usize>>,
+    storage_update: IndexMap<ContractAddress, IndexMap<StorageKey, StarkFelt>>,
+    nonce_update: IndexMap<ContractAddress, Nonce>,
+    class_hash_update: IndexMap<ContractAddress, ClassHash>,
+    compiled_class_hash_update: IndexMap<ClassHash, CompiledClassHash>,
+    contract_class_update: IndexMap<ClassHash, ContractClass>,
+    visited_pcs: IndexMap<ClassHash, HashSet<usize>>,
 }
 
 impl BlockifierStateAdapter {
     pub fn new(block_number: u64) -> Self {
         Self {
             block_number,
-            storage_update: HashMap::default(),
-            nonce_update: HashMap::default(),
-            class_hash_update: HashMap::default(),
-            compiled_class_hash_update: HashMap::default(),
-            contract_class_update: HashMap::default(),
-            visited_pcs: HashMap::default(),
+            storage_update: IndexMap::default(),
+            nonce_update: IndexMap::default(),
+            class_hash_update: IndexMap::default(),
+            compiled_class_hash_update: IndexMap::default(),
+            contract_class_update: IndexMap::default(),
+            visited_pcs: IndexMap::default(),
         }
     }
 }
 
 impl StateReader for BlockifierStateAdapter {
     fn get_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
-        match self.storage_update.get(&(contract_address, key)) {
+        match self.storage_update.get(&contract_address).and_then(|storage| storage.get(&key)) {
             Some(value) => Ok(*value),
             None => match storage_handler::contract_storage().get_at(&(contract_address, key), self.block_number) {
                 Ok(Some(value)) => Ok(value),
@@ -114,7 +114,7 @@ impl State for BlockifierStateAdapter {
         key: StorageKey,
         value: StarkFelt,
     ) -> StateResult<()> {
-        self.storage_update.insert((contract_address, key), value);
+        self.storage_update.entry(contract_address).or_default().insert(key, value);
 
         Ok(())
     }
@@ -155,10 +155,10 @@ impl State for BlockifierStateAdapter {
 
     fn to_state_diff(&mut self) -> CommitmentStateDiff {
         CommitmentStateDiff {
-            address_to_class_hash: IndexMap::default(),
-            address_to_nonce: IndexMap::default(),
-            storage_updates: IndexMap::default(),
-            class_hash_to_compiled_class_hash: IndexMap::default(),
+            address_to_class_hash: self.class_hash_update.clone(),
+            address_to_nonce: self.nonce_update.clone(),
+            storage_updates: self.storage_update.clone(),
+            class_hash_to_compiled_class_hash: self.compiled_class_hash_update.clone(),
         }
     }
 }
