@@ -76,15 +76,6 @@ impl Decode for History<StarkFelt> {
     }
 }
 
-impl Encode for &(ContractAddress, StorageKey) {
-    fn encode(&self) -> Result<Vec<u8>, Error> {
-        let mut buffer = Vec::new();
-        self.0.serialize(&mut buffer).map_err(|_| Error::EncodeError)?;
-        self.1.serialize(&mut buffer).map_err(|_| Error::EncodeError)?;
-        Ok(buffer)
-    }
-}
-
 impl Encode for (ContractAddress, StorageKey) {
     fn encode(&self) -> Result<Vec<u8>, Error> {
         let mut buffer = Vec::new();
