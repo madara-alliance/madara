@@ -1,6 +1,6 @@
 use std::num::NonZeroU128;
 
-use blockifier::blockifier::block::GasPrices;
+use blockifier::block::GasPrices;
 use mc_db::DeoxysBackend;
 use mc_rpc::deoxys_backend_client::get_block_by_block_hash;
 use mp_digest_log::{find_starknet_block, FindLogError};

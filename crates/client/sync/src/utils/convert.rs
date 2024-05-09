@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::num::NonZeroU128;
 use std::sync::Arc;
 
-use blockifier::blockifier::block::GasPrices;
+use blockifier::block::GasPrices;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use starknet_api::hash::StarkFelt;

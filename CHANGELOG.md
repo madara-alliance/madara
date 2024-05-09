@@ -5,6 +5,7 @@
 - fix: graceful shutdown of rocksdb on ctrl+c
 - fix: better error handling around l1 and l2 sync
 - perf: compile with target_cpu=skylake by default
+- feat: up blockifier to v0.6.0-rc.2
 - fix: change bonsai-trie fork location
 - refactor: remove L1HandlerTxFee
 - refactor: remove blockifier dependencie
