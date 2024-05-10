@@ -1,7 +1,8 @@
 use jsonrpsee::core::RpcResult;
 use mc_sync::utility::get_config;
 
-use crate::{errors::StarknetRpcApiError, Felt};
+use crate::errors::StarknetRpcApiError;
+use crate::Felt;
 
 /// Return the currently configured chain id.
 ///

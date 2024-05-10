@@ -181,15 +181,15 @@ pub fn update_l1(state_update: L1StateUpdate) {
 
     {
         let last_state_update = ETHEREUM_STATE_UPDATE.clone();
-        let mut new_state_update =
-            last_state_update.write().expect("poisoned lock");
+        let mut new_state_update = last_state_update.write().expect("poisoned lock");
         *new_state_update = state_update.clone();
     }
 }
 
 // /// Verify the L1 state with the latest data
 // pub async fn verify_l1(state_update: L1StateUpdate, rpc_port: u16) -> anyhow::Result<()> {
-//     let starknet_state_block_number = STARKNET_STATE_UPDATE.read().expect("poisoned lock").block_number;
+//     let starknet_state_block_number = STARKNET_STATE_UPDATE.read().expect("poisoned
+// lock").block_number;
 
 //     // Check if the node reached the latest verified state on Ethereum
 //     if state_update.block_number > starknet_state_block_number {
