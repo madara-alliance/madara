@@ -1,10 +1,10 @@
 //! Utility functions for Deoxys.
 
-use std::error::Error;
 use std::sync::RwLock;
 use std::thread::sleep;
 use std::time::Duration;
 
+use anyhow::{bail, Context};
 use ethers::types::{I256, U256};
 use lazy_static::lazy_static;
 use rand::seq::SliceRandom;
@@ -25,21 +25,18 @@ lazy_static! {
 
 /// this function needs to be called only once at the start of the program
 pub fn update_config(config: &FetchConfig) {
-    let mut new_config = CONFIG.write().expect("Failed to acquire write lock on CONFIG");
+    let mut new_config = CONFIG.write().expect("failed to acquire write lock on CONFIG");
     *new_config = Some(config.clone());
 }
 
-pub fn get_config() -> Result<FetchConfig, &'static str> {
-    let config_guard = CONFIG.read().expect("Failed to acquire read lock on CONFIG");
-    match &*config_guard {
-        Some(config) => Ok(config.clone()),
-        None => Err("Configuration not set yet"),
-    }
+pub fn get_config() -> Option<FetchConfig> {
+    let guard = CONFIG.read().expect("Failed to acquire read lock on CONFIG");
+    guard.as_ref().map(Clone::clone)
 }
 
 // TODO: secure the auto calls here
 
-pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2StateUpdate, Box<dyn Error>> {
+pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> anyhow::Result<L2StateUpdate> {
     let client = reqwest::Client::new();
     let url = format!("http://localhost:{}", rpc_port);
 
@@ -93,7 +90,7 @@ pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> Result<L2S
         }
     }
 
-    Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Maximum retries exceeded")))
+    bail!("Maximum retries exceeded")
 }
 
 /// Returns a random Pokémon name.
@@ -126,17 +123,17 @@ pub fn format_address(address: &str) -> String {
     }
 }
 
-pub fn u256_to_starkfelt(u256: U256) -> Result<StarkFelt, &'static str> {
+pub fn u256_to_starkfelt(u256: U256) -> anyhow::Result<StarkFelt> {
     let mut bytes = [0u8; 32];
     u256.to_big_endian(&mut bytes);
-    StarkFelt::new(bytes).map_err(|_| "Failed to convert U256 to StarkFelt")
+    StarkFelt::new(bytes).context("converting U256 to StarkFelt")
 }
 
-pub fn convert_log_state_update(log_state_update: LogStateUpdate) -> Result<L1StateUpdate, &'static str> {
+pub fn convert_log_state_update(log_state_update: LogStateUpdate) -> anyhow::Result<L1StateUpdate> {
     let block_number = if log_state_update.block_number >= I256::zero() {
         log_state_update.block_number.low_u64()
     } else {
-        return Err("Block number is negative");
+        bail!("Block number is negative");
     };
 
     let global_root = u256_to_starkfelt(log_state_update.global_root)?;

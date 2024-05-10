@@ -262,6 +262,19 @@ static BACKEND_SINGLETON: OnceLock<Arc<DeoxysBackend>> = OnceLock::new();
 
 static DB_SINGLETON: OnceLock<Arc<DB>> = OnceLock::new();
 
+pub struct DBDropHook; // TODO(HACK): db really really shouldnt be in a static
+impl Drop for DBDropHook {
+    fn drop(&mut self) {
+        let backend = BACKEND_SINGLETON.get().unwrap() as *const _ as *mut Arc<DeoxysBackend>;
+        let db = DB_SINGLETON.get().unwrap() as *const _ as *mut Arc<DB>;
+        // TODO(HACK): again, i can't emphasize enough how bad of a hack this is
+        unsafe {
+            std::ptr::drop_in_place(backend);
+            std::ptr::drop_in_place(db);
+        }
+    }
+}
+
 impl DeoxysBackend {
     /// Initializes a local database, returning a singleton backend instance.
     ///
