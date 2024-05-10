@@ -195,7 +195,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         fetch_block_config.api_key = cli.run.gateway_key.clone();
         fetch_block_config.pending_polling_interval = Duration::from_secs(cli.run.pending_polling_interval);
         update_config(&fetch_block_config);
-
+        log::info!("cache: {}", cache);
         let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
 
         service::new_full(config, sealing, l1_endpoint, cache, fetch_block_config, genesis_block, starting_block)

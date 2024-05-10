@@ -2,6 +2,15 @@
 
 ## Next release
 
+- perf: use cached tx hashes instead
+- perf: storage key with encode
+- fix: bloc context blockifier
+- feat: up blockifier to v0.6.0-rc.2
+- fix: change bonsai-trie fork location
+- refactor: remove L1HandlerTxFee
+- feat: up blockifier to v0.6.0-rc.2
+- refactor: remove L1HandlerTxFee
+- refactor: remove blockifier dependencie
 - perf: convert blocks in parallel
 - feat(commitments): Joined hash computation in event and tx commitments
 - feat(l2 sync): polling to get new blocks once sync has caught up with the chain

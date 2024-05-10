@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use blockifier::context::{BlockContext, FeeTokenAddresses, TransactionContext};
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
-use blockifier::execution::errors::EntryPointExecutionError;
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::state::cached_state::{CachedState, GlobalContractCache};
 use blockifier::transaction::account_transaction::AccountTransaction;
@@ -177,7 +176,8 @@ pub fn estimate_message_fee(
     };
 
     let fee = FeeEstimate {
-        gas_consumed: Felt252Wrapper::from(*tx_execution_infos.actual_resources.0.get("l1_gas_usage").unwrap()).into(),
+        gas_consumed: Felt252Wrapper::from(*tx_execution_infos.actual_resources.0.get("l1_gas_usage").unwrap() as u64)
+            .into(),
         gas_price: FieldElement::ZERO,
         data_gas_consumed: tx_execution_infos.da_gas.l1_data_gas.into(),
         data_gas_price: FieldElement::ZERO,
@@ -222,14 +222,6 @@ fn execute_fee_transaction(
 
     match tx_info {
         Ok(tx_info) => {
-            if let Some(_revert_error) = tx_info.revert_error {
-                return Err(TransactionExecutionError::ExecutionError {
-                    error: EntryPointExecutionError::InternalError("Transaction reverted".to_string()),
-                    storage_address: ContractAddress::default(),
-                    selector: EntryPointSelector::default(),
-                });
-            }
-
             let fee_estimate = from_tx_info_and_gas_price(
                 &tx_info,
                 gas_price,
@@ -239,11 +231,7 @@ fn execute_fee_transaction(
             );
             Ok(fee_estimate)
         }
-        Err(_error) => Err(TransactionExecutionError::ExecutionError {
-            error: EntryPointExecutionError::InternalError("Execution error".to_string()),
-            storage_address: ContractAddress::default(),
-            selector: EntryPointSelector::default(),
-        }),
+        Err(error) => Err(error),
     }
 }
 
@@ -278,5 +266,5 @@ pub fn from_tx_info_and_gas_price(
 
 fn init_cached_state(block_context: &BlockContext) -> CachedState<BlockifierStateAdapter> {
     let block_number = block_context.block_info().block_number.0;
-    CachedState::new(BlockifierStateAdapter::new(block_number), GlobalContractCache::new(10))
+    CachedState::new(BlockifierStateAdapter::new(block_number - 1), GlobalContractCache::new(10))
 }

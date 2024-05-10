@@ -1,6 +1,6 @@
 use core::num::NonZeroU128;
 
-use blockifier::blockifier::block::{BlockInfo, GasPrices};
+use blockifier::block::{BlockInfo, GasPrices};
 use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
 use blockifier::versioned_constants::VersionedConstants;
 use mp_felt::Felt252Wrapper;
@@ -75,6 +75,18 @@ pub struct Header {
     pub extra_data: Option<U256>,
 }
 
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
+
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
+
+lazy_static::lazy_static! {
+pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0: VersionedConstants =
+    serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0).unwrap();
+
+pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1: VersionedConstants =
+    serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1).unwrap();
+}
+
 impl Header {
     /// Creates a new header.
     #[allow(clippy::too_many_arguments)]
@@ -113,6 +125,14 @@ impl Header {
 
     /// Converts to a blockifier BlockContext
     pub fn into_block_context(&self, fee_token_addresses: FeeTokenAddresses, chain_id: ChainId) -> BlockContext {
+        let versioned_constants = if self.block_number <= 607_877 {
+            &BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0
+        } else if self.block_number <= 632_914 {
+            &BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1
+        } else {
+            VersionedConstants::latest_constants()
+        };
+
         BlockContext::new_unchecked(
             &BlockInfo {
                 block_number: BlockNumber(self.block_number),
@@ -129,9 +149,7 @@ impl Header {
                 use_kzg_da: false,
             },
             &ChainInfo { chain_id, fee_token_addresses },
-            // TODO
-            // I'm clueless on what those values should be
-            VersionedConstants::latest_constants(),
+            versioned_constants,
         )
     }
 
