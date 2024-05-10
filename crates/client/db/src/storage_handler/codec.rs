@@ -217,7 +217,6 @@ mod tests {
             )
             .unwrap();
 
-        
         let mut bytes = history.encode().unwrap();
         add_to_history_encoded(&mut bytes, 66, StarkFelt::from(42_u64)).unwrap();
         history.push(66, StarkFelt::from(42_u64)).unwrap();
@@ -229,8 +228,8 @@ mod tests {
     fn test_add_to_history_encoded() {
         let mut history = History::new(0, StarkFelt::from(42_u64));
         history.push(90, StarkFelt::from(123456_u64)).unwrap();
-        
-        let mut bytes:Vec<u8> = vec![];
+
+        let mut bytes: Vec<u8> = vec![];
         add_to_history_encoded(&mut bytes, 0, StarkFelt::from(42_u64)).unwrap();
         add_to_history_encoded(&mut bytes, 90, StarkFelt::from(123456_u64)).unwrap();
 
