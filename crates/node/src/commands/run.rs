@@ -206,7 +206,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             if cli.run.no_sync_polling { None } else { Some(Duration::from_secs(cli.run.sync_polling_interval)) };
         fetch_block_config.n_blocks_to_sync = cli.run.n_blocks_to_sync;
         update_config(&fetch_block_config);
-        log::info!("cache: {}", cache);
+
         let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
 
         service::new_full(config, sealing, l1_endpoint, cache, fetch_block_config, genesis_block, starting_block)
