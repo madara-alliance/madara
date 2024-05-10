@@ -39,6 +39,19 @@ impl BlockifierStateAdapter {
 
 impl StateReader for BlockifierStateAdapter {
     fn get_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
+        if contract_address.0.0 == StarkFelt::ONE {
+            let block_number = key.0.0.try_into().map_err(|_| StateError::OldBlockHashNotProvided)?;
+            match storage_handler::block_hash().get(block_number) {
+                Ok(Some(block_hash)) => return Ok(block_hash.into()),
+                Ok(None) => return Err(StateError::OldBlockHashNotProvided),
+                Err(_) => {
+                    return Err(StateError::StateReadError(format!(
+                        "Failed to retrieve block hash for block number {}",
+                        block_number
+                    )));
+                }
+            }
+        }
         match self.storage_update.get(&contract_address).and_then(|storage| storage.get(&key)) {
             Some(value) => Ok(*value),
             None => match storage_handler::contract_storage().get_at(&(contract_address, key), self.block_number) {
