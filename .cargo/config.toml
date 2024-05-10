@@ -1,2 +1,2 @@
 [build]
-#rustflags = ["-Ctarget-cpu=skylake"]
+rustflags = ["-Ctarget-cpu=skylake"]
