@@ -20,6 +20,8 @@ use tokio::task::JoinSet;
 use url::Url;
 
 use crate::l2::L2SyncError;
+use crate::stopwatch_end;
+use crate::utils::PerfStopwatch;
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
 /// feeder.
@@ -42,7 +44,9 @@ pub struct FetchConfig {
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.
     pub api_key: Option<String>,
     /// Polling interval
-    pub pending_polling_interval: Duration,
+    pub sync_polling_interval: Option<Duration>,
+    /// Number of blocks to sync (for testing purposes)
+    pub n_blocks_to_sync: Option<u64>,
 }
 
 pub async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -> Result<p::Block, L2SyncError> {
@@ -66,7 +70,8 @@ pub async fn fetch_block_and_updates(
     let mut attempt = 0;
     let base_delay = Duration::from_secs(1);
 
-    loop {
+    let sw = PerfStopwatch::new();
+    let res = loop {
         log::debug!("fetch_block_and_updates {}", block_n);
         let block = fetch_block(&provider, block_n);
         let state_update = fetch_state_and_class_update(&provider, block_n);
@@ -86,7 +91,7 @@ pub async fn fetch_block_and_updates(
                 }
                 attempt += 1;
                 if attempt >= MAX_RETRY {
-                    return Err(if matches!(err, ProviderError::RateLimited) {
+                    break Err(if matches!(err, ProviderError::RateLimited) {
                         L2SyncError::FetchRetryLimit
                     } else {
                         L2SyncError::Provider(err)
@@ -94,12 +99,14 @@ pub async fn fetch_block_and_updates(
                 }
                 tokio::time::sleep(delay).await;
             }
-            (Err(err), _) | (_, Err(err)) => return Err(err),
+            (Err(err), _) | (_, Err(err)) => break Err(err),
             (Ok(block), Ok((state_update, class_update))) => {
-                return Ok(L2BlockAndUpdates { block_n, block, state_update, class_update });
+                break Ok(L2BlockAndUpdates { block_n, block, state_update, class_update });
             }
         };
-    }
+    };
+    stopwatch_end!(sw, "fetching {}: {:?}", block_n);
+    res
 }
 
 pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBlock, String> {

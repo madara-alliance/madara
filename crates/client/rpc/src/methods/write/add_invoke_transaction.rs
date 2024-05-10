@@ -33,8 +33,8 @@ where
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
-    let config = get_config().map_err(|e| {
-        log::error!("Failed to get config: {e}");
+    let config = get_config().ok_or_else(|| {
+        log::error!("Failed to get config");
         StarknetRpcApiError::InternalServerError
     })?;
     let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);

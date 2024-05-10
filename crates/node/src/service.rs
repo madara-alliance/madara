@@ -302,18 +302,17 @@ pub fn new_full(
 
     let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<DeoxysBlock>(100);
 
-    task_manager.spawn_essential_handle().spawn(
-        "starknet-sync-worker",
-        Some(DEOXYS_TASK_GROUP),
-        starknet_sync_worker::sync(
+    task_manager.spawn_essential_handle().spawn("starknet-sync-worker", Some(DEOXYS_TASK_GROUP), {
+        let fut = starknet_sync_worker::sync(
             fetch_config,
             block_sender,
             command_sink.unwrap().clone(),
             l1_url,
             Arc::clone(&client),
             on_block.unwrap(),
-        ),
-    );
+        );
+        async { fut.await.unwrap() }
+    });
 
     // manual-seal authorship
     if !sealing.is_default() {

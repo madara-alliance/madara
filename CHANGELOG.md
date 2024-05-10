@@ -2,6 +2,9 @@
 
 ## Next release
 
+- fix: graceful shutdown of rocksdb on ctrl+c
+- fix: better error handling around l1 and l2 sync
+- perf: compile with target_cpu=skylake by default
 - perf: storage key with encode
 - fix: bloc context blockifier
 - feat: up blockifier to v0.6.0-rc.2

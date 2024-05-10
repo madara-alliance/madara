@@ -91,7 +91,8 @@ impl NetworkType {
             l1_core_address,
             verify: true,
             api_key: None,
-            pending_polling_interval: Duration::from_secs(2),
+            sync_polling_interval: Some(Duration::from_secs(2)),
+            n_blocks_to_sync: None,
         }
     }
 }
@@ -145,9 +146,17 @@ pub struct ExtendedRunCmd {
     #[clap(long)]
     pub gateway_key: Option<String>,
 
-    /// Polling interval, in seconds.
+    /// Polling interval, in seconds
     #[clap(long, default_value = "2")]
-    pub pending_polling_interval: u64,
+    pub sync_polling_interval: u64,
+
+    /// Stop sync polling
+    #[clap(long, default_value = "false")]
+    pub no_sync_polling: bool,
+
+    /// Number of blocks to sync
+    #[clap(long)]
+    pub n_blocks_to_sync: Option<u64>,
 
     /// A flag to run the TUI dashboard
     #[cfg(feature = "tui")]
@@ -193,7 +202,9 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         fetch_block_config.sound = cli.run.sound;
         fetch_block_config.verify = !cli.run.disable_root;
         fetch_block_config.api_key = cli.run.gateway_key.clone();
-        fetch_block_config.pending_polling_interval = Duration::from_secs(cli.run.pending_polling_interval);
+        fetch_block_config.sync_polling_interval =
+            if cli.run.no_sync_polling { None } else { Some(Duration::from_secs(cli.run.sync_polling_interval)) };
+        fetch_block_config.n_blocks_to_sync = cli.run.n_blocks_to_sync;
         update_config(&fetch_block_config);
 
         let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
