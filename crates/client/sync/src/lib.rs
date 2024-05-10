@@ -19,6 +19,8 @@ pub use mp_types::block::{DBlockT, DHashT};
 pub use utils::m;
 pub use utils::{convert, utility};
 
+use crate::l2::L2SyncConfig;
+
 type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc::EngineCommand<sp_core::H256>>;
 
 pub mod starknet_sync_worker {
@@ -75,11 +77,13 @@ pub mod starknet_sync_worker {
                 block_sender,
                 command_sink,
                 provider,
-                starting_block.into(),
-                fetch_config.n_blocks_to_sync,
-                fetch_config.verify,
                 client,
-                fetch_config.sync_polling_interval
+                L2SyncConfig {
+                    first_block: starting_block.into(),
+                    n_blocks_to_sync: fetch_config.n_blocks_to_sync,
+                    verify: fetch_config.verify,
+                    sync_polling_interval: fetch_config.sync_polling_interval
+                },
             ) => res.context("syncing L2 state")?
         );
 

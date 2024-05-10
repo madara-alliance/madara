@@ -248,17 +248,21 @@ async fn l2_block_conversion_task(
         .await
 }
 
+pub struct L2SyncConfig {
+    pub first_block: u64,
+    pub n_blocks_to_sync: Option<u64>,
+    pub verify: bool,
+    pub sync_polling_interval: Option<Duration>,
+}
+
 /// Spawns workers to fetch blocks and state updates from the feeder.
 /// `n_blocks` is optionally the total number of blocks to sync, for debugging/benchmark purposes.
 pub async fn sync<C>(
     block_sender: Sender<DeoxysBlock>,
     command_sink: CommandSink,
     provider: SequencerGatewayProvider,
-    first_block: u64,
-    n_blocks_to_sync: Option<u64>,
-    verify: bool,
     client: Arc<C>,
-    sync_polling_interval: Option<Duration>,
+    config: L2SyncConfig,
 ) -> anyhow::Result<()>
 where
     C: HeaderBackend<DBlockT> + 'static,
@@ -278,15 +282,15 @@ where
     // starves the tokio worker
 
     let mut fetch_task = tokio::spawn(l2_fetch_task(
-        first_block,
-        n_blocks_to_sync,
+        config.first_block,
+        config.n_blocks_to_sync,
         fetch_stream_sender,
         Arc::clone(&provider),
-        sync_polling_interval,
+        config.sync_polling_interval,
     ));
     let mut block_conversion_task = tokio::spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender));
     let mut verify_and_apply_task =
-        tokio::spawn(l2_verify_and_apply_task(block_conv_receiver, block_sender, command_sink, verify));
+        tokio::spawn(l2_verify_and_apply_task(block_conv_receiver, block_sender, command_sink, config.verify));
 
     tokio::select!(
         // update highest block hash and number, update pending block and state update
