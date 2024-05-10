@@ -2,6 +2,7 @@
 
 ## Next release
 
+- perf: improved perfs with parallelized iteration over tx hashes cache
 - fix: graceful shutdown of rocksdb on ctrl+c
 - fix: better error handling around l1 and l2 sync
 - perf: compile with target_cpu=skylake by default

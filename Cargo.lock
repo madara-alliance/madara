@@ -6163,6 +6163,7 @@ dependencies = [
  "mp-types",
  "num-traits 0.2.18",
  "pallet-starknet-runtime-api",
+ "rayon",
  "sc-client-api",
  "sp-api",
  "sp-blockchain",

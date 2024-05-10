@@ -11,6 +11,7 @@ use mp_types::block::{DBlockT, DHashT, DHeaderT};
 use num_traits::FromPrimitive;
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use prometheus_endpoint::prometheus::core::Number;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{Backend as _, HeaderBackend};
@@ -38,8 +39,10 @@ where
             let opt_storage_starknet_block = get_block_by_block_hash(client, substrate_block_hash);
             match opt_storage_starknet_block {
                 Ok(storage_starknet_block) => {
-                    let digest_starknet_block_hash = digest_starknet_block.header().hash::<H>();
-                    let storage_starknet_block_hash = storage_starknet_block.header().hash::<H>();
+                    let (digest_starknet_block_hash, storage_starknet_block_hash) = rayon::join(
+                        || digest_starknet_block.header().hash::<H>(),
+                        || storage_starknet_block.header().hash::<H>(),
+                    );
                     // Ensure the two blocks sources (chain storage and block digest) agree on the block content
                     if digest_starknet_block_hash != storage_starknet_block_hash {
                         Err(anyhow::anyhow!(
@@ -48,24 +51,25 @@ where
                         ))
                     } else {
                         let chain_id = client.runtime_api().chain_id(substrate_block_hash)?;
+                        let tx_hashes = digest_starknet_block
+                            .transactions()
+                            .par_iter()
+                            .map(|tx| {
+                                Felt252Wrapper::from(tx.compute_hash::<H>(
+                                    chain_id,
+                                    false,
+                                    Some(digest_starknet_block.header().block_number),
+                                ))
+                                .into()
+                            })
+                            .collect();
 
                         // Success, we write the Starknet to Substate hashes mapping to db
                         let mapping_commitment = mc_db::MappingCommitment {
                             block_number: digest_starknet_block.header().block_number,
                             block_hash: substrate_block_hash,
                             starknet_block_hash: digest_starknet_block_hash.into(),
-                            starknet_transaction_hashes: digest_starknet_block
-                                .transactions()
-                                .iter()
-                                .map(|tx| {
-                                    Felt252Wrapper::from(tx.compute_hash::<H>(
-                                        chain_id,
-                                        false,
-                                        Some(digest_starknet_block.header().block_number),
-                                    ))
-                                    .into()
-                                })
-                                .collect(),
+                            starknet_transaction_hashes: tx_hashes,
                         };
 
                         if let Some(block_metrics) = block_metrics {
