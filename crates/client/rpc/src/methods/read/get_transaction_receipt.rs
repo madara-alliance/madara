@@ -209,12 +209,9 @@ pub fn receipt(
     };
 
     // no events or messages sent for declare transactions
-    let (events, messages_sent) = match transaction {
-        Transaction::Declare(_) => (vec![], vec![]),
-        _ => {
-            let call_info = execution_infos.execute_call_info.as_ref().unwrap();
-            (extract_events_from_call_info(call_info), extract_messages_from_call_info(call_info))
-        }
+    let (events, messages_sent) = match execution_infos.execute_call_info.as_ref() {
+        None => (vec![], vec![]),
+        Some(call_info) => (extract_events_from_call_info(call_info), extract_messages_from_call_info(call_info)),
     };
 
     let receipt = match transaction {
