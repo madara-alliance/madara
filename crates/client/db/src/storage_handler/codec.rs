@@ -94,7 +94,7 @@ pub fn add_to_history_encoded(history_encoded: &mut Vec<u8>, index: u64, value: 
         history_encoded.extend(index.to_le_bytes());
     }
     // If the history is not empty, we need to check if we insert in the right order
-    // and update the last_ind
+    // and update the last_index
     else {
         let mut cursor = Cursor::new(&history_encoded);
         let mut last_index_bytes = [0; 8];
