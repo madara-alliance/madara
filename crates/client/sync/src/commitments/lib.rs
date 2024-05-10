@@ -182,6 +182,19 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
     // Then we commit them
     handler_storage_trie.commit(block_number)?;
 
+    // We need to calculate the contract_state_leaf_hash for each contract
+    // that not appear in the storage_updates but has a class_hash or nonce update
+    for contract_addres in csd.address_to_class_hash.keys() {
+        if !csd.storage_updates.contains_key(contract_addres) {
+            handler_storage_trie.init(contract_addres)?;
+        }
+    }
+    for contract_addres in csd.address_to_nonce.keys() {
+        if !csd.storage_updates.contains_key(contract_addres) {
+            handler_storage_trie.init(contract_addres)?;
+        }
+    }
+
     // Then we compute the leaf hashes retrieving the corresponding storage root
     let updates = csd
         .storage_updates
@@ -204,11 +217,9 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
 
 fn contract_state_leaf_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress, storage_root: Felt) -> Felt {
     let class_hash = class_hash(csd, contract_address);
+    let nonce = nonce(csd, contract_address);
 
     let storage_root = FieldElement::from_bytes_be(&storage_root.to_bytes_be()).unwrap();
-
-    let nonce_bytes = csd.address_to_nonce.get(contract_address).unwrap_or(&Nonce::default()).0.0;
-    let nonce = FieldElement::from_bytes_be(&nonce_bytes).unwrap();
 
     // computes the contract state leaf hash
     let contract_state_hash = PedersenHasher::hash_elements(class_hash, storage_root);
@@ -216,6 +227,19 @@ fn contract_state_leaf_hash(csd: &CommitmentStateDiff, contract_address: &Contra
     let contract_state_hash = PedersenHasher::hash_elements(contract_state_hash, FieldElement::ZERO);
 
     Felt::from_bytes_be(&contract_state_hash.to_bytes_be())
+}
+
+fn nonce(csd: &CommitmentStateDiff, contract_address: &ContractAddress) -> FieldElement {
+    let nonce = match csd.address_to_nonce.get(contract_address) {
+        Some(nonce) => *nonce,
+        None => match storage_handler::contract_data().get_nonce(contract_address) {
+            Ok(Some(nonce)) => nonce,
+            // TODO: is it a failure case for no class to be found
+            _ => return FieldElement::ZERO,
+        },
+    };
+
+    FieldElement::from_byte_slice_be(nonce.0.bytes()).unwrap()
 }
 
 fn class_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress) -> FieldElement {

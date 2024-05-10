@@ -50,7 +50,7 @@ impl Encode for u64 {
 impl Encode for History<StarkFelt> {
     fn encode(&self) -> Result<Vec<u8>, Error> {
         let mut buffer = Vec::new();
-        serialize_vlq(self.last_index, &mut buffer).map_err(|_| Error::EncodeError)?;
+        buffer.write_all(&self.last_index.to_le_bytes()).map_err(|_| Error::EncodeError)?;
         for &(index, value) in &self.values {
             serialize_vlq(index, &mut buffer).map_err(|_| Error::EncodeError)?;
             value.serialize(&mut buffer).map_err(|_| Error::EncodeError)?;
@@ -66,7 +66,9 @@ impl Decode for History<StarkFelt> {
     {
         let mut cursor = Cursor::new(bytes);
         let mut values = Vec::new();
-        let last_index = deserialize_vlq(&mut cursor).map_err(|_| Error::DecodeError)?;
+        let mut last_index_bytes = [0; 8];
+        cursor.read_exact(&mut last_index_bytes).map_err(|_| Error::DecodeError)?;
+        let last_index = u64::from_le_bytes(last_index_bytes);
         while (cursor.position() as usize) < bytes.len() {
             let index = deserialize_vlq(&mut cursor).map_err(|_| Error::DecodeError)?;
             let value = StarkFelt::deserialize(&mut cursor).ok_or(Error::DecodeError)?;
@@ -89,18 +91,23 @@ impl Encode for (ContractAddress, StorageKey) {
 pub fn add_to_history_encoded(history_encoded: &mut Vec<u8>, index: u64, value: StarkFelt) -> Result<(), Error> {
     // If the history is empty, we can add the new last_index
     if history_encoded.is_empty() {
-        history_encoded.extend(index.encode()?);
-        return Ok(());
+        history_encoded.extend(index.to_le_bytes());
     }
     // If the history is not empty, we need to check if we insert in the right order
+    // and update the last_ind
     else {
         let mut cursor = Cursor::new(&history_encoded);
-        let last_index = deserialize_vlq(&mut cursor).map_err(|_| Error::DecodeError)?;
+        let mut last_index_bytes = [0; 8];
+        cursor.read_exact(&mut last_index_bytes).map_err(|_| Error::DecodeError)?;
+        let last_index = u64::from_le_bytes(last_index_bytes);
         if index <= last_index {
             return Err(Error::EncodeError);
         }
+        let index_bytes = index.to_le_bytes();
+        history_encoded.iter_mut().take(8).zip(index_bytes.iter()).for_each(|(a, b)| *a = *b);
     }
 
+    // Add the new value with the index to the history
     history_encoded.extend(index.encode()?);
     history_encoded.extend(value.encode()?);
 
@@ -145,6 +152,8 @@ fn deserialize_vlq(reader: &mut impl Read) -> io::Result<u64> {
 
 #[cfg(test)]
 mod tests {
+    use bitvec::vec;
+
     use super::*;
 
     #[test]
@@ -203,12 +212,29 @@ mod tests {
             .unwrap();
         history
             .push(
-                u64::MAX,
+                43,
                 StarkFelt::try_from("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d").unwrap(),
             )
             .unwrap();
-        let bytes = history.encode().unwrap();
+
+        
+        let mut bytes = history.encode().unwrap();
+        add_to_history_encoded(&mut bytes, 66, StarkFelt::from(42_u64)).unwrap();
+        history.push(66, StarkFelt::from(42_u64)).unwrap();
         let decoded = History::decode(&bytes).unwrap();
-        assert_eq!(history.values, decoded.values);
+        assert_eq!(history, decoded);
+    }
+
+    #[test]
+    fn test_add_to_history_encoded() {
+        let mut history = History::new(0, StarkFelt::from(42_u64));
+        history.push(90, StarkFelt::from(123456_u64)).unwrap();
+        
+        let mut bytes:Vec<u8> = vec![];
+        add_to_history_encoded(&mut bytes, 0, StarkFelt::from(42_u64)).unwrap();
+        add_to_history_encoded(&mut bytes, 90, StarkFelt::from(123456_u64)).unwrap();
+
+        let decoded = History::decode(&bytes).unwrap();
+        assert_eq!(history, decoded);
     }
 }

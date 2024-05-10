@@ -2,7 +2,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 /// A simple history implementation that stores values at a given index.
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 #[serde(bound = "T: Serialize + DeserializeOwned")]
 pub struct History<T> {
     pub last_index: u64,
@@ -80,7 +80,7 @@ where
     T: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "History {{ ")?;
+        write!(f, "History (last_index: {}) {{ ", self.last_index)?;
         for (index, value) in &self.values {
             write!(f, "{:?} => {:?}, ", index, value)?;
         }
