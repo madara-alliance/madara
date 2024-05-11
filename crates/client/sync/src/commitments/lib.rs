@@ -208,12 +208,12 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
         .iter()
         .par_bridge()
         .map(|contract_address| {
-            let storage_root = handler_storage_trie.root(contract_address).unwrap();
-            let leaf_hash = contract_state_leaf_hash(csd, contract_address, storage_root).unwrap();
+            let storage_root = handler_storage_trie.root(contract_address)?;
+            let leaf_hash = contract_state_leaf_hash(csd, contract_address, storage_root)?;
 
-            (contract_address, leaf_hash)
+            Ok::<(&ContractAddress, Felt), DeoxysStorageError>((contract_address, leaf_hash))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
 
     // then we compute the contract root by applying the changes so far
     handler_contract.update(updates)?;
