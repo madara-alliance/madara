@@ -2,6 +2,8 @@
 
 ## Next release
 
+- fix: state root for nonce
+- fix: store the first history in storage ket
 - perf: improved perfs with parallelized iteration over tx hashes cache
 - fix: graceful shutdown of rocksdb on ctrl+c
 - fix: better error handling around l1 and l2 sync
