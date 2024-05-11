@@ -186,23 +186,22 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
 
     // We need to initialize the contract trie for each contract that has a class_hash or nonce update
     // to retrieve the corresponding storage root
-    for contract_addres in csd.address_to_class_hash.keys() {
-        if !csd.storage_updates.contains_key(contract_addres) {
-            handler_storage_trie.init(contract_addres)?;
-        }
-    }
-    for contract_addres in csd.address_to_nonce.keys() {
-        if !csd.storage_updates.contains_key(contract_addres) {
-            handler_storage_trie.init(contract_addres)?;
+    for contract_address in csd.address_to_class_hash.keys().chain(csd.address_to_nonce.keys()) {
+        if !csd.storage_updates.contains_key(contract_address) {
+            // Initialize the storage trie if this contract address does not have storage updates
+            handler_storage_trie.init(contract_address)?;
         }
     }
 
     // We need to calculate the contract_state_leaf_hash for each contract
     // that not appear in the storage_updates but has a class_hash or nonce update
-    let mut all_contract_address: HashSet<ContractAddress> = HashSet::new();
-    all_contract_address.extend(csd.storage_updates.keys());
-    all_contract_address.extend(csd.address_to_class_hash.keys());
-    all_contract_address.extend(csd.address_to_nonce.keys());
+    let all_contract_address: HashSet<ContractAddress> = csd
+        .storage_updates
+        .keys()
+        .chain(csd.address_to_class_hash.keys())
+        .chain(csd.address_to_nonce.keys())
+        .cloned()
+        .collect();
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
     let updates = all_contract_address
