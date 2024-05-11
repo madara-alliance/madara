@@ -1,7 +1,7 @@
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
-use mc_db::storage_handler::{self, DeoxysStorageError};
+use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
 use mp_convert::field_element::FromFieldElement;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
@@ -202,7 +202,7 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
         .par_bridge()
         .map(|(contract_address, _)| {
             let storage_root = handler_storage_trie.root(contract_address).unwrap();
-            let leaf_hash = contract_state_leaf_hash(csd, contract_address, storage_root);
+            let leaf_hash = contract_state_leaf_hash(csd, contract_address, storage_root).unwrap();
 
             (contract_address, leaf_hash)
         })
@@ -215,9 +215,12 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
     Ok(handler_contract.root()?.into())
 }
 
-fn contract_state_leaf_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress, storage_root: Felt) -> Felt {
-    let class_hash = class_hash(csd, contract_address);
-    let nonce = nonce(csd, contract_address);
+fn contract_state_leaf_hash(
+    csd: &CommitmentStateDiff,
+    contract_address: &ContractAddress,
+    storage_root: Felt,
+) -> Result<Felt, DeoxysStorageError> {
+    let (class_hash, nonce) = class_hash_and_nonce(csd, contract_address)?;
 
     let storage_root = FieldElement::from_bytes_be(&storage_root.to_bytes_be()).unwrap();
 
@@ -226,33 +229,34 @@ fn contract_state_leaf_hash(csd: &CommitmentStateDiff, contract_address: &Contra
     let contract_state_hash = PedersenHasher::hash_elements(contract_state_hash, nonce);
     let contract_state_hash = PedersenHasher::hash_elements(contract_state_hash, FieldElement::ZERO);
 
-    Felt::from_bytes_be(&contract_state_hash.to_bytes_be())
+    Ok(Felt::from_bytes_be(&contract_state_hash.to_bytes_be()))
 }
 
-fn nonce(csd: &CommitmentStateDiff, contract_address: &ContractAddress) -> FieldElement {
-    let nonce = match csd.address_to_nonce.get(contract_address) {
-        Some(nonce) => *nonce,
-        None => match storage_handler::contract_data().get_nonce(contract_address) {
-            Ok(Some(nonce)) => nonce,
-            // TODO: is it a failure case for no class to be found
-            _ => return FieldElement::ZERO,
-        },
+fn class_hash_and_nonce(
+    csd: &CommitmentStateDiff,
+    contract_address: &ContractAddress,
+) -> Result<(FieldElement, FieldElement), DeoxysStorageError> {
+    let class_hash = csd.address_to_class_hash.get(contract_address);
+    let nonce = csd.address_to_nonce.get(contract_address);
+
+    let (class_hash, nonce) = match (class_hash, nonce) {
+        (Some(class_hash), Some(nonce)) => (*class_hash, *nonce),
+        (Some(class_hash), None) => {
+            let nonce = storage_handler::contract_data().get_nonce(contract_address)?.unwrap_or_default();
+            (*class_hash, nonce)
+        }
+        (None, Some(nonce)) => {
+            let class_hash = storage_handler::contract_data().get_class_hash(contract_address)?.unwrap_or_default();
+            (class_hash, *nonce)
+        }
+        (None, None) => {
+            let contract_data = storage_handler::contract_data().get(contract_address)?.unwrap_or_default();
+            let nonce = contract_data.nonce.get().cloned().unwrap_or_default();
+            let class_hash = contract_data.class_hash.get().cloned().unwrap_or_default();
+            (class_hash, nonce)
+        }
     };
-
-    FieldElement::from_byte_slice_be(nonce.0.bytes()).unwrap()
-}
-
-fn class_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress) -> FieldElement {
-    let class_hash = match csd.address_to_class_hash.get(contract_address) {
-        Some(class_hash) => *class_hash,
-        None => match storage_handler::contract_data().get_class_hash(contract_address) {
-            Ok(Some(class_hash)) => class_hash,
-            // TODO: is it a failure case for no class to be found
-            _ => return FieldElement::ZERO,
-        },
-    };
-
-    FieldElement::from_byte_slice_be(class_hash.0.bytes()).unwrap()
+    Ok((FieldElement::from_bytes_be(&class_hash.0.0).unwrap(), FieldElement::from_bytes_be(&nonce.0.0).unwrap()))
 }
 
 lazy_static! {

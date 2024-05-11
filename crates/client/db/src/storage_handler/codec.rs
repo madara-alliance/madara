@@ -152,8 +152,6 @@ fn deserialize_vlq(reader: &mut impl Read) -> io::Result<u64> {
 
 #[cfg(test)]
 mod tests {
-    use bitvec::vec;
-
     use super::*;
 
     #[test]
