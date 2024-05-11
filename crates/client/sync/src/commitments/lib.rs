@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
@@ -182,8 +184,8 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
     // Then we commit them
     handler_storage_trie.commit(block_number)?;
 
-    // We need to calculate the contract_state_leaf_hash for each contract
-    // that not appear in the storage_updates but has a class_hash or nonce update
+    // We need to initialize the contract trie for each contract that has a class_hash or nonce update
+    // to retrieve the corresponding storage root
     for contract_addres in csd.address_to_class_hash.keys() {
         if !csd.storage_updates.contains_key(contract_addres) {
             handler_storage_trie.init(contract_addres)?;
@@ -195,12 +197,18 @@ fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Fe
         }
     }
 
+    // We need to calculate the contract_state_leaf_hash for each contract
+    // that not appear in the storage_updates but has a class_hash or nonce update
+    let mut all_contract_address: HashSet<ContractAddress> = HashSet::new();
+    all_contract_address.extend(csd.storage_updates.keys());
+    all_contract_address.extend(csd.address_to_class_hash.keys());
+    all_contract_address.extend(csd.address_to_nonce.keys());
+
     // Then we compute the leaf hashes retrieving the corresponding storage root
-    let updates = csd
-        .storage_updates
+    let updates = all_contract_address
         .iter()
         .par_bridge()
-        .map(|(contract_address, _)| {
+        .map(|contract_address| {
             let storage_root = handler_storage_trie.root(contract_address).unwrap();
             let leaf_hash = contract_state_leaf_hash(csd, contract_address, storage_root).unwrap();
 
