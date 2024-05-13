@@ -17,7 +17,6 @@ use super::lib::ConvertCallInfoToExecuteInvocationError;
 use super::utils::{block_number_by_id, tx_execution_infos_to_tx_trace};
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
-use crate::utils::helpers::previous_substrate_block_hash;
 use crate::{utils, Starknet};
 
 pub async fn simulate_transactions<BE, C, H>(
@@ -36,8 +35,7 @@ where
     let substrate_block_hash =
         starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|_e| StarknetRpcApiError::BlockNotFound)?;
 
-    let previous_substrate_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
-    let block_context = block_context(starknet.client.as_ref(), previous_substrate_block_hash)?;
+    let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
     let block_number = block_number_by_id(block_id);
 
     let tx_type_and_tx_iterator = transactions.into_iter().map(|tx| match tx {

@@ -15,7 +15,6 @@ use starknet_core::types::{
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
-use crate::utils::helpers::previous_substrate_block_hash;
 use crate::{utils, Starknet};
 
 /// Estimate the fee associated with transaction
@@ -46,8 +45,7 @@ where
         StarknetRpcApiError::BlockNotFound
     })?;
 
-    let previous_substrate_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
-    let block_context = block_context(starknet.client.as_ref(), previous_substrate_block_hash)?;
+    let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
     let transactions = request
         .into_iter()
