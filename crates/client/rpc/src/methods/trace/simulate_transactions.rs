@@ -38,6 +38,11 @@ where
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
     let block_number = block_number_by_id(block_id);
 
+    let simulation_flags = SimulationFlags {
+        validate: !simulation_flags.contains(&SimulationFlag::SkipValidate),
+        charge_fee: !simulation_flags.contains(&SimulationFlag::SkipFeeCharge),
+    };
+
     let tx_type_and_tx_iterator = transactions.into_iter().map(|tx| match tx {
         BroadcastedTransaction::Invoke(_) => tx.to_account_transaction().map(|tx| (TxType::Invoke, tx)),
         BroadcastedTransaction::Declare(_) => tx.to_account_transaction().map(|tx| (TxType::Declare, tx)),
@@ -51,16 +56,10 @@ where
             },
         )?;
 
-    let simulation_flags = SimulationFlags {
-        validate: !simulation_flags.contains(&SimulationFlag::SkipValidate),
-        charge_fee: !simulation_flags.contains(&SimulationFlag::SkipFeeCharge),
-    };
-
     let fee_types = user_transactions.iter().map(|tx| tx.fee_type()).collect::<Vec<_>>();
-    let charge_fee = block_context.block_info().gas_prices.eth_l1_gas_price.get() != 1;
 
-    let res = utils::execution::simulate_transactions(user_transactions, &simulation_flags, &block_context, charge_fee)
-        .map_err(|e| {
+    let res =
+        utils::execution::simulate_transactions(user_transactions, &simulation_flags, &block_context).map_err(|e| {
             log::error!("Failed to call function: {:#?}", e);
             StarknetRpcApiError::ContractError
         })?;
