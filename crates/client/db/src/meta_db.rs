@@ -46,7 +46,7 @@ impl MetaDb {
 
         if let Some(res) = res {
             Ok(u64::from_be_bytes(
-                res.try_into().map_err(|_| DbError::Format(format!("current sync block should be a u64")))?,
+                res.try_into().map_err(|_| DbError::Format("current sync block should be a u64".into()))?,
             ))
         } else {
             Ok(0)
