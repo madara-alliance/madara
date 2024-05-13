@@ -146,8 +146,7 @@ fn spawn_backup_db_task(
         fs::create_dir_all(db_path).with_context(|| format!("creating directories {:?}", db_path))?;
 
         let opts = rocksdb::backup::RestoreOptions::default();
-        engine.restore_from_backup(db_path, db_path, &opts, 84).context("restoring database")?;
-        // engine.restore_from_latest_backup(db_path, db_path, &opts).context("restoring database")?;
+        engine.restore_from_latest_backup(db_path, db_path, &opts).context("restoring database")?;
         log::debug!("restoring latest backup done");
     }
 
