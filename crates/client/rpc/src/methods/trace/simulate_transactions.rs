@@ -51,7 +51,10 @@ where
             },
         )?;
 
-    let simulation_flags = SimulationFlags::from(simulation_flags);
+    let simulation_flags = SimulationFlags {
+        validate: !simulation_flags.contains(&SimulationFlag::SkipValidate),
+        charge_fee: !simulation_flags.contains(&SimulationFlag::SkipFeeCharge),
+    };
 
     let fee_types = user_transactions.iter().map(|tx| tx.fee_type()).collect::<Vec<_>>();
     let charge_fee = block_context.block_info().gas_prices.eth_l1_gas_price.get() != 1;
