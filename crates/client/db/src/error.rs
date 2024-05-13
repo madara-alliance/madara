@@ -13,6 +13,8 @@ pub enum DbError {
     Uuid(#[from] uuid::Error),
     #[error("A value was queryied that was not initialized at column: `{0}` key: `{1}`")]
     ValueNotInitialized(Column, String),
+    #[error("Format error: `{0}`")]
+    Format(String),
 }
 
 #[derive(Debug, Error)]

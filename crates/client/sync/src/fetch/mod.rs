@@ -19,7 +19,7 @@ pub async fn l2_fetch_task(
     fetch_stream_sender: mpsc::Sender<L2BlockAndUpdates>,
     provider: Arc<SequencerGatewayProvider>,
     sync_polling_interval: Option<Duration>,
-) -> Result<(), L2SyncError> {
+) -> anyhow::Result<()> {
     // First, catch up with the chain
 
     let mut next_block = first_block;
