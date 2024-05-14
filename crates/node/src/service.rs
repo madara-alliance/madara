@@ -21,7 +21,7 @@ use parity_scale_codec::Encode;
 use prometheus_endpoint::Registry;
 use reqwest::Url;
 use sc_basic_authorship::ProposerFactory;
-use sc_client_api::{BlockchainEvents, HeaderBackend};
+use sc_client_api::BlockchainEvents;
 use sc_consensus::{BasicQueue, BlockImportParams};
 use sc_consensus_manual_seal::{ConsensusDataProvider, Error};
 pub use sc_executor::NativeElseWasmExecutor;
@@ -74,6 +74,8 @@ pub fn new_partial<BIQ>(
     build_import_queue: BIQ,
     cache_more_things: bool,
     genesis_block: DeoxysBlock,
+    backup_dir: Option<PathBuf>,
+    restore_from_latest_backup: bool,
 ) -> Result<
     sc_service::PartialComponents<
         FullClient,
@@ -94,7 +96,14 @@ where
         &TaskManager,
     ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>,
 {
-    let deoxys_backend = DeoxysBackend::open(&config.database, &db_config_dir(config), cache_more_things).unwrap();
+    let deoxys_backend = DeoxysBackend::open(
+        &config.database,
+        &db_config_dir(config),
+        backup_dir,
+        restore_from_latest_backup,
+        cache_more_things,
+    )
+    .unwrap();
 
     let telemetry = config
         .telemetry_endpoints
@@ -189,6 +198,7 @@ where
 /// # Arguments
 ///
 /// - `cache`: whether more information should be cached when storing the block in the database.
+#[allow(clippy::too_many_arguments)] // grr
 pub fn new_full(
     config: Configuration,
     sealing: SealingMode,
@@ -197,6 +207,9 @@ pub fn new_full(
     fetch_config: FetchConfig,
     genesis_block: DeoxysBlock,
     starting_block: Option<u32>,
+    backup_every_n_blocks: Option<usize>,
+    backup_dir: Option<PathBuf>,
+    restore_from_latest_backup: bool,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue = build_manual_seal_import_queue;
 
@@ -209,7 +222,14 @@ pub fn new_full(
         select_chain,
         transaction_pool,
         other: (block_import, mut telemetry, deoxys_backend),
-    } = new_partial(&config, build_import_queue, cache_more_things, genesis_block)?;
+    } = new_partial(
+        &config,
+        build_import_queue,
+        cache_more_things,
+        genesis_block,
+        backup_dir,
+        restore_from_latest_backup,
+    )?;
 
     let net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
@@ -228,7 +248,7 @@ pub fn new_full(
 
     let prometheus_registry = config.prometheus_registry().cloned();
 
-    let best_block = client.info().best_number;
+    let best_block = DeoxysBackend::meta().current_sync_block().expect("getting current sync block") as _;
     let on_block =
         if starting_block.is_some() && starting_block >= Some(best_block) { starting_block } else { Some(best_block) };
 
@@ -310,6 +330,7 @@ pub fn new_full(
             l1_url,
             Arc::clone(&client),
             on_block.unwrap(),
+            backup_every_n_blocks,
         );
         async { fut.await.unwrap() }
     });
@@ -473,7 +494,13 @@ type ChainOpsResult =
 
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
-    let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_manual_seal_import_queue, cache_more_things, DeoxysBlock::default())?;
+    let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } = new_partial::<_>(
+        config,
+        build_manual_seal_import_queue,
+        cache_more_things,
+        DeoxysBlock::default(),
+        None,
+        false,
+    )?;
     Ok((client, backend, import_queue, task_manager, other.2))
 }

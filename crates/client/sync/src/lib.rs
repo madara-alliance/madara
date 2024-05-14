@@ -46,6 +46,7 @@ pub mod starknet_sync_worker {
         l1_url: Url,
         client: Arc<C>,
         starting_block: u32,
+        backup_every_n_blocks: Option<usize>,
     ) -> anyhow::Result<()>
     where
         C: HeaderBackend<DBlockT> + 'static,
@@ -68,7 +69,7 @@ pub mod starknet_sync_worker {
                 .await
                 .context("getting state update for genesis block")?
                 .to_state_update_core();
-            verify_l2(0, &state_update);
+            verify_l2(0, &state_update)?;
         }
 
         tokio::select!(
@@ -82,7 +83,8 @@ pub mod starknet_sync_worker {
                     first_block: starting_block.into(),
                     n_blocks_to_sync: fetch_config.n_blocks_to_sync,
                     verify: fetch_config.verify,
-                    sync_polling_interval: fetch_config.sync_polling_interval
+                    sync_polling_interval: fetch_config.sync_polling_interval,
+                    backup_every_n_blocks,
                 },
             ) => res.context("syncing L2 state")?
         );
