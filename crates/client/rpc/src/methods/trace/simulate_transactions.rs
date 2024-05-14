@@ -33,7 +33,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash =
-        starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|_e| StarknetRpcApiError::BlockNotFound)?;
+        starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|_| StarknetRpcApiError::BlockNotFound)?;
 
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
     let block_number = block_number_by_id(block_id);
@@ -58,16 +58,8 @@ where
 
     let fee_types = user_transactions.iter().map(|tx| tx.fee_type()).collect::<Vec<_>>();
 
-    let res =
-        utils::execution::simulate_transactions(user_transactions, &simulation_flags, &block_context).map_err(|e| {
-            log::error!("Failed to call function: {:#?}", e);
-            StarknetRpcApiError::ContractError
-        })?;
-
-    if res.len() != fee_types.len() {
-        log::error!("Failed to convert one or more transactions to simulated transactions: {:#?}", res);
-        return Err(StarknetRpcApiError::InternalServerError.into());
-    }
+    let res = utils::execution::simulate_transactions(user_transactions, &simulation_flags, &block_context)
+        .map_err(|_| StarknetRpcApiError::ContractError)?;
 
     let simulated_transactions = tx_execution_infos_to_simulated_transactions(tx_types, res, block_number, fee_types)
         .map_err(StarknetRpcApiError::from)?;
