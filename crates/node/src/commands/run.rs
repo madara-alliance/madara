@@ -162,6 +162,15 @@ pub struct ExtendedRunCmd {
     #[cfg(feature = "tui")]
     #[clap(long)]
     pub tui: bool,
+
+    #[clap(long)]
+    pub backup_every_n_blocks: Option<usize>,
+
+    #[clap(long)]
+    pub backup_dir: Option<PathBuf>,
+
+    #[clap(long, default_value = "false")]
+    pub restore_from_latest_backup: bool,
 }
 
 pub fn run_node(mut cli: Cli) -> Result<()> {
@@ -209,8 +218,19 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
 
         let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
 
-        service::new_full(config, sealing, l1_endpoint, cache, fetch_block_config, genesis_block, starting_block)
-            .map_err(sc_cli::Error::Service)
+        service::new_full(
+            config,
+            sealing,
+            l1_endpoint,
+            cache,
+            fetch_block_config,
+            genesis_block,
+            starting_block,
+            cli.run.backup_every_n_blocks,
+            cli.run.backup_dir,
+            cli.run.restore_from_latest_backup,
+        )
+        .map_err(sc_cli::Error::Service)
     })
 }
 
