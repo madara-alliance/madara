@@ -3,6 +3,7 @@
 ## Next release
 
 - fix: state root - replaced_classes
+- feat(db): backups
 - fix: state root for nonce
 - fix: store the first history in storage ket
 - perf: improved perfs with parallelized iteration over tx hashes cache

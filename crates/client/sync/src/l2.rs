@@ -3,7 +3,7 @@ use std::pin::pin;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use futures::{stream, StreamExt, TryStreamExt};
 use lazy_static::lazy_static;
 use mc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
@@ -137,7 +137,8 @@ async fn l2_verify_and_apply_task(
     block_sender: Sender<DeoxysBlock>,
     mut command_sink: CommandSink,
     verify: bool,
-) -> Result<(), L2SyncError> {
+    backup_every_n_blocks: Option<usize>,
+) -> anyhow::Result<()> {
     let block_sender = Arc::new(block_sender);
 
     let mut last_block_hash = None;
@@ -150,16 +151,26 @@ async fn l2_verify_and_apply_task(
             let state_update_1 = Arc::clone(&state_update);
             let global_state_root = block.header().global_state_root;
 
-            spawn_compute(move || {
+            let state_root = spawn_compute(move || {
                 let sw = PerfStopwatch::new();
-                let state_root = verify_l2(block_n, &state_update);
+                let state_root = verify_l2(block_n, &state_update)?;
                 stopwatch_end!(sw, "verify_l2: {:?}");
 
-                if global_state_root != state_root {
-                    log::info!("❗ Verified state: {} doesn't match fetched state: {}", state_root, global_state_root);
-                }
+                anyhow::Ok(state_root)
             })
-            .await;
+            .await?;
+
+            if global_state_root != state_root {
+                // TODO(fault tolerance): we should have a single rocksdb transaction for the whole l2 update.
+                // let prev_block = block_n.checked_sub(1).expect("no block to revert to");
+
+                // storage_handler::contract_trie_mut().revert_to(prev_block);
+                // storage_handler::contract_storage_trie_mut().revert_to(prev_block);
+                // storage_handler::contract_class_trie_mut().revert_to(prev_block);
+                // TODO(charpa): make other stuff revertible, maybe history?
+
+                bail!("Verified state: {} doesn't match fetched state: {}", state_root, global_state_root);
+            }
 
             // UNWRAP: we need a 'static future as we are spawning tokio tasks further down the line
             //         this is a hack to achieve that, we put the update in an arc and then unwrap it at the end
@@ -203,9 +214,18 @@ async fn l2_verify_and_apply_task(
             }
         );
 
+        DeoxysBackend::meta().set_current_sync_block(block_n).context("setting current sync block")?;
+
         // compact DB every 1k blocks
         if block_n % 1000 == 0 {
             DeoxysBackend::compact();
+        }
+
+        if backup_every_n_blocks.is_some_and(|backup_every_n_blocks| block_n % backup_every_n_blocks as u64 == 0) {
+            log::info!("⏳ Backing up database at block {block_n}...");
+            let sw = PerfStopwatch::new();
+            DeoxysBackend::backup().await.context("backing up database")?;
+            log::info!("✅ Database backup is done ({:?})", sw.elapsed());
         }
     }
 
@@ -222,7 +242,7 @@ pub struct L2ConvertedBlockAndUpdates {
 async fn l2_block_conversion_task(
     updates_receiver: mpsc::Receiver<L2BlockAndUpdates>,
     output: mpsc::Sender<L2ConvertedBlockAndUpdates>,
-) -> Result<(), L2SyncError> {
+) -> anyhow::Result<()> {
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
     let conversion_stream = stream::unfold(updates_receiver, |mut updates_recv| async {
@@ -253,6 +273,7 @@ pub struct L2SyncConfig {
     pub n_blocks_to_sync: Option<u64>,
     pub verify: bool,
     pub sync_polling_interval: Option<Duration>,
+    pub backup_every_n_blocks: Option<usize>,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
@@ -289,8 +310,13 @@ where
         config.sync_polling_interval,
     ));
     let mut block_conversion_task = tokio::spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender));
-    let mut verify_and_apply_task =
-        tokio::spawn(l2_verify_and_apply_task(block_conv_receiver, block_sender, command_sink, config.verify));
+    let mut verify_and_apply_task = tokio::spawn(l2_verify_and_apply_task(
+        block_conv_receiver,
+        block_sender,
+        command_sink,
+        config.verify,
+        config.backup_every_n_blocks,
+    ));
 
     tokio::select!(
         // update highest block hash and number, update pending block and state update
@@ -353,7 +379,7 @@ pub fn update_l2(state_update: L2StateUpdate) {
 }
 
 /// Verify and update the L2 state according to the latest state update
-pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> StarkFelt {
+pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> anyhow::Result<StarkFelt> {
     let csd = build_commitment_state_diff(state_update);
     let state_root = update_state_root(csd, block_number);
     let block_hash = state_update.block_hash;
@@ -364,7 +390,7 @@ pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> StarkFelt {
         block_hash: Felt252Wrapper::from(block_hash).into(),
     });
 
-    state_root.into()
+    Ok(state_root.into())
 }
 
 async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
