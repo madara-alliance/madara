@@ -133,24 +133,23 @@ impl Header {
             VersionedConstants::latest_constants()
         };
 
-        BlockContext::new_unchecked(
-            &BlockInfo {
-                block_number: BlockNumber(self.block_number),
-                block_timestamp: BlockTimestamp(self.block_timestamp),
-                sequencer_address: self.sequencer_address,
-                gas_prices: self.l1_gas_price.clone().unwrap_or(GasPrices {
-                    eth_l1_gas_price: NonZeroU128::new(1).unwrap(),
-                    strk_l1_gas_price: NonZeroU128::new(1).unwrap(),
-                    eth_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
-                    strk_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
-                }),
-                // TODO
-                // I have no idea what this is, let's say we did not use any for now
-                use_kzg_da: false,
-            },
-            &ChainInfo { chain_id, fee_token_addresses },
-            versioned_constants,
-        )
+        let chain_info = ChainInfo { chain_id, fee_token_addresses };
+
+        let block_info = BlockInfo {
+            block_number: BlockNumber(self.block_number),
+            block_timestamp: BlockTimestamp(self.block_timestamp),
+            sequencer_address: self.sequencer_address,
+            gas_prices: self.l1_gas_price.clone().unwrap_or(GasPrices {
+                eth_l1_gas_price: NonZeroU128::new(1).unwrap(),
+                strk_l1_gas_price: NonZeroU128::new(1).unwrap(),
+                eth_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
+                strk_l1_data_gas_price: NonZeroU128::new(1).unwrap(),
+            }),
+            // TODO: Verify if this is correct
+            use_kzg_da: self.l1_da_mode == L1DataAvailabilityMode::Blob,
+        };
+
+        BlockContext::new_unchecked(&block_info, &chain_info, versioned_constants)
     }
 
     /// Compute the hash of the header.

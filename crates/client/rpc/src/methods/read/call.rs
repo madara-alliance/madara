@@ -12,7 +12,6 @@ use starknet_core::types::{BlockId, FunctionCall};
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
-use crate::utils::helpers::previous_substrate_block_hash;
 use crate::{utils, Arc, Starknet};
 
 /// Call a Function in a Contract Without Creating a Transaction
@@ -48,8 +47,7 @@ where
         StarknetRpcApiError::BlockNotFound
     })?;
 
-    let previous_substrate_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
-    let block_context = block_context(starknet.client.as_ref(), previous_substrate_block_hash)?;
+    let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
     let calldata = Calldata(Arc::new(request.calldata.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()));
 
