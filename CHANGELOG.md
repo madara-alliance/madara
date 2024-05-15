@@ -2,6 +2,8 @@
 
 ## Next release
 
+- fix: creation of the block context
+- fix: is_missing_class
 - feat(db): backups
 - fix: state root for nonce
 - fix: store the first history in storage ket
