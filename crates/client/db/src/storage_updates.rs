@@ -105,7 +105,10 @@ pub async fn store_class_update(block_number: u64, class_update: ClassUpdateWrap
                 contract_class_wrapper;
 
             handler_contract_class_data_mut
-                .insert(class_hash, StorageContractClassData { contract_class, abi, sierra_program_length, abi_length })
+                .insert(
+                    class_hash,
+                    StorageContractClassData { contract_class, abi, sierra_program_length, abi_length, block_number },
+                )
                 .unwrap();
         },
     );
