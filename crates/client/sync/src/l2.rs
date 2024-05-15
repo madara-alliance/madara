@@ -18,7 +18,7 @@ use sp_core::H256;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_core::types::{PendingStateUpdate, StateUpdate};
 use starknet_ff::FieldElement;
-use starknet_providers::sequencer::models::BlockId;
+use starknet_providers::sequencer::models::{BlockId, StateUpdateWithBlock};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -397,7 +397,10 @@ async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C
 where
     C: HeaderBackend<DBlockT>,
 {
-    let block = provider.get_block(BlockId::Pending).await.map_err(|e| format!("Failed to get pending block: {e}"))?;
+    let StateUpdateWithBlock { state_update, block } = provider
+        .get_state_update_with_block(BlockId::Pending)
+        .await
+        .map_err(|e| format!("Failed to get pending block: {e}"))?;
 
     let hash_best = client.info().best_hash;
     let hash_current = block.parent_block_hash;
@@ -408,11 +411,6 @@ where
     let tmp = DHashT::from_str(&hash_current.to_string()).unwrap_or(Default::default());
 
     if hash_best == tmp {
-        let state_update = provider
-            .get_state_update(BlockId::Pending)
-            .await
-            .map_err(|e| format!("Failed to get pending state update: {e}"))?;
-
         *STARKNET_PENDING_BLOCK.write().expect("Failed to acquire write lock on STARKNET_PENDING_BLOCK") =
             Some(spawn_compute(|| crate::convert::convert_block(block)).await.unwrap());
 

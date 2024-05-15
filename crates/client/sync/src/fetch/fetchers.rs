@@ -12,8 +12,7 @@ use starknet_api::core::ClassHash;
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{BlockId as BlockIdCore, DeclaredClassItem, DeployedContractItem, StateUpdate};
 use starknet_ff::FieldElement;
-use starknet_providers::sequencer::models as p;
-use starknet_providers::sequencer::models::BlockId;
+use starknet_providers::sequencer::models::{self as p, BlockId};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use tokio::task::JoinSet;
 use url::Url;
@@ -66,46 +65,47 @@ pub async fn fetch_block_and_updates(
     provider: Arc<SequencerGatewayProvider>,
 ) -> Result<L2BlockAndUpdates, L2SyncError> {
     const MAX_RETRY: u32 = 15;
-    let mut attempt = 0;
     let base_delay = Duration::from_secs(1);
 
     let sw = PerfStopwatch::new();
-    let res = loop {
-        log::debug!("fetch_block_and_updates {}", block_n);
-        let block = fetch_block(&provider, block_n);
-        let state_update = fetch_state_and_class_update(&provider, block_n);
-        let (block, state_update) = tokio::join!(block, state_update);
-        log::debug!("fetch_block_and_updates: done {block_n}");
+    let (state_update, block) =
+        retry(|| fetch_state_update_with_block(&provider, block_n), MAX_RETRY, base_delay).await?;
+    let class_update = fetch_class_update(&provider, &state_update, block_n).await?;
 
-        match (block, state_update) {
-            (Err(L2SyncError::Provider(err)), _) | (_, Err(L2SyncError::Provider(err))) => {
-                // Exponential backoff with a cap on the delay
-                let delay = base_delay * 2_u32.pow(attempt - 1).min(6); // Cap to prevent overly long delays
-                match err {
-                    ProviderError::RateLimited => {
-                        log::info!("The fetching process has been rate limited, retrying in {:?} seconds", delay)
-                    }
-                    // sometimes the sequencer just errors out when trying to rate limit us (??) so retry in that case
-                    _ => log::info!("The provider has returned an error, retrying in {:?} seconds", delay),
-                }
+    stopwatch_end!(sw, "fetching {}: {:?}", block_n);
+    Ok(L2BlockAndUpdates { block_n, block, state_update, class_update })
+}
+
+async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, L2SyncError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, L2SyncError>>,
+{
+    let mut attempt = 0;
+    loop {
+        match f().await {
+            Ok(res) => return Ok(res),
+            Err(L2SyncError::Provider(err)) => {
+                let delay = base_delay * 2_u32.pow(attempt).min(6); // Cap to prevent overly long delays
                 attempt += 1;
-                if attempt >= MAX_RETRY {
+                if attempt > max_retries {
                     break Err(if matches!(err, ProviderError::RateLimited) {
                         L2SyncError::FetchRetryLimit
                     } else {
                         L2SyncError::Provider(err)
                     });
                 }
+                match err {
+                    ProviderError::RateLimited => {
+                        log::info!("The fetching process has been rate limited, retrying in {:?}", delay)
+                    }
+                    _ => log::info!("The provider has returned an error, retrying in {:?}", delay),
+                }
                 tokio::time::sleep(delay).await;
             }
-            (Err(err), _) | (_, Err(err)) => break Err(err),
-            (Ok(block), Ok((state_update, class_update))) => {
-                break Ok(L2BlockAndUpdates { block_n, block, state_update, class_update });
-            }
-        };
-    };
-    stopwatch_end!(sw, "fetching {}: {:?}", block_n);
-    res
+            Err(err) => break Err(err),
+        }
+    }
 }
 
 pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBlock, String> {
@@ -119,27 +119,14 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBloc
     Ok(crate::convert::convert_block(block).expect("invalid genesis block"))
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn fetch_state_and_class_update(
+/// retrieves state update with block from Starknet sequencer in only one request
+async fn fetch_state_update_with_block(
     provider: &SequencerGatewayProvider,
     block_number: u64,
-) -> Result<(StateUpdate, Vec<ContractClassData>), L2SyncError> {
-    // Children tasks need StateUpdate as an Arc, because of task spawn 'static requirement
-    // We make an Arc, and then unwrap the StateUpdate out of the Arc
-    let state_update = fetch_state_update(provider, block_number).await?;
-    let class_update = fetch_class_update(provider, &state_update, block_number).await?;
+) -> Result<(StateUpdate, p::Block), L2SyncError> {
+    let state_update_with_block = provider.get_state_update_with_block(BlockId::Number(block_number)).await?;
 
-    Ok((state_update, class_update))
-}
-
-/// retrieves state update from Starknet sequencer
-async fn fetch_state_update(
-    provider: &SequencerGatewayProvider,
-    block_number: u64,
-) -> Result<StateUpdate, L2SyncError> {
-    let state_update = provider.get_state_update(BlockId::Number(block_number)).await?;
-
-    Ok(state_update.to_state_update_core())
+    Ok((state_update_with_block.state_update.to_state_update_core(), state_update_with_block.block))
 }
 
 /// retrieves class updates from Starknet sequencer
@@ -177,7 +164,10 @@ async fn fetch_class_update(
         if class_hash
             != FieldElement::from_hex_be("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698").unwrap()
         {
-            set.spawn(async move { fetch_class(class_hash, block_number, &provider).await });
+            // Fetch the class definition in parallel, retrying up to 15 times for each class
+            set.spawn(async move {
+                retry(|| fetch_class(class_hash, block_number, &provider), 15, Duration::from_secs(1)).await
+            });
         }
         set
     });
