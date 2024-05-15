@@ -3,6 +3,7 @@
 ## Next release
 
 - fix(rpx): get_class
+- feat: added deoxys launcher script
 - fix: creation of the block context
 - fix: is_missing_class
 - fix: state root - replaced_classes
