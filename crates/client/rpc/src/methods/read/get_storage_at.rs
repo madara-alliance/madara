@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use log::error;
 use mc_db::storage_handler::{self};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -59,10 +58,7 @@ where
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
-    let block_number = starknet.substrate_block_number_from_starknet_block(block_id).map_err(|e| {
-        error!("'{e}'");
-        StarknetRpcApiError::BlockNotFound
-    })?;
+    let block_number = starknet.substrate_block_number_from_starknet_block(block_id)?;
 
     let contract_address = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
     let key = StorageKey(PatriciaKey(StarkFelt(key.to_bytes_be())));
@@ -70,7 +66,7 @@ where
     // Check if the contract exists at the given address in the specified block.
     match storage_handler::contract_data().is_contract_deployed_at(&contract_address, block_number) {
         Err(e) => {
-            error!("Failed to check if contract exists at '{contract_address:?}': {e}");
+            log::error!("Failed to check if contract is deployed: {e}");
             return Err(StarknetRpcApiError::InternalServerError.into());
         }
         Ok(false) => {
@@ -83,7 +79,7 @@ where
         Ok(Some(value)) => Ok(Felt(Felt252Wrapper::from(value).into())),
         Ok(None) => Ok(Felt(FieldElement::default())), // all keys are initialized to 0
         Err(e) => {
-            error!("Failed to retrieve storage at '{contract_address:?}' and '{key:?}': {e}");
+            log::error!("Failed to retrieve contract storage: {e}");
             Err(StarknetRpcApiError::InternalServerError.into())
         }
     }
