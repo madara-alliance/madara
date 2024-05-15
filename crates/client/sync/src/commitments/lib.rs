@@ -15,7 +15,8 @@ use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Event, Transaction};
 use starknet_core::types::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, StateUpdate, StorageEntry,
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate,
+    StorageEntry,
 };
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
@@ -74,6 +75,18 @@ pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStat
         commitment_state_diff.address_to_class_hash.insert(address, class_hash);
     }
 
+    for ReplacedClassItem { contract_address, class_hash } in state_update.state_diff.replaced_classes.iter() {
+        let address = ContractAddress::from_field_element(contract_address);
+        let class_hash = ClassHash::from_field_element(class_hash);
+        commitment_state_diff.address_to_class_hash.insert(address, class_hash);
+    }
+
+    for DeclaredClassItem { class_hash, compiled_class_hash } in state_update.state_diff.declared_classes.iter() {
+        let class_hash = ClassHash::from_field_element(class_hash);
+        let compiled_class_hash = CompiledClassHash::from_field_element(compiled_class_hash);
+        commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
+    }
+
     for NonceUpdate { contract_address, nonce } in state_update.state_diff.nonces.iter() {
         let contract_address = ContractAddress::from_field_element(contract_address);
         let nonce_value = Nonce::from_field_element(nonce);
@@ -89,12 +102,6 @@ pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStat
             storage_map.insert(key, value);
         }
         commitment_state_diff.storage_updates.insert(contract_address, storage_map);
-    }
-
-    for DeclaredClassItem { class_hash, compiled_class_hash } in state_update.state_diff.declared_classes.iter() {
-        let class_hash = ClassHash::from_field_element(class_hash);
-        let compiled_class_hash = CompiledClassHash::from_field_element(compiled_class_hash);
-        commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
     }
 
     commitment_state_diff
