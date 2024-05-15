@@ -10,7 +10,7 @@ repository = "https://github.com/KasarLabs/deoxys"
 version = "0.1.0"
 
 [features]
-default = ["m"]
+default = []
 m = ["dep:rodio"]
 
 [package.metadata.docs.rs]
