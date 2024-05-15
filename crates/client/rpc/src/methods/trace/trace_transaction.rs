@@ -18,7 +18,7 @@ use super::utils::tx_execution_infos_to_tx_trace;
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
-use crate::utils::helpers::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
+use crate::utils::helpers::{tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
 use crate::Starknet;
 
@@ -46,8 +46,7 @@ where
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
     let block_number = block_header.block_number;
     let chain_id = starknet.chain_id()?;
-    let previous_substrate_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
-    let block_context = block_context(starknet.client.as_ref(), previous_substrate_block_hash)?;
+    let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
     // retrieve all transaction hashes from the block in the cache or compute them
     // here we can optimize by computing only tx before the one that we want to trace (optimized if we

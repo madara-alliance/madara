@@ -2,6 +2,8 @@
 
 ## Next release
 
+- fix: creation of the block context
+- fix: is_missing_class
 - fix: state root - replaced_classes
 - feat(db): backups
 - fix: state root for nonce

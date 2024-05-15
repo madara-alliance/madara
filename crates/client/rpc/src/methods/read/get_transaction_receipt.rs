@@ -26,7 +26,7 @@ use crate::utils::call_info::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
 };
 use crate::utils::execution::{block_context, re_execute_transactions};
-use crate::utils::helpers::{previous_substrate_block_hash, tx_hash_compute, tx_hash_retrieve};
+use crate::utils::helpers::{tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
 use crate::{Felt, Starknet};
 
@@ -95,9 +95,7 @@ where
     let block_number = block_header.block_number;
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
 
-    // computes the previous SUBSTRATE block hash and creates a block context
-    let previous_substrate_block_hash = previous_substrate_block_hash(client, substrate_block_hash)?;
-    let block_context = block_context(client.client.as_ref(), previous_substrate_block_hash)?;
+    let block_context = block_context(client.client.as_ref(), substrate_block_hash)?;
 
     // retrieve all transaction hashes from the block in the cache or compute them
     let block_txs_hashes = if let Some(tx_hashes) = client.get_cached_transaction_hashes(block_hash.into()) {

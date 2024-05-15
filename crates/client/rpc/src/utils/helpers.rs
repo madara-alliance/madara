@@ -48,6 +48,7 @@ pub(crate) fn status(block_number: u64) -> BlockStatus {
     }
 }
 
+#[allow(dead_code)]
 pub fn previous_substrate_block_hash<BE, C, H>(
     starknet: &Starknet<BE, C, H>,
     substrate_block_hash: DHashT,

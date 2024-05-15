@@ -3,9 +3,8 @@ use core::time::Duration;
 use std::sync::Arc;
 
 use itertools::Itertools;
-use mc_db::storage_handler;
 use mc_db::storage_handler::primitives::contract_class::{ContractClassData, ContractClassWrapper};
-use mc_db::storage_handler::StorageView;
+use mc_db::storage_handler::{self, StorageView};
 use mp_block::DeoxysBlock;
 use mp_convert::state_update::ToStateUpdateCore;
 use sp_core::H160;
@@ -212,5 +211,6 @@ async fn fetch_class(
 /// this means we only need to check for class hashes in the db.
 fn is_missing_class(class_hash: &FieldElement) -> bool {
     let class_hash = ClassHash(StarkFelt(class_hash.to_bytes_be()));
-    storage_handler::contract_class_data().contains(&class_hash).is_ok()
+    // TODO: return the db error instead of unwrapping
+    storage_handler::contract_class_data().contains(&class_hash).map(|x| !x).unwrap_or(true)
 }

@@ -78,13 +78,12 @@ pub fn simulate_transactions(
     transactions: Vec<AccountTransaction>,
     simulation_flags: &SimulationFlags,
     block_context: &BlockContext,
-    charge_fee: bool,
 ) -> Result<Vec<TransactionExecutionInfo>, TransactionExecutionError> {
     let mut cached_state = init_cached_state(block_context);
 
     let tx_execution_results = transactions
         .into_iter()
-        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, simulation_flags.validate))
+        .map(|tx| tx.execute(&mut cached_state, block_context, simulation_flags.charge_fee, simulation_flags.validate))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(tx_execution_results)
@@ -266,5 +265,5 @@ pub fn from_tx_info_and_gas_price(
 
 fn init_cached_state(block_context: &BlockContext) -> CachedState<BlockifierStateAdapter> {
     let block_number = block_context.block_info().block_number.0;
-    CachedState::new(BlockifierStateAdapter::new(block_number - 1), GlobalContractCache::new(10))
+    CachedState::new(BlockifierStateAdapter::new(block_number - 1), GlobalContractCache::new(16))
 }

@@ -17,7 +17,6 @@ use super::lib::ConvertCallInfoToExecuteInvocationError;
 use super::utils::{block_number_by_id, tx_execution_infos_to_tx_trace};
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
-use crate::utils::helpers::previous_substrate_block_hash;
 use crate::{utils, Starknet};
 
 pub async fn simulate_transactions<BE, C, H>(
@@ -34,11 +33,15 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash =
-        starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|_e| StarknetRpcApiError::BlockNotFound)?;
+        starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|_| StarknetRpcApiError::BlockNotFound)?;
 
-    let previous_substrate_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
-    let block_context = block_context(starknet.client.as_ref(), previous_substrate_block_hash)?;
+    let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
     let block_number = block_number_by_id(block_id);
+
+    let simulation_flags = SimulationFlags {
+        validate: !simulation_flags.contains(&SimulationFlag::SkipValidate),
+        charge_fee: !simulation_flags.contains(&SimulationFlag::SkipFeeCharge),
+    };
 
     let tx_type_and_tx_iterator = transactions.into_iter().map(|tx| match tx {
         BroadcastedTransaction::Invoke(_) => tx.to_account_transaction().map(|tx| (TxType::Invoke, tx)),
@@ -53,21 +56,10 @@ where
             },
         )?;
 
-    let simulation_flags = SimulationFlags::from(simulation_flags);
-
     let fee_types = user_transactions.iter().map(|tx| tx.fee_type()).collect::<Vec<_>>();
-    let charge_fee = block_context.block_info().gas_prices.eth_l1_gas_price.get() != 1;
 
-    let res = utils::execution::simulate_transactions(user_transactions, &simulation_flags, &block_context, charge_fee)
-        .map_err(|e| {
-            log::error!("Failed to call function: {:#?}", e);
-            StarknetRpcApiError::ContractError
-        })?;
-
-    if res.len() != fee_types.len() {
-        log::error!("Failed to convert one or more transactions to simulated transactions: {:#?}", res);
-        return Err(StarknetRpcApiError::InternalServerError.into());
-    }
+    let res = utils::execution::simulate_transactions(user_transactions, &simulation_flags, &block_context)
+        .map_err(|_| StarknetRpcApiError::ContractError)?;
 
     let simulated_transactions = tx_execution_infos_to_simulated_transactions(tx_types, res, block_number, fee_types)
         .map_err(StarknetRpcApiError::from)?;
