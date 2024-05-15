@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use mc_db::storage_handler::primitives::contract_class::{ContractClassData, ContractClassWrapper};
-use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
+use mc_db::storage_handler::{self, StorageView};
 use mp_block::DeoxysBlock;
 use mp_convert::state_update::ToStateUpdateCore;
 use sp_core::H160;
