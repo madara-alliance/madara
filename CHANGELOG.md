@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: fetch block and state update in only one request
 - fix: creation of the block context
 - fix: is_missing_class
 - fix: state root - replaced_classes
