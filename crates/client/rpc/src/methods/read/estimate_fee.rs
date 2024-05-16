@@ -1,7 +1,6 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use jsonrpsee::core::RpcResult;
 use mp_hashers::HasherT;
-use mp_simulations::convert_flags;
 use mp_transactions::from_broadcasted_transactions::ToAccountTransaction;
 use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -9,9 +8,7 @@ use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_core::types::{
-    BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee as EstimateFeeFlag,
-};
+use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
@@ -30,7 +27,7 @@ use crate::{utils, Starknet};
 pub async fn estimate_fee<BE, C, H>(
     starknet: &Starknet<BE, C, H>,
     request: Vec<BroadcastedTransaction>,
-    simulation_flags: Vec<EstimateFeeFlag>,
+    simulation_flags: Vec<SimulationFlagForEstimateFee>,
     block_id: BlockId,
 ) -> RpcResult<Vec<FeeEstimate>>
 where
@@ -56,25 +53,13 @@ where
     let account_transactions: Vec<AccountTransaction> =
         transactions.into_iter().map(AccountTransaction::from).collect();
 
-    let simulation_flags = convert_flags(simulation_flags);
+    let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
 
-    let fee_estimates = utils::execution::estimate_fee(account_transactions, &simulation_flags, &block_context)
-        .map_err(|e| {
+    let fee_estimates =
+        utils::execution::estimate_fee(account_transactions, validate, &block_context).map_err(|e| {
             log::error!("Failed to call function: {:#?}", e);
             StarknetRpcApiError::ContractError
         })?;
 
-    let estimates = fee_estimates
-        .into_iter()
-        .map(|x| FeeEstimate {
-            gas_consumed: x.gas_consumed,
-            gas_price: x.gas_price,
-            data_gas_consumed: x.data_gas_consumed,
-            data_gas_price: x.data_gas_price,
-            overall_fee: x.overall_fee,
-            unit: x.unit,
-        })
-        .collect();
-
-    Ok(estimates)
+    Ok(fee_estimates)
 }
