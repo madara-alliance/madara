@@ -199,6 +199,5 @@ async fn fetch_class(
 /// this means we only need to check for class hashes in the db.
 fn is_missing_class(class_hash: &FieldElement) -> Result<bool, DeoxysStorageError> {
     let class_hash = ClassHash(StarkFelt(class_hash.to_bytes_be()));
-    // TODO: return the db error instead of unwrapping
     storage_handler::contract_class_data().contains(&class_hash).map(|x| !x)
 }
