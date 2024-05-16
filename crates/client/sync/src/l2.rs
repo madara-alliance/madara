@@ -328,7 +328,7 @@ where
             loop {
                 interval.tick().await;
                 if let Err(e) = update_starknet_data(&provider, client.as_ref()).await {
-                    log::error!("{}", e.chain().map(|e| e.to_string()).collect::<Vec<_>>().join(": "));
+                    log::error!("{:#}", e);
                 }
             }
         } => Ok(()),
