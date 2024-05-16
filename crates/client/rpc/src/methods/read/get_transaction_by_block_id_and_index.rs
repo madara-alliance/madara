@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use jsonrpsee::types::error::CallError;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -48,28 +47,29 @@ where
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
+    let index = index as usize;
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let block_number = starknet_block.header().block_number;
 
-    let transaction = starknet_block.transactions().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
+    let transaction = starknet_block.transactions().get(index).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
     let chain_id = starknet.chain_id()?;
 
     let opt_cached_transaction_hashes =
         starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into());
 
-    let transaction_hash = if let Some(cached_tx_hashes) = opt_cached_transaction_hashes {
-        cached_tx_hashes.get(index as usize).map(|&fe| FieldElement::from(Felt252Wrapper::from(fe))).ok_or(
-            CallError::Failed(anyhow::anyhow!(
-                "Number of cached tx hashes does not match the number of transactions in block with id {:?}",
-                block_id
-            )),
-        )?
-    } else {
-        Felt252Wrapper::from(
-            transaction.compute_hash::<H>(chain_id.0.into(), false, Some(starknet_block.header().block_number)).0,
-        )
-        .into()
+    // Get the transaction hash from the cache if it exists, otherwise compute it.
+    let transaction_hash = match opt_cached_transaction_hashes {
+        Some(cached_tx_hashes) => {
+            cached_tx_hashes.get(index).map(|&fe| FieldElement::from(Felt252Wrapper::from(fe))).ok_or(
+                // This should never happen, because the index is checked above when getting the transaction.
+                StarknetRpcApiError::InternalServerError,
+            )?
+        }
+        None => {
+            Felt252Wrapper::from(transaction.compute_hash::<H>(chain_id.0.into(), false, Some(block_number)).0).into()
+        }
     };
 
     Ok(to_starknet_core_tx(transaction.clone(), transaction_hash))
