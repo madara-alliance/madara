@@ -8,7 +8,6 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, BlockTag, MaybePendingBlockWithTxs};
 
-use crate::errors::StarknetRpcApiError;
 use crate::{get_block_with_txs_finalized, get_block_with_txs_pending, Starknet};
 
 /// Get block information with full transactions given the block id.
@@ -41,10 +40,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let chain_id = starknet.chain_id()?;
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        log::error!("Block not found: '{e}'");
-        StarknetRpcApiError::BlockNotFound
-    })?;
+    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
 
     match block_id {
         BlockId::Tag(BlockTag::Pending) => get_block_with_txs_pending::<H>(chain_id),

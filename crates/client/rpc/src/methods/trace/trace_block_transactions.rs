@@ -29,10 +29,7 @@ where
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        log::error!("Block not found: '{e}'");
-        StarknetRpcApiError::BlockNotFound
-    })?;
+    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
         log::error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");

@@ -70,10 +70,7 @@ where
         _ => block_number - 1,
     };
     let substrate_block_hash =
-        starknet.substrate_block_hash_from_starknet_block(BlockId::Number(previous_block_number)).map_err(|e| {
-            log::error!("Failed to retrieve previous block substrate hash: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
+        starknet.substrate_block_hash_from_starknet_block(BlockId::Number(previous_block_number))?;
 
     Ok(substrate_block_hash)
 }
