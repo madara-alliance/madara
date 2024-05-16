@@ -27,7 +27,7 @@ impl OrderedEvents {
         self.index
     }
 
-    pub fn events(&self) -> &Vec<Event> {
+    pub fn events(&self) -> &[Event] {
         &self.events
     }
 }
