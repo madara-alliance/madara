@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(rpc): error handling
 - feat: fetch block and state update in only one request
 - feat: added deoxys launcher script
 - fix: creation of the block context
