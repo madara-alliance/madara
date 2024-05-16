@@ -7,6 +7,7 @@ use anyhow::{bail, Context};
 use futures::{stream, StreamExt, TryStreamExt};
 use lazy_static::lazy_static;
 use mc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
+use mc_db::storage_handler::DeoxysStorageError;
 use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
 use mp_block::DeoxysBlock;
@@ -18,7 +19,7 @@ use sp_core::H256;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_core::types::{PendingStateUpdate, StateUpdate};
 use starknet_ff::FieldElement;
-use starknet_providers::sequencer::models::BlockId;
+use starknet_providers::sequencer::models::{BlockId, StateUpdateWithBlock};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -54,8 +55,8 @@ where
 pub enum L2SyncError {
     #[error("provider error")]
     Provider(#[from] ProviderError),
-    #[error("fetch retry limit exceeded")]
-    FetchRetryLimit,
+    #[error("db error")]
+    Db(#[from] DeoxysStorageError),
 }
 
 /// Contains the latest Starknet verified state on L2
@@ -327,7 +328,7 @@ where
             loop {
                 interval.tick().await;
                 if let Err(e) = update_starknet_data(&provider, client.as_ref()).await {
-                    log::error!("Failed to update highest block hash and number: {}", e);
+                    log::error!("{}", e.chain().map(|e| e.to_string()).collect::<Vec<_>>().join(": "));
                 }
             }
         } => Ok(()),
@@ -393,26 +394,19 @@ pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> anyhow::Resul
     Ok(state_root.into())
 }
 
-async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
+async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> anyhow::Result<()>
 where
     C: HeaderBackend<DBlockT>,
 {
-    let block = provider.get_block(BlockId::Pending).await.map_err(|e| format!("Failed to get pending block: {e}"))?;
+    let StateUpdateWithBlock { state_update, block } =
+        provider.get_state_update_with_block(BlockId::Pending).await.context("Failed to get pending block")?;
 
     let hash_best = client.info().best_hash;
     let hash_current = block.parent_block_hash;
-    let number = provider
-        .get_block_id_by_hash(hash_current)
-        .await
-        .map_err(|e| format!("Failed to get block id by hash: {e}"))?;
+    let number = provider.get_block_id_by_hash(hash_current).await.context("Failed to get block id by hash")?;
     let tmp = DHashT::from_str(&hash_current.to_string()).unwrap_or(Default::default());
 
     if hash_best == tmp {
-        let state_update = provider
-            .get_state_update(BlockId::Pending)
-            .await
-            .map_err(|e| format!("Failed to get pending state update: {e}"))?;
-
         *STARKNET_PENDING_BLOCK.write().expect("Failed to acquire write lock on STARKNET_PENDING_BLOCK") =
             Some(spawn_compute(|| crate::convert::convert_block(block)).await.unwrap());
 

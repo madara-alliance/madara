@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: fetch block and state update in only one request
 - feat: added deoxys launcher script
 - fix: creation of the block context
 - fix: is_missing_class

@@ -7061,7 +7061,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
 dependencies = [
- "proc-macro-crate 1.1.3",
+ "proc-macro-crate 2.0.0",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -11128,7 +11128,7 @@ dependencies = [
 [[package]]
 name = "starknet-core"
 version = "0.10.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "base64 0.21.5",
  "flate2",
@@ -11185,7 +11185,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto"
 version = "0.6.2"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "crypto-bigint",
  "hex",
@@ -11215,7 +11215,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto-codegen"
 version = "0.3.3"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "starknet-curve 0.4.2",
  "starknet-ff 0.3.7",
@@ -11243,7 +11243,7 @@ dependencies = [
 [[package]]
 name = "starknet-curve"
 version = "0.4.2"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "starknet-ff 0.3.7",
 ]
@@ -11266,7 +11266,7 @@ dependencies = [
 [[package]]
 name = "starknet-ff"
 version = "0.3.7"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "ark-ff",
  "bigdecimal",
@@ -11309,7 +11309,7 @@ dependencies = [
 [[package]]
 name = "starknet-providers"
 version = "0.10.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "async-trait",
  "auto_impl",
