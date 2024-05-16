@@ -7,6 +7,7 @@ use anyhow::{bail, Context};
 use futures::{stream, StreamExt, TryStreamExt};
 use lazy_static::lazy_static;
 use mc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
+use mc_db::storage_handler::DeoxysStorageError;
 use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
 use mp_block::DeoxysBlock;
@@ -54,8 +55,8 @@ where
 pub enum L2SyncError {
     #[error("provider error")]
     Provider(#[from] ProviderError),
-    #[error("fetch retry limit exceeded")]
-    FetchRetryLimit,
+    #[error("db error")]
+    Db(#[from] DeoxysStorageError),
 }
 
 /// Contains the latest Starknet verified state on L2

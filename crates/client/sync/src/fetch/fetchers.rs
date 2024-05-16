@@ -4,13 +4,15 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use mc_db::storage_handler::primitives::contract_class::{ContractClassData, ContractClassWrapper};
-use mc_db::storage_handler::{self, StorageView};
+use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
 use mp_block::DeoxysBlock;
 use mp_convert::state_update::ToStateUpdateCore;
 use sp_core::H160;
 use starknet_api::core::ClassHash;
 use starknet_api::hash::StarkFelt;
-use starknet_core::types::{BlockId as BlockIdCore, DeclaredClassItem, DeployedContractItem, StateUpdate};
+use starknet_core::types::{
+    BlockId as BlockIdCore, DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate,
+};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{self as p, BlockId};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
@@ -47,12 +49,6 @@ pub struct FetchConfig {
     pub n_blocks_to_sync: Option<u64>,
 }
 
-pub async fn fetch_block(client: &SequencerGatewayProvider, block_number: u64) -> Result<p::Block, L2SyncError> {
-    let block = client.get_block(BlockId::Number(block_number)).await?;
-
-    Ok(block)
-}
-
 pub struct L2BlockAndUpdates {
     pub block_n: u64,
     pub block: p::Block,
@@ -76,24 +72,23 @@ pub async fn fetch_block_and_updates(
     Ok(L2BlockAndUpdates { block_n, block, state_update, class_update })
 }
 
-async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, L2SyncError>
+async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, ProviderError>
 where
     F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Result<T, L2SyncError>>,
+    Fut: std::future::Future<Output = Result<T, ProviderError>>,
 {
     let mut attempt = 0;
     loop {
         match f().await {
             Ok(res) => return Ok(res),
-            Err(L2SyncError::Provider(err)) => {
+            Err(ProviderError::StarknetError(StarknetError::BlockNotFound)) => {
+                break Err(ProviderError::StarknetError(StarknetError::BlockNotFound));
+            }
+            Err(err) => {
                 let delay = base_delay * 2_u32.pow(attempt).min(6); // Cap to prevent overly long delays
                 attempt += 1;
                 if attempt > max_retries {
-                    break Err(if matches!(err, ProviderError::RateLimited) {
-                        L2SyncError::FetchRetryLimit
-                    } else {
-                        L2SyncError::Provider(err)
-                    });
+                    break Err(err);
                 }
                 match err {
                     ProviderError::RateLimited => {
@@ -103,7 +98,6 @@ where
                 }
                 tokio::time::sleep(delay).await;
             }
-            Err(err) => break Err(err),
         }
     }
 }
@@ -123,7 +117,7 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBloc
 async fn fetch_state_update_with_block(
     provider: &SequencerGatewayProvider,
     block_number: u64,
-) -> Result<(StateUpdate, p::Block), L2SyncError> {
+) -> Result<(StateUpdate, p::Block), ProviderError> {
     let state_update_with_block = provider.get_state_update_with_block(BlockId::Number(block_number)).await?;
 
     Ok((state_update_with_block.state_update.to_state_update_core(), state_update_with_block.block))
@@ -152,8 +146,15 @@ async fn fetch_class_update(
         )
         .chain(state_update.state_diff.deprecated_declared_classes.iter())
         .unique()
-        .filter(|class_hash| is_missing_class(class_hash))
-        .collect();
+        //.filter(|class_hash| is_missing_class(class_hash)?)
+        .filter_map(|class_hash| {
+            match is_missing_class(class_hash) {
+                Ok(true) => Some(Ok(class_hash)),
+                Ok(false) => None,
+                Err(e) => Some(Err(e)),
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     let arc_provider = Arc::new(provider.clone());
 
@@ -187,7 +188,7 @@ async fn fetch_class(
     class_hash: FieldElement,
     block_number: u64,
     provider: &SequencerGatewayProvider,
-) -> Result<ContractClassData, L2SyncError> {
+) -> Result<ContractClassData, ProviderError> {
     let core_class = provider.get_class(BlockIdCore::Number(block_number), class_hash).await?;
     Ok(ContractClassData {
         hash: ClassHash(StarkFelt(class_hash.to_bytes_be())),
@@ -199,8 +200,8 @@ async fn fetch_class(
 ///
 /// Since a change in class definition will result in a change in class hash,
 /// this means we only need to check for class hashes in the db.
-fn is_missing_class(class_hash: &FieldElement) -> bool {
+fn is_missing_class(class_hash: &FieldElement) -> Result<bool, DeoxysStorageError> {
     let class_hash = ClassHash(StarkFelt(class_hash.to_bytes_be()));
     // TODO: return the db error instead of unwrapping
-    storage_handler::contract_class_data().contains(&class_hash).map(|x| !x).unwrap_or(true)
+    storage_handler::contract_class_data().contains(&class_hash).map(|x| !x)
 }
