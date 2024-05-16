@@ -52,12 +52,12 @@ where
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
     let block_number = starknet_block.header().block_number;
+    let starknet_block_hash = starknet_block.header().hash::<H>();
 
     let transaction = starknet_block.transactions().get(index).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
     let chain_id = starknet.chain_id()?;
 
-    let opt_cached_transaction_hashes =
-        starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into());
+    let opt_cached_transaction_hashes = starknet.get_cached_transaction_hashes(starknet_block_hash.into());
 
     // Get the transaction hash from the cache if it exists, otherwise compute it.
     let transaction_hash = match opt_cached_transaction_hashes {
