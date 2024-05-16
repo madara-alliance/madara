@@ -17,9 +17,10 @@ use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{Calldata, Fee, TransactionVersion};
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 
+use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
-use crate::{utils, Starknet, StarknetReadRpcApiServer};
+use crate::{utils, Starknet};
 
 /// Estimate the L2 fee of a message sent on L1
 ///
@@ -51,11 +52,9 @@ where
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
+    let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let block_number = block.header().block_number;
 
-    let block_number = starknet.block_number().map_err(|e| {
-        log::error!("'{e}'");
-        StarknetRpcApiError::BlockNotFound
-    })?;
     let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
 
     let transaction = convert_message_into_tx::<H>(message, chain_id, Some(block_number));
@@ -65,16 +64,7 @@ where
         StarknetRpcApiError::ContractError
     })?;
 
-    let estimate_message_fee = FeeEstimate {
-        gas_consumed: message_fee.gas_consumed,
-        gas_price: message_fee.gas_price,
-        data_gas_consumed: message_fee.data_gas_consumed,
-        data_gas_price: message_fee.data_gas_price,
-        overall_fee: message_fee.overall_fee,
-        unit: message_fee.unit,
-    };
-
-    Ok(estimate_message_fee)
+    Ok(message_fee)
 }
 
 pub fn convert_message_into_tx<H: HasherT + Send + Sync + 'static>(
