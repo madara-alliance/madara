@@ -10,7 +10,6 @@ use starknet_core::types::{
     BlockId, BroadcastedTransaction, SimulatedTransaction, SimulationFlag, TransactionTraceWithHash,
 };
 use starknet_ff::FieldElement;
-use thiserror::Error;
 
 use super::simulate_transactions::simulate_transactions;
 use super::trace_block_transactions::trace_block_transactions;
@@ -45,7 +44,7 @@ where
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum ConvertCallInfoToExecuteInvocationError {
     #[error("One of the simulated transaction failed")]
     TransactionExecutionFailed,
@@ -64,7 +63,7 @@ impl From<ConvertCallInfoToExecuteInvocationError> for StarknetRpcApiError {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum TryFuntionInvocationFromCallInfoError {
     #[error(transparent)]
     TransactionExecution(#[from] TransactionExecutionError),

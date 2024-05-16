@@ -9,7 +9,6 @@ use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
-use thiserror::Error;
 
 use self::block_hash::BlockHashView;
 use self::block_number::BlockNumberView;
@@ -46,7 +45,7 @@ pub mod bonsai_identifier {
     pub const EVENT: &[u8] = "0xevent".as_bytes();
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum DeoxysStorageError {
     #[error("failed to initialize trie for {0}")]
     TrieInitError(TrieType),

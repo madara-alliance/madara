@@ -21,7 +21,6 @@ use starknet_core::types::{PendingStateUpdate, StateUpdate};
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{BlockId, StateUpdateWithBlock};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
-use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Duration;
@@ -51,7 +50,7 @@ where
 }
 
 // TODO: add more error variants, which are more explicit
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum L2SyncError {
     #[error("provider error")]
     Provider(#[from] ProviderError),
