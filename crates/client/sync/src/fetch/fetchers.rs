@@ -94,7 +94,7 @@ where
                     ProviderError::RateLimited => {
                         log::info!("The fetching process has been rate limited, retrying in {:?}", delay)
                     }
-                    _ => log::info!("The provider has returned an error, retrying in {:?}", delay),
+                    _ => log::info!("The provider has returned an error: {}, retrying in {:?}", err, delay),
                 }
                 tokio::time::sleep(delay).await;
             }
@@ -146,13 +146,10 @@ async fn fetch_class_update(
         )
         .chain(state_update.state_diff.deprecated_declared_classes.iter())
         .unique()
-        //.filter(|class_hash| is_missing_class(class_hash)?)
-        .filter_map(|class_hash| {
-            match is_missing_class(class_hash) {
-                Ok(true) => Some(Ok(class_hash)),
-                Ok(false) => None,
-                Err(e) => Some(Err(e)),
-            }
+        .filter_map(|class_hash| match is_missing_class(class_hash) {
+            Ok(true) => Some(Ok(class_hash)),
+            Ok(false) => None,
+            Err(e) => Some(Err(e)),
         })
         .collect::<Result<Vec<_>, _>>()?;
 
