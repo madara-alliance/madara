@@ -328,7 +328,7 @@ where
             loop {
                 interval.tick().await;
                 if let Err(e) = update_starknet_data(&provider, client.as_ref()).await {
-                    log::error!("Failed to update highest block hash and number: {}", e);
+                    log::error!("{}", e.chain().map(|e| e.to_string()).collect::<Vec<_>>().join(": "));
                 }
             }
         } => Ok(()),
@@ -394,21 +394,19 @@ pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> anyhow::Resul
     Ok(state_root.into())
 }
 
-async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
+async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> anyhow::Result<()>
 where
     C: HeaderBackend<DBlockT>,
 {
     let StateUpdateWithBlock { state_update, block } = provider
         .get_state_update_with_block(BlockId::Pending)
-        .await
-        .map_err(|e| format!("Failed to get pending block: {e}"))?;
+        .await.context("Failed to get pending block")?;
 
     let hash_best = client.info().best_hash;
     let hash_current = block.parent_block_hash;
     let number = provider
         .get_block_id_by_hash(hash_current)
-        .await
-        .map_err(|e| format!("Failed to get block id by hash: {e}"))?;
+        .await.context("Failed to get block id by hash")?;
     let tmp = DHashT::from_str(&hash_current.to_string()).unwrap_or(Default::default());
 
     if hash_best == tmp {
