@@ -398,15 +398,12 @@ async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C
 where
     C: HeaderBackend<DBlockT>,
 {
-    let StateUpdateWithBlock { state_update, block } = provider
-        .get_state_update_with_block(BlockId::Pending)
-        .await.context("Failed to get pending block")?;
+    let StateUpdateWithBlock { state_update, block } =
+        provider.get_state_update_with_block(BlockId::Pending).await.context("Failed to get pending block")?;
 
     let hash_best = client.info().best_hash;
     let hash_current = block.parent_block_hash;
-    let number = provider
-        .get_block_id_by_hash(hash_current)
-        .await.context("Failed to get block id by hash")?;
+    let number = provider.get_block_id_by_hash(hash_current).await.context("Failed to get block id by hash")?;
     let tmp = DHashT::from_str(&hash_current.to_string()).unwrap_or(Default::default());
 
     if hash_best == tmp {
