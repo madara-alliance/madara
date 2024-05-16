@@ -98,10 +98,9 @@ where
     let block_context = block_context(client.client.as_ref(), substrate_block_hash)?;
 
     // retrieve all transaction hashes from the block in the cache or compute them
-    let block_txs_hashes = if let Some(tx_hashes) = client.get_cached_transaction_hashes(block_hash.into()) {
-        tx_hash_retrieve(tx_hashes)
-    } else {
-        tx_hash_compute::<H>(&block, chain_id)
+    let block_txs_hashes = match client.get_cached_transaction_hashes(block_hash.into()) {
+        Some(tx_hashes) => tx_hash_retrieve(tx_hashes),
+        None => tx_hash_compute::<H>(&block, chain_id),
     };
 
     // retrieve the transaction index in the block with the transaction hash
