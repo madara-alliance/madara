@@ -41,18 +41,13 @@ where
     let chain_id = starknet.chain_id()?;
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
-    let block_txs_hashes = if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(block_hash.into()) {
-        tx_hash_retrieve(tx_hashes)
-    } else {
-        tx_hash_compute::<H>(&starknet_block, chain_id)
+    let block_txs_hashes = match starknet.get_cached_transaction_hashes(block_hash.into()) {
+        Some(tx_hashes) => tx_hash_retrieve(tx_hashes),
+        None => tx_hash_compute::<H>(&starknet_block, chain_id),
     };
 
-    let transactions = starknet_block.transactions();
-    if transactions.is_empty() {
-        log::error!("Failed to retrieve transaction from block with hash {block_hash:?}");
-        return Err(StarknetRpcApiError::InternalServerError.into());
-    }
-
+    // create a vector of transactions with their corresponding hashes without deploy transactions,
+    // blockifier does not support deploy transactions
     let transaction_with_hash: Vec<_> = starknet_block
         .transactions()
         .iter()
@@ -65,7 +60,7 @@ where
 
     let mut transactions_traces = Vec::new();
 
-    let transactions_info = re_execute_transactions(vec![], transactions_blockifier, &block_context).map_err(|e| {
+    let execution_infos = re_execute_transactions(vec![], transactions_blockifier, &block_context).map_err(|e| {
         log::error!("Failed to re-execute transactions: '{e}'");
         StarknetRpcApiError::InternalServerError
     })?;
@@ -79,7 +74,7 @@ where
             Transaction::Deploy(_) => unreachable!(),
         };
 
-        match tx_execution_infos_to_tx_trace(tx_type, &transactions_info[index], block_number) {
+        match tx_execution_infos_to_tx_trace(tx_type, &execution_infos[index], block_number) {
             Ok(trace) => {
                 let transaction_trace = TransactionTraceWithHash { trace_root: trace, transaction_hash: *tx_hash };
                 transactions_traces.push(transaction_trace);
