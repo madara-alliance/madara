@@ -61,13 +61,7 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
                 handler_contract_data.insert(contract_address, (None, Some(nonce))).unwrap()
             });
 
-            let res = handler_contract_data.commit(block_number);
-            let contract_address_pb = ContractAddress(PatriciaKey(
-                StarkFelt::try_from("0x003dc6e17fc695f720bc1fb9c8703c7aab615500635e0d4d04854bf215e954fc").unwrap(),
-            ));
-            let class_hash_pb = storage_handler::contract_data().get(&contract_address_pb).unwrap_or_default();
-            println!("class_hash_pb: {:?}", class_hash_pb);
-            res
+            handler_contract_data.commit(block_number)
         },
         // Class hash to compiled class hash update
         async move {
