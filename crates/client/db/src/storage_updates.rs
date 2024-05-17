@@ -13,7 +13,7 @@ use storage_handler::primitives::contract_class::{
     ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData,
 };
 
-use crate::storage_handler::{self, DeoxysStorageError, StorageView, StorageViewMut};
+use crate::storage_handler::{self, DeoxysStorageError, StorageViewMut};
 
 pub async fn store_state_update(block_number: u64, state_update: StateUpdate) -> Result<(), DeoxysStorageError> {
     let state_diff = state_update.state_diff.clone();
@@ -49,15 +49,14 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
 
             iter_depoyed.chain(iter_replaced).for_each(|(contract_address, class_hash)| {
                 let class_hash = Some(class_hash);
-                let previous_nonce = handler_contract_data.get(&contract_address).unwrap().map(|data| data.nonce);
-                let nonce = match previous_nonce.unwrap_or_default().get().copied() {
-                    Some(nonce) => Some(nonce),
-                    None => nonce_map.remove(&contract_address),
-                };
-
+                // If the nonce is not present in the nonce map, it means that the nonce was not updated in this
+                // block If the nonce is present in the nonce map, we remove it from the map and use
+                // it
+                let nonce = nonce_map.remove(&contract_address);
                 handler_contract_data.insert(contract_address, (class_hash, nonce)).unwrap()
             });
 
+            // insert nonces for contracts that were not deployed or replaced in this block
             nonce_map.into_iter().for_each(|(contract_address, nonce)| {
                 handler_contract_data.insert(contract_address, (None, Some(nonce))).unwrap()
             });
