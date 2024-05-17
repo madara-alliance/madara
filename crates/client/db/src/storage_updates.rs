@@ -13,7 +13,7 @@ use storage_handler::primitives::contract_class::{
     ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData,
 };
 
-use crate::storage_handler::{self, DeoxysStorageError, StorageView, StorageViewMut};
+use crate::storage_handler::{self, DeoxysStorageError, StorageViewMut};
 
 pub async fn store_state_update(block_number: u64, state_update: StateUpdate) -> Result<(), DeoxysStorageError> {
     let state_diff = state_update.state_diff.clone();
