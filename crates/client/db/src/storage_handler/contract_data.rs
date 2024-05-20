@@ -144,7 +144,7 @@ impl StorageViewMut for ContractDataViewMut {
             }
 
             // If the contract is just being deployed, we need to initialize the nonce
-            if contract_data.nonce.is_empty() && contract_data.class_hash.is_empty() {
+            if contract_data.nonce.is_empty() {
                 contract_data.nonce.push(block_number, Nonce::default())?;
             }
 
