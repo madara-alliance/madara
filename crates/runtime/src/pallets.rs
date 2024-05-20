@@ -36,13 +36,6 @@ impl pallet_starknet::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type SystemHash = DHasherT;
     type TimestampProvider = Timestamp;
-    type UnsignedPriority = UnsignedPriority;
-    type TransactionLongevity = TransactionLongevity;
-    #[cfg(not(feature = "disable-transaction-fee"))]
-    type DisableTransactionFee = ConstBool<false>;
-    #[cfg(feature = "disable-transaction-fee")]
-    type DisableTransactionFee = ConstBool<true>;
-    type DisableNonceValidation = ConstBool<false>;
     type InvokeTxMaxNSteps = InvokeTxMaxNSteps;
     type ValidateMaxNSteps = ValidateMaxNSteps;
     type ProtocolVersion = ProtocolVersion;

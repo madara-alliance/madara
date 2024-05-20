@@ -49,12 +49,10 @@ pub mod types;
 #[macro_use]
 pub extern crate alloc;
 
-use alloc::str::from_utf8_unchecked;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use blockifier::execution::call_info::CallInfo;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
@@ -71,9 +69,8 @@ use sp_runtime::DigestItem;
 use starknet_api::core::{CompiledClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
+use starknet_api::transaction::{Event as StarknetEvent, TransactionHash};
 
-use crate::alloc::string::ToString;
 use crate::types::{CasmClassHash, SierraClassHash};
 
 pub(crate) const LOG_TARGET: &str = "runtime::starknet";
@@ -112,23 +109,6 @@ pub mod pallet {
         type SystemHash: HasherT;
         /// The block time
         type TimestampProvider: Time;
-        /// A configuration for base priority of unsigned transactions.
-        ///
-        /// This is exposed so that it can be tuned for particular runtime, when
-        /// multiple pallets send unsigned transactions.
-        #[pallet::constant]
-        type UnsignedPriority: Get<TransactionPriority>;
-        /// A configuration for longevity of transactions.
-        ///
-        /// This is exposed so that it can be tuned for particular runtime to
-        /// set how long transactions are kept in the mempool.
-        #[pallet::constant]
-        type TransactionLongevity: Get<TransactionLongevity>;
-        /// A bool to disable transaction fees and make all transactions free
-        #[pallet::constant]
-        type DisableTransactionFee: Get<bool>;
-        /// A bool to disable Nonce validation
-        type DisableNonceValidation: Get<bool>;
         #[pallet::constant]
         type InvokeTxMaxNSteps: Get<u32>;
         #[pallet::constant]
@@ -170,17 +150,6 @@ pub mod pallet {
             Weight::zero()
         }
     }
-
-    // TODO: @charpa is this used in any RPC calls?
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn tx_events)]
-    pub(super) type TxEvents<T: Config> = StorageMap<_, Identity, TransactionHash, Vec<StarknetEvent>, ValueQuery>;
-
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn tx_messages)]
-    pub(super) type TxMessages<T: Config> = StorageMap<_, Identity, TransactionHash, Vec<MessageToL1>, ValueQuery>;
 
     #[pallet::storage]
     #[pallet::unbounded]
@@ -275,7 +244,6 @@ pub mod pallet {
     /// EVENTS
     /// See: `<https://docs.substrate.io/main-docs/build/events-errors/>`
     #[pallet::event]
-    #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         KeepStarknetStrange,
         /// Regular Starknet event
@@ -372,29 +340,6 @@ pub mod pallet {
 
 /// The Starknet pallet internal functions.
 impl<T: Config> Pallet<T> {
-    /// convert chain_id
-    #[inline(always)]
-    pub fn chain_id_str() -> String {
-        unsafe { from_utf8_unchecked(&T::ChainId::get().0.to_bytes_be()).to_string() }
-    }
-
-    /// Get the block hash of the previous block.
-    ///
-    /// # Arguments
-    ///
-    /// * `current_block_number` - The number of the current block.
-    ///
-    /// # Returns
-    ///
-    /// The block hash of the parent (previous) block or 0 if the current block is 0.
-    #[inline(always)]
-    pub fn parent_block_hash(current_block_number: u64) -> Felt252Wrapper {
-        match storage_handler::block_hash().get(current_block_number) {
-            Ok(Some(block_hash)) => block_hash,
-            _ => Felt252Wrapper::ZERO,
-        }
-    }
-
     /// Get the current block timestamp in seconds.
     ///
     /// # Returns
@@ -404,18 +349,6 @@ impl<T: Config> Pallet<T> {
     pub fn block_timestamp() -> u64 {
         let timestamp_in_millisecond: u64 = T::TimestampProvider::now().unique_saturated_into();
         timestamp_in_millisecond / 1000
-    }
-
-    #[inline(always)]
-    pub fn event_count() -> u128 {
-        TxEvents::<T>::iter_values().map(|v| v.len() as u128).sum()
-    }
-
-    /// Returns a storage keys and values of a given contract
-    pub fn get_storage_from(contract_address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
-        Ok(storage_handler::contract_storage_trie()
-            .get_storage(&contract_address)
-            .map_err(|_| Error::<T>::ContractNotFound)?)
     }
 
     /// Store a Starknet block in the blockchain.
@@ -460,126 +393,7 @@ impl<T: Config> Pallet<T> {
         }
     }
 
-    /// Aggregate L2 > L1 messages from the call info.
-    ///
-    /// # Arguments
-    ///
-    /// * `tx_hash` - The hash of the transaction being processed
-    /// * `call_info` — A ref to the call info structure.
-    /// * `next_order` — Next expected message order, has to be 0 for a top level invocation
-    ///
-    /// # Returns
-    ///
-    /// Next expected message order
-    fn aggregate_messages_in_call_info(tx_hash: TransactionHash, call_info: &CallInfo, next_order: usize) -> usize {
-        let mut message_idx = 0;
-        let mut inner_call_idx = 0;
-        let mut next_order = next_order;
-
-        loop {
-            // Store current call's messages as long as they have sequential orders
-            if message_idx < call_info.execution.l2_to_l1_messages.len() {
-                let ordered_message = &call_info.execution.l2_to_l1_messages[message_idx];
-                if ordered_message.order == next_order {
-                    let message = MessageToL1 {
-                        from_address: call_info.call.storage_address,
-                        to_address: ordered_message.message.to_address,
-                        payload: ordered_message.message.payload.clone(),
-                    };
-                    TxMessages::<T>::append(tx_hash, message);
-                    next_order += 1;
-                    message_idx += 1;
-                    continue;
-                }
-            }
-
-            // Go deeper to find the continuation of the sequence
-            if inner_call_idx < call_info.inner_calls.len() {
-                next_order =
-                    Self::aggregate_messages_in_call_info(tx_hash, &call_info.inner_calls[inner_call_idx], next_order);
-                inner_call_idx += 1;
-                continue;
-            }
-
-            // At this point we have iterated over all sequential messages and visited all internal calls
-            break;
-        }
-
-        next_order
-    }
-
-    /// Emit events from the call info.
-    ///
-    /// # Arguments
-    ///
-    /// * `call_info` — A ref to the call info structure.
-    /// * `next_order` — Next expected event order, has to be 0 for a top level invocation
-    ///
-    /// # Returns
-    ///
-    /// Next expected event order
-    #[inline(always)]
-    fn emit_events_in_call_info(tx_hash: TransactionHash, call_info: &CallInfo, next_order: usize) -> usize {
-        let mut event_idx = 0;
-        let mut inner_call_idx = 0;
-        let mut next_order = next_order;
-
-        loop {
-            // Emit current call's events as long as they have sequential orders
-            if event_idx < call_info.execution.events.len() {
-                let ordered_event = &call_info.execution.events[event_idx];
-                if ordered_event.order == next_order {
-                    let event = StarknetEvent {
-                        from_address: call_info.call.storage_address,
-                        content: ordered_event.event.clone(),
-                    };
-                    Self::deposit_event(Event::<T>::StarknetEvent(event.clone()));
-                    TxEvents::<T>::append(tx_hash, event);
-                    next_order += 1;
-                    event_idx += 1;
-                    continue;
-                }
-            }
-
-            // Go deeper to find the continuation of the sequence
-            if inner_call_idx < call_info.inner_calls.len() {
-                next_order =
-                    Self::emit_events_in_call_info(tx_hash, &call_info.inner_calls[inner_call_idx], next_order);
-                inner_call_idx += 1;
-                continue;
-            }
-
-            // At this point we have iterated over all sequential events and visited all internal calls
-            break;
-        }
-
-        next_order
-    }
-
-    pub fn emit_and_store_tx_and_fees_events(
-        tx_hash: TransactionHash,
-        execute_call_info: &Option<CallInfo>,
-        fee_transfer_call_info: &Option<CallInfo>,
-    ) {
-        if let Some(call_info) = execute_call_info {
-            Self::emit_events_in_call_info(tx_hash, call_info, 0);
-            Self::aggregate_messages_in_call_info(tx_hash, call_info, 0);
-        }
-        if let Some(call_info) = fee_transfer_call_info {
-            Self::emit_events_in_call_info(tx_hash, call_info, 0);
-            Self::aggregate_messages_in_call_info(tx_hash, call_info, 0);
-        }
-    }
-
     pub fn chain_id() -> Felt252Wrapper {
         T::ChainId::get()
-    }
-
-    pub fn program_hash() -> Felt252Wrapper {
-        T::ProgramHash::get()
-    }
-
-    pub fn is_transaction_fee_disabled() -> bool {
-        T::DisableTransactionFee::get()
     }
 }
