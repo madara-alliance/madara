@@ -8,7 +8,7 @@ services:
     container_name: deoxys
     restart: unless-stopped
     ports:
-      - "9944:9944"
+      - "${RPC_PORT:-9944}:9944"
     volumes:
       - $HOME/deoxys:/var/lib/deoxys
     environment:
@@ -19,6 +19,6 @@ services:
       --l1-endpoint ${ETHEREUM_API_URL}
       --network main
       --chain starknet
-      --rpc-port 9944
+      --rpc-port ${RPC_PORT:-9944}
       --rpc-external
       --rpc-cors "*"
