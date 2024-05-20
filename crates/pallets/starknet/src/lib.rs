@@ -54,14 +54,12 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use frame_support::pallet_prelude::*;
-use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
 use mc_db::storage_handler;
 use mc_db::storage_handler::StorageViewMut;
 use mp_block::DeoxysBlock;
 use mp_digest_log::DEOXYS_ENGINE_ID;
 use mp_felt::{trim_hash, Felt252Wrapper};
-use mp_hashers::HasherT;
 use mp_sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRESS, INHERENT_IDENTIFIER};
 use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
@@ -105,10 +103,6 @@ pub mod pallet {
     pub trait Config: frame_system::Config {
         /// Because this pallet emits events, it depends on the runtime's definition of an event.
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-        /// The hashing function to use.
-        type SystemHash: HasherT;
-        /// The block time
-        type TimestampProvider: Time;
     }
 
     /// The Starknet pallet hooks.
@@ -328,17 +322,6 @@ pub mod pallet {
 
 /// The Starknet pallet internal functions.
 impl<T: Config> Pallet<T> {
-    /// Get the current block timestamp in seconds.
-    ///
-    /// # Returns
-    ///
-    /// The current block timestamp in seconds.
-    #[inline(always)]
-    pub fn block_timestamp() -> u64 {
-        let timestamp_in_millisecond: u64 = T::TimestampProvider::now().unique_saturated_into();
-        timestamp_in_millisecond / 1000
-    }
-
     /// Store a Starknet block in the blockchain.
     ///
     /// # Arguments

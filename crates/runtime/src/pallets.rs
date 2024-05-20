@@ -11,7 +11,7 @@ pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
 pub use mp_program_hash::SN_OS_PROGRAM_HASH;
-use mp_types::block::{DHashT, DHasherT};
+use mp_types::block::DHashT;
 use mp_types::transactions::DTxIndexT;
 /// Import the StarkNet pallet.
 pub use pallet_starknet;
@@ -34,8 +34,6 @@ use crate::*;
 /// Configure the Starknet pallet in pallets/starknet.
 impl pallet_starknet::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
-    type SystemHash = DHasherT;
-    type TimestampProvider = Timestamp;
 }
 
 /// --------------------------------------

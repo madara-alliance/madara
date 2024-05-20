@@ -7292,6 +7292,7 @@ dependencies = [
  "log",
  "mc-db",
  "mp-block",
+ "mp-chain-id",
  "mp-digest-log",
  "mp-felt",
  "mp-genesis-config",
