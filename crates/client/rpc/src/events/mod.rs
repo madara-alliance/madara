@@ -19,7 +19,7 @@ impl<BE, C, H> Starknet<BE, C, H>
 where
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> ,
+    C::Api: StarknetRuntimeApi<DBlockT>,
     BE: Backend<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
