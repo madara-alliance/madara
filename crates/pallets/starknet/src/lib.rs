@@ -67,7 +67,7 @@ use sp_runtime::DigestItem;
 use starknet_api::core::{CompiledClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::{Event as StarknetEvent, TransactionHash};
+use starknet_api::transaction::TransactionHash;
 
 use crate::types::{CasmClassHash, SierraClassHash};
 
@@ -100,10 +100,7 @@ pub mod pallet {
     /// We're coupling the starknet pallet to the tx payment pallet to be able to override the fee
     /// mechanism and comply with starknet which uses an ER20 as fee token
     #[pallet::config]
-    pub trait Config: frame_system::Config {
-        /// Because this pallet emits events, it depends on the runtime's definition of an event.
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-    }
+    pub trait Config: frame_system::Config {}
 
     /// The Starknet pallet hooks.
     /// HOOKS
@@ -220,23 +217,6 @@ pub mod pallet {
             LastKnownEthBlock::<T>::set(None);
             SeqAddrUpdate::<T>::put(true);
         }
-    }
-
-    /// The Starknet pallet events.
-    /// EVENTS
-    /// See: `<https://docs.substrate.io/main-docs/build/events-errors/>`
-    #[pallet::event]
-    pub enum Event<T: Config> {
-        KeepStarknetStrange,
-        /// Regular Starknet event
-        StarknetEvent(StarknetEvent),
-        /// Emitted when fee token address is changed.
-        /// This is emitted by the `set_fee_token_address` extrinsic.
-        /// [old_fee_token_address, new_fee_token_address]
-        FeeTokenAddressChanged {
-            old_fee_token_address: ContractAddress,
-            new_fee_token_address: ContractAddress,
-        },
     }
 
     /// The Starknet pallet custom errors.

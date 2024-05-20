@@ -32,9 +32,7 @@ use crate::*;
 // --------------------------------------
 
 /// Configure the Starknet pallet in pallets/starknet.
-impl pallet_starknet::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
-}
+impl pallet_starknet::Config for Runtime {}
 
 /// --------------------------------------
 /// FRAME SYSTEM PALLET
