@@ -965,7 +965,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/cchudant/bonsai-trie.git?branch=tranto/snapshot#93758e788c6f0c616040be68df2be28480105f03"
+source = "git+https://github.com/keep-starknet-strange/bonsai-trie.git?branch=oss#5b919ca8f2fd58f944e5206f56e62086b23628c9"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -4460,6 +4460,7 @@ checksum = "290f1a1d9242c78d09ce40a5e87e7554ee637af1351968159f4952f028f75604"
 dependencies = [
  "ahash 0.8.7",
  "allocator-api2",
+ "rayon",
  "serde",
 ]
 
@@ -7061,7 +7062,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
 dependencies = [
- "proc-macro-crate 2.0.0",
+ "proc-macro-crate 1.1.3",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -11344,8 +11345,9 @@ dependencies = [
 
 [[package]]
 name = "starknet-types-core"
-version = "0.1.1"
-source = "git+https://github.com/starknet-io/types-rs.git?branch=main#a867774c753c38597ff0c2f252da8c68242a46f3"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4098ac4ad57621cc7ec133b80fe72814d2cc4bee63ca8e7be4450ba6f42a07e8"
 dependencies = [
  "lambdaworks-crypto",
  "lambdaworks-math",

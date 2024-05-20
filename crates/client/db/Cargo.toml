@@ -42,10 +42,7 @@ starknet-ff = { workspace = true, default-features = false, features = [
   "alloc",
   "serde",
 ] }
-starknet-types-core = { workspace = true, default-features = false, features = [
-  "hash",
-  "parity-scale-codec",
-] }
+starknet-types-core = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 
 # Other crates
