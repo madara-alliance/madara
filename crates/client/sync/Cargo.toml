@@ -58,10 +58,7 @@ mp-hashers = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
 mp-types = { workspace = true }
 rayon = { workspace = true }
-starknet-types-core = { workspace = true, default-features = false, features = [
-  "hash",
-  "parity-scale-codec",
-] }
+starknet-types-core = { workspace = true }
 thiserror.workspace = true
 
 [dev-dependencies]
