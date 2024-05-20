@@ -186,15 +186,6 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             });
         }
     }
-    log::info!("ca passe");
-    if cli.run.base.shared_params.dev {
-        override_dev_environment(&mut cli.run);
-    } else if cli.run.deoxys {
-        deoxys_environment(&mut cli.run);
-    }
-
-    // Defaulting `SealingMode` to `Manual` in order to fetch blocks from the network
-    cli.run.sealing = Some(Sealing::Manual);
 
     // Assign a random pokemon name at each startup
     cli.run.base.name.get_or_insert_with(|| {
@@ -205,6 +196,21 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             },
         )
     });
+
+    if cli.run.base.shared_params.dev {
+        override_dev_environment(&mut cli.run);
+    } else if cli.run.deoxys {
+        deoxys_environment(&mut cli.run);
+    }
+
+    // Defaulting `SealingMode` to `Manual` in order to fetch blocks from the network
+    cli.run.sealing = Some(Sealing::Manual);
+
+    // If --no-telemetry is not set, set the telemetry endpoints to starknodes.com
+    if !cli.run.base.telemetry_params.no_telemetry {
+        cli.run.base.telemetry_params.telemetry_endpoints = vec![("wss://starknodes.com/submit/".to_string(), 0)];
+    }
+
     let runner = cli.create_runner(&cli.run.base)?;
 
     // TODO: verify that the l1_endpoint is valid
@@ -215,7 +221,6 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             "Missing required --l1-endpoint argument please reffer to https://deoxys-docs.kasar.io".to_string(),
         ));
     };
-
 
     runner.run_node_until_exit(|config| async move {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();

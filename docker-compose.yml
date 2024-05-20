@@ -11,18 +11,14 @@ services:
       - "9944:9944"
     volumes:
       - /var/lib/deoxys:/var/lib/deoxys
-    command:
-      [
-        "--deoxys",
-        "--rpc-port",
-        "9944",
-        "--network",
-        "main",
-        "--rpc-external",
-        "--rpc-cors",
-        "*",
-        "--l1-endpoint",
-        "${ETHEREUM_API_URL}",
-        "--base-path",
-        "/var/lib/deoxys",
-      ]
+    environment:
+      - ETHEREUM_API_URL=${ETHEREUM_API_URL}
+    command: >
+      --name deoxys
+      --base-path /var/lib/deoxys
+      --l1-endpoint ${ETHEREUM_API_URL}
+      --network main
+      --chain starknet
+      --rpc-port 9944
+      --rpc-external
+      --rpc-cors "*"
