@@ -7,9 +7,6 @@
 
 use mp_felt::Felt252Wrapper;
 pub extern crate alloc;
-use alloc::vec::Vec;
-
-use starknet_api::transaction::TransactionHash;
 
 #[derive(parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
 pub enum StarknetTransactionExecutionError {
@@ -24,7 +21,5 @@ sp_api::decl_runtime_apis! {
     pub trait StarknetRuntimeApi {
         /// Returns the chain id.
         fn chain_id() -> Felt252Wrapper;
-        /// Return the outcome of the tx execution
-        fn get_tx_execution_outcome(tx_hash: TransactionHash) -> Option<Vec<u8>>;
     }
 }

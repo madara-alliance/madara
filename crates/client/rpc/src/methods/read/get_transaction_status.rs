@@ -10,7 +10,7 @@ use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use starknet_core::types::{FieldElement, TransactionExecutionStatus, TransactionStatus};
+use starknet_core::types::{FieldElement, TransactionStatus};
 
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
@@ -75,25 +75,28 @@ where
                 .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
         };
 
-    let execution_status = {
-        let revert_error = starknet
-            .client
-            .runtime_api()
-            .get_tx_execution_outcome(substrate_block_hash, Felt252Wrapper(transaction_hash).into())
-            .map_err(|e| {
-                log::error!(
-                    "Failed to get transaction execution outcome. Substrate block hash: {substrate_block_hash}, \
-                     transaction hash: {transaction_hash}, error: {e}"
-                );
-                StarknetRpcApiError::InternalServerError
-            })?;
+    // TODO: Implement this method
+    Err(StarknetRpcApiError::UnimplementedMethod.into())
 
-        if revert_error.is_none() {
-            TransactionExecutionStatus::Succeeded
-        } else {
-            TransactionExecutionStatus::Reverted
-        }
-    };
+    // let execution_status = {
+    //     let revert_error = starknet
+    //         .client
+    //         .runtime_api()
+    //         .get_tx_execution_outcome(substrate_block_hash,
+    // Felt252Wrapper(transaction_hash).into())         .map_err(|e| {
+    //             log::error!(
+    //                 "Failed to get transaction execution outcome. Substrate block hash:
+    // {substrate_block_hash}, \                  transaction hash: {transaction_hash}, error:
+    // {e}"             );
+    //             StarknetRpcApiError::InternalServerError
+    //         })?;
 
-    Ok(TransactionStatus::AcceptedOnL2(execution_status))
+    //     if revert_error.is_none() {
+    //         TransactionExecutionStatus::Succeeded
+    //     } else {
+    //         TransactionExecutionStatus::Reverted
+    //     }
+    // };
+
+    // Ok(TransactionStatus::AcceptedOnL2(execution_status))
 }

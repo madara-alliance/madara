@@ -49,7 +49,6 @@ pub mod types;
 #[macro_use]
 pub extern crate alloc;
 
-use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -60,14 +59,12 @@ use mc_db::storage_handler::StorageViewMut;
 use mp_block::DeoxysBlock;
 use mp_digest_log::DEOXYS_ENGINE_ID;
 use mp_felt::{trim_hash, Felt252Wrapper};
-use mp_sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRESS, INHERENT_IDENTIFIER};
 use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
 use starknet_api::core::{CompiledClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::TransactionHash;
 
 use crate::types::{CasmClassHash, SierraClassHash};
 
@@ -110,8 +107,6 @@ pub mod pallet {
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         /// The block is being finalized.
         fn on_finalize(_n: BlockNumberFor<T>) {
-            assert!(SeqAddrUpdate::<T>::take(), "Sequencer address must be set for the block");
-
             let block_number =
                 UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
 
@@ -129,34 +124,6 @@ pub mod pallet {
             Weight::zero()
         }
     }
-
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn tx_revert_error)]
-    pub(super) type TxRevertError<T: Config> = StorageMap<_, Identity, TransactionHash, String, OptionQuery>;
-
-    /// The last processed Ethereum block number for L1 messages consumption.
-    /// This is used to avoid re-processing the same Ethereum block multiple times.
-    /// This is used by the offchain worker.
-    /// # TODO
-    /// * Find a more relevant name for this.
-    // TODO: do we actually need this?
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn last_known_eth_block)]
-    pub(super) type LastKnownEthBlock<T: Config> = StorageValue<_, u64>;
-
-    /// Current sequencer address.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn sequencer_address)]
-    pub type SequencerAddress<T: Config> = StorageValue<_, ContractAddress, ValueQuery>;
-
-    /// Ensure the sequencer address was updated for this block.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn seq_addr_update)]
-    pub type SeqAddrUpdate<T: Config> = StorageValue<_, bool, ValueQuery>;
 
     /// Starknet genesis configuration.
     #[pallet::genesis_config]
@@ -213,9 +180,6 @@ pub mod pallet {
                 });
                 handler_contract_class_hashes.commit(0).unwrap();
             }
-
-            LastKnownEthBlock::<T>::set(None);
-            SeqAddrUpdate::<T>::put(true);
         }
     }
 
@@ -253,51 +217,7 @@ pub mod pallet {
     /// These functions materialize as "extrinsics", which are often compared to transactions.
     /// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
     #[pallet::call]
-    impl<T: Config> Pallet<T> {
-        /// Set the current block author's sequencer address.
-        ///
-        /// This call should be invoked exactly once per block. It will set a default value at
-        /// the finalization phase, if this call hasn't been invoked by that time.
-        ///
-        /// The dispatch origin for this call must be `Inherent`.
-        #[pallet::call_index(0)]
-        #[pallet::weight((0, DispatchClass::Mandatory))]
-        pub fn set_sequencer_address(origin: OriginFor<T>, addr: [u8; 32]) -> DispatchResult {
-            ensure_none(origin)?;
-            // The `SeqAddrUpdate` storage item is initialized to `true` in the genesis build. In
-            // block 1 we skip the storage update check, and the `on_finalize` hook
-            // updates the storage item to `false`. Initializing the storage item with
-            // `false` causes the `on_finalize` hook to panic.
-            if UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number()) > 1 {
-                assert!(!SeqAddrUpdate::<T>::exists(), "Sequencer address can be updated only once in the block");
-            }
-
-            let addr = StarkFelt::new(addr).map_err(|_| Error::<T>::SequencerAddressNotValid)?;
-            let addr = ContractAddress(addr.try_into().map_err(|_| Error::<T>::SequencerAddressNotValid)?);
-            SequencerAddress::<T>::put(addr);
-            SeqAddrUpdate::<T>::put(true);
-            Ok(())
-        }
-    }
-
-    #[pallet::inherent]
-    impl<T: Config> ProvideInherent for Pallet<T> {
-        type Call = Call<T>;
-        type Error = InherentError;
-        const INHERENT_IDENTIFIER: InherentIdentifier = INHERENT_IDENTIFIER;
-
-        fn create_inherent(data: &InherentData) -> Option<Self::Call> {
-            let inherent_data = data
-                .get_data::<InherentType>(&INHERENT_IDENTIFIER)
-                .expect("Sequencer address inherent data not correctly encoded")
-                .unwrap_or(DEFAULT_SEQUENCER_ADDRESS);
-            Some(Call::set_sequencer_address { addr: inherent_data })
-        }
-
-        fn is_inherent(call: &Self::Call) -> bool {
-            matches!(call, Call::set_sequencer_address { .. })
-        }
-    }
+    impl<T: Config> Pallet<T> {}
 }
 
 /// The Starknet pallet internal functions.

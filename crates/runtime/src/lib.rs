@@ -42,7 +42,6 @@ use sp_runtime::{generic, ApplyExtrinsicResult};
 pub use sp_runtime::{Perbill, Permill};
 use sp_std::prelude::*;
 use sp_version::RuntimeVersion;
-use starknet_api::transaction::TransactionHash;
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
@@ -179,10 +178,6 @@ impl_runtime_apis! {
 
         fn chain_id() -> Felt252Wrapper {
             Starknet::chain_id()
-        }
-
-        fn get_tx_execution_outcome(tx_hash: TransactionHash) -> Option<Vec<u8>> {
-            Starknet::tx_revert_error(tx_hash).map(|s| s.into_bytes())
         }
     }
 
