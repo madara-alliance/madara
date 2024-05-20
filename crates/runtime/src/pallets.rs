@@ -36,12 +36,6 @@ impl pallet_starknet::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type SystemHash = DHasherT;
     type TimestampProvider = Timestamp;
-    type InvokeTxMaxNSteps = InvokeTxMaxNSteps;
-    type ValidateMaxNSteps = ValidateMaxNSteps;
-    type ProtocolVersion = ProtocolVersion;
-    type ChainId = ChainId;
-    type MaxRecursionDepth = MaxRecursionDepth;
-    type ProgramHash = ProgramHash;
 }
 
 /// --------------------------------------
@@ -145,18 +139,6 @@ impl pallet_timestamp::Config for Runtime {
     type OnTimestampSet = ConsensusOnTimestampSet<Self>;
     type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
     type WeightInfo = ();
-}
-
-// TODO: change the ChainId to the correct one which depends on the network
-parameter_types! {
-    pub const UnsignedPriority: u64 = 1 << 20;
-    pub const TransactionLongevity: u64 = u64::MAX;
-    pub const InvokeTxMaxNSteps: u32 = 1_000_000;
-    pub const ValidateMaxNSteps: u32 = 1_000_000;
-    pub const ProtocolVersion: u8 = 0;
-    pub const ChainId: Felt252Wrapper = mp_chain_id::SN_MAIN_CHAIN_ID;
-    pub const MaxRecursionDepth: u32 = 50;
-    pub const ProgramHash: Felt252Wrapper = SN_OS_PROGRAM_HASH;
 }
 
 /// Implement the OnTimestampSet trait to override the default Aura.
