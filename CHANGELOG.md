@@ -2,7 +2,7 @@
 
 ## Next release
 
-- refactor: store CONFIG in OnceCell
+- refactor: using const and OnceCell instead of lazy_static
 - refactor: remove crate mp-storage
 - fix(rpc): error handling
 - fix(lib): updated core libs to match oss
