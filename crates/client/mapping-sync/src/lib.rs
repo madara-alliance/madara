@@ -58,7 +58,6 @@ impl<C, BE, H> MappingSyncWorker<C, BE, H> {
         sync_from: <DHeaderT as HeaderT>::Number,
         block_metrics: Option<BlockMetrics>,
     ) -> Self {
-        log::info!("metrics 2 {:?}", block_metrics);
         Self {
             import_notifications,
             timeout,

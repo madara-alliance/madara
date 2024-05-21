@@ -53,8 +53,6 @@ pub mod starknet_sync_worker {
     where
         C: HeaderBackend<DBlockT> + 'static,
     {
-        log::info!("metrics {:?}", block_metrics);
-
         let starting_block = starting_block + 1;
 
         let provider = SequencerGatewayProvider::new(

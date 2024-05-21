@@ -186,7 +186,6 @@ pub fn update_l1(state_update: L1StateUpdate, block_metrics: Option<BlockMetrics
     );
 
     if let Some(block_metrics) = block_metrics {
-        log::info!("📊 Updating block metrics");
         block_metrics.l1_block_number.set(state_update.block_number.into_f64());
     }
 
