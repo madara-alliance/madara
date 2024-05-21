@@ -2,7 +2,7 @@ use blockifier::transaction::errors::TransactionExecutionError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
+use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
@@ -10,7 +10,6 @@ use starknet_core::types::{
     BlockId, BroadcastedTransaction, SimulatedTransaction, SimulationFlag, TransactionTraceWithHash,
 };
 use starknet_ff::FieldElement;
-use thiserror::Error;
 
 use super::simulate_transactions::simulate_transactions;
 use super::trace_block_transactions::trace_block_transactions;
@@ -24,7 +23,7 @@ where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     async fn simulate_transactions(
@@ -45,7 +44,7 @@ where
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum ConvertCallInfoToExecuteInvocationError {
     #[error("One of the simulated transaction failed")]
     TransactionExecutionFailed,
@@ -64,7 +63,7 @@ impl From<ConvertCallInfoToExecuteInvocationError> for StarknetRpcApiError {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum TryFuntionInvocationFromCallInfoError {
     #[error(transparent)]
     TransactionExecution(#[from] TransactionExecutionError),

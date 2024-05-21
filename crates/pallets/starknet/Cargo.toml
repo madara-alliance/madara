@@ -20,6 +20,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 # Deoxys primitives
 mc-db = { workspace = true }
 mp-block = { workspace = true }
+mp-chain-id = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-felt = { workspace = true, features = ["parity-scale-codec", "serde"] }
 mp-genesis-config = { workspace = true, default-features = false }

@@ -49,31 +49,23 @@ pub mod types;
 #[macro_use]
 pub extern crate alloc;
 
-use alloc::str::from_utf8_unchecked;
-use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use blockifier::execution::call_info::CallInfo;
 use frame_support::pallet_prelude::*;
-use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
 use mc_db::storage_handler;
 use mc_db::storage_handler::StorageViewMut;
 use mp_block::DeoxysBlock;
 use mp_digest_log::DEOXYS_ENGINE_ID;
 use mp_felt::{trim_hash, Felt252Wrapper};
-use mp_hashers::HasherT;
-use mp_sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRESS, INHERENT_IDENTIFIER};
 use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
 use starknet_api::core::{CompiledClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
 
-use crate::alloc::string::ToString;
 use crate::types::{CasmClassHash, SierraClassHash};
 
 pub(crate) const LOG_TARGET: &str = "runtime::starknet";
@@ -105,43 +97,7 @@ pub mod pallet {
     /// We're coupling the starknet pallet to the tx payment pallet to be able to override the fee
     /// mechanism and comply with starknet which uses an ER20 as fee token
     #[pallet::config]
-    pub trait Config: frame_system::Config {
-        /// Because this pallet emits events, it depends on the runtime's definition of an event.
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-        /// The hashing function to use.
-        type SystemHash: HasherT;
-        /// The block time
-        type TimestampProvider: Time;
-        /// A configuration for base priority of unsigned transactions.
-        ///
-        /// This is exposed so that it can be tuned for particular runtime, when
-        /// multiple pallets send unsigned transactions.
-        #[pallet::constant]
-        type UnsignedPriority: Get<TransactionPriority>;
-        /// A configuration for longevity of transactions.
-        ///
-        /// This is exposed so that it can be tuned for particular runtime to
-        /// set how long transactions are kept in the mempool.
-        #[pallet::constant]
-        type TransactionLongevity: Get<TransactionLongevity>;
-        /// A bool to disable transaction fees and make all transactions free
-        #[pallet::constant]
-        type DisableTransactionFee: Get<bool>;
-        /// A bool to disable Nonce validation
-        type DisableNonceValidation: Get<bool>;
-        #[pallet::constant]
-        type InvokeTxMaxNSteps: Get<u32>;
-        #[pallet::constant]
-        type ValidateMaxNSteps: Get<u32>;
-        #[pallet::constant]
-        type ProtocolVersion: Get<Felt252Wrapper>;
-        #[pallet::constant]
-        type ChainId: Get<Felt252Wrapper>;
-        #[pallet::constant]
-        type MaxRecursionDepth: Get<u32>;
-        #[pallet::constant]
-        type ProgramHash: Get<Felt252Wrapper>;
-    }
+    pub trait Config: frame_system::Config {}
 
     /// The Starknet pallet hooks.
     /// HOOKS
@@ -151,8 +107,6 @@ pub mod pallet {
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         /// The block is being finalized.
         fn on_finalize(_n: BlockNumberFor<T>) {
-            assert!(SeqAddrUpdate::<T>::take(), "Sequencer address must be set for the block");
-
             let block_number =
                 UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
 
@@ -170,45 +124,6 @@ pub mod pallet {
             Weight::zero()
         }
     }
-
-    // TODO: @charpa is this used in any RPC calls?
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn tx_events)]
-    pub(super) type TxEvents<T: Config> = StorageMap<_, Identity, TransactionHash, Vec<StarknetEvent>, ValueQuery>;
-
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn tx_messages)]
-    pub(super) type TxMessages<T: Config> = StorageMap<_, Identity, TransactionHash, Vec<MessageToL1>, ValueQuery>;
-
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn tx_revert_error)]
-    pub(super) type TxRevertError<T: Config> = StorageMap<_, Identity, TransactionHash, String, OptionQuery>;
-
-    /// The last processed Ethereum block number for L1 messages consumption.
-    /// This is used to avoid re-processing the same Ethereum block multiple times.
-    /// This is used by the offchain worker.
-    /// # TODO
-    /// * Find a more relevant name for this.
-    // TODO: do we actually need this?
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn last_known_eth_block)]
-    pub(super) type LastKnownEthBlock<T: Config> = StorageValue<_, u64>;
-
-    /// Current sequencer address.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn sequencer_address)]
-    pub type SequencerAddress<T: Config> = StorageValue<_, ContractAddress, ValueQuery>;
-
-    /// Ensure the sequencer address was updated for this block.
-    #[pallet::storage]
-    #[pallet::unbounded]
-    #[pallet::getter(fn seq_addr_update)]
-    pub type SeqAddrUpdate<T: Config> = StorageValue<_, bool, ValueQuery>;
 
     /// Starknet genesis configuration.
     #[pallet::genesis_config]
@@ -265,28 +180,7 @@ pub mod pallet {
                 });
                 handler_contract_class_hashes.commit(0).unwrap();
             }
-
-            LastKnownEthBlock::<T>::set(None);
-            SeqAddrUpdate::<T>::put(true);
         }
-    }
-
-    /// The Starknet pallet events.
-    /// EVENTS
-    /// See: `<https://docs.substrate.io/main-docs/build/events-errors/>`
-    #[pallet::event]
-    #[pallet::generate_deposit(pub(super) fn deposit_event)]
-    pub enum Event<T: Config> {
-        KeepStarknetStrange,
-        /// Regular Starknet event
-        StarknetEvent(StarknetEvent),
-        /// Emitted when fee token address is changed.
-        /// This is emitted by the `set_fee_token_address` extrinsic.
-        /// [old_fee_token_address, new_fee_token_address]
-        FeeTokenAddressChanged {
-            old_fee_token_address: ContractAddress,
-            new_fee_token_address: ContractAddress,
-        },
     }
 
     /// The Starknet pallet custom errors.
@@ -323,101 +217,11 @@ pub mod pallet {
     /// These functions materialize as "extrinsics", which are often compared to transactions.
     /// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
     #[pallet::call]
-    impl<T: Config> Pallet<T> {
-        /// Set the current block author's sequencer address.
-        ///
-        /// This call should be invoked exactly once per block. It will set a default value at
-        /// the finalization phase, if this call hasn't been invoked by that time.
-        ///
-        /// The dispatch origin for this call must be `Inherent`.
-        #[pallet::call_index(0)]
-        #[pallet::weight((0, DispatchClass::Mandatory))]
-        pub fn set_sequencer_address(origin: OriginFor<T>, addr: [u8; 32]) -> DispatchResult {
-            ensure_none(origin)?;
-            // The `SeqAddrUpdate` storage item is initialized to `true` in the genesis build. In
-            // block 1 we skip the storage update check, and the `on_finalize` hook
-            // updates the storage item to `false`. Initializing the storage item with
-            // `false` causes the `on_finalize` hook to panic.
-            if UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number()) > 1 {
-                assert!(!SeqAddrUpdate::<T>::exists(), "Sequencer address can be updated only once in the block");
-            }
-
-            let addr = StarkFelt::new(addr).map_err(|_| Error::<T>::SequencerAddressNotValid)?;
-            let addr = ContractAddress(addr.try_into().map_err(|_| Error::<T>::SequencerAddressNotValid)?);
-            SequencerAddress::<T>::put(addr);
-            SeqAddrUpdate::<T>::put(true);
-            Ok(())
-        }
-    }
-
-    #[pallet::inherent]
-    impl<T: Config> ProvideInherent for Pallet<T> {
-        type Call = Call<T>;
-        type Error = InherentError;
-        const INHERENT_IDENTIFIER: InherentIdentifier = INHERENT_IDENTIFIER;
-
-        fn create_inherent(data: &InherentData) -> Option<Self::Call> {
-            let inherent_data = data
-                .get_data::<InherentType>(&INHERENT_IDENTIFIER)
-                .expect("Sequencer address inherent data not correctly encoded")
-                .unwrap_or(DEFAULT_SEQUENCER_ADDRESS);
-            Some(Call::set_sequencer_address { addr: inherent_data })
-        }
-
-        fn is_inherent(call: &Self::Call) -> bool {
-            matches!(call, Call::set_sequencer_address { .. })
-        }
-    }
+    impl<T: Config> Pallet<T> {}
 }
 
 /// The Starknet pallet internal functions.
 impl<T: Config> Pallet<T> {
-    /// convert chain_id
-    #[inline(always)]
-    pub fn chain_id_str() -> String {
-        unsafe { from_utf8_unchecked(&T::ChainId::get().0.to_bytes_be()).to_string() }
-    }
-
-    /// Get the block hash of the previous block.
-    ///
-    /// # Arguments
-    ///
-    /// * `current_block_number` - The number of the current block.
-    ///
-    /// # Returns
-    ///
-    /// The block hash of the parent (previous) block or 0 if the current block is 0.
-    #[inline(always)]
-    pub fn parent_block_hash(current_block_number: u64) -> Felt252Wrapper {
-        match storage_handler::block_hash().get(current_block_number) {
-            Ok(Some(block_hash)) => block_hash,
-            _ => Felt252Wrapper::ZERO,
-        }
-    }
-
-    /// Get the current block timestamp in seconds.
-    ///
-    /// # Returns
-    ///
-    /// The current block timestamp in seconds.
-    #[inline(always)]
-    pub fn block_timestamp() -> u64 {
-        let timestamp_in_millisecond: u64 = T::TimestampProvider::now().unique_saturated_into();
-        timestamp_in_millisecond / 1000
-    }
-
-    #[inline(always)]
-    pub fn event_count() -> u128 {
-        TxEvents::<T>::iter_values().map(|v| v.len() as u128).sum()
-    }
-
-    /// Returns a storage keys and values of a given contract
-    pub fn get_storage_from(contract_address: ContractAddress) -> Result<Vec<(StorageKey, StarkFelt)>, DispatchError> {
-        Ok(storage_handler::contract_storage_trie()
-            .get_storage(&contract_address)
-            .map_err(|_| Error::<T>::ContractNotFound)?)
-    }
-
     /// Store a Starknet block in the blockchain.
     ///
     /// # Arguments
@@ -460,126 +264,7 @@ impl<T: Config> Pallet<T> {
         }
     }
 
-    /// Aggregate L2 > L1 messages from the call info.
-    ///
-    /// # Arguments
-    ///
-    /// * `tx_hash` - The hash of the transaction being processed
-    /// * `call_info` — A ref to the call info structure.
-    /// * `next_order` — Next expected message order, has to be 0 for a top level invocation
-    ///
-    /// # Returns
-    ///
-    /// Next expected message order
-    fn aggregate_messages_in_call_info(tx_hash: TransactionHash, call_info: &CallInfo, next_order: usize) -> usize {
-        let mut message_idx = 0;
-        let mut inner_call_idx = 0;
-        let mut next_order = next_order;
-
-        loop {
-            // Store current call's messages as long as they have sequential orders
-            if message_idx < call_info.execution.l2_to_l1_messages.len() {
-                let ordered_message = &call_info.execution.l2_to_l1_messages[message_idx];
-                if ordered_message.order == next_order {
-                    let message = MessageToL1 {
-                        from_address: call_info.call.storage_address,
-                        to_address: ordered_message.message.to_address,
-                        payload: ordered_message.message.payload.clone(),
-                    };
-                    TxMessages::<T>::append(tx_hash, message);
-                    next_order += 1;
-                    message_idx += 1;
-                    continue;
-                }
-            }
-
-            // Go deeper to find the continuation of the sequence
-            if inner_call_idx < call_info.inner_calls.len() {
-                next_order =
-                    Self::aggregate_messages_in_call_info(tx_hash, &call_info.inner_calls[inner_call_idx], next_order);
-                inner_call_idx += 1;
-                continue;
-            }
-
-            // At this point we have iterated over all sequential messages and visited all internal calls
-            break;
-        }
-
-        next_order
-    }
-
-    /// Emit events from the call info.
-    ///
-    /// # Arguments
-    ///
-    /// * `call_info` — A ref to the call info structure.
-    /// * `next_order` — Next expected event order, has to be 0 for a top level invocation
-    ///
-    /// # Returns
-    ///
-    /// Next expected event order
-    #[inline(always)]
-    fn emit_events_in_call_info(tx_hash: TransactionHash, call_info: &CallInfo, next_order: usize) -> usize {
-        let mut event_idx = 0;
-        let mut inner_call_idx = 0;
-        let mut next_order = next_order;
-
-        loop {
-            // Emit current call's events as long as they have sequential orders
-            if event_idx < call_info.execution.events.len() {
-                let ordered_event = &call_info.execution.events[event_idx];
-                if ordered_event.order == next_order {
-                    let event = StarknetEvent {
-                        from_address: call_info.call.storage_address,
-                        content: ordered_event.event.clone(),
-                    };
-                    Self::deposit_event(Event::<T>::StarknetEvent(event.clone()));
-                    TxEvents::<T>::append(tx_hash, event);
-                    next_order += 1;
-                    event_idx += 1;
-                    continue;
-                }
-            }
-
-            // Go deeper to find the continuation of the sequence
-            if inner_call_idx < call_info.inner_calls.len() {
-                next_order =
-                    Self::emit_events_in_call_info(tx_hash, &call_info.inner_calls[inner_call_idx], next_order);
-                inner_call_idx += 1;
-                continue;
-            }
-
-            // At this point we have iterated over all sequential events and visited all internal calls
-            break;
-        }
-
-        next_order
-    }
-
-    pub fn emit_and_store_tx_and_fees_events(
-        tx_hash: TransactionHash,
-        execute_call_info: &Option<CallInfo>,
-        fee_transfer_call_info: &Option<CallInfo>,
-    ) {
-        if let Some(call_info) = execute_call_info {
-            Self::emit_events_in_call_info(tx_hash, call_info, 0);
-            Self::aggregate_messages_in_call_info(tx_hash, call_info, 0);
-        }
-        if let Some(call_info) = fee_transfer_call_info {
-            Self::emit_events_in_call_info(tx_hash, call_info, 0);
-            Self::aggregate_messages_in_call_info(tx_hash, call_info, 0);
-        }
-    }
-
     pub fn chain_id() -> Felt252Wrapper {
-        T::ChainId::get()
-    }
-
-    pub fn program_hash() -> Felt252Wrapper {
-        T::ProgramHash::get()
-    }
-
-    pub fn is_transaction_fee_disabled() -> bool {
-        T::DisableTransactionFee::get()
+        mp_chain_id::SN_MAIN_CHAIN_ID
     }
 }

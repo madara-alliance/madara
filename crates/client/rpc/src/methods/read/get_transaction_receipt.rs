@@ -6,7 +6,7 @@ use mc_db::DeoxysBackend;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHashT};
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
+use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sp_api::ProvideRuntimeApi;
@@ -60,14 +60,14 @@ where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     // get the substrate block hash from the transaction hash
     let substrate_block_hash = DeoxysBackend::mapping()
         .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
         .map_err(|e| {
-            log::error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
+            log::error!("Failed to get substrate block hash from transaction hash: {}", e);
             StarknetRpcApiError::InternalServerError
         })?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
@@ -87,7 +87,7 @@ where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     let block = get_block_by_block_hash(client.client.as_ref(), substrate_block_hash)?;
@@ -98,10 +98,9 @@ where
     let block_context = block_context(client.client.as_ref(), substrate_block_hash)?;
 
     // retrieve all transaction hashes from the block in the cache or compute them
-    let block_txs_hashes = if let Some(tx_hashes) = client.get_cached_transaction_hashes(block_hash.into()) {
-        tx_hash_retrieve(tx_hashes)
-    } else {
-        tx_hash_compute::<H>(&block, chain_id)
+    let block_txs_hashes = match client.get_cached_transaction_hashes(block_hash.into()) {
+        Some(tx_hashes) => tx_hash_retrieve(tx_hashes),
+        None => tx_hash_compute::<H>(&block, chain_id),
     };
 
     // retrieve the transaction index in the block with the transaction hash

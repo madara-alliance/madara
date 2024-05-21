@@ -114,7 +114,7 @@ pub async fn store_class_update(block_number: u64, class_update: ClassUpdateWrap
 
 pub async fn store_key_update(
     block_number: u64,
-    storage_diffs: &Vec<ContractStorageDiffItem>,
+    storage_diffs: &[ContractStorageDiffItem],
 ) -> Result<(), DeoxysStorageError> {
     let handler_storage = storage_handler::contract_storage_mut();
 

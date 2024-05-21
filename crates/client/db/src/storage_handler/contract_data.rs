@@ -67,7 +67,7 @@ impl ContractDataView {
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractData))?
         {
             Some(bytes) => bincode::deserialize::<StorageContractData>(&bytes[..])?,
-            None => StorageContractData::default(),
+            None => return Ok(None),
         };
 
         Ok(contract_data.nonce.get_at(block_number).cloned())
@@ -141,6 +141,11 @@ impl StorageViewMut for ContractDataViewMut {
 
             if let Some(nonce) = nonce {
                 contract_data.nonce.push(block_number, nonce)?;
+            }
+
+            // If the contract is just being deployed, we need to initialize the nonce
+            if contract_data.nonce.is_empty() {
+                contract_data.nonce.push(block_number, Nonce::default())?;
             }
 
             batch.put_cf(&column, bincode::serialize(&key)?, bincode::serialize(&contract_data)?);
