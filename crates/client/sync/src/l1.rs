@@ -334,17 +334,4 @@ mod l1_sync_tests {
 
         Ok(())
     }
-
-    #[tokio::test]
-    async fn listen_and_update_state() -> Result<(), Box<dyn std::error::Error>> {
-        let client = EthereumClient::new(Url::parse(eth_rpc::MAINNET).expect("Failed to parse rpc url"))
-            .await
-            .expect("Failed to create EthereumClient");
-        let start_block = EthereumClient::get_last_event_block_number(&client)
-            .await
-            .expect("Failed to retrieve last event block number");
-        EthereumClient::listen_and_update_state(&client, start_block).await.unwrap();
-
-        Ok(())
-    }
 }

@@ -40,6 +40,7 @@ pub mod starknet_sync_worker {
     use crate::l2::verify_l2;
     use crate::metrics::block_metrics::BlockMetrics;
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn sync<C>(
         fetch_config: FetchConfig,
         block_sender: Sender<DeoxysBlock>,
