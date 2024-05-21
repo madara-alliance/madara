@@ -4,24 +4,14 @@ FROM rust:bookworm AS builder
 # Install build dependencies
 RUN apt-get -y update && \
     apt-get install -y --no-install-recommends \
-        clang \
-        protobuf-compiler \
-        build-essential && \
+    clang \
+    protobuf-compiler \
+    build-essential
 
 # Set the working directory
 WORKDIR /usr/local/bin
 
-# Cache dependencies by copying the Cargo.toml and Cargo.lock files first
-COPY Cargo.toml Cargo.lock ./
-
-# Create a dummy main file and build dependencies
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release
-
-# Remove the dummy main file
-RUN rm -rf src
-
-# Copy the rest of the source code into the container
+# Copy the source code into the container
 COPY . .
 
 # Build the application in release mode
@@ -33,8 +23,8 @@ FROM debian:bookworm
 # Install runtime dependencies
 RUN apt-get -y update && \
     apt-get install -y --no-install-recommends \
-        clang \
-        protobuf-compiler && \
+    clang \
+    protobuf-compiler
 
 # Set the working directory
 WORKDIR /usr/local/bin
