@@ -331,6 +331,7 @@ pub fn new_full(
             Arc::clone(&client),
             on_block.unwrap(),
             backup_every_n_blocks,
+            prometheus_registry.clone(),
         );
         async { fut.await.unwrap() }
     });

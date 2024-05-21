@@ -57,6 +57,7 @@ mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
 mp-types = { workspace = true }
+prometheus-endpoint = { workspace = true }
 rayon = { workspace = true }
 starknet-types-core = { workspace = true, default-features = false, features = [
   "hash",

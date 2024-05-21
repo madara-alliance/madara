@@ -10,8 +10,8 @@ pub mod fetch;
 pub mod l1;
 pub mod l2;
 pub mod reorgs;
-pub mod types;
 pub mod utils;
+pub mod metrics;
 
 pub use l2::SenderConfig;
 pub use mp_types::block::{DBlockT, DHashT};
@@ -29,6 +29,7 @@ pub mod starknet_sync_worker {
     use anyhow::Context;
     use mp_block::DeoxysBlock;
     use mp_convert::state_update::ToStateUpdateCore;
+    use prometheus_endpoint::prometheus;
     use reqwest::Url;
     use sp_blockchain::HeaderBackend;
     use starknet_providers::sequencer::models::BlockId;
@@ -38,6 +39,7 @@ pub mod starknet_sync_worker {
     use self::fetch::fetchers::FetchConfig;
     use super::*;
     use crate::l2::verify_l2;
+    use crate::metrics::block_metrics::BlockMetrics;
 
     pub async fn sync<C>(
         fetch_config: FetchConfig,
@@ -47,10 +49,14 @@ pub mod starknet_sync_worker {
         client: Arc<C>,
         starting_block: u32,
         backup_every_n_blocks: Option<usize>,
+        prometheus_registry: Option<prometheus::Registry>,
     ) -> anyhow::Result<()>
     where
         C: HeaderBackend<DBlockT> + 'static,
     {
+        let block_metrics =
+            prometheus_registry.and_then(|registry| BlockMetrics::register(&registry).ok());
+
         let starting_block = starting_block + 1;
 
         let provider = SequencerGatewayProvider::new(
@@ -73,7 +79,7 @@ pub mod starknet_sync_worker {
         }
 
         tokio::select!(
-            res = l1::sync(l1_url.clone()) => res.context("syncing L1 state")?,
+            res = l1::sync(l1_url.clone(), block_metrics) => res.context("syncing L1 state")?,
             res = l2::sync(
                 block_sender,
                 command_sink,
