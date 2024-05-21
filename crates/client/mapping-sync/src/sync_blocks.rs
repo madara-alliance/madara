@@ -95,7 +95,6 @@ where
                             block_metrics
                                 .l1_gas_price_strk
                                 .set(f64::from_u128(l1_gas_price.strk_l1_gas_price.into()).unwrap_or(f64::MIN))
-                            
                         }
 
                         DeoxysBackend::mapping().write_hashes(mapping_commitment).map_err(|e| anyhow::anyhow!(e))

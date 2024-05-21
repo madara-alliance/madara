@@ -23,7 +23,6 @@ use mc_sync::metrics::block_metrics::BlockMetrics;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHeaderT};
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
-use prometheus_endpoint::prometheus;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::client::ImportNotifications;
 use sp_api::ProvideRuntimeApi;
@@ -57,11 +56,9 @@ impl<C, BE, H> MappingSyncWorker<C, BE, H> {
         substrate_backend: Arc<BE>,
         retry_times: usize,
         sync_from: <DHeaderT as HeaderT>::Number,
-        prometheus_registry: Option<prometheus::Registry>,
+        block_metrics: Option<BlockMetrics>,
     ) -> Self {
-        let block_metrics =
-            prometheus_registry.and_then(|registry| BlockMetrics::register(&registry).ok());
-
+        log::info!("metrics 2 {:?}", block_metrics);
         Self {
             import_notifications,
             timeout,

@@ -14,8 +14,14 @@ pub struct BlockMetrics {
 impl BlockMetrics {
     pub fn register(registry: &Registry) -> Result<Self, PrometheusError> {
         Ok(Self {
-            l2_block_number: register(Gauge::new("deoxys_l2_block_number", "Gauge for deoxys L2 block number")?, registry)?,
-            l1_block_number: register(Gauge::new("deoxys_l1_block_number", "Gauge for deoxys L1 block number")?, registry)?,
+            l2_block_number: register(
+                Gauge::new("deoxys_l2_block_number", "Gauge for deoxys L2 block number")?,
+                registry,
+            )?,
+            l1_block_number: register(
+                Gauge::new("deoxys_l1_block_number", "Gauge for deoxys L1 block number")?,
+                registry,
+            )?,
             transaction_count: register(
                 Gauge::new("deoxys_transaction_count", "Gauge for deoxys transaction count")?,
                 registry,

@@ -9,9 +9,9 @@ pub mod commitments;
 pub mod fetch;
 pub mod l1;
 pub mod l2;
+pub mod metrics;
 pub mod reorgs;
 pub mod utils;
-pub mod metrics;
 
 pub use l2::SenderConfig;
 pub use mp_types::block::{DBlockT, DHashT};
@@ -29,7 +29,6 @@ pub mod starknet_sync_worker {
     use anyhow::Context;
     use mp_block::DeoxysBlock;
     use mp_convert::state_update::ToStateUpdateCore;
-    use prometheus_endpoint::prometheus;
     use reqwest::Url;
     use sp_blockchain::HeaderBackend;
     use starknet_providers::sequencer::models::BlockId;
@@ -49,13 +48,12 @@ pub mod starknet_sync_worker {
         client: Arc<C>,
         starting_block: u32,
         backup_every_n_blocks: Option<usize>,
-        prometheus_registry: Option<prometheus::Registry>,
+        block_metrics: Option<BlockMetrics>,
     ) -> anyhow::Result<()>
     where
         C: HeaderBackend<DBlockT> + 'static,
     {
-        let block_metrics =
-            prometheus_registry.and_then(|registry| BlockMetrics::register(&registry).ok());
+        log::info!("metrics {:?}", block_metrics);
 
         let starting_block = starting_block + 1;
 

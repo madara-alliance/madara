@@ -147,7 +147,11 @@ impl EthereumClient {
 
     /// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
     /// verified state
-    pub async fn listen_and_update_state(&self, start_block: u64, block_metrics: Option<BlockMetrics>) -> anyhow::Result<()> {
+    pub async fn listen_and_update_state(
+        &self,
+        start_block: u64,
+        block_metrics: Option<BlockMetrics>,
+    ) -> anyhow::Result<()> {
         let client = self.provider.clone();
         let address: Address = get_config().expect("config not set").l1_core_address;
         abigen!(
@@ -180,7 +184,9 @@ pub fn update_l1(state_update: L1StateUpdate, block_metrics: Option<BlockMetrics
         state_update.block_hash,
         state_update.global_root
     );
+
     if let Some(block_metrics) = block_metrics {
+        log::info!("📊 Updating block metrics");
         block_metrics.l1_block_number.set(state_update.block_number.into_f64());
     }
 
