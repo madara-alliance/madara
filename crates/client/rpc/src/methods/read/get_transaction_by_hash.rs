@@ -5,7 +5,7 @@ use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
+use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sp_api::ProvideRuntimeApi;
@@ -51,42 +51,44 @@ where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
+    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
-    let substrate_block_hash_from_db = DeoxysBackend::mapping()
+    let substrate_block_hash = DeoxysBackend::mapping()
         .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
         .map_err(|e| {
-            log::error!("Failed to get transaction's substrate block hash from mapping_db: {e}");
-            StarknetRpcApiError::TxnHashNotFound
-        })?;
-
-    let substrate_block_hash = match substrate_block_hash_from_db {
-        Some(block_hash) => block_hash,
-        None => return Err(StarknetRpcApiError::TxnHashNotFound.into()),
-    };
+            log::error!("Failed to get substrate block hash from transaction hash: {}", e);
+            StarknetRpcApiError::InternalServerError
+        })?
+        .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let block_number = starknet_block.header().block_number;
+    let starknet_block_hash = starknet_block.header().hash::<H>();
 
     let chain_id = starknet.chain_id()?.0.into();
 
-    let find_tx =
-        if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into()) {
-            tx_hashes
-                .into_iter()
-                .zip(starknet_block.transactions())
-                .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
-                .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash))
-        } else {
-            starknet_block
-                .transactions()
-                .iter()
-                .find(|tx| {
-                    tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0
-                        == Felt252Wrapper::from(transaction_hash).into()
-                })
-                .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
-        };
+    let opt_cached_transaction_hashes = starknet.get_cached_transaction_hashes(starknet_block_hash.into());
 
-    find_tx.ok_or(StarknetRpcApiError::TxnHashNotFound.into())
+    let transaction_hash = Felt252Wrapper::from(transaction_hash);
+
+    let transaction = match opt_cached_transaction_hashes {
+        Some(cached_tx_hashes) => cached_tx_hashes
+            .into_iter()
+            .zip(starknet_block.transactions())
+            .find(|(tx_hash, _)| *tx_hash == transaction_hash.into())
+            .map(|(_, tx)| tx.clone()),
+        None => starknet_block
+            .transactions()
+            .iter()
+            .find(|tx| tx.compute_hash::<H>(chain_id, false, Some(block_number)).0 == transaction_hash.into())
+            .cloned(),
+    };
+
+    match transaction {
+        Some(tx) => Ok(to_starknet_core_tx(tx, transaction_hash.into())),
+        // This should never happen, because the transaction hash is checked above when getting block hash from
+        // transaction hash.
+        None => Err(StarknetRpcApiError::InternalServerError.into()),
+    }
 }

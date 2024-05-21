@@ -1,5 +1,4 @@
 use bonsai_trie::DBError;
-use thiserror::Error;
 
 use crate::Column;
 
@@ -17,7 +16,7 @@ pub enum DbError {
     Format(String),
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum BonsaiDbError {
     #[error("IO error: `{0}`")]
     Io(#[from] std::io::Error),
