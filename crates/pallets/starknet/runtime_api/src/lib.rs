@@ -18,6 +18,6 @@ pub enum StarknetTransactionExecutionError {
 
 sp_api::decl_runtime_apis! {
     pub trait StarknetRuntimeApi {
-        fn dummy() -> ();
+        fn dummy();
     }
 }

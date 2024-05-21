@@ -174,8 +174,7 @@ impl_runtime_apis! {
     }
 
     impl pallet_starknet_runtime_api::StarknetRuntimeApi<Block> for Runtime {
-        fn dummy() -> (){
-        }
+        fn dummy(){}
     }
 
     #[cfg(feature = "runtime-benchmarks")]

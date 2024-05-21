@@ -21,6 +21,7 @@ futures-timer = { workspace = true }
 log = { workspace = true, default-features = true }
 mc-db = { workspace = true }
 mc-rpc = { workspace = true }
+mc-sync = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
@@ -34,4 +35,3 @@ sc-client-api = { workspace = true }
 sp-api = { workspace = true }
 sp-blockchain = { workspace = true }
 sp-runtime = { workspace = true }
-mc-sync ={ workspace = true }

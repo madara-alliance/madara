@@ -17,7 +17,6 @@ members = [
   "crates/primitives/hashers",
   "crates/primitives/program-hash",
   "crates/primitives/sequencer-address",
-  "crates/primitives/storage",
   "crates/primitives/transactions",
   "crates/primitives/types",
   "crates/runtime",
@@ -41,7 +40,6 @@ default-members = [
   "crates/primitives/hashers",
   "crates/primitives/program-hash",
   "crates/primitives/sequencer-address",
-  "crates/primitives/storage",
   "crates/primitives/transactions",
   "crates/primitives/types",
   "crates/runtime",
@@ -227,7 +225,6 @@ mp-hashers = { path = "crates/primitives/hashers", default-features = false }
 mp-program-hash = { path = "crates/primitives/program-hash", default-features = false }
 mp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
 mp-simulations = { path = "crates/primitives/simulations", default-features = false }
-mp-storage = { path = "crates/primitives/storage", default-features = false }
 mp-transactions = { path = "crates/primitives/transactions", default-features = false }
 mp-types = { path = "crates/primitives/types", default-features = false }
 
