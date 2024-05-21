@@ -314,10 +314,11 @@ fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt2
 mod tests {
     use super::*;
 
+    #[test]
     fn test_contract_class_hash_version() {
         assert_eq!(
             CONTRACT_CLASS_HASH_VERSION,
-            FieldElement::from_byte_slice_be("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap();
+            FieldElement::from_byte_slice_be("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap(),
         );
     }
 }
