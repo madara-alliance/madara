@@ -49,7 +49,6 @@ pub mod types;
 #[macro_use]
 pub extern crate alloc;
 
-use alloc::str::from_utf8_unchecked;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -73,7 +72,6 @@ use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
 
-use crate::alloc::string::ToString;
 use crate::types::{CasmClassHash, SierraClassHash};
 
 pub(crate) const LOG_TARGET: &str = "runtime::starknet";
@@ -372,12 +370,6 @@ pub mod pallet {
 
 /// The Starknet pallet internal functions.
 impl<T: Config> Pallet<T> {
-    /// convert chain_id
-    #[inline(always)]
-    pub fn chain_id_str() -> String {
-        unsafe { from_utf8_unchecked(&T::ChainId::get().0.to_bytes_be()).to_string() }
-    }
-
     /// Get the block hash of the previous block.
     ///
     /// # Arguments
@@ -571,9 +563,9 @@ impl<T: Config> Pallet<T> {
         }
     }
 
-    pub fn chain_id() -> Felt252Wrapper {
-        T::ChainId::get()
-    }
+    // pub fn chain_id() -> Felt252Wrapper {
+    //     T::ChainId::get()
+    // }
 
     pub fn program_hash() -> Felt252Wrapper {
         T::ProgramHash::get()

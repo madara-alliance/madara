@@ -23,8 +23,6 @@ pub enum StarknetTransactionExecutionError {
 
 sp_api::decl_runtime_apis! {
     pub trait StarknetRuntimeApi {
-        /// Returns the chain id.
-        fn chain_id() -> Felt252Wrapper;
         /// Returns the Starknet OS Cairo program hash.
         fn program_hash() -> Felt252Wrapper;
 

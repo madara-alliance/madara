@@ -1,5 +1,5 @@
 use jsonrpsee::core::RpcResult;
-use mc_sync::utility::get_config;
+use mc_sync::utility::{chain_id, feeder_gateway, gateway};
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -33,11 +33,7 @@ where
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
-    let config = get_config().ok_or_else(|| {
-        log::error!("Failed to get config");
-        StarknetRpcApiError::InternalServerError
-    })?;
-    let sequencer = SequencerGatewayProvider::new(config.feeder_gateway, config.gateway, config.chain_id);
+    let sequencer = SequencerGatewayProvider::new(feeder_gateway(), gateway(), chain_id());
 
     let sequencer_response = match sequencer.add_invoke_transaction(invoke_transaction).await {
         Ok(response) => response,

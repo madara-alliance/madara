@@ -1,4 +1,5 @@
 use jsonrpsee::core::RpcResult;
+use mc_sync::utility::chain_id;
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -9,7 +10,7 @@ use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, BlockTag, MaybePendingBlockWithTxs};
 
 use crate::errors::StarknetRpcApiError;
-use crate::{get_block_with_txs_finalized, get_block_with_txs_pending, Starknet};
+use crate::{get_block_with_txs_finalized, get_block_with_txs_pending, Felt, Starknet};
 
 /// Get block information with full transactions given the block id.
 ///
@@ -40,7 +41,7 @@ where
     C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
-    let chain_id = starknet.chain_id()?;
+    let chain_id = Felt(chain_id());
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
         log::error!("Block not found: '{e}'");
         StarknetRpcApiError::BlockNotFound

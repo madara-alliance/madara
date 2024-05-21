@@ -179,10 +179,6 @@ impl_runtime_apis! {
 
     impl pallet_starknet_runtime_api::StarknetRuntimeApi<Block> for Runtime {
 
-        fn chain_id() -> Felt252Wrapper {
-            Starknet::chain_id()
-        }
-
         fn program_hash() -> Felt252Wrapper {
             Starknet::program_hash()
         }
