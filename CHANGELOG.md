@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(rpc): error handling
 - fix(lib): updated core libs to match oss
 - fix: state root - replaced_classes commit
 - feat: fetch block and state update in only one request
