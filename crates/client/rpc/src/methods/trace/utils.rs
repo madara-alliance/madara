@@ -2,19 +2,19 @@ use std::collections::HashMap;
 
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use mc_db::storage_handler;
-use mc_sync::l2::get_highest_block_hash_and_number;
+use mc_db::{storage_handler, DeoxysBackend};
 use mp_felt::Felt252Wrapper;
 use mp_transactions::TxType;
 use starknet_api::core::ContractAddress;
 use starknet_core::types::{
-    BlockId, ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
+    BlockId, BlockTag, ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
     DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, InvokeTransactionTrace,
     L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace,
 };
 use starknet_ff::FieldElement;
 
 use super::lib::*;
+use crate::errors::StarknetRpcApiError;
 
 pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core::types::OrderedMessage> {
     call_info
@@ -243,13 +243,16 @@ pub fn tx_execution_infos_to_tx_trace(
 }
 
 // TODO: move to mod utils
-pub fn block_number_by_id(id: BlockId) -> u64 {
+pub fn block_number_by_id(id: BlockId) -> Result<u64, StarknetRpcApiError> {
+    let (latest_block_hash, latest_block_number) = DeoxysBackend::meta().get_latest_block_hash_and_number()?;
     match id {
-        BlockId::Number(number) => number,
-        BlockId::Hash(block_hash) => match storage_handler::block_number().get(&Felt252Wrapper(block_hash)) {
-            Ok(Some(block_number)) => block_number,
-            _ => get_highest_block_hash_and_number().1,
+        BlockId::Number(number) => Ok(number),
+        BlockId::Hash(block_hash) => match storage_handler::block_number().get(&Felt252Wrapper(block_hash))? {
+            Some(block_number) => Ok(block_number),
+            None if block_hash == latest_block_hash => Ok(latest_block_number),
+            None => Err(StarknetRpcApiError::BlockNotFound),
         },
-        BlockId::Tag(_) => get_highest_block_hash_and_number().1,
+        BlockId::Tag(BlockTag::Latest) => Ok(latest_block_number),
+        BlockId::Tag(BlockTag::Pending) => Ok(latest_block_number + 1),
     }
 }
