@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use jsonrpsee::types::error::CallError;
 use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;

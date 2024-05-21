@@ -24,7 +24,6 @@ pub use frame_support::weights::constants::{
 pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
-use mp_felt::Felt252Wrapper;
 use mp_types::account::{DAccountAddressT, DAccountIdT};
 use mp_types::block::DHeaderT;
 use mp_types::transactions::{DTxIndexT, DTxSignatureT};
@@ -175,6 +174,8 @@ impl_runtime_apis! {
     }
 
     impl pallet_starknet_runtime_api::StarknetRuntimeApi<Block> for Runtime {
+        fn dummy() -> (){
+        }
     }
 
     #[cfg(feature = "runtime-benchmarks")]
