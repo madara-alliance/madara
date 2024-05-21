@@ -30,8 +30,6 @@ use mp_types::block::DHeaderT;
 use mp_types::transactions::{DTxIndexT, DTxSignatureT};
 /// Import the Starknet pallet.
 pub use pallet_starknet;
-use pallet_starknet::pallet::Error as PalletError;
-use pallet_starknet_runtime_api::StarknetTransactionExecutionError;
 pub use pallet_timestamp::Call as TimestampCall;
 use sp_api::impl_runtime_apis;
 use sp_core::crypto::KeyTypeId;
@@ -40,11 +38,10 @@ use sp_runtime::traits::Block as BlockT;
 use sp_runtime::transaction_validity::{TransactionSource, TransactionValidity};
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
-use sp_runtime::{generic, ApplyExtrinsicResult, DispatchError};
+use sp_runtime::{generic, ApplyExtrinsicResult};
 pub use sp_runtime::{Perbill, Permill};
 use sp_std::prelude::*;
 use sp_version::RuntimeVersion;
-use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
@@ -178,46 +175,6 @@ impl_runtime_apis! {
     }
 
     impl pallet_starknet_runtime_api::StarknetRuntimeApi<Block> for Runtime {
-
-        fn program_hash() -> Felt252Wrapper {
-            Starknet::program_hash()
-        }
-
-        fn is_transaction_fee_disabled() -> bool {
-            Starknet::is_transaction_fee_disabled()
-        }
-
-        fn get_tx_messages_to_l1(tx_hash: TransactionHash) -> Vec<MessageToL1> {
-            Starknet::tx_messages(tx_hash)
-        }
-
-        fn get_events_for_tx_by_hash(tx_hash: TransactionHash) -> Vec<StarknetEvent> {
-            Starknet::tx_events(tx_hash)
-        }
-
-        fn get_tx_execution_outcome(tx_hash: TransactionHash) -> Option<Vec<u8>> {
-            Starknet::tx_revert_error(tx_hash).map(|s| s.into_bytes())
-        }
-    }
-
-    impl pallet_starknet_runtime_api::ConvertTransactionRuntimeApi<Block> for Runtime {
-
-        fn convert_error(error: DispatchError) -> StarknetTransactionExecutionError {
-            if error == PalletError::<Runtime>::ContractNotFound.into() {
-                return StarknetTransactionExecutionError::ContractNotFound;
-            }
-            if error == PalletError::<Runtime>::ClassHashAlreadyDeclared.into() {
-                return StarknetTransactionExecutionError::ClassAlreadyDeclared;
-            }
-            if error == PalletError::<Runtime>::ContractClassHashUnknown.into() {
-                return StarknetTransactionExecutionError::ClassHashNotFound;
-            }
-            if error == PalletError::<Runtime>::InvalidContractClass.into() {
-                return StarknetTransactionExecutionError::InvalidContractClass;
-            }
-
-            StarknetTransactionExecutionError::ContractError
-        }
     }
 
     #[cfg(feature = "runtime-benchmarks")]

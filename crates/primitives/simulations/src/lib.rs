@@ -5,7 +5,7 @@ pub extern crate alloc;
 
 use alloc::vec::Vec;
 
-use starknet_core::types::{SimulationFlag, SimulationFlagForEstimateFee as EstimateFeeFlag};
+use starknet_core::types::SimulationFlag;
 
 // TODO: This is a placeholder
 // https://github.com/starkware-libs/starknet-specs/blob/master/api/starknet_api_openrpc.json#L3919
@@ -45,27 +45,5 @@ impl From<Vec<SimulationFlag>> for SimulationFlags {
 impl core::default::Default for SimulationFlags {
     fn default() -> Self {
         Self { validate: true, charge_fee: true }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
-pub struct SimulationFlagForEstimateFee {
-    pub skip_validate: bool,
-}
-
-pub fn convert_flags(flags: Vec<EstimateFeeFlag>) -> Vec<SimulationFlagForEstimateFee> {
-    flags
-        .iter()
-        .map(|flag| match flag {
-            EstimateFeeFlag::SkipValidate => SimulationFlagForEstimateFee { skip_validate: false },
-        })
-        .collect()
-}
-
-impl core::default::Default for SimulationFlagForEstimateFee {
-    fn default() -> Self {
-        Self { skip_validate: true }
     }
 }

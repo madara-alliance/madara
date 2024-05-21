@@ -29,7 +29,6 @@ mod mapping_db;
 use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Env, MultiThreaded, OptimisticTransactionDB, Options,
 };
-use starknet_api::hash::StarkHash;
 use starknet_types_core::hash::{Pedersen, Poseidon};
 pub mod bonsai_db;
 mod meta_db;
@@ -498,12 +497,5 @@ impl DeoxysBackend {
 
     pub fn compact() {
         Self::expose_db().compact_range(None::<&[u8]>, None::<&[u8]>);
-    }
-
-    /// In the future, we will compute the block global state root asynchronously in the client,
-    /// using the Starknet-Bonzai-trie.
-    /// That what replaces it for now :)
-    pub fn temporary_global_state_root_getter() -> StarkHash {
-        Default::default()
     }
 }

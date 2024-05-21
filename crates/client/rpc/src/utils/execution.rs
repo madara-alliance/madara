@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Result;
 use blockifier::context::{BlockContext, FeeTokenAddresses, TransactionContext};
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
@@ -15,7 +16,7 @@ use blockifier::versioned_constants::VersionedConstants;
 use mc_db::storage_handler;
 use mp_felt::Felt252Wrapper;
 use mp_genesis_config::{ETH_TOKEN_ADDR, STRK_TOKEN_ADDR};
-use mp_simulations::{SimulationFlagForEstimateFee, SimulationFlags};
+use mp_simulations::SimulationFlags;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
@@ -140,21 +141,13 @@ pub fn call_contract(
 
 pub fn estimate_fee(
     transactions: Vec<AccountTransaction>,
-    simulation_flags: &[SimulationFlagForEstimateFee],
+    validate: bool,
     block_context: &BlockContext,
 ) -> Result<Vec<FeeEstimate>, TransactionExecutionError> {
-    let transactions_len = transactions.len();
-
-    let mut fees = Vec::with_capacity(transactions_len);
-
-    // TODO: the vector of flags should be for each transaction
-    for tx in transactions {
-        for flag in simulation_flags.iter() {
-            let execution_info = execute_fee_transaction(tx.clone(), flag.clone(), block_context)?;
-            fees.push(execution_info);
-        }
-    }
-
+    let fees = transactions
+        .iter()
+        .map(|tx| execute_fee_transaction(tx.clone(), validate, block_context))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(fees)
 }
 
@@ -188,7 +181,7 @@ pub fn estimate_message_fee(
 
 fn execute_fee_transaction(
     transaction: AccountTransaction,
-    simulation_flags: SimulationFlagForEstimateFee,
+    validate: bool,
     block_context: &BlockContext,
 ) -> Result<FeeEstimate, TransactionExecutionError> {
     let mut cached_state = init_cached_state(block_context);
@@ -208,16 +201,14 @@ fn execute_fee_transaction(
     let tx_info: Result<
         blockifier::transaction::objects::TransactionExecutionInfo,
         blockifier::transaction::errors::TransactionExecutionError,
-    > = transaction.execute(&mut cached_state, block_context, false, simulation_flags.skip_validate).and_then(
-        |mut tx_info| {
-            if tx_info.actual_fee.0 == 0 {
-                tx_info.actual_fee =
-                    blockifier::fee::fee_utils::calculate_tx_fee(&tx_info.actual_resources, block_context, &fee_type)?;
-            }
+    > = transaction.execute(&mut cached_state, block_context, false, validate).and_then(|mut tx_info| {
+        if tx_info.actual_fee.0 == 0 {
+            tx_info.actual_fee =
+                blockifier::fee::fee_utils::calculate_tx_fee(&tx_info.actual_resources, block_context, &fee_type)?;
+        }
 
-            Ok(tx_info)
-        },
-    );
+        Ok(tx_info)
+    });
 
     match tx_info {
         Ok(tx_info) => {
