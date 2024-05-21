@@ -3,6 +3,7 @@ use std::sync::Arc;
 use mp_types::block::DHashT;
 // Substrate
 use parity_scale_codec::{Decode, Encode};
+use starknet_ff::FieldElement;
 
 use crate::{Column, DatabaseExt, DbError, DB};
 
@@ -16,6 +17,7 @@ pub struct MetaDb {
 
 const CURRENT_SYNCING_TIPS: &[u8] = b"CURRENT_SYNCING_TIPS";
 const CURRENT_SYNC_BLOCK: &[u8] = b"CURRENT_SYNC_BLOCK";
+const CHAIN_ID: &[u8] = b"CHAIN_ID";
 
 impl MetaDb {
     pub(crate) fn new(db: Arc<DB>) -> Self {
@@ -57,5 +59,19 @@ impl MetaDb {
         log::debug!("set_current_sync_block {sync_block}");
         self.db.put_cf(&self.db.get_column(Column::Meta), CURRENT_SYNC_BLOCK, u64::to_be_bytes(sync_block))?;
         Ok(())
+    }
+
+    pub fn set_chain_id(&self, chain_id: FieldElement) -> Result<(), DbError> {
+        self.db.put_cf(&self.db.get_column(Column::Meta), CHAIN_ID, chain_id.to_bytes_be())?;
+        Ok(())
+    }
+
+    pub fn chain_id(&self) -> Result<FieldElement, DbError> {
+        let column = self.db.get_column(Column::Meta);
+        match self.db.get_cf(&column, b"CHAIN_ID")? {
+            Some(raw) => FieldElement::from_byte_slice_be(&raw)
+                .map_err(|_| DbError::Format("chain id should be a FieldElement".into())),
+            None => Ok(FieldElement::ZERO),
+        }
     }
 }
