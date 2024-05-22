@@ -76,7 +76,7 @@ pub mod starknet_sync_worker {
         }
 
         tokio::select!(
-            res = l1::sync(l1_url.clone(), block_metrics) => res.context("syncing L1 state")?,
+            res = l1::sync(l1_url.clone(), block_metrics.clone()) => res.context("syncing L1 state")?,
             res = l2::sync(
                 block_sender,
                 command_sink,
@@ -89,6 +89,7 @@ pub mod starknet_sync_worker {
                     sync_polling_interval: fetch_config.sync_polling_interval,
                     backup_every_n_blocks,
                 },
+                block_metrics,
             ) => res.context("syncing L2 state")?
         );
 
