@@ -1,17 +1,36 @@
-FROM rust:slim-buster
+# Stage 1: Build the application
+FROM rust:bookworm AS builder
 
-RUN apt-get -y update; \
+# Install build dependencies
+RUN apt-get -y update && \
     apt-get install -y --no-install-recommends \
-        libssl-dev make clang-11 g++ llvm protobuf-compiler libasound2-dev \
-        pkg-config libz-dev zstd git build-essential; \
-    apt-get autoremove -y; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+    clang \
+    protobuf-compiler \
+    build-essential
 
-EXPOSE 9944
+# Set the working directory
+WORKDIR /usr/local/bin
 
+# Copy the source code into the container
 COPY . .
 
-RUN cargo build --profile=production
+# Build the application in release mode
+RUN cargo build --release
 
-ENTRYPOINT ["./target/production/deoxys"]
+# Stage 2: Create the final runtime image
+FROM debian:bookworm
+
+# Install runtime dependencies
+RUN apt-get -y update && \
+    apt-get install -y --no-install-recommends \
+    clang \
+    protobuf-compiler
+
+# Set the working directory
+WORKDIR /usr/local/bin
+
+# Copy the compiled binary from the builder stage
+COPY --from=builder /usr/local/bin/target/release/deoxys .
+
+# Set the entrypoint
+ENTRYPOINT ["./deoxys"]

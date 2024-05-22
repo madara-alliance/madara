@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(infra): corrected dockerfile + docker-compose
 - fix(rpc): error handling
 - fix(lib): updated core libs to match oss
 - fix: state root - replaced_classes commit

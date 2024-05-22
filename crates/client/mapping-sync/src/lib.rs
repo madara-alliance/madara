@@ -8,7 +8,6 @@
 //! # Usage
 //! The Deoxys node should spawn a `MappingSyncWorker` among it's services.
 
-mod block_metrics;
 mod sync_blocks;
 
 use std::marker::PhantomData;
@@ -20,17 +19,15 @@ use futures::prelude::*;
 use futures::task::{Context, Poll};
 use futures_timer::Delay;
 use log::debug;
+use mc_sync::metrics::block_metrics::BlockMetrics;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHeaderT};
 use pallet_starknet_runtime_api::StarknetRuntimeApi;
-use prometheus_endpoint::prometheus;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::client::ImportNotifications;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Header as HeaderT;
-
-use crate::block_metrics::BlockMetrics;
 
 /// The worker in charge of syncing the Deoxys db when it receive a new Substrate block
 pub struct MappingSyncWorker<C, BE, H> {
@@ -59,11 +56,8 @@ impl<C, BE, H> MappingSyncWorker<C, BE, H> {
         substrate_backend: Arc<BE>,
         retry_times: usize,
         sync_from: <DHeaderT as HeaderT>::Number,
-        prometheus_registry: Option<prometheus::Registry>,
+        block_metrics: Option<BlockMetrics>,
     ) -> Self {
-        let block_metrics =
-            prometheus_registry.and_then(|registry| block_metrics::BlockMetrics::register(&registry).ok());
-
         Self {
             import_notifications,
             timeout,

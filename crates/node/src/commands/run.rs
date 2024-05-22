@@ -186,10 +186,29 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             });
         }
     }
+
+    // Assign a random pokemon name at each startup
+    cli.run.base.name.get_or_insert_with(|| {
+        tokio::runtime::Runtime::new().unwrap().block_on(mc_sync::utility::get_random_pokemon_name()).unwrap_or_else(
+            |e| {
+                log::warn!("Failed to get random pokemon name: {}", e);
+                "deoxys".to_string()
+            },
+        )
+    });
+
     if cli.run.base.shared_params.dev {
         override_dev_environment(&mut cli.run);
     } else if cli.run.deoxys {
         deoxys_environment(&mut cli.run);
+    }
+
+    // Defaulting `SealingMode` to `Manual` in order to fetch blocks from the network
+    cli.run.sealing = Some(Sealing::Manual);
+
+    // If --no-telemetry is not set, set the telemetry endpoints to starknodes.com
+    if !cli.run.base.telemetry_params.no_telemetry {
+        cli.run.base.telemetry_params.telemetry_endpoints = vec![("wss://starknodes.com/submit/".to_string(), 0)];
     }
 
     let runner = cli.create_runner(&cli.run.base)?;
@@ -254,16 +273,6 @@ fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
     // Set the blockchain network to 'starknet'
     cmd.base.shared_params.chain = Some("starknet".to_string());
     cmd.base.shared_params.base_path.get_or_insert_with(|| PathBuf::from("/tmp/deoxys"));
-
-    // Assign a random pokemon name at each startup
-    cmd.base.name.get_or_insert_with(|| {
-        tokio::runtime::Runtime::new().unwrap().block_on(mc_sync::utility::get_random_pokemon_name()).unwrap_or_else(
-            |e| {
-                log::warn!("Failed to get random pokemon name: {}", e);
-                "deoxys".to_string()
-            },
-        )
-    });
 
     // Define telemetry endpoints at starknodes.com
     cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://starknodes.com/submit/".to_string(), 0)];
