@@ -1,5 +1,4 @@
 //! Contains the code required to sync data from the feeder efficiently.
-use core::sync;
 use std::pin::pin;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
@@ -18,7 +17,6 @@ use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use starknet_api::block;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_core::types::{PendingStateUpdate, StateUpdate};
 use starknet_ff::FieldElement;
@@ -33,7 +31,7 @@ use crate::convert::convert_block;
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::l1::ETHEREUM_STATE_UPDATE;
-use crate::metrics::block_metrics::{self, BlockMetrics};
+use crate::metrics::block_metrics::BlockMetrics;
 use crate::utils::PerfStopwatch;
 use crate::{stopwatch_end, CommandSink};
 
@@ -143,7 +141,7 @@ async fn l2_verify_and_apply_task(
     verify: bool,
     backup_every_n_blocks: Option<usize>,
     block_metrics: Option<BlockMetrics>,
-    sync_timer: Arc<Mutex<Option<Instant>>>
+    sync_timer: Arc<Mutex<Option<Instant>>>,
 ) -> anyhow::Result<()> {
     let block_sender = Arc::new(block_sender);
 
@@ -215,7 +213,15 @@ async fn l2_verify_and_apply_task(
             },
             async {
                 let sw = PerfStopwatch::new();
-                create_block(&mut command_sink, &mut last_block_hash, block_n, block_metrics.clone(), sync_timer.clone()).await.expect("creating block");
+                create_block(
+                    &mut command_sink,
+                    &mut last_block_hash,
+                    block_n,
+                    block_metrics.clone(),
+                    sync_timer.clone(),
+                )
+                .await
+                .expect("creating block");
                 stopwatch_end!(sw, "end create_block {}: {:?}", block_n);
             }
         );
@@ -356,7 +362,13 @@ where
 }
 
 /// Notifies the consensus engine that a new block should be created.
-async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>, block_number: u64, block_metrics: Option<BlockMetrics>, sync_timer: Arc<Mutex<Option<Instant>>>) -> Result<(), String> {
+async fn create_block(
+    cmds: &mut CommandSink,
+    parent_hash: &mut Option<H256>,
+    block_number: u64,
+    block_metrics: Option<BlockMetrics>,
+    sync_timer: Arc<Mutex<Option<Instant>>>,
+) -> Result<(), String> {
     let (sender, receiver) = futures::channel::oneshot::channel();
 
     cmds.try_send(sc_consensus_manual_seal::rpc::EngineCommand::SealNewBlock {
@@ -379,7 +391,6 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>, bl
             let mut timer_guard = sync_timer.lock().unwrap();
             if let Some(start_time) = *timer_guard {
                 elapsed_time = start_time.elapsed().as_secs_f64();
-                log::info!("Block Elapsed Time: {:?}", elapsed_time);
                 *timer_guard = Some(Instant::now());
             } else {
                 // For the first block, there is no previous timer set

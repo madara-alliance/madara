@@ -23,10 +23,7 @@ impl BlockMetrics {
                 Gauge::new("deoxys_l2_block_number", "Gauge for deoxys L2 block number")?,
                 registry,
             )?,
-            l2_sync_time: register(
-                Gauge::new("deoxys_l2_sync_time", "Gauge for deoxys L2 sync time")?,
-                registry,
-            )?,
+            l2_sync_time: register(Gauge::new("deoxys_l2_sync_time", "Gauge for deoxys L2 sync time")?, registry)?,
             l2_avg_sync_time: register(
                 Gauge::new("deoxys_l2_avg_sync_time", "Gauge for deoxys L2 average sync time")?,
                 registry,
