@@ -6235,6 +6235,7 @@ dependencies = [
  "mp-hashers",
  "mp-transactions",
  "mp-types",
+ "once_cell",
  "primitive-types",
  "rand 0.8.5",
  "rayon",
@@ -6521,7 +6522,6 @@ dependencies = [
  "blockifier",
  "derive_more",
  "hex",
- "lazy_static",
  "mp-felt",
  "serde",
  "serde_with",
@@ -6568,16 +6568,6 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "starknet-core 0.10.0",
-]
-
-[[package]]
-name = "mp-storage"
-version = "0.1.0"
-dependencies = [
- "lazy_static",
- "parity-scale-codec",
- "serde",
- "sp-io",
 ]
 
 [[package]]
@@ -7291,7 +7281,6 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "lazy_static",
  "log",
  "mc-db",
  "mp-block",
@@ -7301,7 +7290,6 @@ dependencies = [
  "mp-genesis-config",
  "mp-hashers",
  "mp-sequencer-address",
- "mp-storage",
  "mp-transactions",
  "parity-scale-codec",
  "scale-info",

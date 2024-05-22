@@ -1,5 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
+use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -55,7 +56,7 @@ where
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
 
-    let chain_id = starknet.chain_id()?.0.into();
+    let chain_id = chain_id().into();
 
     let _starknet_tx =
         if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into()) {

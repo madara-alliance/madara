@@ -1,6 +1,7 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
+use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::TxType;
@@ -20,7 +21,7 @@ use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
 use crate::utils::helpers::{tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
-use crate::Starknet;
+use crate::{Felt, Starknet};
 
 pub async fn trace_transaction<BE, C, H>(
     starknet: &Starknet<BE, C, H>,
@@ -45,7 +46,7 @@ where
     let block_header = starknet_block.header();
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
     let block_number = block_header.block_number;
-    let chain_id = starknet.chain_id()?;
+    let chain_id = Felt(chain_id());
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
     // retrieve all transaction hashes from the block in the cache or compute them

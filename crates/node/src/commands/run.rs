@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use deoxys_runtime::SealingMode;
 use mc_sync::fetch::fetchers::{fetch_apply_genesis_block, FetchConfig};
-use mc_sync::utility::update_config;
+use mc_sync::utility::set_config;
 use mc_sync::utils::constant::starknet_core_address;
 use reqwest::Url;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
@@ -233,7 +233,8 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         fetch_block_config.sync_polling_interval =
             if cli.run.no_sync_polling { None } else { Some(Duration::from_secs(cli.run.sync_polling_interval)) };
         fetch_block_config.n_blocks_to_sync = cli.run.n_blocks_to_sync;
-        update_config(&fetch_block_config);
+        // unique set of static OnceCell configuration
+        set_config(&fetch_block_config);
 
         let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
 

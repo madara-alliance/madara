@@ -17,6 +17,7 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use mc_db::DeoxysBackend;
+use methods::trace::utils::block_number_by_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
@@ -267,17 +268,13 @@ where
 
     /// Returns the substrate block hash corresponding to the given Starknet block id
     fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<DHashT, StarknetRpcApiError> {
-        match block_id {
-            BlockId::Hash(h) => deoxys_backend_client::load_hash(self.client.as_ref(), Felt252Wrapper::from(h).into())
-                .map_err(|e| {
-                    log::error!("Failed to load Starknet block hash for Substrate block with hash '{h}': {e}");
-                    StarknetRpcApiError::BlockNotFound
-                })?,
-            BlockId::Number(n) => self
-                .client
-                .hash(UniqueSaturatedInto::unique_saturated_into(n))
-                .map_err(|_| StarknetRpcApiError::BlockNotFound)?,
-            BlockId::Tag(_) => Some(self.client.info().best_hash),
+        if let BlockId::Hash(block_hash) = block_id {
+            deoxys_backend_client::load_hash(self.client.as_ref(), Felt252Wrapper::from(block_hash).into())?
+        } else {
+            let block_number = block_number_by_id(block_id)?;
+            self.client
+                .hash(UniqueSaturatedInto::unique_saturated_into(block_number))
+                .map_err(|_| StarknetRpcApiError::BlockNotFound)?
         }
         .ok_or(StarknetRpcApiError::BlockNotFound)
     }

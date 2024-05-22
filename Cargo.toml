@@ -17,7 +17,6 @@ members = [
   "crates/primitives/hashers",
   "crates/primitives/program-hash",
   "crates/primitives/sequencer-address",
-  "crates/primitives/storage",
   "crates/primitives/transactions",
   "crates/primitives/types",
   "crates/runtime",
@@ -41,7 +40,6 @@ default-members = [
   "crates/primitives/hashers",
   "crates/primitives/program-hash",
   "crates/primitives/sequencer-address",
-  "crates/primitives/storage",
   "crates/primitives/transactions",
   "crates/primitives/types",
   "crates/runtime",
@@ -227,7 +225,6 @@ mp-hashers = { path = "crates/primitives/hashers", default-features = false }
 mp-program-hash = { path = "crates/primitives/program-hash", default-features = false }
 mp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
 mp-simulations = { path = "crates/primitives/simulations", default-features = false }
-mp-storage = { path = "crates/primitives/storage", default-features = false }
 mp-transactions = { path = "crates/primitives/transactions", default-features = false }
 mp-types = { path = "crates/primitives/types", default-features = false }
 
@@ -299,6 +296,7 @@ indexmap = "2.2.5"
 itertools = "0.12.1"
 jsonrpsee = { version = "0.16.3", default-features = false }
 lazy_static = { version = "1.4.0", default-features = false }
+once_cell = "1.19.0"
 log = { version = "0.4.20", default-features = false, features = ["std"] }
 num-traits = "0.2.17"
 num-bigint = "0.4.4"

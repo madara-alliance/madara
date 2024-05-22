@@ -35,7 +35,7 @@ where
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
 
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
-    let block_number = block_number_by_id(block_id);
+    let block_number = block_number_by_id(block_id)?;
 
     let simulation_flags = SimulationFlags {
         validate: !simulation_flags.contains(&SimulationFlag::SkipValidate),

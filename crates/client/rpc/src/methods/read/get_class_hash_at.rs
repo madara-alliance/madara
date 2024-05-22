@@ -22,7 +22,7 @@ use crate::Felt;
 ///
 /// * `class_hash` - The class hash of the given contract
 pub fn get_class_hash_at(block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
-    let block_number = block_number_by_id(block_id);
+    let block_number = block_number_by_id(block_id)?;
     let key = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
 
     match storage_handler::contract_data().get_class_hash_at(&key, block_number) {

@@ -5,7 +5,6 @@
 // Specifically, the macro generates a trait (`StarknetRuntimeApi`) with unused type parameters.
 #![allow(clippy::extra_unused_type_parameters)]
 
-use mp_felt::Felt252Wrapper;
 pub extern crate alloc;
 
 #[derive(parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
@@ -19,7 +18,6 @@ pub enum StarknetTransactionExecutionError {
 
 sp_api::decl_runtime_apis! {
     pub trait StarknetRuntimeApi {
-        /// Returns the chain id.
-        fn chain_id() -> Felt252Wrapper;
+        fn dummy();
     }
 }
