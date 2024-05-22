@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(metrics): Added sync time metrics
 - refactor: using const and OnceCell instead of lazy_static
 - refactor: remove crate mp-storage
 - feat(infra): corrected dockerfile + docker-compose

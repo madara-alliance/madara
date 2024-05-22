@@ -1,7 +1,8 @@
 //! Contains the code required to sync data from the feeder efficiently.
 use std::pin::pin;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Instant;
 
 use anyhow::{bail, Context};
 use futures::{stream, StreamExt, TryStreamExt};
@@ -29,6 +30,7 @@ use crate::convert::convert_block;
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::l1::ETHEREUM_STATE_UPDATE;
+use crate::metrics::block_metrics::BlockMetrics;
 use crate::utils::PerfStopwatch;
 use crate::{stopwatch_end, CommandSink};
 
@@ -126,6 +128,8 @@ async fn l2_verify_and_apply_task(
     mut command_sink: CommandSink,
     verify: bool,
     backup_every_n_blocks: Option<usize>,
+    block_metrics: Option<BlockMetrics>,
+    sync_timer: Arc<Mutex<Option<Instant>>>,
 ) -> anyhow::Result<()> {
     let block_sender = Arc::new(block_sender);
 
@@ -197,7 +201,15 @@ async fn l2_verify_and_apply_task(
             },
             async {
                 let sw = PerfStopwatch::new();
-                create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
+                create_block(
+                    &mut command_sink,
+                    &mut last_block_hash,
+                    block_n,
+                    block_metrics.clone(),
+                    sync_timer.clone(),
+                )
+                .await
+                .expect("creating block");
                 stopwatch_end!(sw, "end create_block {}: {:?}", block_n);
             }
         );
@@ -272,6 +284,7 @@ pub async fn sync<C>(
     provider: SequencerGatewayProvider,
     client: Arc<C>,
     config: L2SyncConfig,
+    block_metrics: Option<BlockMetrics>,
 ) -> anyhow::Result<()>
 where
     C: HeaderBackend<DBlockT> + 'static,
@@ -279,6 +292,7 @@ where
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(10);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(10);
     let provider = Arc::new(provider);
+    let sync_timer = Arc::new(Mutex::new(None));
 
     // [Fetch task] ==new blocks and updates=> [Block conversion task] ======> [Verification and apply
     // task]
@@ -304,6 +318,8 @@ where
         command_sink,
         config.verify,
         config.backup_every_n_blocks,
+        block_metrics.clone(),
+        Arc::clone(&sync_timer),
     ));
 
     tokio::select!(
@@ -334,7 +350,13 @@ where
 }
 
 /// Notifies the consensus engine that a new block should be created.
-async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) -> Result<(), String> {
+async fn create_block(
+    cmds: &mut CommandSink,
+    parent_hash: &mut Option<H256>,
+    block_number: u64,
+    block_metrics: Option<BlockMetrics>,
+    sync_timer: Arc<Mutex<Option<Instant>>>,
+) -> Result<(), String> {
     let (sender, receiver) = futures::channel::oneshot::channel();
 
     cmds.try_send(sc_consensus_manual_seal::rpc::EngineCommand::SealNewBlock {
@@ -349,6 +371,27 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
         .await
         .map_err(|err| format!("failed to seal block: {err}"))?
         .map_err(|err| format!("failed to seal block: {err}"))?;
+
+    // Update Block sync time metrics
+    if let Some(block_metrics) = block_metrics {
+        let elapsed_time;
+        {
+            let mut timer_guard = sync_timer.lock().unwrap();
+            if let Some(start_time) = *timer_guard {
+                elapsed_time = start_time.elapsed().as_secs_f64();
+                *timer_guard = Some(Instant::now());
+            } else {
+                // For the first block, there is no previous timer set
+                elapsed_time = 0.0;
+                *timer_guard = Some(Instant::now());
+            }
+        }
+
+        let sync_time = block_metrics.l2_sync_time.get() + elapsed_time;
+        block_metrics.l2_sync_time.set(sync_time);
+        block_metrics.l2_latest_sync_time.set(elapsed_time);
+        block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / block_number as f64);
+    }
 
     *parent_hash = Some(create_block_info.hash);
     Ok(())

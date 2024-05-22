@@ -47,7 +47,7 @@ pub async fn l2_fetch_task(
         }
     };
 
-    log::info!("🥳🥳🥳 The sync process caught up with the tip of the chain.");
+    log::info!("🥳 The sync process caught up with the tip of the chain.");
 
     if let Some(sync_polling_interval) = sync_polling_interval {
         // Polling
