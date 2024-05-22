@@ -24,7 +24,7 @@ use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdat
 
 use crate::commitments::lib::calculate_commitments;
 use crate::l2::L2SyncError;
-use crate::utility::get_config;
+use crate::utility;
 
 /// Compute heavy, this should only be called in a rayon ctx
 pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
@@ -400,7 +400,7 @@ fn commitments(
 }
 
 fn chain_id() -> mp_felt::Felt252Wrapper {
-    get_config().expect("config not set").chain_id.into()
+    utility::chain_id().into()
 }
 
 fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {

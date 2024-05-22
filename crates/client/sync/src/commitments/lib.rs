@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
-use lazy_static::lazy_static;
 use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
 use mp_convert::field_element::FromFieldElement;
 use mp_felt::Felt252Wrapper;
@@ -273,10 +272,9 @@ fn class_hash_and_nonce(
     Ok((FieldElement::from_bytes_be(&class_hash.0.0).unwrap(), FieldElement::from_bytes_be(&nonce.0.0).unwrap()))
 }
 
-lazy_static! {
-    static ref CONTRACT_CLASS_HASH_VERSION: FieldElement =
-        FieldElement::from_byte_slice_be("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap();
-}
+// "CONTRACT_CLASS_LEAF_V0"
+const CONTRACT_CLASS_HASH_VERSION: FieldElement =
+    FieldElement::from_mont([9331882290187415277, 12057587991035439952, 18444375821049509847, 115292049744600508]);
 
 /// Calculates the class trie root
 ///
@@ -299,7 +297,7 @@ fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt2
         .map(|(class_hash, compiled_class_hash)| {
             let compiled_class_hash = FieldElement::from_bytes_be(&compiled_class_hash.0.0).unwrap();
 
-            let hash = PoseidonHasher::hash_elements(*CONTRACT_CLASS_HASH_VERSION, compiled_class_hash);
+            let hash = PoseidonHasher::hash_elements(CONTRACT_CLASS_HASH_VERSION, compiled_class_hash);
 
             (class_hash, hash)
         })
@@ -310,4 +308,17 @@ fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt2
     handler_class.commit(block_number)?;
 
     Ok(handler_class.root()?.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_contract_class_hash_version() {
+        assert_eq!(
+            CONTRACT_CLASS_HASH_VERSION,
+            FieldElement::from_byte_slice_be("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap(),
+        );
+    }
 }

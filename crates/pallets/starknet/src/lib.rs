@@ -59,7 +59,6 @@ use mc_db::storage_handler::StorageViewMut;
 use mp_block::DeoxysBlock;
 use mp_digest_log::DEOXYS_ENGINE_ID;
 use mp_felt::{trim_hash, Felt252Wrapper};
-use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
 use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
 use starknet_api::core::{CompiledClassHash, ContractAddress};
@@ -160,11 +159,6 @@ pub mod pallet {
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            frame_support::storage::unhashed::put::<StarknetStorageSchemaVersion>(
-                PALLET_STARKNET_SCHEMA,
-                &StarknetStorageSchemaVersion::V1,
-            );
-
             if storage_handler::block_hash().get(1).unwrap().is_none() {
                 let handler_contract_data = storage_handler::contract_data_mut();
                 self.contracts.iter().for_each(|(contract_address, class_hash)| {
@@ -262,9 +256,5 @@ impl<T: Config> Pallet<T> {
                 log!(info, "Block not found in store_block")
             }
         }
-    }
-
-    pub fn chain_id() -> Felt252Wrapper {
-        mp_chain_id::SN_MAIN_CHAIN_ID
     }
 }

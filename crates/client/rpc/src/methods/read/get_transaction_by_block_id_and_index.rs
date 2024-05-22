@@ -1,4 +1,5 @@
 use jsonrpsee::core::RpcResult;
+use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -13,7 +14,7 @@ use starknet_core::types::{BlockId, FieldElement, Transaction};
 
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
+use crate::{Felt, Starknet};
 
 /// Get the details of a transaction by a given block id and index.
 ///
@@ -55,7 +56,7 @@ where
     let starknet_block_hash = starknet_block.header().hash::<H>();
 
     let transaction = starknet_block.transactions().get(index).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
-    let chain_id = starknet.chain_id()?;
+    let chain_id = Felt(chain_id());
 
     let opt_cached_transaction_hashes = starknet.get_cached_transaction_hashes(starknet_block_hash.into());
 

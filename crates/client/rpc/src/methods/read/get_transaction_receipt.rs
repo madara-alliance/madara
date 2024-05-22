@@ -3,6 +3,7 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution as btx;
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
+use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHashT};
@@ -72,7 +73,7 @@ where
         })?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-    let chain_id = starknet.chain_id()?;
+    let chain_id = Felt(chain_id());
 
     get_transaction_receipt_finalized(starknet, chain_id, substrate_block_hash, transaction_hash)
 }

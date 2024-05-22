@@ -4,6 +4,7 @@ use blockifier::block::GasPrices;
 use mc_db::DeoxysBackend;
 use mc_rpc::deoxys_backend_client::get_block_by_block_hash;
 use mc_sync::metrics::block_metrics::BlockMetrics;
+use mc_sync::utility::chain_id;
 use mp_digest_log::{find_starknet_block, FindLogError};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -49,13 +50,12 @@ where
                              db state ({storage_starknet_block_hash:?})"
                         ))
                     } else {
-                        let chain_id = client.runtime_api().chain_id(substrate_block_hash)?;
                         let tx_hashes = digest_starknet_block
                             .transactions()
                             .par_iter()
                             .map(|tx| {
                                 Felt252Wrapper::from(tx.compute_hash::<H>(
-                                    chain_id,
+                                    chain_id().into(),
                                     false,
                                     Some(digest_starknet_block.header().block_number),
                                 ))

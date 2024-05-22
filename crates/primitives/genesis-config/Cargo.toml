@@ -15,7 +15,6 @@ blockifier = { workspace = true, features = ["testing"] }
 # third party
 derive_more = { workspace = true, features = ["constructor"] }
 hex = { workspace = true }
-lazy_static = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_with = { workspace = true }
 starknet-core = { workspace = true }

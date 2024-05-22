@@ -1,75 +1,125 @@
 use jsonrpsee::types::error::{CallError, ErrorObject};
+use mc_db::storage_handler::DeoxysStorageError;
+use mc_db::DbError;
 use pallet_starknet_runtime_api::StarknetTransactionExecutionError;
 use starknet_core::types::StarknetError;
 
 // Comes from the RPC Spec:
 // https://github.com/starkware-libs/starknet-specs/blob/0e859ff905795f789f1dfd6f7340cdaf5015acc8/api/starknet_write_api.json#L227
-#[derive(thiserror::Error, Clone, Copy, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum StarknetRpcApiError {
     #[error("Failed to write transaction")]
-    FailedToReceiveTxn = 1,
+    FailedToReceiveTxn,
     #[error("Contract not found")]
-    ContractNotFound = 20,
+    ContractNotFound,
     #[error("Block not found")]
-    BlockNotFound = 24,
+    BlockNotFound,
     #[error("Invalid transaction hash")]
-    InvalidTxnHash = 25,
+    InvalidTxnHash,
     #[error("Invalid tblock hash")]
-    InvalidBlockHash = 26,
+    InvalidBlockHash,
     #[error("Invalid transaction index in a block")]
-    InvalidTxnIndex = 27,
+    InvalidTxnIndex,
     #[error("Class hash not found")]
-    ClassHashNotFound = 28,
+    ClassHashNotFound,
     #[error("Transaction hash not found")]
-    TxnHashNotFound = 29,
+    TxnHashNotFound,
     #[error("Requested page size is too big")]
-    PageSizeTooBig = 31,
+    PageSizeTooBig,
     #[error("There are no blocks")]
-    NoBlocks = 32,
+    NoBlocks,
     #[error("The supplied continuation token is invalid or unknown")]
-    InvalidContinuationToken = 33,
+    InvalidContinuationToken,
     #[error("Too many keys provided in a filter")]
-    TooManyKeysInFilter = 34,
+    TooManyKeysInFilter,
     #[error("Failed to fetch pending transactions")]
-    FailedToFetchPendingTransactions = 38,
+    FailedToFetchPendingTransactions,
     #[error("Contract error")]
-    ContractError = 40,
+    ContractError,
     #[error("Transaction execution error")]
-    TxnExecutionError = 41,
+    TxnExecutionError,
     #[error("Invalid contract class")]
-    InvalidContractClass = 50,
+    InvalidContractClass,
     #[error("Class already declared")]
-    ClassAlreadyDeclared = 51,
+    ClassAlreadyDeclared,
     #[error("Invalid transaction nonce")]
-    InvalidTxnNonce = 52,
+    InvalidTxnNonce,
     #[error("Max fee is smaller than the minimal transaction cost (validation plus fee transfer)")]
-    InsufficientMaxFee = 53,
+    InsufficientMaxFee,
     #[error("Account balance is smaller than the transaction's max_fee")]
-    InsufficientAccountBalance = 54,
+    InsufficientAccountBalance,
     #[error("Account validation failed")]
-    ValidationFailure = 55,
+    ValidationFailure,
     #[error("Compilation failed")]
-    CompilationFailed = 56,
+    CompilationFailed,
     #[error("Contract class size is too large")]
-    ContractClassSizeTooLarge = 57,
+    ContractClassSizeTooLarge,
     #[error("Sender address is not an account contract")]
-    NonAccount = 58,
+    NonAccount,
     #[error("A transaction with the same hash already exists in the mempool")]
-    DuplicateTxn = 59,
+    DuplicateTxn,
     #[error("The compiled class hash did not match the one supplied in the transaction")]
-    CompiledClassHashMismatch = 60,
+    CompiledClassHashMismatch,
     #[error("The transaction version is not supported")]
-    UnsupportedTxnVersion = 61,
+    UnsupportedTxnVersion,
     #[error("The contract class version is not supported")]
-    UnsupportedContractClassVersion = 62,
+    UnsupportedContractClassVersion,
     #[error("An unexpected error occurred")]
-    ErrUnexpectedError = 63,
+    ErrUnexpectedError { data: String },
     #[error("Internal server error")]
-    InternalServerError = 500,
+    InternalServerError,
     #[error("Unimplemented method")]
-    UnimplementedMethod = 501,
+    UnimplementedMethod,
     #[error("Too many storage keys requested")]
-    ProofLimitExceeded = 10000,
+    ProofLimitExceeded,
+}
+
+impl From<&StarknetRpcApiError> for i32 {
+    fn from(err: &StarknetRpcApiError) -> Self {
+        match err {
+            StarknetRpcApiError::FailedToReceiveTxn => 1,
+            StarknetRpcApiError::ContractNotFound => 20,
+            StarknetRpcApiError::BlockNotFound => 24,
+            StarknetRpcApiError::InvalidTxnHash => 25,
+            StarknetRpcApiError::InvalidBlockHash => 26,
+            StarknetRpcApiError::InvalidTxnIndex => 27,
+            StarknetRpcApiError::ClassHashNotFound => 28,
+            StarknetRpcApiError::TxnHashNotFound => 29,
+            StarknetRpcApiError::PageSizeTooBig => 31,
+            StarknetRpcApiError::NoBlocks => 32,
+            StarknetRpcApiError::InvalidContinuationToken => 33,
+            StarknetRpcApiError::TooManyKeysInFilter => 34,
+            StarknetRpcApiError::FailedToFetchPendingTransactions => 38,
+            StarknetRpcApiError::ContractError => 40,
+            StarknetRpcApiError::TxnExecutionError => 41,
+            StarknetRpcApiError::InvalidContractClass => 50,
+            StarknetRpcApiError::ClassAlreadyDeclared => 51,
+            StarknetRpcApiError::InvalidTxnNonce => 52,
+            StarknetRpcApiError::InsufficientMaxFee => 53,
+            StarknetRpcApiError::InsufficientAccountBalance => 54,
+            StarknetRpcApiError::ValidationFailure => 55,
+            StarknetRpcApiError::CompilationFailed => 56,
+            StarknetRpcApiError::ContractClassSizeTooLarge => 57,
+            StarknetRpcApiError::NonAccount => 58,
+            StarknetRpcApiError::DuplicateTxn => 59,
+            StarknetRpcApiError::CompiledClassHashMismatch => 60,
+            StarknetRpcApiError::UnsupportedTxnVersion => 61,
+            StarknetRpcApiError::UnsupportedContractClassVersion => 62,
+            StarknetRpcApiError::ErrUnexpectedError { data: _ } => 63,
+            StarknetRpcApiError::InternalServerError => 500,
+            StarknetRpcApiError::UnimplementedMethod => 501,
+            StarknetRpcApiError::ProofLimitExceeded => 10000,
+        }
+    }
+}
+
+impl StarknetRpcApiError {
+    pub fn data(&self) -> Option<String> {
+        match self {
+            StarknetRpcApiError::ErrUnexpectedError { data } => Some(data.clone()),
+            _ => None,
+        }
+    }
 }
 
 impl From<StarknetTransactionExecutionError> for StarknetRpcApiError {
@@ -86,7 +136,7 @@ impl From<StarknetTransactionExecutionError> for StarknetRpcApiError {
 
 impl From<StarknetRpcApiError> for jsonrpsee::core::Error {
     fn from(err: StarknetRpcApiError) -> Self {
-        jsonrpsee::core::Error::Call(CallError::Custom(ErrorObject::owned(err as i32, err.to_string(), None::<()>)))
+        jsonrpsee::core::Error::Call(CallError::Custom(ErrorObject::owned((&err).into(), err.to_string(), err.data())))
     }
 }
 
@@ -116,9 +166,21 @@ impl From<StarknetError> for StarknetRpcApiError {
             StarknetError::CompiledClassHashMismatch => StarknetRpcApiError::CompiledClassHashMismatch,
             StarknetError::UnsupportedTxVersion => StarknetRpcApiError::UnsupportedTxnVersion,
             StarknetError::UnsupportedContractClassVersion => StarknetRpcApiError::UnsupportedContractClassVersion,
-            StarknetError::UnexpectedError(_) => StarknetRpcApiError::ErrUnexpectedError,
+            StarknetError::UnexpectedError(data) => StarknetRpcApiError::ErrUnexpectedError { data },
             StarknetError::NoTraceAvailable(_) => StarknetRpcApiError::InternalServerError,
             StarknetError::TransactionExecutionError(_) => StarknetRpcApiError::TxnExecutionError,
         }
+    }
+}
+
+impl From<DeoxysStorageError> for StarknetRpcApiError {
+    fn from(_: DeoxysStorageError) -> Self {
+        StarknetRpcApiError::ErrUnexpectedError { data: "DB error".to_string() }
+    }
+}
+
+impl From<DbError> for StarknetRpcApiError {
+    fn from(_: DbError) -> Self {
+        StarknetRpcApiError::ErrUnexpectedError { data: "DB error".to_string() }
     }
 }

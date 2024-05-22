@@ -3,6 +3,7 @@ use std::sync::Arc;
 use blockifier::transaction::transactions::L1HandlerTransaction;
 use jsonrpsee::core::RpcResult;
 use log::error;
+use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
@@ -55,9 +56,7 @@ where
     let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
     let block_number = block.header().block_number;
 
-    let chain_id = Felt252Wrapper(starknet.chain_id()?.0);
-
-    let transaction = convert_message_into_tx::<H>(message, chain_id, Some(block_number));
+    let transaction = convert_message_into_tx::<H>(message, chain_id().into(), Some(block_number));
 
     let message_fee = utils::execution::estimate_message_fee(transaction, &block_context).map_err(|e| {
         error!("Function execution failed: {:#?}", e);
