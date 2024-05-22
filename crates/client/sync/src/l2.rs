@@ -19,7 +19,6 @@ use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_core::types::{PendingStateUpdate, StateUpdate};
-use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{BlockId, StateUpdateWithBlock};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::mpsc;
@@ -96,11 +95,6 @@ lazy_static! {
 }
 
 lazy_static! {
-    /// Shared latest block number and hash of chain, using a RwLock to allow for concurrent reads and exclusive writes
-    pub static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: RwLock<(FieldElement, u64)> = RwLock::new((FieldElement::default(), 0));
-}
-
-lazy_static! {
     /// Shared pending block data, using a RwLock to allow for concurrent reads and exclusive writes
     static ref STARKNET_PENDING_BLOCK: RwLock<Option<DeoxysBlock>> = RwLock::new(None);
 }
@@ -108,12 +102,6 @@ lazy_static! {
 lazy_static! {
     /// Shared pending state update, using RwLock to allow for concurrent reads and exclusive writes
     static ref STARKNET_PENDING_STATE_UPDATE: RwLock<Option<PendingStateUpdate>> = RwLock::new(None);
-}
-
-pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
-    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
-        .read()
-        .expect("Failed to acquire read lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
 }
 
 pub fn get_pending_block() -> Option<DeoxysBlock> {
@@ -464,9 +452,9 @@ where
             Some(crate::convert::state_update(state_update));
     }
 
-    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
-        .write()
-        .expect("Failed to acquire write lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER") = (hash_current, number);
+    DeoxysBackend::meta()
+        .set_latest_block_hash_and_number(hash_current, number)
+        .context("setting highest block hash and number")?;
 
     log::debug!(
         "update_starknet_data: latest_block_number: {}, latest_block_hash: 0x{:x}, best_hash: {}",

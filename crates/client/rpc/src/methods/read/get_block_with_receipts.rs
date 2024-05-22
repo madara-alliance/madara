@@ -1,4 +1,5 @@
 use jsonrpsee::core::RpcResult;
+use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
@@ -23,7 +24,7 @@ use crate::utils::block::{
 use crate::utils::execution::{block_context, re_execute_transactions};
 use crate::utils::helpers::{status, tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
-use crate::Starknet;
+use crate::{Felt, Starknet};
 
 pub fn get_block_with_receipts<BE, C, H>(
     starknet: &Starknet<BE, C, H>,
@@ -41,7 +42,6 @@ where
     let block_header = block.header();
     let block_number = block_header.block_number;
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
-    let chain_id = starknet.chain_id()?;
 
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
@@ -49,7 +49,7 @@ where
     let block_txs_hashes = if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(block_hash.into()) {
         tx_hash_retrieve(tx_hashes)
     } else {
-        tx_hash_compute::<H>(&block, chain_id)
+        tx_hash_compute::<H>(&block, Felt(chain_id()))
     };
 
     // create a vector of transactions with their corresponding hashes without deploy transactions,
