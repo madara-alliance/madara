@@ -9,8 +9,8 @@ pub mod commitments;
 pub mod fetch;
 pub mod l1;
 pub mod l2;
+pub mod metrics;
 pub mod reorgs;
-pub mod types;
 pub mod utils;
 
 pub use l2::SenderConfig;
@@ -38,7 +38,9 @@ pub mod starknet_sync_worker {
     use self::fetch::fetchers::FetchConfig;
     use super::*;
     use crate::l2::verify_l2;
+    use crate::metrics::block_metrics::BlockMetrics;
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn sync<C>(
         fetch_config: FetchConfig,
         block_sender: Sender<DeoxysBlock>,
@@ -47,6 +49,7 @@ pub mod starknet_sync_worker {
         client: Arc<C>,
         starting_block: u32,
         backup_every_n_blocks: Option<usize>,
+        block_metrics: Option<BlockMetrics>,
     ) -> anyhow::Result<()>
     where
         C: HeaderBackend<DBlockT> + 'static,
@@ -73,7 +76,7 @@ pub mod starknet_sync_worker {
         }
 
         tokio::select!(
-            res = l1::sync(l1_url.clone()) => res.context("syncing L1 state")?,
+            res = l1::sync(l1_url.clone(), block_metrics) => res.context("syncing L1 state")?,
             res = l2::sync(
                 block_sender,
                 command_sink,

@@ -6251,6 +6251,7 @@ dependencies = [
  "starknet-providers 0.10.0",
  "starknet-types-core",
  "starknet_api",
+ "substrate-prometheus-endpoint",
  "thiserror",
  "tokio",
  "url",

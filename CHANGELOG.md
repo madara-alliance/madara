@@ -4,6 +4,7 @@
 
 - refactor: using const and OnceCell instead of lazy_static
 - refactor: remove crate mp-storage
+- feat(infra): corrected dockerfile + docker-compose
 - fix(rpc): error handling
 - fix(lib): updated core libs to match oss
 - fix: state root - replaced_classes commit
