@@ -403,14 +403,6 @@ async fn create_block(
         block_metrics.l2_sync_time.set(sync_time);
         block_metrics.l2_latest_sync_time.set(elapsed_time);
         block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / block_number as f64);
-
-        log::info!(
-            "Block number: {}, Sync time: {}, Avg sync time: {}, Latest sync time: {}",
-            block_number,
-            block_metrics.l2_sync_time.get(),
-            block_metrics.l2_avg_sync_time.get(),
-            block_metrics.l2_latest_sync_time.get()
-        );
     }
 
     *parent_hash = Some(create_block_info.hash);
