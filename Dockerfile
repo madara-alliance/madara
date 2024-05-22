@@ -9,7 +9,7 @@ RUN apt-get -y update && \
     build-essential
 
 # Set the working directory
-WORKDIR /usr/local/bin
+WORKDIR /usr/src/
 
 # Copy the source code into the container
 COPY . .
@@ -30,7 +30,7 @@ RUN apt-get -y update && \
 WORKDIR /usr/local/bin
 
 # Copy the compiled binary from the builder stage
-COPY --from=builder /usr/local/bin/target/release/deoxys .
+COPY --from=builder /usr/src/target/release/deoxys .
 
 # Set the entrypoint
 ENTRYPOINT ["./deoxys"]
