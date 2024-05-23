@@ -196,7 +196,7 @@ fn execute_fee_transaction(
     };
 
     let minimal_l1_gas_amount_vector = estimate_minimal_gas_vector(block_context, &transaction)
-        .map_err(TransactionExecutionError::TransactionPreValidationError);
+        .map_err(TransactionExecutionError::TransactionPreValidationError)?;
 
     let tx_info: Result<
         blockifier::transaction::objects::TransactionExecutionInfo,
@@ -212,13 +212,8 @@ fn execute_fee_transaction(
 
     match tx_info {
         Ok(tx_info) => {
-            let fee_estimate = from_tx_info_and_gas_price(
-                &tx_info,
-                gas_price,
-                data_gas_price,
-                unit,
-                minimal_l1_gas_amount_vector.expect("Minimal gas vector error"),
-            );
+            let fee_estimate =
+                from_tx_info_and_gas_price(&tx_info, gas_price, data_gas_price, unit, minimal_l1_gas_amount_vector);
             Ok(fee_estimate)
         }
         Err(error) => Err(error),
