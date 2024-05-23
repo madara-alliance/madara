@@ -5,10 +5,8 @@ use mc_sync::l2::get_pending_state_update;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, BlockTag, FieldElement, MaybePendingStateUpdate, StateUpdate};
 
@@ -41,8 +39,6 @@ pub fn get_state_update<BE, C, H>(
 where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     match block_id {
@@ -58,8 +54,6 @@ fn get_state_update_finalized<BE, C, H>(
 where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;

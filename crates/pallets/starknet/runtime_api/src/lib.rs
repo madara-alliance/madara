@@ -15,9 +15,3 @@ pub enum StarknetTransactionExecutionError {
     InvalidContractClass,
     ContractError,
 }
-
-sp_api::decl_runtime_apis! {
-    pub trait StarknetRuntimeApi {
-        fn dummy();
-    }
-}

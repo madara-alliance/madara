@@ -7,10 +7,8 @@ use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHashT};
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::core::{calculate_contract_address, ContractAddress};
 use starknet_api::transaction::Transaction;
@@ -60,8 +58,6 @@ pub async fn get_transaction_receipt<BE, C, H>(
 where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     // get the substrate block hash from the transaction hash
@@ -87,8 +83,6 @@ pub fn get_transaction_receipt_finalized<BE, C, H>(
 where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     let block = get_block_by_block_hash(client.client.as_ref(), substrate_block_hash)?;
