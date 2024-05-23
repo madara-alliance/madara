@@ -1,9 +1,7 @@
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
-use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_types::block::DBlockT;
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -51,26 +49,14 @@ where
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let starknet_block_hash = starknet_block.header().hash::<H>();
 
-    let chain_id = chain_id().into();
-
-    let _starknet_tx =
-        if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into()) {
-            tx_hashes
-                .into_iter()
-                .zip(starknet_block.transactions())
-                .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
-                .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash))
-        } else {
-            starknet_block
-                .transactions()
-                .iter()
-                .find(|tx| {
-                    tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0
-                        == Felt252Wrapper::from(transaction_hash).into()
-                })
-                .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
-        };
+    let _starknet_tx = starknet
+        .get_cached_transaction_hashes(starknet_block_hash.into())?
+        .into_iter()
+        .zip(starknet_block.transactions())
+        .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
+        .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash));
 
     // TODO: Implement this method
     Err(StarknetRpcApiError::UnimplementedMethod.into())

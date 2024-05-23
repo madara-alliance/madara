@@ -76,25 +76,19 @@ where
         let block_hash = starknet_block.header().hash::<H>();
 
         // get txs hashes from cache or compute them
-        let block_txs_hashes: Vec<_> = if let Some(tx_hashes) = self.get_cached_transaction_hashes(block_hash.into()) {
-            tx_hashes
-                .into_iter()
-                .map(|h| {
-                    Felt252Wrapper::try_from(h)
-                        .map(|f| f.0)
-                        .map_err(|e| {
-                            log::error!("'{e}'");
-                            StarknetRpcApiError::InternalServerError
-                        })
-                        .unwrap()
-                })
-                .collect()
-        } else {
-            starknet_block
-                .transactions_hashes::<H>(chain_id().into(), Some(starknet_block.header().block_number))
-                .map(|tx_hash| FieldElement::from(Felt252Wrapper::from(tx_hash)))
-                .collect()
-        };
+        let block_txs_hashes: Vec<_> = self
+            .get_cached_transaction_hashes(block_hash.into())?
+            .into_iter()
+            .map(|h| {
+                Felt252Wrapper::try_from(h)
+                    .map(|f| f.0)
+                    .map_err(|e| {
+                        log::error!("'{e}'");
+                        StarknetRpcApiError::InternalServerError
+                    })
+                    .unwrap()
+            })
+            .collect();
         Ok(block_txs_hashes)
     }
 

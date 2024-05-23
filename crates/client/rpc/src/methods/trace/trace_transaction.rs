@@ -1,7 +1,6 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
-use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::TxType;
@@ -17,9 +16,9 @@ use super::utils::tx_execution_infos_to_tx_trace;
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
-use crate::utils::helpers::{tx_hash_compute, tx_hash_retrieve};
+use crate::utils::helpers::tx_hash_retrieve;
 use crate::utils::transaction::blockifier_transactions;
-use crate::{Felt, Starknet};
+use crate::Starknet;
 
 pub async fn trace_transaction<BE, C, H>(
     starknet: &Starknet<BE, C, H>,
@@ -42,17 +41,9 @@ where
     let block_header = starknet_block.header();
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
     let block_number = block_header.block_number;
-    let chain_id = Felt(chain_id());
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
-    // retrieve all transaction hashes from the block in the cache or compute them
-    // here we can optimize by computing only tx before the one that we want to trace (optimized if we
-    // dont use cache)
-    let block_txs_hashes = if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(block_hash.into()) {
-        tx_hash_retrieve(tx_hashes)
-    } else {
-        tx_hash_compute::<H>(&starknet_block, chain_id)
-    };
+    let block_txs_hashes = tx_hash_retrieve(starknet.get_cached_transaction_hashes(block_hash.into())?);
 
     // retrieve the transaction index in the block with the transaction hash
     let (tx_index, _) =

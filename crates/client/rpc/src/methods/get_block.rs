@@ -19,8 +19,7 @@ use crate::utils::helpers::{status, tx_conv, tx_hash_compute, tx_hash_retrieve};
 use crate::{Felt, Starknet};
 
 pub(crate) fn get_block_with_tx_hashes_finalized<BE, C, H>(
-    server: &Starknet<BE, C, H>,
-    chain_id: Felt,
+    starknet: &Starknet<BE, C, H>,
     substrate_block_hash: DHashT,
 ) -> RpcResult<MaybePendingBlockWithTxHashes>
 where
@@ -28,14 +27,10 @@ where
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let starknet_block = get_block_by_block_hash(server.client.as_ref(), substrate_block_hash)?;
+    let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
 
     let block_hash = starknet_block.header().hash::<H>();
-    let transactions = if let Some(tx_hashes) = server.get_cached_transaction_hashes(block_hash.into()) {
-        tx_hash_retrieve(tx_hashes)
-    } else {
-        tx_hash_compute::<H>(&starknet_block, chain_id)
-    };
+    let block_txs_hashes = tx_hash_retrieve(starknet.get_cached_transaction_hashes(block_hash.into())?);
 
     let block_number = starknet_block.header().block_number;
     let status = status(block_number);
@@ -49,7 +44,7 @@ where
     let l1_da_mode = l1_da_mode(&starknet_block);
 
     let block_with_tx_hashes = BlockWithTxHashes {
-        transactions,
+        transactions: block_txs_hashes,
         status,
         block_hash: block_hash.into(),
         parent_hash,
@@ -97,8 +92,7 @@ where
 }
 
 pub(crate) fn get_block_with_txs_finalized<BE, C, H>(
-    server: &Starknet<BE, C, H>,
-    chain_id: Felt,
+    starknet: &Starknet<BE, C, H>,
     substrate_block_hash: DHashT,
 ) -> RpcResult<MaybePendingBlockWithTxs>
 where
@@ -106,15 +100,11 @@ where
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let starknet_block = get_block_by_block_hash(server.client.as_ref(), substrate_block_hash)?;
+    let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
 
     let block_hash = starknet_block.header().hash::<H>();
-    let tx_hashes = if let Some(tx_hashes) = server.get_cached_transaction_hashes(block_hash.into()) {
-        tx_hash_retrieve(tx_hashes)
-    } else {
-        tx_hash_compute::<H>(&starknet_block, chain_id)
-    };
-    let transactions = tx_conv(starknet_block.transactions(), tx_hashes);
+    let block_txs_hashes = tx_hash_retrieve(starknet.get_cached_transaction_hashes(block_hash.into())?);
+    let transactions = tx_conv(starknet_block.transactions(), block_txs_hashes);
 
     let block_number = starknet_block.header().block_number;
     let status = status(block_number);
