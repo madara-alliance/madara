@@ -88,7 +88,7 @@ where
 
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
-    let block_txs_hashes = tx_hash_retrieve(starknet.get_cached_transaction_hashes(starknet_block_hash.into())?);
+    let block_txs_hashes = tx_hash_retrieve(starknet.get_block_transaction_hashes(starknet_block_hash.into())?);
 
     // retrieve the transaction index in the block with the transaction hash
     let (tx_index, _) =

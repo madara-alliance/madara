@@ -87,6 +87,8 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
+    use mc_db::DeoxysBackend;
+
     use super::*;
 
     #[pallet::pallet]
@@ -159,7 +161,7 @@ pub mod pallet {
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            if storage_handler::block_hash().get(1).unwrap().is_none() {
+            if DeoxysBackend::mapping().block_hash_from_block_number(1).unwrap().is_none() {
                 let handler_contract_data = storage_handler::contract_data_mut();
                 self.contracts.iter().for_each(|(contract_address, class_hash)| {
                     handler_contract_data.insert_class_hash(*contract_address, *class_hash).unwrap();
@@ -238,10 +240,8 @@ impl<T: Config> Pallet<T> {
                 let state_root = Felt252Wrapper::try_from(block.header().global_state_root).unwrap();
 
                 let mut handler_block_number = storage_handler::block_number();
-                let mut handler_block_hash = storage_handler::block_hash();
 
                 handler_block_number.insert(&block_hash, block_number).unwrap();
-                handler_block_hash.insert(block_number, &block_hash).unwrap();
 
                 let digest = DigestItem::Consensus(DEOXYS_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
                 frame_system::Pallet::<T>::deposit_log(digest);

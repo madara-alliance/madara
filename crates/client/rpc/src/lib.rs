@@ -306,9 +306,9 @@ where
     /// # Arguments
     ///
     /// * `block_hash` - The hash of the block containing the transactions (starknet block).
-    fn get_cached_transaction_hashes(&self, block_hash: StarkHash) -> Result<Vec<StarkHash>, StarknetRpcApiError> {
+    fn get_block_transaction_hashes(&self, block_hash: StarkHash) -> Result<Vec<StarkHash>, StarknetRpcApiError> {
         DeoxysBackend::mapping()
-            .cached_transaction_hashes_from_block_hash(block_hash)?
+            .transaction_hashes_from_block_hash(block_hash)?
             .ok_or(StarknetRpcApiError::BlockNotFound)
     }
 }

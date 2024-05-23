@@ -77,7 +77,7 @@ where
 
         // get txs hashes from cache or compute them
         let block_txs_hashes: Vec<_> = self
-            .get_cached_transaction_hashes(block_hash.into())?
+            .get_block_transaction_hashes(block_hash.into())?
             .into_iter()
             .map(|h| {
                 Felt252Wrapper::try_from(h)

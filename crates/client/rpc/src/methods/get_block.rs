@@ -30,7 +30,7 @@ where
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
 
     let block_hash = starknet_block.header().hash::<H>();
-    let block_txs_hashes = tx_hash_retrieve(starknet.get_cached_transaction_hashes(block_hash.into())?);
+    let block_txs_hashes = tx_hash_retrieve(starknet.get_block_transaction_hashes(block_hash.into())?);
 
     let block_number = starknet_block.header().block_number;
     let status = status(block_number);
@@ -103,7 +103,7 @@ where
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
 
     let block_hash = starknet_block.header().hash::<H>();
-    let block_txs_hashes = tx_hash_retrieve(starknet.get_cached_transaction_hashes(block_hash.into())?);
+    let block_txs_hashes = tx_hash_retrieve(starknet.get_block_transaction_hashes(block_hash.into())?);
     let transactions = tx_conv(starknet_block.transactions(), block_txs_hashes);
 
     let block_number = starknet_block.header().block_number;

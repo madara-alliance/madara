@@ -36,7 +36,7 @@ where
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
-    let block_txs_hashes = tx_hash_retrieve(starknet.get_cached_transaction_hashes(block_hash.into())?);
+    let block_txs_hashes = tx_hash_retrieve(starknet.get_block_transaction_hashes(block_hash.into())?);
 
     // create a vector of transactions with their corresponding hashes without deploy transactions,
     // blockifier does not support deploy transactions

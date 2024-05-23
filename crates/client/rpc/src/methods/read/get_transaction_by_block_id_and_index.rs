@@ -50,7 +50,7 @@ where
 
     let transaction = starknet_block.transactions().get(index).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
 
-    let block_txs_hashes = starknet.get_cached_transaction_hashes(starknet_block_hash.into())?;
+    let block_txs_hashes = starknet.get_block_transaction_hashes(starknet_block_hash.into())?;
 
     let transaction_hash = block_txs_hashes.get(index).map(|&fe| FieldElement::from(Felt252Wrapper::from(fe))).ok_or(
         // This should never happen, because the index is checked above when getting the transaction.

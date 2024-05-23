@@ -52,7 +52,7 @@ where
     let starknet_block_hash = starknet_block.header().hash::<H>();
 
     let _starknet_tx = starknet
-        .get_cached_transaction_hashes(starknet_block_hash.into())?
+        .get_block_transaction_hashes(starknet_block_hash.into())?
         .into_iter()
         .zip(starknet_block.transactions())
         .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())

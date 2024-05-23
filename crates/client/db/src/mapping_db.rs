@@ -140,7 +140,7 @@ impl MappingDb {
     ///
     /// - The cache is disabled.
     /// - The provided `starknet_hash` is not present in the cache.
-    pub fn cached_transaction_hashes_from_block_hash(
+    pub fn transaction_hashes_from_block_hash(
         &self,
         starknet_block_hash: StarkHash,
     ) -> Result<Option<Vec<StarkHash>>, DbError> {
@@ -166,10 +166,7 @@ impl MappingDb {
     ///
     /// - The cache is disabled.
     /// - The provided `starknet_hash` is not present in the cache.
-    pub fn cached_block_hash_from_block_number(
-        &self,
-        starknet_block_number: u64,
-    ) -> Result<Option<StarkHash>, DbError> {
+    pub fn block_hash_from_block_number(&self, starknet_block_number: u64) -> Result<Option<StarkHash>, DbError> {
         let starknet_block_hashes_col = self.db.get_column(Column::StarknetBlockHashes);
 
         match self.db.get_cf(&starknet_block_hashes_col, starknet_block_number.encode())? {
