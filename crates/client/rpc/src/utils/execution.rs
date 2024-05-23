@@ -168,8 +168,9 @@ pub fn estimate_message_fee(
     };
 
     let fee = FeeEstimate {
-        gas_consumed: Felt252Wrapper::from(*tx_execution_infos.actual_resources.0.get("l1_gas_usage").unwrap() as u64)
-            .into(),
+        gas_consumed: FieldElement::from(
+            tx_execution_infos.actual_resources.0.get("l1_gas_usage").cloned().unwrap_or_default(),
+        ),
         gas_price: FieldElement::ZERO,
         data_gas_consumed: tx_execution_infos.da_gas.l1_data_gas.into(),
         data_gas_price: FieldElement::ZERO,
