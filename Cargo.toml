@@ -20,7 +20,6 @@ members = [
   "crates/primitives/transactions",
   "crates/primitives/types",
   "crates/runtime",
-  "crates/db-explorer",
 ]
 resolver = "2"
 # All previous except for `starknet-rpc-test` and `starknet-e2e-test`

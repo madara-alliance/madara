@@ -344,7 +344,7 @@ impl DeoxysBackend {
 
         let bonsai_contract_storage = BonsaiStorage::new(
             BonsaiDb::new(
-                &db,
+                db,
                 DatabaseKeyMapping {
                     flat: Column::BonsaiContractsStorageFlat,
                     trie: Column::BonsaiContractsStorageTrie,
@@ -357,7 +357,7 @@ impl DeoxysBackend {
 
         let mut bonsai_classes = BonsaiStorage::new(
             BonsaiDb::new(
-                &db,
+                db,
                 DatabaseKeyMapping {
                     flat: Column::BonsaiClassesFlat,
                     trie: Column::BonsaiClassesTrie,
@@ -370,8 +370,8 @@ impl DeoxysBackend {
         bonsai_classes.init_tree(bonsai_identifier::CLASS).unwrap();
 
         let backend = Arc::new(Self {
-            mapping: Arc::new(MappingDb::new(Arc::clone(&db), cache_more_things)),
-            meta: Arc::new(MetaDb::new(Arc::clone(&db))),
+            mapping: Arc::new(MappingDb::new(Arc::clone(db), cache_more_things)),
+            meta: Arc::new(MetaDb::new(Arc::clone(db))),
             bonsai_contract: RwLock::new(bonsai_contract),
             bonsai_storage: RwLock::new(bonsai_contract_storage),
             bonsai_class: RwLock::new(bonsai_classes),

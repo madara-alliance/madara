@@ -2,6 +2,7 @@
 
 ## Next release
 
+- perf(db): db contract history parallel fetching and batching
 - feat(metrics): Added sync time metrics
 - refactor: using const and OnceCell instead of lazy_static
 - refactor: remove crate mp-storage
