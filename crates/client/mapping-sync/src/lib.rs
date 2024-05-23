@@ -22,10 +22,8 @@ use log::debug;
 use mc_sync::metrics::block_metrics::BlockMetrics;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHeaderT};
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::client::ImportNotifications;
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Header as HeaderT;
 
@@ -77,8 +75,6 @@ impl<C, BE, H> MappingSyncWorker<C, BE, H> {
 
 impl<C, BE, H> Stream for MappingSyncWorker<C, BE, H>
 where
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
     BE: Backend<DBlockT>,
     H: HasherT,

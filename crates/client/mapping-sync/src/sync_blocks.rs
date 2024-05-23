@@ -11,11 +11,9 @@ use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
 use num_traits::FromPrimitive;
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use prometheus_endpoint::prometheus::core::Number;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use sc_client_api::backend::{Backend, StorageProvider};
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{Backend as _, HeaderBackend};
 use sp_runtime::traits::Header as HeaderT;
 
@@ -23,8 +21,6 @@ fn sync_block<C, BE, H>(client: &C, header: &DHeaderT, block_metrics: Option<&Bl
 where
     // TODO: refactor this!
     C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     BE: Backend<DBlockT>,
     H: HasherT,
 {
@@ -146,8 +142,6 @@ fn sync_one_block<C, BE, H>(
     block_metrics: Option<&BlockMetrics>,
 ) -> anyhow::Result<bool>
 where
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
     BE: Backend<DBlockT>,
     H: HasherT,
@@ -189,8 +183,6 @@ pub fn sync_blocks<C, BE, H>(
     block_metrics: Option<&BlockMetrics>,
 ) -> anyhow::Result<bool>
 where
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
     BE: Backend<DBlockT>,
     H: HasherT,

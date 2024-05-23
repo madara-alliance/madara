@@ -55,7 +55,6 @@ where
     C: Send + Sync + 'static,
     C::Api: substrate_frame_rpc_system::AccountNonceApi<DBlockT, DAccountIdT, DTxIndexT>,
     C::Api: BlockBuilder<DBlockT>,
-    C::Api: pallet_starknet_runtime_api::StarknetRuntimeApi<DBlockT>,
     G: GenesisProvider + Send + Sync + 'static,
     P: TransactionPool<Block = DBlockT> + 'static,
     BE: Backend<DBlockT> + 'static,

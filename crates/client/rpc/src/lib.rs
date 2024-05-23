@@ -21,11 +21,9 @@ use methods::trace::utils::block_number_by_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_network_sync::SyncingService;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use sp_api::ProvideRuntimeApi;
 use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
@@ -252,8 +250,6 @@ where
 impl<BE, C, H> Starknet<BE, C, H>
 where
     C: HeaderBackend<DBlockT> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     pub fn current_block_hash(&self) -> Result<H256, StarknetRpcApiError> {
