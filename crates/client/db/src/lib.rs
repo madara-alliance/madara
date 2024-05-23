@@ -177,14 +177,10 @@ pub enum Column {
 
     /// This column is used to map starknet block hashes to a list of transaction hashes that are
     /// contained in the block.
-    ///
-    /// This column should only be accessed if the `--cache` flag is enabled.
-    StarknetTransactionHashesCache,
+    StarknetTransactionHashes,
 
     /// This column is used to map starknet block numbers to their block hashes.
-    ///
-    /// This column should only be accessed if the `--cache` flag is enabled.
-    StarknetBlockHashesCache,
+    StarknetBlockHashes,
 
     // Each bonsai storage has 3 columns
     BonsaiContractsTrie,
@@ -220,8 +216,8 @@ impl Column {
             BlockMapping,
             TransactionMapping,
             SyncedMapping,
-            StarknetTransactionHashesCache,
-            StarknetBlockHashesCache,
+            StarknetTransactionHashes,
+            StarknetBlockHashes,
             BlockHashToNumber,
             BlockNumberToHash,
             BlockStateDiff,
@@ -248,8 +244,10 @@ impl Column {
             Column::BlockMapping => "block_mapping",
             Column::TransactionMapping => "transaction_mapping",
             Column::SyncedMapping => "synced_mapping",
-            Column::StarknetTransactionHashesCache => "starknet_transaction_hashes_cache",
-            Column::StarknetBlockHashesCache => "starnet_block_hashes_cache",
+            // TODO: change to "starknet_transaction_hashes" when rebuild the DB
+            Column::StarknetTransactionHashes => "starknet_transaction_hashes_cache",
+            // TODO: change to "starknet_block_hashes" when rebuild the DB
+            Column::StarknetBlockHashes => "starnet_block_hashes_cache",
             Column::BonsaiContractsTrie => "bonsai_contracts_trie",
             Column::BonsaiContractsFlat => "bonsai_contracts_flat",
             Column::BonsaiContractsLog => "bonsai_contracts_log",
@@ -351,13 +349,10 @@ impl DeoxysBackend {
         db_config_dir: &Path,
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
-        cache_more_things: bool,
     ) -> Result<&'static Arc<DeoxysBackend>> {
         // load db after restoration
         BACKEND_SINGLETON
-            .set(Arc::new(
-                Self::init(database, db_config_dir, cache_more_things, backup_dir, restore_from_latest_backup).unwrap(),
-            ))
+            .set(Arc::new(Self::init(database, db_config_dir, backup_dir, restore_from_latest_backup).unwrap()))
             .ok()
             .context("Backend already initialized")?;
 
@@ -375,7 +370,6 @@ impl DeoxysBackend {
     fn init(
         database: &DatabaseSource,
         db_config_dir: &Path,
-        cache_more_things: bool,
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
     ) -> Result<Self> {
@@ -401,16 +395,10 @@ impl DeoxysBackend {
             },
             backup_dir,
             restore_from_latest_backup,
-            cache_more_things,
         )
     }
 
-    fn new(
-        config: &DatabaseSettings,
-        backup_dir: Option<PathBuf>,
-        restore_from_latest_backup: bool,
-        cache_more_things: bool,
-    ) -> Result<Self> {
+    fn new(config: &DatabaseSettings, backup_dir: Option<PathBuf>, restore_from_latest_backup: bool) -> Result<Self> {
         DB_SINGLETON.set(Arc::new(open_database(config, backup_dir, restore_from_latest_backup)?)).unwrap();
         let db = DB_SINGLETON.get().unwrap();
         let bonsai_config = BonsaiStorageConfig {
@@ -461,7 +449,7 @@ impl DeoxysBackend {
         bonsai_classes.init_tree(bonsai_identifier::CLASS).unwrap();
 
         Ok(Self {
-            mapping: Arc::new(MappingDb::new(Arc::clone(db), cache_more_things)),
+            mapping: Arc::new(MappingDb::new(Arc::clone(db))),
             meta: Arc::new(MetaDb::new(Arc::clone(db))),
             bonsai_contract: RwLock::new(bonsai_contract),
             bonsai_storage: RwLock::new(bonsai_contract_storage),

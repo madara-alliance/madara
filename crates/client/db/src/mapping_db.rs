@@ -21,14 +21,12 @@ pub struct MappingCommitment<B: BlockT> {
 /// Allow interaction with the mapping db
 pub struct MappingDb {
     db: Arc<DB>,
-    /// Whether more information should be cached in the database.
-    cache_more_things: bool,
 }
 
 impl MappingDb {
     /// Creates a new instance of the mapping database.
-    pub(crate) fn new(db: Arc<DB>, cache_more_things: bool) -> Self {
-        Self { db, cache_more_things }
+    pub(crate) fn new(db: Arc<DB>) -> Self {
+        Self { db }
     }
 
     /// Check if the given block hash has already been processed
@@ -67,8 +65,8 @@ impl MappingDb {
         let synced_mapping_col = self.db.get_column(Column::SyncedMapping);
         let block_mapping_col = self.db.get_column(Column::BlockMapping);
         let transaction_mapping_col = self.db.get_column(Column::TransactionMapping);
-        let starknet_tx_hashes_col = self.db.get_column(Column::StarknetTransactionHashesCache);
-        let starknet_block_hashes_col = self.db.get_column(Column::StarknetBlockHashesCache);
+        let starknet_tx_hashes_col = self.db.get_column(Column::StarknetTransactionHashes);
+        let starknet_block_hashes_col = self.db.get_column(Column::StarknetBlockHashes);
 
         let mut transaction: WriteBatchWithTransaction<true> = Default::default();
 
@@ -94,19 +92,17 @@ impl MappingDb {
             transaction.put_cf(&transaction_mapping_col, &transaction_hash.encode(), &commitment.block_hash.encode());
         }
 
-        if self.cache_more_things {
-            transaction.put_cf(
-                &starknet_tx_hashes_col,
-                &commitment.starknet_block_hash.encode(),
-                &commitment.starknet_transaction_hashes.encode(),
-            );
+        transaction.put_cf(
+            &starknet_tx_hashes_col,
+            &commitment.starknet_block_hash.encode(),
+            &commitment.starknet_transaction_hashes.encode(),
+        );
 
-            transaction.put_cf(
-                &starknet_block_hashes_col,
-                &commitment.block_number.encode(),
-                &commitment.starknet_block_hash.encode(),
-            );
-        }
+        transaction.put_cf(
+            &starknet_block_hashes_col,
+            &commitment.block_number.encode(),
+            &commitment.starknet_block_hash.encode(),
+        );
 
         self.db.write(transaction)?;
 
@@ -148,12 +144,7 @@ impl MappingDb {
         &self,
         starknet_block_hash: StarkHash,
     ) -> Result<Option<Vec<StarkHash>>, DbError> {
-        let starknet_tx_hashes_col = self.db.get_column(Column::StarknetTransactionHashesCache);
-
-        if !self.cache_more_things {
-            // The cache is not enabled, no need to even touch the database.
-            return Ok(None);
-        }
+        let starknet_tx_hashes_col = self.db.get_column(Column::StarknetTransactionHashes);
 
         match self.db.get_cf(&starknet_tx_hashes_col, starknet_block_hash.encode())? {
             Some(raw) => Ok(Some(Vec::<StarkHash>::decode(&mut &raw[..])?)),
@@ -179,12 +170,7 @@ impl MappingDb {
         &self,
         starknet_block_number: u64,
     ) -> Result<Option<StarkHash>, DbError> {
-        let starknet_block_hashes_col = self.db.get_column(Column::StarknetBlockHashesCache);
-
-        if !self.cache_more_things {
-            // The cache is not enabled, no need to even touch the database.
-            return Ok(None);
-        }
+        let starknet_block_hashes_col = self.db.get_column(Column::StarknetBlockHashes);
 
         match self.db.get_cf(&starknet_block_hashes_col, starknet_block_number.encode())? {
             Some(raw) => Ok(Some(<StarkHash>::decode(&mut &raw[..])?)),

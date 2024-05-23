@@ -72,7 +72,6 @@ type BoxBlockImport = sc_consensus::BoxBlockImport<DBlockT>;
 pub fn new_partial<BIQ>(
     config: &Configuration,
     build_import_queue: BIQ,
-    cache_more_things: bool,
     genesis_block: DeoxysBlock,
     backup_dir: Option<PathBuf>,
     restore_from_latest_backup: bool,
@@ -96,14 +95,8 @@ where
         &TaskManager,
     ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>,
 {
-    let deoxys_backend = DeoxysBackend::open(
-        &config.database,
-        &db_config_dir(config),
-        backup_dir,
-        restore_from_latest_backup,
-        cache_more_things,
-    )
-    .unwrap();
+    let deoxys_backend =
+        DeoxysBackend::open(&config.database, &db_config_dir(config), backup_dir, restore_from_latest_backup).unwrap();
 
     let telemetry = config
         .telemetry_endpoints
@@ -203,7 +196,6 @@ pub fn new_full(
     config: Configuration,
     sealing: SealingMode,
     l1_url: Url,
-    cache_more_things: bool,
     fetch_config: FetchConfig,
     genesis_block: DeoxysBlock,
     starting_block: Option<u32>,
@@ -222,14 +214,7 @@ pub fn new_full(
         select_chain,
         transaction_pool,
         other: (block_import, mut telemetry, deoxys_backend),
-    } = new_partial(
-        &config,
-        build_import_queue,
-        cache_more_things,
-        genesis_block,
-        backup_dir,
-        restore_from_latest_backup,
-    )?;
+    } = new_partial(&config, build_import_queue, genesis_block, backup_dir, restore_from_latest_backup)?;
 
     let net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
@@ -492,15 +477,9 @@ where
 type ChainOpsResult =
     Result<(Arc<FullClient>, Arc<FullBackend>, BasicQueue<DBlockT>, TaskManager, Arc<DeoxysBackend>), ServiceError>;
 
-pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
+pub fn new_chain_ops(config: &mut Configuration) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
-    let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } = new_partial::<_>(
-        config,
-        build_manual_seal_import_queue,
-        cache_more_things,
-        DeoxysBlock::default(),
-        None,
-        false,
-    )?;
+    let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
+        new_partial::<_>(config, build_manual_seal_import_queue, DeoxysBlock::default(), None, false)?;
     Ok((client, backend, import_queue, task_manager, other.2))
 }
