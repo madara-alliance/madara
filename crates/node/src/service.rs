@@ -97,7 +97,7 @@ where
     ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>,
 {
     let deoxys_backend = DeoxysBackend::open(
-        &config.database,
+        // &config.database,
         &db_config_dir(config),
         backup_dir,
         restore_from_latest_backup,
