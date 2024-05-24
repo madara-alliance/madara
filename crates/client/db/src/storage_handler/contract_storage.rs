@@ -19,32 +19,6 @@ use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut, Storag
 use crate::storage_handler::codec::Encode;
 use crate::{Column, DatabaseExt, DeoxysBackend};
 
-#[derive(Clone)]
-struct ContractStorageKeyEncoded(pub [u8; 64]);
-impl ContractStorageKeyEncoded {
-    fn new(address: &ContractAddress, key: &StorageKey) -> Self {
-        let mut arr = [0u8; 64];
-        arr[..32].copy_from_slice(address.bytes());
-        arr[32..].copy_from_slice(key.bytes());
-        Self(arr)
-    }
-    // fn contract_address(&self) -> Option<ContractAddress> {
-    //     // Safety: this returns a slice of 32 bytes
-    //     let bytes = self.0[..32].try_into().unwrap();
-    //     Some(ContractAddress(PatriciaKey(StarkFelt::new(bytes).ok()?)))
-    // }
-    // fn storage_key(&self) -> Option<StorageKey> {
-    //     // Safety: this returns a slice of 32 bytes
-    //     let bytes = self.0[32..].try_into().unwrap();
-    //     Some(StorageKey(PatriciaKey(StarkFelt::new(bytes).ok()?)))
-    // }
-}
-impl AsRef<[u8]> for ContractStorageKeyEncoded {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
 #[derive(Default, Debug)]
 pub struct ContractStorageViewMut(SkipMap<(ContractAddress, StorageKey), StarkFelt>);
 pub struct ContractStorageView;
@@ -74,12 +48,14 @@ impl StorageViewMut for ContractStorageViewMut {
 
         as_vec.deref().par_chunks(1024).try_for_each(|chunk| {
             let column = db.get_column(Column::ContractStorage);
-            let histories_encoded = db
-                .multi_get_cf(chunk.iter().map(|(key, _v)| (&column, ContractStorageKeyEncoded::new(&key.0, &key.1))));
+            let histories_encoded = db.multi_get_cf(chunk.iter().map(|(key, _v)| {
+                // unwrap: felt encoding cannot fail
+                (&column, key.encode().unwrap())
+            }));
 
             let mut batch = WriteBatchWithTransaction::<true>::default();
             for (history_encoded, (key, value)) in histories_encoded.into_iter().zip(chunk) {
-                let key_encoded = ContractStorageKeyEncoded::new(&key.0, &key.1);
+                let key_encoded = key.encode()?;
 
                 let mut history_encoded = history_encoded
                     .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
@@ -110,7 +86,7 @@ impl StorageView for ContractStorageViewMut {
         let column = db.get_column(Column::ContractStorage);
 
         let history: History<StarkFelt> = match db
-            .get_cf(&column, ContractStorageKeyEncoded::new(&key.0, &key.1))
+            .get_cf(&column, key.encode()?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .map(|bytes| Decode::decode(&bytes))
         {
@@ -126,7 +102,7 @@ impl StorageView for ContractStorageViewMut {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractStorage);
 
-        match db.key_may_exist_cf(&column, ContractStorageKeyEncoded::new(&key.0, &key.1)) {
+        match db.key_may_exist_cf(&column, key.encode()?) {
             true => Ok(self.get(key)?.is_some()),
             false => Ok(false),
         }
@@ -184,7 +160,7 @@ impl StorageViewRevetible for ContractStorageViewMut {
         for key in change_set.into_iter() {
             let db = Arc::clone(&db);
             let key = (ContractAddress::from_field_element(key.0), StorageKey::from_field_element(key.1));
-            let key_encoded = ContractStorageKeyEncoded::new(&key.0, &key.1);
+            let key_encoded = key.encode()?;
 
             set.spawn(async move {
                 let column = db.get_column(Column::ContractStorage);
@@ -241,7 +217,7 @@ impl ContractStorageView {
         let column = db.get_column(Column::ContractStorage);
 
         let history: History<StarkFelt> = match db
-            .get_cf(&column, ContractStorageKeyEncoded::new(&key.0, &key.1))
+            .get_cf(&column, key.encode()?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .map(|bytes| Decode::decode(&bytes))
         {
@@ -263,7 +239,7 @@ impl StorageView for ContractStorageView {
         let column = db.get_column(Column::ContractStorage);
 
         let history: History<StarkFelt> = match db
-            .get_cf(&column, ContractStorageKeyEncoded::new(&key.0, &key.1))
+            .get_cf(&column, key.encode()?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .map(|bytes| Decode::decode(&bytes))
         {
@@ -279,7 +255,7 @@ impl StorageView for ContractStorageView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractStorage);
 
-        match db.key_may_exist_cf(&column, ContractStorageKeyEncoded::new(&key.0, &key.1)) {
+        match db.key_may_exist_cf(&column, key.encode()?) {
             true => Ok(self.get(key)?.is_some()),
             false => Ok(false),
         }
