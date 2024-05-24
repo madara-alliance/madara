@@ -6,7 +6,7 @@ use hyper::{body::Buf, Body, Request};
 
 use rstest::*;
 
-use crate::{config::Config, queue::init_consumers, routes::app_router, utils::env_utils::get_env_var_or_default};
+use crate::{queue::init_consumers, routes::app_router, utils::env_utils::get_env_var_or_default};
 
 use super::common::init_config;
 

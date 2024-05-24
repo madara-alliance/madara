@@ -2,7 +2,7 @@ pub mod constants;
 
 use constants::*;
 use rstest::*;
-use std::env;
+
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,14 +12,14 @@ use crate::{
     jobs::types::{ExternalId, JobItem, JobStatus::Created, JobType::DataSubmission},
 };
 
-use crate::config::config;
+
 use crate::database::MockDatabase;
 use crate::queue::MockQueueProvider;
 use ::uuid::Uuid;
 use da_client_interface::MockDaClient;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
-use tracing_subscriber::fmt::writer::EitherWriter::B;
+
 use url::Url;
 
 pub async fn init_config(
@@ -31,9 +31,9 @@ pub async fn init_config(
     let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).with_target(false).try_init();
 
     let rpc_url = rpc_url.unwrap_or(MADARA_RPC_URL.to_string());
-    let database = database.unwrap_or(MockDatabase::new());
-    let queue = queue.unwrap_or(MockQueueProvider::new());
-    let da_client = da_client.unwrap_or(MockDaClient::new());
+    let database = database.unwrap_or_default();
+    let queue = queue.unwrap_or_default();
+    let da_client = da_client.unwrap_or_default();
 
     // init starknet client
     let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(rpc_url.as_str()).expect("Failed to parse URL")));

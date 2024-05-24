@@ -1,20 +1,19 @@
 use rstest::*;
 use starknet::core::types::StateUpdate;
-use std::any::Any;
+
 use std::collections::HashMap;
-use std::env;
+
 
 use httpmock::prelude::*;
-use serde_json::{json, Error};
+use serde_json::{json};
 
 use super::super::common::{default_job_item, init_config};
 use starknet_core::types::{FieldElement, MaybePendingStateUpdate, StateDiff};
 use uuid::Uuid;
 
-use crate::config::config;
+
 use crate::jobs::types::ExternalId;
 use crate::{
-    config::Config,
     jobs::{
         da_job::DaJob,
         types::{JobItem, JobStatus, JobType},

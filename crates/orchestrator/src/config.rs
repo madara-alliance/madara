@@ -1,12 +1,11 @@
 use crate::database::mongodb::config::MongoDbConfig;
 use crate::database::mongodb::MongoDb;
-use crate::database::{Database, DatabaseConfig, MockDatabase};
+use crate::database::{Database, DatabaseConfig};
 use crate::queue::sqs::SqsQueue;
-use crate::queue::{MockQueueProvider, QueueProvider};
+use crate::queue::{QueueProvider};
 use crate::utils::env_utils::get_env_var_or_panic;
-use color_eyre::Result;
+use da_client_interface::{DaClient};
 use da_client_interface::DaConfig;
-use da_client_interface::{DaClient, MockDaClient};
 use dotenvy::dotenv;
 use ethereum_da_client::config::EthereumDaConfig;
 use ethereum_da_client::EthereumDaClient;
@@ -44,28 +43,6 @@ pub async fn init_config() -> Config {
     let queue = Box::new(SqsQueue {});
 
     Config { starknet_client: Arc::new(provider), da_client: build_da_client(), database, queue }
-}
-
-/// Initializes mock app config
-#[cfg(test)]
-pub async fn init_config_with_mocks(
-    mock_database: MockDatabase,
-    mock_queue_provider: MockQueueProvider,
-    mock_da_client: MockDaClient,
-    starknet_rpc_url: String,
-) {
-    dotenv().ok();
-
-    // init starknet client
-    let provider =
-        JsonRpcClient::new(HttpTransport::new(Url::parse(starknet_rpc_url.as_str()).expect("Failed to parse URL")));
-
-    let database = Box::new(mock_database);
-    let queue = Box::new(mock_queue_provider);
-    let da_client = Box::new(mock_da_client);
-
-    let config = Config { starknet_client: Arc::new(provider), da_client, database, queue };
-    assert!(CONFIG.set(config).is_ok());
 }
 
 impl Config {

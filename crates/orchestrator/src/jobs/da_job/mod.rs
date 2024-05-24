@@ -192,7 +192,7 @@ mod tests {
             let state_update_path = "test-utils/stateUpdate.json".to_owned();
             let contents = read_to_string(state_update_path).expect("Couldn't find or load that file.");
 
-            let v: Result<StateUpdate, Error> = serde_json::from_str(&contents.as_str());
+            let v: Result<StateUpdate, Error> = serde_json::from_str(contents.as_str());
 
             let state_update: StateUpdate = match v {
                 Ok(state_update) => state_update,
