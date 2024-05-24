@@ -10,7 +10,6 @@ jobs:
     # sadly, for now we have to "rebuild" for the coverage
     runs-on: self-hosted
 
-
     steps:
       - uses: actions/checkout@v3
 
