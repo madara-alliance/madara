@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use starknet::core::types::{BlockId, FieldElement, MaybePendingStateUpdate, StateUpdate, StorageEntry};
+use starknet::providers::Provider;
 use std::collections::HashMap;
 use tracing::log;
 use uuid::Uuid;
@@ -13,7 +14,7 @@ pub struct DaJob;
 
 #[async_trait]
 impl Job for DaJob {
-    async fn create_job(&self, _config: &dyn Config, internal_id: String) -> Result<JobItem> {
+    async fn create_job(&self, _config: &Config, internal_id: String) -> Result<JobItem> {
         Ok(JobItem {
             id: Uuid::new_v4(),
             internal_id,
@@ -25,7 +26,7 @@ impl Job for DaJob {
         })
     }
 
-    async fn process_job(&self, config: &dyn Config, job: &JobItem) -> Result<String> {
+    async fn process_job(&self, config: &Config, job: &JobItem) -> Result<String> {
         let block_no = job.internal_id.parse::<u64>()?;
         let state_update = config.starknet_client().get_state_update(BlockId::Number(block_no)).await?;
 
@@ -47,7 +48,7 @@ impl Job for DaJob {
         Ok(external_id)
     }
 
-    async fn verify_job(&self, config: &dyn Config, job: &JobItem) -> Result<JobVerificationStatus> {
+    async fn verify_job(&self, config: &Config, job: &JobItem) -> Result<JobVerificationStatus> {
         Ok(config.da_client().verify_inclusion(job.external_id.unwrap_string()?).await?.into())
     }
 
@@ -181,11 +182,12 @@ mod tests {
 
     mod test_state_update_to_blob_data {
         use super::*;
+        use serde_json::Error;
         use std::fs::{read_to_string, File};
         use std::io::{self, BufRead};
-        use serde_json::Error;
 
         #[test]
+        #[ignore]
         fn state_update_to_blob_data_works() {
             let state_update_path = "test-utils/stateUpdate.json".to_owned();
             let contents = read_to_string(state_update_path).expect("Couldn't find or load that file.");

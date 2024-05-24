@@ -1,7 +1,4 @@
-use std::{
-    io::Read,
-    net::SocketAddr,
-};
+use std::{io::Read, net::SocketAddr};
 
 use axum::http::StatusCode;
 
@@ -9,22 +6,13 @@ use hyper::{body::Buf, Body, Request};
 
 use rstest::*;
 
-use orchestrator::{
-    queue::init_consumers,
-    config::Config,
-    routes::app_router,
-    utils::env_utils::get_env_var_or_default,
-};
+use crate::{config::Config, queue::init_consumers, routes::app_router, utils::env_utils::get_env_var_or_default};
 
-use super::common::get_or_init_config;
+use super::common::init_config;
 
 #[fixture]
-pub async fn setup_server(
-    #[future]
-    #[with( String::from("http://localhost:9944") )]
-    get_or_init_config: &'static dyn Config
-) -> SocketAddr {
-    let _config = get_or_init_config.await;
+pub async fn setup_server() -> SocketAddr {
+    let _config = init_config(Some("http://localhost:9944".to_string()), None, None, None).await;
 
     let host = get_env_var_or_default("HOST", "127.0.0.1");
     let port = get_env_var_or_default("PORT", "3000").parse::<u16>().expect("PORT must be a u16");
@@ -47,7 +35,6 @@ pub async fn setup_server(
 #[tokio::test]
 async fn test_health_endpoint(#[future] setup_server: SocketAddr) {
     let addr = setup_server.await;
-
 
     let client = hyper::Client::new();
     let response = client

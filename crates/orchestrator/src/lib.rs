@@ -14,3 +14,6 @@ pub mod queue;
 pub mod routes;
 /// Contains the utils
 pub mod utils;
+
+#[cfg(test)]
+mod tests;

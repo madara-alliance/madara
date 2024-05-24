@@ -1,135 +1,101 @@
 use crate::database::mongodb::config::MongoDbConfig;
 use crate::database::mongodb::MongoDb;
-use crate::database::{Database, DatabaseConfig};
+use crate::database::{Database, DatabaseConfig, MockDatabase};
 use crate::queue::sqs::SqsQueue;
-use crate::queue::QueueProvider;
+use crate::queue::{MockQueueProvider, QueueProvider};
 use crate::utils::env_utils::get_env_var_or_panic;
-use da_client_interface::{DaClient, DaConfig};
+use color_eyre::Result;
+use da_client_interface::DaConfig;
+use da_client_interface::{DaClient, MockDaClient};
 use dotenvy::dotenv;
 use ethereum_da_client::config::EthereumDaConfig;
 use ethereum_da_client::EthereumDaClient;
-use mockall::{automock, predicate::*};
 use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::{Provider, ProviderError, JsonRpcClient, Url};
-use starknet_core::types::{MaybePendingStateUpdate, BlockId};
+use starknet::providers::{JsonRpcClient, Url};
 use std::sync::Arc;
 use tokio::sync::OnceCell;
-use async_trait::async_trait;
-
-pub struct MockProvider {
-    // You can add state here that might be useful for your tests
-}
-
-impl MockProvider {
-    pub fn new() -> Self {
-        MockProvider {
-            // Initialize with any necessary state
-        }
-    }
-}
-
-#[async_trait]
-impl Provider for MockProvider {
-    async fn spec_version(&self) -> Result<String, ProviderError> {
-        Ok("mock_version".to_string())
-    }
-    // Mock other methods similarly...
-}
-
-pub enum ProviderEnum {
-    JsonRpcClient(JsonRpcClient<HttpTransport>),
-    MockProvider(MockProvider),  // Mock implementation
-}
-
-#[async_trait]
-impl Provider for ProviderEnum {
-    async fn spec_version(&self) -> Result<String, ProviderError> {
-        match self {
-            ProviderEnum::JsonRpcClient(client) => client.spec_version().await,
-            ProviderEnum::MockProvider(mock) => mock.spec_version().await,
-        }
-    }
-    // Continue implementing other Provider trait methods...
-}
-
-#[automock]
-pub trait Config: Send + Sync {
-    fn starknet_client(&self) -> &ProviderEnum;
-    fn da_client(&self) -> &dyn DaClient;
-    fn database(&self) -> &dyn Database;
-    fn queue(&self) -> &dyn QueueProvider;
-}
 
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling `config` function.
-pub struct AppConfig {
+pub struct Config {
     /// The starknet client to get data from the node
-    starknet_client: Box<ProviderEnum>,
+    pub starknet_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
-    da_client: Box<dyn DaClient>,
+    pub da_client: Box<dyn DaClient>,
     /// The database client
-    database: Box<dyn Database>,
+    pub database: Box<dyn Database>,
     /// The queue provider
-    queue: Box<dyn QueueProvider>,
+    pub queue: Box<dyn QueueProvider>,
 }
 
-impl Config for AppConfig {
+/// Initializes the app config
+pub async fn init_config() -> Config {
+    dotenv().ok();
+
+    // init starknet client
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(get_env_var_or_panic("MADARA_RPC_URL").as_str()).expect("Failed to parse URL"),
+    ));
+
+    // init database
+    let database = Box::new(MongoDb::new(MongoDbConfig::new_from_env()).await);
+
+    // init the queue
+    let queue = Box::new(SqsQueue {});
+
+    Config { starknet_client: Arc::new(provider), da_client: build_da_client(), database, queue }
+}
+
+/// Initializes mock app config
+#[cfg(test)]
+pub async fn init_config_with_mocks(
+    mock_database: MockDatabase,
+    mock_queue_provider: MockQueueProvider,
+    mock_da_client: MockDaClient,
+    starknet_rpc_url: String,
+) {
+    dotenv().ok();
+
+    // init starknet client
+    let provider =
+        JsonRpcClient::new(HttpTransport::new(Url::parse(starknet_rpc_url.as_str()).expect("Failed to parse URL")));
+
+    let database = Box::new(mock_database);
+    let queue = Box::new(mock_queue_provider);
+    let da_client = Box::new(mock_da_client);
+
+    let config = Config { starknet_client: Arc::new(provider), da_client, database, queue };
+    assert!(CONFIG.set(config).is_ok());
+}
+
+impl Config {
     /// Returns the starknet client
-    fn starknet_client(&self) -> &ProviderEnum {
+    pub fn starknet_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
         &self.starknet_client
     }
 
     /// Returns the DA client
-    fn da_client(&self) -> &dyn DaClient {
+    pub fn da_client(&self) -> &dyn DaClient {
         self.da_client.as_ref()
     }
 
     /// Returns the database client
-    fn database(&self) -> &dyn Database {
+    pub fn database(&self) -> &dyn Database {
         self.database.as_ref()
     }
 
     /// Returns the queue provider
-    fn queue(&self) -> &dyn QueueProvider {
+    pub fn queue(&self) -> &dyn QueueProvider {
         self.queue.as_ref()
     }
 }
 
 /// The app config. It can be accessed from anywhere inside the service.
 /// It's initialized only once.
-pub static CONFIG: OnceCell<AppConfig> = OnceCell::const_new();
-
-/// Initializes mock app config
-#[cfg(test)]
-async fn init_config() -> AppConfig {
-    dotenv().ok();
-
-    let url = Url::parse(&get_env_var_or_panic("MADARA_RPC_URL")).expect("Failed to parse URL");
-    // let starknet_provider = Box::new(ProviderEnum::JsonRpcClient(JsonRpcClient::new(HttpTransport::new(url))));
-    let starknet_provider = Box::new(ProviderEnum::MockProvider(MockProvider::new()));
-
-    let database = Box::new(MongoDb::new(MongoDbConfig::new_from_env()).await);
-    let queue = Box::new(SqsQueue {});
-
-    AppConfig { starknet_client: starknet_provider, da_client: build_da_client(), database, queue }
-}
-
-/// Initializes the app config
-#[cfg(not(test))]
-async fn init_config() -> AppConfig {
-    dotenv().ok();
-
-    let url = Url::parse(&get_env_var_or_panic("MADARA_RPC_URL")).expect("Failed to parse URL");
-    let starknet_provider = Box::new(ProviderEnum::JsonRpcClient(JsonRpcClient::new(HttpTransport::new(url))));
-
-    let database = Box::new(MongoDb::new(MongoDbConfig::new_from_env()).await);
-    let queue = Box::new(SqsQueue {});
-
-    AppConfig { starknet_client: starknet_provider, da_client: build_da_client(), database, queue }
-}
+pub static CONFIG: OnceCell<Config> = OnceCell::const_new();
 
 /// Returns the app config. Initializes if not already done.
-pub async fn config() -> &'static dyn Config {
+pub async fn config() -> &'static Config {
     CONFIG.get_or_init(init_config).await
 }
 

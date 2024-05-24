@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/orchestrator",
-  "crates/da_clients/da-client-interface",
-  "crates/da_clients/ethereum",
-  "crates/utils",
+    "crates/orchestrator",
+    "crates/da_clients/da-client-interface",
+    "crates/da_clients/ethereum",
+    "crates/utils",
 ]
 
 [workspace.package]
@@ -33,6 +33,7 @@ tracing = { version = "0.1.40" }
 tracing-subscriber = { version = "0.3.18" }
 url = { version = "2.5.0" }
 uuid = { version = "1.7.0" }
+httpmock = { version = "0.7.0" }
 da-client-interface = { path = "crates/da_clients/da-client-interface" }
 ethereum-da-client = { path = "crates/da_clients/ethereum" }
 utils = { path = "crates/utils" }
