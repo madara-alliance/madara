@@ -4,9 +4,9 @@ name: Workflow - Pull Request
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    branches: [ main ]
   push:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
   linters:
@@ -20,4 +20,8 @@ jobs:
   linters_cargo:
     name: Run Cargo linters
     uses: ./.github/workflows/linters-cargo.yml
+
+  coverage:
+    name: Run coverage
+    uses: ./.github/workflows/coverage.yml
     needs: rust_build

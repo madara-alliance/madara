@@ -1,5 +1,3 @@
-
-
 use rstest::*;
 
 #[rstest]

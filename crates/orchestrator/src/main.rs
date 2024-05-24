@@ -1,8 +1,8 @@
+use dotenvy::dotenv;
 use orchestrator::config::config;
 use orchestrator::queue::init_consumers;
 use orchestrator::routes::app_router;
 use orchestrator::utils::env_utils::get_env_var_or_default;
-use dotenvy::dotenv;
 
 /// Start the server
 #[tokio::main]

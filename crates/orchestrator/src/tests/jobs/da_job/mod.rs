@@ -3,22 +3,18 @@ use starknet::core::types::StateUpdate;
 
 use std::collections::HashMap;
 
-
 use httpmock::prelude::*;
-use serde_json::{json};
+use serde_json::json;
 
 use super::super::common::{default_job_item, init_config};
 use starknet_core::types::{FieldElement, MaybePendingStateUpdate, StateDiff};
 use uuid::Uuid;
 
-
 use crate::jobs::types::ExternalId;
-use crate::{
-    jobs::{
-        da_job::DaJob,
-        types::{JobItem, JobStatus, JobType},
-        Job,
-    },
+use crate::jobs::{
+    da_job::DaJob,
+    types::{JobItem, JobStatus, JobType},
+    Job,
 };
 use da_client_interface::{DaVerificationStatus, MockDaClient};
 

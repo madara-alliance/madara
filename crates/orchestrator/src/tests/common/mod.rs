@@ -3,7 +3,6 @@ pub mod constants;
 use constants::*;
 use rstest::*;
 
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -11,7 +10,6 @@ use crate::{
     config::Config,
     jobs::types::{ExternalId, JobItem, JobStatus::Created, JobType::DataSubmission},
 };
-
 
 use crate::database::MockDatabase;
 use crate::queue::MockQueueProvider;
