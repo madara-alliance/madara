@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(hash): declare tx v0 hash computation
 - remove RuntimeApi on RPC
 - feat(metrics): Added sync time metrics
 - refactor: using const and OnceCell instead of lazy_static
