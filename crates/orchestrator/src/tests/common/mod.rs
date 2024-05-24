@@ -36,12 +36,7 @@ pub async fn init_config(
     // init starknet client
     let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(rpc_url.as_str()).expect("Failed to parse URL")));
 
-    Config {
-        starknet_client: Arc::new(provider),
-        da_client: Box::new(da_client),
-        database: Box::new(database),
-        queue: Box::new(queue),
-    }
+    Config::new(Arc::new(provider), Box::new(da_client), Box::new(database), Box::new(queue))
 }
 
 #[fixture]

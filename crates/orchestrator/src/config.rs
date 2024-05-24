@@ -18,13 +18,13 @@ use tokio::sync::OnceCell;
 /// by calling `config` function.
 pub struct Config {
     /// The starknet client to get data from the node
-    pub starknet_client: Arc<JsonRpcClient<HttpTransport>>,
+    starknet_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
-    pub da_client: Box<dyn DaClient>,
+    da_client: Box<dyn DaClient>,
     /// The database client
-    pub database: Box<dyn Database>,
+    database: Box<dyn Database>,
     /// The queue provider
-    pub queue: Box<dyn QueueProvider>,
+    queue: Box<dyn QueueProvider>,
 }
 
 /// Initializes the app config
@@ -46,6 +46,16 @@ pub async fn init_config() -> Config {
 }
 
 impl Config {
+    /// Create a new config
+    pub fn new(
+        starknet_client: Arc<JsonRpcClient<HttpTransport>>,
+        da_client: Box<dyn DaClient>,
+        database: Box<dyn Database>,
+        queue: Box<dyn QueueProvider>,
+    ) -> Self {
+        Self { starknet_client, da_client, database, queue }
+    }
+
     /// Returns the starknet client
     pub fn starknet_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
         &self.starknet_client
