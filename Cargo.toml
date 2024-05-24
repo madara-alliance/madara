@@ -67,6 +67,9 @@ repository = "https://github.com/kasarlabs/deoxys/"
 version = "0.1.0"
 
 [workspace.dependencies]
+rocksdb = { version = "0.21", features = [
+  # "multi-threaded-cf",
+] }
 # Substrate frame dependencies
 frame-benchmarking = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
   "std",
