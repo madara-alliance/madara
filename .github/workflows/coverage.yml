@@ -1,0 +1,39 @@
+---
+name: Task - Rust Tests & Coverage
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  coverage:
+    # sadly, for now we have to "rebuild" for the coverage
+    runs-on: self-hosted
+
+
+    steps:
+      - uses: actions/checkout@v3
+
+      # selecting a toolchain either by action or manual `rustup` calls should happen
+      # before the plugin, as the cache uses the current rustc version as its cache key
+      - run: rustup show
+
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: taiki-e/install-action@nextest
+
+      - name: Clean workspace
+        run: |
+          cargo llvm-cov clean --workspace
+
+      - name: Run llvm-cov
+        run: |
+          cargo llvm-cov nextest --release --lcov --output-path lcov.info
+
+      - name: Upload coverage to codecov.io
+        uses: codecov/codecov-action@v3
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+
+      - uses: colpal/actions-clean@v1
+        if: ${{ always() }} # To ensure this step runs even when earlier steps fail
