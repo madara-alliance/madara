@@ -180,11 +180,86 @@ async fn get_job(id: Uuid) -> Result<JobItem> {
 
 fn increment_key_in_metadata(metadata: &HashMap<String, String>, key: &str) -> Result<HashMap<String, String>> {
     let mut new_metadata = metadata.clone();
-    let attempt = metadata.get(key).unwrap_or(&"0".to_string()).parse::<u64>()?;
-    new_metadata.insert(key.to_string(), (attempt + 1).to_string());
+    let attempt = get_u64_from_metadata(metadata, key)?;
+    let incremented_value = attempt.checked_add(1);
+    if incremented_value.is_none() {
+        return Err(eyre!("Incrementing key {} in metadata would exceed u64::MAX", key));
+    }
+    new_metadata.insert(key.to_string(), incremented_value.unwrap().to_string());
     Ok(new_metadata)
 }
 
 fn get_u64_from_metadata(metadata: &HashMap<String, String>, key: &str) -> Result<u64> {
     Ok(metadata.get(key).unwrap_or(&"0".to_string()).parse::<u64>()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod test_incremement_key_in_metadata {
+        use super::*;
+
+        #[test]
+        fn key_does_not_exist() {
+            let metadata = HashMap::new();
+            let key = "test_key";
+            let updated_metadata = increment_key_in_metadata(&metadata, key).unwrap();
+            assert_eq!(updated_metadata.get(key), Some(&"1".to_string()));
+        }
+
+        #[test]
+        fn key_exists_with_numeric_value() {
+            let mut metadata = HashMap::new();
+            metadata.insert("test_key".to_string(), "41".to_string());
+            let key = "test_key";
+            let updated_metadata = increment_key_in_metadata(&metadata, key).unwrap();
+            assert_eq!(updated_metadata.get(key), Some(&"42".to_string()));
+        }
+
+        #[test]
+        fn key_exists_with_non_numeric_value() {
+            let mut metadata = HashMap::new();
+            metadata.insert("test_key".to_string(), "not_a_number".to_string());
+            let key = "test_key";
+            let result = increment_key_in_metadata(&metadata, key);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn key_exists_with_max_u64_value() {
+            let mut metadata = HashMap::new();
+            metadata.insert("test_key".to_string(), u64::MAX.to_string());
+            let key = "test_key";
+            let result = increment_key_in_metadata(&metadata, key);
+            assert!(result.is_err());
+        }
+    }
+
+    mod test_get_u64_from_metadata {
+        use super::*;
+
+        #[test]
+        fn key_exists_with_valid_u64_value() {
+            let mut metadata = HashMap::new();
+            metadata.insert("key1".to_string(), "12345".to_string());
+            let result = get_u64_from_metadata(&metadata, "key1").unwrap();
+            assert_eq!(result, 12345);
+        }
+
+        #[test]
+        fn key_exists_with_invalid_value() {
+            let mut metadata = HashMap::new();
+            metadata.insert("key2".to_string(), "not_a_number".to_string());
+            let result = get_u64_from_metadata(&metadata, "key2");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn key_does_not_exist() {
+            let metadata = HashMap::<String, String>::new();
+            let result = get_u64_from_metadata(&metadata, "key3").unwrap();
+            assert_eq!(result, 0);
+        }
+    }
 }

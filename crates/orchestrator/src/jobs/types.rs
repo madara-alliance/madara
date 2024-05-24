@@ -66,7 +66,7 @@ fn unwrap_external_id_failed(expected: &str, got: &ExternalId) -> color_eyre::ey
     eyre!("wrong ExternalId type: expected {}, got {:?}", expected, got)
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum JobType {
     /// Submitting DA data to the DA layer
     DataSubmission,
@@ -78,7 +78,7 @@ pub enum JobType {
     StateUpdation,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]
 pub enum JobStatus {
     /// An acknowledgement that the job has been received by the
     /// orchestrator and is waiting to be processed
