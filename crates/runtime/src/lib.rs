@@ -173,10 +173,6 @@ impl_runtime_apis! {
         }
     }
 
-    impl pallet_starknet_runtime_api::StarknetRuntimeApi<Block> for Runtime {
-        fn dummy(){}
-    }
-
     #[cfg(feature = "runtime-benchmarks")]
     impl frame_benchmarking::Benchmark<Block> for Runtime {
         fn benchmark_metadata(extra: bool) -> (

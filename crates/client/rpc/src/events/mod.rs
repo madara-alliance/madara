@@ -4,10 +4,8 @@ use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent};
 use starknet_ff::FieldElement;
@@ -19,8 +17,6 @@ use crate::Starknet;
 impl<BE, C, H> Starknet<BE, C, H>
 where
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     BE: Backend<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
