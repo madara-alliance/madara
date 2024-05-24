@@ -88,7 +88,15 @@ fn transaction(transaction: p::TransactionType) -> Transaction {
 }
 
 fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
-    if tx.version == FieldElement::ZERO || tx.version == FieldElement::ONE {
+    if tx.version == FieldElement::ZERO {
+        DeclareTransaction::V0(starknet_api::transaction::DeclareTransactionV0V1 {
+            max_fee: fee(tx.max_fee.expect("no max fee provided")),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce),
+            class_hash: class_hash(tx.class_hash),
+            sender_address: contract_address(tx.sender_address),
+        })
+    } else if tx.version == FieldElement::ONE {
         DeclareTransaction::V1(starknet_api::transaction::DeclareTransactionV0V1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
