@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/orchestrator",
-    "crates/da_clients/da-client-interface",
-    "crates/da_clients/ethereum",
-    "crates/utils",
+  "crates/orchestrator",
+  "crates/da_clients/da-client-interface",
+  "crates/da_clients/ethereum",
+  "crates/utils",
 ]
 
 [workspace.package]
