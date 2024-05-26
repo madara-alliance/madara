@@ -16,10 +16,11 @@ use self::block_state_diff::BlockStateDiffView;
 use self::class_trie::{ClassTrieView, ClassTrieViewMut};
 use self::contract_class_data::{ContractClassDataView, ContractClassDataViewMut};
 use self::contract_class_hashes::{ContractClassHashesView, ContractClassHashesViewMut};
-use self::contract_data::{ContractDataView, ContractDataViewMut};
+use self::contract_data::{ContractClassView, ContractClassViewMut, ContractNoncesView, ContractNoncesViewMut};
 use self::contract_storage::{ContractStorageView, ContractStorageViewMut};
 use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
 use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
+use self::history::HistoryError;
 use crate::DeoxysBackend;
 
 pub mod benchmark;
@@ -27,11 +28,10 @@ pub mod block_hash;
 pub mod block_number;
 pub mod block_state_diff;
 mod class_trie;
-mod codec;
 mod contract_class_data;
 mod contract_class_hashes;
-mod contract_data;
-mod contract_storage;
+pub(crate) mod contract_data;
+pub(crate) mod contract_storage;
 mod contract_storage_trie;
 mod contract_trie;
 mod history;
@@ -71,24 +71,12 @@ pub enum DeoxysStorageError {
     StorageSerdeError,
     #[error("failed to revert {0} to block {1}")]
     StorageRevertError(StorageType, u64),
-    #[error("failed to push new value in history")]
-    StorageHistoryError,
+    #[error("failed to parse history")]
+    StorageHistoryError(#[from] HistoryError),
 }
 
 impl From<bincode::Error> for DeoxysStorageError {
     fn from(_: bincode::Error) -> Self {
-        DeoxysStorageError::StorageSerdeError
-    }
-}
-
-impl From<history::HistoryError> for DeoxysStorageError {
-    fn from(_: history::HistoryError) -> Self {
-        DeoxysStorageError::StorageHistoryError
-    }
-}
-
-impl From<codec::Error> for DeoxysStorageError {
-    fn from(_: codec::Error) -> Self {
         DeoxysStorageError::StorageSerdeError
     }
 }
@@ -217,11 +205,11 @@ pub fn contract_storage_trie<'a>() -> ContractStorageTrieView<'a> {
 }
 
 pub fn contract_storage_mut() -> ContractStorageViewMut {
-    ContractStorageViewMut::default()
+    ContractStorageViewMut::new()
 }
 
 pub fn contract_storage() -> ContractStorageView {
-    ContractStorageView
+    ContractStorageView::new()
 }
 
 pub fn class_trie_mut<'a>() -> ClassTrieViewMut<'a> {
@@ -248,12 +236,20 @@ pub fn contract_class_hashes() -> ContractClassHashesView {
     ContractClassHashesView
 }
 
-pub fn contract_data_mut() -> ContractDataViewMut {
-    ContractDataViewMut::default()
+pub fn contract_class_hash() -> ContractClassView {
+    ContractClassView::new()
 }
 
-pub fn contract_data() -> ContractDataView {
-    ContractDataView
+pub fn contract_class_hash_mut() -> ContractClassViewMut {
+    ContractClassViewMut::new()
+}
+
+pub fn contract_nonces() -> ContractNoncesView {
+    ContractNoncesView::new()
+}
+
+pub fn contract_nonces_mut() -> ContractNoncesViewMut {
+    ContractNoncesViewMut::new()
 }
 
 pub fn block_number() -> BlockNumberView {

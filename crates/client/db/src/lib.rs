@@ -27,6 +27,7 @@ mod error;
 mod mapping_db;
 use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Env, MultiThreaded, OptimisticTransactionDB, Options,
+    SliceTransform,
 };
 use starknet_types_core::hash::{Pedersen, Poseidon};
 pub mod bonsai_db;
@@ -137,9 +138,22 @@ pub enum Column {
     BlockHashToNumber,
     BlockNumberToHash,
     BlockStateDiff,
+
     ContractClassData,
-    ContractData,
+
+    // History of contract class hashes
+    // contract_address history block_number => class_hash
+    ContractToClassHashes,
+
+    // History of contract nonces
+    // contract_address history block_number => nonce
+    ContractToNonces,
+
+    // Class hash => compiled class hash
     ContractClassHashes,
+
+    // History of contract key => values
+    // (contract_address, storage_key) history block_number => felt
     ContractStorage,
 
     /// This column is used to map starknet block hashes to a list of transaction hashes that are
@@ -187,15 +201,16 @@ impl Column {
             BlockMapping,
             TransactionMapping,
             SyncedMapping,
-            StarknetTransactionHashesCache,
-            StarknetBlockHashesCache,
             BlockHashToNumber,
             BlockNumberToHash,
             BlockStateDiff,
             ContractClassData,
-            ContractData,
-            ContractStorage,
+            ContractToClassHashes,
+            ContractToNonces,
             ContractClassHashes,
+            ContractStorage,
+            StarknetTransactionHashesCache,
+            StarknetBlockHashesCache,
             BonsaiContractsTrie,
             BonsaiContractsFlat,
             BonsaiContractsLog,
@@ -210,39 +225,57 @@ impl Column {
     pub const NUM_COLUMNS: usize = Self::ALL.len();
 
     pub(crate) fn rocksdb_name(&self) -> &'static str {
+        use Column::*;
         match self {
-            Column::Meta => "meta",
-            Column::BlockMapping => "block_mapping",
-            Column::TransactionMapping => "transaction_mapping",
-            Column::SyncedMapping => "synced_mapping",
-            Column::StarknetTransactionHashesCache => "starknet_transaction_hashes_cache",
-            Column::StarknetBlockHashesCache => "starnet_block_hashes_cache",
-            Column::BonsaiContractsTrie => "bonsai_contracts_trie",
-            Column::BonsaiContractsFlat => "bonsai_contracts_flat",
-            Column::BonsaiContractsLog => "bonsai_contracts_log",
-            Column::BonsaiContractsStorageTrie => "bonsai_contracts_storage_trie",
-            Column::BonsaiContractsStorageFlat => "bonsai_contracts_storage_flat",
-            Column::BonsaiContractsStorageLog => "bonsai_contracts_storage_log",
-            Column::BonsaiClassesTrie => "bonsai_classes_trie",
-            Column::BonsaiClassesFlat => "bonsai_classes_flat",
-            Column::BonsaiClassesLog => "bonsai_classes_log",
-            Column::BlockHashToNumber => "block_hash_to_number_trie",
-            Column::BlockNumberToHash => "block_to_hash_trie",
-            Column::BlockStateDiff => "block_state_diff",
-            Column::ContractClassData => "contract_class_data",
-            Column::ContractData => "contract_data",
-            Column::ContractClassHashes => "contract_class_hashes",
-            Column::ContractStorage => "contrac_storage",
+            Meta => "meta",
+            BlockMapping => "block_mapping",
+            TransactionMapping => "transaction_mapping",
+            SyncedMapping => "synced_mapping",
+            StarknetTransactionHashesCache => "starknet_transaction_hashes_cache",
+            StarknetBlockHashesCache => "starnet_block_hashes_cache",
+            BonsaiContractsTrie => "bonsai_contracts_trie",
+            BonsaiContractsFlat => "bonsai_contracts_flat",
+            BonsaiContractsLog => "bonsai_contracts_log",
+            BonsaiContractsStorageTrie => "bonsai_contracts_storage_trie",
+            BonsaiContractsStorageFlat => "bonsai_contracts_storage_flat",
+            BonsaiContractsStorageLog => "bonsai_contracts_storage_log",
+            BonsaiClassesTrie => "bonsai_classes_trie",
+            BonsaiClassesFlat => "bonsai_classes_flat",
+            BonsaiClassesLog => "bonsai_classes_log",
+            BlockHashToNumber => "block_hash_to_number_trie",
+            BlockNumberToHash => "block_to_hash_trie",
+            BlockStateDiff => "block_state_diff",
+            ContractClassData => "contract_class_data",
+            ContractToClassHashes => "contract_to_class_hashes",
+            ContractToNonces => "contract_to_nonces",
+            ContractClassHashes => "contract_class_hashes",
+            ContractStorage => "contract_storage",
         }
     }
 
     /// Per column rocksdb options, like memory budget, compaction profiles, block sizes for hdd/sdd
     /// etc. TODO: add basic sensible defaults
     pub(crate) fn rocksdb_options(&self) -> Options {
-        // match self {
-        //     _ => Options::default(),
-        // }
-        Options::default()
+        let mut opts = Options::default();
+        match self {
+            Column::ContractStorage => {
+                opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(
+                    storage_handler::contract_storage::CONTRACT_STORAGE_PREFIX_EXTRACTOR,
+                ));
+            }
+            Column::ContractToClassHashes => {
+                opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(
+                    storage_handler::contract_data::CONTRACT_CLASS_HASH_PREFIX_EXTRACTOR,
+                ));
+            }
+            Column::ContractToNonces => {
+                opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(
+                    storage_handler::contract_data::CONTRACT_NONCES_PREFIX_EXTRACTOR,
+                ));
+            }
+            _ => {}
+        }
+        opts
     }
 }
 

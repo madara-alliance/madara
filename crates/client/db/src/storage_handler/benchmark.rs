@@ -21,7 +21,10 @@ pub fn run_db_bench() -> Result<(), DeoxysStorageError> {
 
     // Contract class hash & nonce
 
-    let bytes = bench_db_column(Column::ContractData)?;
+    let bytes = bench_db_column(Column::ContractToClassHashes)?;
+    log::info!("contract data: {bytes} bytes");
+
+    let bytes = bench_db_column(Column::ContractToNonces)?;
     log::info!("contract data: {bytes} bytes");
 
     // Compiled class hashes
@@ -93,7 +96,8 @@ fn column_to_storage_type(column: &Column) -> StorageType {
         Column::BlockHashToNumber => StorageType::BlockNumber,
         Column::BlockNumberToHash => StorageType::BlockHash,
         Column::ContractClassData => StorageType::ContractClassData,
-        Column::ContractData => StorageType::ContractData,
+        Column::ContractToClassHashes => StorageType::ContractData,
+        Column::ContractToNonces => StorageType::ContractData,
         Column::ContractClassHashes => StorageType::ContractClassHashes,
         Column::BonsaiContractsTrie => StorageType::Contract,
         Column::BonsaiContractsFlat => StorageType::Contract,

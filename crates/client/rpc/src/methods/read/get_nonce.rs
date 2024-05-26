@@ -29,7 +29,7 @@ pub fn get_nonce(block_id: BlockId, contract_address: FieldElement) -> RpcResult
     let key = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
 
     let block_number = block_number_by_id(block_id)?;
-    match storage_handler::contract_data().get_nonce_at(&key, block_number) {
+    match storage_handler::contract_class_hash().get_at(&key, block_number) {
         Err(e) => {
             log::error!("Failed to get nonce: {e}");
             Err(StarknetRpcApiError::InternalServerError.into())

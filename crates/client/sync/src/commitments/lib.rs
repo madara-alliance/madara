@@ -249,25 +249,13 @@ fn class_hash_and_nonce(
     csd: &CommitmentStateDiff,
     contract_address: &ContractAddress,
 ) -> Result<(FieldElement, FieldElement), DeoxysStorageError> {
-    let class_hash = csd.address_to_class_hash.get(contract_address);
-    let nonce = csd.address_to_nonce.get(contract_address);
-
-    let (class_hash, nonce) = match (class_hash, nonce) {
-        (Some(class_hash), Some(nonce)) => (*class_hash, *nonce),
-        (Some(class_hash), None) => {
-            let nonce = storage_handler::contract_data().get_nonce(contract_address)?.unwrap_or_default();
-            (*class_hash, nonce)
-        }
-        (None, Some(nonce)) => {
-            let class_hash = storage_handler::contract_data().get_class_hash(contract_address)?.unwrap_or_default();
-            (class_hash, *nonce)
-        }
-        (None, None) => {
-            let contract_data = storage_handler::contract_data().get(contract_address)?.unwrap_or_default();
-            let nonce = contract_data.nonce.get().cloned().unwrap_or_default();
-            let class_hash = contract_data.class_hash.get().cloned().unwrap_or_default();
-            (class_hash, nonce)
-        }
+    let class_hash = match csd.address_to_class_hash.get(contract_address) {
+        Some(class_hash) => *class_hash,
+        None => storage_handler::contract_class_hash().get(contract_address)?.unwrap_or_default(),
+    };
+    let nonce = match csd.address_to_nonce.get(contract_address) {
+        Some(nonce) => *nonce,
+        None => storage_handler::contract_nonces().get(contract_address)?.unwrap_or_default(),
     };
     Ok((FieldElement::from_bytes_be(&class_hash.0.0).unwrap(), FieldElement::from_bytes_be(&nonce.0.0).unwrap()))
 }
