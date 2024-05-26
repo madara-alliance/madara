@@ -59,7 +59,6 @@ use mc_db::storage_handler::StorageViewMut;
 use mp_block::DeoxysBlock;
 use mp_digest_log::DEOXYS_ENGINE_ID;
 use mp_felt::{trim_hash, Felt252Wrapper};
-use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
 use starknet_api::core::{CompiledClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
@@ -108,11 +107,8 @@ pub mod pallet {
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         /// The block is being finalized.
         fn on_finalize(_n: BlockNumberFor<T>) {
-            let block_number =
-                UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
-
             // Create a new Starknet block and store it.
-            <Pallet<T>>::store_block(block_number);
+            <Pallet<T>>::store_block();
         }
 
         /// The block is being initialized. Implement to have something happen.
@@ -161,7 +157,7 @@ pub mod pallet {
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            if DeoxysBackend::mapping().block_hash_from_block_number(1).unwrap().is_none() {
+            if DeoxysBackend::mapping().starknet_block_hash_from_block_number(1).unwrap().is_none() {
                 let handler_contract_data = storage_handler::contract_data_mut();
                 self.contracts.iter().for_each(|(contract_address, class_hash)| {
                     handler_contract_data.insert_class_hash(*contract_address, *class_hash).unwrap();
@@ -223,7 +219,7 @@ impl<T: Config> Pallet<T> {
     /// # Arguments
     ///
     /// * `block_number` - The block number.
-    fn store_block(block_number: u64) {
+    fn store_block() {
         let block: DeoxysBlock;
         match &frame_system::Pallet::<T>::digest().logs()[0] {
             DigestItem::PreRuntime(mp_digest_log::DEOXYS_ENGINE_ID, encoded_data) => {
@@ -238,10 +234,6 @@ impl<T: Config> Pallet<T> {
                 let actual_block_number = block.header().block_number;
                 let block_hash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
                 let state_root = Felt252Wrapper::try_from(block.header().global_state_root).unwrap();
-
-                let mut handler_block_number = storage_handler::block_number();
-
-                handler_block_number.insert(&block_hash, block_number).unwrap();
 
                 let digest = DigestItem::Consensus(DEOXYS_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
                 frame_system::Pallet::<T>::deposit_log(digest);

@@ -164,23 +164,29 @@ fn spawn_backup_db_task(
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Column {
     Meta,
+    // Starknet block hash to Substrate block hash
     BlockMapping,
-    TransactionMapping,
+    // Substrate block hash to true if it contains a Starknet block
     SyncedMapping,
-    BlockHashToNumber,
-    BlockNumberToHash,
-    BlockStateDiff,
+    // Transaction hash to Substrate block hash
+    TransactionMapping,
+    /// Starknet block hash to list of starknet transaction hashes
+    StarknetTransactionHashesMapping,
+    /// Block number to block Starknet block hash
+    StarknetBlockHashesMapping,
+    /// Starknet block hash to block number
+    StarknetBlockNumberMapping,
+
+    /// Contract class hash to class data
     ContractClassData,
+    /// Contract address to class hash and nonce history
     ContractData,
+    /// Class hash to compiled class hash
     ContractClassHashes,
+    /// Contract address and storage key to storage value history
     ContractStorage,
-
-    /// This column is used to map starknet block hashes to a list of transaction hashes that are
-    /// contained in the block.
-    StarknetTransactionHashes,
-
-    /// This column is used to map starknet block numbers to their block hashes.
-    StarknetBlockHashes,
+    /// Block number to state diff
+    BlockStateDiff,
 
     // Each bonsai storage has 3 columns
     BonsaiContractsTrie,
@@ -194,6 +200,12 @@ pub enum Column {
     BonsaiClassesTrie,
     BonsaiClassesFlat,
     BonsaiClassesLog,
+}
+
+impl Column {
+    fn iter() -> impl Iterator<Item = Self> {
+        Self::ALL.iter().copied()
+    }
 }
 
 impl fmt::Debug for Column {
@@ -214,17 +226,16 @@ impl Column {
         &[
             Meta,
             BlockMapping,
-            TransactionMapping,
             SyncedMapping,
-            StarknetTransactionHashes,
-            StarknetBlockHashes,
-            BlockHashToNumber,
-            BlockNumberToHash,
-            BlockStateDiff,
+            TransactionMapping,
+            StarknetTransactionHashesMapping,
+            StarknetBlockHashesMapping,
+            StarknetBlockNumberMapping,
             ContractClassData,
             ContractData,
-            ContractStorage,
             ContractClassHashes,
+            ContractStorage,
+            BlockStateDiff,
             BonsaiContractsTrie,
             BonsaiContractsFlat,
             BonsaiContractsLog,
@@ -244,10 +255,9 @@ impl Column {
             Column::BlockMapping => "block_mapping",
             Column::TransactionMapping => "transaction_mapping",
             Column::SyncedMapping => "synced_mapping",
-            // TODO: change to "starknet_transaction_hashes" when rebuild the DB
-            Column::StarknetTransactionHashes => "starknet_transaction_hashes_cache",
-            // TODO: change to "starknet_block_hashes" when rebuild the DB
-            Column::StarknetBlockHashes => "starnet_block_hashes_cache",
+            Column::StarknetTransactionHashesMapping => "starknet_transaction_hashes_mapping",
+            Column::StarknetBlockHashesMapping => "starnet_block_hashes_mapping",
+            Column::StarknetBlockNumberMapping => "starknet_block_number_mapping",
             Column::BonsaiContractsTrie => "bonsai_contracts_trie",
             Column::BonsaiContractsFlat => "bonsai_contracts_flat",
             Column::BonsaiContractsLog => "bonsai_contracts_log",
@@ -257,8 +267,6 @@ impl Column {
             Column::BonsaiClassesTrie => "bonsai_classes_trie",
             Column::BonsaiClassesFlat => "bonsai_classes_flat",
             Column::BonsaiClassesLog => "bonsai_classes_log",
-            Column::BlockHashToNumber => "block_hash_to_number_trie",
-            Column::BlockNumberToHash => "block_to_hash_trie",
             Column::BlockStateDiff => "block_state_diff",
             Column::ContractClassData => "contract_class_data",
             Column::ContractData => "contract_data",

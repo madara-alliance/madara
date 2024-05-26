@@ -10,7 +10,6 @@ use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
 
-use self::block_number::BlockNumberView;
 use self::block_state_diff::BlockStateDiffView;
 use self::class_trie::{ClassTrieView, ClassTrieViewMut};
 use self::contract_class_data::{ContractClassDataView, ContractClassDataViewMut};
@@ -22,7 +21,6 @@ use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
 use crate::DeoxysBackend;
 
 pub mod benchmark;
-pub mod block_number;
 pub mod block_state_diff;
 mod class_trie;
 mod codec;
@@ -252,10 +250,6 @@ pub fn contract_data_mut() -> ContractDataViewMut {
 
 pub fn contract_data() -> ContractDataView {
     ContractDataView
-}
-
-pub fn block_number() -> BlockNumberView {
-    BlockNumberView
 }
 
 pub fn block_state_diff() -> BlockStateDiffView {

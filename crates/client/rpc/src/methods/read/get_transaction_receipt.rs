@@ -61,7 +61,7 @@ where
 {
     // get the substrate block hash from the transaction hash
     let substrate_block_hash = DeoxysBackend::mapping()
-        .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
+        .substrate_block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
         .map_err(|e| {
             log::error!("Failed to get substrate block hash from transaction hash: {}", e);
             StarknetRpcApiError::InternalServerError

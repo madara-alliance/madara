@@ -14,7 +14,7 @@ pub fn load_hash<C>(client: &C, hash: StarkHash) -> Result<Option<DHashT>, DbErr
 where
     C: HeaderBackend<DBlockT> + 'static,
 {
-    let substrate_hashes = DeoxysBackend::mapping().block_hash(hash)?;
+    let substrate_hashes = DeoxysBackend::mapping().substrate_block_hash(hash)?;
 
     if let Some(substrate_hashes) = substrate_hashes {
         for substrate_hash in substrate_hashes {
