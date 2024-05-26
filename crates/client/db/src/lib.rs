@@ -375,7 +375,7 @@ impl DeoxysBackend {
         bonsai_classes.init_tree(bonsai_identifier::CLASS).unwrap();
 
         let backend = Arc::new(Self {
-            mapping: Arc::new(MappingDb::new(Arc::clone(db), cache_more_things)),
+            mapping: Arc::new(MappingDb::new(Arc::clone(db))),
             meta: Arc::new(MetaDb::new(Arc::clone(db))),
             bonsai_contract: RwLock::new(bonsai_contract),
             bonsai_storage: RwLock::new(bonsai_contract_storage),

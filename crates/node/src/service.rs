@@ -100,7 +100,6 @@ where
         &db_config_dir(config),
         backup_dir,
         restore_from_latest_backup,
-        cache_more_things,
     )
     .unwrap();
 
