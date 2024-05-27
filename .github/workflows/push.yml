@@ -14,13 +14,3 @@ jobs:
   rust_check:
     name: Run check
     uses: ./.github/workflows/rust-check.yml
-
-  linters_cargo:
-    name: Run Cargo linters
-    uses: ./.github/workflows/linters-cargo.yml
-    needs: rust_check
-
-  rust_test:
-    name: Run Cargo tests
-    uses: ./.github/workflows/rust-test.yml
-    needs: rust_check

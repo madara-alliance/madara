@@ -13,10 +13,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2023-08-24
+          components: rustfmt, clippy
+
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "cache"
 
+      - name: Setup build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler libasound2-dev
+
       - name: Check the project
         run: |
           cargo check --release --workspace
+
+      - name: Format and clippy
+        run: |
+          cargo fmt -- --check
+          cargo clippy --workspace --tests --no-deps -- -D warnings
+
+      - name: Run unit tests
+        run: |
+          cargo test
