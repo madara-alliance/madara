@@ -1,133 +1,187 @@
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
+use std::ops::Deref;
 
-/// A simple history implementation that stores values at a given index.
-#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
-#[serde(bound = "T: Serialize + DeserializeOwned")]
-pub struct History<T> {
-    pub last_index: u64,
-    pub values: Vec<(u64, T)>,
-}
+use crossbeam_skiplist::SkipMap;
+use rayon::prelude::ParallelIterator;
+use rayon::slice::ParallelSlice;
+use rocksdb::{IteratorMode, ReadOptions, WriteBatchWithTransaction};
+use thiserror::Error;
 
-#[derive(Debug)]
+use super::{codec, DeoxysStorageError, StorageView, StorageViewMut};
+use crate::{Column, DatabaseExt, DeoxysBackend, DB};
+
+#[derive(Debug, Error)]
 pub enum HistoryError {
-    ValueNotOrdered,
+    #[error("rocksdb error: {0}")]
+    RocksDBError(#[from] rocksdb::Error),
+    #[error("db number format error")]
+    NumberFormat,
+    #[error("value codec error: {0}")]
+    ParityCodec(#[from] parity_scale_codec::Error),
+    #[error("value codec error: {0}")]
+    Codec(#[from] codec::Error),
 }
 
-/// A simple history implementation that stores values at a given index.
-/// It allows to get the value at a given index, push a new value with an index,
-/// and revert the history to a given index.
-///
-/// ***Note:*** This implementation need to insert the values in order.
-impl<T> History<T>
-where
-    T: Serialize + for<'de> Deserialize<'de>,
-{
-    pub fn new(index: u64, value: T) -> Self {
-        Self { last_index: index, values: vec![(index, value)] }
+pub struct History<K: Deref<Target = [u8]>, T> {
+    column: Column,
+    prefix: K,
+    _boo: PhantomData<T>,
+}
+
+impl<K: Deref<Target = [u8]>, T: codec::Decode + codec::Encode> History<K, T> {
+    pub fn open(column: Column, prefix: K) -> Self {
+        Self { column, prefix, _boo: PhantomData }
     }
 
-    /// Push a new value with an index.
-    /// If the index is smaller or equal to the last index, it will return an error.
-    pub fn push(&mut self, index: u64, value: T) -> Result<(), HistoryError> {
-        if self.last_index != 0 && self.last_index >= index {
-            return Err(HistoryError::ValueNotOrdered);
+    pub fn get_at(&self, db: &DB, block_n: u64) -> Result<Option<(u64, T)>, HistoryError> {
+        let block_n = u32::try_from(block_n).map_err(|_| HistoryError::NumberFormat)?;
+        let start_at = [self.prefix.deref(), &block_n.to_be_bytes() as &[u8]].concat();
+
+        let mut options = ReadOptions::default();
+        options.set_prefix_same_as_start(true);
+        // options.set_iterate_range(PrefixRange(&prefix as &[u8]));
+        let mode = IteratorMode::From(&start_at, rocksdb::Direction::Reverse);
+        let mut iter = db.iterator_cf_opt(&db.get_column(self.column), options, mode);
+
+        match iter.next() {
+            Some(res) => {
+                let (k, v) = res?;
+                assert!(k.starts_with(self.prefix.deref()));
+                let block_n: [u8; 4] =
+                    k[self.prefix.deref().len()..].try_into().map_err(|_| HistoryError::NumberFormat)?;
+                let block_n = u32::from_be_bytes(block_n);
+
+                let v = T::decode(v.deref())?;
+
+                Ok(Some((block_n.into(), v)))
+            }
+            None => Ok(None),
         }
-        self.last_index = index;
-        self.values.push((index, value));
+    }
+
+    pub fn get_last(&self, db: &DB) -> Result<Option<(u64, T)>, HistoryError> {
+        self.get_at(db, u32::MAX.into())
+    }
+
+    pub fn put(
+        &self,
+        db: &DB,
+        write_batch: &mut WriteBatchWithTransaction<true>,
+        block_n: u64,
+        value: T,
+    ) -> Result<(), HistoryError> {
+        let block_n = u32::try_from(block_n).map_err(|_| HistoryError::NumberFormat)?;
+        let key = [self.prefix.deref(), &block_n.to_be_bytes() as &[u8]].concat();
+        write_batch.put_cf(&db.get_column(self.column), key, value.encode()?);
+        Ok(())
+    }
+}
+
+// View/ViewMut storage handler implementations
+
+pub trait AsHistoryView {
+    type Key: Ord + Sync + Send + Clone + 'static;
+    type KeyBin: Deref<Target = [u8]> + From<Self::Key>;
+    type T: codec::Decode + codec::Encode + Sync + Send + Clone + 'static;
+
+    fn column() -> Column;
+}
+
+pub struct HistoryView<R: AsHistoryView>(PhantomData<R>);
+impl<R: AsHistoryView> HistoryView<R> {
+    pub(crate) fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<R: AsHistoryView> StorageView for HistoryView<R> {
+    type KEY = R::Key;
+    type VALUE = R::T;
+
+    fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+        let db = DeoxysBackend::expose_db();
+        let key = R::KeyBin::from(key.clone());
+        let history = History::open(R::column(), key);
+
+        let got = history.get_last(db)?;
+
+        Ok(got.map(|(_block, v)| v))
+    }
+
+    fn contains(&self, key: &Self::KEY) -> Result<bool, DeoxysStorageError> {
+        self.get(key).map(|a| a.is_some())
+    }
+}
+
+impl<R: AsHistoryView> HistoryView<R> {
+    pub fn get_at(&self, key: &R::Key, block_number: u64) -> Result<Option<R::T>, DeoxysStorageError> {
+        let db = DeoxysBackend::expose_db();
+        let key = R::KeyBin::from(key.clone());
+        let history = History::open(R::column(), key);
+
+        let got = history.get_at(db, block_number)?;
+
+        Ok(got.map(|(_block, v)| v))
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct HistoryViewMut<R: AsHistoryView>(SkipMap<R::Key, R::T>);
+impl<R: AsHistoryView> HistoryViewMut<R> {
+    pub(crate) fn new() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<R: AsHistoryView> StorageViewMut for HistoryViewMut<R> {
+    type KEY = R::Key;
+    type VALUE = R::T;
+
+    /// Insert data into storage.
+    ///
+    /// * `key`: identifier used to inser data.
+    /// * `value`: encodable data to save to the database.
+    fn insert(&self, key: Self::KEY, value: Self::VALUE) -> Result<(), DeoxysStorageError> {
+        self.0.insert(key, value);
         Ok(())
     }
 
-    /// Get the value at a given index.
-    /// If the index is not found, it will return the value at the previous index.
-    /// If the index is smaller than the first index, it will return None.
-    pub fn get_at(&self, index: u64) -> Option<&T> {
-        match self.values.binary_search_by_key(&index, |&(i, _)| i) {
-            Ok(i) => Some(&self.values[i].1),
-            Err(0) => None,
-            Err(i) => Some(&self.values[i - 1].1),
-        }
-    }
+    /// Applies all changes up to this point.
+    ///
+    /// * `block_number`: point in the chain at which to apply the new changes. Must be
+    /// incremental
+    fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError> {
+        let db = DeoxysBackend::expose_db();
 
-    /// Get the last value.
-    pub fn get(&self) -> Option<&T> {
-        self.values.last().map(|(_, value)| value)
-    }
+        let as_vec = self.0.into_iter().collect::<Vec<_>>(); // todo: use proper datastructure that supports rayon
 
-    /// Revert the history to a given index.
-    /// If the index is not found, it will revert to the previous index.
-    /// If the index is smaller than the first index, it will clear the history.
-    pub fn revert_to(&mut self, index: u64) {
-        match self.values.binary_search_by_key(&index, |&(i, _)| i) {
-            Ok(i) => self.values.truncate(i + 1),
-            Err(0) => self.values.clear(),
-            Err(i) => self.values.truncate(i),
-        }
-        self.last_index = self.values.last().map(|(i, _)| *i).unwrap_or_default();
-    }
+        as_vec.deref().par_chunks(1024).try_for_each(|chunk| {
+            let mut batch = WriteBatchWithTransaction::<true>::default();
+            for (key, v) in chunk {
+                let key = R::KeyBin::from(key.clone());
 
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
-    }
+                History::open(R::column(), key).put(db, &mut batch, block_number, v.clone())?;
+            }
+            db.write(batch)?;
+            Ok::<_, HistoryError>(())
+        })?;
 
-    pub fn len(&self) -> usize {
-        self.values.len()
+        Ok(())
     }
 }
 
-impl<T> std::fmt::Debug for History<T>
-where
-    T: std::fmt::Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "History (last_index: {}) {{ ", self.last_index)?;
-        for (index, value) in &self.values {
-            write!(f, "{:?} => {:?}, ", index, value)?;
+impl<R: AsHistoryView> StorageView for HistoryViewMut<R> {
+    type KEY = R::Key;
+    type VALUE = R::T;
+
+    fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
+        if let Some(entry) = self.0.get(key) {
+            return Ok(Some(entry.value().clone()));
         }
-        write!(f, "}}")
+        HistoryView::<R>::new().get(key)
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_history() {
-        let mut history = History::<u64>::default();
-
-        assert_eq!(history.get(), None);
-        assert_eq!(history.get_at(0), None);
-
-        history.push(0, 0).unwrap();
-        assert_eq!(history.get(), Some(&0));
-        assert_eq!(history.get_at(0), Some(&0));
-        assert_eq!(history.get_at(1), Some(&0));
-
-        history.push(1, 1).unwrap();
-        assert_eq!(history.get(), Some(&1));
-        assert_eq!(history.get_at(0), Some(&0));
-        assert_eq!(history.get_at(1), Some(&1));
-        assert_eq!(history.get_at(2), Some(&1));
-
-        history.push(2, 2).unwrap();
-        assert_eq!(history.get(), Some(&2));
-        assert_eq!(history.get_at(0), Some(&0));
-        assert_eq!(history.get_at(1), Some(&1));
-        assert_eq!(history.get_at(2), Some(&2));
-        assert_eq!(history.get_at(3), Some(&2));
-
-        history.push(1, 3).unwrap_err();
-        assert_eq!(history.get(), Some(&2));
-        assert_eq!(history.get_at(0), Some(&0));
-        assert_eq!(history.get_at(1), Some(&1));
-        assert_eq!(history.get_at(2), Some(&2));
-        assert_eq!(history.get_at(3), Some(&2));
-
-        history.revert_to(1);
-        assert_eq!(history.get(), Some(&1));
-        assert_eq!(history.get_at(0), Some(&0));
-        assert_eq!(history.get_at(1), Some(&1));
-        assert_eq!(history.get_at(2), Some(&1));
+    fn contains(&self, key: &Self::KEY) -> Result<bool, DeoxysStorageError> {
+        self.get(key).map(|a| a.is_some())
     }
 }

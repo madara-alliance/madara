@@ -29,9 +29,9 @@ sp-core = { workspace = true }
 sp-runtime = { workspace = true, default-features = true }
 
 # Deoxys crates
-mp-convert = { workspace = true }
-mp-felt = { workspace = true }
-mp-transactions = { workspace = true }
+mp-convert = { workspace = true, features = ["std"] }
+mp-felt = { workspace = true, features = ["std", "serde"] }
+mp-transactions = { workspace = true, features = ["std", "serde", "client"] }
 mp-types = { workspace = true }
 
 # Starknet crates
@@ -42,10 +42,7 @@ starknet-ff = { workspace = true, default-features = false, features = [
   "alloc",
   "serde",
 ] }
-starknet-types-core = { workspace = true, default-features = false, features = [
-  "hash",
-  "parity-scale-codec",
-] }
+starknet-types-core = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 
 # Other crates
@@ -58,9 +55,7 @@ crossbeam-skiplist = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true, default-features = true }
 rayon = { workspace = true }
-rocksdb = { version = "0.21", features = [
-  # "multi-threaded-cf",
-] }
+rocksdb.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -1,10 +1,7 @@
 use std::io::{self, Cursor, Read, Write};
 
-use starknet_api::core::ContractAddress;
+use starknet_api::core::{ClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
-use starknet_api::state::StorageKey;
-
-use super::history::History;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -39,6 +36,44 @@ impl Decode for StarkFelt {
     }
 }
 
+impl Encode for ContractAddress {
+    fn encode(&self) -> Result<Vec<u8>, Error> {
+        self.0.encode()
+    }
+}
+
+impl Decode for ContractAddress {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        Ok(ContractAddress(PatriciaKey(StarkFelt::decode(bytes)?)))
+    }
+}
+
+impl Encode for ClassHash {
+    fn encode(&self) -> Result<Vec<u8>, Error> {
+        self.0.encode()
+    }
+}
+
+impl Encode for Nonce {
+    fn encode(&self) -> Result<Vec<u8>, Error> {
+        let nonce = u64::try_from(self.0).map_err(|_| Error::EncodeError)?;
+        nonce.encode()
+    }
+}
+
+impl Decode for Nonce {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        let nonce = u64::decode(bytes)?;
+        Ok(Nonce(StarkFelt::from(nonce)))
+    }
+}
+
+impl Decode for ClassHash {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        Ok(ClassHash(StarkFelt::decode(bytes)?))
+    }
+}
+
 impl Encode for u64 {
     fn encode(&self) -> Result<Vec<u8>, Error> {
         let mut buffer = Vec::new();
@@ -47,71 +82,23 @@ impl Encode for u64 {
     }
 }
 
-impl Encode for History<StarkFelt> {
-    fn encode(&self) -> Result<Vec<u8>, Error> {
-        let mut buffer = Vec::new();
-        buffer.write_all(&self.last_index.to_le_bytes()).map_err(|_| Error::EncodeError)?;
-        for &(index, value) in &self.values {
-            serialize_vlq(index, &mut buffer).map_err(|_| Error::EncodeError)?;
-            value.serialize(&mut buffer).map_err(|_| Error::EncodeError)?;
-        }
-        Ok(buffer)
-    }
-}
-
-impl Decode for History<StarkFelt> {
-    fn decode(bytes: &[u8]) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
+impl Decode for u64 {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
         let mut cursor = Cursor::new(bytes);
-        let mut values = Vec::new();
-        let mut last_index_bytes = [0; 8];
-        cursor.read_exact(&mut last_index_bytes).map_err(|_| Error::DecodeError)?;
-        let last_index = u64::from_le_bytes(last_index_bytes);
-        while (cursor.position() as usize) < bytes.len() {
-            let index = deserialize_vlq(&mut cursor).map_err(|_| Error::DecodeError)?;
-            let value = StarkFelt::deserialize(&mut cursor).ok_or(Error::DecodeError)?;
-            values.push((index, value));
-        }
-        Ok(History { last_index, values })
+        deserialize_vlq(&mut cursor).map_err(|_| Error::DecodeError)
     }
 }
 
-impl Encode for (ContractAddress, StorageKey) {
+impl Encode for u32 {
     fn encode(&self) -> Result<Vec<u8>, Error> {
-        let mut buffer = Vec::new();
-        self.0.serialize(&mut buffer).map_err(|_| Error::EncodeError)?;
-        self.1.serialize(&mut buffer).map_err(|_| Error::EncodeError)?;
-        Ok(buffer)
+        u64::from(*self).encode()
     }
 }
 
-/// Add a new value to an encoded history without decoding it.
-pub fn add_to_history_encoded(history_encoded: &mut Vec<u8>, index: u64, value: StarkFelt) -> Result<(), Error> {
-    // If the history is empty, we can add the new last_index
-    if history_encoded.is_empty() {
-        history_encoded.extend(index.to_le_bytes());
+impl Decode for u32 {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        u64::decode(bytes)?.try_into().map_err(|_| Error::DecodeError)
     }
-    // If the history is not empty, we need to check if we insert in the right order
-    // and update the last_index
-    else {
-        let mut cursor = Cursor::new(&history_encoded);
-        let mut last_index_bytes = [0; 8];
-        cursor.read_exact(&mut last_index_bytes).map_err(|_| Error::DecodeError)?;
-        let last_index = u64::from_le_bytes(last_index_bytes);
-        if index <= last_index {
-            return Err(Error::EncodeError);
-        }
-        let index_bytes = index.to_le_bytes();
-        history_encoded.iter_mut().take(8).zip(index_bytes.iter()).for_each(|(a, b)| *a = *b);
-    }
-
-    // Add the new value with the index to the history
-    history_encoded.extend(index.encode()?);
-    history_encoded.extend(value.encode()?);
-
-    Ok(())
 }
 
 /// Write a variable-length quantity to the writer from an u64.
@@ -199,39 +186,10 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_decode_history() {
-        let mut history = History::default();
-        history.push(1, StarkFelt::from(42_u64)).unwrap();
-        history
-            .push(
-                42,
-                StarkFelt::try_from("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap(),
-            )
-            .unwrap();
-        history
-            .push(
-                43,
-                StarkFelt::try_from("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d").unwrap(),
-            )
-            .unwrap();
-
-        let mut bytes = history.encode().unwrap();
-        add_to_history_encoded(&mut bytes, 66, StarkFelt::from(42_u64)).unwrap();
-        history.push(66, StarkFelt::from(42_u64)).unwrap();
-        let decoded = History::decode(&bytes).unwrap();
-        assert_eq!(history, decoded);
-    }
-
-    #[test]
-    fn test_add_to_history_encoded() {
-        let mut history = History::new(0, StarkFelt::from(42_u64));
-        history.push(90, StarkFelt::from(123456_u64)).unwrap();
-
-        let mut bytes: Vec<u8> = vec![];
-        add_to_history_encoded(&mut bytes, 0, StarkFelt::from(42_u64)).unwrap();
-        add_to_history_encoded(&mut bytes, 90, StarkFelt::from(123456_u64)).unwrap();
-
-        let decoded = History::decode(&bytes).unwrap();
-        assert_eq!(history, decoded);
+    fn test_encode_decode_u64() {
+        let value = 42_u64;
+        let bytes = value.encode().unwrap();
+        let decoded = u64::decode(&bytes).unwrap();
+        assert_eq!(value, decoded);
     }
 }

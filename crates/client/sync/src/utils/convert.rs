@@ -22,9 +22,9 @@ use starknet_providers::sequencer::models::state_update::{
 };
 use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
 
-use crate::commitments::lib::calculate_commitments;
+use crate::commitments::lib::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
-use crate::utility::get_config;
+use crate::utility;
 
 /// Compute heavy, this should only be called in a rayon ctx
 pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
@@ -88,7 +88,15 @@ fn transaction(transaction: p::TransactionType) -> Transaction {
 }
 
 fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
-    if tx.version == FieldElement::ZERO || tx.version == FieldElement::ONE {
+    if tx.version == FieldElement::ZERO {
+        DeclareTransaction::V0(starknet_api::transaction::DeclareTransactionV0V1 {
+            max_fee: fee(tx.max_fee.expect("no max fee provided")),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce),
+            class_hash: class_hash(tx.class_hash),
+            sender_address: contract_address(tx.sender_address),
+        })
+    } else if tx.version == FieldElement::ONE {
         DeclareTransaction::V1(starknet_api::transaction::DeclareTransactionV0V1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
@@ -394,13 +402,14 @@ fn commitments(
 ) -> (StarkFelt, StarkFelt) {
     let chain_id = chain_id();
 
-    let (commitment_tx, commitment_event) = calculate_commitments(transactions, events, chain_id, block_number);
+    let (commitment_tx, commitment_event) =
+        calculate_tx_and_event_commitments(transactions, events, chain_id, block_number);
 
     (commitment_tx.into(), commitment_event.into())
 }
 
 fn chain_id() -> mp_felt::Felt252Wrapper {
-    get_config().expect("config not set").chain_id.into()
+    utility::chain_id().into()
 }
 
 fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {

@@ -14,11 +14,11 @@ use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::metrics::block_metrics::BlockMetrics;
 use mc_sync::starknet_sync_worker;
 use mp_block::DeoxysBlock;
 use mp_types::block::{DBlockT, DHashT, DHasherT};
 use parity_scale_codec::Encode;
-use prometheus_endpoint::Registry;
 use reqwest::Url;
 use sc_basic_authorship::ProposerFactory;
 use sc_client_api::BlockchainEvents;
@@ -97,7 +97,7 @@ where
     ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>,
 {
     let deoxys_backend = DeoxysBackend::open(
-        &config.database,
+        // &config.database,
         &db_config_dir(config),
         backup_dir,
         restore_from_latest_backup,
@@ -247,6 +247,7 @@ pub fn new_full(
         })?;
 
     let prometheus_registry = config.prometheus_registry().cloned();
+    let block_metrics = prometheus_registry.and_then(|registry| BlockMetrics::register(&registry).ok());
 
     let best_block = DeoxysBackend::meta().current_sync_block().expect("getting current sync block") as _;
     let on_block =
@@ -315,7 +316,7 @@ pub fn new_full(
             backend.clone(),
             3,
             0,
-            prometheus_registry.clone(),
+            block_metrics.clone(),
         )
         .for_each(|()| future::ready(())),
     );
@@ -331,6 +332,7 @@ pub fn new_full(
             Arc::clone(&client),
             on_block.unwrap(),
             backup_every_n_blocks,
+            block_metrics,
         );
         async { fut.await.unwrap() }
     });
@@ -345,7 +347,6 @@ pub fn new_full(
             select_chain,
             block_import,
             &task_manager,
-            prometheus_registry.as_ref(),
             commands_stream,
             telemetry,
         )?;
@@ -369,7 +370,6 @@ fn run_manual_seal_authorship(
     select_chain: FullSelectChain,
     block_import: BoxBlockImport,
     task_manager: &TaskManager,
-    _prometheus_registry: Option<&Registry>,
     commands_stream: Option<mpsc::Receiver<sc_consensus_manual_seal::rpc::EngineCommand<DHashT>>>,
     _telemetry: Option<Telemetry>,
 ) -> Result<(), ServiceError>

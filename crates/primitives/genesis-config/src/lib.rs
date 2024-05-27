@@ -5,7 +5,6 @@ use std::vec::Vec;
 
 use blockifier::execution::contract_class::ContractClass as StarknetContractClass;
 use derive_more::Constructor;
-use lazy_static::lazy_static;
 use mp_felt::Felt252Wrapper;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -13,14 +12,21 @@ use serde_with::serde_as;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_crypto::FieldElement;
 
-lazy_static! {
-    pub static ref ETH_TOKEN_ADDR: HexFelt = HexFelt(
-        FieldElement::from_hex_be("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap()
-    );
-    pub static ref STRK_TOKEN_ADDR: HexFelt = HexFelt(
-        FieldElement::from_hex_be("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d").unwrap()
-    );
-}
+// 0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7
+pub const ETH_TOKEN_ADDR: HexFelt = HexFelt(FieldElement::from_mont([
+    4380532846569209554,
+    17839402928228694863,
+    17240401758547432026,
+    418961398025637529,
+]));
+
+// 0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
+pub const STRK_TOKEN_ADDR: HexFelt = HexFelt(FieldElement::from_mont([
+    16432072983745651214,
+    1325769094487018516,
+    5134018303144032807,
+    468300854463065062,
+]));
 
 /// A wrapper for FieldElement that implements serde's Serialize and Deserialize for hex strings.
 #[serde_as]
@@ -79,8 +85,8 @@ pub mod convert {
                 contracts: convert_contract(&genesis_diff),
                 sierra_class_hash_to_casm_class_hash: convert_sierra_class_hash(&genesis_diff),
                 storage: convert_storage(&genesis_diff),
-                strk_fee_token_address: *STRK_TOKEN_ADDR,
-                eth_fee_token_address: *ETH_TOKEN_ADDR,
+                strk_fee_token_address: STRK_TOKEN_ADDR,
+                eth_fee_token_address: ETH_TOKEN_ADDR,
             }
         }
     }
@@ -169,5 +175,32 @@ where
         Ok(None)
     } else {
         hex::decode(&hex_string).map(Some).map_err(|err| Error::custom(err.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_eth_token_addr() {
+        assert_eq!(
+            ETH_TOKEN_ADDR.0,
+            HexFelt(
+                FieldElement::from_hex_be("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap()
+            )
+            .0
+        );
+    }
+
+    #[test]
+    fn test_strk_token_addr() {
+        assert_eq!(
+            STRK_TOKEN_ADDR.0,
+            HexFelt(
+                FieldElement::from_hex_be("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d")
+                    .unwrap()
+            )
+            .0
+        );
     }
 }

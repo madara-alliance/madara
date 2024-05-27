@@ -1,12 +1,11 @@
 use mc_sync::l2::get_pending_block;
+use mc_sync::utility::chain_id;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent};
 use starknet_ff::FieldElement;
@@ -18,8 +17,6 @@ use crate::Starknet;
 impl<BE, C, H> Starknet<BE, C, H>
 where
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     BE: Backend<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
@@ -77,7 +74,6 @@ where
 
     fn get_block_txs_hashes(&self, starknet_block: &DeoxysBlock) -> Result<Vec<FieldElement>, StarknetRpcApiError> {
         let block_hash = starknet_block.header().hash::<H>();
-        let chain_id = self.chain_id().unwrap();
 
         // get txs hashes from cache or compute them
         let block_txs_hashes: Vec<_> = if let Some(tx_hashes) = self.get_cached_transaction_hashes(block_hash.into()) {
@@ -95,7 +91,7 @@ where
                 .collect()
         } else {
             starknet_block
-                .transactions_hashes::<H>(chain_id.0.into(), Some(starknet_block.header().block_number))
+                .transactions_hashes::<H>(chain_id().into(), Some(starknet_block.header().block_number))
                 .map(|tx_hash| FieldElement::from(Felt252Wrapper::from(tx_hash)))
                 .collect()
         };
@@ -103,9 +99,8 @@ where
     }
 
     fn get_pending_txs_hashes(&self, starknet_block: &DeoxysBlock) -> Result<Vec<FieldElement>, StarknetRpcApiError> {
-        let chain_id = self.chain_id().unwrap();
         let tx_hashes: Vec<FieldElement> = starknet_block
-            .transactions_hashes::<H>(chain_id.0.into(), None)
+            .transactions_hashes::<H>(chain_id().into(), None)
             .map(|tx_hash| FieldElement::from(Felt252Wrapper::from(tx_hash)))
             .collect();
         Ok(tx_hashes)

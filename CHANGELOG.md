@@ -3,6 +3,19 @@
 ## Next release
 
 - fix(rpx): get_class
+- perf(db): contract key history now using rocksdb iterators for history
+- fix(root): Cleaned state root commitments crate
+- fix(hash): declare tx v0 hash computation
+- perf(db): db contract history parallel fetching and batching
+- remove RuntimeApi on RPC
+- feat(metrics): Added sync time metrics
+- refactor: using const and OnceCell instead of lazy_static
+- refactor: remove crate mp-storage
+- feat(infra): corrected dockerfile + docker-compose
+- fix(rpc): error handling
+- fix(lib): updated core libs to match oss
+- fix: state root - replaced_classes commit
+- feat: fetch block and state update in only one request
 - feat: added deoxys launcher script
 - fix: creation of the block context
 - fix: is_missing_class

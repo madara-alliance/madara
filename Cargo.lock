@@ -158,23 +158,24 @@ dependencies = [
 
 [[package]]
 name = "anstream"
-version = "0.6.5"
+version = "0.6.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d664a92ecae85fd0a7392615844904654d1d5f5514837f471ddef4a057aba1b6"
+checksum = "418c75fa768af9c03be99d17643f93f79bbba589895012a80e3452a19ddda15b"
 dependencies = [
  "anstyle",
  "anstyle-parse",
  "anstyle-query",
  "anstyle-wincon",
  "colorchoice",
+ "is_terminal_polyfill",
  "utf8parse",
 ]
 
 [[package]]
 name = "anstyle"
-version = "1.0.4"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7079075b41f533b8c61d2a4d073c4676e1f8b249ff94a393b0595db304e0dd87"
+checksum = "038dfcf04a5feb68e9c60b21c9625a54c2c0616e79b72b0fd87075a056ae1d1b"
 
 [[package]]
 name = "anstyle-parse"
@@ -965,7 +966,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/cchudant/bonsai-trie.git?branch=tranto/snapshot#93758e788c6f0c616040be68df2be28480105f03"
+source = "git+https://github.com/keep-starknet-strange/bonsai-trie.git?branch=oss#5b919ca8f2fd58f944e5206f56e62086b23628c9"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -2723,6 +2724,7 @@ dependencies = [
 name = "deoxys"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "clap",
  "deoxys-runtime",
@@ -2744,6 +2746,7 @@ dependencies = [
  "pallet-starknet",
  "pallet-starknet-runtime-api",
  "parity-scale-codec",
+ "rayon",
  "reqwest",
  "sc-basic-authorship",
  "sc-cli",
@@ -4460,6 +4463,7 @@ checksum = "290f1a1d9242c78d09ce40a5e87e7554ee637af1351968159f4952f028f75604"
 dependencies = [
  "ahash 0.8.7",
  "allocator-api2",
+ "rayon",
  "serde",
 ]
 
@@ -4664,7 +4668,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite 0.2.13",
- "socket2 0.4.10",
+ "socket2 0.5.5",
  "tokio",
  "tower-service",
  "tracing",
@@ -4955,6 +4959,12 @@ dependencies = [
  "rustix 0.38.28",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "is_terminal_polyfill"
+version = "1.70.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8478577c03552c21db0e2724ffb8986a5ce7af88107e6be5d2ee6e158c12800"
 
 [[package]]
 name = "itertools"
@@ -5913,9 +5923,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.20"
+version = "0.4.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
+checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 
 [[package]]
 name = "lru"
@@ -6156,6 +6166,7 @@ dependencies = [
  "log",
  "mc-db",
  "mc-rpc",
+ "mc-sync",
  "mp-digest-log",
  "mp-felt",
  "mp-hashers",
@@ -6233,6 +6244,7 @@ dependencies = [
  "mp-hashers",
  "mp-transactions",
  "mp-types",
+ "once_cell",
  "primitive-types",
  "rand 0.8.5",
  "rayon",
@@ -6248,6 +6260,7 @@ dependencies = [
  "starknet-providers 0.10.0",
  "starknet-types-core",
  "starknet_api",
+ "substrate-prometheus-endpoint",
  "thiserror",
  "tokio",
  "url",
@@ -6518,7 +6531,6 @@ dependencies = [
  "blockifier",
  "derive_more",
  "hex",
- "lazy_static",
  "mp-felt",
  "serde",
  "serde_with",
@@ -6565,16 +6577,6 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "starknet-core 0.10.0",
-]
-
-[[package]]
-name = "mp-storage"
-version = "0.1.0"
-dependencies = [
- "lazy_static",
- "parity-scale-codec",
- "serde",
- "sp-io",
 ]
 
 [[package]]
@@ -7061,7 +7063,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
 dependencies = [
- "proc-macro-crate 1.1.3",
+ "proc-macro-crate 2.0.0",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -7288,16 +7290,15 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "lazy_static",
  "log",
  "mc-db",
  "mp-block",
+ "mp-chain-id",
  "mp-digest-log",
  "mp-felt",
  "mp-genesis-config",
  "mp-hashers",
  "mp-sequencer-address",
- "mp-storage",
  "mp-transactions",
  "parity-scale-codec",
  "scale-info",
@@ -11128,7 +11129,7 @@ dependencies = [
 [[package]]
 name = "starknet-core"
 version = "0.10.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "base64 0.21.5",
  "flate2",
@@ -11185,7 +11186,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto"
 version = "0.6.2"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "crypto-bigint",
  "hex",
@@ -11215,7 +11216,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto-codegen"
 version = "0.3.3"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "starknet-curve 0.4.2",
  "starknet-ff 0.3.7",
@@ -11243,7 +11244,7 @@ dependencies = [
 [[package]]
 name = "starknet-curve"
 version = "0.4.2"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "starknet-ff 0.3.7",
 ]
@@ -11266,7 +11267,7 @@ dependencies = [
 [[package]]
 name = "starknet-ff"
 version = "0.3.7"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "ark-ff",
  "bigdecimal",
@@ -11309,7 +11310,7 @@ dependencies = [
 [[package]]
 name = "starknet-providers"
 version = "0.10.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#5fc0e80815e30abf63ee452bf3caf4f007eebab2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#13fb5e5b6af35bc32e760c05716782a983c0cc40"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -11343,8 +11344,9 @@ dependencies = [
 
 [[package]]
 name = "starknet-types-core"
-version = "0.1.1"
-source = "git+https://github.com/starknet-io/types-rs.git?branch=main#a867774c753c38597ff0c2f252da8c68242a46f3"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4098ac4ad57621cc7ec133b80fe72814d2cc4bee63ca8e7be4450ba6f42a07e8"
 dependencies = [
  "lambdaworks-crypto",
  "lambdaworks-math",
@@ -12346,7 +12348,7 @@ checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
  "digest 0.10.7",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 

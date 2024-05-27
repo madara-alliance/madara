@@ -28,10 +28,10 @@ use crate::methods::trace::utils::block_number_by_id;
 /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
 /// * `CONTRACT_NOT_FOUND` - If the specified contract address does not exist.
 pub fn get_class_at(block_id: BlockId, contract_address: FieldElement) -> RpcResult<ContractClass> {
-    let block_number = block_number_by_id(block_id);
+    let block_number = block_number_by_id(block_id)?;
     let key = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
 
-    let class_hash = match storage_handler::contract_data().get_class_hash_at(&key, block_number) {
+    let class_hash = match storage_handler::contract_class_hash().get_at(&key, block_number) {
         Err(e) => {
             log::error!("Failed to retrieve contract class: {e}");
             return Err(StarknetRpcApiError::InternalServerError.into());

@@ -1,12 +1,14 @@
 //! Contains the code required to sync data from the feeder efficiently.
 use std::pin::pin;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Instant;
 
 use anyhow::{bail, Context};
 use futures::{stream, StreamExt, TryStreamExt};
 use lazy_static::lazy_static;
 use mc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
+use mc_db::storage_handler::DeoxysStorageError;
 use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
 use mp_block::DeoxysBlock;
@@ -17,10 +19,8 @@ use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_core::types::{PendingStateUpdate, StateUpdate};
-use starknet_ff::FieldElement;
-use starknet_providers::sequencer::models::BlockId;
+use starknet_providers::sequencer::models::{BlockId, StateUpdateWithBlock};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
-use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Duration;
@@ -30,6 +30,7 @@ use crate::convert::convert_block;
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::l1::ETHEREUM_STATE_UPDATE;
+use crate::metrics::block_metrics::BlockMetrics;
 use crate::utils::PerfStopwatch;
 use crate::{stopwatch_end, CommandSink};
 
@@ -50,12 +51,12 @@ where
 }
 
 // TODO: add more error variants, which are more explicit
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum L2SyncError {
     #[error("provider error")]
     Provider(#[from] ProviderError),
-    #[error("fetch retry limit exceeded")]
-    FetchRetryLimit,
+    #[error("db error")]
+    Db(#[from] DeoxysStorageError),
 }
 
 /// Contains the latest Starknet verified state on L2
@@ -94,11 +95,6 @@ lazy_static! {
 }
 
 lazy_static! {
-    /// Shared latest block number and hash of chain, using a RwLock to allow for concurrent reads and exclusive writes
-    pub static ref STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER: RwLock<(FieldElement, u64)> = RwLock::new((FieldElement::default(), 0));
-}
-
-lazy_static! {
     /// Shared pending block data, using a RwLock to allow for concurrent reads and exclusive writes
     static ref STARKNET_PENDING_BLOCK: RwLock<Option<DeoxysBlock>> = RwLock::new(None);
 }
@@ -106,12 +102,6 @@ lazy_static! {
 lazy_static! {
     /// Shared pending state update, using RwLock to allow for concurrent reads and exclusive writes
     static ref STARKNET_PENDING_STATE_UPDATE: RwLock<Option<PendingStateUpdate>> = RwLock::new(None);
-}
-
-pub fn get_highest_block_hash_and_number() -> (FieldElement, u64) {
-    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
-        .read()
-        .expect("Failed to acquire read lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER")
 }
 
 pub fn get_pending_block() -> Option<DeoxysBlock> {
@@ -138,6 +128,8 @@ async fn l2_verify_and_apply_task(
     mut command_sink: CommandSink,
     verify: bool,
     backup_every_n_blocks: Option<usize>,
+    block_metrics: Option<BlockMetrics>,
+    sync_timer: Arc<Mutex<Option<Instant>>>,
 ) -> anyhow::Result<()> {
     let block_sender = Arc::new(block_sender);
 
@@ -209,7 +201,15 @@ async fn l2_verify_and_apply_task(
             },
             async {
                 let sw = PerfStopwatch::new();
-                create_block(&mut command_sink, &mut last_block_hash).await.expect("creating block");
+                create_block(
+                    &mut command_sink,
+                    &mut last_block_hash,
+                    block_n,
+                    block_metrics.clone(),
+                    sync_timer.clone(),
+                )
+                .await
+                .expect("creating block");
                 stopwatch_end!(sw, "end create_block {}: {:?}", block_n);
             }
         );
@@ -284,6 +284,7 @@ pub async fn sync<C>(
     provider: SequencerGatewayProvider,
     client: Arc<C>,
     config: L2SyncConfig,
+    block_metrics: Option<BlockMetrics>,
 ) -> anyhow::Result<()>
 where
     C: HeaderBackend<DBlockT> + 'static,
@@ -291,6 +292,7 @@ where
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(10);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(10);
     let provider = Arc::new(provider);
+    let sync_timer = Arc::new(Mutex::new(None));
 
     // [Fetch task] ==new blocks and updates=> [Block conversion task] ======> [Verification and apply
     // task]
@@ -316,6 +318,8 @@ where
         command_sink,
         config.verify,
         config.backup_every_n_blocks,
+        block_metrics.clone(),
+        Arc::clone(&sync_timer),
     ));
 
     tokio::select!(
@@ -327,7 +331,7 @@ where
             loop {
                 interval.tick().await;
                 if let Err(e) = update_starknet_data(&provider, client.as_ref()).await {
-                    log::error!("Failed to update highest block hash and number: {}", e);
+                    log::error!("{:#}", e);
                 }
             }
         } => Ok(()),
@@ -346,7 +350,13 @@ where
 }
 
 /// Notifies the consensus engine that a new block should be created.
-async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) -> Result<(), String> {
+async fn create_block(
+    cmds: &mut CommandSink,
+    parent_hash: &mut Option<H256>,
+    block_number: u64,
+    block_metrics: Option<BlockMetrics>,
+    sync_timer: Arc<Mutex<Option<Instant>>>,
+) -> Result<(), String> {
     let (sender, receiver) = futures::channel::oneshot::channel();
 
     cmds.try_send(sc_consensus_manual_seal::rpc::EngineCommand::SealNewBlock {
@@ -361,6 +371,27 @@ async fn create_block(cmds: &mut CommandSink, parent_hash: &mut Option<H256>) ->
         .await
         .map_err(|err| format!("failed to seal block: {err}"))?
         .map_err(|err| format!("failed to seal block: {err}"))?;
+
+    // Update Block sync time metrics
+    if let Some(block_metrics) = block_metrics {
+        let elapsed_time;
+        {
+            let mut timer_guard = sync_timer.lock().unwrap();
+            if let Some(start_time) = *timer_guard {
+                elapsed_time = start_time.elapsed().as_secs_f64();
+                *timer_guard = Some(Instant::now());
+            } else {
+                // For the first block, there is no previous timer set
+                elapsed_time = 0.0;
+                *timer_guard = Some(Instant::now());
+            }
+        }
+
+        let sync_time = block_metrics.l2_sync_time.get() + elapsed_time;
+        block_metrics.l2_sync_time.set(sync_time);
+        block_metrics.l2_latest_sync_time.set(elapsed_time);
+        block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / block_number as f64);
+    }
 
     *parent_hash = Some(create_block_info.hash);
     Ok(())
@@ -393,26 +424,19 @@ pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> anyhow::Resul
     Ok(state_root.into())
 }
 
-async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> Result<(), String>
+async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> anyhow::Result<()>
 where
     C: HeaderBackend<DBlockT>,
 {
-    let block = provider.get_block(BlockId::Pending).await.map_err(|e| format!("Failed to get pending block: {e}"))?;
+    let StateUpdateWithBlock { state_update, block } =
+        provider.get_state_update_with_block(BlockId::Pending).await.context("Failed to get pending block")?;
 
     let hash_best = client.info().best_hash;
     let hash_current = block.parent_block_hash;
-    let number = provider
-        .get_block_id_by_hash(hash_current)
-        .await
-        .map_err(|e| format!("Failed to get block id by hash: {e}"))?;
+    let number = provider.get_block_id_by_hash(hash_current).await.context("Failed to get block id by hash")?;
     let tmp = DHashT::from_str(&hash_current.to_string()).unwrap_or(Default::default());
 
     if hash_best == tmp {
-        let state_update = provider
-            .get_state_update(BlockId::Pending)
-            .await
-            .map_err(|e| format!("Failed to get pending state update: {e}"))?;
-
         *STARKNET_PENDING_BLOCK.write().expect("Failed to acquire write lock on STARKNET_PENDING_BLOCK") =
             Some(spawn_compute(|| crate::convert::convert_block(block)).await.unwrap());
 
@@ -420,9 +444,9 @@ where
             Some(crate::convert::state_update(state_update));
     }
 
-    *STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER
-        .write()
-        .expect("Failed to acquire write lock on STARKNET_HIGHEST_BLOCK_HASH_AND_NUMBER") = (hash_current, number);
+    DeoxysBackend::meta()
+        .set_latest_block_hash_and_number(hash_current, number)
+        .context("setting highest block hash and number")?;
 
     log::debug!(
         "update_starknet_data: latest_block_number: {}, latest_block_hash: 0x{:x}, best_hash: {}",
