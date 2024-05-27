@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use anyhow::Result;
 use blockifier::context::{BlockContext, FeeTokenAddresses, TransactionContext};
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
-use blockifier::execution::errors::EntryPointExecutionError;
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::state::cached_state::{CachedState, GlobalContractCache};
 use blockifier::transaction::account_transaction::AccountTransaction;
@@ -16,7 +16,7 @@ use blockifier::versioned_constants::VersionedConstants;
 use mc_db::storage_handler;
 use mp_felt::Felt252Wrapper;
 use mp_genesis_config::{ETH_TOKEN_ADDR, STRK_TOKEN_ADDR};
-use mp_simulations::{SimulationFlagForEstimateFee, SimulationFlags};
+use mp_simulations::SimulationFlags;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
@@ -79,13 +79,12 @@ pub fn simulate_transactions(
     transactions: Vec<AccountTransaction>,
     simulation_flags: &SimulationFlags,
     block_context: &BlockContext,
-    charge_fee: bool,
 ) -> Result<Vec<TransactionExecutionInfo>, TransactionExecutionError> {
     let mut cached_state = init_cached_state(block_context);
 
     let tx_execution_results = transactions
         .into_iter()
-        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, simulation_flags.validate))
+        .map(|tx| tx.execute(&mut cached_state, block_context, simulation_flags.charge_fee, simulation_flags.validate))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(tx_execution_results)
@@ -142,21 +141,13 @@ pub fn call_contract(
 
 pub fn estimate_fee(
     transactions: Vec<AccountTransaction>,
-    simulation_flags: &[SimulationFlagForEstimateFee],
+    validate: bool,
     block_context: &BlockContext,
 ) -> Result<Vec<FeeEstimate>, TransactionExecutionError> {
-    let transactions_len = transactions.len();
-
-    let mut fees = Vec::with_capacity(transactions_len);
-
-    // TODO: the vector of flags should be for each transaction
-    for tx in transactions {
-        for flag in simulation_flags.iter() {
-            let execution_info = execute_fee_transaction(tx.clone(), flag.clone(), block_context)?;
-            fees.push(execution_info);
-        }
-    }
-
+    let fees = transactions
+        .iter()
+        .map(|tx| execute_fee_transaction(tx.clone(), validate, block_context))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(fees)
 }
 
@@ -177,7 +168,8 @@ pub fn estimate_message_fee(
     };
 
     let fee = FeeEstimate {
-        gas_consumed: Felt252Wrapper::from(*tx_execution_infos.actual_resources.0.get("l1_gas_usage").unwrap()).into(),
+        gas_consumed: Felt252Wrapper::from(*tx_execution_infos.actual_resources.0.get("l1_gas_usage").unwrap() as u64)
+            .into(),
         gas_price: FieldElement::ZERO,
         data_gas_consumed: tx_execution_infos.da_gas.l1_data_gas.into(),
         data_gas_price: FieldElement::ZERO,
@@ -189,7 +181,7 @@ pub fn estimate_message_fee(
 
 fn execute_fee_transaction(
     transaction: AccountTransaction,
-    simulation_flags: SimulationFlagForEstimateFee,
+    validate: bool,
     block_context: &BlockContext,
 ) -> Result<FeeEstimate, TransactionExecutionError> {
     let mut cached_state = init_cached_state(block_context);
@@ -209,27 +201,17 @@ fn execute_fee_transaction(
     let tx_info: Result<
         blockifier::transaction::objects::TransactionExecutionInfo,
         blockifier::transaction::errors::TransactionExecutionError,
-    > = transaction.execute(&mut cached_state, block_context, false, simulation_flags.skip_validate).and_then(
-        |mut tx_info| {
-            if tx_info.actual_fee.0 == 0 {
-                tx_info.actual_fee =
-                    blockifier::fee::fee_utils::calculate_tx_fee(&tx_info.actual_resources, block_context, &fee_type)?;
-            }
+    > = transaction.execute(&mut cached_state, block_context, false, validate).and_then(|mut tx_info| {
+        if tx_info.actual_fee.0 == 0 {
+            tx_info.actual_fee =
+                blockifier::fee::fee_utils::calculate_tx_fee(&tx_info.actual_resources, block_context, &fee_type)?;
+        }
 
-            Ok(tx_info)
-        },
-    );
+        Ok(tx_info)
+    });
 
     match tx_info {
         Ok(tx_info) => {
-            if let Some(_revert_error) = tx_info.revert_error {
-                return Err(TransactionExecutionError::ExecutionError {
-                    error: EntryPointExecutionError::InternalError("Transaction reverted".to_string()),
-                    storage_address: ContractAddress::default(),
-                    selector: EntryPointSelector::default(),
-                });
-            }
-
             let fee_estimate = from_tx_info_and_gas_price(
                 &tx_info,
                 gas_price,
@@ -239,11 +221,7 @@ fn execute_fee_transaction(
             );
             Ok(fee_estimate)
         }
-        Err(_error) => Err(TransactionExecutionError::ExecutionError {
-            error: EntryPointExecutionError::InternalError("Execution error".to_string()),
-            storage_address: ContractAddress::default(),
-            selector: EntryPointSelector::default(),
-        }),
+        Err(error) => Err(error),
     }
 }
 
@@ -278,5 +256,5 @@ pub fn from_tx_info_and_gas_price(
 
 fn init_cached_state(block_context: &BlockContext) -> CachedState<BlockifierStateAdapter> {
     let block_number = block_context.block_info().block_number.0;
-    CachedState::new(BlockifierStateAdapter::new(block_number), GlobalContractCache::new(10))
+    CachedState::new(BlockifierStateAdapter::new(block_number - 1), GlobalContractCache::new(16))
 }

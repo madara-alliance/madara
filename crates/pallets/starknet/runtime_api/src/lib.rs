@@ -5,14 +5,7 @@
 // Specifically, the macro generates a trait (`StarknetRuntimeApi`) with unused type parameters.
 #![allow(clippy::extra_unused_type_parameters)]
 
-use blockifier::context::{BlockContext, FeeTokenAddresses};
-use mp_felt::Felt252Wrapper;
 pub extern crate alloc;
-use alloc::vec::Vec;
-
-use sp_runtime::DispatchError;
-use starknet_api::hash::StarkHash;
-use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
 
 #[derive(parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
 pub enum StarknetTransactionExecutionError {
@@ -21,33 +14,4 @@ pub enum StarknetTransactionExecutionError {
     ClassHashNotFound,
     InvalidContractClass,
     ContractError,
-}
-
-sp_api::decl_runtime_apis! {
-    pub trait StarknetRuntimeApi {
-        /// Returns the chain id.
-        fn chain_id() -> Felt252Wrapper;
-        /// Returns the Starknet OS Cairo program hash.
-        fn program_hash() -> Felt252Wrapper;
-        /// Returns the Starknet config hash.
-        fn config_hash() -> StarkHash;
-        /// Returns the fee token address.
-        fn fee_token_addresses() -> FeeTokenAddresses;
-
-        fn get_events_for_tx_by_hash(tx_hash: TransactionHash) -> Vec<StarknetEvent>;
-
-        /// Return the outcome of the tx execution
-        fn get_tx_execution_outcome(tx_hash: TransactionHash) -> Option<Vec<u8>>;
-        /// Return the block context
-        fn get_block_context() -> BlockContext;
-        /// Return is fee disabled in state
-        fn is_transaction_fee_disabled() -> bool;
-        /// Return messages sent to L1 during tx execution
-        fn get_tx_messages_to_l1(tx_hash: TransactionHash) -> Vec<MessageToL1>;
-    }
-
-    pub trait ConvertTransactionRuntimeApi {
-        /// Converts the DispatchError to an understandable error for the client
-        fn convert_error(error: DispatchError) -> StarknetTransactionExecutionError;
-    }
 }

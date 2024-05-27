@@ -16,7 +16,6 @@ pub mod opaque;
 mod pallets;
 mod runtime_tests;
 
-use blockifier::context::FeeTokenAddresses;
 pub use config::*;
 pub use frame_support::traits::{ConstU128, ConstU32, ConstU64, ConstU8, KeyOwnerProofSystem, Randomness, StorageInfo};
 pub use frame_support::weights::constants::{
@@ -25,14 +24,11 @@ pub use frame_support::weights::constants::{
 pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
-use mp_felt::Felt252Wrapper;
 use mp_types::account::{DAccountAddressT, DAccountIdT};
 use mp_types::block::DHeaderT;
 use mp_types::transactions::{DTxIndexT, DTxSignatureT};
 /// Import the Starknet pallet.
 pub use pallet_starknet;
-use pallet_starknet::pallet::Error as PalletError;
-use pallet_starknet_runtime_api::StarknetTransactionExecutionError;
 pub use pallet_timestamp::Call as TimestampCall;
 use sp_api::impl_runtime_apis;
 use sp_core::crypto::KeyTypeId;
@@ -41,12 +37,10 @@ use sp_runtime::traits::Block as BlockT;
 use sp_runtime::transaction_validity::{TransactionSource, TransactionValidity};
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
-use sp_runtime::{generic, ApplyExtrinsicResult, DispatchError};
+use sp_runtime::{generic, ApplyExtrinsicResult};
 pub use sp_runtime::{Perbill, Permill};
 use sp_std::prelude::*;
 use sp_version::RuntimeVersion;
-use starknet_api::hash::StarkHash;
-use starknet_api::transaction::{Event as StarknetEvent, MessageToL1, TransactionHash};
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
@@ -176,65 +170,6 @@ impl_runtime_apis! {
     impl frame_system_rpc_runtime_api::AccountNonceApi<Block, DAccountIdT, DTxIndexT> for Runtime {
         fn account_nonce(account: DAccountIdT) -> DTxIndexT {
             System::account_nonce(account)
-        }
-    }
-
-    impl pallet_starknet_runtime_api::StarknetRuntimeApi<Block> for Runtime {
-
-        fn chain_id() -> Felt252Wrapper {
-            Starknet::chain_id()
-        }
-
-        fn program_hash() -> Felt252Wrapper {
-            Starknet::program_hash()
-        }
-
-        fn config_hash() -> StarkHash {
-            Starknet::config_hash()
-        }
-
-        fn fee_token_addresses() -> FeeTokenAddresses {
-            Starknet::fee_token_addresses()
-        }
-
-        fn is_transaction_fee_disabled() -> bool {
-            Starknet::is_transaction_fee_disabled()
-        }
-
-        fn get_tx_messages_to_l1(tx_hash: TransactionHash) -> Vec<MessageToL1> {
-            Starknet::tx_messages(tx_hash)
-        }
-
-        fn get_events_for_tx_by_hash(tx_hash: TransactionHash) -> Vec<StarknetEvent> {
-            Starknet::tx_events(tx_hash)
-        }
-
-        fn get_tx_execution_outcome(tx_hash: TransactionHash) -> Option<Vec<u8>> {
-            Starknet::tx_revert_error(tx_hash).map(|s| s.into_bytes())
-        }
-
-        fn get_block_context() -> blockifier::context::BlockContext {
-           Starknet::get_block_context()
-        }
-    }
-
-    impl pallet_starknet_runtime_api::ConvertTransactionRuntimeApi<Block> for Runtime {
-
-        fn convert_error(error: DispatchError) -> StarknetTransactionExecutionError {
-            if error == PalletError::<Runtime>::ContractNotFound.into() {
-                return StarknetTransactionExecutionError::ContractNotFound;
-            }
-            if error == PalletError::<Runtime>::ClassHashAlreadyDeclared.into() {
-                return StarknetTransactionExecutionError::ClassAlreadyDeclared;
-            }
-            if error == PalletError::<Runtime>::ContractClassHashUnknown.into() {
-                return StarknetTransactionExecutionError::ClassHashNotFound;
-            }
-            if error == PalletError::<Runtime>::InvalidContractClass.into() {
-                return StarknetTransactionExecutionError::InvalidContractClass;
-            }
-
-            StarknetTransactionExecutionError::ContractError
         }
     }
 

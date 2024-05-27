@@ -18,7 +18,7 @@ impl StorageView for ContractClassHashesView {
         let column = db.get_column(Column::ContractClassHashes);
 
         let compiled_class_hash = db
-            .get_cf(&column, bincode::serialize(&class_hash).unwrap())
+            .get_cf(&column, bincode::serialize(&class_hash)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassHashes))?
             .map(|bytes| bincode::deserialize::<CompiledClassHash>(&bytes[..]));
 
@@ -33,7 +33,7 @@ impl StorageView for ContractClassHashesView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassHashes);
 
-        match db.key_may_exist_cf(&column, bincode::serialize(&class_hash).unwrap()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&class_hash)?) {
             true => Ok(self.get(class_hash)?.is_some()),
             false => Ok(false),
         }
@@ -55,7 +55,7 @@ impl StorageViewMut for ContractClassHashesViewMut {
 
         let mut batch = WriteBatchWithTransaction::<true>::default();
         for (key, value) in self.0.into_iter() {
-            batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&value).unwrap());
+            batch.put_cf(&column, bincode::serialize(&key)?, bincode::serialize(&value)?);
         }
         db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassHashes))
     }

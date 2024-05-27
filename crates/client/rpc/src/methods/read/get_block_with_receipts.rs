@@ -1,12 +1,11 @@
 use jsonrpsee::core::RpcResult;
+use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_api::transaction::Transaction;
 use starknet_core::types::{
@@ -21,9 +20,9 @@ use crate::utils::block::{
     l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, timestamp,
 };
 use crate::utils::execution::{block_context, re_execute_transactions};
-use crate::utils::helpers::{previous_substrate_block_hash, status, tx_hash_compute, tx_hash_retrieve};
+use crate::utils::helpers::{status, tx_hash_compute, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
-use crate::Starknet;
+use crate::{Felt, Starknet};
 
 pub fn get_block_with_receipts<BE, C, H>(
     starknet: &Starknet<BE, C, H>,
@@ -32,29 +31,21 @@ pub fn get_block_with_receipts<BE, C, H>(
 where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        log::error!("'{e}'");
-        StarknetRpcApiError::BlockNotFound
-    })?;
+    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
     let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
     let block_header = block.header();
     let block_number = block_header.block_number;
     let block_hash: Felt252Wrapper = block_header.hash::<H>();
-    let chain_id = starknet.chain_id()?;
 
-    // computes the previous SUBSTRATE block hash and creates a block context
-    let previous_substrate_block_hash = previous_substrate_block_hash(starknet, substrate_block_hash)?;
-    let block_context = block_context(starknet.client.as_ref(), previous_substrate_block_hash)?;
+    let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
     // retrieve all transaction hashes from the block in the cache or compute them
     let block_txs_hashes = if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(block_hash.into()) {
         tx_hash_retrieve(tx_hashes)
     } else {
-        tx_hash_compute::<H>(&block, chain_id)
+        tx_hash_compute::<H>(&block, Felt(chain_id()))
     };
 
     // create a vector of transactions with their corresponding hashes without deploy transactions,

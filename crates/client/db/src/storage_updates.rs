@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use mp_convert::field_element::FromFieldElement;
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -12,7 +13,7 @@ use storage_handler::primitives::contract_class::{
     ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData,
 };
 
-use crate::storage_handler::{self, DeoxysStorageError, StorageView, StorageViewMut};
+use crate::storage_handler::{self, DeoxysStorageError, StorageViewMut};
 
 pub async fn store_state_update(block_number: u64, state_update: StateUpdate) -> Result<(), DeoxysStorageError> {
     let state_diff = state_update.state_diff.clone();
@@ -48,15 +49,14 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
 
             iter_depoyed.chain(iter_replaced).for_each(|(contract_address, class_hash)| {
                 let class_hash = Some(class_hash);
-                let previous_nonce = handler_contract_data.get(&contract_address).unwrap().map(|data| data.nonce);
-                let nonce = match previous_nonce.unwrap_or_default().get().copied() {
-                    Some(nonce) => Some(nonce),
-                    None => nonce_map.remove(&contract_address),
-                };
-
+                // If the nonce is not present in the nonce map, it means that the nonce was not updated in this
+                // block If the nonce is present in the nonce map, we remove it from the map and use
+                // it
+                let nonce = nonce_map.remove(&contract_address);
                 handler_contract_data.insert(contract_address, (class_hash, nonce)).unwrap()
             });
 
+            // insert nonces for contracts that were not deployed or replaced in this block
             nonce_map.into_iter().for_each(|(contract_address, nonce)| {
                 handler_contract_data.insert(contract_address, (None, Some(nonce))).unwrap()
             });
@@ -114,18 +114,18 @@ pub async fn store_class_update(block_number: u64, class_update: ClassUpdateWrap
 
 pub async fn store_key_update(
     block_number: u64,
-    storage_diffs: &Vec<ContractStorageDiffItem>,
+    storage_diffs: &[ContractStorageDiffItem],
 ) -> Result<(), DeoxysStorageError> {
     let handler_storage = storage_handler::contract_storage_mut();
 
-    for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
-        let contract_address = ContractAddress::from_field_element(address);
-        for StorageEntry { key, value } in storage_entries {
+    storage_diffs.into_par_iter().try_for_each(|ContractStorageDiffItem { address, storage_entries }| {
+        let contract_address = ContractAddress::from_field_element(*address);
+        storage_entries.iter().try_for_each(|StorageEntry { key, value }| -> Result<(), DeoxysStorageError> {
             let key = StorageKey::from_field_element(key);
             let value = StarkFelt::from_field_element(value);
-            handler_storage.insert((contract_address, key), value)?;
-        }
-    }
+            handler_storage.insert((contract_address, key), value)
+        })
+    })?;
 
     handler_storage.commit(block_number)?;
 

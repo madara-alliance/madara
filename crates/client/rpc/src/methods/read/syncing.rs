@@ -1,15 +1,14 @@
 use jsonrpsee::core::RpcResult;
-use mc_sync::l2::get_highest_block_hash_and_number;
+use mc_db::DeoxysBackend;
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sp_api::ProvideRuntimeApi;
 use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{SyncStatus, SyncStatusType};
 
+use crate::errors::StarknetRpcApiError;
 use crate::{deoxys_backend_client, Starknet};
 
 /// Returns an object about the sync status, or false if the node is not synching
@@ -30,8 +29,6 @@ pub async fn syncing<BE, C, H>(starknet: &Starknet<BE, C, H>) -> RpcResult<SyncS
 where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     // obtain best seen (highest) block number
@@ -62,8 +59,12 @@ where
                 let current_block_num = UniqueSaturatedInto::<u64>::unique_saturated_into(best_number);
                 let current_block_hash = current_block?.header().hash::<H>().0;
 
-                // Get the highest block number and hash from the global variable update in l2 sync()
-                let (highest_block_hash, highest_block_num) = get_highest_block_hash_and_number();
+                // Get the highest block number and hash
+                let (highest_block_hash, highest_block_num) =
+                    DeoxysBackend::meta().get_latest_block_hash_and_number().map_err(|e| {
+                        log::error!("Failed to retrieve the highest block hash and number: {}", e);
+                        StarknetRpcApiError::InternalServerError
+                    })?;
 
                 // Build the `SyncStatus` struct with the respective syn information
                 Ok(SyncStatusType::Syncing(SyncStatus {

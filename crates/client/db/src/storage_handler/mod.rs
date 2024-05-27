@@ -9,7 +9,6 @@ use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
-use thiserror::Error;
 
 use self::block_hash::BlockHashView;
 use self::block_number::BlockNumberView;
@@ -46,7 +45,7 @@ pub mod bonsai_identifier {
     pub const EVENT: &[u8] = "0xevent".as_bytes();
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum DeoxysStorageError {
     #[error("failed to initialize trie for {0}")]
     TrieInitError(TrieType),
@@ -68,8 +67,30 @@ pub enum DeoxysStorageError {
     StorageEncodeError(StorageType),
     #[error("failed to decode {0}")]
     StorageDecodeError(StorageType),
+    #[error("failed to serialize/deserialize")]
+    StorageSerdeError,
     #[error("failed to revert {0} to block {1}")]
     StorageRevertError(StorageType, u64),
+    #[error("failed to push new value in history")]
+    StorageHistoryError,
+}
+
+impl From<bincode::Error> for DeoxysStorageError {
+    fn from(_: bincode::Error) -> Self {
+        DeoxysStorageError::StorageSerdeError
+    }
+}
+
+impl From<history::HistoryError> for DeoxysStorageError {
+    fn from(_: history::HistoryError) -> Self {
+        DeoxysStorageError::StorageHistoryError
+    }
+}
+
+impl From<codec::Error> for DeoxysStorageError {
+    fn from(_: codec::Error) -> Self {
+        DeoxysStorageError::StorageSerdeError
+    }
 }
 
 #[derive(Debug)]

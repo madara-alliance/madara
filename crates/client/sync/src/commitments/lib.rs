@@ -1,23 +1,21 @@
 use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
-use lazy_static::lazy_static;
-use mc_db::storage_handler::{self, DeoxysStorageError};
 use mp_convert::field_element::FromFieldElement;
 use mp_felt::Felt252Wrapper;
-use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::poseidon::PoseidonHasher;
 use mp_hashers::HasherT;
-use rayon::prelude::*;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Event, Transaction};
 use starknet_core::types::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, StateUpdate, StorageEntry,
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate,
+    StorageEntry,
 };
 use starknet_ff::FieldElement;
-use starknet_types_core::felt::Felt;
 
+use super::classes::class_trie_root;
+use super::contracts::contract_trie_root;
 use super::events::memory_event_commitment;
 use super::transactions::memory_transaction_commitment;
 
@@ -33,7 +31,7 @@ use super::transactions::memory_transaction_commitment;
 /// # Returns
 ///
 /// The transaction and the event commitment as `Felt252Wrapper`.
-pub fn calculate_commitments(
+pub fn calculate_tx_and_event_commitments(
     transactions: &[Transaction],
     events: &[Event],
     chain_id: Felt252Wrapper,
@@ -72,6 +70,18 @@ pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStat
         commitment_state_diff.address_to_class_hash.insert(address, class_hash);
     }
 
+    for ReplacedClassItem { contract_address, class_hash } in state_update.state_diff.replaced_classes.iter() {
+        let address = ContractAddress::from_field_element(contract_address);
+        let class_hash = ClassHash::from_field_element(class_hash);
+        commitment_state_diff.address_to_class_hash.insert(address, class_hash);
+    }
+
+    for DeclaredClassItem { class_hash, compiled_class_hash } in state_update.state_diff.declared_classes.iter() {
+        let class_hash = ClassHash::from_field_element(class_hash);
+        let compiled_class_hash = CompiledClassHash::from_field_element(compiled_class_hash);
+        commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
+    }
+
     for NonceUpdate { contract_address, nonce } in state_update.state_diff.nonces.iter() {
         let contract_address = ContractAddress::from_field_element(contract_address);
         let nonce_value = Nonce::from_field_element(nonce);
@@ -87,12 +97,6 @@ pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStat
             storage_map.insert(key, value);
         }
         commitment_state_diff.storage_updates.insert(contract_address, storage_map);
-    }
-
-    for DeclaredClassItem { class_hash, compiled_class_hash } in state_update.state_diff.declared_classes.iter() {
-        let class_hash = ClassHash::from_field_element(class_hash);
-        let compiled_class_hash = CompiledClassHash::from_field_element(compiled_class_hash);
-        commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
     }
 
     commitment_state_diff
@@ -151,121 +155,4 @@ pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt252
         || class_trie_root(&csd, block_number).expect("Failed to compute class root"),
     );
     calculate_state_root::<PoseidonHasher>(contract_trie_root, class_trie_root)
-}
-
-/// Calculates the contract trie root
-///
-/// # Arguments
-///
-/// * `csd`             - Commitment state diff for the current block.
-/// * `bonsai_contract` - Bonsai db used to store contract hashes.
-/// * `block_number`    - The current block number.
-///
-/// # Returns
-///
-/// The contract root.
-fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
-    // NOTE: handlers implicitely acquire a lock on their respective tries
-    // for the duration of their livetimes
-    let mut handler_contract = storage_handler::contract_trie_mut();
-    let mut handler_storage_trie = storage_handler::contract_storage_trie_mut();
-
-    // First we insert the contract storage changes
-    for (contract_address, updates) in csd.storage_updates.iter() {
-        handler_storage_trie.init(contract_address)?;
-
-        for (key, value) in updates {
-            handler_storage_trie.insert(*contract_address, *key, *value)?;
-        }
-    }
-
-    // Then we commit them
-    handler_storage_trie.commit(block_number)?;
-
-    // Then we compute the leaf hashes retrieving the corresponding storage root
-    let updates = csd
-        .storage_updates
-        .iter()
-        .par_bridge()
-        .map(|(contract_address, _)| {
-            let storage_root = handler_storage_trie.root(contract_address).unwrap();
-            let leaf_hash = contract_state_leaf_hash(csd, contract_address, storage_root);
-
-            (contract_address, leaf_hash)
-        })
-        .collect::<Vec<_>>();
-
-    // then we compute the contract root by applying the changes so far
-    handler_contract.update(updates)?;
-    handler_contract.commit(block_number)?;
-
-    Ok(handler_contract.root()?.into())
-}
-
-fn contract_state_leaf_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress, storage_root: Felt) -> Felt {
-    let class_hash = class_hash(csd, contract_address);
-
-    let storage_root = FieldElement::from_bytes_be(&storage_root.to_bytes_be()).unwrap();
-
-    let nonce_bytes = csd.address_to_nonce.get(contract_address).unwrap_or(&Nonce::default()).0.0;
-    let nonce = FieldElement::from_bytes_be(&nonce_bytes).unwrap();
-
-    // computes the contract state leaf hash
-    let contract_state_hash = PedersenHasher::hash_elements(class_hash, storage_root);
-    let contract_state_hash = PedersenHasher::hash_elements(contract_state_hash, nonce);
-    let contract_state_hash = PedersenHasher::hash_elements(contract_state_hash, FieldElement::ZERO);
-
-    Felt::from_bytes_be(&contract_state_hash.to_bytes_be())
-}
-
-fn class_hash(csd: &CommitmentStateDiff, contract_address: &ContractAddress) -> FieldElement {
-    let class_hash = match csd.address_to_class_hash.get(contract_address) {
-        Some(class_hash) => *class_hash,
-        None => match storage_handler::contract_data().get_class_hash(contract_address) {
-            Ok(Some(class_hash)) => class_hash,
-            // TODO: is it a failure case for no class to be found
-            _ => return FieldElement::ZERO,
-        },
-    };
-
-    FieldElement::from_byte_slice_be(class_hash.0.bytes()).unwrap()
-}
-
-lazy_static! {
-    static ref CONTRACT_CLASS_HASH_VERSION: FieldElement =
-        FieldElement::from_byte_slice_be("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap();
-}
-
-/// Calculates the class trie root
-///
-/// # Arguments
-///
-/// * `csd`          - Commitment state diff for the current block.
-/// * `bonsai_class` - Bonsai db used to store class hashes.
-/// * `block_number` - The current block number.
-///
-/// # Returns
-///
-/// The class root.
-fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
-    let mut handler_class = storage_handler::class_trie_mut();
-
-    let updates = csd
-        .class_hash_to_compiled_class_hash
-        .iter()
-        .par_bridge()
-        .map(|(class_hash, compiled_class_hash)| {
-            let compiled_class_hash = FieldElement::from_bytes_be(&compiled_class_hash.0.0).unwrap();
-
-            let hash = PoseidonHasher::hash_elements(*CONTRACT_CLASS_HASH_VERSION, compiled_class_hash);
-
-            (class_hash, hash)
-        })
-        .collect::<Vec<_>>();
-
-    handler_class.init()?;
-    handler_class.update(updates)?;
-    handler_class.commit(block_number)?;
-
-    Ok(handler_class.root()?.into())
 }

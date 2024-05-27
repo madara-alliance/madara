@@ -20,12 +20,12 @@ targets = ["x86_64-unknown-linux-gnu"]
 # Deoxys primitives
 mc-db = { workspace = true }
 mp-block = { workspace = true }
+mp-chain-id = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-felt = { workspace = true, features = ["parity-scale-codec", "serde"] }
 mp-genesis-config = { workspace = true, default-features = false }
 mp-hashers = { workspace = true }
 mp-sequencer-address = { workspace = true, features = ["parity-scale-codec"] }
-mp-storage = { workspace = true, features = ["parity-scale-codec"] }
 mp-transactions = { workspace = true, features = ["scale-info"] }
 
 blockifier = { workspace = true, features = ["testing"] }
@@ -54,7 +54,6 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
-lazy_static = { workspace = true }
 starknet-ff = { workspace = true }
 
 [features]

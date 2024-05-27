@@ -1,29 +1,26 @@
 use std::num::NonZeroU128;
 
-use blockifier::blockifier::block::GasPrices;
+use blockifier::block::GasPrices;
 use mc_db::DeoxysBackend;
 use mc_rpc::deoxys_backend_client::get_block_by_block_hash;
+use mc_sync::metrics::block_metrics::BlockMetrics;
+use mc_sync::utility::chain_id;
 use mp_digest_log::{find_starknet_block, FindLogError};
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
 use num_traits::FromPrimitive;
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use prometheus_endpoint::prometheus::core::Number;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use sc_client_api::backend::{Backend, StorageProvider};
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{Backend as _, HeaderBackend};
 use sp_runtime::traits::Header as HeaderT;
-
-use crate::block_metrics::BlockMetrics;
 
 fn sync_block<C, BE, H>(client: &C, header: &DHeaderT, block_metrics: Option<&BlockMetrics>) -> anyhow::Result<()>
 where
     // TODO: refactor this!
     C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     BE: Backend<DBlockT>,
     H: HasherT,
 {
@@ -38,8 +35,10 @@ where
             let opt_storage_starknet_block = get_block_by_block_hash(client, substrate_block_hash);
             match opt_storage_starknet_block {
                 Ok(storage_starknet_block) => {
-                    let digest_starknet_block_hash = digest_starknet_block.header().hash::<H>();
-                    let storage_starknet_block_hash = storage_starknet_block.header().hash::<H>();
+                    let (digest_starknet_block_hash, storage_starknet_block_hash) = rayon::join(
+                        || digest_starknet_block.header().hash::<H>(),
+                        || storage_starknet_block.header().hash::<H>(),
+                    );
                     // Ensure the two blocks sources (chain storage and block digest) agree on the block content
                     if digest_starknet_block_hash != storage_starknet_block_hash {
                         Err(anyhow::anyhow!(
@@ -47,30 +46,30 @@ where
                              db state ({storage_starknet_block_hash:?})"
                         ))
                     } else {
-                        let chain_id = client.runtime_api().chain_id(substrate_block_hash)?;
+                        let tx_hashes = digest_starknet_block
+                            .transactions()
+                            .par_iter()
+                            .map(|tx| {
+                                Felt252Wrapper::from(tx.compute_hash::<H>(
+                                    chain_id().into(),
+                                    false,
+                                    Some(digest_starknet_block.header().block_number),
+                                ))
+                                .into()
+                            })
+                            .collect();
 
                         // Success, we write the Starknet to Substate hashes mapping to db
                         let mapping_commitment = mc_db::MappingCommitment {
                             block_number: digest_starknet_block.header().block_number,
                             block_hash: substrate_block_hash,
                             starknet_block_hash: digest_starknet_block_hash.into(),
-                            starknet_transaction_hashes: digest_starknet_block
-                                .transactions()
-                                .iter()
-                                .map(|tx| {
-                                    Felt252Wrapper::from(tx.compute_hash::<H>(
-                                        chain_id,
-                                        false,
-                                        Some(digest_starknet_block.header().block_number),
-                                    ))
-                                    .into()
-                                })
-                                .collect(),
+                            starknet_transaction_hashes: tx_hashes,
                         };
 
                         if let Some(block_metrics) = block_metrics {
                             let starknet_block = &digest_starknet_block.clone();
-                            block_metrics.block_height.set(starknet_block.header().block_number.into_f64());
+                            block_metrics.l2_block_number.set(starknet_block.header().block_number.into_f64());
                             let l1_gas_price = starknet_block.header().l1_gas_price.clone().unwrap_or(GasPrices {
                                 eth_l1_gas_price: NonZeroU128::new(1).unwrap(),
                                 strk_l1_gas_price: NonZeroU128::new(1).unwrap(),
@@ -82,14 +81,13 @@ where
                             // allow dashboards to catch anomalies so that it can be investigated.
                             block_metrics
                                 .transaction_count
-                                .inc_by(f64::from_u128(starknet_block.header().transaction_count).unwrap_or(f64::MIN));
+                                .set(f64::from_u128(starknet_block.header().transaction_count).unwrap_or(f64::MIN));
                             block_metrics
                                 .event_count
-                                .inc_by(f64::from_u128(starknet_block.header().event_count).unwrap_or(f64::MIN));
+                                .set(f64::from_u128(starknet_block.header().event_count).unwrap_or(f64::MIN));
                             block_metrics
                                 .l1_gas_price_wei
                                 .set(f64::from_u128(l1_gas_price.eth_l1_gas_price.into()).unwrap_or(f64::MIN));
-
                             block_metrics
                                 .l1_gas_price_strk
                                 .set(f64::from_u128(l1_gas_price.strk_l1_gas_price.into()).unwrap_or(f64::MIN))
@@ -144,24 +142,18 @@ fn sync_one_block<C, BE, H>(
     block_metrics: Option<&BlockMetrics>,
 ) -> anyhow::Result<bool>
 where
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
     BE: Backend<DBlockT>,
     H: HasherT,
 {
-    let mut current_syncing_tips = DeoxysBackend::meta().current_syncing_tips()?;
-
-    if current_syncing_tips.is_empty() {
-        let mut leaves = substrate_backend.blockchain().leaves()?;
-        if leaves.is_empty() {
-            return Ok(false);
-        }
-        current_syncing_tips.append(&mut leaves);
+    // Fetch the leaves (latest unfinalized blocks) from the blockchain backend
+    let mut leaves = substrate_backend.blockchain().leaves()?;
+    if leaves.is_empty() {
+        return Ok(false);
     }
 
     let mut operating_header = None;
-    while let Some(checking_tip) = current_syncing_tips.pop() {
+    while let Some(checking_tip) = leaves.pop() {
         if let Some(checking_header) = fetch_header(substrate_backend.blockchain(), checking_tip, sync_from)? {
             operating_header = Some(checking_header);
             break;
@@ -170,21 +162,15 @@ where
     let operating_header = match operating_header {
         Some(operating_header) => operating_header,
         None => {
-            DeoxysBackend::meta().write_current_syncing_tips(current_syncing_tips)?;
             return Ok(false);
         }
     };
 
     if *operating_header.number() == 0 {
         sync_genesis_block::<_, H>(client, &operating_header)?;
-
-        DeoxysBackend::meta().write_current_syncing_tips(current_syncing_tips)?;
         Ok(true)
     } else {
         sync_block::<_, _, H>(client, &operating_header, block_metrics)?;
-
-        current_syncing_tips.push(*operating_header.parent_hash());
-        DeoxysBackend::meta().write_current_syncing_tips(current_syncing_tips)?;
         Ok(true)
     }
 }
@@ -197,8 +183,6 @@ pub fn sync_blocks<C, BE, H>(
     block_metrics: Option<&BlockMetrics>,
 ) -> anyhow::Result<bool>
 where
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     C: HeaderBackend<DBlockT> + StorageProvider<DBlockT, BE>,
     BE: Backend<DBlockT>,
     H: HasherT,

@@ -1,8 +1,46 @@
-git # Deoxys Changelog
+# Deoxys Changelog
 
 ## Next release
 
 - test(CI): define toolchain before cache
+- fix(root): Cleaned state root commitments crate
+- fix(hash): declare tx v0 hash computation
+- perf(db): db contract history parallel fetching and batching
+- remove RuntimeApi on RPC
+- feat(metrics): Added sync time metrics
+- refactor: using const and OnceCell instead of lazy_static
+- refactor: remove crate mp-storage
+- feat(infra): corrected dockerfile + docker-compose
+- fix(rpc): error handling
+- fix(lib): updated core libs to match oss
+- fix: state root - replaced_classes commit
+- feat: fetch block and state update in only one request
+- feat: added deoxys launcher script
+- fix: creation of the block context
+- fix: is_missing_class
+- fix: state root - replaced_classes
+- feat(db): backups
+- fix: state root for nonce
+- fix: store the first history in storage ket
+- perf: improved perfs with parallelized iteration over tx hashes cache
+- fix: graceful shutdown of rocksdb on ctrl+c
+- fix: better error handling around l1 and l2 sync
+- perf: compile with target_cpu=skylake by default
+- perf: storage key with encode
+- fix: bloc context blockifier
+- feat: up blockifier to v0.6.0-rc.2
+- fix: change bonsai-trie fork location
+- refactor: remove L1HandlerTxFee
+- feat: up blockifier to v0.6.0-rc.2
+- refactor: remove L1HandlerTxFee
+- refactor: remove blockifier dependencie
+- perf: convert blocks in parallel
+- feat(commitments): Joined hash computation in event and tx commitments
+- feat(l2 sync): polling to get new blocks once sync has caught up with the chain
+- perf: store key
+- fix: sync, remove `unwrap` in storage
+- fix(classes): Fixed classes on the RPC level by adding ordering and complete deserialisation
+- fix: class update
 - feat: store key/value in `--disble-root` mode
 - fix: storage nonce and key/value
 - fix: class and store updates and block desync after ctrl+c

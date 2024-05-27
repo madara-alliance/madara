@@ -218,10 +218,19 @@ impl ComputeTransactionHash for DeclareTransactionV0V1 {
         &self,
         chain_id: Felt252Wrapper,
         offset_version: bool,
-        _block_number: Option<u64>,
+        block_number: Option<u64>,
     ) -> TransactionHash {
-        let prefix = FieldElement::from_byte_slice_be(DECLARE_PREFIX).unwrap();
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { FieldElement::ZERO };
+        let prefix =
+            FieldElement::from_byte_slice_be(DECLARE_PREFIX).expect("Failed to convert DECLARE_PREFIX to FieldElement");
+
+        let version = if offset_version {
+            SIMULATE_TX_VERSION_OFFSET
+        } else {
+            match block_number {
+                Some(0) | None => FieldElement::ZERO,
+                _ => FieldElement::ONE,
+            }
+        };
         let sender_address = Felt252Wrapper::from(self.sender_address).into();
         let entrypoint_selector = FieldElement::ZERO;
         let max_fee = FieldElement::from(self.max_fee.0);
@@ -332,8 +341,9 @@ impl ComputeTransactionHash for DeclareTransaction {
         _block_number: Option<u64>,
     ) -> TransactionHash {
         match self {
-            DeclareTransaction::V0(tx) => tx.compute_hash::<H>(chain_id, offset_version, _block_number),
-            DeclareTransaction::V1(tx) => tx.compute_hash::<H>(chain_id, offset_version, _block_number),
+            // Provisory setting block_number to 0 for V0 to differentiate them from V1 (1)
+            DeclareTransaction::V0(tx) => tx.compute_hash::<H>(chain_id, offset_version, Some(0)),
+            DeclareTransaction::V1(tx) => tx.compute_hash::<H>(chain_id, offset_version, Some(1)),
             DeclareTransaction::V2(tx) => tx.compute_hash::<H>(chain_id, offset_version, _block_number),
             DeclareTransaction::V3(tx) => tx.compute_hash::<H>(chain_id, offset_version, _block_number),
         }

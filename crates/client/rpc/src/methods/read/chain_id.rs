@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
-use mc_sync::utility::get_config;
+use mc_sync::utility;
 
-use crate::errors::StarknetRpcApiError;
 use crate::Felt;
 
 /// Return the currently configured chain id.
@@ -19,12 +18,5 @@ use crate::Felt;
 /// Returns the chain id this node is connected to. The chain id is returned as a specific type,
 /// defined by the Starknet protocol, indicating the particular network.
 pub fn chain_id() -> RpcResult<Felt> {
-    let chain_id = get_config()
-        .map_err(|e| {
-            log::error!("Failed to get config: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .chain_id;
-
-    Ok(Felt(chain_id))
+    Ok(Felt(utility::chain_id()))
 }

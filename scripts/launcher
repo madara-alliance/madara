@@ -1,0 +1,364 @@
+#!/bin/bash
+
+declare -x FRAME
+declare -x FRAME_INTERVAL
+
+set_spinner() {
+  FRAME=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+  FRAME_INTERVAL=0.1
+}
+
+start() {
+  local step=0
+
+  tput civis -- invisible
+
+  while [ "$step" -lt "${#CMDS[@]}" ]; do
+    ${CMDS[$step]} & pid=$!
+
+    while ps -p $pid &>/dev/null; do
+      echo -ne "\\r[   ] ${STEPS[$step]} ..."
+
+      for k in "${!FRAME[@]}"; do
+        echo -ne "\\r[ ${FRAME[k]} ] ${STEPS[$step]} ..."
+        sleep $FRAME_INTERVAL
+      done
+    done
+
+    echo -ne "\\r[ ✔ ] ${STEPS[$step]}\\n"
+    step=$((step + 1))
+  done
+
+  tput cnorm -- normal
+}
+
+# Detect OS
+OS="$(uname -s)"
+case "$OS" in
+  Linux*)     OS=Linux;;
+  Darwin*)    OS=Mac;;
+  *)          echo "Unsupported OS: $OS"; exit 1;;
+esac
+
+# Couleurs et styles
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+RED=$(tput setaf 1)
+CYAN=$(tput setaf 6)
+NC=$(tput sgr0) # No Color
+BOLD=$(tput bold)
+UNDERLINE=$(tput smul)
+BLINK=$(tput blink)
+
+# Icônes ASCII pour les liens sociaux
+GITHUB_ICON="🔗 GitHub: "
+DOCS_ICON="📄 Documentation: "
+
+# Fonction pour la barre de progression
+progress_bar() {
+    local duration=${1}
+    already_done() { for ((done=0; done<$elapsed; done++)); do printf "▇"; done }
+    remaining() { for ((remain=$elapsed; remain<$duration; remain++)); do printf " "; done }
+    percentage() { printf "| %s%%" $(( ($elapsed * 100) / $duration )); }
+
+    for ((elapsed=1; elapsed<=$duration; elapsed++))
+    do
+        printf "\r["
+        already_done; remaining; percentage
+        sleep 0.1
+    done
+    printf "]\n"
+}
+
+# ASCII Art
+ascii_art() {
+echo -e "${RED}
+                      ____                            
+                     / __ \___  ____  _  ____  _______
+                    / / / / _ \/ __ \| |/_/ / / / ___/
+                   / /_/ /  __/ /_/ />  </ /_/ (__  ) 
+                  /_____/\___/\____/_/|_|\__, /____/  
+                                        /____/${NC}v0.1.0-alpha
+"
+}
+
+# Welcome message
+clear
+ascii_art
+echo -e "${GREEN}${BOLD}Welcome to Deoxys launcher!${NC}"
+echo -e "${GREEN}This script allows you to easily launch a Deoxys instance with your desired parameters.${NC}"
+echo -e "${GREEN}For more information, please refer to our documentation:${NC}"
+echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://kasar.io${NC}"
+# Save cursor position
+tput sc
+
+# Check for dependencies
+echo -e "\n${GREEN}We will now proceed to a dependency check${NC}"
+
+echo -e "\n${YELLOW}${BOLD}Would you like to proceed? (yes/no)${NC}"
+read -p "> " PROCEED
+
+tput rc
+tput ed
+
+if [ "$PROCEED" != "yes" ]; then
+    echo -e "${RED}Operation aborted.${NC}"
+    exit 1
+fi
+
+# Define dependencies and their check commands
+if [ "$OS" == "Linux" ]; then
+  DEPENDENCIES=(
+      "curl:command -v curl"
+      "rustup:command -v rustup"
+      "cargo:command -v cargo"
+      "g++:command -v g++"
+      "protobuf-compiler:command -v protoc"
+      "libasound2-dev:dpkg -s libasound2-dev"
+      "pkg-config:command -v pkg-config"
+      "zstd:command -v zstd"
+  )
+elif [ "$OS" == "Mac" ]; then
+  DEPENDENCIES=(
+      "curl:command -v curl"
+      "rustup:command -v rustup"
+      "cargo:command -v cargo"
+      "g++:command -v g++"
+      "protobuf-compiler:command -v protoc"
+      "pkg-config:command -v pkg-config"
+      "zstd:command -v zstd"
+  )
+fi
+
+# Function to check for a dependency
+check_dependency() {
+    eval "$1" >/dev/null 2>&1
+}
+
+# Check dependencies
+MISSING_DEPS=()
+for DEP in "${DEPENDENCIES[@]}"; do
+    DEP_NAME="${DEP%%:*}"
+    DEP_CHECK="${DEP##*:}"
+    if ! check_dependency "$DEP_CHECK"; then
+        MISSING_DEPS+=("$DEP_NAME")
+    fi
+done
+
+# Report missing dependencies
+if [ ${#MISSING_DEPS[@]} -ne 0 ]; then
+    echo -e "${YELLOW}The following dependencies are missing:${NC}"
+    for DEP in "${MISSING_DEPS[@]}"; do
+        echo -e "${YELLOW}- $DEP${NC}"
+    done
+    
+    echo -e "\n${YELLOW}${BOLD}Do you want to install the missing dependencies? (yes/no)${NC}"
+    read -p "> " INSTALL_DEPS
+    
+    if [ "$INSTALL_DEPS" != "yes" ]; then
+        echo -e "\n${RED}Installation aborted.${NC}"
+        exit 1
+    else
+        echo -e "\n${GREEN}Installing missing dependencies...${NC}"
+        if [ "$OS" == "Linux" ]; then
+          sudo apt update
+          for DEP in "${MISSING_DEPS[@]}"; do
+              if ! sudo apt install -y "$DEP"; then
+                  echo -e "${RED}Failed to install $DEP.${NC}"
+                  STILL_MISSING_DEPS+=("$DEP")
+              fi
+          done
+        elif [ "$OS" == "Mac" ]; then
+          for DEP in "${MISSING_DEPS[@]}"; do
+              if ! brew install "$DEP"; then
+                  echo -e "${RED}Failed to install $DEP.${NC}"
+                  STILL_MISSING_DEPS+=("$DEP")
+              fi
+          done
+        fi
+    fi
+    
+    # Re-check dependencies to ensure all are installed
+    echo -e "\n${GREEN}Verifying installation of dependencies...${NC}"
+    RECHECK_MISSING_DEPS=()
+    for DEP in "${MISSING_DEPS[@]}"; do
+        DEP_CHECK="${DEPENDENCIES[@]#*:}"
+        if ! check_dependency "$DEP_CHECK"; then
+            RECHECK_MISSING_DEPS+=("$DEP")
+        fi
+    done
+
+    if [ ${#RECHECK_MISSING_DEPS[@]} -ne 0 ]; then
+        echo -e "\n${RED}The following dependencies could not be installed:${NC}"
+        for DEP in "${RECHECK_MISSING_DEPS[@]}"; do
+            echo -e "${RED}- $DEP${NC}"
+        done
+        exit 1
+    else
+        echo -e "\n${GREEN}All dependencies are successfully installed and verified.${NC}"
+    fi
+else
+    echo -e "\n${GREEN}All dependencies are installed.${NC}"
+fi
+
+
+echo -e "\n${GREEN}We will now proceed with the download and installation of the binary from GitHub:${NC}"
+echo -e "${CYAN}${GITHUB_ICON}${UNDERLINE}https://github.com/kasarlabs/deoxys${NC}"
+
+echo -e "\n${YELLOW}${BOLD}Do you want to proceed? (yes/no)${NC}"
+read -p "> " PROCEED
+
+tput rc
+tput ed
+
+if [ "$PROCEED" != "yes" ]; then
+    echo -e "${RED}Operation aborted.${NC}"
+    exit 1
+fi
+
+# Function to check if a command exists
+command_exists () {
+    type "$1" &> /dev/null ;
+}
+
+# Check if curl is installed
+if ! command_exists curl ; then
+    echo -e "${RED}Error: curl is not installed. Please install curl and try again.${NC}"
+    exit 1
+fi
+
+# Check if rustup is installed
+if ! command_exists rustup ; then
+    echo -e "${YELLOW}Installing rustup...${NC}"
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    source $HOME/.cargo/env
+fi
+
+# Check if cargo is installed
+if ! command_exists cargo ; then
+    echo -e "${RED}Error: cargo is not installed. Please install Rust and try again.${NC}"
+    exit 1
+fi
+
+# Install the binary from a given URL
+BIN_URL="https://example.com/path/to/your/binary"  # Replace with actual URL
+BIN_NAME="deoxys"  # Replace with the actual name of the binary
+
+echo -e "\n${GREEN}Downloading the binary...${NC}"
+curl -L $BIN_URL -o /usr/local/bin/$BIN_NAME
+chmod +x /usr/local/bin/$BIN_NAME
+
+tput rc
+tput ed
+
+# Ask for the node name
+while true; do
+    echo -e "\n${YELLOW}${BOLD}👤 What name would you like to give this node?${NC}"
+    read -p "> " NODE_NAME
+    if [ -n "$NODE_NAME" ]; then
+        break
+    else
+        echo -e "${RED}Node name cannot be empty.${NC}"
+    fi
+done
+
+tput rc
+tput ed
+
+# Choose the network
+echo -e "\n🌐 ${YELLOW}${BOLD}On which network? (Enter a number)${NC}\n"
+echo "${YELLOW}1. Mainnet${NC}"
+echo "${YELLOW}2. Testnet${NC}"
+echo "${YELLOW}3. Integration${NC}"
+while true; do
+    read -p "> " NETWORK_CHOICE
+    case $NETWORK_CHOICE in
+        1) NETWORK="main"; break ;;
+        2) NETWORK="test"; break ;;
+        3) NETWORK="integration"; break ;;
+        *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, or 3.${NC}" ;;
+    esac
+done
+
+tput rc
+tput ed
+
+# Ask for the database path
+echo -e "\n💾 ${YELLOW}${BOLD}Where would you like to store your database? (default: /tmp/deoxys)${NC}"
+read -p "> " BASE_PATH
+BASE_PATH=${BASE_PATH:-/tmp/deoxys}
+
+tput rc
+tput ed
+
+# Ask for RPC access
+while true; do
+    echo -e "\n🔌 ${YELLOW}${BOLD}Do you want to enable RPC access? (yes/no) ${NC}"
+    read -p "> " RPC_ACCESS
+    case $RPC_ACCESS in
+        yes|no) break ;;
+        *) echo -e "${YELLOW}Please answer yes or no.${NC}" ;;
+    esac
+done
+
+tput rc
+tput ed
+
+if [ "$RPC_ACCESS" == "yes" ]; then
+    RPC_OPTS="--rpc-cors '*' --rpc-external"
+    echo -e "\n🚪 ${YELLOW}${BOLD}On which port do you want RPC access? (default: 9933)${NC}"
+    read -p "> " RPC_PORT
+    RPC_PORT=${RPC_PORT:-9933}
+    RPC_OPTS="$RPC_OPTS --rpc-port $RPC_PORT"
+else
+    RPC_OPTS=""
+fi
+
+tput rc
+tput ed
+
+# Ask for the L1 endpoint URL
+while true; do
+    echo -e "\n🔗 ${YELLOW}${BOLD}Enter the URL of the L1 endpoint:${NC}"
+    read -p "> " L1_ENDPOINT
+    if [[ $L1_ENDPOINT =~ ^https?:// ]]; then
+        break
+    else
+        echo -e "${RED}Please enter a valid URL starting with http:// or https://.${NC}"
+    fi
+done
+
+tput rc
+tput ed
+
+# Synchronize via snapshot or genesis
+echo -e "\n🔄 ${YELLOW}${BOLD}Which sync mode would you like? (Enter a number)${NC}\n"
+echo "${YELLOW}1. Snap sync (fast)${NC}"
+echo "${YELLOW}2. Full sync (safe)${NC}"
+while true; do
+    read -p "> " SYNC_CHOICE
+    case $SYNC_CHOICE in
+        1) SYNC_OPT="--snap"; break ;;
+        2) SYNC_OPT=""; break ;;
+        *) echo -e "${YELLOW}Invalid choice, please enter 1 or 2.${NC}" ;;
+    esac
+done
+
+tput rc
+tput ed
+
+# Build the final command
+COMMAND="/usr/local/bin/$BIN_NAME run --name $NODE_NAME --network=$NETWORK --base-path=$BASE_PATH $RPC_OPTS --l1-endpoint $L1_ENDPOINT $SYNC_OPT"
+
+echo -e "\n🔄 ${YELLOW}${BOLD}The following command will be executed:${NC}\n"
+echo -e "${CYAN}$COMMAND${NC}"
+
+# Confirm before executing
+echo -e "\n${YELLOW}${BOLD}Do you want to proceed? (yes/no)${NC}\n"
+read -p "> " CONFIRM
+if [ "$CONFIRM" == "yes" ]; then
+    echo -e "\n${GREEN}Starting the node...${NC}"
+    eval $COMMAND
+else
+    echo -e "${RED}Command execution aborted.${NC}"
+fi

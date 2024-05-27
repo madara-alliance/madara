@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::num::NonZeroU128;
 use std::sync::Arc;
 
-use blockifier::blockifier::block::GasPrices;
+use blockifier::block::GasPrices;
 use mp_block::DeoxysBlock;
 use mp_felt::Felt252Wrapper;
 use starknet_api::hash::StarkFelt;
@@ -22,14 +22,12 @@ use starknet_providers::sequencer::models::state_update::{
 };
 use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
 
-use crate::commitments::lib::calculate_commitments;
-use crate::utility::get_config;
+use crate::commitments::lib::calculate_tx_and_event_commitments;
+use crate::l2::L2SyncError;
+use crate::utility;
 
-pub async fn block(block: p::Block) -> DeoxysBlock {
-    tokio::task::spawn_blocking(|| convert_block_sync(block)).await.expect("join error")
-}
-
-pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
+/// Compute heavy, this should only be called in a rayon ctx
+pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
@@ -72,7 +70,7 @@ pub fn convert_block_sync(block: p::Block) -> DeoxysBlock {
         .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
         .collect();
 
-    DeoxysBlock::new(header, transactions, ordered_events)
+    Ok(DeoxysBlock::new(header, transactions, ordered_events))
 }
 
 fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {
@@ -90,7 +88,15 @@ fn transaction(transaction: p::TransactionType) -> Transaction {
 }
 
 fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
-    if tx.version == FieldElement::ZERO || tx.version == FieldElement::ONE {
+    if tx.version == FieldElement::ZERO {
+        DeclareTransaction::V0(starknet_api::transaction::DeclareTransactionV0V1 {
+            max_fee: fee(tx.max_fee.expect("no max fee provided")),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce),
+            class_hash: class_hash(tx.class_hash),
+            sender_address: contract_address(tx.sender_address),
+        })
+    } else if tx.version == FieldElement::ONE {
         DeclareTransaction::V1(starknet_api::transaction::DeclareTransactionV0V1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
@@ -396,19 +402,14 @@ fn commitments(
 ) -> (StarkFelt, StarkFelt) {
     let chain_id = chain_id();
 
-    let (commitment_tx, commitment_event) = calculate_commitments(transactions, events, chain_id, block_number);
+    let (commitment_tx, commitment_event) =
+        calculate_tx_and_event_commitments(transactions, events, chain_id, block_number);
 
     (commitment_tx.into(), commitment_event.into())
 }
 
 fn chain_id() -> mp_felt::Felt252Wrapper {
-    match get_config() {
-        Ok(config) => config.chain_id.into(),
-        Err(e) => {
-            log::error!("Failed to get chain id: {}", e);
-            FieldElement::from_byte_slice_be(b"").unwrap().into()
-        }
-    }
+    utility::chain_id().into()
 }
 
 fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {

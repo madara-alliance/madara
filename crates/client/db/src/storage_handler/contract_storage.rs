@@ -1,9 +1,11 @@
+use std::ops::Deref;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use crossbeam_skiplist::{SkipMap, SkipSet};
-use itertools::izip;
+use mp_convert::field_element::FromFieldElement;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use rayon::slice::ParallelSlice;
 use rocksdb::{IteratorMode, ReadOptions, WriteBatchWithTransaction};
 use starknet_api::core::ContractAddress;
 use starknet_api::hash::StarkFelt;
@@ -11,8 +13,10 @@ use starknet_api::state::StorageKey;
 use starknet_core::types::{ContractStorageDiffItem, StateDiff, StorageEntry};
 use tokio::task::{spawn_blocking, JoinSet};
 
+use super::codec::{self, Decode};
 use super::history::History;
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut, StorageViewRevetible};
+use crate::storage_handler::codec::Encode;
 use crate::{Column, DatabaseExt, DeoxysBackend};
 
 #[derive(Default, Debug)]
@@ -39,30 +43,33 @@ impl StorageViewMut for ContractStorageViewMut {
     /// incremental
     fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = Arc::new(DeoxysBackend::expose_db());
-        let column = db.get_column(Column::ContractStorage);
 
-        let (keys, values): (Vec<_>, Vec<_>) = self.0.into_iter().unzip();
-        let keys_cf: Vec<_> = keys.iter().map(|key| (&column, bincode::serialize(key).unwrap())).collect();
-        let histories = db
-            .multi_get_cf(keys_cf)
-            .into_iter()
-            .map(|result| {
-                result.map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage)).and_then(
-                    |option| match option {
-                        Some(bytes) => bincode::deserialize::<History<StarkFelt>>(&bytes)
-                            .map_err(|_| DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
-                        None => Ok(History::default()),
-                    },
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let as_vec = self.0.into_iter().collect::<Vec<_>>(); // todo: use proper datastructure that supports rayon
 
-        let mut batch = WriteBatchWithTransaction::<true>::default();
-        for (key, mut history, value) in izip!(keys, histories, values) {
-            history.push(block_number, value).unwrap();
-            batch.put_cf(&column, bincode::serialize(&key).unwrap(), bincode::serialize(&history).unwrap());
-        }
-        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractStorage))
+        as_vec.deref().par_chunks(1024).try_for_each(|chunk| {
+            let column = db.get_column(Column::ContractStorage);
+            let histories_encoded = db.multi_get_cf(chunk.iter().map(|(key, _v)| {
+                // unwrap: felt encoding cannot fail
+                (&column, key.encode().unwrap())
+            }));
+
+            let mut batch = WriteBatchWithTransaction::<true>::default();
+            for (history_encoded, (key, value)) in histories_encoded.into_iter().zip(chunk) {
+                let key_encoded = key.encode()?;
+
+                let mut history_encoded = history_encoded
+                    .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
+                    .unwrap_or_default();
+
+                codec::add_to_history_encoded(&mut history_encoded, block_number, *value)?;
+                batch.put_cf(&column, key_encoded, history_encoded);
+            }
+
+            db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractStorage))?;
+            Ok::<_, DeoxysStorageError>(())
+        })?;
+
+        Ok(())
     }
 }
 
@@ -79,9 +86,9 @@ impl StorageView for ContractStorageViewMut {
         let column = db.get_column(Column::ContractStorage);
 
         let history: History<StarkFelt> = match db
-            .get_cf(&column, bincode::serialize(key).unwrap())
+            .get_cf(&column, key.encode()?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
-            .map(|bytes| bincode::deserialize(&bytes))
+            .map(|bytes| Decode::decode(&bytes))
         {
             Some(Ok(history)) => history,
             Some(Err(_)) => return Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
@@ -95,7 +102,7 @@ impl StorageView for ContractStorageViewMut {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractStorage);
 
-        match db.key_may_exist_cf(&column, bincode::serialize(&key).unwrap()) {
+        match db.key_may_exist_cf(&column, key.encode()?) {
             true => Ok(self.get(key)?.is_some()),
             false => Ok(false),
         }
@@ -108,7 +115,7 @@ impl StorageViewRevetible for ContractStorageViewMut {
         let db = Arc::new(DeoxysBackend::expose_db());
 
         let mut read_options = ReadOptions::default();
-        read_options.set_iterate_lower_bound(bincode::serialize(&block_number).unwrap());
+        read_options.set_iterate_lower_bound(bincode::serialize(&block_number)?);
 
         // Currently we only use this iterator to retrieve the latest block number. A better way to
         // do this would be to decouple the highest block lazy_static in `l2.rs`, but in the
@@ -152,14 +159,15 @@ impl StorageViewRevetible for ContractStorageViewMut {
         let change_set = Arc::try_unwrap(change_set).expect("Arc should not be aliased");
         for key in change_set.into_iter() {
             let db = Arc::clone(&db);
-            let key = bincode::serialize(&key).unwrap();
+            let key = (ContractAddress::from_field_element(key.0), StorageKey::from_field_element(key.1));
+            let key_encoded = key.encode()?;
 
             set.spawn(async move {
                 let column = db.get_column(Column::ContractStorage);
-                let Ok(result) = db.get_cf(&column, key.clone()) else {
+                let Ok(result) = db.get_cf(&column, key_encoded.clone()) else {
                     return Err(DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage));
                 };
-                let mut history: History<StarkFelt> = match result.map(|bytes| bincode::deserialize(&bytes)) {
+                let mut history: History<StarkFelt> = match result.map(|bytes| Decode::decode(&bytes)) {
                     Some(Ok(history)) => history,
                     Some(Err(_)) => return Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
                     None => unreachable!("Reverting contract storage should only use existing contract addresses"),
@@ -170,7 +178,7 @@ impl StorageViewRevetible for ContractStorageViewMut {
                 history.revert_to(block_number);
                 match history.is_empty() {
                     true => {
-                        if db.delete(key.clone()).is_err() {
+                        if db.delete(key_encoded.clone()).is_err() {
                             return Err(DeoxysStorageError::StorageRevertError(
                                 StorageType::ContractStorage,
                                 block_number,
@@ -178,7 +186,7 @@ impl StorageViewRevetible for ContractStorageViewMut {
                         }
                     }
                     false => {
-                        if db.put_cf(&column, key.clone(), bincode::serialize(&history).unwrap()).is_err() {
+                        if db.put_cf(&column, key_encoded.clone(), history.encode()?).is_err() {
                             return Err(DeoxysStorageError::StorageRevertError(
                                 StorageType::ContractStorage,
                                 block_number,
@@ -209,9 +217,9 @@ impl ContractStorageView {
         let column = db.get_column(Column::ContractStorage);
 
         let history: History<StarkFelt> = match db
-            .get_cf(&column, bincode::serialize(key).unwrap())
+            .get_cf(&column, key.encode()?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
-            .map(|bytes| bincode::deserialize(&bytes))
+            .map(|bytes| Decode::decode(&bytes))
         {
             Some(Ok(history)) => history,
             Some(Err(_)) => return Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
@@ -231,9 +239,9 @@ impl StorageView for ContractStorageView {
         let column = db.get_column(Column::ContractStorage);
 
         let history: History<StarkFelt> = match db
-            .get_cf(&column, bincode::serialize(key).unwrap())
+            .get_cf(&column, key.encode()?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
-            .map(|bytes| bincode::deserialize(&bytes))
+            .map(|bytes| Decode::decode(&bytes))
         {
             Some(Ok(history)) => history,
             Some(Err(_)) => return Err(DeoxysStorageError::StorageDecodeError(StorageType::ContractStorage)),
@@ -247,7 +255,7 @@ impl StorageView for ContractStorageView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractStorage);
 
-        match db.key_may_exist_cf(&column, bincode::serialize(&key).unwrap()) {
+        match db.key_may_exist_cf(&column, key.encode()?) {
             true => Ok(self.get(key)?.is_some()),
             false => Ok(false),
         }

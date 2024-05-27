@@ -14,14 +14,14 @@ use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::metrics::block_metrics::BlockMetrics;
 use mc_sync::starknet_sync_worker;
 use mp_block::DeoxysBlock;
 use mp_types::block::{DBlockT, DHashT, DHasherT};
 use parity_scale_codec::Encode;
-use prometheus_endpoint::Registry;
 use reqwest::Url;
 use sc_basic_authorship::ProposerFactory;
-use sc_client_api::{BlockchainEvents, HeaderBackend};
+use sc_client_api::BlockchainEvents;
 use sc_consensus::{BasicQueue, BlockImportParams};
 use sc_consensus_manual_seal::{ConsensusDataProvider, Error};
 pub use sc_executor::NativeElseWasmExecutor;
@@ -74,6 +74,8 @@ pub fn new_partial<BIQ>(
     build_import_queue: BIQ,
     cache_more_things: bool,
     genesis_block: DeoxysBlock,
+    backup_dir: Option<PathBuf>,
+    restore_from_latest_backup: bool,
 ) -> Result<
     sc_service::PartialComponents<
         FullClient,
@@ -94,7 +96,14 @@ where
         &TaskManager,
     ) -> Result<(BasicImportQueue, BoxBlockImport), ServiceError>,
 {
-    let deoxys_backend = DeoxysBackend::open(&config.database, &db_config_dir(config), cache_more_things).unwrap();
+    let deoxys_backend = DeoxysBackend::open(
+        // &config.database,
+        &db_config_dir(config),
+        backup_dir,
+        restore_from_latest_backup,
+        cache_more_things,
+    )
+    .unwrap();
 
     let telemetry = config
         .telemetry_endpoints
@@ -189,6 +198,7 @@ where
 /// # Arguments
 ///
 /// - `cache`: whether more information should be cached when storing the block in the database.
+#[allow(clippy::too_many_arguments)] // grr
 pub fn new_full(
     config: Configuration,
     sealing: SealingMode,
@@ -197,6 +207,9 @@ pub fn new_full(
     fetch_config: FetchConfig,
     genesis_block: DeoxysBlock,
     starting_block: Option<u32>,
+    backup_every_n_blocks: Option<usize>,
+    backup_dir: Option<PathBuf>,
+    restore_from_latest_backup: bool,
 ) -> Result<TaskManager, ServiceError> {
     let build_import_queue = build_manual_seal_import_queue;
 
@@ -209,7 +222,14 @@ pub fn new_full(
         select_chain,
         transaction_pool,
         other: (block_import, mut telemetry, deoxys_backend),
-    } = new_partial(&config, build_import_queue, cache_more_things, genesis_block)?;
+    } = new_partial(
+        &config,
+        build_import_queue,
+        cache_more_things,
+        genesis_block,
+        backup_dir,
+        restore_from_latest_backup,
+    )?;
 
     let net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
@@ -227,8 +247,9 @@ pub fn new_full(
         })?;
 
     let prometheus_registry = config.prometheus_registry().cloned();
+    let block_metrics = prometheus_registry.and_then(|registry| BlockMetrics::register(&registry).ok());
 
-    let best_block = client.info().best_number;
+    let best_block = DeoxysBackend::meta().current_sync_block().expect("getting current sync block") as _;
     let on_block =
         if starting_block.is_some() && starting_block >= Some(best_block) { starting_block } else { Some(best_block) };
 
@@ -295,25 +316,26 @@ pub fn new_full(
             backend.clone(),
             3,
             0,
-            prometheus_registry.clone(),
+            block_metrics.clone(),
         )
         .for_each(|()| future::ready(())),
     );
 
     let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<DeoxysBlock>(100);
 
-    task_manager.spawn_essential_handle().spawn(
-        "starknet-sync-worker",
-        Some(DEOXYS_TASK_GROUP),
-        starknet_sync_worker::sync(
+    task_manager.spawn_essential_handle().spawn("starknet-sync-worker", Some(DEOXYS_TASK_GROUP), {
+        let fut = starknet_sync_worker::sync(
             fetch_config,
             block_sender,
             command_sink.unwrap().clone(),
             l1_url,
             Arc::clone(&client),
             on_block.unwrap(),
-        ),
-    );
+            backup_every_n_blocks,
+            block_metrics,
+        );
+        async { fut.await.unwrap() }
+    });
 
     // manual-seal authorship
     if !sealing.is_default() {
@@ -325,7 +347,6 @@ pub fn new_full(
             select_chain,
             block_import,
             &task_manager,
-            prometheus_registry.as_ref(),
             commands_stream,
             telemetry,
         )?;
@@ -349,7 +370,6 @@ fn run_manual_seal_authorship(
     select_chain: FullSelectChain,
     block_import: BoxBlockImport,
     task_manager: &TaskManager,
-    _prometheus_registry: Option<&Registry>,
     commands_stream: Option<mpsc::Receiver<sc_consensus_manual_seal::rpc::EngineCommand<DHashT>>>,
     _telemetry: Option<Telemetry>,
 ) -> Result<(), ServiceError>
@@ -474,7 +494,13 @@ type ChainOpsResult =
 
 pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
-    let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_manual_seal_import_queue, cache_more_things, DeoxysBlock::default())?;
+    let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } = new_partial::<_>(
+        config,
+        build_manual_seal_import_queue,
+        cache_more_things,
+        DeoxysBlock::default(),
+        None,
+        false,
+    )?;
     Ok((client, backend, import_queue, task_manager, other.2))
 }

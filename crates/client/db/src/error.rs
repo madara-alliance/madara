@@ -1,5 +1,4 @@
 use bonsai_trie::DBError;
-use thiserror::Error;
 
 use crate::Column;
 
@@ -13,9 +12,11 @@ pub enum DbError {
     Uuid(#[from] uuid::Error),
     #[error("A value was queryied that was not initialized at column: `{0}` key: `{1}`")]
     ValueNotInitialized(Column, String),
+    #[error("Format error: `{0}`")]
+    Format(String),
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum BonsaiDbError {
     #[error("IO error: `{0}`")]
     Io(#[from] std::io::Error),

@@ -1,15 +1,13 @@
 use jsonrpsee::core::RpcResult;
+use mc_sync::utility::chain_id;
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, BlockTag, MaybePendingBlockWithTxHashes};
 
-use crate::errors::StarknetRpcApiError;
-use crate::{get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, Starknet};
+use crate::{get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, Felt, Starknet};
 
 /// Get block information with transaction hashes given the block id.
 ///
@@ -30,15 +28,10 @@ pub fn get_block_with_tx_hashes<BE, C, H>(
 where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT> + ConvertTransactionRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
-    let chain_id = starknet.chain_id()?;
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-        log::error!("'{e}'");
-        StarknetRpcApiError::BlockNotFound
-    })?;
+    let chain_id = Felt(chain_id());
+    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
 
     match block_id {
         BlockId::Tag(BlockTag::Pending) => get_block_with_tx_hashes_pending::<H>(chain_id),

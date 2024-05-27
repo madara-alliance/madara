@@ -9,7 +9,7 @@ impl BlockHashView {
     pub fn insert(&mut self, block_number: u64, block_hash: &Felt252Wrapper) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockNumberToHash);
-        db.put_cf(&column, bincode::serialize(&block_number).unwrap(), bincode::serialize(&block_hash).unwrap())
+        db.put_cf(&column, bincode::serialize(&block_number)?, bincode::serialize(&block_hash)?)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockHash))
     }
 
@@ -17,13 +17,13 @@ impl BlockHashView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockNumberToHash);
         let block_hash = db
-            .get_cf(&column, bincode::serialize(&block_number).unwrap())
+            .get_cf(&column, bincode::serialize(&block_number)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockHash))?
             .map(|bytes| bincode::deserialize::<Felt252Wrapper>(&bytes[..]));
 
         match block_hash {
             Some(Ok(block_hash)) => Ok(Some(block_hash)),
-            Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::BlockHash)),
+            Some(Err(_)) => Err(DeoxysStorageError::StorageSerdeError),
             None => Ok(None),
         }
     }
@@ -32,7 +32,7 @@ impl BlockHashView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockNumberToHash);
 
-        match db.key_may_exist_cf(&column, bincode::serialize(&block_number).unwrap()) {
+        match db.key_may_exist_cf(&column, bincode::serialize(&block_number)?) {
             true => Ok(self.get(block_number)?.is_some()),
             false => Ok(false),
         }

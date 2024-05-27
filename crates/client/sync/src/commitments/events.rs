@@ -22,22 +22,28 @@ use starknet_types_core::hash::Pedersen;
 ///
 /// The event hash as `FieldElement`.
 pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
-    let keys_hash = H::compute_hash_on_elements(
-        &event
-            .content
-            .keys
-            .iter()
-            .map(|key| FieldElement::from(Felt252Wrapper::from(key.0)))
-            .collect::<Vec<FieldElement>>(),
-    );
-    let data_hash = H::compute_hash_on_elements(
-        &event
-            .content
-            .data
-            .0
-            .iter()
-            .map(|data| FieldElement::from(Felt252Wrapper::from(*data)))
-            .collect::<Vec<FieldElement>>(),
+    let (keys_hash, data_hash) = rayon::join(
+        || {
+            H::compute_hash_on_elements(
+                &event
+                    .content
+                    .keys
+                    .iter()
+                    .map(|key| FieldElement::from(Felt252Wrapper::from(key.0)))
+                    .collect::<Vec<FieldElement>>(),
+            )
+        },
+        || {
+            H::compute_hash_on_elements(
+                &event
+                    .content
+                    .data
+                    .0
+                    .iter()
+                    .map(|data| FieldElement::from(Felt252Wrapper::from(*data)))
+                    .collect::<Vec<FieldElement>>(),
+            )
+        },
     );
     let from_address = FieldElement::from(Felt252Wrapper::from(event.from_address.0.0));
     H::compute_hash_on_elements(&[from_address, keys_hash, data_hash])

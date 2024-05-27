@@ -35,11 +35,10 @@ use starknet_core::types::{
     FlattenedSierraClass, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
 };
 use starknet_crypto::FieldElement;
-use thiserror::Error;
 
 use crate::compute_hash::ComputeTransactionHash;
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum BroadcastedTransactionConversionError {
     #[error("Max fee should not be greater than u128::MAX")]
     MaxFeeTooBig,

@@ -1,9 +1,6 @@
 //! Configuration of the pallets used in the runtime.
 //! The pallets used in the runtime are configured here.
 //! This file is used to generate the `construct_runtime!` macro.
-use std::num::NonZeroU128;
-
-use blockifier::blockifier::block::GasPrices;
 pub use frame_support::traits::{
     ConstBool, ConstU128, ConstU32, ConstU64, ConstU8, KeyOwnerProofSystem, OnTimestampSet, Randomness, StorageInfo,
 };
@@ -14,7 +11,7 @@ pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
 pub use mp_program_hash::SN_OS_PROGRAM_HASH;
-use mp_types::block::{DHashT, DHasherT};
+use mp_types::block::DHashT;
 use mp_types::transactions::DTxIndexT;
 /// Import the StarkNet pallet.
 pub use pallet_starknet;
@@ -35,25 +32,7 @@ use crate::*;
 // --------------------------------------
 
 /// Configure the Starknet pallet in pallets/starknet.
-impl pallet_starknet::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
-    type SystemHash = DHasherT;
-    type TimestampProvider = Timestamp;
-    type UnsignedPriority = UnsignedPriority;
-    type TransactionLongevity = TransactionLongevity;
-    #[cfg(not(feature = "disable-transaction-fee"))]
-    type DisableTransactionFee = ConstBool<false>;
-    #[cfg(feature = "disable-transaction-fee")]
-    type DisableTransactionFee = ConstBool<true>;
-    type DisableNonceValidation = ConstBool<false>;
-    type InvokeTxMaxNSteps = InvokeTxMaxNSteps;
-    type ValidateMaxNSteps = ValidateMaxNSteps;
-    type ProtocolVersion = ProtocolVersion;
-    type ChainId = ChainId;
-    type MaxRecursionDepth = MaxRecursionDepth;
-    type ProgramHash = ProgramHash;
-    type L1GasPrices = L1GasPrices;
-}
+impl pallet_starknet::Config for Runtime {}
 
 /// --------------------------------------
 /// FRAME SYSTEM PALLET
@@ -156,19 +135,6 @@ impl pallet_timestamp::Config for Runtime {
     type OnTimestampSet = ConsensusOnTimestampSet<Self>;
     type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
     type WeightInfo = ();
-}
-
-// TODO: change the ChainId to the correct one which depends on the network
-parameter_types! {
-    pub const UnsignedPriority: u64 = 1 << 20;
-    pub const TransactionLongevity: u64 = u64::MAX;
-    pub const InvokeTxMaxNSteps: u32 = 1_000_000;
-    pub const ValidateMaxNSteps: u32 = 1_000_000;
-    pub const ProtocolVersion: u8 = 0;
-    pub const ChainId: Felt252Wrapper = mp_chain_id::SN_MAIN_CHAIN_ID;
-    pub const MaxRecursionDepth: u32 = 50;
-    pub const ProgramHash: Felt252Wrapper = SN_OS_PROGRAM_HASH;
-    pub const L1GasPrices: GasPrices = GasPrices { eth_l1_gas_price: unsafe { NonZeroU128::new_unchecked(10) }, strk_l1_gas_price: unsafe { NonZeroU128::new_unchecked(10) }, eth_l1_data_gas_price: unsafe { NonZeroU128::new_unchecked(10) }, strk_l1_data_gas_price: unsafe { NonZeroU128::new_unchecked(10) } };
 }
 
 /// Implement the OnTimestampSet trait to override the default Aura.

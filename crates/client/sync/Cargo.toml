@@ -10,7 +10,7 @@ repository = "https://github.com/KasarLabs/deoxys"
 version = "0.1.0"
 
 [features]
-default = ["m"]
+default = []
 m = ["dep:rodio"]
 
 [package.metadata.docs.rs]
@@ -20,6 +20,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 anyhow = "1.0.75"
 ethers = { workspace = true }
 lazy_static = { workspace = true }
+once_cell = { workspace = true }
 reqwest = { workspace = true }
 serde_json = "1"
 
@@ -57,11 +58,9 @@ mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
 mp-types = { workspace = true }
+prometheus-endpoint = { workspace = true }
 rayon = { workspace = true }
-starknet-types-core = { workspace = true, default-features = false, features = [
-  "hash",
-  "parity-scale-codec",
-] }
+starknet-types-core = { workspace = true }
 thiserror.workspace = true
 
 [dev-dependencies]

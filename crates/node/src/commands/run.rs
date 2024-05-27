@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 use std::result::Result as StdResult;
+use std::time::Duration;
 
 use deoxys_runtime::SealingMode;
 use mc_sync::fetch::fetchers::{fetch_apply_genesis_block, FetchConfig};
-use mc_sync::utility::update_config;
+use mc_sync::utility::set_config;
 use mc_sync::utils::constant::starknet_core_address;
 use reqwest::Url;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
@@ -90,6 +91,8 @@ impl NetworkType {
             l1_core_address,
             verify: true,
             api_key: None,
+            sync_polling_interval: Some(Duration::from_secs(2)),
+            n_blocks_to_sync: None,
         }
     }
 }
@@ -143,10 +146,31 @@ pub struct ExtendedRunCmd {
     #[clap(long)]
     pub gateway_key: Option<String>,
 
+    /// Polling interval, in seconds
+    #[clap(long, default_value = "2")]
+    pub sync_polling_interval: u64,
+
+    /// Stop sync polling
+    #[clap(long, default_value = "false")]
+    pub no_sync_polling: bool,
+
+    /// Number of blocks to sync
+    #[clap(long)]
+    pub n_blocks_to_sync: Option<u64>,
+
     /// A flag to run the TUI dashboard
     #[cfg(feature = "tui")]
     #[clap(long)]
     pub tui: bool,
+
+    #[clap(long)]
+    pub backup_every_n_blocks: Option<usize>,
+
+    #[clap(long)]
+    pub backup_dir: Option<PathBuf>,
+
+    #[clap(long, default_value = "false")]
+    pub restore_from_latest_backup: bool,
 }
 
 pub fn run_node(mut cli: Cli) -> Result<()> {
@@ -162,10 +186,29 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             });
         }
     }
+
+    // Assign a random pokemon name at each startup
+    cli.run.base.name.get_or_insert_with(|| {
+        tokio::runtime::Runtime::new().unwrap().block_on(mc_sync::utility::get_random_pokemon_name()).unwrap_or_else(
+            |e| {
+                log::warn!("Failed to get random pokemon name: {}", e);
+                "deoxys".to_string()
+            },
+        )
+    });
+
     if cli.run.base.shared_params.dev {
         override_dev_environment(&mut cli.run);
     } else if cli.run.deoxys {
         deoxys_environment(&mut cli.run);
+    }
+
+    // Defaulting `SealingMode` to `Manual` in order to fetch blocks from the network
+    cli.run.sealing = Some(Sealing::Manual);
+
+    // If --no-telemetry is not set, set the telemetry endpoints to starknodes.com
+    if !cli.run.base.telemetry_params.no_telemetry {
+        cli.run.base.telemetry_params.telemetry_endpoints = vec![("wss://starknodes.com/submit/".to_string(), 0)];
     }
 
     let runner = cli.create_runner(&cli.run.base)?;
@@ -187,12 +230,27 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         fetch_block_config.sound = cli.run.sound;
         fetch_block_config.verify = !cli.run.disable_root;
         fetch_block_config.api_key = cli.run.gateway_key.clone();
-        update_config(&fetch_block_config);
+        fetch_block_config.sync_polling_interval =
+            if cli.run.no_sync_polling { None } else { Some(Duration::from_secs(cli.run.sync_polling_interval)) };
+        fetch_block_config.n_blocks_to_sync = cli.run.n_blocks_to_sync;
+        // unique set of static OnceCell configuration
+        set_config(&fetch_block_config);
 
         let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
 
-        service::new_full(config, sealing, l1_endpoint, cache, fetch_block_config, genesis_block, starting_block)
-            .map_err(sc_cli::Error::Service)
+        service::new_full(
+            config,
+            sealing,
+            l1_endpoint,
+            cache,
+            fetch_block_config,
+            genesis_block,
+            starting_block,
+            cli.run.backup_every_n_blocks,
+            cli.run.backup_dir,
+            cli.run.restore_from_latest_backup,
+        )
+        .map_err(sc_cli::Error::Service)
     })
 }
 
@@ -216,16 +274,6 @@ fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
     // Set the blockchain network to 'starknet'
     cmd.base.shared_params.chain = Some("starknet".to_string());
     cmd.base.shared_params.base_path.get_or_insert_with(|| PathBuf::from("/tmp/deoxys"));
-
-    // Assign a random pokemon name at each startup
-    cmd.base.name.get_or_insert_with(|| {
-        tokio::runtime::Runtime::new().unwrap().block_on(mc_sync::utility::get_random_pokemon_name()).unwrap_or_else(
-            |e| {
-                log::warn!("Failed to get random pokemon name: {}", e);
-                "deoxys".to_string()
-            },
-        )
-    });
 
     // Define telemetry endpoints at starknodes.com
     cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://starknodes.com/submit/".to_string(), 0)];
