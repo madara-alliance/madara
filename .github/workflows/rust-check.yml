@@ -26,7 +26,7 @@ jobs:
 
       - name: Check the project
         run: |
-          cargo check --release --workspace
+          cargo check --workspace
 
       - name: Format and clippy
         run: |
