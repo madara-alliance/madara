@@ -17,6 +17,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           shared-key: "cache"
 
       - name: Setup build deps
