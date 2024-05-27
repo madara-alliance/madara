@@ -108,7 +108,7 @@ fn try_get_funtion_invocation_from_call_info(
     } else {
         // Compute and cache the class hash
         let Ok(Some(class_hash)) =
-            storage_handler::contract_data().get_class_hash_at(&call_info.call.storage_address, block_number)
+            storage_handler::contract_class_hash().get_at(&call_info.call.storage_address, block_number)
         else {
             return Err(TryFuntionInvocationFromCallInfoError::ContractNotFound);
         };

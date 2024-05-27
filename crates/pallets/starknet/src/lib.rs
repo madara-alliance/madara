@@ -158,11 +158,11 @@ pub mod pallet {
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
             if DeoxysBackend::mapping().starknet_block_hash_from_block_number(1).unwrap().is_none() {
-                let handler_contract_data = storage_handler::contract_data_mut();
+                let handler_contract_class = storage_handler::contract_class_hash_mut();
                 self.contracts.iter().for_each(|(contract_address, class_hash)| {
-                    handler_contract_data.insert_class_hash(*contract_address, *class_hash).unwrap();
+                    handler_contract_class.insert(*contract_address, *class_hash).unwrap();
                 });
-                handler_contract_data.commit(0).unwrap();
+                handler_contract_class.commit(0).unwrap();
 
                 let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
                 self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {

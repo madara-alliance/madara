@@ -44,50 +44,57 @@ impl SubstrateCli for Cli {
 }
 
 /// Parse and run command line arguments
-pub fn run() -> sc_cli::Result<()> {
+pub fn run() -> anyhow::Result<()> {
     let _db_drop = mc_db::DBDropHook;
+    crate::util::setup_rayon_threadpool()?;
     let cli = Cli::from_args();
 
     match cli.subcommand {
-        Some(Subcommand::Key(ref cmd)) => cmd.run(&cli),
+        Some(Subcommand::Key(ref cmd)) => Ok(cmd.run(&cli)?),
         Some(Subcommand::BuildSpec(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
-            runner.sync_run(|config| cmd.run(config.chain_spec, config.network))
+            runner.sync_run(|config| cmd.run(config.chain_spec, config.network))?;
+            Ok(())
         }
         Some(Subcommand::CheckBlock(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.async_run(|mut config| {
                 let (client, _, import_queue, task_manager, _) = service::new_chain_ops(&mut config)?;
                 Ok((cmd.run(client, import_queue), task_manager))
-            })
+            })?;
+            Ok(())
         }
         Some(Subcommand::ExportBlocks(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.async_run(|mut config| {
                 let (client, _, _, task_manager, _) = service::new_chain_ops(&mut config)?;
                 Ok((cmd.run(client, config.database), task_manager))
-            })
+            })?;
+            Ok(())
         }
         Some(Subcommand::ExportState(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.async_run(|mut config| {
                 let (client, _, _, task_manager, _) = service::new_chain_ops(&mut config)?;
                 Ok((cmd.run(client, config.chain_spec), task_manager))
-            })
+            })?;
+            Ok(())
         }
         Some(Subcommand::ImportBlocks(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.async_run(|mut config| {
                 let (client, _, import_queue, task_manager, _) = service::new_chain_ops(&mut config)?;
                 Ok((cmd.run(client, import_queue), task_manager))
-            })
+            })?;
+            Ok(())
         }
         Some(Subcommand::PurgeChain(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
-            runner.sync_run(|config| cmd.run(config.database))
+            runner.sync_run(|config| cmd.run(config.database))?;
+            Ok(())
         }
         // TODO: This does not handle reverts correctly
-        Some(Subcommand::Revert(ref _cmd)) => Err("Subcommand Revert is not implemented.".into()),
+        Some(Subcommand::Revert(ref _cmd)) => anyhow::bail!("Subcommand Revert is not implemented."),
         Some(Subcommand::Benchmark(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
 
@@ -135,7 +142,8 @@ pub fn run() -> sc_cli::Result<()> {
                     }
                     BenchmarkCmd::Machine(cmd) => cmd.run(&config, SUBSTRATE_REFERENCE_HARDWARE.clone()),
                 }
-            })
+            })?;
+            Ok(())
         }
         #[cfg(feature = "try-runtime")]
         Some(Subcommand::TryRuntime(cmd)) => {
@@ -150,13 +158,14 @@ pub fn run() -> sc_cli::Result<()> {
             })
         }
         #[cfg(not(feature = "try-runtime"))]
-        Some(Subcommand::TryRuntimeDisabled) => Err("TryRuntime wasn't enabled when building the node. You can \
-                                                     enable it with `--features try-runtime`."
-            .into()),
+        Some(Subcommand::TryRuntimeDisabled) => anyhow::bail!(
+            "TryRuntime wasn't enabled when building the node. You can enable it with `--features try-runtime`."
+        ),
         Some(Subcommand::ChainInfo(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
-            runner.sync_run(|config| cmd.run::<Block>(&config))
+            runner.sync_run(|config| cmd.run::<Block>(&config))?;
+            Ok(())
         }
-        None => run_node(cli),
+        None => Ok(run_node(cli)?),
     }
 }

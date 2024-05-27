@@ -9,6 +9,7 @@ impl BlockStateDiffView {
     pub fn insert(&mut self, block_number: u64, state_diff: StateDiff) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockStateDiff);
+        let block_number: u32 = block_number.try_into().map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
 
         db.put_cf(&column, bincode::serialize(&block_number)?, bincode::serialize(&state_diff)?)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockStateDiff))
@@ -17,6 +18,7 @@ impl BlockStateDiffView {
     pub fn get(&self, block_number: u64) -> Result<Option<StateDiff>, DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockStateDiff);
+        let block_number: u32 = block_number.try_into().map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
 
         let state_diff = db
             .get_cf(&column, bincode::serialize(&block_number)?)

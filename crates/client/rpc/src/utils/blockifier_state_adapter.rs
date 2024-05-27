@@ -69,7 +69,7 @@ impl StateReader for BlockifierStateAdapter {
     fn get_nonce_at(&mut self, contract_address: ContractAddress) -> StateResult<Nonce> {
         match self.nonce_update.get(&contract_address) {
             Some(nonce) => Ok(*nonce),
-            None => match storage_handler::contract_data().get_nonce_at(&contract_address, self.block_number) {
+            None => match storage_handler::contract_nonces().get_at(&contract_address, self.block_number) {
                 Ok(Some(nonce)) => Ok(nonce),
                 Ok(None) => Ok(Nonce::default()),
                 Err(_) => Err(StateError::StateReadError(format!(
@@ -83,7 +83,7 @@ impl StateReader for BlockifierStateAdapter {
     fn get_class_hash_at(&mut self, contract_address: ContractAddress) -> StateResult<ClassHash> {
         match self.class_hash_update.get(&contract_address).cloned() {
             Some(class_hash) => Ok(class_hash),
-            None => match storage_handler::contract_data().get_class_hash_at(&contract_address, self.block_number) {
+            None => match storage_handler::contract_class_hash().get_at(&contract_address, self.block_number) {
                 Ok(Some(class_hash)) => Ok(class_hash),
                 Ok(None) => Ok(ClassHash::default()),
                 Err(_) => Err(StateError::StateReadError(format!(

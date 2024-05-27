@@ -54,6 +54,7 @@ impl StorageViewMut for ContractClassDataViewMut {
     fn commit(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassData);
+        let _block_number: u32 = _block_number.try_into().map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
 
         let mut batch = WriteBatchWithTransaction::<true>::default();
         for (key, value) in self.0.into_iter() {

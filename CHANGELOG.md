@@ -3,6 +3,8 @@
 ## Next release
 
 - refactor: mapping db
+- perf(db): contract key history now using rocksdb iterators for history
+- fix(root): Cleaned state root commitments crate
 - fix(hash): declare tx v0 hash computation
 - perf(db): db contract history parallel fetching and batching
 - remove RuntimeApi on RPC
