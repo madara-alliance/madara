@@ -59,6 +59,7 @@ pub(crate) fn open_rocksdb(
     opts.create_missing_column_families(true);
     opts.set_bytes_per_sync(1024 * 1024);
     opts.set_keep_log_file_num(1);
+    opts.optimize_level_style_compaction(4096 * 1024 * 1024);
     opts.set_compression_type(DBCompressionType::Zstd);
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     opts.increase_parallelism(cores);

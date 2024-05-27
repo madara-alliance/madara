@@ -2,6 +2,7 @@
 
 ## Next release
 
+- perf(db): contract key history now using rocksdb iterators for history
 - perf(db): db contract history parallel fetching and batching
 - remove RuntimeApi on RPC
 - feat(metrics): Added sync time metrics

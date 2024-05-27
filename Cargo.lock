@@ -2724,6 +2724,7 @@ dependencies = [
 name = "deoxys"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "clap",
  "deoxys-runtime",
@@ -2745,6 +2746,7 @@ dependencies = [
  "pallet-starknet",
  "pallet-starknet-runtime-api",
  "parity-scale-codec",
+ "rayon",
  "reqwest",
  "sc-basic-authorship",
  "sc-cli",

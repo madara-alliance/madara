@@ -93,7 +93,7 @@ impl<R: AsHistoryView> StorageView for HistoryView<R> {
         let key = R::KeyBin::from(key.clone());
         let history = History::open(R::column(), key);
 
-        let got = history.get_last(&db)?;
+        let got = history.get_last(db)?;
 
         Ok(got.map(|(_block, v)| v))
     }
@@ -109,7 +109,7 @@ impl<R: AsHistoryView> HistoryView<R> {
         let key = R::KeyBin::from(key.clone());
         let history = History::open(R::column(), key);
 
-        let got = history.get_at(&db, block_number)?;
+        let got = history.get_at(db, block_number)?;
 
         Ok(got.map(|(_block, v)| v))
     }
@@ -150,7 +150,7 @@ impl<R: AsHistoryView> StorageViewMut for HistoryViewMut<R> {
             for (key, v) in chunk {
                 let key = R::KeyBin::from(key.clone());
 
-                History::open(R::column(), key).put(&db, &mut batch, block_number, v.clone());
+                History::open(R::column(), key).put(db, &mut batch, block_number, v.clone());
             }
             db.write(batch)?;
             Ok::<_, HistoryError>(())
