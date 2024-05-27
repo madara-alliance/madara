@@ -22,7 +22,7 @@ use starknet_providers::sequencer::models::state_update::{
 };
 use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
 
-use crate::commitments::lib::calculate_commitments;
+use crate::commitments::lib::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
 use crate::utility;
 
@@ -402,7 +402,8 @@ fn commitments(
 ) -> (StarkFelt, StarkFelt) {
     let chain_id = chain_id();
 
-    let (commitment_tx, commitment_event) = calculate_commitments(transactions, events, chain_id, block_number);
+    let (commitment_tx, commitment_event) =
+        calculate_tx_and_event_commitments(transactions, events, chain_id, block_number);
 
     (commitment_tx.into(), commitment_event.into())
 }
