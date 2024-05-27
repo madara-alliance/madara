@@ -60,7 +60,7 @@ where
     let key = StorageKey(PatriciaKey(StarkFelt(key.to_bytes_be())));
 
     // Check if the contract exists at the given address in the specified block.
-    match storage_handler::contract_data().is_contract_deployed_at(&contract_address, block_number) {
+    match storage_handler::contract_class_hash().is_contract_deployed_at(&contract_address, block_number) {
         Err(e) => {
             log::error!("Failed to check if contract is deployed: {e}");
             return Err(StarknetRpcApiError::InternalServerError.into());
