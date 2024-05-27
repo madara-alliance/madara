@@ -2,13 +2,12 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 
 use crossbeam_skiplist::SkipMap;
-use parity_scale_codec::{Decode, Encode};
 use rayon::prelude::ParallelIterator;
 use rayon::slice::ParallelSlice;
 use rocksdb::{IteratorMode, ReadOptions, WriteBatchWithTransaction};
 use thiserror::Error;
 
-use super::{DeoxysStorageError, StorageView, StorageViewMut};
+use super::{codec, DeoxysStorageError, StorageView, StorageViewMut};
 use crate::{Column, DatabaseExt, DeoxysBackend, DB};
 
 #[derive(Debug, Error)]
@@ -19,6 +18,8 @@ pub enum HistoryError {
     NumberFormat,
     #[error("value codec error: {0}")]
     ParityCodec(#[from] parity_scale_codec::Error),
+    #[error("value codec error: {0}")]
+    Codec(#[from] codec::Error),
 }
 
 pub struct History<K: Deref<Target = [u8]>, T> {
@@ -27,12 +28,13 @@ pub struct History<K: Deref<Target = [u8]>, T> {
     _boo: PhantomData<T>,
 }
 
-impl<K: Deref<Target = [u8]>, T: Decode + Encode> History<K, T> {
+impl<K: Deref<Target = [u8]>, T: codec::Decode + codec::Encode> History<K, T> {
     pub fn open(column: Column, prefix: K) -> Self {
         Self { column, prefix, _boo: PhantomData }
     }
 
     pub fn get_at(&self, db: &DB, block_n: u64) -> Result<Option<(u64, T)>, HistoryError> {
+        let block_n = u32::try_from(block_n).map_err(|_| HistoryError::NumberFormat)?;
         let start_at = [self.prefix.deref(), &block_n.to_be_bytes() as &[u8]].concat();
 
         let mut options = ReadOptions::default();
@@ -45,13 +47,13 @@ impl<K: Deref<Target = [u8]>, T: Decode + Encode> History<K, T> {
             Some(res) => {
                 let (k, v) = res?;
                 assert!(k.starts_with(self.prefix.deref()));
-                let block_n: [u8; 8] =
+                let block_n: [u8; 4] =
                     k[self.prefix.deref().len()..].try_into().map_err(|_| HistoryError::NumberFormat)?;
-                let block_n = u64::from_be_bytes(block_n);
+                let block_n = u32::from_be_bytes(block_n);
 
-                let v = T::decode(&mut v.deref())?;
+                let v = T::decode(v.deref())?;
 
-                Ok(Some((block_n, v)))
+                Ok(Some((block_n.into(), v)))
             }
             None => Ok(None),
         }
@@ -61,9 +63,17 @@ impl<K: Deref<Target = [u8]>, T: Decode + Encode> History<K, T> {
         self.get_at(db, u64::MAX)
     }
 
-    pub fn put(&self, db: &DB, write_batch: &mut WriteBatchWithTransaction<true>, block_n: u64, value: T) {
+    pub fn put(
+        &self,
+        db: &DB,
+        write_batch: &mut WriteBatchWithTransaction<true>,
+        block_n: u64,
+        value: T,
+    ) -> Result<(), HistoryError> {
+        let block_n = u32::try_from(block_n).map_err(|_| HistoryError::NumberFormat)?;
         let key = [self.prefix.deref(), &block_n.to_be_bytes() as &[u8]].concat();
-        write_batch.put_cf(&db.get_column(self.column), key, value.encode());
+        write_batch.put_cf(&db.get_column(self.column), key, value.encode()?);
+        Ok(())
     }
 }
 
@@ -72,7 +82,7 @@ impl<K: Deref<Target = [u8]>, T: Decode + Encode> History<K, T> {
 pub trait AsHistoryView {
     type Key: Ord + Sync + Send + Clone + 'static;
     type KeyBin: Deref<Target = [u8]> + From<Self::Key>;
-    type T: Decode + Encode + Sync + Send + Clone + 'static;
+    type T: codec::Decode + codec::Encode + Sync + Send + Clone + 'static;
 
     fn column() -> Column;
 }
@@ -150,7 +160,7 @@ impl<R: AsHistoryView> StorageViewMut for HistoryViewMut<R> {
             for (key, v) in chunk {
                 let key = R::KeyBin::from(key.clone());
 
-                History::open(R::column(), key).put(db, &mut batch, block_number, v.clone());
+                History::open(R::column(), key).put(db, &mut batch, block_number, v.clone())?;
             }
             db.write(batch)?;
             Ok::<_, HistoryError>(())

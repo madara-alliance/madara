@@ -9,6 +9,7 @@ impl BlockHashView {
     pub fn insert(&mut self, block_number: u64, block_hash: &Felt252Wrapper) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockNumberToHash);
+        let block_number: u32 = block_number.try_into().map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
         db.put_cf(&column, bincode::serialize(&block_number)?, bincode::serialize(&block_hash)?)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockHash))
     }
@@ -16,6 +17,8 @@ impl BlockHashView {
     pub fn get(&self, block_number: u64) -> Result<Option<Felt252Wrapper>, DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockNumberToHash);
+        let block_number: u32 = block_number.try_into().map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
+
         let block_hash = db
             .get_cf(&column, bincode::serialize(&block_number)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockHash))?
