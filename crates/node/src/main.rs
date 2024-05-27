@@ -11,7 +11,8 @@ mod commands;
 mod configs;
 mod genesis_block;
 mod rpc;
+mod util;
 
-fn main() -> sc_cli::Result<()> {
+fn main() -> anyhow::Result<()> {
     command::run()
 }
