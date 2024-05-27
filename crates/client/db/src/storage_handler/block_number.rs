@@ -9,6 +9,7 @@ impl BlockNumberView {
     pub fn insert(&mut self, block_hash: &Felt252Wrapper, block_number: u64) -> Result<(), DeoxysStorageError> {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::BlockHashToNumber);
+        let block_number: u32 = block_number.try_into().map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
 
         db.put_cf(&column, bincode::serialize(&block_hash)?, bincode::serialize(&block_number)?)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockNumber))
@@ -19,10 +20,10 @@ impl BlockNumberView {
         let block_number = db
             .get_cf(&column, bincode::serialize(&block_hash)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockNumber))?
-            .map(|bytes| bincode::deserialize::<u64>(&bytes[..]));
+            .map(|bytes| bincode::deserialize::<u32>(&bytes[..]));
 
         match block_number {
-            Some(Ok(block_number)) => Ok(Some(block_number)),
+            Some(Ok(block_number)) => Ok(Some(block_number.into())),
             Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::BlockNumber)),
             None => Ok(None),
         }

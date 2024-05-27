@@ -28,6 +28,7 @@ pub mod block_hash;
 pub mod block_number;
 pub mod block_state_diff;
 mod class_trie;
+mod codec;
 mod contract_class_data;
 mod contract_class_hashes;
 pub(crate) mod contract_data;
@@ -73,6 +74,10 @@ pub enum DeoxysStorageError {
     StorageRevertError(StorageType, u64),
     #[error("failed to parse history")]
     StorageHistoryError(#[from] HistoryError),
+    #[error("invalid block number")]
+    InvalidBlockNumber,
+    #[error("invalid nonce")]
+    InvalidNonce,
 }
 
 impl From<bincode::Error> for DeoxysStorageError {
