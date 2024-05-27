@@ -96,8 +96,8 @@ parity-scale-codec = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true }
 url = { workspace = true }
 
-rayon.workspace = true
 anyhow.workspace = true
+rayon.workspace = true
 
 [build-dependencies]
 substrate-build-script-utils = { workspace = true }
