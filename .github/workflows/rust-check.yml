@@ -19,6 +19,7 @@ jobs:
         with:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           shared-key: "cache"
+          cache-all-crates: "true"
 
       - name: Setup build deps
         run: |
