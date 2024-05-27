@@ -60,7 +60,7 @@ impl<K: Deref<Target = [u8]>, T: codec::Decode + codec::Encode> History<K, T> {
     }
 
     pub fn get_last(&self, db: &DB) -> Result<Option<(u64, T)>, HistoryError> {
-        self.get_at(db, u64::MAX)
+        self.get_at(db, u32::MAX.into())
     }
 
     pub fn put(
