@@ -1,9 +1,7 @@
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
-use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_types::block::DBlockT;
 use sc_client_api::backend::{Backend, StorageProvider};
@@ -52,7 +50,7 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = DeoxysBackend::mapping()
-        .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
+        .substrate_block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
         .map_err(|e| {
             log::error!("Failed to get substrate block hash from transaction hash: {}", e);
             StarknetRpcApiError::InternalServerError
@@ -60,27 +58,16 @@ where
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-    let block_number = starknet_block.header().block_number;
     let starknet_block_hash = starknet_block.header().hash::<H>();
-
-    let chain_id = chain_id().into();
-
-    let opt_cached_transaction_hashes = starknet.get_cached_transaction_hashes(starknet_block_hash.into());
 
     let transaction_hash = Felt252Wrapper::from(transaction_hash);
 
-    let transaction = match opt_cached_transaction_hashes {
-        Some(cached_tx_hashes) => cached_tx_hashes
-            .into_iter()
-            .zip(starknet_block.transactions())
-            .find(|(tx_hash, _)| *tx_hash == transaction_hash.into())
-            .map(|(_, tx)| tx.clone()),
-        None => starknet_block
-            .transactions()
-            .iter()
-            .find(|tx| tx.compute_hash::<H>(chain_id, false, Some(block_number)).0 == transaction_hash.into())
-            .cloned(),
-    };
+    let transaction = starknet
+        .get_block_transaction_hashes(starknet_block_hash.into())?
+        .into_iter()
+        .zip(starknet_block.transactions())
+        .find(|(tx_hash, _)| *tx_hash == transaction_hash.into())
+        .map(|(_, tx)| tx.clone());
 
     match transaction {
         Some(tx) => Ok(to_starknet_core_tx(tx, transaction_hash.into())),

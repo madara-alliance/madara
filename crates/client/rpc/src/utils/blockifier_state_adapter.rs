@@ -6,6 +6,7 @@ use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
 use indexmap::IndexMap;
 use mc_db::storage_handler::{self, StorageView};
+use mc_db::DeoxysBackend;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -41,8 +42,8 @@ impl StateReader for BlockifierStateAdapter {
     fn get_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
         if contract_address.0.0 == StarkFelt::ONE {
             let block_number = key.0.0.try_into().map_err(|_| StateError::OldBlockHashNotProvided)?;
-            match storage_handler::block_hash().get(block_number) {
-                Ok(Some(block_hash)) => return Ok(block_hash.into()),
+            match DeoxysBackend::mapping().starknet_block_hash_from_block_number(block_number) {
+                Ok(Some(block_hash)) => return Ok(block_hash),
                 Ok(None) => return Err(StateError::OldBlockHashNotProvided),
                 Err(_) => {
                     return Err(StateError::StateReadError(format!(

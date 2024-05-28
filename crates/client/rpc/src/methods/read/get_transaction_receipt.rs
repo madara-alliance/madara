@@ -3,7 +3,6 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution as btx;
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
-use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHashT};
@@ -25,9 +24,9 @@ use crate::utils::call_info::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
 };
 use crate::utils::execution::{block_context, re_execute_transactions};
-use crate::utils::helpers::{tx_hash_compute, tx_hash_retrieve};
+use crate::utils::helpers::tx_hash_retrieve;
 use crate::utils::transaction::blockifier_transactions;
-use crate::{Felt, Starknet};
+use crate::Starknet;
 
 /// Get the transaction receipt by the transaction hash.
 ///
@@ -62,21 +61,18 @@ where
 {
     // get the substrate block hash from the transaction hash
     let substrate_block_hash = DeoxysBackend::mapping()
-        .block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
+        .substrate_block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
         .map_err(|e| {
             log::error!("Failed to get substrate block hash from transaction hash: {}", e);
             StarknetRpcApiError::InternalServerError
         })?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-    let chain_id = Felt(chain_id());
-
-    get_transaction_receipt_finalized(starknet, chain_id, substrate_block_hash, transaction_hash)
+    get_transaction_receipt_finalized(starknet, substrate_block_hash, transaction_hash)
 }
 
 pub fn get_transaction_receipt_finalized<BE, C, H>(
-    client: &Starknet<BE, C, H>,
-    chain_id: Felt,
+    starknet: &Starknet<BE, C, H>,
     substrate_block_hash: DHashT,
     transaction_hash: FieldElement,
 ) -> RpcResult<TransactionReceiptWithBlockInfo>
@@ -85,28 +81,24 @@ where
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let block = get_block_by_block_hash(client.client.as_ref(), substrate_block_hash)?;
+    let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
     let block_header = block.header();
     let block_number = block_header.block_number;
-    let block_hash: Felt252Wrapper = block_header.hash::<H>();
+    let starknet_block_hash: Felt252Wrapper = block_header.hash::<H>();
 
-    let block_context = block_context(client.client.as_ref(), substrate_block_hash)?;
+    let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
-    // retrieve all transaction hashes from the block in the cache or compute them
-    let block_txs_hashes = match client.get_cached_transaction_hashes(block_hash.into()) {
-        Some(tx_hashes) => tx_hash_retrieve(tx_hashes),
-        None => tx_hash_compute::<H>(&block, chain_id),
-    };
+    let block_txs_hashes = tx_hash_retrieve(starknet.get_block_transaction_hashes(starknet_block_hash.into())?);
 
     // retrieve the transaction index in the block with the transaction hash
     let (tx_index, _) =
         block_txs_hashes.iter().enumerate().find(|(_, hash)| *hash == &transaction_hash).ok_or_else(|| {
-            log::error!("Failed to retrieve transaction index from block with hash {block_hash:?}");
+            log::error!("Failed to retrieve transaction index from block with hash {starknet_block_hash:?}");
             StarknetRpcApiError::InternalServerError
         })?;
 
     let transaction = block.transactions().get(tx_index).ok_or_else(|| {
-        log::error!("Failed to retrieve transaction at index {tx_index} from block with hash {block_hash:?}");
+        log::error!("Failed to retrieve transaction at index {tx_index} from block with hash {starknet_block_hash:?}");
         StarknetRpcApiError::InternalServerError
     })?;
 
@@ -126,7 +118,7 @@ where
 
     let receipt = receipt(transaction, &execution_infos, transaction_hash, block_number)?;
 
-    let block_info = starknet_core::types::ReceiptBlock::Block { block_hash: block_hash.0, block_number };
+    let block_info = starknet_core::types::ReceiptBlock::Block { block_hash: starknet_block_hash.0, block_number };
 
     Ok(TransactionReceiptWithBlockInfo { receipt, block: block_info })
 }

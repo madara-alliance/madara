@@ -133,13 +133,20 @@ fn spawn_backup_db_task(
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Column {
     Meta,
+    // Starknet block hash to Substrate block hash
     BlockMapping,
-    TransactionMapping,
+    // Substrate block hash to true if it contains a Starknet block
     SyncedMapping,
-    BlockHashToNumber,
-    BlockNumberToHash,
-    BlockStateDiff,
+    // Transaction hash to Substrate block hash
+    TransactionMapping,
+    /// Starknet block hash to list of starknet transaction hashes
+    StarknetTransactionHashesMapping,
+    /// Block number to block Starknet block hash
+    StarknetBlockHashesMapping,
+    /// Starknet block hash to block number
+    StarknetBlockNumberMapping,
 
+    /// Contract class hash to class data
     ContractClassData,
 
     // History of contract class hashes
@@ -156,17 +163,8 @@ pub enum Column {
     // History of contract key => values
     // (contract_address, storage_key) history block_number => felt
     ContractStorage,
-
-    /// This column is used to map starknet block hashes to a list of transaction hashes that are
-    /// contained in the block.
-    ///
-    /// This column should only be accessed if the `--cache` flag is enabled.
-    StarknetTransactionHashesCache,
-
-    /// This column is used to map starknet block numbers to their block hashes.
-    ///
-    /// This column should only be accessed if the `--cache` flag is enabled.
-    StarknetBlockHashesCache,
+    /// Block number to state diff
+    BlockStateDiff,
 
     // Each bonsai storage has 3 columns
     BonsaiContractsTrie,
@@ -180,6 +178,12 @@ pub enum Column {
     BonsaiClassesTrie,
     BonsaiClassesFlat,
     BonsaiClassesLog,
+}
+
+impl Column {
+    fn iter() -> impl Iterator<Item = Self> {
+        Self::ALL.iter().copied()
+    }
 }
 
 impl fmt::Debug for Column {
@@ -200,18 +204,17 @@ impl Column {
         &[
             Meta,
             BlockMapping,
-            TransactionMapping,
             SyncedMapping,
-            BlockHashToNumber,
-            BlockNumberToHash,
-            BlockStateDiff,
+            TransactionMapping,
+            StarknetTransactionHashesMapping,
+            StarknetBlockHashesMapping,
+            StarknetBlockNumberMapping,
             ContractClassData,
             ContractToClassHashes,
             ContractToNonces,
             ContractClassHashes,
             ContractStorage,
-            StarknetTransactionHashesCache,
-            StarknetBlockHashesCache,
+            BlockStateDiff,
             BonsaiContractsTrie,
             BonsaiContractsFlat,
             BonsaiContractsLog,
@@ -232,8 +235,9 @@ impl Column {
             BlockMapping => "block_mapping",
             TransactionMapping => "transaction_mapping",
             SyncedMapping => "synced_mapping",
-            StarknetTransactionHashesCache => "starknet_transaction_hashes_cache",
-            StarknetBlockHashesCache => "starnet_block_hashes_cache",
+            StarknetTransactionHashesMapping => "starknet_transaction_hashes_mapping",
+            StarknetBlockHashesMapping => "starnet_block_hashes_mapping",
+            StarknetBlockNumberMapping => "starknet_block_number_mapping",
             BonsaiContractsTrie => "bonsai_contracts_trie",
             BonsaiContractsFlat => "bonsai_contracts_flat",
             BonsaiContractsLog => "bonsai_contracts_log",
@@ -243,14 +247,12 @@ impl Column {
             BonsaiClassesTrie => "bonsai_classes_trie",
             BonsaiClassesFlat => "bonsai_classes_flat",
             BonsaiClassesLog => "bonsai_classes_log",
-            BlockHashToNumber => "block_hash_to_number_trie",
-            BlockNumberToHash => "block_to_hash_trie",
             BlockStateDiff => "block_state_diff",
             ContractClassData => "contract_class_data",
             ContractToClassHashes => "contract_to_class_hashes",
             ContractToNonces => "contract_to_nonces",
             ContractClassHashes => "contract_class_hashes",
-            ContractStorage => "contract_storage",
+            ContractStorage => "contrac_storage",
         }
     }
 
@@ -346,7 +348,6 @@ impl DeoxysBackend {
         db_config_dir: &Path,
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
-        cache_more_things: bool,
     ) -> Result<&'static Arc<DeoxysBackend>> {
         let db_path = db_config_dir.join("starknet/rockdb"); //.deoxysdb/chains/starknet/starknet/rockdb
 
@@ -404,7 +405,7 @@ impl DeoxysBackend {
         bonsai_classes.init_tree(bonsai_identifier::CLASS).unwrap();
 
         let backend = Arc::new(Self {
-            mapping: Arc::new(MappingDb::new(Arc::clone(db), cache_more_things)),
+            mapping: Arc::new(MappingDb::new(Arc::clone(db))),
             meta: Arc::new(MetaDb::new(Arc::clone(db))),
             bonsai_contract: RwLock::new(bonsai_contract),
             bonsai_storage: RwLock::new(bonsai_contract_storage),
