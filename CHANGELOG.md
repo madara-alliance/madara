@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(infra): Added boilerplate to deploy a grafana/prometheus dashboard
 - feat(metrics): Added sync time metrics
 - refactor: using const and OnceCell instead of lazy_static
 - refactor: remove crate mp-storage
