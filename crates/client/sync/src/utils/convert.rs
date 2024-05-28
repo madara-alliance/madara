@@ -62,6 +62,10 @@ pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
         extra_data,
     };
 
+    let computed_block_hash: FieldElement = header.hash::<mp_hashers::pedersen::PedersenHasher>().into();
+    if computed_block_hash != block.block_hash.expect("no block hash provided") {
+        return Err(L2SyncError::MismatchedBlockHash(block_number));
+    }
     let ordered_events: Vec<mp_block::OrderedEvents> = block
         .transaction_receipts
         .iter()
