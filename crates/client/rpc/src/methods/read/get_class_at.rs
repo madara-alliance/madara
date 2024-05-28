@@ -49,7 +49,8 @@ pub fn get_class_at(block_id: BlockId, contract_address: FieldElement) -> RpcRes
     };
 
     // converting from stored Blockifier class to rpc class
-    let StorageContractClassData { contract_class, abi, sierra_program_length, abi_length } = contract_class_data;
+    let StorageContractClassData { contract_class, abi, sierra_program_length, abi_length, block_number: _ } =
+        contract_class_data;
     Ok(ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }.try_into().map_err(
         |e| {
             log::error!("Failed to convert contract class from hash '{class_hash}' to RPC contract class: {e}");
