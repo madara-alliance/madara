@@ -19,6 +19,7 @@ use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_core::types::{PendingStateUpdate, StateUpdate};
+use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{BlockId, StateUpdateWithBlock};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::mpsc;
@@ -135,13 +136,13 @@ async fn l2_verify_and_apply_task(
 
     let mut last_block_hash = None;
 
-    while let Some(L2ConvertedBlockAndUpdates { block_n, block, state_update, class_update }) =
+    while let Some(L2ConvertedBlockAndUpdates { block_n, block_with_tx_hash, state_update, class_update }) =
         pin!(updates_receiver.recv()).await
     {
         let state_update = if verify {
             let state_update = Arc::new(state_update);
             let state_update_1 = Arc::clone(&state_update);
-            let global_state_root = block.header().global_state_root;
+            let global_state_root = block_with_tx_hash.0.header().global_state_root;
 
             let state_root = spawn_compute(move || {
                 let sw = PerfStopwatch::new();
@@ -176,7 +177,7 @@ async fn l2_verify_and_apply_task(
         let storage_diffs = state_update.state_diff.storage_diffs.clone();
         tokio::join!(
             async move {
-                block_sender.send(block).await.expect("block reciever channel is closed");
+                block_sender.send(block_with_tx_hash.0).await.expect("block reciever channel is closed");
             },
             async {
                 let sw = PerfStopwatch::new();
@@ -234,7 +235,7 @@ async fn l2_verify_and_apply_task(
 
 pub struct L2ConvertedBlockAndUpdates {
     pub block_n: u64,
-    pub block: DeoxysBlock,
+    pub block_with_tx_hash: (DeoxysBlock, Vec<FieldElement>),
     pub state_update: StateUpdate,
     pub class_update: Vec<ContractClassData>,
 }
@@ -250,9 +251,9 @@ async fn l2_block_conversion_task(
             (
                 spawn_compute(move || {
                     let sw = PerfStopwatch::new();
-                    let block = convert_block(block)?;
+                    let block_with_tx_hash = convert_block(block)?;
                     stopwatch_end!(sw, "convert_block: {:?}");
-                    Ok(L2ConvertedBlockAndUpdates { block_n, block, state_update, class_update })
+                    Ok(L2ConvertedBlockAndUpdates { block_n, block_with_tx_hash, state_update, class_update })
                 }),
                 updates_recv,
             )
@@ -438,7 +439,7 @@ where
 
     if hash_best == tmp {
         *STARKNET_PENDING_BLOCK.write().expect("Failed to acquire write lock on STARKNET_PENDING_BLOCK") =
-            Some(spawn_compute(|| crate::convert::convert_block(block)).await.unwrap());
+            Some(spawn_compute(|| crate::convert::convert_block(block)).await.unwrap().0);
 
         *STARKNET_PENDING_STATE_UPDATE.write().expect("Failed to aquire write lock on STARKNET_PENDING_STATE_UPDATE") =
             Some(crate::convert::state_update(state_update));

@@ -27,7 +27,7 @@ use crate::l2::L2SyncError;
 use crate::utility;
 
 /// Compute heavy, this should only be called in a rayon ctx
-pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
+pub fn convert_block(block: p::Block) -> Result<(DeoxysBlock, Vec<FieldElement>), L2SyncError> {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
@@ -39,7 +39,7 @@ pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
     let transaction_count = transactions.len() as u128;
     let event_count = events.len() as u128;
 
-    let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number);
+    let ((transaction_commitment, txs_hashes), event_commitment) = commitments(&transactions, &events, block_number);
 
     let protocol_version = starknet_version(&block.starknet_version);
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
@@ -70,7 +70,7 @@ pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
         .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
         .collect();
 
-    Ok(DeoxysBlock::new(header, transactions, ordered_events))
+    Ok((DeoxysBlock::new(header, transactions, ordered_events), txs_hashes))
 }
 
 fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {
@@ -399,13 +399,13 @@ fn commitments(
     transactions: &[starknet_api::transaction::Transaction],
     events: &[starknet_api::transaction::Event],
     block_number: u64,
-) -> (StarkFelt, StarkFelt) {
+) -> ((StarkFelt, Vec<FieldElement>), StarkFelt) {
     let chain_id = chain_id();
 
-    let (commitment_tx, commitment_event) =
+    let ((commitment_tx, txs_hashes), commitment_event) =
         calculate_tx_and_event_commitments(transactions, events, chain_id, block_number);
 
-    (commitment_tx.into(), commitment_event.into())
+    ((commitment_tx.into(), txs_hashes), commitment_event.into())
 }
 
 fn chain_id() -> mp_felt::Felt252Wrapper {
