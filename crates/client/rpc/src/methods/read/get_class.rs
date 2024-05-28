@@ -38,7 +38,7 @@ pub fn get_class(block_id: BlockId, class_hash: FieldElement) -> RpcResult<Contr
                 abi_length,
                 block_number: declared_at_block,
             } = class;
-            if declared_at_block >= block_number_by_id(block_id) {
+            if declared_at_block >= block_number_by_id(block_id)? {
                 return Err(StarknetRpcApiError::ClassHashNotFound.into());
             }
             Ok(ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
