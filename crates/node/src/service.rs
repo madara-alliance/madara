@@ -421,8 +421,10 @@ where
             // listening for new blocks
             let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            let block_digest_item: DigestItem =
-                sp_runtime::DigestItem::PreRuntime(mp_digest_log::DEOXYS_ENGINE_ID, Encode::encode(&block));
+            let block_digest_item: DigestItem = sp_runtime::DigestItem::PreRuntime(
+                mp_digest_log::DEOXYS_ENGINE_ID,
+                mp_digest_log::Log::Block(block).encode(),
+            );
 
             Ok(Digest { logs: vec![block_digest_item] })
         }
