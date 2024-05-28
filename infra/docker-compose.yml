@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   deoxys:
@@ -12,7 +12,26 @@ services:
       - "9615:9615"
     volumes:
       - /var/lib/deoxys:/var/lib/deoxys
-    command: ["--deoxys", "--rpc-port", "9944", "--network", "main", "--rpc-external", "--rpc-cors", "*", "--rpc-methods", "Safe", "--l1-endpoint", "${DEOXYS_ETHEREUM_API_URL}", "--rpc-max-connections", "100", "--base-path", "/var/lib/deoxys", "--prometheus-external"]
+    command:
+      [
+        "--deoxys",
+        "--rpc-port",
+        "9944",
+        "--network",
+        "main",
+        "--rpc-external",
+        "--rpc-cors",
+        "*",
+        "--rpc-methods",
+        "Safe",
+        "--l1-endpoint",
+        "${DEOXYS_ETHEREUM_API_URL}",
+        "--rpc-max-connections",
+        "100",
+        "--base-path",
+        "/var/lib/deoxys",
+        "--prometheus-external",
+      ]
 
   prometheus:
     container_name: prometheus
@@ -25,7 +44,7 @@ services:
     links:
       - cadvisor:cadvisor
       - influxdb:influxdb
-    depends_on: 
+    depends_on:
       - cadvisor
       - influxdb
 
@@ -37,10 +56,10 @@ services:
       - /sys:/host/sys:ro
       - /:/rootfs:ro
       - /:/host:ro,rslave
-    command: 
-      - '--path.rootfs=/host'
-      - '--path.procfs=/host/proc' 
-      - '--path.sysfs=/host/sys'
+    command:
+      - "--path.rootfs=/host"
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
       - --collector.filesystem.ignored-mount-points
       - "^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)"
     ports:
@@ -52,14 +71,14 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
-    volumes: 
+    volumes:
       - "/:/rootfs"
       - "/var/run:/var/run"
       - "/sys:/sys"
       - "/var/lib/docker/:/var/lib/docker"
       - "/dev/disk/:/dev/disk"
     privileged: true
-    devices: 
+    devices:
       - "/dev/kmsg"
 
   grafana:
