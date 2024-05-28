@@ -6,6 +6,7 @@ use mc_db::{storage_handler, DeoxysBackend};
 use mp_felt::Felt252Wrapper;
 use mp_transactions::TxType;
 use starknet_api::core::ContractAddress;
+use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
     BlockId, BlockTag, ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
     DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, InvokeTransactionTrace,
@@ -247,11 +248,13 @@ pub fn block_number_by_id(id: BlockId) -> Result<u64, StarknetRpcApiError> {
     let (latest_block_hash, latest_block_number) = DeoxysBackend::meta().get_latest_block_hash_and_number()?;
     match id {
         BlockId::Number(number) => Ok(number),
-        BlockId::Hash(block_hash) => match storage_handler::block_number().get(&Felt252Wrapper(block_hash))? {
-            Some(block_number) => Ok(block_number),
-            None if block_hash == latest_block_hash => Ok(latest_block_number),
-            None => Err(StarknetRpcApiError::BlockNotFound),
-        },
+        BlockId::Hash(block_hash) => {
+            match DeoxysBackend::mapping().block_number_from_starknet_block_hash(StarkFelt(block_hash.to_bytes_be()))? {
+                Some(block_number) => Ok(block_number),
+                None if block_hash == latest_block_hash => Ok(latest_block_number),
+                None => Err(StarknetRpcApiError::BlockNotFound),
+            }
+        }
         BlockId::Tag(BlockTag::Latest) => Ok(latest_block_number),
         BlockId::Tag(BlockTag::Pending) => Ok(latest_block_number + 1),
     }

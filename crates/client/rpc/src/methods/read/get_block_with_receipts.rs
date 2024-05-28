@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
@@ -20,9 +19,9 @@ use crate::utils::block::{
     l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, timestamp,
 };
 use crate::utils::execution::{block_context, re_execute_transactions};
-use crate::utils::helpers::{status, tx_hash_compute, tx_hash_retrieve};
+use crate::utils::helpers::{status, tx_hash_retrieve};
 use crate::utils::transaction::blockifier_transactions;
-use crate::{Felt, Starknet};
+use crate::Starknet;
 
 pub fn get_block_with_receipts<BE, C, H>(
     starknet: &Starknet<BE, C, H>,
@@ -41,12 +40,7 @@ where
 
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
-    // retrieve all transaction hashes from the block in the cache or compute them
-    let block_txs_hashes = if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(block_hash.into()) {
-        tx_hash_retrieve(tx_hashes)
-    } else {
-        tx_hash_compute::<H>(&block, Felt(chain_id()))
-    };
+    let block_txs_hashes = tx_hash_retrieve(starknet.get_block_transaction_hashes(block_hash.into())?);
 
     // create a vector of transactions with their corresponding hashes without deploy transactions,
     // blockifier does not support deploy transactions

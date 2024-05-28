@@ -2,7 +2,8 @@
 
 ## Next release
 
-- fix(rpx): get_class
+- fix(rpc): get_class
+- refactor: mapping db
 - perf(db): contract key history now using rocksdb iterators for history
 - fix(root): Cleaned state root commitments crate
 - fix(hash): declare tx v0 hash computation

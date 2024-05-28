@@ -122,14 +122,6 @@ pub struct ExtendedRunCmd {
     #[clap(long, short, default_value = "integration")]
     pub network: NetworkType,
 
-    /// When enabled, more information about the blocks and their transaction is cached and stored
-    /// in the database.
-    ///
-    /// This may improve response times for RPCs that require that information, but it also
-    /// increases the memory footprint of the node.
-    #[clap(long)]
-    pub cache: bool,
-
     /// This will invoke sound interpreted from the block hashes.
     #[clap(long)]
     pub sound: bool,
@@ -224,7 +216,6 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
 
     runner.run_node_until_exit(|config| async move {
         let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
-        let cache = cli.run.cache;
         let starting_block = cli.run.starting_block;
         let mut fetch_block_config = cli.run.network.block_fetch_config();
         fetch_block_config.sound = cli.run.sound;
@@ -242,7 +233,6 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
             config,
             sealing,
             l1_endpoint,
-            cache,
             fetch_block_config,
             genesis_block,
             starting_block,

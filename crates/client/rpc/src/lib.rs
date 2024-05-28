@@ -17,6 +17,7 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use mc_db::DeoxysBackend;
+use mc_sync::utility;
 use methods::trace::utils::block_number_by_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
@@ -225,7 +226,7 @@ impl<BE, C, H> Starknet<BE, C, H> {
 
 impl<BE, C, H> Starknet<BE, C, H> {
     fn chain_id(&self) -> RpcResult<Felt> {
-        methods::read::chain_id::chain_id()
+        Ok(Felt(utility::chain_id()))
     }
 }
 
@@ -305,10 +306,9 @@ where
     /// # Arguments
     ///
     /// * `block_hash` - The hash of the block containing the transactions (starknet block).
-    fn get_cached_transaction_hashes(&self, block_hash: StarkHash) -> Option<Vec<StarkHash>> {
-        DeoxysBackend::mapping().cached_transaction_hashes_from_block_hash(block_hash).unwrap_or_else(|err| {
-            log::error!("Failed to read from cache: {err}");
-            None
-        })
+    fn get_block_transaction_hashes(&self, block_hash: StarkHash) -> Result<Vec<StarkHash>, StarknetRpcApiError> {
+        DeoxysBackend::mapping()
+            .transaction_hashes_from_block_hash(block_hash)?
+            .ok_or(StarknetRpcApiError::BlockNotFound)
     }
 }

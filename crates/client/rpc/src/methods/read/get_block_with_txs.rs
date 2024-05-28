@@ -41,6 +41,6 @@ where
 
     match block_id {
         BlockId::Tag(BlockTag::Pending) => get_block_with_txs_pending::<H>(chain_id),
-        _ => get_block_with_txs_finalized(starknet, chain_id, substrate_block_hash),
+        _ => get_block_with_txs_finalized(starknet, substrate_block_hash),
     }
 }
