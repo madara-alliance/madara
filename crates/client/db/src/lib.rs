@@ -221,7 +221,6 @@ impl Column {
             BonsaiContractsStorageTrie,
             BonsaiContractsStorageFlat,
             BonsaiContractsStorageLog,
-
             BonsaiClassesTrie,
             BonsaiClassesFlat,
             BonsaiClassesLog,
