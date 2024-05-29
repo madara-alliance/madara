@@ -315,8 +315,8 @@ pub async fn sync<C>(
 where
     C: HeaderBackend<DBlockT> + 'static,
 {
-    let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(10);
-    let (block_conv_sender, block_conv_receiver) = mpsc::channel(10);
+    let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(30);
+    let (block_conv_sender, block_conv_receiver) = mpsc::channel(30);
     let provider = Arc::new(provider);
     let sync_timer = Arc::new(Mutex::new(None));
 
