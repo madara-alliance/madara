@@ -30,7 +30,7 @@ use crate::convert::{convert_block, ConvertedBlock};
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::l1::ETHEREUM_STATE_UPDATE;
-use crate::metrics::block_metrics::BlockMetrics;
+use crate::metrics::block_metrics::{update_metrics, BlockMetrics};
 use crate::utils::PerfStopwatch;
 use crate::{stopwatch_end, CommandSink};
 
@@ -141,7 +141,8 @@ async fn l2_verify_and_apply_task(
         pin!(updates_receiver.recv()).await
     {
         let ConvertedBlock { block, block_hash, txs_hashes } = converted_block;
-        let global_state_root = block.header().global_state_root;
+        let block_header = block.header().clone();
+        let global_state_root = block_header.global_state_root;
         let state_update = if verify {
             let state_update = Arc::new(state_update);
             let state_update_1 = Arc::clone(&state_update);
@@ -209,7 +210,7 @@ async fn l2_verify_and_apply_task(
                     &mut command_sink,
                     &mut last_block_hash,
                     block_n,
-                    block_metrics.clone(),
+                    block_metrics.as_ref(),
                     sync_timer.clone(),
                 )
                 .await
@@ -223,7 +224,14 @@ async fn l2_verify_and_apply_task(
                 if store_mapping(block_n, block_hash, substrate_block_hash, txs_hashes).await.is_err() {
                     log::error!("❗ Failed to store mapping for block {block_n}");
                 };
-                stopwatch_end!(sw, "end store_key {}: {:?}", block_n);
+                stopwatch_end!(sw, "end store_mapping {}: {:?}", block_n);
+            },
+            async {
+                if let Some(block_metrics) = block_metrics.as_ref() {
+                    let sw = PerfStopwatch::new();
+                    update_metrics(block_metrics, block_header).await;
+                    stopwatch_end!(sw, "end update_metrics {}: {:?}", block_n);
+                }
             },
         );
 
@@ -336,7 +344,7 @@ where
         command_sink,
         config.verify,
         config.backup_every_n_blocks,
-        block_metrics.clone(),
+        block_metrics,
         Arc::clone(&sync_timer),
     ));
 
@@ -372,7 +380,7 @@ async fn create_block(
     cmds: &mut CommandSink,
     parent_hash: &mut Option<H256>,
     block_number: u64,
-    block_metrics: Option<BlockMetrics>,
+    block_metrics: Option<&BlockMetrics>,
     sync_timer: Arc<Mutex<Option<Instant>>>,
 ) -> Result<H256, String> {
     let (sender, receiver) = futures::channel::oneshot::channel();
