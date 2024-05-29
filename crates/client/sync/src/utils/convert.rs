@@ -26,8 +26,14 @@ use crate::commitments::lib::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
 use crate::utility;
 
+pub struct ConvertedBlock {
+    pub block: DeoxysBlock,
+    pub block_hash: StarkFelt,
+    pub txs_hashes: Vec<StarkFelt>,
+}
+
 /// Compute heavy, this should only be called in a rayon ctx
-pub fn convert_block(block: p::Block) -> Result<(DeoxysBlock, Vec<FieldElement>), L2SyncError> {
+pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
@@ -74,7 +80,11 @@ pub fn convert_block(block: p::Block) -> Result<(DeoxysBlock, Vec<FieldElement>)
         .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
         .collect();
 
-    Ok((DeoxysBlock::new(header, transactions, ordered_events), txs_hashes))
+    Ok(ConvertedBlock {
+        block: DeoxysBlock::new(header, transactions, ordered_events),
+        block_hash: felt(computed_block_hash),
+        txs_hashes: txs_hashes.into_iter().map(felt).collect(),
+    })
 }
 
 fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {

@@ -222,7 +222,6 @@ impl<T: Config> Pallet<T> {
             DigestItem::PreRuntime(mp_digest_log::DEOXYS_ENGINE_ID, encoded_data) => {
                 let digest = DigestItem::Consensus(DEOXYS_ENGINE_ID, encoded_data.clone());
                 frame_system::Pallet::<T>::deposit_log(digest);
-                log!(info, "Block stored in store_block");
             }
             _ => {
                 log!(info, "Block not found in store_block")

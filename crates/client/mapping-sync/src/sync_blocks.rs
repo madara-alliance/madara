@@ -4,15 +4,11 @@ use blockifier::block::GasPrices;
 use mc_db::DeoxysBackend;
 use mc_rpc::deoxys_backend_client::get_block_by_block_hash;
 use mc_sync::metrics::block_metrics::BlockMetrics;
-use mc_sync::utility::chain_id;
 use mp_digest_log::{find_starknet_block, FindLogError};
-use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
 use num_traits::FromPrimitive;
 use prometheus_endpoint::prometheus::core::Number;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sp_blockchain::{Backend as _, HeaderBackend};
 use sp_runtime::traits::Header as HeaderT;
@@ -46,27 +42,6 @@ where
                              db state ({storage_starknet_block_hash:?})"
                         ))
                     } else {
-                        let tx_hashes = digest_starknet_block
-                            .transactions()
-                            .par_iter()
-                            .map(|tx| {
-                                Felt252Wrapper::from(tx.compute_hash::<H>(
-                                    chain_id().into(),
-                                    false,
-                                    Some(digest_starknet_block.header().block_number),
-                                ))
-                                .into()
-                            })
-                            .collect();
-
-                        // Success, we write the Starknet to Substate hashes mapping to db
-                        let mapping_commitment = mc_db::MappingCommitment {
-                            block_number: digest_starknet_block.header().block_number,
-                            block_hash: substrate_block_hash,
-                            starknet_block_hash: digest_starknet_block_hash.into(),
-                            starknet_transaction_hashes: tx_hashes,
-                        };
-
                         if let Some(block_metrics) = block_metrics {
                             let starknet_block = &digest_starknet_block.clone();
                             block_metrics.l2_block_number.set(starknet_block.header().block_number.into_f64());
@@ -90,10 +65,9 @@ where
                                 .set(f64::from_u128(l1_gas_price.eth_l1_gas_price.into()).unwrap_or(f64::MIN));
                             block_metrics
                                 .l1_gas_price_strk
-                                .set(f64::from_u128(l1_gas_price.strk_l1_gas_price.into()).unwrap_or(f64::MIN))
+                                .set(f64::from_u128(l1_gas_price.strk_l1_gas_price.into()).unwrap_or(f64::MIN));
                         }
-
-                        DeoxysBackend::mapping().write_hashes(mapping_commitment).map_err(|e| anyhow::anyhow!(e))
+                        Ok(())
                     }
                 }
                 // If there is not Starknet block in this Substrate block, we write it in the db
