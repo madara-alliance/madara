@@ -58,6 +58,8 @@ pub enum L2SyncError {
     Provider(#[from] ProviderError),
     #[error("db error")]
     Db(#[from] DeoxysStorageError),
+    #[error("mismatched block hash for block {0}")]
+    MismatchedBlockHash(u64),
 }
 
 /// Contains the latest Starknet verified state on L2

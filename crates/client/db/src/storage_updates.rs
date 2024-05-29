@@ -36,26 +36,33 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
         let handler_contract_data_class = storage_handler::contract_class_hash_mut();
         let handler_contract_data_nonces = storage_handler::contract_nonces_mut();
 
-        let iter_depoyed = state_update.state_diff.deployed_contracts.into_iter().map(
-            |DeployedContractItem { address, class_hash }| {
+        state_update
+            .state_diff
+            .deployed_contracts
+            .into_iter()
+            .map(|DeployedContractItem { address, class_hash }| {
                 (ContractAddress::from_field_element(address), ClassHash::from_field_element(class_hash))
-            },
-        );
-        let iter_replaced = state_update.state_diff.replaced_classes.into_iter().map(
-            |ReplacedClassItem { contract_address, class_hash }| {
-                (ContractAddress::from_field_element(contract_address), ClassHash::from_field_element(class_hash))
-            },
-        );
+            })
+            .try_for_each(|(contract_address, class_hash)| -> Result<(), DeoxysStorageError> {
+                handler_contract_data_class.insert(contract_address, class_hash)?;
+                // insert nonces for contracts that were deployed in this block and do not have a nonce
+                if !nonce_map.contains_key(&contract_address) {
+                    handler_contract_data_nonces.insert(contract_address, Nonce::default())?;
+                }
+                Ok(())
+            })?;
 
-        for (contract_address, class_hash) in iter_depoyed.chain(iter_replaced) {
-            // If the nonce is not present in the nonce map, it means that the nonce was not updated in this
-            // block If the nonce is present in the nonce map, we remove it from the map and use
-            // it
-            handler_contract_data_class.insert(contract_address, class_hash)?;
-            // if let Some(nonce) = nonce_map.remove(&contract_address) {
-            //     handler_contract_data_nonces.insert(contract_address, nonce)?;
-            // }
-        }
+        state_update
+            .state_diff
+            .replaced_classes
+            .into_iter()
+            .map(|ReplacedClassItem { contract_address, class_hash }| {
+                (ContractAddress::from_field_element(contract_address), ClassHash::from_field_element(class_hash))
+            })
+            .try_for_each(|(contract_address, class_hash)| -> Result<(), DeoxysStorageError> {
+                handler_contract_data_class.insert(contract_address, class_hash)?;
+                Ok(())
+            })?;
 
         // insert nonces for contracts that were not deployed or replaced in this block
         nonce_map.into_iter().for_each(|(contract_address, nonce)| {
