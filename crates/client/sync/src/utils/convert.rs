@@ -38,6 +38,7 @@ pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
     let parent_block_hash = felt(block.parent_block_hash);
+    let block_hash = block.block_hash.expect("no block hash provided");
     let block_number = block.block_number.expect("no block number provided");
     let block_timestamp = block.timestamp;
     let global_state_root = felt(block.state_root.expect("no state root provided"));
@@ -50,7 +51,7 @@ pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
     let protocol_version = starknet_version(&block.starknet_version);
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
-    let extra_data = block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be()));
+    let extra_data = Some(sp_core::U256::from_big_endian(&block_hash.to_bytes_be()));
 
     let header = mp_block::Header {
         parent_block_hash,
@@ -69,7 +70,8 @@ pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
     };
 
     let computed_block_hash: FieldElement = header.hash::<mp_hashers::pedersen::PedersenHasher>().into();
-    if computed_block_hash != block.block_hash.expect("no block hash provided") {
+    // mismatched block hash is allowed for blocks 1466..=2242
+    if computed_block_hash != block_hash && !(1466..=2242).contains(&block_number) {
         return Err(L2SyncError::MismatchedBlockHash(block_number));
     }
     let ordered_events: Vec<mp_block::OrderedEvents> = block
@@ -82,7 +84,7 @@ pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
 
     Ok(ConvertedBlock {
         block: DeoxysBlock::new(header, transactions, ordered_events),
-        block_hash: felt(computed_block_hash),
+        block_hash: felt(block_hash),
         txs_hashes: txs_hashes.into_iter().map(felt).collect(),
     })
 }
