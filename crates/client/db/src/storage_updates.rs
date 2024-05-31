@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use mp_convert::field_element::FromFieldElement;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use sp_core::H256;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -13,7 +14,9 @@ use storage_handler::primitives::contract_class::{
     ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData,
 };
 
+use crate::mapping_db::MappingCommitment;
 use crate::storage_handler::{self, DeoxysStorageError, StorageViewMut};
+use crate::{DbError, DeoxysBackend};
 
 pub async fn store_state_update(block_number: u64, state_update: StateUpdate) -> Result<(), DeoxysStorageError> {
     let state_diff = state_update.state_diff.clone();
@@ -141,4 +144,20 @@ pub async fn store_key_update(
     handler_storage.commit(block_number)?;
 
     Ok(())
+}
+
+pub async fn store_mapping(
+    block_number: u64,
+    starknet_block_hash: StarkFelt,
+    substrate_block_hash: H256,
+    starknet_transaction_hashes: Vec<StarkFelt>,
+) -> Result<(), DbError> {
+    let mapping_commitment = MappingCommitment {
+        block_number,
+        block_hash: substrate_block_hash,
+        starknet_block_hash,
+        starknet_transaction_hashes,
+    };
+
+    DeoxysBackend::mapping().write_hashes(mapping_commitment)
 }

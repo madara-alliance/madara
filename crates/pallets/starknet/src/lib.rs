@@ -56,9 +56,7 @@ use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 use mc_db::storage_handler;
 use mc_db::storage_handler::StorageViewMut;
-use mp_block::DeoxysBlock;
 use mp_digest_log::DEOXYS_ENGINE_ID;
-use mp_felt::{trim_hash, Felt252Wrapper};
 use sp_runtime::DigestItem;
 use starknet_api::core::{CompiledClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
@@ -220,29 +218,10 @@ impl<T: Config> Pallet<T> {
     ///
     /// * `block_number` - The block number.
     fn store_block() {
-        let block: DeoxysBlock;
         match &frame_system::Pallet::<T>::digest().logs()[0] {
             DigestItem::PreRuntime(mp_digest_log::DEOXYS_ENGINE_ID, encoded_data) => {
-                block = match DeoxysBlock::decode(&mut encoded_data.as_slice()) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        log!(error, "Failed to decode block: {:?}", e);
-                        return;
-                    }
-                };
-
-                let actual_block_number = block.header().block_number;
-                let block_hash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
-                let state_root = Felt252Wrapper::try_from(block.header().global_state_root).unwrap();
-
-                let digest = DigestItem::Consensus(DEOXYS_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
+                let digest = DigestItem::Consensus(DEOXYS_ENGINE_ID, encoded_data.clone());
                 frame_system::Pallet::<T>::deposit_log(digest);
-                log::info!(
-                    "✨ Imported #{} ({}) and updated state root ({})",
-                    actual_block_number,
-                    trim_hash(&block_hash),
-                    trim_hash(&state_root)
-                );
             }
             _ => {
                 log!(info, "Block not found in store_block")

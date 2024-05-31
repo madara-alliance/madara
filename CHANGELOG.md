@@ -2,6 +2,8 @@
 
 ## Next release
 
+- refactor: l2-sync
+- refactor: remove crate mp-mapping-sync
 - fix(rpc): get_nonce
 - fix(rpc): get_class
 - refactor: mapping db

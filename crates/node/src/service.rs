@@ -3,25 +3,20 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use deoxys_runtime::{self, RuntimeApi, SealingMode};
 use futures::channel::mpsc;
-use futures::future;
 use futures::future::BoxFuture;
-use futures::prelude::*;
 use mc_db::DeoxysBackend;
 use mc_genesis_data_provider::OnDiskGenesisConfig;
-use mc_mapping_sync::MappingSyncWorker;
 use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::metrics::block_metrics::BlockMetrics;
 use mc_sync::starknet_sync_worker;
 use mp_block::DeoxysBlock;
-use mp_types::block::{DBlockT, DHashT, DHasherT};
+use mp_types::block::{DBlockT, DHashT};
 use parity_scale_codec::Encode;
 use reqwest::Url;
 use sc_basic_authorship::ProposerFactory;
-use sc_client_api::BlockchainEvents;
 use sc_consensus::{BasicQueue, BlockImportParams};
 use sc_consensus_manual_seal::{ConsensusDataProvider, Error};
 pub use sc_executor::NativeElseWasmExecutor;
@@ -296,21 +291,6 @@ pub fn new_full(
         telemetry: telemetry.as_mut(),
     })?;
 
-    task_manager.spawn_essential_handle().spawn(
-        "mc-mapping-sync-worker",
-        Some(DEOXYS_TASK_GROUP),
-        MappingSyncWorker::<_, _, DHasherT>::new(
-            client.import_notification_stream(),
-            Duration::new(6, 0),
-            client.clone(),
-            backend.clone(),
-            3,
-            0,
-            block_metrics.clone(),
-        )
-        .for_each(|()| future::ready(())),
-    );
-
     let (block_sender, block_receiver) = tokio::sync::mpsc::channel::<DeoxysBlock>(100);
 
     task_manager.spawn_essential_handle().spawn("starknet-sync-worker", Some(DEOXYS_TASK_GROUP), {
@@ -421,8 +401,10 @@ where
             // listening for new blocks
             let mut lock = self.block_receiver.try_lock().map_err(|e| Error::Other(e.into()))?;
             let block = lock.try_recv().map_err(|_| Error::EmptyTransactionPool)?;
-            let block_digest_item: DigestItem =
-                sp_runtime::DigestItem::PreRuntime(mp_digest_log::DEOXYS_ENGINE_ID, Encode::encode(&block));
+            let block_digest_item: DigestItem = sp_runtime::DigestItem::PreRuntime(
+                mp_digest_log::DEOXYS_ENGINE_ID,
+                mp_digest_log::Log::Block(block).encode(),
+            );
 
             Ok(Digest { logs: vec![block_digest_item] })
         }

@@ -36,7 +36,7 @@ pub fn calculate_tx_and_event_commitments(
     events: &[Event],
     chain_id: Felt252Wrapper,
     block_number: u64,
-) -> (Felt252Wrapper, Felt252Wrapper) {
+) -> ((Felt252Wrapper, Vec<FieldElement>), Felt252Wrapper) {
     let (commitment_tx, commitment_event) = rayon::join(
         || memory_transaction_commitment(transactions, chain_id, block_number),
         || memory_event_commitment(events),

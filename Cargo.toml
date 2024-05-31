@@ -3,7 +3,6 @@ members = [
   "crates/client/db",
   "crates/client/sync",
   "crates/client/genesis-data-provider",
-  "crates/client/mapping-sync",
   "crates/client/rpc",
   "crates/node",
   "crates/pallets/starknet",
@@ -27,7 +26,6 @@ resolver = "2"
 default-members = [
   "crates/client/db",
   "crates/client/genesis-data-provider",
-  "crates/client/mapping-sync",
   "crates/client/rpc",
   "crates/node",
   "crates/pallets/starknet",
@@ -234,7 +232,6 @@ mp-types = { path = "crates/primitives/types", default-features = false }
 # Deoxys client
 mc-db = { path = "crates/client/db" }
 mc-genesis-data-provider = { path = "crates/client/genesis-data-provider" }
-mc-mapping-sync = { path = "crates/client/mapping-sync" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-sync = { path = "crates/client/sync", default-features = false }
 

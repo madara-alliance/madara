@@ -1,3 +1,4 @@
+use num_traits::FromPrimitive;
 use prometheus_endpoint::prometheus::Gauge;
 use prometheus_endpoint::{register, PrometheusError, Registry};
 
@@ -47,5 +48,16 @@ impl BlockMetrics {
                 registry,
             )?,
         })
+    }
+}
+
+pub async fn update_metrics(block_metrics: &BlockMetrics, block_header: mp_block::Header) {
+    block_metrics.l2_block_number.set(block_header.block_number as f64);
+    block_metrics.transaction_count.set(f64::from_u128(block_header.transaction_count).unwrap_or(f64::MIN));
+    block_metrics.event_count.set(f64::from_u128(block_header.event_count).unwrap_or(f64::MIN));
+
+    if let Some(l1_gas_price) = block_header.l1_gas_price {
+        block_metrics.l1_gas_price_wei.set(f64::from_u128(l1_gas_price.eth_l1_gas_price.into()).unwrap_or(f64::MIN));
+        block_metrics.l1_gas_price_strk.set(f64::from_u128(l1_gas_price.strk_l1_gas_price.into()).unwrap_or(f64::MIN));
     }
 }
