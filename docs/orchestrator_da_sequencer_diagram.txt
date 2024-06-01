@@ -1,53 +1,67 @@
-title DA Service
-
-participant DA service
-database DB
-participant Madara
+title Orchestrator Flow
 
 
-DA service->DB: get last updated block
-DB-->DA service: last_updated_block
-DA service->Madara: get latest block
-Madara -->DA service: latest block
-loop for each block
-DA service->DB: insert new row with block_no\nas primary key, status as CREATED in da_tracker table
-DB-->DA service:ok
-DA service->Queue: process block_no, attempt 1
-end
-group for each block
-Queue-->DA service:receive message to process block_no, attemp_no (n)
-alt case n<MAX_ATTEMPTS_SUBMISSION
-DA service->DB: get block_no row from da_tracker
-DB-->DA service: row
-note over DA service: ensure row is in CREATED state\nand take a lock over it to avoid\nduplicate submissions
-DA service->Madara: starknet_getStateUpdate
-Madara-->DA service: state diffs
-note over DA service: convert state diffs to calldata
-DA service->DA layer: submit data blob
-DA layer-->DA service: txn_hash
-DA service->DB: update block_no with txn_hash and change status\nto SUBMITTED and release lock
-DB-->DA service:ok
-DA service->Queue: verify txn_hash with d delay, attempt 1
-Queue-->DA service: receive message to verify txn hash
-DA service->DA layer: check txn inclusion
-alt case transaction is finalized
-DA layer-->DA service: txn has been finalized
-DA service->DB: update block_no row to SUCCESS
-DB-->DA service:ok
-else case transaction is still pending
-DA layer-->DA service: txn hasn't been finalized yet
-alt case n < MAX_ATTEMPTS_VERIFICATION
-DA service->Queue: verify txn_hash with d delay, attempt n+1
-else case n >= MAX_ATTEMPTS_VERIFICATION
-DA service->DB: update block_no to TIMED_OUT_VERIFICATION and raise alert
-DB-->DA service: ok
-end
-else case txn has been rejected/orphaned
-DA layer-->DA service: txn failed/not found
-DA service->Queue: process block_no, attempt n+1
-end
-else case n>=MAX_ATTEMPTS_SUBMISSION
-DA service->DB:update block_no to TIMED_OUT_SUBMISSION and raise alert
-DB-->DA service:ok
+==Job: SNOS execution==
+orchestrator->Madara: get SNOS input
+Madara --> orchestrator: input
+orchestrator->CairoVM: execute SNOS
+CairoVM-->orchestrator: Cairo PIE
+orchestrator->DB:store PIE
+DB-->orchestrator: ok
+==Job Complete: SNOS execution==
+opt with applicative recursion
+loop check every X units of time
+orchestrator->DB: PIEs of pending block
+DB-->orchestrator: result
+alt DA limit or max leaf limit is hit
+orchestrator->CairoVM: get PIE of SNAR program
+CairoVM-->orchestrator: PIE
+orchestrator->DB: store PIE
+DB-->orchestrator:ok
+else limit not hit
+note over orchestrator: do nothing
 end
 end
+end
+==JOB: Proving==
+orchestrator->DB: get PIE of SNOS/SNAR from db_id
+DB-->orchestrator: PIE
+orchestrator->prover_api: submit PIE for proof creation
+prover_api-->orchestrator: polling_id
+group inside prover service (ignore for SHARP)
+note over prover_api: aggregate multiple PIEs into\na single proof
+prover_api->orchestrator: create job for proof submission
+orchestrator-->prover_api: job_id
+note over orchestrator: completed job to verify proof on chain
+prover_api->orchestrator: polls for job status
+orchestrator-->prover_api: success
+note over prover_api: marks all PIEs with their polling_id as success
+end
+orchestrator->prover_api: polls over the polling_id and gets status
+prover_api-->orchestrator: sucess
+==Job Complete: Proving==
+==Cron: Create jobs for state updates==
+note over orchestrator: fetch last update_state job. if it's being processed\ndo nothing. if it's processed, create a job to process block n+1.\n\nthere might be optimisations possible to process multiple blocks in different jobs\nin parallel. however, this can cause complications in nonce management, so to\nstart with, we can do this sequentially as the bottleneck should ideally be\nthe proving
+opt alt DA mode
+==Job: DA Submission==
+orchestrator->Madara: get state_udpate for block
+Madara-->orchestrator: state_update
+note over orchestrator: build blob
+orchestrator->Alt DA: submit blob
+Alt DA-->orchestrator: ok
+==Job Complete: DA Submission==
+end
+==Job: Update State==
+alt Eth DA
+note over orchestrator: build state diffs similar to the alt DA
+note over orchestrator: create equivalence proof between DA commitment\nand SNOS commitment
+orchestrator->Settlement Layer: calldata for update state, blob data and equivalence proof in the same txn
+else Starknet as DA
+note over orchestrator: state diffs already in calldata of proof
+orchestrator->Settlement Layer: calldata for update state
+else Alt DA
+note over orchestrator: create equivalence proof between DA commitment\nand SNOS commitment
+orchestrator->Settlement Layer: calldata for update state and equivalence proof in same txn
+end
+DB-->orchestrator:ok
+==Job Complete: Update State==
