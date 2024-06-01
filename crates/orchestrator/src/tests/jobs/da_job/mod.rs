@@ -22,7 +22,7 @@ use da_client_interface::{DaVerificationStatus, MockDaClient};
 #[tokio::test]
 async fn test_create_job() {
     let config = init_config(None, None, None, None).await;
-    let job = DaJob.create_job(&config, String::from("0")).await;
+    let job = DaJob.create_job(&config, String::from("0"), HashMap::new()).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();

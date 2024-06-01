@@ -14,6 +14,8 @@ pub mod queue;
 pub mod routes;
 /// Contains the utils
 pub mod utils;
+/// Contains workers which act like cron jobs
+pub mod workers;
 
 #[cfg(test)]
 mod tests;

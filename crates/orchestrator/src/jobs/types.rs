@@ -68,12 +68,14 @@ fn unwrap_external_id_failed(expected: &str, got: &ExternalId) -> color_eyre::ey
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum JobType {
+    /// Running SNOS for a block
+    SnosRun,
     /// Submitting DA data to the DA layer
     DataSubmission,
     /// Getting a proof from the proving service
     ProofCreation,
     /// Verifying the proof on the base layer
-    ProofVerification,
+    ProofRegistration,
     /// Updaing the state root on the base layer
     StateUpdation,
 }

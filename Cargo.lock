@@ -4834,6 +4834,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "settlement-client-interface"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum 0.7.5",
+ "color-eyre",
+ "mockall",
+ "starknet",
+]
+
+[[package]]
 name = "sha-1"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -12,6 +12,9 @@ use uuid::Uuid;
 
 mod constants;
 pub mod da_job;
+mod register_proof_job;
+pub mod snos_job;
+mod state_update_job;
 pub mod types;
 
 /// The Job trait is used to define the methods that a job
@@ -20,7 +23,12 @@ pub mod types;
 #[async_trait]
 pub trait Job: Send + Sync {
     /// Should build a new job item and return it
-    async fn create_job(&self, config: &Config, internal_id: String) -> Result<JobItem>;
+    async fn create_job(
+        &self,
+        config: &Config,
+        internal_id: String,
+        metadata: HashMap<String, String>,
+    ) -> Result<JobItem>;
     /// Should process the job and return the external_id which can be used to
     /// track the status of the job. For example, a DA job will submit the state diff
     /// to the DA layer and return the txn hash.
@@ -40,7 +48,7 @@ pub trait Job: Send + Sync {
 }
 
 /// Creates the job in the DB in the created state and adds it to the process queue
-pub async fn create_job(job_type: JobType, internal_id: String) -> Result<()> {
+pub async fn create_job(job_type: JobType, internal_id: String, metadata: HashMap<String, String>) -> Result<()> {
     let config = config().await;
     let existing_job = config.database().get_job_by_internal_id_and_type(internal_id.as_str(), &job_type).await?;
     if existing_job.is_some() {
@@ -53,7 +61,7 @@ pub async fn create_job(job_type: JobType, internal_id: String) -> Result<()> {
     }
 
     let job_handler = get_job_handler(&job_type);
-    let job_item = job_handler.create_job(config, internal_id).await?;
+    let job_item = job_handler.create_job(config, internal_id, metadata).await?;
     config.database().create_job(job_item.clone()).await?;
 
     add_job_to_process_queue(job_item.id).await?;

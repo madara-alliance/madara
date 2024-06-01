@@ -14,14 +14,19 @@ pub struct DaJob;
 
 #[async_trait]
 impl Job for DaJob {
-    async fn create_job(&self, _config: &Config, internal_id: String) -> Result<JobItem> {
+    async fn create_job(
+        &self,
+        _config: &Config,
+        internal_id: String,
+        metadata: HashMap<String, String>,
+    ) -> Result<JobItem> {
         Ok(JobItem {
             id: Uuid::new_v4(),
             internal_id,
             job_type: JobType::DataSubmission,
             status: JobStatus::Created,
             external_id: String::new().into(),
-            metadata: HashMap::new(),
+            metadata,
             version: 0,
         })
     }

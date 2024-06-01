@@ -3,6 +3,11 @@ use orchestrator::config::config;
 use orchestrator::queue::init_consumers;
 use orchestrator::routes::app_router;
 use orchestrator::utils::env_utils::get_env_var_or_default;
+use orchestrator::workers::proof_registration::ProofRegistrationWorker;
+use orchestrator::workers::proving::ProvingWorker;
+use orchestrator::workers::snos::SnosWorker;
+use orchestrator::workers::update_state::UpdateStateWorker;
+use orchestrator::workers::*;
 
 /// Start the server
 #[tokio::main]
@@ -21,6 +26,21 @@ async fn main() {
     // init consumer
     init_consumers().await.expect("Failed to init consumers");
 
+    // spawn a thread for each worker
+    // changes in rollup mode - sovereign, validity, validiums etc.
+    // will likely involve changes in these workers as well
+    tokio::spawn(start_cron(Box::new(SnosWorker), 60));
+    tokio::spawn(start_cron(Box::new(ProvingWorker), 60));
+    tokio::spawn(start_cron(Box::new(ProofRegistrationWorker), 60));
+    tokio::spawn(start_cron(Box::new(UpdateStateWorker), 60));
+
     tracing::info!("Listening on http://{}", address);
     axum::serve(listener, app).await.expect("Failed to start axum server");
+}
+
+async fn start_cron(worker: Box<dyn Worker>, interval: u64) {
+    loop {
+        worker.run_worker().await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
+    }
 }
