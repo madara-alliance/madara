@@ -14,13 +14,14 @@ pub extern crate alloc;
 
 mod starkware_types_conversions;
 
+mod convert;
 #[cfg(feature = "serde")]
 pub mod with_serde;
-
 use alloc::string::{String, ToString};
 use core::fmt;
 
 use cairo_vm::felt::Felt252;
+pub use convert::*;
 #[cfg(feature = "parity-scale-codec")]
 use parity_scale_codec::{Decode, Encode, EncodeLike, Error, Input, MaxEncodedLen, Output};
 #[cfg(feature = "scale-info")]

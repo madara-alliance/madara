@@ -110,7 +110,7 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBloc
     };
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    Ok(crate::convert::convert_block(block).expect("invalid genesis block").block)
+    Ok(crate::convert::convert_block(block).expect("invalid genesis block"))
 }
 
 /// retrieves state update with block from Starknet sequencer in only one request

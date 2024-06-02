@@ -2,20 +2,18 @@ use std::collections::HashMap;
 
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use mc_db::{storage_handler, DeoxysBackend};
+use mc_db::storage_handler;
 use mp_felt::Felt252Wrapper;
 use mp_transactions::TxType;
 use starknet_api::core::ContractAddress;
-use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
-    BlockId, BlockTag, ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
+    ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
     DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, InvokeTransactionTrace,
     L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace,
 };
 use starknet_ff::FieldElement;
 
 use super::lib::*;
-use crate::errors::StarknetRpcApiError;
 
 pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core::types::OrderedMessage> {
     call_info
@@ -243,23 +241,24 @@ pub fn tx_execution_infos_to_tx_trace(
     Ok(tx_trace)
 }
 
-// TODO: move to mod utils
-pub fn block_number_by_id(id: BlockId) -> Result<u64, StarknetRpcApiError> {
-    let (latest_block_hash, latest_block_number) = DeoxysBackend::meta().get_latest_block_hash_and_number()?;
-    match id {
-        // Check if the block corresponding to the number is stored in the database
-        BlockId::Number(number) => match DeoxysBackend::mapping().starknet_block_hash_from_block_number(number)? {
-            Some(_) => Ok(number),
-            None => Err(StarknetRpcApiError::BlockNotFound),
-        },
-        BlockId::Hash(block_hash) => {
-            match DeoxysBackend::mapping().block_number_from_starknet_block_hash(StarkFelt(block_hash.to_bytes_be()))? {
-                Some(block_number) => Ok(block_number),
-                None if block_hash == latest_block_hash => Ok(latest_block_number),
-                None => Err(StarknetRpcApiError::BlockNotFound),
-            }
-        }
-        BlockId::Tag(BlockTag::Latest) => Ok(latest_block_number),
-        BlockId::Tag(BlockTag::Pending) => Ok(latest_block_number + 1),
-    }
-}
+// // TODO: move to mod utils
+// pub fn block_number_by_id(id: BlockId) -> Result<u64, StarknetRpcApiError> {
+//     let (latest_block_hash, latest_block_number) =
+// DeoxysBackend::meta().get_latest_block_hash_and_number()?;     match id {
+//         // Check if the block corresponding to the number is stored in the database
+//         BlockId::Number(number) => match
+// DeoxysBackend::mapping().starknet_block_hash_from_block_number(number)? {             Some(_) =>
+// Ok(number),             None => Err(StarknetRpcApiError::BlockNotFound),
+//         },
+//         BlockId::Hash(block_hash) => {
+//             match
+// DeoxysBackend::mapping().block_number_from_starknet_block_hash(StarkFelt(block_hash.
+// to_bytes_be()))? {                 Some(block_number) => Ok(block_number),
+//                 None if block_hash == latest_block_hash => Ok(latest_block_number),
+//                 None => Err(StarknetRpcApiError::BlockNotFound),
+//             }
+//         }
+//         BlockId::Tag(BlockTag::Latest) => Ok(latest_block_number),
+//         BlockId::Tag(BlockTag::Pending) => Ok(latest_block_number + 1),
+//     }
+// }

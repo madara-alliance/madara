@@ -33,6 +33,7 @@ mp-convert = { workspace = true, features = ["std"] }
 mp-felt = { workspace = true, features = ["std", "serde"] }
 mp-transactions = { workspace = true, features = ["std", "serde", "client"] }
 mp-types = { workspace = true }
+mp-block = { workspace = true, features = ["std", "parity-scale-codec"] }
 
 # Starknet crates
 blockifier = { workspace = true, features = ["testing"] }

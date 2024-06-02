@@ -1,36 +1,34 @@
 //! Contains the code required to sync data from the feeder efficiently.
 use std::pin::pin;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use anyhow::{bail, Context};
 use futures::{stream, StreamExt, TryStreamExt};
-use lazy_static::lazy_static;
+use mc_db::rocksdb::WriteBatchWithTransaction;
 use mc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
 use mc_db::storage_handler::DeoxysStorageError;
-use mc_db::storage_updates::{store_class_update, store_key_update, store_mapping, store_state_update};
+use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
-use mp_block::DeoxysBlock;
+use mp_block::{BlockId, BlockTag, DeoxysBlock};
 use mp_felt::{trim_hash, Felt252Wrapper};
-use mp_types::block::{DBlockT, DHashT};
+use mp_types::block::DBlockT;
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
-use sp_core::H256;
 use starknet_api::hash::{StarkFelt, StarkHash};
-use starknet_core::types::{PendingStateUpdate, StateUpdate};
-use starknet_providers::sequencer::models::{BlockId, StateUpdateWithBlock};
+use starknet_core::types::StateUpdate;
+use starknet_providers::sequencer::models::StateUpdateWithBlock;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Duration;
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
-use crate::convert::{convert_block, ConvertedBlock};
+use crate::convert::convert_block;
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::l1::ETHEREUM_STATE_UPDATE;
-use crate::metrics::block_metrics::{update_metrics, BlockMetrics};
+use crate::metrics::block_metrics::BlockMetrics;
 use crate::utils::PerfStopwatch;
 use crate::{stopwatch_end, CommandSink};
 
@@ -69,50 +67,50 @@ pub struct L2StateUpdate {
     pub block_hash: StarkHash,
 }
 
-/// The current syncing status:
-///
-/// - SyncVerifiedState: the node is syncing AcceptedOnL1 blocks
-/// - SyncUnverifiedState: the node is syncing AcceptedOnL2 blocks
-/// - SyncPendingState: the node is fully synced and now syncing Pending blocks
-///
-/// This is used to determine the current state of the syncing process
-pub enum SyncStatus {
-    SyncVerifiedState,
-    SyncUnverifiedState,
-    SyncPendingState,
-}
+// /// The current syncing status:
+// ///
+// /// - SyncVerifiedState: the node is syncing AcceptedOnL1 blocks
+// /// - SyncUnverifiedState: the node is syncing AcceptedOnL2 blocks
+// /// - SyncPendingState: the node is fully synced and now syncing Pending blocks
+// ///
+// /// This is used to determine the current state of the syncing process
+// pub enum SyncStatus {
+//     SyncVerifiedState,
+//     SyncUnverifiedState,
+//     SyncPendingState,
+// }
 
-lazy_static! {
-    /// Shared current syncing status, either verified, unverified or pending
-    pub static ref SYNC_STATUS: RwLock<SyncStatus> = RwLock::new(SyncStatus::SyncVerifiedState);
-}
+// lazy_static! {
+//     /// Shared current syncing status, either verified, unverified or pending
+//     pub static ref SYNC_STATUS: RwLock<SyncStatus> = RwLock::new(SyncStatus::SyncVerifiedState);
+// }
 
-lazy_static! {
-    /// Shared latest L2 state update verified on L2
-    pub static ref STARKNET_STATE_UPDATE: RwLock<L2StateUpdate> = RwLock::new(L2StateUpdate {
-        block_number: u64::default(),
-        global_root: StarkHash::default(),
-        block_hash: StarkHash::default(),
-    });
-}
+// lazy_static! {
+//     /// Shared latest L2 state update verified on L2
+//     pub static ref STARKNET_STATE_UPDATE: RwLock<L2StateUpdate> = RwLock::new(L2StateUpdate {
+//         block_number: u64::default(),
+//         global_root: StarkHash::default(),
+//         block_hash: StarkHash::default(),
+//     });
+// }
 
-lazy_static! {
-    /// Shared pending block data, using a RwLock to allow for concurrent reads and exclusive writes
-    static ref STARKNET_PENDING_BLOCK: RwLock<Option<DeoxysBlock>> = RwLock::new(None);
-}
+// lazy_static! {
+//     /// Shared pending block data, using a RwLock to allow for concurrent reads and exclusive
+// writes     static ref STARKNET_PENDING_BLOCK: RwLock<Option<DeoxysBlock>> = RwLock::new(None);
+// }
 
-lazy_static! {
-    /// Shared pending state update, using RwLock to allow for concurrent reads and exclusive writes
-    static ref STARKNET_PENDING_STATE_UPDATE: RwLock<Option<PendingStateUpdate>> = RwLock::new(None);
-}
+// lazy_static! {
+//     /// Shared pending state update, using RwLock to allow for concurrent reads and exclusive
+// writes     static ref STARKNET_PENDING_STATE_UPDATE: RwLock<Option<PendingStateUpdate>> =
+// RwLock::new(None); }
 
-pub fn get_pending_block() -> Option<DeoxysBlock> {
-    STARKNET_PENDING_BLOCK.read().expect("Failed to acquire read lock on STARKNET_PENDING_BLOCK").clone()
-}
+// pub fn get_pending_block() -> Option<DeoxysBlock> {
+//     STARKNET_PENDING_BLOCK.read().expect("Failed to acquire read lock on
+// STARKNET_PENDING_BLOCK").clone() }
 
-pub fn get_pending_state_update() -> Option<PendingStateUpdate> {
-    STARKNET_PENDING_STATE_UPDATE.read().expect("Failed to acquire read lock on STARKNET_PENDING_BLOCK").clone()
-}
+// pub fn get_pending_state_update() -> Option<PendingStateUpdate> {
+//     STARKNET_PENDING_STATE_UPDATE.read().expect("Failed to acquire read lock on
+// STARKNET_PENDING_BLOCK").clone() }
 
 /// The configuration of the senders responsible for sending blocks and state
 /// updates from the feeder.
@@ -126,23 +124,20 @@ pub struct SenderConfig {
 
 async fn l2_verify_and_apply_task(
     mut updates_receiver: mpsc::Receiver<L2ConvertedBlockAndUpdates>,
-    block_sender: Sender<DeoxysBlock>,
-    mut command_sink: CommandSink,
+    // block_sender: Sender<DeoxysBlock>,
+    // mut command_sink: CommandSink,
     verify: bool,
     backup_every_n_blocks: Option<usize>,
     block_metrics: Option<BlockMetrics>,
     sync_timer: Arc<Mutex<Option<Instant>>>,
 ) -> anyhow::Result<()> {
-    let block_sender = Arc::new(block_sender);
-
-    let mut last_block_hash = None;
-
-    while let Some(L2ConvertedBlockAndUpdates { block_n, converted_block, state_update, class_update }) =
+    while let Some(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update }) =
         pin!(updates_receiver.recv()).await
     {
-        let ConvertedBlock { block, block_hash, txs_hashes } = converted_block;
-        let block_header = block.header().clone();
-        let global_state_root = block_header.global_state_root;
+        let block_n = converted_block.block_n();
+        let block_hash = *converted_block.block_hash();
+        let global_state_root = converted_block.header().global_state_root;
+
         let state_update = if verify {
             let state_update = Arc::new(state_update);
             let state_update_1 = Arc::clone(&state_update);
@@ -176,12 +171,25 @@ async fn l2_verify_and_apply_task(
             state_update
         };
 
-        let block_sender = Arc::clone(&block_sender);
         let storage_diffs = state_update.state_diff.storage_diffs.clone();
-        let (block_hash_sender, block_hash_receiver) = tokio::sync::oneshot::channel();
         tokio::join!(
             async move {
-                block_sender.send(block).await.expect("block reciever channel is closed");
+                let mut tx = WriteBatchWithTransaction::default();
+                let sw = PerfStopwatch::new();
+
+                let res = DeoxysBackend::mapping()
+                    .write_new_block(&mut tx, &converted_block)
+                    .context("making write batch for mapping")
+                    .and_then(|_| {
+                        let db_access = DeoxysBackend::expose_db();
+                        db_access.write(tx).context("writing to db")
+                    });
+                match res {
+                    Ok(_) => {}
+                    Err(err) => log::error!("❗ Failed to store mapping for block {block_n}: {:#}", err),
+                };
+
+                stopwatch_end!(sw, "end store_mapping {}: {:?}", block_n);
             },
             async {
                 let sw = PerfStopwatch::new();
@@ -205,35 +213,22 @@ async fn l2_verify_and_apply_task(
                 stopwatch_end!(sw, "end store_key {}: {:?}", block_n);
             },
             async {
-                let sw = PerfStopwatch::new();
-                let substrate_block_hash = create_block(
-                    &mut command_sink,
-                    &mut last_block_hash,
-                    block_n,
-                    block_metrics.as_ref(),
-                    sync_timer.clone(),
-                )
-                .await
-                .expect("creating block");
-                stopwatch_end!(sw, "end create_block {}: {:?}", block_n);
-                block_hash_sender.send(substrate_block_hash).expect("block hash receiver channel is closed");
-            },
-            async {
-                let substrate_block_hash = block_hash_receiver.await.expect("block hash receiver channel is closed");
-                let sw = PerfStopwatch::new();
-                if store_mapping(block_n, block_hash, substrate_block_hash, txs_hashes).await.is_err() {
-                    log::error!("❗ Failed to store mapping for block {block_n}");
-                };
-                stopwatch_end!(sw, "end store_mapping {}: {:?}", block_n);
-            },
-            async {
-                if let Some(block_metrics) = block_metrics.as_ref() {
+                if let Some(_block_metrics) = block_metrics.as_ref() {
                     let sw = PerfStopwatch::new();
-                    update_metrics(block_metrics, block_header).await;
+                    // update_metrics(block_metrics, block_header).await;
+                    // TODO(merge): metrics
                     stopwatch_end!(sw, "end update_metrics {}: {:?}", block_n);
                 }
             },
         );
+
+        update_sync_metrics(
+            // &mut command_sink,
+            block_n,
+            block_metrics.as_ref(),
+            sync_timer.clone(),
+        )
+        .await?;
 
         DeoxysBackend::meta().set_current_sync_block(block_n).context("setting current sync block")?;
         log::info!(
@@ -259,8 +254,7 @@ async fn l2_verify_and_apply_task(
 }
 
 pub struct L2ConvertedBlockAndUpdates {
-    pub block_n: u64,
-    pub converted_block: ConvertedBlock,
+    pub converted_block: DeoxysBlock,
     pub state_update: StateUpdate,
     pub class_update: Vec<ContractClassData>,
 }
@@ -272,13 +266,13 @@ async fn l2_block_conversion_task(
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
     let conversion_stream = stream::unfold(updates_receiver, |mut updates_recv| async {
-        updates_recv.recv().await.map(|L2BlockAndUpdates { block_n, block, state_update, class_update }| {
+        updates_recv.recv().await.map(|L2BlockAndUpdates { block, state_update, class_update, .. }| {
             (
                 spawn_compute(move || {
                     let sw = PerfStopwatch::new();
                     let converted_block = convert_block(block)?;
                     stopwatch_end!(sw, "convert_block: {:?}");
-                    Ok(L2ConvertedBlockAndUpdates { block_n, converted_block, state_update, class_update })
+                    Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
                 }),
                 updates_recv,
             )
@@ -304,17 +298,13 @@ pub struct L2SyncConfig {
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
 /// `n_blocks` is optionally the total number of blocks to sync, for debugging/benchmark purposes.
-pub async fn sync<C>(
-    block_sender: Sender<DeoxysBlock>,
-    command_sink: CommandSink,
+pub async fn sync(
+    // block_sender: Sender<DeoxysBlock>,
+    // command_sink: CommandSink,
     provider: SequencerGatewayProvider,
-    client: Arc<C>,
     config: L2SyncConfig,
     block_metrics: Option<BlockMetrics>,
-) -> anyhow::Result<()>
-where
-    C: HeaderBackend<DBlockT> + 'static,
-{
+) -> anyhow::Result<()> {
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(30);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(30);
     let provider = Arc::new(provider);
@@ -340,8 +330,8 @@ where
     let mut block_conversion_task = tokio::spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender));
     let mut verify_and_apply_task = tokio::spawn(l2_verify_and_apply_task(
         block_conv_receiver,
-        block_sender,
-        command_sink,
+        // block_sender,
+        // command_sink,
         config.verify,
         config.backup_every_n_blocks,
         block_metrics,
@@ -356,7 +346,7 @@ where
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 interval.tick().await;
-                if let Err(e) = update_starknet_data(&provider, client.as_ref()).await {
+                if let Err(e) = update_starknet_data(&provider).await {
                     log::error!("{:#}", e);
                 }
             }
@@ -375,29 +365,11 @@ where
     Ok(())
 }
 
-/// Notifies the consensus engine that a new block should be created.
-async fn create_block(
-    cmds: &mut CommandSink,
-    parent_hash: &mut Option<H256>,
+async fn update_sync_metrics(
     block_number: u64,
     block_metrics: Option<&BlockMetrics>,
     sync_timer: Arc<Mutex<Option<Instant>>>,
-) -> Result<H256, String> {
-    let (sender, receiver) = futures::channel::oneshot::channel();
-
-    cmds.try_send(sc_consensus_manual_seal::rpc::EngineCommand::SealNewBlock {
-        create_empty: true,
-        finalize: false,
-        parent_hash: None,
-        sender: Some(sender),
-    })
-    .unwrap();
-
-    let create_block_info = receiver
-        .await
-        .map_err(|err| format!("failed to seal block: {err}"))?
-        .map_err(|err| format!("failed to seal block: {err}"))?;
-
+) -> anyhow::Result<()> {
     // Update Block sync time metrics
     if let Some(block_metrics) = block_metrics {
         let elapsed_time;
@@ -419,8 +391,7 @@ async fn create_block(
         block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / block_number as f64);
     }
 
-    *parent_hash = Some(create_block_info.hash);
-    Ok(create_block_info.hash)
+    Ok(())
 }
 
 /// Update the L2 state with the latest data
@@ -450,36 +421,35 @@ pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> anyhow::Resul
     Ok(state_root.into())
 }
 
-async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> anyhow::Result<()>
-where
-    C: HeaderBackend<DBlockT>,
-{
-    let StateUpdateWithBlock { state_update, block } =
-        provider.get_state_update_with_block(BlockId::Pending).await.context("Failed to get pending block")?;
+async fn update_starknet_data(provider: &SequencerGatewayProvider) -> anyhow::Result<()> {
+    let storage = DeoxysBackend::mapping();
 
-    let hash_best = client.info().best_hash;
-    let hash_current = block.parent_block_hash;
-    let number = provider.get_block_id_by_hash(hash_current).await.context("Failed to get block id by hash")?;
-    let tmp = DHashT::from_str(&hash_current.to_string()).unwrap_or(Default::default());
+    let StateUpdateWithBlock { state_update, block } = provider
+        .get_state_update_with_block(starknet_providers::sequencer::models::BlockId::Pending)
+        .await
+        .context("Failed to get pending block")?;
 
-    if hash_best == tmp {
+    let block_n_best = storage.get_block_n(&BlockId::Tag(BlockTag::Latest))?.unwrap_or(0);
+    let Some(block_n_pending_min_1) = block.block_number.unwrap().checked_sub(1) else {
+        bail!("Pending block is genesis")
+    };
+
+    let mut tx = WriteBatchWithTransaction::default();
+
+    if block_n_best == block_n_pending_min_1 {
         // TODO: remove unwrap on convert_block
-        *STARKNET_PENDING_BLOCK.write().expect("Failed to acquire write lock on STARKNET_PENDING_BLOCK") =
-            Some(spawn_compute(|| crate::convert::convert_block(block)).await.unwrap().block);
 
-        *STARKNET_PENDING_STATE_UPDATE.write().expect("Failed to aquire write lock on STARKNET_PENDING_STATE_UPDATE") =
-            Some(crate::convert::state_update(state_update));
+        let block = spawn_compute(|| crate::convert::convert_block(block)).await.context("Failed to convert block")?;
+        let storage_update = crate::convert::state_update(state_update);
+        storage.write_pending(&mut tx, &block, &storage_update).context("writing pending to rocksdb transaction");
+    } else {
+        storage.write_no_pending(&mut tx).context("writing no pending to rocksdb transaction")?;
     }
 
-    DeoxysBackend::meta()
-        .set_latest_block_hash_and_number(hash_current, number)
-        .context("setting highest block hash and number")?;
-
     log::debug!(
-        "update_starknet_data: latest_block_number: {}, latest_block_hash: 0x{:x}, best_hash: {}",
-        number,
-        hash_current,
-        hash_best
+        "update_starknet_data: block_n_best: {}, block_n_pending: 0x{:x}",
+        block_n_best,
+        block.block_number.unwrap(),
     );
     Ok(())
 }

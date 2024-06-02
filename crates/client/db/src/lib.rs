@@ -24,7 +24,7 @@ use meta_db::MetaDb;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
 mod error;
-mod mapping_db;
+pub mod mapping_db;
 use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Env, MultiThreaded, OptimisticTransactionDB, Options,
     SliceTransform,
@@ -36,7 +36,6 @@ pub mod storage_handler;
 pub mod storage_updates;
 
 pub use error::{BonsaiDbError, DbError};
-pub use mapping_db::MappingCommitment;
 use storage_handler::bonsai_identifier;
 use tokio::sync::{mpsc, oneshot};
 
@@ -45,6 +44,9 @@ const DB_HASH_LEN: usize = 32;
 pub type DbHash = [u8; DB_HASH_LEN];
 
 pub type DB = OptimisticTransactionDB<MultiThreaded>;
+
+pub use rocksdb;
+pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<true>;
 
 pub(crate) fn open_rocksdb(
     path: &Path,
@@ -133,18 +135,31 @@ fn spawn_backup_db_task(
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Column {
     Meta,
-    // Starknet block hash to Substrate block hash
-    BlockMapping,
-    // Substrate block hash to true if it contains a Starknet block
-    SyncedMapping,
-    // Transaction hash to Substrate block hash
-    TransactionMapping,
-    /// Starknet block hash to list of starknet transaction hashes
-    StarknetTransactionHashesMapping,
-    /// Block number to block Starknet block hash
-    StarknetBlockHashesMapping,
-    /// Starknet block hash to block number
-    StarknetBlockNumberMapping,
+
+    // // Starknet block hash to Substrate block hash
+    // BlockMapping,
+    // // Substrate block hash to true if it contains a Starknet block
+    // // SyncedMapping,
+    // // Transaction hash to Substrate block hash
+    // TransactionMapping,
+    // /// Starknet block hash to list of starknet transaction hashes
+    // StarknetTransactionHashesMapping,
+    // /// Block number to block Starknet block hash
+    // StarknetBlockHashesMapping,
+    // /// Starknet block hash to block number
+    // StarknetBlockNumberMapping,
+
+    // Blocks storage
+    // block_n => Block info
+    BlockNToBlockInfo,
+    // block_n => Block inner
+    BlockNToBlockInner,
+    /// Many To One
+    TxHashToBlockN,
+    /// One To One
+    BlockHashToBlockN,
+    /// Meta column for block storage (sync tip, pending block)
+    BlockStorageMeta,
 
     /// Contract class hash to class data
     ContractClassData,
@@ -203,12 +218,11 @@ impl Column {
         use Column::*;
         &[
             Meta,
-            BlockMapping,
-            SyncedMapping,
-            TransactionMapping,
-            StarknetTransactionHashesMapping,
-            StarknetBlockHashesMapping,
-            StarknetBlockNumberMapping,
+            BlockNToBlockInfo,
+            BlockNToBlockInner,
+            TxHashToBlockN,
+            BlockHashToBlockN,
+            BlockStorageMeta,
             ContractClassData,
             ContractToClassHashes,
             ContractToNonces,
@@ -232,12 +246,11 @@ impl Column {
         use Column::*;
         match self {
             Meta => "meta",
-            BlockMapping => "block_mapping",
-            TransactionMapping => "transaction_mapping",
-            SyncedMapping => "synced_mapping",
-            StarknetTransactionHashesMapping => "starknet_transaction_hashes_mapping",
-            StarknetBlockHashesMapping => "starnet_block_hashes_mapping",
-            StarknetBlockNumberMapping => "starknet_block_number_mapping",
+            BlockNToBlockInfo => "block_n_to_block_info",
+            BlockNToBlockInner => "block_n_to_block_inner",
+            TxHashToBlockN => "tx_hash_to_block_n",
+            BlockHashToBlockN => "block_hash_to_block_n",
+            BlockStorageMeta => "block_storage_meta",
             BonsaiContractsTrie => "bonsai_contracts_trie",
             BonsaiContractsFlat => "bonsai_contracts_flat",
             BonsaiContractsLog => "bonsai_contracts_log",

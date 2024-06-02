@@ -5,12 +5,13 @@ use std::num::NonZeroU128;
 use std::sync::Arc;
 
 use blockifier::block::GasPrices;
-use mp_block::DeoxysBlock;
+use mp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
 use mp_felt::Felt252Wrapper;
+use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
     DeclareTransaction, DeployAccountTransaction, DeployAccountTransactionV1, DeployTransaction, Event,
-    InvokeTransaction, L1HandlerTransaction, Transaction,
+    InvokeTransaction, L1HandlerTransaction, Transaction, TransactionHash,
 };
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, PendingStateUpdate,
@@ -26,14 +27,8 @@ use crate::commitments::lib::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
 use crate::utility;
 
-pub struct ConvertedBlock {
-    pub block: DeoxysBlock,
-    pub block_hash: StarkFelt,
-    pub txs_hashes: Vec<StarkFelt>,
-}
-
 /// Compute heavy, this should only be called in a rayon ctx
-pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
+pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
@@ -82,11 +77,16 @@ pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
         .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
         .collect();
 
-    Ok(ConvertedBlock {
-        block: DeoxysBlock::new(header, transactions, ordered_events),
-        block_hash: felt(block_hash),
-        txs_hashes: txs_hashes.into_iter().map(felt).collect(),
-    })
+    let block = DeoxysBlock::new(
+        DeoxysBlockInfo::new(
+            header,
+            txs_hashes.into_iter().map(felt).map(TransactionHash).collect(),
+            BlockHash(felt(block_hash)),
+        ),
+        DeoxysBlockInner::new(transactions, ordered_events),
+    );
+
+    Ok(block)
 }
 
 fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {

@@ -34,8 +34,6 @@ pub struct FullDeps<A: ChainApi, C, G: GenesisProvider, P> {
     pub graph: Arc<Pool<A>>,
     /// Whether to deny unsafe calls
     pub deny_unsafe: DenyUnsafe,
-    /// Manual seal command sink
-    pub command_sink: Option<mpsc::Sender<EngineCommand<DHashT>>>,
     /// Starknet dependencies
     pub starknet: StarknetDeps<C, G, DBlockT>,
 }
@@ -64,7 +62,7 @@ where
     use substrate_frame_rpc_system::{System, SystemApiServer};
 
     let mut module = RpcModule::new(());
-    let FullDeps { client, pool, deny_unsafe, starknet: starknet_params, command_sink, .. } = deps;
+    let FullDeps { client, pool, deny_unsafe, starknet: starknet_params, .. } = deps;
 
     module.merge(System::new(client.clone(), pool.clone(), deny_unsafe).into_rpc())?;
     module.merge(StarknetReadRpcApiServer::into_rpc(Starknet::<_, _, DHasherT>::new(
@@ -82,14 +80,6 @@ where
         starknet_params.sync_service,
         starknet_params.starting_block,
     )))?;
-
-    if let Some(command_sink) = command_sink {
-        module.merge(
-            // We provide the rpc handler with the sending end of the channel to allow the rpc
-            // send EngineCommands to the background block authorship task.
-            ManualSeal::new(command_sink).into_rpc(),
-        )?;
-    }
 
     Ok(module)
 }

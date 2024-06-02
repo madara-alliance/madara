@@ -24,16 +24,12 @@ use crate::l2::L2SyncConfig;
 type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc::EngineCommand<sp_core::H256>>;
 
 pub mod starknet_sync_worker {
-    use std::sync::Arc;
-
     use anyhow::Context;
-    use mp_block::DeoxysBlock;
     use mp_convert::state_update::ToStateUpdateCore;
     use reqwest::Url;
     use sp_blockchain::HeaderBackend;
     use starknet_providers::sequencer::models::BlockId;
     use starknet_providers::SequencerGatewayProvider;
-    use tokio::sync::mpsc::Sender;
 
     use self::fetch::fetchers::FetchConfig;
     use super::*;
@@ -43,10 +39,7 @@ pub mod starknet_sync_worker {
     #[allow(clippy::too_many_arguments)]
     pub async fn sync<C>(
         fetch_config: FetchConfig,
-        block_sender: Sender<DeoxysBlock>,
-        command_sink: CommandSink,
         l1_url: Url,
-        client: Arc<C>,
         starting_block: u32,
         backup_every_n_blocks: Option<usize>,
         block_metrics: Option<BlockMetrics>,
@@ -78,10 +71,7 @@ pub mod starknet_sync_worker {
         tokio::select!(
             res = l1::sync(l1_url.clone(), block_metrics.clone()) => res.context("syncing L1 state")?,
             res = l2::sync(
-                block_sender,
-                command_sink,
                 provider,
-                client,
                 L2SyncConfig {
                     first_block: starting_block.into(),
                     n_blocks_to_sync: fetch_config.n_blocks_to_sync,

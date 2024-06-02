@@ -19,12 +19,13 @@ use self::contract_storage::{ContractStorageView, ContractStorageViewMut};
 use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
 use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
 use self::history::HistoryError;
+use crate::mapping_db::MappingDbError;
 use crate::DeoxysBackend;
 
 pub mod benchmark;
 pub mod block_state_diff;
 mod class_trie;
-mod codec;
+pub mod codec;
 mod contract_class_data;
 mod contract_class_hashes;
 pub(crate) mod contract_data;
@@ -70,6 +71,8 @@ pub enum DeoxysStorageError {
     StorageRevertError(StorageType, u64),
     #[error("failed to parse history")]
     StorageHistoryError(#[from] HistoryError),
+    #[error("mapping db error")]
+    MappingDbError(#[from] MappingDbError),
     #[error("invalid block number")]
     InvalidBlockNumber,
     #[error("invalid nonce")]

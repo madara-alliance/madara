@@ -1,15 +1,6 @@
 use jsonrpsee::core::RpcResult;
-use mc_db::DeoxysBackend;
-use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
-use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
-use mp_types::block::DBlockT;
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sp_blockchain::HeaderBackend;
 use starknet_core::types::{FieldElement, TransactionStatus};
 
-use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
@@ -31,32 +22,20 @@ use crate::Starknet;
 ///     confirmed, pending, or rejected.
 ///   - `execution_status`: The execution status of the transaction, providing details on the
 ///     execution outcome if the transaction has been processed.
-pub fn get_transaction_status<BE, C, H>(
-    starknet: &Starknet<BE, C, H>,
-    transaction_hash: FieldElement,
-) -> RpcResult<TransactionStatus>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let substrate_block_hash = DeoxysBackend::mapping()
-        .substrate_block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
-        .map_err(|e| {
-            log::error!("Failed to get substrate block hash from transaction hash: {}", e);
-            StarknetRpcApiError::InternalServerError
-        })?
-        .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+pub fn get_transaction_status(_starknet: &Starknet, _transaction_hash: FieldElement) -> RpcResult<TransactionStatus> {
+    // let transaction_hash = TransactionHash(transaction_hash.into_stark_felt());
 
-    let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-    let starknet_block_hash = starknet_block.header().hash::<H>();
+    // let block = starknet
+    //     .block_storage()
+    //     .get_block_info_from_tx_hash(&transaction_hash)?
+    //     .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-    let _starknet_tx = starknet
-        .get_block_transaction_hashes(starknet_block_hash.into())?
-        .into_iter()
-        .zip(starknet_block.transactions())
-        .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
-        .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash));
+    // let _starknet_tx = starknet
+    //     .get_block_transaction_hashes(starknet_block_hash.into())?
+    //     .into_iter()
+    //     .zip(starknet_block.transactions())
+    //     .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
+    //     .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash));
 
     // TODO: Implement this method
     Err(StarknetRpcApiError::UnimplementedMethod.into())

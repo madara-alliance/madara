@@ -1,14 +1,8 @@
 use jsonrpsee::core::RpcResult;
-use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
+use mp_felt::FeltWrapper;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
-use mp_types::block::DBlockT;
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sp_blockchain::HeaderBackend;
-use starknet_core::types::{BlockId, FieldElement, Transaction};
+use starknet_core::types::{BlockId, Transaction};
 
-use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
@@ -32,30 +26,14 @@ use crate::Starknet;
 /// transaction details are returned as a type conforming to the StarkNet protocol. In case of
 /// errors like `BLOCK_NOT_FOUND` or `INVALID_TXN_INDEX`, returns a `StarknetRpcApiError`
 /// indicating the specific issue.
-pub fn get_transaction_by_block_id_and_index<BE, C, H>(
-    starknet: &Starknet<BE, C, H>,
+pub fn get_transaction_by_block_id_and_index(
+    starknet: &Starknet,
     block_id: BlockId,
     index: u64,
-) -> RpcResult<Transaction>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let index = index as usize;
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
+) -> RpcResult<Transaction> {
+    let block = starknet.get_block(block_id)?;
+    let tx_hash = block.tx_hashes().get(index as usize).ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    let tx = block.transactions().get(index as usize).ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-    let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-    let starknet_block_hash = starknet_block.header().hash::<H>();
-
-    let transaction = starknet_block.transactions().get(index).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
-
-    let block_txs_hashes = starknet.get_block_transaction_hashes(starknet_block_hash.into())?;
-
-    let transaction_hash = block_txs_hashes.get(index).map(|&fe| FieldElement::from(Felt252Wrapper::from(fe))).ok_or(
-        // This should never happen, because the index is checked above when getting the transaction.
-        StarknetRpcApiError::InternalServerError,
-    )?;
-
-    Ok(to_starknet_core_tx(transaction.clone(), transaction_hash))
+    Ok(to_starknet_core_tx(tx, tx_hash.into_field_element()))
 }

@@ -13,12 +13,12 @@ use blockifier::transaction::objects::{
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use blockifier::versioned_constants::VersionedConstants;
+use jsonrpsee::core::RpcResult;
 use mc_db::storage_handler::{self, StorageView};
+use mp_block::DeoxysBlockInfo;
 use mp_felt::Felt252Wrapper;
 use mp_genesis_config::{ETH_TOKEN_ADDR, STRK_TOKEN_ADDR};
 use mp_simulations::SimulationFlags;
-use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::StarkHash;
@@ -28,21 +28,11 @@ use starknet_ff::FieldElement;
 
 use super::blockifier_state_adapter::BlockifierStateAdapter;
 use crate::errors::StarknetRpcApiError;
-use crate::get_block_by_block_hash;
+use crate::utils::ResultExt;
+use crate::Starknet;
 
-pub fn block_context<B, C>(
-    client: &C,
-    substrate_block_hash: <B as BlockT>::Hash,
-) -> Result<BlockContext, StarknetRpcApiError>
-where
-    B: BlockT,
-    C: HeaderBackend<B>,
-{
-    let block = get_block_by_block_hash(client, substrate_block_hash).map_err(|e| {
-        log::error!("Failed to retrieve block by block hash: {e}");
-        StarknetRpcApiError::BlockNotFound
-    })?;
-    let block_header = block.header();
+pub fn block_context(client: &Starknet, block_info: &DeoxysBlockInfo) -> Result<BlockContext, StarknetRpcApiError> {
+    let block_header = block_info.header();
 
     // safe unwrap because address is always valid and static
     let fee_token_address = FeeTokenAddresses {
@@ -96,9 +86,11 @@ pub fn call_contract(
     function_selector: EntryPointSelector,
     calldata: Calldata,
     block_context: &BlockContext,
-) -> Result<Vec<Felt252Wrapper>, ()> {
+) -> RpcResult<Vec<Felt252Wrapper>> {
     // Get class hash
-    let class_hash = storage_handler::contract_class_hash().get(&address).map_err(|_| ())?;
+    let class_hash = storage_handler::contract_class_hash()
+        .get(&address)
+        .or_internal_server_error("Error getting contract class hash")?;
 
     let entrypoint = CallEntryPoint {
         class_hash,
@@ -120,23 +112,25 @@ pub fn call_contract(
         }),
         false,
     )
-    .map_err(|_| ())?;
+    .map_err(|err| {
+        log::error!("Transaction execution error: {err}");
+        StarknetRpcApiError::TxnExecutionError
+    })?;
 
-    match entrypoint.execute(
-        &mut BlockifierStateAdapter::new(block_context.block_info().block_number.0),
-        &mut resources,
-        &mut entry_point_execution_context,
-    ) {
-        Ok(v) => {
-            log::debug!("Successfully called a smart contract function: {:?}", v);
-            let result = v.execution.retdata.0.iter().map(|x| (*x).into()).collect();
-            Ok(result)
-        }
-        Err(e) => {
-            log::error!("failed to call smart contract {:?}", e);
-            Err(())
-        }
-    }
+    let res = entrypoint
+        .execute(
+            &mut BlockifierStateAdapter::new(block_context.block_info().block_number.0),
+            &mut resources,
+            &mut entry_point_execution_context,
+        )
+        .map_err(|err| {
+            log::error!("Entry point execution error: {err}");
+            StarknetRpcApiError::TxnExecutionError
+        })?;
+
+    log::debug!("Successfully called a smart contract function: {:?}", res);
+    let result = res.execution.retdata.0.iter().map(|x| (*x).into()).collect();
+    Ok(result)
 }
 
 pub fn estimate_fee(

@@ -54,11 +54,9 @@ use alloc::vec::Vec;
 
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
-use mc_db::storage_handler;
-use mc_db::storage_handler::StorageViewMut;
 use mp_digest_log::DEOXYS_ENGINE_ID;
 use sp_runtime::DigestItem;
-use starknet_api::core::{CompiledClassHash, ContractAddress};
+use starknet_api::core::ContractAddress;
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 
@@ -84,8 +82,6 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
-    use mc_db::DeoxysBackend;
-
     use super::*;
 
     #[pallet::pallet]
@@ -155,21 +151,23 @@ pub mod pallet {
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            if DeoxysBackend::mapping().starknet_block_hash_from_block_number(1).unwrap().is_none() {
-                let handler_contract_class = storage_handler::contract_class_hash_mut();
-                self.contracts.iter().for_each(|(contract_address, class_hash)| {
-                    handler_contract_class.insert(*contract_address, *class_hash).unwrap();
-                });
-                handler_contract_class.commit(0).unwrap();
+            todo!() // TODO(merge): genesis block
+            // if DeoxysBackend::mapping().starknet_block_hash_from_block_number(1).unwrap().
+            // is_none() {     let handler_contract_class =
+            // storage_handler::contract_class_hash_mut();     self.contracts.iter().
+            // for_each(|(contract_address, class_hash)| {
+            //         handler_contract_class.insert(*contract_address, *class_hash).unwrap();
+            //     });
+            //     handler_contract_class.commit(0).unwrap();
 
-                let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
-                self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
-                    handler_contract_class_hashes
-                        .insert(*class_hash, CompiledClassHash(compiled_class_hash.0))
-                        .unwrap();
-                });
-                handler_contract_class_hashes.commit(0).unwrap();
-            }
+            //     let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
+            //     self.sierra_to_casm_class_hash.iter().for_each(|(class_hash,
+            // compiled_class_hash)| {         handler_contract_class_hashes
+            //             .insert(*class_hash, CompiledClassHash(compiled_class_hash.0))
+            //             .unwrap();
+            //     });
+            //     handler_contract_class_hashes.commit(0).unwrap();
+            // }
         }
     }
 

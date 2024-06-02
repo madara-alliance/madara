@@ -1,9 +1,4 @@
 use jsonrpsee::core::{async_trait, RpcResult};
-use mp_hashers::HasherT;
-use mp_types::block::DBlockT;
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sp_blockchain::HeaderBackend;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate,
     FieldElement, FunctionCall, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
@@ -34,12 +29,7 @@ use super::syncing::*;
 use crate::{Felt, Starknet, StarknetReadRpcApiServer};
 
 #[async_trait]
-impl<BE, C, H> StarknetReadRpcApiServer for Starknet<BE, C, H>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
+impl StarknetReadRpcApiServer for Starknet {
     fn block_number(&self) -> RpcResult<u64> {
         self.current_block_number()
     }
@@ -90,15 +80,15 @@ where
     }
 
     fn get_class_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<ContractClass> {
-        get_class_at(block_id, contract_address)
+        get_class_at(self, block_id, contract_address)
     }
 
     fn get_class_hash_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
-        get_class_hash_at(block_id, contract_address)
+        get_class_hash_at(self, block_id, contract_address)
     }
 
     fn get_class(&self, block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass> {
-        get_class(block_id, class_hash)
+        get_class(self, block_id, class_hash)
     }
 
     async fn get_events(&self, filter: EventFilterWithPage) -> RpcResult<EventsPage> {
@@ -106,7 +96,7 @@ where
     }
 
     fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
-        get_nonce(block_id, contract_address)
+        get_nonce(self, block_id, contract_address)
     }
 
     fn get_storage_at(&self, contract_address: FieldElement, key: FieldElement, block_id: BlockId) -> RpcResult<Felt> {

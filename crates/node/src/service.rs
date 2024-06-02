@@ -238,15 +238,6 @@ pub fn new_full(
     let on_block =
         if starting_block.is_some() && starting_block >= Some(best_block) { starting_block } else { Some(best_block) };
 
-    // Channel for the rpc handler to communicate with the authorship task.
-    let (command_sink, commands_stream) = match sealing {
-        SealingMode::Manual => {
-            let (sender, receiver) = mpsc::channel(1000);
-            (Some(sender), Some(receiver))
-        }
-        _ => (None, None),
-    };
-
     let config_dir: PathBuf = config.data_path.clone();
     let genesis_data = OnDiskGenesisConfig(config_dir);
     let starknet_rpc_params = StarknetDeps {
@@ -261,7 +252,6 @@ pub fn new_full(
         let client = client.clone();
         let pool = transaction_pool.clone();
         let graph = transaction_pool.pool().clone();
-        let command_sink = command_sink.clone();
 
         Box::new(move |deny_unsafe, _| {
             let deps = crate::rpc::FullDeps {
@@ -270,7 +260,6 @@ pub fn new_full(
                 graph: graph.clone(),
                 deny_unsafe,
                 starknet: starknet_rpc_params.clone(),
-                command_sink: command_sink.clone(),
             };
             crate::rpc::create_full(deps).map_err(Into::into)
         })
@@ -297,7 +286,7 @@ pub fn new_full(
         let fut = starknet_sync_worker::sync(
             fetch_config,
             block_sender,
-            command_sink.unwrap().clone(),
+            // command_sink.unwrap().clone(),
             l1_url,
             Arc::clone(&client),
             on_block.unwrap(),
@@ -308,23 +297,23 @@ pub fn new_full(
     });
 
     // manual-seal authorship
-    if !sealing.is_default() {
-        run_manual_seal_authorship(
-            block_receiver,
-            sealing,
-            client,
-            transaction_pool,
-            select_chain,
-            block_import,
-            &task_manager,
-            commands_stream,
-            telemetry,
-        )?;
+    // if !sealing.is_default() {
+    //     run_manual_seal_authorship(
+    //         block_receiver,
+    //         sealing,
+    //         client,
+    //         transaction_pool,
+    //         select_chain,
+    //         block_import,
+    //         &task_manager,
+    //         commands_stream,
+    //         telemetry,
+    //     )?;
 
-        network_starter.start_network();
+    //     network_starter.start_network();
 
-        return Ok(task_manager);
-    }
+    //     return Ok(task_manager);
+    // }
 
     network_starter.start_network();
 
