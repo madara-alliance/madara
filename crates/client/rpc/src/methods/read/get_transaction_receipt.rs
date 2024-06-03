@@ -24,7 +24,7 @@ use crate::utils::call_info::{
     blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
 };
 use crate::utils::execution::{block_context, re_execute_transactions};
-use crate::utils::helpers::tx_hash_retrieve;
+use crate::utils::helpers::{block_hash_from_block_n, tx_hash_retrieve, txs_hashes_from_block_hash};
 use crate::utils::transaction::blockifier_transactions;
 use crate::Starknet;
 
@@ -84,11 +84,11 @@ where
     let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
     let block_header = block.header();
     let block_number = block_header.block_number;
-    let starknet_block_hash: Felt252Wrapper = block_header.hash::<H>();
+    let starknet_block_hash = block_hash_from_block_n(block_number)?;
 
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
-    let block_txs_hashes = tx_hash_retrieve(starknet.get_block_transaction_hashes(starknet_block_hash.into())?);
+    let block_txs_hashes = tx_hash_retrieve(txs_hashes_from_block_hash(starknet_block_hash)?);
 
     // retrieve the transaction index in the block with the transaction hash
     let (tx_index, _) =
@@ -118,7 +118,7 @@ where
 
     let receipt = receipt(transaction, &execution_infos, transaction_hash, block_number)?;
 
-    let block_info = starknet_core::types::ReceiptBlock::Block { block_hash: starknet_block_hash.0, block_number };
+    let block_info = starknet_core::types::ReceiptBlock::Block { block_hash: starknet_block_hash, block_number };
 
     Ok(TransactionReceiptWithBlockInfo { receipt, block: block_info })
 }

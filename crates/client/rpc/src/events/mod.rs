@@ -12,6 +12,7 @@ use starknet_ff::FieldElement;
 
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
+use crate::utils::helpers::{block_hash_from_block_n, block_hash_from_id, block_n_from_id, txs_hashes_from_block_hash};
 use crate::Starknet;
 
 impl<BE, C, H> Starknet<BE, C, H>
@@ -55,7 +56,7 @@ where
         let (block_hash, block_number) = if block_id == BlockId::Tag(BlockTag::Pending) {
             (None, None)
         } else {
-            (Some(starknet_block.header().hash::<H>().0), Some(starknet_block.header().block_number))
+            (Some(block_hash_from_id(block_id)?), Some(starknet_block.header().block_number))
         };
 
         let emitted_events = tx_hash_and_events
@@ -73,11 +74,11 @@ where
     }
 
     fn get_block_txs_hashes(&self, starknet_block: &DeoxysBlock) -> Result<Vec<FieldElement>, StarknetRpcApiError> {
-        let block_hash = starknet_block.header().hash::<H>();
+        let block_number = starknet_block.header().block_number;
+        let block_hash = block_hash_from_block_n(block_number)?;
 
         // get txs hashes from cache or compute them
-        let block_txs_hashes: Vec<_> = self
-            .get_block_transaction_hashes(block_hash.into())?
+        let block_txs_hashes: Vec<_> = txs_hashes_from_block_hash(block_hash)?
             .into_iter()
             .map(|h| {
                 Felt252Wrapper::try_from(h)
@@ -130,12 +131,10 @@ where
 
     fn get_block_by_tag(&self, block_tag: BlockTag) -> Result<DeoxysBlock, StarknetRpcApiError> {
         if block_tag == BlockTag::Latest {
-            self.get_block_by_number(
-                self.substrate_block_number_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
-                    log::error!("'{e}'");
-                    StarknetRpcApiError::BlockNotFound
-                })?,
-            )
+            self.get_block_by_number(block_n_from_id(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
+                log::error!("'{e}'");
+                StarknetRpcApiError::BlockNotFound
+            })?)
         } else {
             match get_pending_block() {
                 Some(block) => Ok(block),

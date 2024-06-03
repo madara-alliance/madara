@@ -12,6 +12,7 @@ use starknet_core::types::{BlockId, BlockTag, FieldElement, MaybePendingStateUpd
 
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
+use crate::utils::helpers::block_hash_from_block_n;
 use crate::Starknet;
 
 /// Get the information about the result of executing the requested block.
@@ -59,10 +60,8 @@ where
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-
-    let block_hash = starknet_block.header().hash::<H>().into();
-
     let block_number = starknet_block.header().block_number;
+    let block_hash = block_hash_from_block_n(block_number)?;
 
     let new_root = Felt252Wrapper::from(starknet_block.header().global_state_root).into();
 

@@ -5,7 +5,7 @@ use mp_felt::Felt252Wrapper;
 use starknet_core::types::{BlockId, ContractClass, FieldElement};
 
 use crate::errors::StarknetRpcApiError;
-use crate::methods::trace::utils::block_number_by_id;
+use crate::utils::helpers::block_n_from_id;
 
 /// Get the contract class definition in the given block associated with the given hash.
 ///
@@ -38,7 +38,7 @@ pub fn get_class(block_id: BlockId, class_hash: FieldElement) -> RpcResult<Contr
                 abi_length,
                 block_number: declared_at_block,
             } = class;
-            if declared_at_block >= block_number_by_id(block_id)? {
+            if declared_at_block >= block_n_from_id(block_id)? {
                 return Err(StarknetRpcApiError::ClassHashNotFound.into());
             }
             Ok(ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }

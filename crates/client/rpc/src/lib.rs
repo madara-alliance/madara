@@ -16,9 +16,7 @@ use std::sync::Arc;
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use mc_db::DeoxysBackend;
 use mc_sync::utility;
-use methods::trace::utils::block_number_by_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::{DBlockT, DHashT, DHeaderT};
@@ -29,7 +27,6 @@ use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use sp_runtime::traits::Header as HeaderT;
-use starknet_api::hash::StarkHash;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
@@ -39,6 +36,7 @@ use starknet_core::types::{
     MaybePendingStateUpdate, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
     SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
+use utils::helpers::block_n_from_id;
 
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::methods::get_block::{
@@ -268,47 +266,11 @@ where
         if let BlockId::Hash(block_hash) = block_id {
             deoxys_backend_client::load_hash(self.client.as_ref(), Felt252Wrapper::from(block_hash).into())?
         } else {
-            let block_number = block_number_by_id(block_id)?;
+            let block_number = block_n_from_id(block_id)?;
             self.client
                 .hash(UniqueSaturatedInto::unique_saturated_into(block_number))
                 .map_err(|_| StarknetRpcApiError::BlockNotFound)?
         }
         .ok_or(StarknetRpcApiError::BlockNotFound)
-    }
-
-    /// Helper function to get the substrate block number from a Starknet block id
-    ///
-    /// # Arguments
-    ///
-    /// * `block_id` - The Starknet block id
-    ///
-    /// # Returns
-    ///
-    /// * `u64` - The substrate block number
-    fn substrate_block_number_from_starknet_block(&self, block_id: BlockId) -> Result<u64, StarknetRpcApiError> {
-        // Short circuit on block number
-        if let BlockId::Number(x) = block_id {
-            return Ok(x);
-        }
-
-        let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id)?;
-
-        let starknet_block = match get_block_by_block_hash(self.client.as_ref(), substrate_block_hash) {
-            Ok(block) => block,
-            Err(_) => return Err(StarknetRpcApiError::BlockNotFound),
-        };
-
-        Ok(starknet_block.header().block_number)
-    }
-
-    /// Returns a list of all transaction hashes in the given block.
-    ///
-    /// # Arguments
-    ///
-    /// * `block_hash` - The hash of the block containing the transactions (starknet block).
-    fn get_block_transaction_hashes(&self, block_hash: StarkHash) -> Result<Vec<StarkHash>, StarknetRpcApiError> {
-        DeoxysBackend::mapping()
-            .transaction_hashes_from_block_hash(block_hash)?
-            .ok_or(StarknetRpcApiError::BlockNotFound)
     }
 }
