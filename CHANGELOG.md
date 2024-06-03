@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refacor: use db hash
 - refactor: l2-sync
 - refactor: remove crate mp-mapping-sync
 - fix(rpc): get_nonce
