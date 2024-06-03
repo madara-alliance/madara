@@ -6,7 +6,7 @@ use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{FieldElement, Transaction};
 
 use crate::errors::StarknetRpcApiError;
-use crate::utils::ResultExt;
+use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
 
 /// Get the details and status of a submitted transaction.
@@ -38,13 +38,12 @@ use crate::Starknet;
 ///   system's capacity.
 pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: FieldElement) -> RpcResult<Transaction> {
     let tx_hash = TransactionHash(StarkFelt::from(Felt252Wrapper(transaction_hash)));
-    let block = starknet
+    let (block, tx_info) = starknet
         .block_storage()
-        .get_block_from_tx_hash(&tx_hash)
+        .find_tx_hash_block(&tx_hash)
         .or_internal_server_error("Error getting block from tx hash")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-
-    let index =
-        block.tx_hashes().iter().position(|hash| hash == &tx_hash).ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-    Ok(to_starknet_core_tx(&block.transactions()[index], transaction_hash))
+    let tx =
+        block.transactions().get(tx_info.tx_index).ok_or_internal_server_error("Storage block transaction mismatch")?;
+    Ok(to_starknet_core_tx(&tx, transaction_hash))
 }

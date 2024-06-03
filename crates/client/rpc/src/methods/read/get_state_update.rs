@@ -40,7 +40,11 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> RpcResult<May
 
     match block_id {
         BlockId::Tag(BlockTag::Pending) => {
-            let state_update = starknet.block_storage().get_pending_state_update()?;
+            let state_update = starknet
+                .block_storage()
+                .get_pending_block_state_update()
+                .or_internal_server_error("Failed to get pending state update")?
+                .ok_or(StarknetRpcApiError::BlockNotFound)?;
             Ok(MaybePendingStateUpdate::PendingUpdate(state_update))
         }
         _ => {

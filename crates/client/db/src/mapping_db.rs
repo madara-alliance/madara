@@ -29,7 +29,8 @@ pub struct MappingDb {
     db: Arc<DB>,
 }
 
-enum BlockStorageType {
+#[derive(Debug, Clone)]
+pub enum BlockStorageType {
     Pending,
     BlockN(u64),
 }
@@ -38,7 +39,16 @@ const ROW_PENDING_INFO: &[u8] = b"pending_info";
 const ROW_PENDING_STATE_UPDATE: &[u8] = b"pending_state_update";
 const ROW_PENDING_INNER: &[u8] = b"pending";
 const ROW_SYNC_TIP: &[u8] = b"sync_tip";
+const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
 
+#[derive(Debug, Clone)]
+pub struct TxStorageInfo {
+    pub storage_type: BlockStorageType,
+    pub tx_index: usize,
+}
+
+// TODO(error-handling): replace all of the else { return Ok(None) } with hard errors for
+// inconsistent state.
 impl MappingDb {
     /// Creates a new instance of the mapping database.
     pub(crate) fn new(db: Arc<DB>) -> Self {
@@ -100,6 +110,13 @@ impl MappingDb {
         Ok(Some(res))
     }
 
+    pub fn get_l1_last_confirmed_block(&self) -> Result<Option<u64>> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        let Some(res) = self.db.get_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK)? else { return Ok(None) };
+        let res = parity_scale_codec::Decode::decode(&mut res.as_ref())?;
+        Ok(Some(res))
+    }
+
     pub fn get_pending_block_state_update(&self) -> Result<Option<PendingStateUpdate>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_STATE_UPDATE)? else { return Ok(None) };
@@ -130,6 +147,16 @@ impl MappingDb {
         Ok(())
     }
 
+    pub fn write_last_confirmed_block(&self, tx: &mut WriteBatchWithTransaction, l1_last: u64) -> Result<()> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        tx.put_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK, codec::Encode::encode(&l1_last)?);
+        Ok(())
+    }
+
+    pub fn write_no_last_confirmed_block(&self, tx: &mut WriteBatchWithTransaction) -> Result<()> {
+        self.write_last_confirmed_block(tx, 0)
+    }
+
     pub fn write_new_block(&self, tx: &mut WriteBatchWithTransaction, block: &DeoxysBlock) -> Result<()> {
         let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
         let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
@@ -147,7 +174,7 @@ impl MappingDb {
         tx.put_cf(&block_n_to_block, &block_n_encoded, parity_scale_codec::Encode::encode(&block));
         tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
 
-        Ok(())
+        self.write_no_pending(tx)
     }
 
     // Convenience functions
@@ -176,6 +203,8 @@ impl MappingDb {
             BlockStorageType::BlockN(block_n) => self.get_block_inner_from_block_n(*block_n),
         }
     }
+
+    // BlockId
 
     pub fn get_block_n(&self, id: &BlockId) -> Result<Option<u64>> {
         let Some(ty) = self.id_to_storage_type(id)? else { return Ok(None) };
@@ -209,27 +238,77 @@ impl MappingDb {
         Ok(Some(DeoxysBlock::new(info, inner)))
     }
 
-    pub fn get_block_n_from_tx_hash(&self, tx_hash: &TransactionHash) -> Result<Option<u64>> {
-        let Some(block_n) = self.tx_hash_to_block_n(tx_hash)? else { return Ok(None) };
-        Ok(Some(block_n))
+    // Tx hashes and tx status
+
+    /// Returns the index of the tx.
+    pub fn find_tx_hash_block_info(
+        &self,
+        tx_hash: &TransactionHash,
+    ) -> Result<Option<(DeoxysBlockInfo, TxStorageInfo)>> {
+        match self.tx_hash_to_block_n(tx_hash)? {
+            Some(block_n) => {
+                let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                Ok(Some((info, TxStorageInfo { storage_type: BlockStorageType::BlockN(block_n), tx_index })))
+            }
+            None => {
+                let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                Ok(Some((info, TxStorageInfo { storage_type: BlockStorageType::Pending, tx_index })))
+            }
+        }
     }
 
-    pub fn get_block_info_from_tx_hash(&self, tx_hash: &TransactionHash) -> Result<Option<DeoxysBlockInfo>> {
-        let Some(block_n) = self.tx_hash_to_block_n(tx_hash)? else { return Ok(None) };
-        let Some(block_info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
-        Ok(Some(block_info))
+    /// Returns the index of the tx.
+    pub fn find_tx_hash_block(&self, tx_hash: &TransactionHash) -> Result<Option<(DeoxysBlock, TxStorageInfo)>> {
+        match self.tx_hash_to_block_n(tx_hash)? {
+            Some(block_n) => {
+                let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                let Some(inner) = self.get_pending_block_inner()? else { return Ok(None) };
+                Ok(Some((
+                    DeoxysBlock::new(info, inner),
+                    TxStorageInfo { storage_type: BlockStorageType::BlockN(block_n), tx_index },
+                )))
+            }
+            None => {
+                let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                let Some(inner) = self.get_pending_block_inner()? else { return Ok(None) };
+                Ok(Some((
+                    DeoxysBlock::new(info, inner),
+                    TxStorageInfo { storage_type: BlockStorageType::Pending, tx_index },
+                )))
+            }
+        }
     }
 
-    pub fn get_block_inner_from_tx_hash(&self, tx_hash: &TransactionHash) -> Result<Option<DeoxysBlockInner>> {
-        let Some(block_n) = self.tx_hash_to_block_n(tx_hash)? else { return Ok(None) };
-        let Some(block_inner) = self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
-        Ok(Some(block_inner))
-    }
+    // pub fn get_tx_status(&self, tx_info: &TxStorageInfo) {
 
-    pub fn get_block_from_tx_hash(&self, tx_hash: &TransactionHash) -> Result<Option<DeoxysBlock>> {
-        let Some(block_n) = self.tx_hash_to_block_n(tx_hash)? else { return Ok(None) };
-        let Some(block_info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
-        let Some(block_inner) = self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
-        Ok(Some(DeoxysBlock::new(block_info, block_inner)))
-    }
+    // }
+
+    // pub fn get_block_n_from_tx_hash(&self, tx_hash: &TransactionHash) -> Result<Option<u64>> {
+    //     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)? else { return Ok(None) };
+    //     Ok(Some(block_n))
+    // }
+
+    // pub fn get_block_info_from_tx_hash(&self, tx_hash: &TransactionHash) ->
+    // Result<Option<DeoxysBlockInfo>> {     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)?
+    // else { return Ok(None) };     let Some(block_info) =
+    // self.get_block_info_from_block_n(block_n)? else { return Ok(None) };     Ok(Some(block_info))
+    // }
+
+    // pub fn get_block_inner_from_tx_hash(&self, tx_hash: &TransactionHash) ->
+    // Result<Option<DeoxysBlockInner>> {     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)?
+    // else { return Ok(None) };     let Some(block_inner) =
+    // self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
+    //     Ok(Some(block_inner))
+    // }
+
+    // pub fn get_block_from_tx_hash(&self, tx_hash: &TransactionHash) -> Result<Option<DeoxysBlock>> {
+    //     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)? else { return Ok(None) };
+    //     let Some(block_info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
+    //     let Some(block_inner) = self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
+    //     Ok(Some(DeoxysBlock::new(block_info, block_inner)))
+    // }
 }

@@ -31,7 +31,7 @@ use crate::errors::StarknetRpcApiError;
 use crate::utils::ResultExt;
 use crate::Starknet;
 
-pub fn block_context(client: &Starknet, block_info: &DeoxysBlockInfo) -> Result<BlockContext, StarknetRpcApiError> {
+pub fn block_context(_client: &Starknet, block_info: &DeoxysBlockInfo) -> Result<BlockContext, StarknetRpcApiError> {
     let block_header = block_info.header();
 
     // safe unwrap because address is always valid and static

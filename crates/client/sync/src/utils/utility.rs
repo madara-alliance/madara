@@ -10,7 +10,6 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 use reqwest::header;
 use serde_json::{json, Value};
-use sp_core::H160;
 use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
 use url::Url;
@@ -30,7 +29,7 @@ pub fn chain_id() -> FieldElement {
     CONFIG.get().expect("CONFIG not initialized").chain_id
 }
 
-pub fn l1_core_address() -> H160 {
+pub fn l1_core_address() -> mp_block::H160 {
     CONFIG.get().expect("CONFIG not initialized").l1_core_address
 }
 

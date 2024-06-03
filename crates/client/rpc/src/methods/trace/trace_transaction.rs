@@ -18,26 +18,16 @@ pub async fn trace_transaction(
     starknet: &Starknet,
     transaction_hash: FieldElement,
 ) -> RpcResult<TransactionTraceWithHash> {
-    let transaction_hash_f = TransactionHash(transaction_hash.into_stark_felt());
-    let block = starknet
+    let (block, tx_info) = starknet
         .block_storage()
-        .get_block_from_tx_hash(&transaction_hash_f)
+        .find_tx_hash_block(&TransactionHash(transaction_hash.into_stark_felt()))
         .or_internal_server_error("Error while getting block from tx hash")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-    let block_hash = block.block_hash().into_field_element();
     let block_number = block.block_n();
     let block_context = block_context(starknet, block.info())?;
 
-    // retrieve the transaction index in the block with the transaction hash
-    let (tx_index, _) = block
-        .tx_hashes()
-        .iter()
-        .enumerate()
-        .find(|(_, hash)| *hash == &transaction_hash_f)
-        .ok_or_else_internal_server_error(|| {
-            format!("Failed to retrieve transaction index from block with hash {block_hash:#x}")
-        })?;
+    let tx_index = tx_info.tx_index;
 
     // create a vector of tuples with the transaction and its hash, up to the current transaction index
     let transaction_with_hash = block
@@ -67,7 +57,8 @@ pub async fn trace_transaction(
 
     let execution_infos = execution_infos(transactions_blockifier, &block_context)?;
 
-    let trace = tx_execution_infos_to_tx_trace(tx_type, &execution_infos, block_number).unwrap();
+    let trace = tx_execution_infos_to_tx_trace(tx_type, &execution_infos, block_number)
+        .or_internal_server_error("Converting execution infos to tx trace")?;
 
     let tx_trace = TransactionTraceWithHash { transaction_hash, trace_root: trace };
 

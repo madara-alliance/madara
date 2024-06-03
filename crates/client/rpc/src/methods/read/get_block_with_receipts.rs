@@ -1,26 +1,22 @@
 use jsonrpsee::core::RpcResult;
+use mc_db::mapping_db::BlockStorageType;
 use mp_felt::FeltWrapper;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
-use mp_types::block::DHasherT;
 use starknet_api::transaction::Transaction;
 use starknet_core::types::{
-    BlockId, BlockTag, BlockWithReceipts, MaybePendingBlockWithReceipts, PendingBlockWithReceipts, TransactionReceipt,
-    TransactionWithReceipt,
+    BlockId, BlockStatus, BlockTag, BlockWithReceipts, MaybePendingBlockWithReceipts, PendingBlockWithReceipts,
+    TransactionReceipt, TransactionWithReceipt,
 };
 
 use super::get_transaction_receipt::receipt;
-use crate::utils::block::{
-    l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, timestamp,
-};
+use crate::utils::block::{l1_da_mode, l1_data_gas_price, l1_gas_price, starknet_version};
 use crate::utils::execution::{block_context, re_execute_transactions};
-use crate::utils::helpers::status;
 use crate::utils::transaction::blockifier_transactions;
 use crate::utils::ResultExt;
 use crate::Starknet;
 
 pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithReceipts> {
     let block = starknet.get_block(block_id)?;
-    let block_number = block.block_n();
     let block_context = block_context(starknet, block.info())?;
 
     let block_txs_hashes = block.tx_hashes().iter().map(FeltWrapper::into_field_element);
@@ -50,7 +46,16 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
         .iter()
         .zip(transaction_with_hash)
         .map(|(execution_info, (transaction, transaction_hash))| {
-            receipt(&transaction, execution_info, transaction_hash, block_number)
+            receipt(
+                starknet,
+                &transaction,
+                execution_info,
+                transaction_hash,
+                &match block_id {
+                    BlockId::Tag(BlockTag::Pending) => BlockStorageType::Pending,
+                    _ => BlockStorageType::BlockN(block.block_n()),
+                },
+            )
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -65,9 +70,9 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
     if is_pending {
         let pending_block_with_receipts = PendingBlockWithReceipts {
             transactions: transactions_with_receipts,
-            parent_hash: parent_hash(&block),
-            timestamp: timestamp(&block),
-            sequencer_address: sequencer_address(&block),
+            parent_hash: block.header().parent_block_hash.into_field_element(),
+            timestamp: block.header().block_timestamp,
+            sequencer_address: block.header().sequencer_address.into_field_element(),
             l1_gas_price: l1_gas_price(&block),
             l1_data_gas_price: l1_data_gas_price(&block),
             l1_da_mode: l1_da_mode(&block),
@@ -77,14 +82,20 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
         let pending_block = MaybePendingBlockWithReceipts::PendingBlock(pending_block_with_receipts);
         Ok(pending_block)
     } else {
+        let status = if block.block_n() <= starknet.get_l1_last_confirmed_block()? {
+            BlockStatus::AcceptedOnL1
+        } else {
+            BlockStatus::AcceptedOnL2
+        };
+
         let block_with_receipts = BlockWithReceipts {
-            status: status(block.header().block_number),
-            block_hash: block.header().hash::<DHasherT>().into(),
-            parent_hash: parent_hash(&block),
+            status,
+            block_hash: block.block_hash().into_field_element(),
+            parent_hash: block.header().parent_block_hash.into_field_element(),
             block_number: block.header().block_number,
-            new_root: new_root(&block),
-            timestamp: timestamp(&block),
-            sequencer_address: sequencer_address(&block),
+            new_root: block.header().global_state_root.into_field_element(),
+            timestamp: block.header().block_timestamp,
+            sequencer_address: block.header().sequencer_address.into_field_element(),
             l1_gas_price: l1_gas_price(&block),
             l1_data_gas_price: l1_data_gas_price(&block),
             l1_da_mode: l1_da_mode(&block),

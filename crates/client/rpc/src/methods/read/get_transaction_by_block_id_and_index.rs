@@ -32,8 +32,8 @@ pub fn get_transaction_by_block_id_and_index(
     index: u64,
 ) -> RpcResult<Transaction> {
     let block = starknet.get_block(block_id)?;
-    let tx_hash = block.tx_hashes().get(index as usize).ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-    let tx = block.transactions().get(index as usize).ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    let tx_hash = block.tx_hashes().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
+    let tx = block.transactions().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
 
     Ok(to_starknet_core_tx(tx, tx_hash.into_field_element()))
 }

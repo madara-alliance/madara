@@ -362,7 +362,7 @@ impl DeoxysBackend {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
     ) -> Result<&'static Arc<DeoxysBackend>> {
-        let db_path = db_config_dir.join("starknet/rockdb"); //.deoxysdb/chains/starknet/starknet/rockdb
+        let db_path = db_config_dir.join("db"); //.deoxysdb/db
 
         let db =
             Arc::new(open_rocksdb(&db_path, true, backup_dir, restore_from_latest_backup).context("opening database")?);

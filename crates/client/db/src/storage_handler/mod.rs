@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use bitvec::prelude::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
-use sp_core::hexdisplay::AsBytesRef;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -261,7 +260,7 @@ pub fn block_state_diff() -> BlockStateDiffView {
 }
 
 fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {
-    identifier.0.0.0.as_bytes_ref()
+    &identifier.0.0.0
 }
 
 fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {

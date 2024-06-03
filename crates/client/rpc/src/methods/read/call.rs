@@ -4,7 +4,8 @@ use starknet_api::transaction::Calldata;
 use starknet_core::types::{BlockId, FunctionCall};
 
 use crate::utils::execution::block_context;
-use crate::{utils::{self, ResultExt}, Arc, Starknet};
+use crate::utils::{self, ResultExt};
+use crate::{Arc, Starknet};
 
 /// Call a Function in a Contract Without Creating a Transaction
 ///

@@ -45,10 +45,6 @@ starknet-ff = { workspace = true, default-features = false, features = [
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true }
 
-sc-consensus-manual-seal.workspace = true
-sp-blockchain = { workspace = true, default-features = true }
-sp-core = { workspace = true, features = ["std"] }
-
 bitvec = { workspace = true }
 bonsai-trie = { workspace = true }
 mc-db = { workspace = true }

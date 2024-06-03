@@ -4,7 +4,7 @@ use starknet_core::types::EmittedEvent;
 
 use crate::Starknet;
 
-pub fn get_block_events(starknet: &Starknet, block: &DeoxysBlock, pending: bool) -> Vec<EmittedEvent> {
+pub fn get_block_events(_starknet: &Starknet, block: &DeoxysBlock, pending: bool) -> Vec<EmittedEvent> {
     let (block_hash, block_number) =
         if pending { (None, None) } else { (Some(block.block_hash().into_field_element()), Some(block.block_n())) };
 

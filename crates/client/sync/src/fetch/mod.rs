@@ -5,7 +5,7 @@ use std::time::Duration;
 use futures::prelude::*;
 use starknet_core::types::StarknetError;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use self::fetchers::L2BlockAndUpdates;
 use crate::fetch::fetchers::fetch_block_and_updates;
@@ -19,6 +19,7 @@ pub async fn l2_fetch_task(
     fetch_stream_sender: mpsc::Sender<L2BlockAndUpdates>,
     provider: Arc<SequencerGatewayProvider>,
     sync_polling_interval: Option<Duration>,
+    once_caught_up_callback: oneshot::Sender<()>,
 ) -> anyhow::Result<()> {
     // First, catch up with the chain
 
@@ -48,6 +49,8 @@ pub async fn l2_fetch_task(
     };
 
     log::info!("🥳 The sync process caught up with the tip of the chain.");
+
+    let _ = once_caught_up_callback.send(());
 
     if let Some(sync_polling_interval) = sync_polling_interval {
         // Polling

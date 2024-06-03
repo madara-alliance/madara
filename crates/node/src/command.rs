@@ -1,6 +1,7 @@
 use deoxys_runtime::Block;
 use frame_benchmarking_cli::{BenchmarkCmd, ExtrinsicFactory, SUBSTRATE_REFERENCE_HARDWARE};
 use sc_cli::{ChainSpec, SubstrateCli};
+use sc_service::new_full_client;
 
 use crate::benchmarking::{inherent_benchmark_data, RemarkBuilder};
 use crate::cli::{Cli, Subcommand};
@@ -48,6 +49,8 @@ pub fn run() -> anyhow::Result<()> {
     let _db_drop = mc_db::DBDropHook;
     crate::util::setup_rayon_threadpool()?;
     let cli = Cli::from_args();
+
+    new_full_client(config, telemetry, executor)
 
     match cli.subcommand {
         Some(Subcommand::Key(ref cmd)) => Ok(cmd.run(&cli)?),

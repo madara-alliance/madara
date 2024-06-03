@@ -97,6 +97,8 @@ url = { workspace = true }
 
 anyhow.workspace = true
 rayon.workspace = true
+tower = "0.4.13"
+jsonrpsee-server = "0.22.5"
 
 [build-dependencies]
 substrate-build-script-utils = { workspace = true }

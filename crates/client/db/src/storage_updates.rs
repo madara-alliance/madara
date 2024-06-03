@@ -15,7 +15,7 @@ use storage_handler::primitives::contract_class::{
 
 use crate::storage_handler::{self, DeoxysStorageError, StorageViewMut};
 
-pub async fn store_state_update(block_number: u64, state_update: StateUpdate) -> Result<(), DeoxysStorageError> {
+pub fn store_state_update(block_number: u64, state_update: StateUpdate) -> Result<(), DeoxysStorageError> {
     let state_diff = state_update.state_diff.clone();
     let nonce_map: HashMap<ContractAddress, Nonce> = state_update
         .state_diff
@@ -32,7 +32,7 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
     log::debug!("💾 update state: block_number: {}", block_number);
 
     // Contract address to class hash and nonce update
-    let fut1 = async move {
+    let task_1 = || {
         let handler_contract_data_class = storage_handler::contract_class_hash_mut();
         let handler_contract_data_nonces = storage_handler::contract_nonces_mut();
 
@@ -75,7 +75,7 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
     };
 
     // Class hash to compiled class hash update
-    let fut2 = async move {
+    let task_2 = || {
         let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
 
         state_update
@@ -96,14 +96,14 @@ pub async fn store_state_update(block_number: u64, state_update: StateUpdate) ->
     };
 
     // Block number to state diff update
-    let fut3 = async move { storage_handler::block_state_diff().insert(block_number, state_diff) };
+    let task_3 = || storage_handler::block_state_diff().insert(block_number, state_diff);
 
-    let (result1, result2, result3) = tokio::join!(fut1, fut2, fut3);
+    let (result1, (result2, result3)) = rayon::join(task_1, || rayon::join(task_2, task_3));
 
     result1.and(result2).and(result3)
 }
 
-pub async fn store_class_update(block_number: u64, class_update: ClassUpdateWrapper) -> Result<(), DeoxysStorageError> {
+pub fn store_class_update(block_number: u64, class_update: ClassUpdateWrapper) -> Result<(), DeoxysStorageError> {
     let handler_contract_class_data_mut = storage_handler::contract_class_data_mut();
 
     class_update.0.into_iter().for_each(
@@ -123,7 +123,7 @@ pub async fn store_class_update(block_number: u64, class_update: ClassUpdateWrap
     handler_contract_class_data_mut.commit(block_number)
 }
 
-pub async fn store_key_update(
+pub fn store_key_update(
     block_number: u64,
     storage_diffs: &[ContractStorageDiffItem],
 ) -> Result<(), DeoxysStorageError> {

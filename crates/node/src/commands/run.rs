@@ -1,41 +1,15 @@
 use std::path::PathBuf;
-use std::result::Result as StdResult;
 use std::time::Duration;
 
-use deoxys_runtime::SealingMode;
 use mc_sync::fetch::fetchers::{fetch_apply_genesis_block, FetchConfig};
 use mc_sync::utility::set_config;
 use mc_sync::utils::constant::starknet_core_address;
 use reqwest::Url;
-use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
-use serde::{Deserialize, Serialize};
+use sc_cli::{RunCmd, SubstrateCli};
 use sp_core::H160;
 
 use crate::cli::Cli;
 use crate::service;
-
-/// Available Sealing methods.
-#[derive(Debug, Copy, Clone, clap::ValueEnum, Default, Serialize, Deserialize)]
-pub enum Sealing {
-    /// Seal using rpc method.
-    #[default]
-    Manual,
-    /// Seal when transaction is executed. This mode does not finalize blocks, if you want to
-    /// finalize blocks use `--sealing=instant-finality`.
-    Instant,
-    /// Seal when transaction is executed with finalization.
-    InstantFinality,
-}
-
-impl From<Sealing> for SealingMode {
-    fn from(value: Sealing) -> Self {
-        match value {
-            Sealing::Manual => SealingMode::Manual,
-            Sealing::Instant => SealingMode::Instant { finalize: false },
-            Sealing::InstantFinality => SealingMode::Instant { finalize: true },
-        }
-    }
-}
 
 /// Starknet network types.
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -97,7 +71,7 @@ impl NetworkType {
     }
 }
 
-fn parse_url(s: &str) -> StdResult<Url, url::ParseError> {
+fn parse_url(s: &str) -> Result<Url, url::ParseError> {
     s.parse()
 }
 
@@ -105,10 +79,6 @@ fn parse_url(s: &str) -> StdResult<Url, url::ParseError> {
 pub struct ExtendedRunCmd {
     #[clap(flatten)]
     pub base: RunCmd,
-
-    /// Choose sealing method.
-    #[clap(long, value_enum, ignore_case = true)]
-    pub sealing: Option<Sealing>,
 
     /// The L1 rpc endpoint url for state verification
     #[clap(long, value_parser = parse_url)]
@@ -125,10 +95,6 @@ pub struct ExtendedRunCmd {
     /// This will invoke sound interpreted from the block hashes.
     #[clap(long)]
     pub sound: bool,
-
-    /// This wrap a specific deoxys environment for a node quick start.
-    #[clap(long)]
-    pub deoxys: bool,
 
     /// Disable root verification
     #[clap(long)]
@@ -165,7 +131,7 @@ pub struct ExtendedRunCmd {
     pub restore_from_latest_backup: bool,
 }
 
-pub fn run_node(mut cli: Cli) -> Result<()> {
+pub fn run_node(mut cli: Cli) -> anyhow::Result<()> {
     #[cfg(feature = "tui")]
     {
         deoxys_tui::modify_substrate_sources();
@@ -189,86 +155,46 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         )
     });
 
-    if cli.run.base.shared_params.dev {
-        override_dev_environment(&mut cli.run);
-    } else if cli.run.deoxys {
-        deoxys_environment(&mut cli.run);
-    }
-
-    // Defaulting `SealingMode` to `Manual` in order to fetch blocks from the network
-    cli.run.sealing = Some(Sealing::Manual);
+    deoxys_environment(&mut cli.run);
 
     // If --no-telemetry is not set, set the telemetry endpoints to starknodes.com
-    if !cli.run.base.telemetry_params.no_telemetry {
-        cli.run.base.telemetry_params.telemetry_endpoints = vec![("wss://starknodes.com/submit/".to_string(), 0)];
-    }
-
-    let runner = cli.create_runner(&cli.run.base)?;
+    // TODO(merge): telemetry
+    // if !cli.run.base.telemetry_params.no_telemetry {
+    //     cli.run.base.telemetry_params.telemetry_endpoints =
+    // vec![("wss://starknodes.com/submit/".to_string(), 0)]; }
 
     // TODO: verify that the l1_endpoint is valid
     let l1_endpoint = if let Some(url) = cli.run.l1_endpoint {
         url
     } else {
-        return Err(sc_cli::Error::Input(
-            "Missing required --l1-endpoint argument please reffer to https://deoxys-docs.kasar.io".to_string(),
-        ));
+        log::error!("Missing required --l1-endpoint argument. The Online documentation is available here: https://deoxys-docs.kasar.io");
+        return Ok(());
     };
 
-    runner.run_node_until_exit(|config| async move {
-        let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
-        let starting_block = cli.run.starting_block;
-        let mut fetch_block_config = cli.run.network.block_fetch_config();
-        fetch_block_config.sound = cli.run.sound;
-        fetch_block_config.verify = !cli.run.disable_root;
-        fetch_block_config.api_key = cli.run.gateway_key.clone();
-        fetch_block_config.sync_polling_interval =
-            if cli.run.no_sync_polling { None } else { Some(Duration::from_secs(cli.run.sync_polling_interval)) };
-        fetch_block_config.n_blocks_to_sync = cli.run.n_blocks_to_sync;
-        // unique set of static OnceCell configuration
-        set_config(&fetch_block_config);
+    let starting_block = cli.run.starting_block;
+    let mut fetch_block_config = cli.run.network.block_fetch_config();
+    fetch_block_config.sound = cli.run.sound;
+    fetch_block_config.verify = !cli.run.disable_root;
+    fetch_block_config.api_key = cli.run.gateway_key.clone();
+    fetch_block_config.sync_polling_interval =
+        if cli.run.no_sync_polling { None } else { Some(Duration::from_secs(cli.run.sync_polling_interval)) };
+    fetch_block_config.n_blocks_to_sync = cli.run.n_blocks_to_sync;
+    // unique set of static OnceCell configuration
+    set_config(&fetch_block_config);
 
-        let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
+    let genesis_block = fetch_apply_genesis_block(fetch_block_config.clone()).await.unwrap();
 
-        service::new_full(
-            config,
-            sealing,
-            l1_endpoint,
-            fetch_block_config,
-            genesis_block,
-            starting_block,
-            cli.run.backup_every_n_blocks,
-            cli.run.backup_dir,
-            cli.run.restore_from_latest_backup,
-        )
-        .map_err(sc_cli::Error::Service)
-    })
-}
+    service::new_full(
+        config,
+        sealing,
+        l1_endpoint,
+        fetch_block_config,
+        genesis_block,
+        starting_block,
+        cli.run.backup_every_n_blocks,
+        cli.run.backup_dir,
+        cli.run.restore_from_latest_backup,
+    )
 
-fn override_dev_environment(cmd: &mut ExtendedRunCmd) {
-    // create a reproducible dev environment
-    // by disabling the default substrate `dev` behaviour
-    cmd.base.shared_params.dev = false;
-    cmd.base.shared_params.chain = Some("dev".to_string());
-
-    cmd.base.force_authoring = true;
-    cmd.base.alice = true;
-    cmd.base.tmp = true;
-
-    // we can't set `--rpc-cors=all`, so it needs to be set manually if we want to connect with external
-    // hosts
-    cmd.base.rpc_external = true;
-    cmd.base.rpc_methods = RpcMethods::Unsafe;
-}
-
-fn deoxys_environment(cmd: &mut ExtendedRunCmd) {
-    // Set the blockchain network to 'starknet'
-    cmd.base.shared_params.chain = Some("starknet".to_string());
-    cmd.base.shared_params.base_path.get_or_insert_with(|| PathBuf::from("/tmp/deoxys"));
-
-    // Define telemetry endpoints at starknodes.com
-    cmd.base.telemetry_params.telemetry_endpoints = vec![("wss://starknodes.com/submit/".to_string(), 0)];
-
-    // Enables manual sealing for custom block production
-    cmd.base.no_grandpa = true;
-    cmd.sealing = Some(Sealing::Manual);
+    Ok(())
 }

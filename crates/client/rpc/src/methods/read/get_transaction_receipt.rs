@@ -2,7 +2,7 @@ use blockifier::context::BlockContext;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution as btx;
 use jsonrpsee::core::RpcResult;
-use mp_block::DeoxysBlock;
+use mc_db::mapping_db::BlockStorageType;
 use mp_felt::FeltWrapper;
 use starknet_api::core::{calculate_contract_address, ContractAddress};
 use starknet_api::transaction::{Transaction, TransactionHash};
@@ -48,41 +48,17 @@ pub async fn get_transaction_receipt(
     starknet: &Starknet,
     transaction_hash: FieldElement,
 ) -> RpcResult<TransactionReceiptWithBlockInfo> {
-    let block = starknet
+    let (block, tx_info) = starknet
         .block_storage()
-        .get_block_from_tx_hash(&TransactionHash(transaction_hash.into_stark_felt()))
-        .or_internal_server_error("Failed to get block n from transaction hash")?
+        .find_tx_hash_block(&TransactionHash(transaction_hash.into_stark_felt()))
+        .or_internal_server_error("Error getting block from tx_hash")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-    get_transaction_receipt_finalized(starknet, &block, transaction_hash)
-}
-
-pub fn get_transaction_receipt_finalized(
-    starknet: &Starknet,
-    block: &DeoxysBlock,
-    transaction_hash: FieldElement,
-) -> RpcResult<TransactionReceiptWithBlockInfo> {
-    let block_header = block.header();
-    let block_number = block_header.block_number;
-    let block_hash = block.block_hash().into_field_element();
+    let tx_index = tx_info.tx_index;
 
     let block_context = block_context(starknet, block.info())?;
-
-    let transaction_hash_stark_felt = transaction_hash.into_stark_felt();
-    let block_txs_hashes = block.tx_hashes().iter().map(FeltWrapper::into_field_element).collect::<Vec<_>>();
-
-    // retrieve the transaction index in the block with the transaction hash
-    let (tx_index, _) = block
-        .tx_hashes()
-        .iter()
-        .enumerate()
-        .find(|(_, hash)| &hash.0 == &transaction_hash_stark_felt)
-        .ok_or_else_internal_server_error(|| {
-            format!("Failed to retrieve transaction index from block_n {block_number}")
-        })?;
-
     let transaction = block.transactions().get(tx_index).ok_or_else_internal_server_error(|| {
-        format!("Failed to retrieve transaction at index {tx_index} index from block_n {block_number}")
+        format!("Failed to retrieve transaction at index {tx_index} index from block_n {}", block.block_n())
     })?;
 
     // deploy transaction was not supported by blockifier
@@ -92,18 +68,29 @@ pub fn get_transaction_receipt_finalized(
     }
 
     // create a vector of tuples with the transaction and its hash, up to the current transaction index
-    let transaction_with_hash =
-        block.transactions().iter().cloned().zip(block_txs_hashes.iter().cloned()).take(tx_index + 1).collect();
+    let transaction_with_hash = block
+        .transactions()
+        .iter()
+        .cloned()
+        .zip(block.tx_hashes().iter().map(FeltWrapper::into_field_element))
+        .take(tx_index + 1)
+        .collect();
 
     let transactions_blockifier = blockifier_transactions(transaction_with_hash)?;
 
     let execution_infos = execution_infos(transactions_blockifier, &block_context)?;
 
-    let receipt = receipt(transaction, &execution_infos, transaction_hash, block_number)?;
+    let receipt = receipt(starknet, transaction, &execution_infos, transaction_hash, &tx_info.storage_type)?;
 
-    let block_info = starknet_core::types::ReceiptBlock::Block { block_hash, block_number };
+    let block = match tx_info.storage_type {
+        BlockStorageType::Pending => starknet_core::types::ReceiptBlock::Pending,
+        BlockStorageType::BlockN(block_number) => {
+            let block_hash = block.block_hash().into_field_element();
+            starknet_core::types::ReceiptBlock::Block { block_hash, block_number }
+        }
+    };
 
-    Ok(TransactionReceiptWithBlockInfo { receipt, block: block_info })
+    Ok(TransactionReceiptWithBlockInfo { receipt, block })
 }
 
 pub(crate) fn execution_infos(
@@ -130,10 +117,11 @@ pub(crate) fn execution_infos(
 }
 
 pub fn receipt(
+    starknet: &Starknet,
     transaction: &Transaction,
     execution_infos: &TransactionExecutionInfo,
     transaction_hash: FieldElement,
-    block_number: u64,
+    is_pending: &BlockStorageType,
 ) -> RpcResult<TransactionReceipt> {
     let message_hash: Hash256 = Hash256::from_felt(&FieldElement::default());
 
@@ -142,10 +130,12 @@ pub fn receipt(
         unit: starknet_core::types::PriceUnit::Wei,
     };
 
-    let finality_status = if block_number <= mc_sync::l1::ETHEREUM_STATE_UPDATE.read().unwrap().block_number {
-        TransactionFinalityStatus::AcceptedOnL1
-    } else {
-        TransactionFinalityStatus::AcceptedOnL2
+    let finality_status = match is_pending {
+        BlockStorageType::Pending => TransactionFinalityStatus::AcceptedOnL2,
+        BlockStorageType::BlockN(block_n) if *block_n <= starknet.get_l1_last_confirmed_block()? => {
+            TransactionFinalityStatus::AcceptedOnL1
+        }
+        BlockStorageType::BlockN(_) => TransactionFinalityStatus::AcceptedOnL2,
     };
 
     let execution_result = match execution_infos.revert_error.clone() {

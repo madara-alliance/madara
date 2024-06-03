@@ -19,6 +19,8 @@ pub type BlockTransactions = Vec<Transaction>;
 /// Block Events
 pub type BlockEvents = Vec<OrderedEvents>;
 
+pub use sp_core::{U256, H160};
+
 /// Block tag.
 ///
 /// A tag specifying a dynamic reference to a block.

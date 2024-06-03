@@ -1,6 +1,6 @@
 //! Contains the necessaries to perform an L1 verification of the state
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 use ethers::contract::{abigen, EthEvent};
@@ -9,7 +9,7 @@ use ethers::types::transaction::eip2718::TypedTransaction;
 use ethers::types::{Address, BlockNumber as EthBlockNumber, Filter, TransactionRequest, I256, U256, U64};
 use ethers::utils::hex::decode;
 use futures::stream::StreamExt;
-use lazy_static::lazy_static;
+use mc_db::{DeoxysBackend, WriteBatchWithTransaction};
 use mp_felt::Felt252Wrapper;
 use primitive_types::H256;
 use prometheus_endpoint::prometheus::core::Number;
@@ -21,15 +21,6 @@ use starknet_api::hash::StarkHash;
 use crate::metrics::block_metrics::BlockMetrics;
 use crate::utility::{convert_log_state_update, l1_core_address};
 use crate::utils::constant::LOG_STATE_UPDTATE_TOPIC;
-
-lazy_static! {
-    /// Shared latest L2 state update verified on L1
-    pub static ref ETHEREUM_STATE_UPDATE: Arc<RwLock<L1StateUpdate>> = Arc::new(RwLock::new(L1StateUpdate {
-        block_number: u64::default(),
-        global_root: StarkHash::default(),
-        block_hash: StarkHash::default(),
-    }));
-}
 
 /// Contains the Starknet verified state on L1
 #[derive(Debug, Clone, Deserialize)]
@@ -169,7 +160,7 @@ impl EthereumClient {
             let log = event_result.context("listening for events")?;
             let format_event =
                 convert_log_state_update(log.clone()).context("formatting event into an L1StateUpdate")?;
-            update_l1(format_event, block_metrics.clone());
+            update_l1(format_event, block_metrics.clone())?;
         }
 
         Ok(())
@@ -177,7 +168,7 @@ impl EthereumClient {
 }
 
 /// Update the L1 state with the latest data
-pub fn update_l1(state_update: L1StateUpdate, block_metrics: Option<BlockMetrics>) {
+pub fn update_l1(state_update: L1StateUpdate, block_metrics: Option<BlockMetrics>) -> anyhow::Result<()> {
     log::info!(
         "🔄 Updated L1 head: Number: #{}, Hash: {}, Root: {}",
         state_update.block_number,
@@ -189,11 +180,13 @@ pub fn update_l1(state_update: L1StateUpdate, block_metrics: Option<BlockMetrics
         block_metrics.l1_block_number.set(state_update.block_number.into_f64());
     }
 
-    {
-        let last_state_update = ETHEREUM_STATE_UPDATE.clone();
-        let mut new_state_update = last_state_update.write().expect("poisoned lock");
-        *new_state_update = state_update.clone();
-    }
+    let mut tx = WriteBatchWithTransaction::default();
+    DeoxysBackend::mapping()
+        .write_last_confirmed_block(&mut tx, state_update.block_number)
+        .context("setting l1 last confirmed block number")?;
+    DeoxysBackend::expose_db().write(tx).context("writing pending block to db")?;
+    log::debug!("update_l1: wrote last confirmed block number");
+    Ok(())
 }
 
 // /// Verify the L1 state with the latest data
@@ -232,13 +225,23 @@ pub fn update_l1(state_update: L1StateUpdate, block_metrics: Option<BlockMetrics
 
 /// Syncronize with the L1 latest state updates
 pub async fn sync(l1_url: Url, block_metrics: Option<BlockMetrics>) -> anyhow::Result<()> {
+    // Clear L1 confirmed block at startup
+    {
+        let mut tx = WriteBatchWithTransaction::default();
+        DeoxysBackend::mapping()
+            .write_no_last_confirmed_block(&mut tx)
+            .context("clearing l1 last confirmed block number")?;
+        DeoxysBackend::expose_db().write(tx).context("writing pending block to db")?;
+        log::debug!("update_l1: cleared confirmed block number");
+    }
+
     let client = EthereumClient::new(l1_url).await.context("creating ethereum client")?;
 
     log::info!("🚀 Subscribed to L1 state verification");
 
     // Get and store the latest verified state
     let initial_state = EthereumClient::get_initial_state(&client).await.context("getting initial ethereum state")?;
-    update_l1(initial_state, block_metrics.clone());
+    update_l1(initial_state, block_metrics.clone())?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
     let start_block =

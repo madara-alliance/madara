@@ -7,7 +7,6 @@ use mc_db::storage_handler::primitives::contract_class::{ContractClassData, Cont
 use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
 use mp_block::DeoxysBlock;
 use mp_convert::state_update::ToStateUpdateCore;
-use sp_core::H160;
 use starknet_api::core::ClassHash;
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
@@ -38,7 +37,7 @@ pub struct FetchConfig {
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
     /// The L1 contract core address
-    pub l1_core_address: H160,
+    pub l1_core_address: mp_block::H160,
     /// Whether to check the root of the state update
     pub verify: bool,
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.

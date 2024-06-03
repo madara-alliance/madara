@@ -6,80 +6,18 @@
 #![warn(missing_docs)]
 
 mod starknet;
-use std::sync::Arc;
 
-use futures::channel::mpsc;
 use jsonrpsee::RpcModule;
-use mc_genesis_data_provider::GenesisProvider;
-use mp_types::account::DAccountIdT;
-use mp_types::block::{DBlockT, DHashT, DHasherT};
-use mp_types::transactions::DTxIndexT;
-use sc_client_api::{Backend, BlockBackend, StorageProvider};
-use sc_consensus_manual_seal::rpc::EngineCommand;
+use mc_rpc::{Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 pub use sc_rpc_api::DenyUnsafe;
-use sc_transaction_pool::{ChainApi, Pool};
-use sc_transaction_pool_api::TransactionPool;
-use sp_api::ProvideRuntimeApi;
-use sp_block_builder::BlockBuilder;
-use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 pub use starknet::StarknetDeps;
 
-/// Full client dependencies.
-pub struct FullDeps<A: ChainApi, C, G: GenesisProvider, P> {
-    /// The client instance to use.
-    pub client: Arc<C>,
-    /// Transaction pool instance.
-    pub pool: Arc<P>,
-    /// Extrinsic pool graph instance.
-    pub graph: Arc<Pool<A>>,
-    /// Whether to deny unsafe calls
-    pub deny_unsafe: DenyUnsafe,
-    /// Starknet dependencies
-    pub starknet: StarknetDeps<C, G, DBlockT>,
-}
-
 /// Instantiate all full RPC extensions.
-pub fn create_full<A, C, G, P, BE>(
-    deps: FullDeps<A, C, G, P>,
-) -> Result<RpcModule<()>, Box<dyn std::error::Error + Send + Sync>>
-where
-    A: ChainApi<Block = DBlockT> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C: HeaderBackend<DBlockT>
-        + BlockBackend<DBlockT>
-        + HeaderMetadata<DBlockT, Error = BlockChainError>
-        + StorageProvider<DBlockT, BE>
-        + 'static,
-    C: Send + Sync + 'static,
-    C::Api: substrate_frame_rpc_system::AccountNonceApi<DBlockT, DAccountIdT, DTxIndexT>,
-    C::Api: BlockBuilder<DBlockT>,
-    G: GenesisProvider + Send + Sync + 'static,
-    P: TransactionPool<Block = DBlockT> + 'static,
-    BE: Backend<DBlockT> + 'static,
-{
-    use mc_rpc::{Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
-    use sc_consensus_manual_seal::rpc::{ManualSeal, ManualSealApiServer};
-    use substrate_frame_rpc_system::{System, SystemApiServer};
-
+pub fn create_full(starting_block: u64) -> anyhow::Result<RpcModule<()>> {
     let mut module = RpcModule::new(());
-    let FullDeps { client, pool, deny_unsafe, starknet: starknet_params, .. } = deps;
-
-    module.merge(System::new(client.clone(), pool.clone(), deny_unsafe).into_rpc())?;
-    module.merge(StarknetReadRpcApiServer::into_rpc(Starknet::<_, _, DHasherT>::new(
-        client.clone(),
-        starknet_params.sync_service.clone(),
-        starknet_params.starting_block,
-    )))?;
-    module.merge(StarknetWriteRpcApiServer::into_rpc(Starknet::<_, _, DHasherT>::new(
-        client.clone(),
-        starknet_params.sync_service.clone(),
-        starknet_params.starting_block,
-    )))?;
-    module.merge(StarknetTraceRpcApiServer::into_rpc(Starknet::<_, _, DHasherT>::new(
-        client,
-        starknet_params.sync_service,
-        starknet_params.starting_block,
-    )))?;
+    module.merge(StarknetReadRpcApiServer::into_rpc(Starknet::new(starting_block)))?;
+    module.merge(StarknetWriteRpcApiServer::into_rpc(Starknet::new(starting_block)))?;
+    module.merge(StarknetTraceRpcApiServer::into_rpc(Starknet::new(starting_block)))?;
 
     Ok(module)
 }

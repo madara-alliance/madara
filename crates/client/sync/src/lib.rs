@@ -1,10 +1,6 @@
 #![allow(deprecated)]
 #![feature(let_chains)]
 
-// use std::sync::Arc;
-// use sp_runtime::traits::Block as BlockT;
-// use reqwest::Url;
-
 pub mod commitments;
 pub mod fetch;
 pub mod l1;
@@ -13,7 +9,6 @@ pub mod metrics;
 pub mod reorgs;
 pub mod utils;
 
-pub use l2::SenderConfig;
 pub use mp_types::block::{DBlockT, DHashT};
 #[cfg(feature = "m")]
 pub use utils::m;
@@ -21,13 +16,10 @@ pub use utils::{convert, utility};
 
 use crate::l2::L2SyncConfig;
 
-type CommandSink = futures::channel::mpsc::Sender<sc_consensus_manual_seal::rpc::EngineCommand<sp_core::H256>>;
-
 pub mod starknet_sync_worker {
     use anyhow::Context;
     use mp_convert::state_update::ToStateUpdateCore;
     use reqwest::Url;
-    use sp_blockchain::HeaderBackend;
     use starknet_providers::sequencer::models::BlockId;
     use starknet_providers::SequencerGatewayProvider;
 
@@ -36,17 +28,13 @@ pub mod starknet_sync_worker {
     use crate::l2::verify_l2;
     use crate::metrics::block_metrics::BlockMetrics;
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn sync<C>(
+    pub async fn sync(
         fetch_config: FetchConfig,
         l1_url: Url,
         starting_block: u32,
         backup_every_n_blocks: Option<usize>,
         block_metrics: Option<BlockMetrics>,
-    ) -> anyhow::Result<()>
-    where
-        C: HeaderBackend<DBlockT> + 'static,
-    {
+    ) -> anyhow::Result<()> {
         let starting_block = starting_block + 1;
 
         let provider = SequencerGatewayProvider::new(

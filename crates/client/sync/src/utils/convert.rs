@@ -46,7 +46,7 @@ pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
     let protocol_version = starknet_version(&block.starknet_version);
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
-    let extra_data = Some(sp_core::U256::from_big_endian(&block_hash.to_bytes_be()));
+    let extra_data = Some(mp_block::U256::from_big_endian(&block_hash.to_bytes_be()));
 
     let header = mp_block::Header {
         parent_block_hash,
