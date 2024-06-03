@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::TxType;
 use mp_types::block::DBlockT;
@@ -12,7 +11,7 @@ use super::utils::tx_execution_infos_to_tx_trace;
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::{block_context, re_execute_transactions};
-use crate::utils::helpers::tx_hash_retrieve;
+use crate::utils::helpers::{block_hash_from_block_n, tx_hash_retrieve, txs_hashes_from_block_hash};
 use crate::utils::transaction::blockifier_transactions;
 use crate::Starknet;
 
@@ -33,10 +32,10 @@ where
     })?;
     let block_header = starknet_block.header();
     let block_number = block_header.block_number;
-    let block_hash: Felt252Wrapper = block_header.hash::<H>();
+    let block_hash = block_hash_from_block_n(block_number)?;
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
-    let block_txs_hashes = tx_hash_retrieve(starknet.get_block_transaction_hashes(block_hash.into())?);
+    let block_txs_hashes = tx_hash_retrieve(txs_hashes_from_block_hash(block_hash)?);
 
     // create a vector of transactions with their corresponding hashes without deploy transactions,
     // blockifier does not support deploy transactions

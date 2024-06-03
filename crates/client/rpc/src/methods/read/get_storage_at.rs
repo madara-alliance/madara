@@ -12,6 +12,7 @@ use starknet_api::state::StorageKey;
 use starknet_core::types::{BlockId, FieldElement};
 
 use crate::errors::StarknetRpcApiError;
+use crate::utils::helpers::block_n_from_id;
 use crate::{Felt, Starknet};
 
 /// Get the value of the storage at the given address and key.
@@ -44,7 +45,7 @@ use crate::{Felt, Starknet};
 /// * `STORAGE_KEY_NOT_FOUND` - If the specified storage key does not exist within the given
 ///   contract.
 pub fn get_storage_at<BE, C, H>(
-    starknet: &Starknet<BE, C, H>,
+    _starknet: &Starknet<BE, C, H>,
     contract_address: FieldElement,
     key: FieldElement,
     block_id: BlockId,
@@ -54,7 +55,7 @@ where
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
-    let block_number = starknet.substrate_block_number_from_starknet_block(block_id)?;
+    let block_number = block_n_from_id(block_id)?;
 
     let contract_address = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
     let key = StorageKey(PatriciaKey(StarkFelt(key.to_bytes_be())));

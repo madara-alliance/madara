@@ -15,7 +15,9 @@ use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::utils::block::{
     l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, timestamp,
 };
-use crate::utils::helpers::{status, tx_conv, tx_hash_compute, tx_hash_retrieve};
+use crate::utils::helpers::{
+    block_hash_from_block_n, status, tx_conv, tx_hash_compute, tx_hash_retrieve, txs_hashes_from_block_hash,
+};
 use crate::{Felt, Starknet};
 
 pub(crate) fn get_block_with_tx_hashes_finalized<BE, C, H>(
@@ -28,11 +30,9 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-
-    let block_hash = starknet_block.header().hash::<H>();
-    let block_txs_hashes = tx_hash_retrieve(starknet.get_block_transaction_hashes(block_hash.into())?);
-
     let block_number = starknet_block.header().block_number;
+    let block_hash = block_hash_from_block_n(block_number)?;
+    let block_txs_hashes = tx_hash_retrieve(txs_hashes_from_block_hash(block_hash)?);
     let status = status(block_number);
     let parent_hash = parent_hash(&starknet_block);
     let new_root = new_root(&starknet_block);
@@ -46,7 +46,7 @@ where
     let block_with_tx_hashes = BlockWithTxHashes {
         transactions: block_txs_hashes,
         status,
-        block_hash: block_hash.into(),
+        block_hash,
         parent_hash,
         block_number,
         new_root,
@@ -101,12 +101,11 @@ where
     H: HasherT + Send + Sync + 'static,
 {
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-
-    let block_hash = starknet_block.header().hash::<H>();
-    let block_txs_hashes = tx_hash_retrieve(starknet.get_block_transaction_hashes(block_hash.into())?);
-    let transactions = tx_conv(starknet_block.transactions(), block_txs_hashes);
-
     let block_number = starknet_block.header().block_number;
+    let block_hash = block_hash_from_block_n(block_number)?;
+
+    let block_txs_hashes = tx_hash_retrieve(txs_hashes_from_block_hash(block_hash)?);
+    let transactions = tx_conv(starknet_block.transactions(), block_txs_hashes);
     let status = status(block_number);
     let parent_hash = parent_hash(&starknet_block);
     let new_root = new_root(&starknet_block);
@@ -119,7 +118,7 @@ where
 
     let block_with_txs = BlockWithTxs {
         status,
-        block_hash: block_hash.into(),
+        block_hash,
         parent_hash,
         block_number,
         new_root,

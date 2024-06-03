@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_types::block::DBlockT;
@@ -19,7 +18,7 @@ use crate::utils::block::{
     l1_da_mode, l1_data_gas_price, l1_gas_price, new_root, parent_hash, sequencer_address, starknet_version, timestamp,
 };
 use crate::utils::execution::{block_context, re_execute_transactions};
-use crate::utils::helpers::{status, tx_hash_retrieve};
+use crate::utils::helpers::{block_hash_from_block_n, status, tx_hash_retrieve, txs_hashes_from_block_hash};
 use crate::utils::transaction::blockifier_transactions;
 use crate::Starknet;
 
@@ -36,11 +35,11 @@ where
     let block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
     let block_header = block.header();
     let block_number = block_header.block_number;
-    let block_hash: Felt252Wrapper = block_header.hash::<H>();
+    let block_hash = block_hash_from_block_n(block_number)?;
 
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
 
-    let block_txs_hashes = tx_hash_retrieve(starknet.get_block_transaction_hashes(block_hash.into())?);
+    let block_txs_hashes = tx_hash_retrieve(txs_hashes_from_block_hash(block_hash)?);
 
     // create a vector of transactions with their corresponding hashes without deploy transactions,
     // blockifier does not support deploy transactions
@@ -103,9 +102,9 @@ where
     } else {
         let block_with_receipts = BlockWithReceipts {
             status: status(starknet_block.header().block_number),
-            block_hash: starknet_block.header().hash::<H>().into(),
+            block_hash,
             parent_hash: parent_hash(&starknet_block),
-            block_number: starknet_block.header().block_number,
+            block_number,
             new_root: new_root(&starknet_block),
             timestamp: timestamp(&starknet_block),
             sequencer_address: sequencer_address(&starknet_block),

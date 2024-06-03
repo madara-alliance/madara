@@ -11,6 +11,7 @@ use starknet_core::types::{FieldElement, TransactionStatus};
 
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
+use crate::utils::helpers::{block_hash_from_block_n, txs_hashes_from_block_hash};
 use crate::Starknet;
 
 /// Gets the Transaction Status, Including Mempool Status and Execution Details
@@ -49,10 +50,10 @@ where
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-    let starknet_block_hash = starknet_block.header().hash::<H>();
+    let block_number = starknet_block.header().block_number;
+    let starknet_block_hash = block_hash_from_block_n(block_number)?;
 
-    let _starknet_tx = starknet
-        .get_block_transaction_hashes(starknet_block_hash.into())?
+    let _starknet_tx = txs_hashes_from_block_hash(starknet_block_hash)?
         .into_iter()
         .zip(starknet_block.transactions())
         .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())

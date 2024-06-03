@@ -10,6 +10,7 @@ use starknet_core::types::{BlockId, FieldElement, Transaction};
 
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
+use crate::utils::helpers::{block_hash_from_block_n, txs_hashes_from_block_hash};
 use crate::Starknet;
 
 /// Get the details of a transaction by a given block id and index.
@@ -46,11 +47,12 @@ where
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-    let starknet_block_hash = starknet_block.header().hash::<H>();
+    let block_number = starknet_block.header().block_number;
+    let starknet_block_hash = block_hash_from_block_n(block_number)?;
 
     let transaction = starknet_block.transactions().get(index).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
 
-    let block_txs_hashes = starknet.get_block_transaction_hashes(starknet_block_hash.into())?;
+    let block_txs_hashes = txs_hashes_from_block_hash(starknet_block_hash)?;
 
     let transaction_hash = block_txs_hashes.get(index).map(|&fe| FieldElement::from(Felt252Wrapper::from(fe))).ok_or(
         // This should never happen, because the index is checked above when getting the transaction.
