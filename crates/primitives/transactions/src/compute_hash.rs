@@ -14,6 +14,9 @@ use starknet_core::crypto::compute_hash_on_elements;
 use starknet_core::utils::starknet_keccak;
 use starknet_crypto::FieldElement;
 
+use starknet_types_core::hash::{Pedersen, Poseidon};
+use starknet_types_core::felt::Felt;
+
 use super::SIMULATE_TX_VERSION_OFFSET;
 use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK};
 
