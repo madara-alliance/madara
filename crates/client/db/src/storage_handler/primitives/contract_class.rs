@@ -28,6 +28,7 @@ pub struct StorageContractClassData {
     pub abi: ContractAbi,
     pub sierra_program_length: u64,
     pub abi_length: u64,
+    pub block_number: u64,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]

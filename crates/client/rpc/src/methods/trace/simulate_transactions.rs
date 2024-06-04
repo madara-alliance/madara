@@ -5,18 +5,17 @@ use mp_simulations::SimulationFlags;
 use mp_transactions::from_broadcasted_transactions::ToAccountTransaction;
 use mp_transactions::TxType;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulatedTransaction, SimulationFlag,
 };
 
 use super::lib::ConvertCallInfoToExecuteInvocationError;
-use super::utils::{block_number_by_id, tx_execution_infos_to_tx_trace};
+use super::utils::tx_execution_infos_to_tx_trace;
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
+use crate::utils::helpers::block_n_from_id;
 use crate::{utils, Starknet};
 
 pub async fn simulate_transactions<BE, C, H>(
@@ -28,14 +27,12 @@ pub async fn simulate_transactions<BE, C, H>(
 where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
 
     let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
-    let block_number = block_number_by_id(block_id)?;
+    let block_number = block_n_from_id(block_id)?;
 
     let simulation_flags = SimulationFlags {
         validate: !simulation_flags.contains(&SimulationFlag::SkipValidate),

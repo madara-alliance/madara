@@ -2,9 +2,7 @@ use blockifier::transaction::errors::TransactionExecutionError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, SimulatedTransaction, SimulationFlag, TransactionTraceWithHash,
@@ -22,8 +20,6 @@ impl<BE, C, H> StarknetTraceRpcApiServer for Starknet<BE, C, H>
 where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     async fn simulate_transactions(

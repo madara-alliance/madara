@@ -13,7 +13,7 @@ use blockifier::transaction::objects::{
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use blockifier::versioned_constants::VersionedConstants;
-use mc_db::storage_handler;
+use mc_db::storage_handler::{self, StorageView};
 use mp_felt::Felt252Wrapper;
 use mp_genesis_config::{ETH_TOKEN_ADDR, STRK_TOKEN_ADDR};
 use mp_simulations::SimulationFlags;
@@ -98,7 +98,7 @@ pub fn call_contract(
     block_context: &BlockContext,
 ) -> Result<Vec<Felt252Wrapper>, ()> {
     // Get class hash
-    let class_hash = storage_handler::contract_data().get_class_hash(&address).map_err(|_| ())?;
+    let class_hash = storage_handler::contract_class_hash().get(&address).map_err(|_| ())?;
 
     let entrypoint = CallEntryPoint {
         class_hash,
@@ -168,8 +168,9 @@ pub fn estimate_message_fee(
     };
 
     let fee = FeeEstimate {
-        gas_consumed: Felt252Wrapper::from(*tx_execution_infos.actual_resources.0.get("l1_gas_usage").unwrap() as u64)
-            .into(),
+        gas_consumed: FieldElement::from(
+            tx_execution_infos.actual_resources.0.get("l1_gas_usage").cloned().unwrap_or_default(),
+        ),
         gas_price: FieldElement::ZERO,
         data_gas_consumed: tx_execution_infos.da_gas.l1_data_gas.into(),
         data_gas_price: FieldElement::ZERO,
@@ -196,7 +197,7 @@ fn execute_fee_transaction(
     };
 
     let minimal_l1_gas_amount_vector = estimate_minimal_gas_vector(block_context, &transaction)
-        .map_err(TransactionExecutionError::TransactionPreValidationError);
+        .map_err(TransactionExecutionError::TransactionPreValidationError)?;
 
     let tx_info: Result<
         blockifier::transaction::objects::TransactionExecutionInfo,
@@ -212,13 +213,8 @@ fn execute_fee_transaction(
 
     match tx_info {
         Ok(tx_info) => {
-            let fee_estimate = from_tx_info_and_gas_price(
-                &tx_info,
-                gas_price,
-                data_gas_price,
-                unit,
-                minimal_l1_gas_amount_vector.expect("Minimal gas vector error"),
-            );
+            let fee_estimate =
+                from_tx_info_and_gas_price(&tx_info, gas_price, data_gas_price, unit, minimal_l1_gas_amount_vector);
             Ok(fee_estimate)
         }
         Err(error) => Err(error),

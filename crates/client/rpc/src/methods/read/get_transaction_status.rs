@@ -1,20 +1,17 @@
 use jsonrpsee::core::RpcResult;
 use mc_db::DeoxysBackend;
-use mc_sync::utility::chain_id;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{FieldElement, TransactionStatus};
 
 use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
+use crate::utils::helpers::{block_hash_from_block_n, txs_hashes_from_block_hash};
 use crate::Starknet;
 
 /// Gets the Transaction Status, Including Mempool Status and Execution Details
@@ -42,12 +39,10 @@ pub fn get_transaction_status<BE, C, H>(
 where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     let substrate_block_hash = DeoxysBackend::mapping()
-        .block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
+        .substrate_block_hash_from_transaction_hash(Felt252Wrapper(transaction_hash).into())
         .map_err(|e| {
             log::error!("Failed to get substrate block hash from transaction hash: {}", e);
             StarknetRpcApiError::InternalServerError
@@ -55,26 +50,14 @@ where
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
     let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
+    let block_number = starknet_block.header().block_number;
+    let starknet_block_hash = block_hash_from_block_n(block_number)?;
 
-    let chain_id = chain_id().into();
-
-    let _starknet_tx =
-        if let Some(tx_hashes) = starknet.get_cached_transaction_hashes(starknet_block.header().hash::<H>().into()) {
-            tx_hashes
-                .into_iter()
-                .zip(starknet_block.transactions())
-                .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
-                .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash))
-        } else {
-            starknet_block
-                .transactions()
-                .iter()
-                .find(|tx| {
-                    tx.compute_hash::<H>(chain_id, false, Some(starknet_block.header().block_number)).0
-                        == Felt252Wrapper::from(transaction_hash).into()
-                })
-                .map(|tx| to_starknet_core_tx(tx.clone(), transaction_hash))
-        };
+    let _starknet_tx = txs_hashes_from_block_hash(starknet_block_hash)?
+        .into_iter()
+        .zip(starknet_block.transactions())
+        .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
+        .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash));
 
     // TODO: Implement this method
     Err(StarknetRpcApiError::UnimplementedMethod.into())

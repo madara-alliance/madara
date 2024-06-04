@@ -3,7 +3,6 @@ members = [
   "crates/client/db",
   "crates/client/sync",
   "crates/client/genesis-data-provider",
-  "crates/client/mapping-sync",
   "crates/client/rpc",
   "crates/node",
   "crates/pallets/starknet",
@@ -27,7 +26,6 @@ resolver = "2"
 default-members = [
   "crates/client/db",
   "crates/client/genesis-data-provider",
-  "crates/client/mapping-sync",
   "crates/client/rpc",
   "crates/node",
   "crates/pallets/starknet",
@@ -67,6 +65,9 @@ repository = "https://github.com/kasarlabs/deoxys/"
 version = "0.1.0"
 
 [workspace.dependencies]
+rocksdb = { version = "0.21", features = [
+  # "multi-threaded-cf",
+] }
 # Substrate frame dependencies
 frame-benchmarking = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
   "std",
@@ -231,7 +232,6 @@ mp-types = { path = "crates/primitives/types", default-features = false }
 # Deoxys client
 mc-db = { path = "crates/client/db" }
 mc-genesis-data-provider = { path = "crates/client/genesis-data-provider" }
-mc-mapping-sync = { path = "crates/client/mapping-sync" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-sync = { path = "crates/client/sync", default-features = false }
 

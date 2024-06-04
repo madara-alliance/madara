@@ -22,16 +22,23 @@ use starknet_providers::sequencer::models::state_update::{
 };
 use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
 
-use crate::commitments::lib::calculate_commitments;
+use crate::commitments::lib::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
 use crate::utility;
 
+pub struct ConvertedBlock {
+    pub block: DeoxysBlock,
+    pub block_hash: StarkFelt,
+    pub txs_hashes: Vec<StarkFelt>,
+}
+
 /// Compute heavy, this should only be called in a rayon ctx
-pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
+pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
     let parent_block_hash = felt(block.parent_block_hash);
+    let block_hash = block.block_hash.expect("no block hash provided");
     let block_number = block.block_number.expect("no block number provided");
     let block_timestamp = block.timestamp;
     let global_state_root = felt(block.state_root.expect("no state root provided"));
@@ -39,12 +46,12 @@ pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
     let transaction_count = transactions.len() as u128;
     let event_count = events.len() as u128;
 
-    let (transaction_commitment, event_commitment) = commitments(&transactions, &events, block_number);
+    let ((transaction_commitment, txs_hashes), event_commitment) = commitments(&transactions, &events, block_number);
 
     let protocol_version = starknet_version(&block.starknet_version);
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
-    let extra_data = block.block_hash.map(|h| sp_core::U256::from_big_endian(&h.to_bytes_be()));
+    let extra_data = Some(sp_core::U256::from_big_endian(&block_hash.to_bytes_be()));
 
     let header = mp_block::Header {
         parent_block_hash,
@@ -62,6 +69,11 @@ pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
         extra_data,
     };
 
+    let computed_block_hash: FieldElement = header.hash::<mp_hashers::pedersen::PedersenHasher>().into();
+    // mismatched block hash is allowed for blocks 1466..=2242
+    if computed_block_hash != block_hash && !(1466..=2242).contains(&block_number) {
+        return Err(L2SyncError::MismatchedBlockHash(block_number));
+    }
     let ordered_events: Vec<mp_block::OrderedEvents> = block
         .transaction_receipts
         .iter()
@@ -70,7 +82,11 @@ pub fn convert_block(block: p::Block) -> Result<DeoxysBlock, L2SyncError> {
         .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
         .collect();
 
-    Ok(DeoxysBlock::new(header, transactions, ordered_events))
+    Ok(ConvertedBlock {
+        block: DeoxysBlock::new(header, transactions, ordered_events),
+        block_hash: felt(block_hash),
+        txs_hashes: txs_hashes.into_iter().map(felt).collect(),
+    })
 }
 
 fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {
@@ -88,7 +104,15 @@ fn transaction(transaction: p::TransactionType) -> Transaction {
 }
 
 fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
-    if tx.version == FieldElement::ZERO || tx.version == FieldElement::ONE {
+    if tx.version == FieldElement::ZERO {
+        DeclareTransaction::V0(starknet_api::transaction::DeclareTransactionV0V1 {
+            max_fee: fee(tx.max_fee.expect("no max fee provided")),
+            signature: signature(tx.signature),
+            nonce: nonce(tx.nonce),
+            class_hash: class_hash(tx.class_hash),
+            sender_address: contract_address(tx.sender_address),
+        })
+    } else if tx.version == FieldElement::ONE {
         DeclareTransaction::V1(starknet_api::transaction::DeclareTransactionV0V1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
@@ -391,12 +415,13 @@ fn commitments(
     transactions: &[starknet_api::transaction::Transaction],
     events: &[starknet_api::transaction::Event],
     block_number: u64,
-) -> (StarkFelt, StarkFelt) {
+) -> ((StarkFelt, Vec<FieldElement>), StarkFelt) {
     let chain_id = chain_id();
 
-    let (commitment_tx, commitment_event) = calculate_commitments(transactions, events, chain_id, block_number);
+    let ((commitment_tx, txs_hashes), commitment_event) =
+        calculate_tx_and_event_commitments(transactions, events, chain_id, block_number);
 
-    (commitment_tx.into(), commitment_event.into())
+    ((commitment_tx.into(), txs_hashes), commitment_event.into())
 }
 
 fn chain_id() -> mp_felt::Felt252Wrapper {

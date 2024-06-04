@@ -3,6 +3,17 @@
 ## Next release
 
 - feat(infra): Added boilerplate to deploy a grafana/prometheus dashboard
+- refacor: use db hash
+- refactor: l2-sync
+- refactor: remove crate mp-mapping-sync
+- fix(rpc): get_nonce
+- fix(rpc): get_class
+- refactor: mapping db
+- perf(db): contract key history now using rocksdb iterators for history
+- fix(root): Cleaned state root commitments crate
+- fix(hash): declare tx v0 hash computation
+- perf(db): db contract history parallel fetching and batching
+- remove RuntimeApi on RPC
 - feat(metrics): Added sync time metrics
 - refactor: using const and OnceCell instead of lazy_static
 - refactor: remove crate mp-storage

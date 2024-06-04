@@ -1,21 +1,15 @@
 use anyhow::Result;
+use mc_db::DeoxysBackend;
 use mc_sync::l1::ETHEREUM_STATE_UPDATE;
 use mp_block::DeoxysBlock;
 use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
-use mp_types::block::{DBlockT, DHashT};
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sp_api::ProvideRuntimeApi;
-use sp_blockchain::HeaderBackend;
-use starknet_api::hash::StarkFelt;
+use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::transaction as stx;
-use starknet_core::types::{BlockId, BlockStatus, FieldElement};
+use starknet_core::types::{BlockId, BlockStatus, BlockTag, FieldElement};
 
-use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
-use crate::{Felt, Starknet};
+use crate::Felt;
 
 pub(crate) fn tx_hash_retrieve(tx_hashes: Vec<StarkFelt>) -> Vec<FieldElement> {
     // safe to unwrap because we know that the StarkFelt is a valid FieldElement
@@ -48,29 +42,51 @@ pub(crate) fn status(block_number: u64) -> BlockStatus {
     }
 }
 
-#[allow(dead_code)]
-pub fn previous_substrate_block_hash<BE, C, H>(
-    starknet: &Starknet<BE, C, H>,
-    substrate_block_hash: DHashT,
-) -> Result<DHashT, StarknetRpcApiError>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
-    H: HasherT + Send + Sync + 'static,
-{
-    let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash).map_err(|e| {
-        log::error!("Failed to get block for block hash {substrate_block_hash}: '{e}'");
-        StarknetRpcApiError::InternalServerError
-    })?;
-    let block_number = starknet_block.header().block_number;
-    let previous_block_number = match block_number {
-        0 => 0,
-        _ => block_number - 1,
-    };
-    let substrate_block_hash =
-        starknet.substrate_block_hash_from_starknet_block(BlockId::Number(previous_block_number))?;
+/// Returns a list of all transaction hashes in the given block.
+///
+/// # Arguments
+///
+/// * `block_hash` - The hash of the block containing the transactions (starknet block).
+pub fn txs_hashes_from_block_hash(block_hash: FieldElement) -> Result<Vec<StarkHash>, StarknetRpcApiError> {
+    let block_hash = StarkFelt(block_hash.to_bytes_be());
+    DeoxysBackend::mapping().transaction_hashes_from_block_hash(block_hash)?.ok_or(StarknetRpcApiError::BlockNotFound)
+}
 
-    Ok(substrate_block_hash)
+pub fn block_n_from_id(id: BlockId) -> Result<u64, StarknetRpcApiError> {
+    let (latest_block_hash, latest_block_number) = DeoxysBackend::meta().get_latest_block_hash_and_number()?;
+    match id {
+        // Check if the block corresponding to the number is stored in the database
+        BlockId::Number(number) => match DeoxysBackend::mapping().starknet_block_hash_from_block_number(number)? {
+            Some(_) => Ok(number),
+            None => Err(StarknetRpcApiError::BlockNotFound),
+        },
+        BlockId::Hash(block_hash) => {
+            match DeoxysBackend::mapping().block_number_from_starknet_block_hash(StarkFelt(block_hash.to_bytes_be()))? {
+                Some(block_number) => Ok(block_number),
+                None if block_hash == latest_block_hash => Ok(latest_block_number),
+                None => Err(StarknetRpcApiError::BlockNotFound),
+            }
+        }
+        BlockId::Tag(BlockTag::Latest) => Ok(latest_block_number),
+        BlockId::Tag(BlockTag::Pending) => Ok(latest_block_number + 1),
+    }
+}
+
+pub fn block_hash_from_id(id: BlockId) -> Result<FieldElement, StarknetRpcApiError> {
+    match id {
+        BlockId::Number(n) => DeoxysBackend::mapping()
+            .starknet_block_hash_from_block_number(n)?
+            .map(|h| FieldElement::from_bytes_be(&h.0).unwrap())
+            .ok_or(StarknetRpcApiError::BlockNotFound),
+        BlockId::Hash(h) => Ok(h),
+        BlockId::Tag(BlockTag::Latest) => Ok(DeoxysBackend::meta().get_latest_block_hash_and_number()?.0),
+        BlockId::Tag(BlockTag::Pending) => Err(StarknetRpcApiError::BlockNotFound),
+    }
+}
+
+pub fn block_hash_from_block_n(block_number: u64) -> Result<FieldElement, StarknetRpcApiError> {
+    DeoxysBackend::mapping()
+        .starknet_block_hash_from_block_number(block_number)?
+        .map(|h| FieldElement::from_bytes_be(&h.0).unwrap())
+        .ok_or(StarknetRpcApiError::BlockNotFound)
 }

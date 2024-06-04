@@ -9,10 +9,10 @@ use futures::{stream, StreamExt, TryStreamExt};
 use lazy_static::lazy_static;
 use mc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
 use mc_db::storage_handler::DeoxysStorageError;
-use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
+use mc_db::storage_updates::{store_class_update, store_key_update, store_mapping, store_state_update};
 use mc_db::DeoxysBackend;
 use mp_block::DeoxysBlock;
-use mp_felt::Felt252Wrapper;
+use mp_felt::{trim_hash, Felt252Wrapper};
 use mp_types::block::{DBlockT, DHashT};
 use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
@@ -26,11 +26,11 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::Duration;
 
 use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
-use crate::convert::convert_block;
+use crate::convert::{convert_block, ConvertedBlock};
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::l1::ETHEREUM_STATE_UPDATE;
-use crate::metrics::block_metrics::BlockMetrics;
+use crate::metrics::block_metrics::{update_metrics, BlockMetrics};
 use crate::utils::PerfStopwatch;
 use crate::{stopwatch_end, CommandSink};
 
@@ -57,6 +57,8 @@ pub enum L2SyncError {
     Provider(#[from] ProviderError),
     #[error("db error")]
     Db(#[from] DeoxysStorageError),
+    #[error("mismatched block hash for block {0}")]
+    MismatchedBlockHash(u64),
 }
 
 /// Contains the latest Starknet verified state on L2
@@ -135,13 +137,15 @@ async fn l2_verify_and_apply_task(
 
     let mut last_block_hash = None;
 
-    while let Some(L2ConvertedBlockAndUpdates { block_n, block, state_update, class_update }) =
+    while let Some(L2ConvertedBlockAndUpdates { block_n, converted_block, state_update, class_update }) =
         pin!(updates_receiver.recv()).await
     {
+        let ConvertedBlock { block, block_hash, txs_hashes } = converted_block;
+        let block_header = block.header().clone();
+        let global_state_root = block_header.global_state_root;
         let state_update = if verify {
             let state_update = Arc::new(state_update);
             let state_update_1 = Arc::clone(&state_update);
-            let global_state_root = block.header().global_state_root;
 
             let state_root = spawn_compute(move || {
                 let sw = PerfStopwatch::new();
@@ -174,6 +178,7 @@ async fn l2_verify_and_apply_task(
 
         let block_sender = Arc::clone(&block_sender);
         let storage_diffs = state_update.state_diff.storage_diffs.clone();
+        let (block_hash_sender, block_hash_receiver) = tokio::sync::oneshot::channel();
         tokio::join!(
             async move {
                 block_sender.send(block).await.expect("block reciever channel is closed");
@@ -201,21 +206,42 @@ async fn l2_verify_and_apply_task(
             },
             async {
                 let sw = PerfStopwatch::new();
-                create_block(
+                let substrate_block_hash = create_block(
                     &mut command_sink,
                     &mut last_block_hash,
                     block_n,
-                    block_metrics.clone(),
+                    block_metrics.as_ref(),
                     sync_timer.clone(),
                 )
                 .await
                 .expect("creating block");
                 stopwatch_end!(sw, "end create_block {}: {:?}", block_n);
-            }
+                block_hash_sender.send(substrate_block_hash).expect("block hash receiver channel is closed");
+            },
+            async {
+                let substrate_block_hash = block_hash_receiver.await.expect("block hash receiver channel is closed");
+                let sw = PerfStopwatch::new();
+                if store_mapping(block_n, block_hash, substrate_block_hash, txs_hashes).await.is_err() {
+                    log::error!("❗ Failed to store mapping for block {block_n}");
+                };
+                stopwatch_end!(sw, "end store_mapping {}: {:?}", block_n);
+            },
+            async {
+                if let Some(block_metrics) = block_metrics.as_ref() {
+                    let sw = PerfStopwatch::new();
+                    update_metrics(block_metrics, block_header).await;
+                    stopwatch_end!(sw, "end update_metrics {}: {:?}", block_n);
+                }
+            },
         );
 
         DeoxysBackend::meta().set_current_sync_block(block_n).context("setting current sync block")?;
-
+        log::info!(
+            "✨ Imported #{} ({}) and updated state root ({})",
+            block_n,
+            trim_hash(&block_hash.into()),
+            trim_hash(&global_state_root.into())
+        );
         // compact DB every 1k blocks
         if block_n % 1000 == 0 {
             DeoxysBackend::compact();
@@ -234,7 +260,7 @@ async fn l2_verify_and_apply_task(
 
 pub struct L2ConvertedBlockAndUpdates {
     pub block_n: u64,
-    pub block: DeoxysBlock,
+    pub converted_block: ConvertedBlock,
     pub state_update: StateUpdate,
     pub class_update: Vec<ContractClassData>,
 }
@@ -250,9 +276,9 @@ async fn l2_block_conversion_task(
             (
                 spawn_compute(move || {
                     let sw = PerfStopwatch::new();
-                    let block = convert_block(block)?;
+                    let converted_block = convert_block(block)?;
                     stopwatch_end!(sw, "convert_block: {:?}");
-                    Ok(L2ConvertedBlockAndUpdates { block_n, block, state_update, class_update })
+                    Ok(L2ConvertedBlockAndUpdates { block_n, converted_block, state_update, class_update })
                 }),
                 updates_recv,
             )
@@ -289,8 +315,8 @@ pub async fn sync<C>(
 where
     C: HeaderBackend<DBlockT> + 'static,
 {
-    let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(10);
-    let (block_conv_sender, block_conv_receiver) = mpsc::channel(10);
+    let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(30);
+    let (block_conv_sender, block_conv_receiver) = mpsc::channel(30);
     let provider = Arc::new(provider);
     let sync_timer = Arc::new(Mutex::new(None));
 
@@ -318,7 +344,7 @@ where
         command_sink,
         config.verify,
         config.backup_every_n_blocks,
-        block_metrics.clone(),
+        block_metrics,
         Arc::clone(&sync_timer),
     ));
 
@@ -354,9 +380,9 @@ async fn create_block(
     cmds: &mut CommandSink,
     parent_hash: &mut Option<H256>,
     block_number: u64,
-    block_metrics: Option<BlockMetrics>,
+    block_metrics: Option<&BlockMetrics>,
     sync_timer: Arc<Mutex<Option<Instant>>>,
-) -> Result<(), String> {
+) -> Result<H256, String> {
     let (sender, receiver) = futures::channel::oneshot::channel();
 
     cmds.try_send(sc_consensus_manual_seal::rpc::EngineCommand::SealNewBlock {
@@ -394,7 +420,7 @@ async fn create_block(
     }
 
     *parent_hash = Some(create_block_info.hash);
-    Ok(())
+    Ok(create_block_info.hash)
 }
 
 /// Update the L2 state with the latest data
@@ -437,8 +463,9 @@ where
     let tmp = DHashT::from_str(&hash_current.to_string()).unwrap_or(Default::default());
 
     if hash_best == tmp {
+        // TODO: remove unwrap on convert_block
         *STARKNET_PENDING_BLOCK.write().expect("Failed to acquire write lock on STARKNET_PENDING_BLOCK") =
-            Some(spawn_compute(|| crate::convert::convert_block(block)).await.unwrap());
+            Some(spawn_compute(|| crate::convert::convert_block(block)).await.unwrap().block);
 
         *STARKNET_PENDING_STATE_UPDATE.write().expect("Failed to aquire write lock on STARKNET_PENDING_STATE_UPDATE") =
             Some(crate::convert::state_update(state_update));

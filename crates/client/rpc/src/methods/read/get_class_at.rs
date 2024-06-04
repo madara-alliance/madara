@@ -6,7 +6,7 @@ use starknet_api::hash::StarkFelt;
 use starknet_core::types::{BlockId, ContractClass, FieldElement};
 
 use crate::errors::StarknetRpcApiError;
-use crate::methods::trace::utils::block_number_by_id;
+use crate::utils::helpers::block_n_from_id;
 
 /// Get the Contract Class Definition at a Given Address in a Specific Block
 ///
@@ -28,10 +28,10 @@ use crate::methods::trace::utils::block_number_by_id;
 /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
 /// * `CONTRACT_NOT_FOUND` - If the specified contract address does not exist.
 pub fn get_class_at(block_id: BlockId, contract_address: FieldElement) -> RpcResult<ContractClass> {
-    let block_number = block_number_by_id(block_id)?;
+    let block_number = block_n_from_id(block_id)?;
     let key = ContractAddress(PatriciaKey(StarkFelt(contract_address.to_bytes_be())));
 
-    let class_hash = match storage_handler::contract_data().get_class_hash_at(&key, block_number) {
+    let class_hash = match storage_handler::contract_class_hash().get_at(&key, block_number) {
         Err(e) => {
             log::error!("Failed to retrieve contract class: {e}");
             return Err(StarknetRpcApiError::InternalServerError.into());
@@ -49,7 +49,8 @@ pub fn get_class_at(block_id: BlockId, contract_address: FieldElement) -> RpcRes
     };
 
     // converting from stored Blockifier class to rpc class
-    let StorageContractClassData { contract_class, abi, sierra_program_length, abi_length } = contract_class_data;
+    let StorageContractClassData { contract_class, abi, sierra_program_length, abi_length, block_number: _ } =
+        contract_class_data;
     Ok(ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }.try_into().map_err(
         |e| {
             log::error!("Failed to convert contract class from hash '{class_hash}' to RPC contract class: {e}");

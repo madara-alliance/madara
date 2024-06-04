@@ -5,6 +5,7 @@ use mp_felt::Felt252Wrapper;
 use starknet_core::types::{BlockId, ContractClass, FieldElement};
 
 use crate::errors::StarknetRpcApiError;
+use crate::utils::helpers::block_n_from_id;
 
 /// Get the contract class definition in the given block associated with the given hash.
 ///
@@ -18,7 +19,7 @@ use crate::errors::StarknetRpcApiError;
 ///
 /// Returns the contract class definition if found. In case of an error, returns a
 /// `StarknetRpcApiError` indicating either `BlockNotFound` or `ClassHashNotFound`.
-pub fn get_class(_block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass> {
+pub fn get_class(block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass> {
     let class_hash = Felt252Wrapper(class_hash).into();
 
     // TODO: get class for the given block when block_number will be stored in
@@ -30,7 +31,16 @@ pub fn get_class(_block_id: BlockId, class_hash: FieldElement) -> RpcResult<Cont
         }
         Ok(None) => Err(StarknetRpcApiError::ClassHashNotFound.into()),
         Ok(Some(class)) => {
-            let StorageContractClassData { contract_class, abi, sierra_program_length, abi_length } = class;
+            let StorageContractClassData {
+                contract_class,
+                abi,
+                sierra_program_length,
+                abi_length,
+                block_number: declared_at_block,
+            } = class;
+            if declared_at_block >= block_n_from_id(block_id)? {
+                return Err(StarknetRpcApiError::ClassHashNotFound.into());
+            }
             Ok(ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
                 .try_into()
                 .map_err(|e| {

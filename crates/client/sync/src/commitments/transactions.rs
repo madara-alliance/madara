@@ -96,7 +96,7 @@ pub fn memory_transaction_commitment(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
-) -> Result<Felt252Wrapper, String> {
+) -> Result<(Felt252Wrapper, Vec<FieldElement>), String> {
     // TODO @cchudant refacto/optimise this function
     let config = BonsaiStorageConfig::default();
     let bonsai_db = HashMapDb::<BasicId>::default();
@@ -111,7 +111,7 @@ pub fn memory_transaction_commitment(
         .collect::<Vec<_>>();
 
     // once transaction hashes have finished computing, they are inserted into the local Bonsai db
-    for (i, tx_hash) in txs.into_iter().enumerate() {
+    for (i, &tx_hash) in txs.iter().enumerate() {
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
         let value = Felt::from(Felt252Wrapper::from(tx_hash));
         bonsai_storage.insert(identifier, key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
@@ -123,5 +123,5 @@ pub fn memory_transaction_commitment(
     bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
     let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
-    Ok(Felt252Wrapper::from(root_hash))
+    Ok((Felt252Wrapper::from(root_hash), txs))
 }

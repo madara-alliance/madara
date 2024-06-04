@@ -2,10 +2,8 @@ use jsonrpsee::core::RpcResult;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use mp_types::block::DBlockT;
-use pallet_starknet_runtime_api::StarknetRuntimeApi;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage};
 use starknet_ff::FieldElement;
@@ -13,6 +11,7 @@ use starknet_ff::FieldElement;
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::StarknetRpcApiError;
 use crate::types::ContinuationToken;
+use crate::utils::helpers::block_n_from_id;
 use crate::Starknet;
 
 /// Returns all events matching the given filter.
@@ -39,8 +38,6 @@ pub async fn get_events<BE, C, H>(starknet: &Starknet<BE, C, H>, filter: EventFi
 where
     BE: Backend<DBlockT> + 'static,
     C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
     H: HasherT + Send + Sync + 'static,
 {
     let from_address = filter.event_filter.address.map(Felt252Wrapper::from);
@@ -56,7 +53,7 @@ where
 
     // Get the substrate block numbers for the requested range
     let (from_block, to_block, latest_block) =
-        block_range(filter.event_filter.from_block, filter.event_filter.to_block, starknet)?;
+        block_range(filter.event_filter.from_block, filter.event_filter.to_block)?;
 
     let continuation_token = match filter.result_page_request.continuation_token {
         Some(token) => ContinuationToken::parse(token).map_err(|e| {
@@ -120,26 +117,15 @@ fn event_match_filter(event: &EmittedEvent, address: Option<Felt252Wrapper>, key
     match_from_address && match_keys
 }
 
-fn block_range<BE, C, H>(
-    from_block: Option<BlockId>,
-    to_block: Option<BlockId>,
-    starknet: &Starknet<BE, C, H>,
-) -> Result<(u64, u64, u64), StarknetRpcApiError>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    C: ProvideRuntimeApi<DBlockT>,
-    C::Api: StarknetRuntimeApi<DBlockT>,
-    H: HasherT + Send + Sync + 'static,
-{
-    let latest = starknet.substrate_block_number_from_starknet_block(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
+fn block_range(from_block: Option<BlockId>, to_block: Option<BlockId>) -> Result<(u64, u64, u64), StarknetRpcApiError> {
+    let latest = block_n_from_id(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
         log::error!("'{e}'");
         StarknetRpcApiError::BlockNotFound
     })?;
     let from = if from_block == Some(BlockId::Tag(BlockTag::Pending)) {
         latest + 1
     } else {
-        starknet.substrate_block_number_from_starknet_block(from_block.unwrap_or(BlockId::Number(0))).map_err(|e| {
+        block_n_from_id(from_block.unwrap_or(BlockId::Number(0))).map_err(|e| {
             log::error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?
@@ -147,7 +133,7 @@ where
     let to = if to_block == Some(BlockId::Tag(BlockTag::Pending)) {
         latest + 1
     } else {
-        starknet.substrate_block_number_from_starknet_block(to_block.unwrap_or(BlockId::Number(0))).map_err(|e| {
+        block_n_from_id(to_block.unwrap_or(BlockId::Number(0))).map_err(|e| {
             log::error!("'{e}'");
             StarknetRpcApiError::BlockNotFound
         })?

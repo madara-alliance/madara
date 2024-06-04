@@ -2724,6 +2724,7 @@ dependencies = [
 name = "deoxys"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "clap",
  "deoxys-runtime",
@@ -2736,7 +2737,6 @@ dependencies = [
  "log",
  "mc-db",
  "mc-genesis-data-provider",
- "mc-mapping-sync",
  "mc-rpc",
  "mc-sync",
  "mp-block",
@@ -2745,6 +2745,7 @@ dependencies = [
  "pallet-starknet",
  "pallet-starknet-runtime-api",
  "parity-scale-codec",
+ "rayon",
  "reqwest",
  "sc-basic-authorship",
  "sc-cli",
@@ -6154,33 +6155,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-mapping-sync"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "blockifier",
- "futures",
- "futures-timer",
- "log",
- "mc-db",
- "mc-rpc",
- "mc-sync",
- "mp-digest-log",
- "mp-felt",
- "mp-hashers",
- "mp-transactions",
- "mp-types",
- "num-traits 0.2.18",
- "pallet-starknet-runtime-api",
- "rayon",
- "sc-client-api",
- "sp-api",
- "sp-blockchain",
- "sp-runtime",
- "substrate-prometheus-endpoint",
-]
-
-[[package]]
 name = "mc-rpc"
 version = "0.1.0"
 dependencies = [
@@ -6242,6 +6216,7 @@ dependencies = [
  "mp-hashers",
  "mp-transactions",
  "mp-types",
+ "num-traits 0.2.18",
  "once_cell",
  "primitive-types",
  "rand 0.8.5",

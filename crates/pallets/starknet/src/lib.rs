@@ -56,10 +56,7 @@ use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 use mc_db::storage_handler;
 use mc_db::storage_handler::StorageViewMut;
-use mp_block::DeoxysBlock;
 use mp_digest_log::DEOXYS_ENGINE_ID;
-use mp_felt::{trim_hash, Felt252Wrapper};
-use sp_runtime::traits::UniqueSaturatedInto;
 use sp_runtime::DigestItem;
 use starknet_api::core::{CompiledClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
@@ -87,6 +84,8 @@ macro_rules! log {
 
 #[frame_support::pallet]
 pub mod pallet {
+    use mc_db::DeoxysBackend;
+
     use super::*;
 
     #[pallet::pallet]
@@ -106,11 +105,8 @@ pub mod pallet {
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         /// The block is being finalized.
         fn on_finalize(_n: BlockNumberFor<T>) {
-            let block_number =
-                UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
-
             // Create a new Starknet block and store it.
-            <Pallet<T>>::store_block(block_number);
+            <Pallet<T>>::store_block();
         }
 
         /// The block is being initialized. Implement to have something happen.
@@ -159,12 +155,12 @@ pub mod pallet {
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            if storage_handler::block_hash().get(1).unwrap().is_none() {
-                let handler_contract_data = storage_handler::contract_data_mut();
+            if DeoxysBackend::mapping().starknet_block_hash_from_block_number(1).unwrap().is_none() {
+                let handler_contract_class = storage_handler::contract_class_hash_mut();
                 self.contracts.iter().for_each(|(contract_address, class_hash)| {
-                    handler_contract_data.insert_class_hash(*contract_address, *class_hash).unwrap();
+                    handler_contract_class.insert(*contract_address, *class_hash).unwrap();
                 });
-                handler_contract_data.commit(0).unwrap();
+                handler_contract_class.commit(0).unwrap();
 
                 let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
                 self.sierra_to_casm_class_hash.iter().for_each(|(class_hash, compiled_class_hash)| {
@@ -221,36 +217,11 @@ impl<T: Config> Pallet<T> {
     /// # Arguments
     ///
     /// * `block_number` - The block number.
-    fn store_block(block_number: u64) {
-        let block: DeoxysBlock;
+    fn store_block() {
         match &frame_system::Pallet::<T>::digest().logs()[0] {
             DigestItem::PreRuntime(mp_digest_log::DEOXYS_ENGINE_ID, encoded_data) => {
-                block = match DeoxysBlock::decode(&mut encoded_data.as_slice()) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        log!(error, "Failed to decode block: {:?}", e);
-                        return;
-                    }
-                };
-
-                let actual_block_number = block.header().block_number;
-                let block_hash = Felt252Wrapper::try_from(block.header().extra_data.unwrap()).unwrap();
-                let state_root = Felt252Wrapper::try_from(block.header().global_state_root).unwrap();
-
-                let mut handler_block_number = storage_handler::block_number();
-                let mut handler_block_hash = storage_handler::block_hash();
-
-                handler_block_number.insert(&block_hash, block_number).unwrap();
-                handler_block_hash.insert(block_number, &block_hash).unwrap();
-
-                let digest = DigestItem::Consensus(DEOXYS_ENGINE_ID, mp_digest_log::Log::Block(block).encode());
+                let digest = DigestItem::Consensus(DEOXYS_ENGINE_ID, encoded_data.clone());
                 frame_system::Pallet::<T>::deposit_log(digest);
-                log::info!(
-                    "✨ Imported #{} ({}) and updated state root ({})",
-                    actual_block_number,
-                    trim_hash(&block_hash),
-                    trim_hash(&state_root)
-                );
             }
             _ => {
                 log!(info, "Block not found in store_block")
