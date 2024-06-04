@@ -21,23 +21,12 @@ pub fn calculate_event_hash(event: &Event) -> Felt {
     let (keys_hash, data_hash) = rayon::join(
         || {
             Pedersen::hash_array(
-                &event
-                    .content
-                    .keys
-                    .iter()
-                    .map(|key| Felt::from_bytes_be(&key.0.0))
-                    .collect::<Vec<Felt>>(),
+                &event.content.keys.iter().map(|key| Felt::from_bytes_be(&key.0.0)).collect::<Vec<Felt>>(),
             )
         },
         || {
             Pedersen::hash_array(
-                &event
-                    .content
-                    .data
-                    .0
-                    .iter()
-                    .map(|data| Felt::from_bytes_be(&data.0))
-                    .collect::<Vec<Felt>>(),
+                &event.content.data.0.iter().map(|data| Felt::from_bytes_be(&data.0)).collect::<Vec<Felt>>(),
             )
         },
     );

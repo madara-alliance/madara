@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(hashers): cleaned hashers using types core hashers and Felt
 - feat(infra): Added boilerplate to deploy a grafana/prometheus dashboard
 - refacor: use db hash
 - refactor: l2-sync

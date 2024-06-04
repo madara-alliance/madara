@@ -9,8 +9,7 @@ use mp_transactions::compute_hash::ComputeTransactionHash;
 use rayon::prelude::*;
 use starknet_api::transaction::Transaction;
 use starknet_types_core::felt::Felt;
-use starknet_types_core::hash::Pedersen;
-use starknet_types_core::hash::StarkHash;
+use starknet_types_core::hash::{Pedersen, StarkHash};
 
 /// Compute the combined hash of the transaction hash and the signature.
 ///
@@ -38,18 +37,14 @@ pub fn calculate_transaction_hash_with_signature(
                 // Include signatures for Invoke transactions or for all transactions
                 let signature = invoke_tx.signature();
 
-                Pedersen::hash_array(
-                    &signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>(),
-                )
+                Pedersen::hash_array(&signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>())
             }
             Transaction::Declare(declare_tx) => {
                 // Include signatures for Declare transactions if the block number is greater than 61394 (mainnet)
                 if include_signature {
                     let signature = declare_tx.signature();
 
-                    Pedersen::hash_array(
-                        &signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>(),
-                    )
+                    Pedersen::hash_array(&signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>())
                 } else {
                     Pedersen::hash_array(&[])
                 }
@@ -60,9 +55,7 @@ pub fn calculate_transaction_hash_with_signature(
                 if include_signature {
                     let signature = deploy_account_tx.signature();
 
-                    Pedersen::hash_array(
-                        &signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>(),
-                    )
+                    Pedersen::hash_array(&signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>())
                 } else {
                     Pedersen::hash_array(&[])
                 }
@@ -70,7 +63,10 @@ pub fn calculate_transaction_hash_with_signature(
             Transaction::L1Handler(_) => Pedersen::hash_array(&[]),
             _ => Pedersen::hash_array(&[]),
         },
-        || Felt252Wrapper::from(transaction.compute_hash::<PedersenHasher>(chain_id, false, Some(block_number)).0).into(),
+        || {
+            Felt252Wrapper::from(transaction.compute_hash::<PedersenHasher>(chain_id, false, Some(block_number)).0)
+                .into()
+        },
     );
 
     Pedersen::hash(&tx_hash, &signature_hash)
