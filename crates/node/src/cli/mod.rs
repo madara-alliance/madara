@@ -4,35 +4,11 @@ pub mod rpc;
 pub mod sync;
 pub mod telemetry;
 
-use std::fmt;
-
 pub use db::*;
 pub use prometheus::*;
 pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
-
-pub enum CliError {
-    UsageError,
-    InternalError,
-}
-
-pub trait ResultExt<T, E> {
-    fn or_internal_error<C: fmt::Display>(self, context: C) -> Result<T, CliError>;
-}
-
-impl<T, E: Into<anyhow::Error>> ResultExt<T, E> for Result<T, E> {
-    #[inline]
-    fn or_internal_error<C: fmt::Display>(self, context: C) -> Result<T, CliError> {
-        match self {
-            Ok(val) => Ok(val),
-            Err(err) => {
-                log::error!("{}: {:#}", context, E::into(err));
-                Err(CliError::InternalError)
-            }
-        }
-    }
-}
 
 #[derive(Clone, Debug, clap::Parser)]
 pub struct RunCmd {
@@ -68,17 +44,20 @@ pub struct RunCmd {
 }
 
 impl RunCmd {
-    pub fn name(&mut self) -> String {
-        self.name
-            .get_or_insert_with(|| {
-                tokio::runtime::Runtime::new()
-                    .unwrap()
-                    .block_on(mc_sync::utility::get_random_pokemon_name())
+    pub async fn provide_node_name(&mut self) -> String {
+        match &self.name {
+            Some(name) => name.clone(),
+            None => {
+                let name = mc_sync::utility::get_random_pokemon_name()
+                    .await
                     .unwrap_or_else(|e| {
                         log::warn!("Failed to get random pokemon name: {}", e);
                         "deoxys".to_string()
-                    })
-            })
-            .clone()
+                    });
+
+                self.name = Some(name.clone());
+                name
+            },
+        }
     }
 }

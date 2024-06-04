@@ -191,7 +191,7 @@ pub async fn start_server(
     });
 
     log::info!(
-        "Running JSON-RPC server: addr={}, allowed origins={}",
+        "📱 Running JSON-RPC server at {} (allowed origins={})",
         local_addr.map_or_else(|| "unknown".to_string(), |a| a.to_string()),
         format_cors(cors.as_ref())
     );

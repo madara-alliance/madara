@@ -41,6 +41,7 @@ pub mod starknet_sync_worker {
         // let starting_block = starting_block + 1;
         let chain_id = chain_id.into_stark_felt();
 
+
         let starting_block = if let Some(starting_block) = starting_block {
             starting_block
         } else {
@@ -49,6 +50,8 @@ pub mod starknet_sync_worker {
                 .context("getting sync tip")?
                 .unwrap_or_default() as _
         };
+
+        log::info!("☕ Starting L2 sync from block {}", starting_block);
 
         let provider = SequencerGatewayProvider::new(
             fetch_config.gateway.clone(),
