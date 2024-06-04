@@ -1,8 +1,5 @@
 //! Starknet block primitives.
-#![cfg_attr(not(feature = "std"), no_std)]
 
-#[doc(hidden)]
-pub extern crate alloc;
 use alloc::vec::Vec;
 
 mod header;
@@ -19,7 +16,7 @@ pub type BlockTransactions = Vec<Transaction>;
 /// Block Events
 pub type BlockEvents = Vec<OrderedEvents>;
 
-pub use sp_core::{U256, H160};
+pub use primitive_types::{U256, H160};
 
 /// Block tag.
 ///

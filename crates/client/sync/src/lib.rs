@@ -8,7 +8,6 @@ pub mod metrics;
 pub mod reorgs;
 pub mod utils;
 
-pub use mp_types::block::{DBlockT, DHashT};
 #[cfg(feature = "m")]
 pub use utils::m;
 pub use utils::{convert, utility};
@@ -18,11 +17,9 @@ use crate::l2::L2SyncConfig;
 pub mod starknet_sync_worker {
     use anyhow::Context;
     use mc_db::DeoxysBackend;
-    use mp_convert::field_element::FromFieldElement;
     use mp_convert::state_update::ToStateUpdateCore;
-    use mp_felt::{Felt252Wrapper, FeltWrapper};
+    use mp_felt::FeltWrapper;
     use reqwest::Url;
-    use starknet_api::hash::StarkFelt;
     use starknet_ff::FieldElement;
     use starknet_providers::sequencer::models::BlockId;
     use starknet_providers::SequencerGatewayProvider;

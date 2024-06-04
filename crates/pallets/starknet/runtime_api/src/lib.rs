@@ -7,11 +7,3 @@
 
 pub extern crate alloc;
 
-#[derive(parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
-pub enum StarknetTransactionExecutionError {
-    ContractNotFound,
-    ClassAlreadyDeclared,
-    ClassHashNotFound,
-    InvalidContractClass,
-    ContractError,
-}

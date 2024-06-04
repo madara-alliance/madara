@@ -17,7 +17,6 @@ use jsonrpsee::core::RpcResult;
 use mc_db::storage_handler::{self, StorageView};
 use mp_block::DeoxysBlockInfo;
 use mp_felt::Felt252Wrapper;
-use mp_genesis_config::{ETH_TOKEN_ADDR, STRK_TOKEN_ADDR};
 use mp_simulations::SimulationFlags;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
@@ -31,13 +30,29 @@ use crate::errors::StarknetRpcApiError;
 use crate::utils::ResultExt;
 use crate::Starknet;
 
+// 0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7
+pub const ETH_TOKEN_ADDR: FieldElement = FieldElement::from_mont([
+    4380532846569209554,
+    17839402928228694863,
+    17240401758547432026,
+    418961398025637529,
+]);
+
+// 0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
+pub const STRK_TOKEN_ADDR: FieldElement = FieldElement::from_mont([
+    16432072983745651214,
+    1325769094487018516,
+    5134018303144032807,
+    468300854463065062,
+]);
+
 pub fn block_context(_client: &Starknet, block_info: &DeoxysBlockInfo) -> Result<BlockContext, StarknetRpcApiError> {
     let block_header = block_info.header();
 
     // safe unwrap because address is always valid and static
     let fee_token_address = FeeTokenAddresses {
-        strk_fee_token_address: StarkHash::new_unchecked(STRK_TOKEN_ADDR.0.to_bytes_be()).try_into().unwrap(),
-        eth_fee_token_address: StarkHash::new_unchecked(ETH_TOKEN_ADDR.0.to_bytes_be()).try_into().unwrap(),
+        strk_fee_token_address: StarkHash::new_unchecked(STRK_TOKEN_ADDR.to_bytes_be()).try_into().unwrap(),
+        eth_fee_token_address: StarkHash::new_unchecked(ETH_TOKEN_ADDR.to_bytes_be()).try_into().unwrap(),
     };
     let chain_id = starknet_api::core::ChainId("SN_MAIN".to_string());
 

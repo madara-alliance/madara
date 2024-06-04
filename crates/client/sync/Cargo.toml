@@ -34,7 +34,7 @@ primitive-types = { workspace = true }
 rand = { workspace = true }
 rodio = { version = "0.17", optional = true }
 serde = { workspace = true, default-features = true }
-tokio = { workspace = true, features = ["macros", "parking_lot", "test-util"] }
+tokio = { workspace = true, features = ["macros", "parking_lot", "test-util", "signal"] }
 url = { workspace = true }
 
 starknet-core = { workspace = true }

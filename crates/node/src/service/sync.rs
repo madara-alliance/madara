@@ -1,5 +1,5 @@
 use mc_sync::{fetch::fetchers::FetchConfig, metrics::block_metrics::BlockMetrics};
-use sp_core::H160;
+use primitive_types::H160;
 use starknet_core::types::FieldElement;
 use tokio::task::JoinSet;
 use url::Url;

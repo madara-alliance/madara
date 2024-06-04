@@ -1,7 +1,14 @@
 use mc_db::storage_handler::DeoxysStorageError;
 use mc_db::DbError;
-use pallet_starknet_runtime_api::StarknetTransactionExecutionError;
 use starknet_core::types::StarknetError;
+
+pub enum StarknetTransactionExecutionError {
+    ContractNotFound,
+    ClassAlreadyDeclared,
+    ClassHashNotFound,
+    InvalidContractClass,
+    ContractError,
+}
 
 // Comes from the RPC Spec:
 // https://github.com/starkware-libs/starknet-specs/blob/0e859ff905795f789f1dfd6f7340cdaf5015acc8/api/starknet_write_api.json#L227

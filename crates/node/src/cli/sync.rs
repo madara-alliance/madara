@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use mc_sync::{fetch::fetchers::FetchConfig, utils::constant::starknet_core_address};
-use sp_core::H160;
+use primitive_types::H160;
 use url::Url;
 
 fn parse_url(s: &str) -> Result<Url, url::ParseError> {
