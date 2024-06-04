@@ -39,7 +39,7 @@ pub fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<F
     handler_class.update(updates)?;
     handler_class.commit(block_number)?;
 
-    Ok(handler_class.root()?)
+    handler_class.root()
 }
 
 #[cfg(test)]

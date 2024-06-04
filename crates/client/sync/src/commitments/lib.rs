@@ -123,10 +123,7 @@ pub fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) 
     if classes_trie_root == Felt::ZERO {
         contracts_trie_root
     } else {
-        let state_commitment_hash =
-            Poseidon::hash_array(&[starknet_state_prefix, contracts_trie_root, classes_trie_root]);
-
-        state_commitment_hash
+        Poseidon::hash_array(&[starknet_state_prefix, contracts_trie_root, classes_trie_root])
     }
 }
 

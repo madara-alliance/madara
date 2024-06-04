@@ -70,7 +70,7 @@ pub fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Resul
     handler_contract.update(updates)?;
     handler_contract.commit(block_number)?;
 
-    Ok(handler_contract.root()?.into())
+    handler_contract.root()
 }
 
 /// Computes the contract state leaf hash
