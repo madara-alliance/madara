@@ -12,15 +12,14 @@ use mc_db::storage_handler::DeoxysStorageError;
 use mc_db::storage_updates::{store_class_update, store_key_update, store_mapping, store_state_update};
 use mc_db::DeoxysBackend;
 use mp_block::DeoxysBlock;
-use mp_felt::{trim_hash, Felt252Wrapper};
+use mp_felt::trim_hash;
 use mp_types::block::{DBlockT, DHashT};
-use serde::Deserialize;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_core::types::{PendingStateUpdate, StateUpdate};
 use starknet_providers::sequencer::models::{BlockId, StateUpdateWithBlock};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
+use starknet_types_core::felt::Felt;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Duration;
@@ -62,11 +61,11 @@ pub enum L2SyncError {
 }
 
 /// Contains the latest Starknet verified state on L2
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct L2StateUpdate {
     pub block_number: u64,
-    pub global_root: StarkHash,
-    pub block_hash: StarkHash,
+    pub global_root: Felt,
+    pub block_hash: Felt,
 }
 
 /// The current syncing status:
@@ -91,8 +90,8 @@ lazy_static! {
     /// Shared latest L2 state update verified on L2
     pub static ref STARKNET_STATE_UPDATE: RwLock<L2StateUpdate> = RwLock::new(L2StateUpdate {
         block_number: u64::default(),
-        global_root: StarkHash::default(),
-        block_hash: StarkHash::default(),
+        global_root: Felt::default(),
+        block_hash: Felt::default(),
     });
 }
 
@@ -156,7 +155,7 @@ async fn l2_verify_and_apply_task(
             })
             .await?;
 
-            if global_state_root != state_root {
+            if global_state_root.0 != state_root.to_bytes_be() {
                 // TODO(fault tolerance): we should have a single rocksdb transaction for the whole l2 update.
                 // let prev_block = block_n.checked_sub(1).expect("no block to revert to");
 
@@ -436,18 +435,14 @@ pub fn update_l2(state_update: L2StateUpdate) {
 }
 
 /// Verify and update the L2 state according to the latest state update
-pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> anyhow::Result<StarkFelt> {
+pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> anyhow::Result<Felt> {
     let csd = build_commitment_state_diff(state_update);
     let state_root = update_state_root(csd, block_number);
-    let block_hash = state_update.block_hash;
+    let block_hash = Felt::from_bytes_be(&state_update.block_hash.to_bytes_be());
 
-    update_l2(L2StateUpdate {
-        block_number,
-        global_root: state_root.into(),
-        block_hash: Felt252Wrapper::from(block_hash).into(),
-    });
+    update_l2(L2StateUpdate { block_number, global_root: state_root, block_hash });
 
-    Ok(state_root.into())
+    Ok(state_root)
 }
 
 async fn update_starknet_data<C>(provider: &SequencerGatewayProvider, client: &C) -> anyhow::Result<()>

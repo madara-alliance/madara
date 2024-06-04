@@ -2,8 +2,6 @@ use blockifier::state::cached_state::CommitmentStateDiff;
 use indexmap::IndexMap;
 use mp_convert::field_element::FromFieldElement;
 use mp_felt::Felt252Wrapper;
-use mp_hashers::poseidon::PoseidonHasher;
-use mp_hashers::HasherT;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -13,6 +11,8 @@ use starknet_core::types::{
     StorageEntry,
 };
 use starknet_ff::FieldElement;
+use starknet_types_core::felt::Felt;
+use starknet_types_core::hash::{Poseidon, StarkHash};
 
 use super::classes::class_trie_root;
 use super::contracts::contract_trie_root;
@@ -30,13 +30,13 @@ use super::transactions::memory_transaction_commitment;
 ///
 /// # Returns
 ///
-/// The transaction and the event commitment as `Felt252Wrapper`.
+/// The transaction and the event commitment as `Felt`.
 pub fn calculate_tx_and_event_commitments(
     transactions: &[Transaction],
     events: &[Event],
     chain_id: Felt252Wrapper,
     block_number: u64,
-) -> ((Felt252Wrapper, Vec<FieldElement>), Felt252Wrapper) {
+) -> ((Felt, Vec<Felt>), Felt) {
     let (commitment_tx, commitment_event) = rayon::join(
         || memory_transaction_commitment(transactions, chain_id, block_number),
         || memory_event_commitment(events),
@@ -115,23 +115,18 @@ pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStat
 ///
 /// # Returns
 ///
-/// The state commitment as a `Felt252Wrapper`.
-pub fn calculate_state_root<H: HasherT>(
-    contracts_trie_root: Felt252Wrapper,
-    classes_trie_root: Felt252Wrapper,
-) -> Felt252Wrapper
-where
-    H: HasherT,
-{
-    let starknet_state_prefix = Felt252Wrapper::try_from("STARKNET_STATE_V0".as_bytes()).unwrap();
+/// The state commitment as a `Felt`.
+pub fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> Felt {
+    let starknet_state_prefix =
+        Felt::from_raw([17245362975199821124, 8635008616843941494, 18446744073709548949, 329108408257827203]);
 
-    if classes_trie_root == Felt252Wrapper::ZERO {
+    if classes_trie_root == Felt::ZERO {
         contracts_trie_root
     } else {
         let state_commitment_hash =
-            H::compute_hash_on_elements(&[starknet_state_prefix.0, contracts_trie_root.0, classes_trie_root.0]);
+            Poseidon::hash_array(&[starknet_state_prefix, contracts_trie_root, classes_trie_root]);
 
-        state_commitment_hash.into()
+        state_commitment_hash
     }
 }
 
@@ -147,12 +142,12 @@ where
 /// * `BonsaiDb` - The database responsible for storing computing the state tries.
 ///
 ///
-/// The updated state root as a `Felt252Wrapper`.
-pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt252Wrapper {
+/// The updated state root as a `Felt`.
+pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt {
     // Update contract and its storage tries
     let (contract_trie_root, class_trie_root) = rayon::join(
         || contract_trie_root(&csd, block_number).expect("Failed to compute contract root"),
         || class_trie_root(&csd, block_number).expect("Failed to compute class root"),
     );
-    calculate_state_root::<PoseidonHasher>(contract_trie_root, class_trie_root)
+    calculate_state_root(contract_trie_root, class_trie_root)
 }

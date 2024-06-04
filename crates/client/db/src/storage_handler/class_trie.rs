@@ -3,7 +3,6 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
 use starknet_api::core::ClassHash;
-use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Poseidon;
 
@@ -72,7 +71,7 @@ impl ClassTrieViewMut<'_> {
         self.0.root_hash(bonsai_identifier::CLASS).map_err(|_| DeoxysStorageError::TrieRootError(TrieType::Class))
     }
 
-    pub fn update(&mut self, updates: Vec<(&ClassHash, FieldElement)>) -> Result<(), DeoxysStorageError> {
+    pub fn update(&mut self, updates: Vec<(&ClassHash, Felt)>) -> Result<(), DeoxysStorageError> {
         for (key, value) in updates {
             let key = conv_class_key(key);
             let value = Felt::from_bytes_be(&value.to_bytes_be());

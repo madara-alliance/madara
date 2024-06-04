@@ -2,13 +2,10 @@ use std::collections::HashSet;
 
 use blockifier::state::cached_state::CommitmentStateDiff;
 use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
-use mp_felt::Felt252Wrapper;
-use mp_hashers::pedersen::PedersenHasher;
-use mp_hashers::HasherT;
 use rayon::prelude::*;
 use starknet_api::core::ContractAddress;
-use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
+use starknet_types_core::hash::{Pedersen, StarkHash};
 
 /// Calculates the contract trie root
 ///
@@ -20,7 +17,7 @@ use starknet_types_core::felt::Felt;
 /// # Returns
 ///
 /// The contract root.
-pub fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
+pub fn contract_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt, DeoxysStorageError> {
     // NOTE: handlers implicitely acquire a lock on their respective tries
     // for the duration of their livetimes
     let mut handler_contract = storage_handler::contract_trie_mut();
@@ -94,14 +91,12 @@ fn contract_state_leaf_hash(
 ) -> Result<Felt, DeoxysStorageError> {
     let (class_hash, nonce) = class_hash_and_nonce(csd, contract_address)?;
 
-    let storage_root = FieldElement::from_bytes_be(&storage_root.to_bytes_be()).unwrap();
-
     // computes the contract state leaf hash
-    let contract_state_hash = PedersenHasher::hash_elements(class_hash, storage_root);
-    let contract_state_hash = PedersenHasher::hash_elements(contract_state_hash, nonce);
-    let contract_state_hash = PedersenHasher::hash_elements(contract_state_hash, FieldElement::ZERO);
+    let contract_state_hash = Pedersen::hash(&class_hash, &storage_root);
+    let contract_state_hash = Pedersen::hash(&contract_state_hash, &nonce);
+    let contract_state_hash = Pedersen::hash(&contract_state_hash, &Felt::ZERO);
 
-    Ok(Felt::from_bytes_be(&contract_state_hash.to_bytes_be()))
+    Ok(contract_state_hash)
 }
 
 /// Retrieves the class hash and nonce of a contract address
@@ -117,7 +112,7 @@ fn contract_state_leaf_hash(
 fn class_hash_and_nonce(
     csd: &CommitmentStateDiff,
     contract_address: &ContractAddress,
-) -> Result<(FieldElement, FieldElement), DeoxysStorageError> {
+) -> Result<(Felt, Felt), DeoxysStorageError> {
     let class_hash = match csd.address_to_class_hash.get(contract_address) {
         Some(class_hash) => *class_hash,
         None => storage_handler::contract_class_hash().get(contract_address)?.unwrap_or_default(),
@@ -126,5 +121,5 @@ fn class_hash_and_nonce(
         Some(nonce) => *nonce,
         None => storage_handler::contract_nonces().get(contract_address)?.unwrap_or_default(),
     };
-    Ok((FieldElement::from_bytes_be(&class_hash.0.0).unwrap(), FieldElement::from_bytes_be(&nonce.0.0).unwrap()))
+    Ok((Felt::from_bytes_be(&class_hash.0.0), Felt::from_bytes_be(&nonce.0.0)))
 }

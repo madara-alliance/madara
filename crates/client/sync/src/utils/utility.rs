@@ -1,15 +1,11 @@
 //! Utility functions for Deoxys.
 
-use std::thread::sleep;
-use std::time::Duration;
-
 use anyhow::{bail, Context};
 use ethers::types::{I256, U256};
 use once_cell::sync::OnceCell;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use reqwest::header;
-use serde_json::{json, Value};
+use serde_json::Value;
 use sp_core::H160;
 use starknet_api::hash::StarkFelt;
 use starknet_ff::FieldElement;
@@ -17,7 +13,6 @@ use url::Url;
 
 use crate::fetch::fetchers::FetchConfig;
 use crate::l1::{L1StateUpdate, LogStateUpdate};
-use crate::l2::L2StateUpdate;
 
 static CONFIG: OnceCell<FetchConfig> = OnceCell::new();
 
@@ -40,65 +35,6 @@ pub fn gateway() -> Url {
 
 pub fn feeder_gateway() -> Url {
     CONFIG.get().expect("CONFIG not initialized").feeder_gateway.clone()
-}
-
-// TODO: secure the auto calls here
-
-pub async fn get_state_update_at(rpc_port: u16, block_number: u64) -> anyhow::Result<L2StateUpdate> {
-    let client = reqwest::Client::new();
-    let url = format!("http://localhost:{}", rpc_port);
-
-    let request = json!({
-        "id": 1,
-        "jsonrpc": "2.0",
-        "method": "starknet_getStateUpdate",
-        "params": [{ "block_number": block_number }]
-    });
-    let payload = serde_json::to_vec(&request)?;
-
-    const MAX_ATTEMPTS: u8 = 3;
-    const RETRY_DELAY: Duration = Duration::from_secs(5);
-    let mut attempts = 0;
-
-    while attempts < MAX_ATTEMPTS {
-        let response = client
-            .post(&url)
-            .header(header::CONTENT_TYPE, "application/json")
-            .header(header::ACCEPT, "application/json")
-            .body(payload.clone())
-            .send()
-            .await;
-
-        match response {
-            Ok(response) => {
-                let json_response = response.json::<Value>().await;
-                match json_response {
-                    Ok(json_response) => {
-                        if let Some(result) = json_response.get("result") {
-                            let state_update: L2StateUpdate = serde_json::from_value(result.clone())?;
-                            return Ok(state_update);
-                        } else {
-                            eprintln!("No result found in response");
-                            attempts += 1;
-                            sleep(RETRY_DELAY);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to parse response as JSON: {}", e);
-                        attempts += 1;
-                        sleep(RETRY_DELAY);
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("Request failed: {}, retrying...", e);
-                attempts += 1;
-                sleep(RETRY_DELAY);
-            }
-        }
-    }
-
-    bail!("Maximum retries exceeded")
 }
 
 /// Returns a random Pokémon name.
