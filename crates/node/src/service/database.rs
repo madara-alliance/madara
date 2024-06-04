@@ -1,13 +1,14 @@
+use anyhow::Context;
+use mc_db::{DBDropHook, DeoxysBackend};
+
+use crate::cli::DbParams;
+
 pub struct DatabaseService(DBDropHook);
 
 impl DatabaseService {
-    pub fn new(
-        base_path: PathBuf,
-        backup_dir: Option<PathBuf>,
-        restore_from_latest_backup: bool,
-    ) -> anyhow::Result<Self> {
-        let deoxys_backend =
-            DeoxysBackend::open(base_path, backup_dir, restore_from_latest_backup).context("opening database")?;
+    pub fn new(config: &DbParams) -> anyhow::Result<Self> {
+        let _deoxys_backend =
+            DeoxysBackend::open(&config.base_path, config.backup_dir.clone(), config.restore_from_latest_backup).context("opening database")?;
 
         Ok(Self(DBDropHook))
     }

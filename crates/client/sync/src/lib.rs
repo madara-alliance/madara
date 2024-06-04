@@ -1,5 +1,4 @@
 #![allow(deprecated)]
-#![feature(let_chains)]
 
 pub mod commitments;
 pub mod fetch;
@@ -18,8 +17,13 @@ use crate::l2::L2SyncConfig;
 
 pub mod starknet_sync_worker {
     use anyhow::Context;
+    use mc_db::DeoxysBackend;
+    use mp_convert::field_element::FromFieldElement;
     use mp_convert::state_update::ToStateUpdateCore;
+    use mp_felt::{Felt252Wrapper, FeltWrapper};
     use reqwest::Url;
+    use starknet_api::hash::StarkFelt;
+    use starknet_ff::FieldElement;
     use starknet_providers::sequencer::models::BlockId;
     use starknet_providers::SequencerGatewayProvider;
 
@@ -31,11 +35,23 @@ pub mod starknet_sync_worker {
     pub async fn sync(
         fetch_config: FetchConfig,
         l1_url: Url,
-        starting_block: u32,
-        backup_every_n_blocks: Option<usize>,
+        l1_core_address: ethers::abi::Address,
+        starting_block: Option<u64>,
+        backup_every_n_blocks: Option<u64>,
         block_metrics: Option<BlockMetrics>,
+        chain_id: FieldElement,
     ) -> anyhow::Result<()> {
-        let starting_block = starting_block + 1;
+        // let starting_block = starting_block + 1;
+        let chain_id = chain_id.into_stark_felt();
+
+        let starting_block = if let Some(starting_block) = starting_block {
+            starting_block
+        } else {
+            DeoxysBackend::mapping()
+                .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+                .context("getting sync tip")?
+                .unwrap_or_default() as _
+        };
 
         let provider = SequencerGatewayProvider::new(
             fetch_config.gateway.clone(),
@@ -57,7 +73,7 @@ pub mod starknet_sync_worker {
         }
 
         tokio::select!(
-            res = l1::sync(l1_url.clone(), block_metrics.clone()) => res.context("syncing L1 state")?,
+            res = l1::sync(l1_url.clone(), block_metrics.clone(), l1_core_address) => res.context("syncing L1 state")?,
             res = l2::sync(
                 provider,
                 L2SyncConfig {
@@ -68,6 +84,7 @@ pub mod starknet_sync_worker {
                     backup_every_n_blocks,
                 },
                 block_metrics,
+                chain_id,
             ) => res.context("syncing L2 state")?
         );
 

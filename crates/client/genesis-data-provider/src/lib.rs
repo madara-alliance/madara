@@ -3,7 +3,7 @@ mod constants;
 use std::path::PathBuf;
 
 use constants::{GENESIS_ASSETS_DIR, GENESIS_ASSETS_FILE};
-use jsonrpsee::types::error::CallError;
+// use jsonrpsee::types::error::CallError;
 use mp_genesis_config::GenesisData;
 
 pub trait GenesisProvider {
@@ -21,11 +21,12 @@ pub enum LoadGenesisDataError {
     InvalidPath,
 }
 
-impl From<LoadGenesisDataError> for jsonrpsee::core::Error {
-    fn from(e: LoadGenesisDataError) -> Self {
-        jsonrpsee::core::Error::Call(CallError::Failed(anyhow::Error::from(e)))
-    }
-}
+// impl From<LoadGenesisDataError> for jsonrpsee::core::Error {
+//     fn from(e: LoadGenesisDataError) -> Self {
+//         todo!()
+//         // jsonrpsee::core::Error::Call(CallError::Failed(anyhow::Error::from(e)))
+//     }
+// }
 
 impl GenesisProvider for OnDiskGenesisConfig {
     type LoadGenesisDataError = LoadGenesisDataError;

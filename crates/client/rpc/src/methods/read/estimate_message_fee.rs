@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use blockifier::transaction::transactions::L1HandlerTransaction;
 use jsonrpsee::core::RpcResult;
-use mc_sync::utility::chain_id;
 use mp_felt::{Felt252Wrapper, FeltWrapper};
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_types::block::DHasherT;
@@ -40,7 +39,7 @@ pub async fn estimate_message_fee(
     let block_context = block_context(starknet, &block_info)?;
     let block_number = block_info.block_n();
 
-    let transaction = convert_message_into_tx(message, chain_id().into(), Some(block_number));
+    let transaction = convert_message_into_tx(message, starknet.chain_config.chain_id.0.into(), Some(block_number));
 
     let message_fee = utils::execution::estimate_message_fee(transaction, &block_context)
         .or_contract_error("Function execution failed")?;

@@ -16,7 +16,6 @@ use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use mc_db::mapping_db::MappingDb;
 use mc_db::DeoxysBackend;
-use mc_sync::utility;
 use mp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -29,6 +28,7 @@ use starknet_core::types::{
     MaybePendingStateUpdate, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
     SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
+use starknet_providers::{SequencerGatewayProvider, Url};
 use utils::ResultExt;
 
 // Starknet RPC API trait and types
@@ -190,14 +190,30 @@ pub trait StarknetTraceRpcApi {
     async fn trace_transaction(&self, transaction_hash: FieldElement) -> RpcResult<TransactionTraceWithHash>;
 }
 
+#[derive(Clone)]
+pub struct ChainConfig {
+    pub chain_id: Felt,
+    pub feeder_gateway: Url,
+    pub gateway: Url,
+}
+
 /// A Starknet RPC server for Deoxys
 pub struct Starknet {
     starting_block: u64,
+    chain_config: ChainConfig,
 }
 
 impl Starknet {
-    pub fn new(starting_block: u64) -> Self {
-        Self { starting_block }
+    pub fn new(starting_block: u64, chain_config: ChainConfig) -> Self {
+        Self { starting_block, chain_config }
+    }
+
+    pub fn make_sequencer_provider(&self) -> SequencerGatewayProvider {
+        SequencerGatewayProvider::new(
+            self.chain_config.feeder_gateway.clone(),
+            self.chain_config.gateway.clone(),
+            self.chain_config.chain_id.0,
+        )
     }
 
     pub fn block_storage(&self) -> &MappingDb {
@@ -237,7 +253,7 @@ impl Starknet {
     }
 
     fn chain_id(&self) -> RpcResult<Felt> {
-        Ok(Felt(utility::chain_id()))
+        Ok(self.chain_config.chain_id)
     }
 
     pub fn current_block_number(&self) -> RpcResult<u64> {
@@ -249,6 +265,10 @@ impl Starknet {
     }
 
     pub fn get_l1_last_confirmed_block(&self) -> RpcResult<u64> {
-        Ok(self.block_storage().get_l1_last_confirmed_block().or_internal_server_error("Error getting L1 last confirmed block")?.unwrap_or_default())
+        Ok(self
+            .block_storage()
+            .get_l1_last_confirmed_block()
+            .or_internal_server_error("Error getting L1 last confirmed block")?
+            .unwrap_or_default())
     }
 }

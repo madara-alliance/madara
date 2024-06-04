@@ -4,6 +4,7 @@ use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{EventKey, TransactionHash};
 use starknet_core::types::EthAddress;
 use starknet_ff::FieldElement;
+use starknet_types_core::felt::Felt;
 
 use crate::Felt252Wrapper;
 
@@ -42,6 +43,24 @@ impl FeltWrapper for StarkFelt {
 impl FeltWrapper for &StarkFelt {
     fn into_stark_felt(self) -> StarkFelt {
         *self
+    }
+    fn into_field_element(self) -> FieldElement {
+        Felt252Wrapper::from(*self).into()
+    }
+}
+
+impl FeltWrapper for Felt {
+    fn into_stark_felt(self) -> StarkFelt {
+        Felt252Wrapper::from(self).into()
+    }
+    fn into_field_element(self) -> FieldElement {
+        Felt252Wrapper::from(self).into()
+    }
+}
+
+impl FeltWrapper for &Felt {
+    fn into_stark_felt(self) -> StarkFelt {
+        Felt252Wrapper::from(*self).into()
     }
     fn into_field_element(self) -> FieldElement {
         Felt252Wrapper::from(*self).into()

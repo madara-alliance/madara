@@ -32,8 +32,6 @@ pub struct FetchConfig {
     pub feeder_gateway: Url,
     /// The ID of the chain served by the sequencer gateway.
     pub chain_id: starknet_ff::FieldElement,
-    /// The number of tasks spawned to fetch blocks and state updates.
-    pub workers: u32,
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
     /// The L1 contract core address
@@ -101,7 +99,7 @@ where
     }
 }
 
-pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBlock, String> {
+pub async fn fetch_apply_genesis_block(config: FetchConfig, chain_id: StarkFelt) -> Result<DeoxysBlock, String> {
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
     let client = match &config.api_key {
         Some(api_key) => client.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
@@ -109,7 +107,7 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBloc
     };
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    Ok(crate::convert::convert_block(block).expect("invalid genesis block"))
+    Ok(crate::convert::convert_block(block, chain_id).expect("invalid genesis block"))
 }
 
 /// retrieves state update with block from Starknet sequencer in only one request

@@ -49,9 +49,6 @@ sp-state-machine = { workspace = true }
 sp-statement-store = { workspace = true }
 sp-timestamp = { workspace = true }
 
-# These dependencies are used for the node template's RPCs
-jsonrpsee = { workspace = true, features = ["server"] }
-
 # Substrate primitives dependencies
 sp-api = { workspace = true }
 sp-block-builder = { workspace = true }
@@ -82,6 +79,7 @@ mc-genesis-data-provider = { workspace = true }
 
 # Primitives
 mp-block = { workspace = true }
+mp-felt = { workspace = true }
 mp-digest-log = { workspace = true }
 mp-types = { workspace = true }
 
@@ -97,8 +95,15 @@ url = { workspace = true }
 
 anyhow.workspace = true
 rayon.workspace = true
-tower = "0.4.13"
-jsonrpsee-server = "0.22.5"
+tower.workspace = true
+governor.workspace = true
+hyper.workspace = true
+ip_network.workspace = true
+jsonrpsee.workspace = true
+forwarded-header-value = "0.1.1"
+tower-http.workspace = true
+serde_json.workspace = true
+env_logger = "0.11.3"
 
 [build-dependencies]
 substrate-build-script-utils = { workspace = true }

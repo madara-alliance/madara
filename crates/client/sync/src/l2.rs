@@ -81,7 +81,7 @@ fn store_new_block(block: &DeoxysBlock) -> Result<(), DeoxysStorageError> {
 async fn l2_verify_and_apply_task(
     mut updates_receiver: mpsc::Receiver<L2ConvertedBlockAndUpdates>,
     verify: bool,
-    backup_every_n_blocks: Option<usize>,
+    backup_every_n_blocks: Option<u64>,
     block_metrics: Option<BlockMetrics>,
     sync_timer: Arc<Mutex<Option<Instant>>>,
 ) -> anyhow::Result<()> {
@@ -183,35 +183,35 @@ pub struct L2ConvertedBlockAndUpdates {
 async fn l2_block_conversion_task(
     updates_receiver: mpsc::Receiver<L2BlockAndUpdates>,
     output: mpsc::Sender<L2ConvertedBlockAndUpdates>,
+    chain_id: StarkFelt,
 ) -> anyhow::Result<()> {
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
-    let conversion_stream = stream::unfold(updates_receiver, |mut updates_recv| async {
-        updates_recv.recv().await.map(|L2BlockAndUpdates { block, state_update, class_update, .. }| {
-            (
+    let conversion_stream = stream::unfold((updates_receiver, chain_id), |(mut updates_recv, chain_id)| async move {
+        match updates_recv.recv().await {
+            Some(L2BlockAndUpdates { block, state_update, class_update, .. }) => Some((
                 spawn_compute(move || {
                     let sw = PerfStopwatch::new();
-                    let converted_block = convert_block(block)?;
+                    let converted_block = convert_block(block, chain_id).context("converting block")?;
                     stopwatch_end!(sw, "convert_block: {:?}");
                     Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
                 }),
-                updates_recv,
-            )
-        })
+                (updates_recv, chain_id),
+            )),
+            None => None,
+        }
     });
 
     conversion_stream
         .buffered(10)
-        .try_for_each(|block| async {
-            output.send(block).await.expect("downstream task is not running");
-            Ok(())
-        })
+        .try_for_each(|block| async { output.send(block).await.context("downstream task is not running").map(|_| {}) })
         .await
 }
 
 async fn l2_pending_block_task(
     sync_finished_cb: oneshot::Receiver<()>,
     provider: Arc<SequencerGatewayProvider>,
+    chain_id: StarkFelt,
 ) -> anyhow::Result<()> {
     // clear pending status
     {
@@ -243,8 +243,9 @@ async fn l2_pending_block_task(
 
         let mut tx = WriteBatchWithTransaction::default();
         if block_n_best == block_n_pending_min_1 {
-            let block =
-                spawn_compute(|| crate::convert::convert_block(block)).await.context("converting pending block")?;
+            let block = spawn_compute(move || crate::convert::convert_block(block, chain_id))
+                .await
+                .context("converting pending block")?;
             let storage_update = crate::convert::state_update(state_update);
             storage
                 .write_pending(&mut tx, &block, &storage_update)
@@ -264,7 +265,7 @@ pub struct L2SyncConfig {
     pub n_blocks_to_sync: Option<u64>,
     pub verify: bool,
     pub sync_polling_interval: Option<Duration>,
-    pub backup_every_n_blocks: Option<usize>,
+    pub backup_every_n_blocks: Option<u64>,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
@@ -275,6 +276,7 @@ pub async fn sync(
     provider: SequencerGatewayProvider,
     config: L2SyncConfig,
     block_metrics: Option<BlockMetrics>,
+    chain_id: StarkFelt,
 ) -> anyhow::Result<()> {
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(30);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(30);
@@ -300,7 +302,8 @@ pub async fn sync(
         config.sync_polling_interval,
         once_caught_up_cb_sender,
     ));
-    let mut block_conversion_task = tokio::spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender));
+    let mut block_conversion_task =
+        tokio::spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender, chain_id));
     let mut verify_and_apply_task = tokio::spawn(l2_verify_and_apply_task(
         block_conv_receiver,
         config.verify,
@@ -308,7 +311,7 @@ pub async fn sync(
         block_metrics,
         Arc::clone(&sync_timer),
     ));
-    let mut pending_block_task = tokio::spawn(l2_pending_block_task(once_caught_up_cb_receiver, provider));
+    let mut pending_block_task = tokio::spawn(l2_pending_block_task(once_caught_up_cb_receiver, provider, chain_id));
 
     tokio::select!(
         // update pending block task

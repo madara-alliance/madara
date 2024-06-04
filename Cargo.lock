@@ -2689,6 +2689,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.14.3",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core 0.9.9",
+]
+
+[[package]]
 name = "dasp_sample"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2729,12 +2742,16 @@ dependencies = [
  "clap",
  "deoxys-runtime",
  "deoxys-tui",
+ "env_logger 0.11.3",
+ "forwarded-header-value",
  "frame-benchmarking",
  "frame-benchmarking-cli",
  "frame-system",
  "futures",
- "jsonrpsee",
- "jsonrpsee-server 0.22.5",
+ "governor",
+ "hyper",
+ "ip_network",
+ "jsonrpsee 0.22.5",
  "log",
  "mc-db",
  "mc-genesis-data-provider",
@@ -2742,6 +2759,7 @@ dependencies = [
  "mc-sync",
  "mp-block",
  "mp-digest-log",
+ "mp-felt",
  "mp-types",
  "pallet-starknet",
  "pallet-starknet-runtime-api",
@@ -2762,6 +2780,7 @@ dependencies = [
  "sc-transaction-pool",
  "sc-transaction-pool-api",
  "serde",
+ "serde_json",
  "sp-api",
  "sp-block-builder",
  "sp-blockchain",
@@ -2779,6 +2798,7 @@ dependencies = [
  "substrate-prometheus-endpoint",
  "tokio",
  "tower",
+ "tower-http",
  "try-runtime-cli",
  "url",
 ]
@@ -3252,6 +3272,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "env_filter"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a009aa4810eb158359dda09d0c87378e4bbb89b5a801f016885a4707ba24f7ea"
+dependencies = [
+ "log",
+ "regex",
+]
+
+[[package]]
 name = "env_logger"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3262,6 +3292,19 @@ dependencies = [
  "log",
  "regex",
  "termcolor",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38b35839ba51819680ba087cd351788c9a3c476841207e0b8cee0b04722343b9"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "env_filter",
+ "humantime",
+ "log",
 ]
 
 [[package]]
@@ -3714,7 +3757,7 @@ version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "84f2e425d9790201ba4af4630191feac6dcc98765b118d4d18e91d23c2353866"
 dependencies = [
- "env_logger",
+ "env_logger 0.10.1",
  "log",
 ]
 
@@ -3793,6 +3836,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13624c2627564efccf4934284bdd98cbaa14e79b0b5a141218e507b3a823456"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "forwarded-header-value"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8835f84f38484cc86f110a805655697908257fb9a7af005234060891557198e9"
+dependencies = [
+ "nonempty",
+ "thiserror",
 ]
 
 [[package]]
@@ -3911,7 +3964,7 @@ source = "git+https://github.com/kasarlabs/polkadot-sdk?branch=release-polkadot-
 dependencies = [
  "futures",
  "indicatif",
- "jsonrpsee",
+ "jsonrpsee 0.16.3",
  "log",
  "parity-scale-codec",
  "serde",
@@ -4377,6 +4430,26 @@ checksum = "fa124423ded10046a849fa0ae9747c541895557f1af177e0890b09879e7e9e7d"
 dependencies = [
  "fnv",
  "minilp",
+]
+
+[[package]]
+name = "governor"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68a7f542ee6b35af73b06abc0dad1c1bae89964e4e253bc4b587b91c9637867b"
+dependencies = [
+ "cfg-if",
+ "dashmap",
+ "futures",
+ "futures-timer",
+ "no-std-compat",
+ "nonzero_ext",
+ "parking_lot 0.12.1",
+ "portable-atomic",
+ "quanta",
+ "rand 0.8.5",
+ "smallvec",
+ "spinning_top",
 ]
 
 [[package]]
@@ -5060,10 +5133,24 @@ checksum = "367a292944c07385839818bb71c8d76611138e2dedb0677d035b8da21d29c78b"
 dependencies = [
  "jsonrpsee-core 0.16.3",
  "jsonrpsee-http-client",
- "jsonrpsee-proc-macros",
+ "jsonrpsee-proc-macros 0.16.3",
  "jsonrpsee-server 0.16.3",
  "jsonrpsee-types 0.16.3",
  "jsonrpsee-ws-client",
+ "tracing",
+]
+
+[[package]]
+name = "jsonrpsee"
+version = "0.22.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfdb12a2381ea5b2e68c3469ec604a007b367778cdb14d09612c8069ebd616ad"
+dependencies = [
+ "jsonrpsee-core 0.22.5",
+ "jsonrpsee-proc-macros 0.22.5",
+ "jsonrpsee-server 0.22.5",
+ "jsonrpsee-types 0.22.5",
+ "tokio",
  "tracing",
 ]
 
@@ -5168,6 +5255,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "jsonrpsee-proc-macros"
+version = "0.22.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d0bb047e79a143b32ea03974a6bf59b62c2a4c5f5d42a381c907a8bbb3f75c0"
+dependencies = [
+ "heck 0.4.1",
+ "proc-macro-crate 3.1.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
 ]
 
 [[package]]
@@ -6206,7 +6306,7 @@ name = "mc-genesis-data-provider"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "jsonrpsee",
+ "jsonrpsee 0.22.5",
  "log",
  "mp-genesis-config",
  "serde_json",
@@ -6222,7 +6322,7 @@ dependencies = [
  "cairo-vm",
  "indexmap 2.2.6",
  "itertools 0.12.1",
- "jsonrpsee",
+ "jsonrpsee 0.22.5",
  "log",
  "mc-db",
  "mc-sync",
@@ -6880,6 +6980,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "no-std-compat"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b93853da6d84c2e3c7d730d6473e8817692dd89be387eb01b94d7f108ecb5b8c"
+
+[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6894,6 +7000,18 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
+
+[[package]]
+name = "nonempty"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9e591e719385e6ebaeb5ce5d3887f7d5676fceca6411d1925ccc95745f3d6f7"
+
+[[package]]
+name = "nonzero_ext"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38bf9645c8b145698bb0b18a4637dcacbc421ea49bef2317e4fd8065a387cf21"
 
 [[package]]
 name = "normalize-line-endings"
@@ -7897,6 +8015,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro-crate"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d37c51ca738a55da99dc0c4a34860fd675453b8b36209178c2249bb13651284"
+dependencies = [
+ "toml_edit 0.21.0",
+]
+
+[[package]]
 name = "proc-macro-error"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8054,6 +8181,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5787f7cda34e3033a72192c018bc5883100330f362ef279a8cbccfce8bb4e874"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "quanta"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e5167a477619228a0b284fac2674e3c388cba90631d7b7de620e6f1fcd08da5"
+dependencies = [
+ "crossbeam-utils",
+ "libc",
+ "once_cell",
+ "raw-cpuid",
+ "wasi 0.11.0+wasi-snapshot-preview1",
+ "web-sys",
+ "winapi",
 ]
 
 [[package]]
@@ -8245,6 +8387,15 @@ dependencies = [
  "strum 0.26.2",
  "unicode-segmentation",
  "unicode-width",
+]
+
+[[package]]
+name = "raw-cpuid"
+version = "11.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e29830cbb1290e404f24c73af91c5d8d631ce7e128691e9477556b540cd01ecd"
+dependencies = [
+ "bitflags 2.4.1",
 ]
 
 [[package]]
@@ -9144,7 +9295,7 @@ dependencies = [
  "async-trait",
  "futures",
  "futures-timer",
- "jsonrpsee",
+ "jsonrpsee 0.16.3",
  "log",
  "parity-scale-codec",
  "sc-client-api",
@@ -9470,7 +9621,7 @@ version = "4.0.0-dev"
 source = "git+https://github.com/kasarlabs/polkadot-sdk?branch=release-polkadot-v1.3.0-std#c78d3ab6ffec9e4fd28a0ee853c3291b68d27246"
 dependencies = [
  "futures",
- "jsonrpsee",
+ "jsonrpsee 0.16.3",
  "log",
  "parity-scale-codec",
  "parking_lot 0.12.1",
@@ -9501,7 +9652,7 @@ name = "sc-rpc-api"
 version = "0.10.0-dev"
 source = "git+https://github.com/kasarlabs/polkadot-sdk?branch=release-polkadot-v1.3.0-std#c78d3ab6ffec9e4fd28a0ee853c3291b68d27246"
 dependencies = [
- "jsonrpsee",
+ "jsonrpsee 0.16.3",
  "parity-scale-codec",
  "sc-chain-spec",
  "sc-mixnet",
@@ -9522,7 +9673,7 @@ version = "4.0.0-dev"
 source = "git+https://github.com/kasarlabs/polkadot-sdk?branch=release-polkadot-v1.3.0-std#c78d3ab6ffec9e4fd28a0ee853c3291b68d27246"
 dependencies = [
  "http",
- "jsonrpsee",
+ "jsonrpsee 0.16.3",
  "log",
  "serde_json",
  "substrate-prometheus-endpoint",
@@ -9540,7 +9691,7 @@ dependencies = [
  "futures",
  "futures-util",
  "hex",
- "jsonrpsee",
+ "jsonrpsee 0.16.3",
  "log",
  "parity-scale-codec",
  "parking_lot 0.12.1",
@@ -9569,7 +9720,7 @@ dependencies = [
  "exit-future",
  "futures",
  "futures-timer",
- "jsonrpsee",
+ "jsonrpsee 0.16.3",
  "log",
  "parity-scale-codec",
  "parking_lot 0.12.1",
@@ -11036,6 +11187,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "spinning_top"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d96d2d1d716fb500937168cc09353ffdc7a012be8475ac7308e1bdf0e3923300"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
 name = "spki"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11552,7 +11712,7 @@ source = "git+https://github.com/kasarlabs/polkadot-sdk?branch=release-polkadot-
 dependencies = [
  "frame-system-rpc-runtime-api",
  "futures",
- "jsonrpsee",
+ "jsonrpsee 0.16.3",
  "log",
  "parity-scale-codec",
  "sc-rpc-api",
@@ -11582,7 +11742,7 @@ version = "0.10.0-dev"
 source = "git+https://github.com/kasarlabs/polkadot-sdk?branch=release-polkadot-v1.3.0-std#c78d3ab6ffec9e4fd28a0ee853c3291b68d27246"
 dependencies = [
  "async-trait",
- "jsonrpsee",
+ "jsonrpsee 0.16.3",
  "log",
  "sc-rpc-api",
  "serde",
@@ -12083,6 +12243,10 @@ version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8fa9be0de6cf49e536ce1851f987bd21a43b771b09473c3549a6c853db37c1c"
 dependencies = [
+ "futures-core",
+ "futures-util",
+ "pin-project",
+ "pin-project-lite 0.2.13",
  "tower-layer",
  "tower-service",
  "tracing",

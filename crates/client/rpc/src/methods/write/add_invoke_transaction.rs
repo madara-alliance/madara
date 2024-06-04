@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
-use mc_sync::utility::{chain_id, feeder_gateway, gateway};
 use starknet_core::types::{BroadcastedInvokeTransaction, InvokeTransactionResult};
-use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
+use starknet_providers::{Provider, ProviderError};
 
 use crate::errors::StarknetRpcApiError;
 use crate::{bail_internal_server_error, Starknet};
@@ -16,10 +15,10 @@ use crate::{bail_internal_server_error, Starknet};
 ///
 /// * `transaction_hash` - transaction hash corresponding to the invocation
 pub async fn add_invoke_transaction(
-    _starknet: &Starknet,
+    starknet: &Starknet,
     invoke_transaction: BroadcastedInvokeTransaction,
 ) -> RpcResult<InvokeTransactionResult> {
-    let sequencer = SequencerGatewayProvider::new(feeder_gateway(), gateway(), chain_id());
+    let sequencer = starknet.make_sequencer_provider();
 
     let sequencer_response = match sequencer.add_invoke_transaction(invoke_transaction).await {
         Ok(response) => response,
