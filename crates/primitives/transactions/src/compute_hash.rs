@@ -13,15 +13,14 @@ use starknet_api::transaction::{
     InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Resource,
     ResourceBoundsMapping, Transaction, TransactionHash,
 };
-use starknet_core::crypto::compute_hash_on_elements;
-use starknet_core::utils::{starknet_keccak};
-use starknet_crypto::FieldElement;
+
+use starknet_core::utils::starknet_keccak;
 
 use starknet_types_core::hash::{Pedersen, StarkHash}; //, Poseidon};
 use starknet_types_core::felt::Felt;
 
 use super::SIMULATE_TX_VERSION_OFFSET;
-use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK, SIMULATE_TX_VERSION_OFFSET_FELT};
+use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK};
 
 const DECLARE_PREFIX: &[u8] = b"declare";
 const DEPLOY_ACCOUNT_PREFIX: &[u8] = b"deploy_account";
@@ -40,11 +39,8 @@ pub trait ComputeTransactionHash {
     ) -> TransactionHash;
 }
 
-fn convert_calldata(calldata: Calldata) -> Vec<FieldElement> {
-    calldata.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect()
-}
-
-fn convert_calldata_as_felt(calldata: Calldata) -> Vec<Felt> {
+fn convert_calldata(calldata: Calldata) -> Vec<Felt> {
+    // calldata.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect()
     calldata.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect()
 }
 
@@ -100,11 +96,11 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
         block_number: Option<u64>,
     ) -> TransactionHash {
         let prefix = Felt::from_bytes_be_slice(INVOKE_PREFIX);
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT } else { Felt::ZERO };
+        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ZERO };
         let sender_address = Felt::from_bytes_be(&self.contract_address.0.0.0);
         let entrypoint_selector = Felt::from_bytes_be(&self.entry_point_selector.0.0);
 
-        let calldata_tmp = convert_calldata_as_felt(self.calldata.clone());
+        let calldata_tmp = convert_calldata(self.calldata.clone());
         let calldata_tmp_bis = calldata_tmp.as_slice();
         let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);
         
@@ -141,11 +137,11 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
         _block_number: Option<u64>,
     ) -> TransactionHash {
         let prefix = Felt::from_bytes_be_slice(INVOKE_PREFIX);
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::ONE } else { Felt::ONE };
+        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::ONE } else { Felt::ONE };
         let sender_address  = Felt::from_bytes_be(&self.sender_address.0.0.0);
         let entrypoint_selector = Felt::ZERO;
 
-        let calldata_tmp = convert_calldata_as_felt(self.calldata.clone());
+        let calldata_tmp = convert_calldata(self.calldata.clone());
         let calldata_tmp_bis = calldata_tmp.as_slice();
         let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);
         
@@ -174,7 +170,7 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
     ) -> TransactionHash {
         let prefix = Felt::from_bytes_be_slice(INVOKE_PREFIX);
         let version =
-            if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::THREE } else { Felt::THREE };
+            if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
         let sender_address = Felt::from_bytes_be(&self.sender_address.0.0.0);
 
         let felt_tmp_a = Felt::try_from(self.tip.0).unwrap();
@@ -200,7 +196,7 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
             let account_deployment_data_hash = Pedersen::hash_array(account_deployment_data_tmp_bis);
 
 
-            let calldata_tmp = convert_calldata_as_felt(self.calldata.clone());
+            let calldata_tmp = convert_calldata(self.calldata.clone());
             let calldata_tmp_bis = calldata_tmp.as_slice();
             let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);    
 
@@ -245,7 +241,7 @@ impl ComputeTransactionHash for DeclareTransactionV0V1 {
     ) -> TransactionHash {
         let prefix = Felt::from_bytes_be_slice(DECLARE_PREFIX);
         let version = if offset_version {
-            SIMULATE_TX_VERSION_OFFSET_FELT
+            SIMULATE_TX_VERSION_OFFSET
         } else {
             match block_number {
                 Some(0) | None => Felt::ZERO,
@@ -293,7 +289,7 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
     ) -> TransactionHash {
         let prefix = Felt::from_bytes_be_slice(DECLARE_PREFIX);
 
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::TWO } else { Felt::TWO };
+        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::TWO } else { Felt::TWO };
         let sender_address = Felt::from_bytes_be(&self.sender_address.0.0.0);
         let entrypoint_selector = Felt::ZERO;
 
@@ -326,7 +322,7 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
     ) -> TransactionHash {
         let prefix = Felt::from_bytes_be_slice(DECLARE_PREFIX);
         let version =
-            if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::THREE } else { Felt::THREE };
+            if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
         let sender_address = Felt::from_bytes_be(&self.sender_address.0.0.0);
         
         let felt_tmp_a = Felt::try_from(self.tip.0).unwrap();
@@ -405,7 +401,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
-        let constructor_calldata = convert_calldata_as_felt(self.constructor_calldata.clone());
+        let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
 
         let contract_address = Felt::from_bytes_be(&
             calculate_contract_address(
@@ -417,7 +413,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
         );
 
         let prefix = Felt::from_bytes_be_slice(DEPLOY_ACCOUNT_PREFIX);
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::ONE } else { Felt::ONE };
+        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::ONE } else { Felt::ONE };
         let entrypoint_selector = Felt::ZERO;
         
         let mut calldata: Vec<Felt> = Vec::with_capacity(constructor_calldata.len() + 2);
@@ -450,7 +446,7 @@ impl ComputeTransactionHash for DeployTransaction {
         block_number: Option<u64>,
     ) -> TransactionHash {
         let chain_id = chain_id.into();
-        let constructor_calldata = convert_calldata_as_felt(self.constructor_calldata.clone());
+        let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
 
         let contract_address = Felt::from_bytes_be(
             &calculate_contract_address(
@@ -481,9 +477,9 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
     ) -> TransactionHash {
         let prefix = Felt::from_bytes_be_slice(DEPLOY_ACCOUNT_PREFIX);
         let version =
-            if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::THREE } else { Felt::THREE };
+            if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
         
-        let constructor_calldata = convert_calldata_as_felt(self.constructor_calldata.clone());
+        let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
         let contract_address = Felt::from_bytes_be(&
             calculate_contract_address(
                 self.contract_address_salt,
@@ -535,46 +531,47 @@ impl ComputeTransactionHash for L1HandlerTransaction {
         offset_version: bool,
         block_number: Option<u64>,
     ) -> TransactionHash {
-        let prefix = FieldElement::from_byte_slice_be(L1_HANDLER_PREFIX).unwrap();
-        let invoke_prefix = FieldElement::from_byte_slice_be(INVOKE_PREFIX).unwrap();
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { FieldElement::ZERO };
-        let contract_address = Felt252Wrapper::from(self.contract_address).into();
-        let entrypoint_selector = Felt252Wrapper::from(self.entry_point_selector).into();
-        let calldata_hash = compute_hash_on_elements(&convert_calldata(self.calldata.clone()));
-        let nonce = Felt252Wrapper::from(self.nonce).into();
+        let prefix = Felt::from_bytes_be_slice(L1_HANDLER_PREFIX);
+        let invoke_prefix = Felt::from_bytes_be_slice(INVOKE_PREFIX);
+        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ZERO };
+        let contract_address = Felt::from_bytes_be(&self.contract_address.0.0.0);
+        let entrypoint_selector = Felt::from_bytes_be(&self.entry_point_selector.0.0);
+        
+        let calldata_tmp = convert_calldata(self.calldata.clone());
+        let calldata_tmp_bis = calldata_tmp.as_slice();
+        let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);
+        
+        let nonce = Felt::from_bytes_be(&self.nonce.0.0);
         let chain_id = chain_id.into();
 
         if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && block_number.is_some() {
-            Felt252Wrapper::from(H::compute_hash_on_elements(&[
+            TransactionHash(StarkFelt(Pedersen::hash_array(&[
                 invoke_prefix,
                 contract_address,
                 entrypoint_selector,
                 calldata_hash,
                 chain_id,
-            ]))
-            .into()
+            ]).to_bytes_be()))
         } else if block_number < Some(LEGACY_BLOCK_NUMBER) && block_number.is_some() {
-            Felt252Wrapper::from(H::compute_hash_on_elements(&[
+            TransactionHash(StarkFelt(Pedersen::hash_array(&[
                 prefix,
                 contract_address,
                 entrypoint_selector,
                 calldata_hash,
                 chain_id,
                 nonce,
-            ]))
-            .into()
+            ]).to_bytes_be()))
         } else {
-            Felt252Wrapper::from(H::compute_hash_on_elements(&[
+            TransactionHash(StarkFelt(Pedersen::hash_array(&[
                 prefix,
                 version,
                 contract_address,
                 entrypoint_selector,
                 calldata_hash,
-                FieldElement::ZERO, // Fees are set to zero on L1 Handler txs
+                Felt::ZERO, // Fees are set to zero on L1 Handler txs
                 chain_id,
                 nonce,
-            ]))
-            .into()
+            ]).to_bytes_be()))
         }
     }
 }
