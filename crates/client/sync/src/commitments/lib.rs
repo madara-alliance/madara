@@ -21,7 +21,7 @@ use super::transactions::memory_transaction_commitment;
 
 /// "STARKNET_STATE_V0"
 const STARKNET_STATE_PREFIX: Felt =
-        Felt::from_raw([329108408257827203, 18446744073709548949, 8635008616843941494, 17245362975199821124]);
+    Felt::from_raw([329108408257827203, 18446744073709548949, 8635008616843941494, 17245362975199821124]);
 
 /// Calculate the transaction and event commitment.
 ///
