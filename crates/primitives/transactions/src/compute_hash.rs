@@ -92,6 +92,17 @@ fn prepare_data_availability_modes(
     FieldElement::from_bytes_be(&buffer).unwrap()
 }
 
+fn prepare_data_availability_modes_as_felt(
+    nonce_data_availability_mode: DataAvailabilityMode,
+    fee_data_availability_mode: DataAvailabilityMode,
+) -> Felt {
+    let mut buffer = [0u8; 32];
+    buffer[8..12].copy_from_slice(&(nonce_data_availability_mode as u32).to_be_bytes());
+    buffer[12..16].copy_from_slice(&(fee_data_availability_mode as u32).to_be_bytes());
+
+    Felt::from_bytes_be(&buffer)
+}
+
 impl ComputeTransactionHash for Transaction {
     fn compute_hash<H: HasherT>(
         &self,
@@ -207,9 +218,10 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
         let paymaster_hash = Pedersen::hash_array(paymaster_tmp_bis);
 
         let nonce = Felt::from_bytes_be(&self.nonce.0.0);
-        let data_availability_modes = Felt::ZERO; // TODO
-
-        // prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
+        let data_availability_modes = prepare_data_availability_modes_as_felt(
+                self.nonce_data_availability_mode, self.fee_data_availability_mode
+            );
+        
         let data_hash = {
             let account_deployment_data_tmp = 
                 &self.account_deployment_data.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect::<Vec<_>>();
