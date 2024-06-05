@@ -121,7 +121,6 @@ pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStat
 ///
 /// The state commitment as a `Felt`.
 pub fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> Felt {
-    log::info!("STARKNET_STATE_PREFIX: {:?}", STARKNET_STATE_PREFIX.to_string());
     if classes_trie_root == Felt::ZERO {
         contracts_trie_root
     } else {
