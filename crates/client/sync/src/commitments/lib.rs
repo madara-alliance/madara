@@ -19,6 +19,10 @@ use super::contracts::contract_trie_root;
 use super::events::memory_event_commitment;
 use super::transactions::memory_transaction_commitment;
 
+/// "STARKNET_STATE_V0"
+const STARKNET_STATE_PREFIX: Felt =
+        Felt::from_raw([17245362975199821124, 8635008616843941494, 18446744073709548949, 329108408257827203]);
+
 /// Calculate the transaction and event commitment.
 ///
 /// # Arguments
@@ -117,13 +121,10 @@ pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStat
 ///
 /// The state commitment as a `Felt`.
 pub fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> Felt {
-    let starknet_state_prefix =
-        Felt::from_raw([17245362975199821124, 8635008616843941494, 18446744073709548949, 329108408257827203]);
-
     if classes_trie_root == Felt::ZERO {
         contracts_trie_root
     } else {
-        Poseidon::hash_array(&[starknet_state_prefix, contracts_trie_root, classes_trie_root])
+        Poseidon::hash_array(&[STARKNET_STATE_PREFIX, contracts_trie_root, classes_trie_root])
     }
 }
 
@@ -147,4 +148,14 @@ pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt {
         || class_trie_root(&csd, block_number).expect("Failed to compute class root"),
     );
     calculate_state_root(contract_trie_root, class_trie_root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_contract_class_hash_version() {
+        assert_eq!(STARKNET_STATE_PREFIX, Felt::from_bytes_be_slice("STARKNET_STATE_V0".as_bytes()));
+    }
 }
