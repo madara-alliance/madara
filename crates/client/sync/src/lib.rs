@@ -17,6 +17,7 @@ use crate::l2::L2SyncConfig;
 pub mod starknet_sync_worker {
     use anyhow::Context;
     use mc_db::DeoxysBackend;
+    use mc_telemetry::TelemetryHandle;
     use mp_convert::state_update::ToStateUpdateCore;
     use mp_felt::FeltWrapper;
     use reqwest::Url;
@@ -37,6 +38,7 @@ pub mod starknet_sync_worker {
         backup_every_n_blocks: Option<u64>,
         block_metrics: Option<BlockMetrics>,
         chain_id: FieldElement,
+        telemetry: TelemetryHandle,
     ) -> anyhow::Result<()> {
         // let starting_block = starting_block + 1;
         let chain_id = chain_id.into_stark_felt();
@@ -85,6 +87,7 @@ pub mod starknet_sync_worker {
                 },
                 block_metrics,
                 chain_id,
+                telemetry,
             ) => res.context("syncing L2 state")?
         );
 

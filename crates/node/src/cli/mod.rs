@@ -44,20 +44,15 @@ pub struct RunCmd {
 }
 
 impl RunCmd {
-    pub async fn provide_node_name(&mut self) -> String {
-        match &self.name {
-            Some(name) => name.clone(),
-            None => {
-                let name = mc_sync::utility::get_random_pokemon_name()
-                    .await
-                    .unwrap_or_else(|e| {
-                        log::warn!("Failed to get random pokemon name: {}", e);
-                        "deoxys".to_string()
-                    });
+    pub async fn node_name_or_provide(&mut self) -> &str {
+        if self.name.is_none() {
+            let name = mc_sync::utility::get_random_pokemon_name().await.unwrap_or_else(|e| {
+                log::warn!("Failed to get random pokemon name: {}", e);
+                "deoxys".to_string()
+            });
 
-                self.name = Some(name.clone());
-                name
-            },
+            self.name = Some(name);
         }
+        self.name.as_ref().unwrap()
     }
 }

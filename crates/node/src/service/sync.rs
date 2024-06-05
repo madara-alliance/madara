@@ -1,4 +1,6 @@
+use anyhow::Context;
 use mc_sync::{fetch::fetchers::FetchConfig, metrics::block_metrics::BlockMetrics};
+use mc_telemetry::TelemetryHandle;
 use primitive_types::H160;
 use starknet_core::types::FieldElement;
 use tokio::task::JoinSet;
@@ -15,10 +17,15 @@ pub struct SyncService {
     starting_block: Option<u64>,
     block_metrics: Option<BlockMetrics>,
     chain_id: FieldElement,
+    start_params: Option<TelemetryHandle>,
 }
 
 impl SyncService {
-    pub fn new(config: &SyncParams, block_metrics: Option<BlockMetrics>) -> anyhow::Result<Self> {
+    pub fn new(
+        config: &SyncParams,
+        block_metrics: Option<BlockMetrics>,
+        telemetry: TelemetryHandle,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             fetch_config: config.block_fetch_config(),
             l1_endpoint: config.l1_endpoint.clone(),
@@ -27,6 +34,7 @@ impl SyncService {
             backup_every_n_blocks: config.backup_every_n_blocks,
             block_metrics,
             chain_id: config.network.chain_id(),
+            start_params: Some(telemetry),
         })
     }
     pub async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
@@ -38,7 +46,9 @@ impl SyncService {
             starting_block,
             block_metrics,
             chain_id,
+            ..
         } = self.clone();
+        let telemetry = self.start_params.take().context("service already started")?;
 
         join_set.spawn(async move {
             mc_sync::starknet_sync_worker::sync(
@@ -49,6 +59,7 @@ impl SyncService {
                 backup_every_n_blocks,
                 block_metrics,
                 chain_id,
+                telemetry,
             )
             .await
         });

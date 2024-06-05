@@ -585,6 +585,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-tungstenite"
+version = "0.25.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cca750b12e02c389c1694d35c16539f88b8bbaa5945934fdc1b41a776688589"
+dependencies = [
+ "futures-io",
+ "futures-util",
+ "log",
+ "pin-project-lite 0.2.13",
+ "tungstenite 0.21.0",
+]
+
+[[package]]
 name = "async_io_stream"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -696,6 +709,12 @@ name = "base64"
 version = "0.21.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35636a1494ede3b646cc98f74f8e62c773a38a659ebc777a2cf26b9b74171df9"
+
+[[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64ct"
@@ -2734,26 +2753,26 @@ dependencies = [
  "forwarded-header-value",
  "futures",
  "governor",
- "hyper",
+ "hyper 0.14.28",
  "ip_network",
  "jsonrpsee 0.22.5",
  "log",
  "mc-db",
  "mc-rpc",
  "mc-sync",
+ "mc-telemetry",
  "mp-block",
  "mp-felt",
  "mp-types",
  "parity-scale-codec",
  "primitive-types",
  "rayon",
- "reqwest",
+ "reqwest 0.12.4",
  "serde",
  "serde_json",
  "starknet-core 0.10.0",
  "starknet-providers 0.10.0",
  "substrate-prometheus-endpoint",
- "sysinfo",
  "tokio",
  "tower",
  "tower-http",
@@ -3416,7 +3435,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "regex",
- "reqwest",
+ "reqwest 0.11.23",
  "serde",
  "serde_json",
  "syn 2.0.48",
@@ -3475,7 +3494,7 @@ source = "git+https://github.com/gakonst/ethers-rs#1354179f3c1586b1359c21a3a7e93
 dependencies = [
  "chrono",
  "ethers-core",
- "reqwest",
+ "reqwest 0.11.23",
  "semver",
  "serde",
  "serde_json",
@@ -3499,7 +3518,7 @@ dependencies = [
  "futures-locks",
  "futures-util",
  "instant",
- "reqwest",
+ "reqwest 0.11.23",
  "serde",
  "serde_json",
  "thiserror",
@@ -3525,12 +3544,12 @@ dependencies = [
  "futures-timer",
  "futures-util",
  "hashers",
- "http",
+ "http 0.2.11",
  "instant",
  "jsonwebtoken",
  "once_cell",
  "pin-project",
- "reqwest",
+ "reqwest 0.11.23",
  "serde",
  "serde_json",
  "thiserror",
@@ -4374,7 +4393,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "http",
+ "http 0.2.11",
  "indexmap 2.2.6",
  "slab",
  "tokio",
@@ -4568,13 +4587,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "http"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21b9ddb458710bc376481b842f5da65cdf31522de232c1ca8146abce2a358258"
+dependencies = [
+ "bytes",
+ "fnv",
+ "itoa",
+]
+
+[[package]]
 name = "http-body"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ceab25649e9960c0311ea418d17bee82c0dcec1bd053b5f9a66e265a693bed2"
 dependencies = [
  "bytes",
- "http",
+ "http 0.2.11",
+ "pin-project-lite 0.2.13",
+]
+
+[[package]]
+name = "http-body"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cac85db508abc24a2e48553ba12a996e87244a0395ce011e62b37158745d643"
+dependencies = [
+ "bytes",
+ "http 1.1.0",
+]
+
+[[package]]
+name = "http-body-util"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0475f8b2ac86659c21b64320d5d653f9efe42acd2a4e560073ec61a155a34f1d"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "http 1.1.0",
+ "http-body 1.0.0",
  "pin-project-lite 0.2.13",
 ]
 
@@ -4622,8 +4675,8 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http",
- "http-body",
+ "http 0.2.11",
+ "http-body 0.4.6",
  "httparse",
  "httpdate",
  "itoa",
@@ -4636,20 +4689,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyper"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb5aa53871fc917b1a9ed87b683a5d86db645e23acb32c2e0785a353e522fb75"
+dependencies = [
+ "bytes",
+ "futures-channel",
+ "futures-util",
+ "http 1.1.0",
+ "http-body 1.0.0",
+ "httparse",
+ "itoa",
+ "pin-project-lite 0.2.13",
+ "tokio",
+ "want",
+]
+
+[[package]]
 name = "hyper-rustls"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec3efd23720e2049821a693cbc7e65ea87c72f1c58ff2f9522ff332b1491e590"
 dependencies = [
  "futures-util",
- "http",
- "hyper",
+ "http 0.2.11",
+ "hyper 0.14.28",
  "log",
  "rustls 0.21.10",
  "rustls-native-certs",
  "tokio",
  "tokio-rustls",
  "webpki-roots 0.25.3",
+]
+
+[[package]]
+name = "hyper-util"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca38ef113da30126bbff9cd1705f9273e15d45498615d138b0c20279ac7a76aa"
+dependencies = [
+ "bytes",
+ "futures-channel",
+ "futures-util",
+ "http 1.1.0",
+ "http-body 1.0.0",
+ "hyper 1.1.0",
+ "pin-project-lite 0.2.13",
+ "socket2 0.5.5",
+ "tokio",
+ "tower",
+ "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -4900,7 +4991,7 @@ dependencies = [
  "socket2 0.5.5",
  "widestring",
  "windows-sys 0.48.0",
- "winreg",
+ "winreg 0.50.0",
 ]
 
 [[package]]
@@ -5047,7 +5138,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8b3815d9f5d5de348e5f162b316dc9cdf4548305ebb15b4eb9328e66cf27d7a"
 dependencies = [
  "futures-util",
- "http",
+ "http 0.2.11",
  "jsonrpsee-core 0.16.3",
  "jsonrpsee-types 0.16.3",
  "pin-project",
@@ -5076,7 +5167,7 @@ dependencies = [
  "futures-timer",
  "futures-util",
  "globset",
- "hyper",
+ "hyper 0.14.28",
  "jsonrpsee-types 0.16.3",
  "parking_lot 0.12.1",
  "rand 0.8.5",
@@ -5099,7 +5190,7 @@ dependencies = [
  "async-trait",
  "beef",
  "futures-util",
- "hyper",
+ "hyper 0.14.28",
  "jsonrpsee-types 0.22.5",
  "parking_lot 0.12.1",
  "rand 0.8.5",
@@ -5118,7 +5209,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e5f9fabdd5d79344728521bb65e3106b49ec405a78b66fbff073b72b389fa43"
 dependencies = [
  "async-trait",
- "hyper",
+ "hyper 0.14.28",
  "hyper-rustls",
  "jsonrpsee-core 0.16.3",
  "jsonrpsee-types 0.16.3",
@@ -5164,8 +5255,8 @@ checksum = "cf4d945a6008c9b03db3354fb3c83ee02d2faa9f2e755ec1dfb69c3551b8f4ba"
 dependencies = [
  "futures-channel",
  "futures-util",
- "http",
- "hyper",
+ "http 0.2.11",
+ "hyper 0.14.28",
  "jsonrpsee-core 0.16.3",
  "jsonrpsee-types 0.16.3",
  "serde",
@@ -5185,8 +5276,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12d8b6a9674422a8572e0b0abb12feeb3f2aeda86528c80d0350c2bd0923ab41"
 dependencies = [
  "futures-util",
- "http",
- "hyper",
+ "http 0.2.11",
+ "hyper 0.14.28",
  "jsonrpsee-core 0.22.5",
  "jsonrpsee-types 0.22.5",
  "pin-project",
@@ -5235,7 +5326,7 @@ version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e1b3975ed5d73f456478681a417128597acd6a2487855fdb7b4a3d4d195bf5e"
 dependencies = [
- "http",
+ "http 0.2.11",
  "jsonrpsee-client-transport",
  "jsonrpsee-core 0.16.3",
  "jsonrpsee-types 0.16.3",
@@ -6245,6 +6336,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mc-db",
+ "mc-telemetry",
  "mp-block",
  "mp-convert",
  "mp-felt",
@@ -6256,7 +6348,7 @@ dependencies = [
  "primitive-types",
  "rand 0.8.5",
  "rayon",
- "reqwest",
+ "reqwest 0.12.4",
  "rodio",
  "serde",
  "serde_json",
@@ -6269,6 +6361,40 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "mc-telemetry"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.13.1",
+ "bonsai-trie",
+ "chrono",
+ "futures",
+ "indexmap 2.2.6",
+ "itertools 0.12.1",
+ "log",
+ "mp-block",
+ "mp-convert",
+ "mp-felt",
+ "mp-transactions",
+ "mp-types",
+ "parity-scale-codec",
+ "rayon",
+ "reqwest 0.12.4",
+ "reqwest-websocket",
+ "rocksdb",
+ "serde",
+ "serde_json",
+ "starknet-core 0.10.0",
+ "starknet-ff 0.3.7",
+ "starknet-types-core",
+ "starknet_api",
+ "sysinfo",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -8405,9 +8531,9 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http",
- "http-body",
- "hyper",
+ "http 0.2.11",
+ "http-body 0.4.6",
+ "hyper 0.14.28",
  "hyper-rustls",
  "ipnet",
  "js-sys",
@@ -8430,7 +8556,59 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "webpki-roots 0.25.3",
- "winreg",
+ "winreg 0.50.0",
+]
+
+[[package]]
+name = "reqwest"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "566cafdd92868e0939d3fb961bd0dc25fcfaaed179291093b3d43e6b3150ea10"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "futures-core",
+ "futures-util",
+ "http 1.1.0",
+ "http-body 1.0.0",
+ "http-body-util",
+ "hyper 1.1.0",
+ "hyper-util",
+ "ipnet",
+ "js-sys",
+ "log",
+ "mime",
+ "once_cell",
+ "percent-encoding",
+ "pin-project-lite 0.2.13",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sync_wrapper",
+ "tokio",
+ "tower-service",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "winreg 0.52.0",
+]
+
+[[package]]
+name = "reqwest-websocket"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f577b873973670ae646078b04ca30fc5af08f40af0160af3242684c12d575983"
+dependencies = [
+ "async-tungstenite",
+ "futures-util",
+ "reqwest 0.12.4",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tungstenite 0.21.0",
+ "web-sys",
 ]
 
 [[package]]
@@ -9339,7 +9517,7 @@ name = "sc-rpc-server"
 version = "4.0.0-dev"
 source = "git+https://github.com/kasarlabs/polkadot-sdk?branch=release-polkadot-v1.3.0-std#c78d3ab6ffec9e4fd28a0ee853c3291b68d27246"
 dependencies = [
- "http",
+ "http 0.2.11",
  "jsonrpsee 0.16.3",
  "log",
  "serde_json",
@@ -10130,7 +10308,7 @@ dependencies = [
  "bytes",
  "flate2",
  "futures",
- "http",
+ "http 0.2.11",
  "httparse",
  "log",
  "rand 0.8.5",
@@ -11155,7 +11333,7 @@ dependencies = [
  "ethereum-types",
  "flate2",
  "log",
- "reqwest",
+ "reqwest 0.11.23",
  "serde",
  "serde_json",
  "serde_with",
@@ -11174,7 +11352,7 @@ dependencies = [
  "ethereum-types",
  "flate2",
  "log",
- "reqwest",
+ "reqwest 0.11.23",
  "serde",
  "serde_json",
  "serde_with",
@@ -11372,7 +11550,7 @@ name = "substrate-prometheus-endpoint"
 version = "0.10.0-dev"
 source = "git+https://github.com/kasarlabs/polkadot-sdk?branch=release-polkadot-v1.3.0-std#c78d3ab6ffec9e4fd28a0ee853c3291b68d27246"
 dependencies = [
- "hyper",
+ "hyper 0.14.28",
  "log",
  "prometheus",
  "thiserror",
@@ -11414,7 +11592,7 @@ dependencies = [
  "fs2",
  "hex",
  "once_cell",
- "reqwest",
+ "reqwest 0.11.23",
  "semver",
  "serde",
  "serde_json",
@@ -11495,6 +11673,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "sync_wrapper"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2047c6ded9c721764247e62cd3b03c09ffc529b2ba5b10ec482ae507a4a70160"
 
 [[package]]
 name = "synstructure"
@@ -11801,7 +11985,7 @@ dependencies = [
  "rustls 0.21.10",
  "tokio",
  "tokio-rustls",
- "tungstenite",
+ "tungstenite 0.20.1",
  "webpki-roots 0.25.3",
 ]
 
@@ -11884,6 +12068,7 @@ dependencies = [
  "futures-util",
  "pin-project",
  "pin-project-lite 0.2.13",
+ "tokio",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -11899,8 +12084,8 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-util",
- "http",
- "http-body",
+ "http 0.2.11",
+ "http-body 0.4.6",
  "http-range-header",
  "pin-project-lite 0.2.13",
  "tower-layer",
@@ -12159,11 +12344,30 @@ dependencies = [
  "byteorder",
  "bytes",
  "data-encoding",
- "http",
+ "http 0.2.11",
  "httparse",
  "log",
  "rand 0.8.5",
  "rustls 0.21.10",
+ "sha1",
+ "thiserror",
+ "url",
+ "utf-8",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ef1a641ea34f399a848dea702823bbecfb4c486f911735368f1f137cb8257e1"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "data-encoding",
+ "http 1.1.0",
+ "httparse",
+ "log",
+ "rand 0.8.5",
  "sha1",
  "thiserror",
  "url",
@@ -13054,6 +13258,16 @@ name = "winreg"
 version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "winreg"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a277a57398d4bfa075df44f501a17cfdf8542d224f0d36095a2adc7aee4ef0a5"
 dependencies = [
  "cfg-if",
  "windows-sys 0.48.0",

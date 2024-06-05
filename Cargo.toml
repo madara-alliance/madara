@@ -4,6 +4,7 @@ members = [
   "crates/client/sync",
   "crates/client/genesis-data-provider",
   "crates/client/rpc",
+  "crates/client/telemetry",
   "crates/node",
   "crates/pallets/starknet",
   "crates/pallets/starknet/runtime_api/",
@@ -194,6 +195,7 @@ mp-transactions = { path = "crates/primitives/transactions", default-features = 
 mp-types = { path = "crates/primitives/types", default-features = false }
 
 # Deoxys client
+mc-telemetry = { path = "crates/client/telemetry" }
 mc-db = { path = "crates/client/db" }
 mc-genesis-data-provider = { path = "crates/client/genesis-data-provider" }
 mc-rpc = { path = "crates/client/rpc" }
@@ -258,7 +260,7 @@ num-traits = "0.2.17"
 num-bigint = "0.4.4"
 primitive-types = "0.12.2"
 rand = "0.8.5"
-reqwest = { version = "0.11.22", default-features = false }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
 rstest = "0.18.1"
 scale-info = { version = "2.10.0", default-features = false, features = [
   "std",

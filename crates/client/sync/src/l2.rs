@@ -12,7 +12,7 @@ use mc_db::storage_handler::DeoxysStorageError;
 use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
 use mp_block::{BlockId, BlockTag, DeoxysBlock};
-use mp_felt::trim_hash;
+use mp_felt::{trim_hash, FeltWrapper};
 use serde::Deserialize;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_core::types::StateUpdate;
@@ -20,6 +20,7 @@ use starknet_providers::sequencer::models::StateUpdateWithBlock;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Duration;
+use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 
 use crate::commitments::lib::{build_commitment_state_diff, csd_calculate_state_root};
 use crate::convert::convert_block;
@@ -84,6 +85,7 @@ async fn l2_verify_and_apply_task(
     backup_every_n_blocks: Option<u64>,
     block_metrics: Option<BlockMetrics>,
     sync_timer: Arc<Mutex<Option<Instant>>>,
+    telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
     while let Some(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update }) =
         pin!(updates_receiver.recv()).await
@@ -158,6 +160,20 @@ async fn l2_verify_and_apply_task(
             trim_hash(&block_hash.into()),
             trim_hash(&global_state_root.into())
         );
+        log::debug!(
+            "Imported #{} ({:#x}) and updated state root ({:#x})",
+            block_n,
+            block_hash.into_field_element(),
+            global_state_root.into_field_element()
+        );
+
+        telemetry.send(VerbosityLevel::Info, serde_json::json!({
+            "best": format!("{:#x}", block_hash.into_field_element()),
+            "height": block_n,
+            "origin": "Own",
+            "msg": "block.import",
+        }));
+
         // compact DB every 1k blocks
         if block_n % 1000 == 0 {
             DeoxysBackend::compact();
@@ -277,6 +293,7 @@ pub async fn sync(
     config: L2SyncConfig,
     block_metrics: Option<BlockMetrics>,
     chain_id: StarkFelt,
+    telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(30);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(30);
@@ -310,6 +327,7 @@ pub async fn sync(
         config.backup_every_n_blocks,
         block_metrics,
         Arc::clone(&sync_timer),
+        telemetry,
     ));
     let mut pending_block_task = tokio::spawn(l2_pending_block_task(once_caught_up_cb_receiver, provider, chain_id));
 
