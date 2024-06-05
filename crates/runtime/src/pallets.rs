@@ -2,25 +2,17 @@
 //! The pallets used in the runtime are configured here.
 //! This file is used to generate the `construct_runtime!` macro.
 pub use frame_support::traits::{
-    ConstBool, ConstU128, ConstU32, ConstU64, ConstU8, KeyOwnerProofSystem, OnTimestampSet, Randomness, StorageInfo,
+    ConstBool, ConstU32, ConstU64, OnTimestampSet,
 };
-pub use frame_support::weights::constants::{
-    BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight, WEIGHT_REF_TIME_PER_SECOND,
-};
-pub use frame_support::weights::{IdentityFee, Weight};
-pub use frame_support::{construct_runtime, parameter_types, StorageValue};
-pub use frame_system::Call as SystemCall;
-pub use mp_program_hash::SN_OS_PROGRAM_HASH;
+pub use frame_support::weights::constants::RocksDbWeight;
+pub use frame_support::StorageValue;
 use mp_types::block::DHashT;
 use mp_types::transactions::DTxIndexT;
 /// Import the StarkNet pallet.
 pub use pallet_starknet;
-pub use pallet_timestamp::Call as TimestampCall;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::traits::{AccountIdLookup, BlakeTwo256};
 #[cfg(any(feature = "std", test))]
-pub use sp_runtime::BuildStorage;
-pub use sp_runtime::{Perbill, Permill};
 use sp_std::marker::PhantomData;
 
 use crate::*;

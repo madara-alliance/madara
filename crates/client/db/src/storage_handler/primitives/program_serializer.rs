@@ -57,8 +57,7 @@ pub struct ReferenceSerializerWrapper {
     pub value_address: ValueAddress,
 }
 
-#[cfg_attr(all(feature = "arbitrary", feature = "std"), derive(Arbitrary, Clone))]
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct DebugInfoWrapper {
     pub(crate) instruction_locations: BTreeMap<usize, InstructionLocation>,
 }

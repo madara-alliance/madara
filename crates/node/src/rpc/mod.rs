@@ -17,7 +17,6 @@ use mp_types::transactions::DTxIndexT;
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_consensus_manual_seal::rpc::EngineCommand;
 pub use sc_rpc_api::DenyUnsafe;
-use sc_transaction_pool::{ChainApi, Pool};
 use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_block_builder::BlockBuilder;
@@ -25,13 +24,11 @@ use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 pub use starknet::StarknetDeps;
 
 /// Full client dependencies.
-pub struct FullDeps<A: ChainApi, C, G: GenesisProvider, P> {
+pub struct FullDeps<C, G: GenesisProvider, P> {
     /// The client instance to use.
     pub client: Arc<C>,
     /// Transaction pool instance.
     pub pool: Arc<P>,
-    /// Extrinsic pool graph instance.
-    pub graph: Arc<Pool<A>>,
     /// Whether to deny unsafe calls
     pub deny_unsafe: DenyUnsafe,
     /// Manual seal command sink
@@ -41,11 +38,10 @@ pub struct FullDeps<A: ChainApi, C, G: GenesisProvider, P> {
 }
 
 /// Instantiate all full RPC extensions.
-pub fn create_full<A, C, G, P, BE>(
-    deps: FullDeps<A, C, G, P>,
+pub fn create_full<C, G, P, BE>(
+    deps: FullDeps<C, G, P>,
 ) -> Result<RpcModule<()>, Box<dyn std::error::Error + Send + Sync>>
 where
-    A: ChainApi<Block = DBlockT> + 'static,
     C: ProvideRuntimeApi<DBlockT>,
     C: HeaderBackend<DBlockT>
         + BlockBackend<DBlockT>

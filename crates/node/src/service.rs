@@ -260,14 +260,12 @@ pub fn new_full(
     let rpc_extensions_builder = {
         let client = client.clone();
         let pool = transaction_pool.clone();
-        let graph = transaction_pool.pool().clone();
         let command_sink = command_sink.clone();
 
         Box::new(move |deny_unsafe, _| {
             let deps = crate::rpc::FullDeps {
                 client: client.clone(),
                 pool: pool.clone(),
-                graph: graph.clone(),
                 deny_unsafe,
                 starknet: starknet_rpc_params.clone(),
                 command_sink: command_sink.clone(),
