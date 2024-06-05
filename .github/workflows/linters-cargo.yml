@@ -15,7 +15,7 @@ jobs:
           shared-key: "cache"
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2024-06-04
+          toolchain: 1.78
           components: rustfmt, clippy
 
       - name: Setup build deps

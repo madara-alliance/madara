@@ -23,7 +23,7 @@ where
     // safe to unwrap because we know that the StarkFelt is a valid FieldElement
     block
         .transactions_hashes::<H>(chain_id.0.into(), Some(block.header().block_number))
-        .map(|tx_hash| FieldElement::from_bytes_be(&tx_hash.0.0).unwrap())
+        .map(|tx_hash| FieldElement::from_bytes_be(&tx_hash.0 .0).unwrap())
         .collect()
 }
 

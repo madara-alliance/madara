@@ -63,7 +63,11 @@ mod reexport_for_client_only {
         /// Try to create an instance ouf of the given identifier and data.
         // TODO: Bad name. This let think that it uses the trait TryFrom
         pub fn try_from(id: &InherentIdentifier, mut data: &[u8]) -> Option<Self> {
-            if id == &INHERENT_IDENTIFIER { <InherentError as Decode>::decode(&mut data).ok() } else { None }
+            if id == &INHERENT_IDENTIFIER {
+                <InherentError as Decode>::decode(&mut data).ok()
+            } else {
+                None
+            }
         }
     }
 

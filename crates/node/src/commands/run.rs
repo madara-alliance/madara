@@ -220,7 +220,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         let mut fetch_block_config = cli.run.network.block_fetch_config();
         fetch_block_config.sound = cli.run.sound;
         fetch_block_config.verify = !cli.run.disable_root;
-        fetch_block_config.api_key = cli.run.gateway_key.clone();
+        fetch_block_config.api_key.clone_from(&cli.run.gateway_key);
         fetch_block_config.sync_polling_interval =
             if cli.run.no_sync_polling { None } else { Some(Duration::from_secs(cli.run.sync_polling_interval)) };
         fetch_block_config.n_blocks_to_sync = cli.run.n_blocks_to_sync;

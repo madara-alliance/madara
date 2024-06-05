@@ -29,7 +29,7 @@ pub fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<F
         .iter()
         .par_bridge()
         .map(|(class_hash, compiled_class_hash)| {
-            let compiled_class_hash = FieldElement::from_bytes_be(&compiled_class_hash.0.0).unwrap();
+            let compiled_class_hash = FieldElement::from_bytes_be(&compiled_class_hash.0 .0).unwrap();
 
             let hash = PoseidonHasher::hash_elements(CONTRACT_CLASS_HASH_VERSION, compiled_class_hash);
 

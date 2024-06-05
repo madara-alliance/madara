@@ -1,9 +1,4 @@
 #![allow(deprecated)]
-#![feature(let_chains)]
-
-// use std::sync::Arc;
-// use sp_runtime::traits::Block as BlockT;
-// use reqwest::Url;
 
 pub mod commitments;
 pub mod fetch;

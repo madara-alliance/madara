@@ -14,8 +14,8 @@ pub struct ContractAddressStorageKey([u8; 64]);
 impl From<(ContractAddress, StorageKey)> for ContractAddressStorageKey {
     fn from(value: (ContractAddress, StorageKey)) -> Self {
         let mut key = [0u8; 64];
-        key[..32].copy_from_slice(value.0.0.0.bytes());
-        key[32..].copy_from_slice(value.1.0.0.bytes());
+        key[..32].copy_from_slice(value.0 .0 .0.bytes());
+        key[32..].copy_from_slice(value.1 .0 .0.bytes());
         Self(key)
     }
 }

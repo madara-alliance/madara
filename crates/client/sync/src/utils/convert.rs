@@ -197,7 +197,11 @@ fn deploy_account_transaction(tx: p::DeployAccountTransaction) -> DeployAccountT
 
 // TODO: implement something better than this
 fn deploy_account_transaction_version(tx: &p::DeployAccountTransaction) -> u8 {
-    if tx.resource_bounds.is_some() { 3 } else { 1 }
+    if tx.resource_bounds.is_some() {
+        3
+    } else {
+        1
+    }
 }
 
 fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {

@@ -45,7 +45,7 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
             )
         },
     );
-    let from_address = FieldElement::from(Felt252Wrapper::from(event.from_address.0.0));
+    let from_address = FieldElement::from(Felt252Wrapper::from(event.from_address.0 .0));
     H::compute_hash_on_elements(&[from_address, keys_hash, data_hash])
 }
 

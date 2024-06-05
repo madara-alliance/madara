@@ -63,7 +63,11 @@ impl BonsaiDatabase for BonsaiDb<'_> {
         Ok(iter
             .map_while(|kv| {
                 if let Ok((key, value)) = kv {
-                    if key.starts_with(prefix.as_slice()) { Some((key.to_vec(), value.to_vec())) } else { None }
+                    if key.starts_with(prefix.as_slice()) {
+                        Some((key.to_vec(), value.to_vec()))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -163,7 +167,11 @@ impl<'db> BonsaiDatabase for BonsaiTransaction<'db> {
         Ok(iter
             .map_while(|kv| {
                 if let Ok((key, value)) = kv {
-                    if key.starts_with(prefix.as_slice()) { Some((key.to_vec(), value.to_vec())) } else { None }
+                    if key.starts_with(prefix.as_slice()) {
+                        Some((key.to_vec(), value.to_vec()))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }

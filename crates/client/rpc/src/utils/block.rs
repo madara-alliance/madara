@@ -19,7 +19,7 @@ pub(crate) fn timestamp(block: &DeoxysBlock) -> u64 {
 
 pub(crate) fn sequencer_address(block: &DeoxysBlock) -> FieldElement {
     // safe unwrap() FieldElement from Starkfelt
-    FieldElement::from_bytes_be(&block.header().sequencer_address.0.0.0).unwrap()
+    FieldElement::from_bytes_be(&block.header().sequencer_address.0 .0 .0).unwrap()
 }
 
 pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
