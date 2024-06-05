@@ -272,9 +272,7 @@ impl ComputeTransactionHash for DeclareTransactionV0V1 {
         offset_version: bool,
         block_number: Option<u64>,
     ) -> TransactionHash {
-        let prefix =
-            Felt::from_bytes_be_slice(DECLARE_PREFIX);
-
+        let prefix = Felt::from_bytes_be_slice(DECLARE_PREFIX);
         let version = if offset_version {
             SIMULATE_TX_VERSION_OFFSET_FELT
         } else {
@@ -283,18 +281,19 @@ impl ComputeTransactionHash for DeclareTransactionV0V1 {
                 _ => Felt::ONE,
             }
         };
+        
         let sender_address = Felt::from_bytes_be(&self.sender_address.0.0.0);
         let entrypoint_selector = Felt::ZERO;
         let max_fee = Felt::from(self.max_fee.0);
-
+        
         let class_hash_as_felt = Felt::from_bytes_be(&self.class_hash.0.0);
-
+        
         let nonce_or_class_hash: Felt = if version == Felt::ZERO {
             class_hash_as_felt
         } else {
             Felt::from_bytes_be(&self.nonce.0.0)
         };
-
+        
         let class_or_nothing_hash = if version == Felt::ZERO {
             Pedersen::hash_array(&[])
         } else {
@@ -321,16 +320,19 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
-        let prefix = FieldElement::from_byte_slice_be(DECLARE_PREFIX).unwrap();
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::TWO } else { FieldElement::TWO };
-        let sender_address = Felt252Wrapper::from(self.sender_address).into();
-        let entrypoint_selector = FieldElement::ZERO;
-        let calldata = compute_hash_on_elements(&[Felt252Wrapper::from(self.class_hash).into()]);
-        let max_fee = FieldElement::from(self.max_fee.0);
-        let nonce = Felt252Wrapper::from(self.nonce).into();
-        let compiled_class_hash = Felt252Wrapper::from(self.compiled_class_hash).into();
+        let prefix = Felt::from_bytes_be_slice(DECLARE_PREFIX);
 
-        Felt252Wrapper(H::compute_hash_on_elements(&[
+        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::TWO } else { Felt::TWO };
+        let sender_address = Felt::from_bytes_be(&self.sender_address.0.0.0);
+        let entrypoint_selector = Felt::ZERO;
+
+        let calldata = Pedersen::hash_array(&[Felt::from_bytes_be(&self.class_hash.0.0)]);
+        
+        let max_fee = Felt::from(self.max_fee.0);
+        let nonce = Felt::from_bytes_be(&self.nonce.0.0);
+        let compiled_class_hash = Felt::from_bytes_be(&self.compiled_class_hash.0.0);
+
+        TransactionHash(StarkFelt(Pedersen::hash_array(&[
             prefix,
             version,
             sender_address,
@@ -340,8 +342,7 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
             chain_id.into(),
             nonce,
             compiled_class_hash,
-        ]))
-        .into()
+            ]).to_bytes_be()))
     }
 }
 
