@@ -83,7 +83,14 @@ impl TelemetryService {
             }))
             .await;
 
-            while let Some(event) = rx.recv().await {
+            let rx = &mut rx;
+
+            while let Some(event) = tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    None
+                }
+                res = rx.recv() => res,
+            } {
                 log::debug!(
                     "Sending telemetry event '{}'.",
                     event.message.get("msg").and_then(|e| e.as_str()).unwrap_or("<unknown>")

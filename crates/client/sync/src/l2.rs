@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use anyhow::{bail, Context};
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{stream, StreamExt};
 use mc_db::mapping_db::MappingDbError;
 use mc_db::rocksdb::WriteBatchWithTransaction;
 use mc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
@@ -29,7 +29,7 @@ use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::metrics::block_metrics::BlockMetrics;
 use crate::stopwatch_end;
-use crate::utils::PerfStopwatch;
+use crate::utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
 
 /// Prefer this compared to [`tokio::spawn_blocking`], as spawn_blocking creates new OS threads and
 /// we don't really need that
@@ -89,7 +89,7 @@ async fn l2_verify_and_apply_task(
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
     while let Some(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update }) =
-        pin!(updates_receiver.recv()).await
+        channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await
     {
         let block_n = converted_block.block_n();
         let block_hash = *converted_block.block_hash();
@@ -208,23 +208,27 @@ async fn l2_block_conversion_task(
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
     let conversion_stream = stream::unfold((updates_receiver, chain_id), |(mut updates_recv, chain_id)| async move {
-        updates_recv.recv().await.map(|L2BlockAndUpdates { block, state_update, class_update, .. }| {
+        channel_wait_or_graceful_shutdown(updates_recv.recv()).await.map(|L2BlockAndUpdates { block, state_update, class_update, .. }| {
             (
                 spawn_compute(move || {
                     let sw = PerfStopwatch::new();
                     let converted_block = convert_block(block, chain_id).context("converting block")?;
                     stopwatch_end!(sw, "convert_block: {:?}");
-                    Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
+                    anyhow::Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
                 }),
                 (updates_recv, chain_id),
             )
         })
     });
 
-    conversion_stream
-        .buffered(10)
-        .try_for_each(|block| async { output.send(block).await.context("downstream task is not running").map(|_| {}) })
-        .await
+    let mut stream = pin!(conversion_stream.buffered(10));
+    while let Some(block) = channel_wait_or_graceful_shutdown(stream.next()).await {
+        if output.send(block?).await.is_err() {
+            // channel closed
+            break;
+        }
+    }
+    Ok(())
 }
 
 async fn l2_pending_block_task(
@@ -241,13 +245,14 @@ async fn l2_pending_block_task(
     }
 
     // we start the pending block task only once the node has been fully sync
-    sync_finished_cb.await.context("sync is not running")?;
+    if sync_finished_cb.await.is_err() {
+        // channel closed
+        return Ok(())
+    }
 
     let mut interval = tokio::time::interval(Duration::from_secs(2)); // TODO(cli): make interval configurable
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        interval.tick().await;
-
+    while let Some(_) = wait_or_graceful_shutdown(interval.tick()).await {
         let storage = DeoxysBackend::mapping();
 
         let StateUpdateWithBlock { state_update, block } = provider
@@ -256,7 +261,7 @@ async fn l2_pending_block_task(
             .context("getting pending block from sequencer")?;
 
         let block_n_best = storage.get_block_n(&BlockId::Tag(BlockTag::Latest))?.unwrap_or(0);
-        let Some(block_n_pending_min_1) = block.block_number.unwrap().checked_sub(1) else {
+        let Some(block_n_pending_min_1) = block.block_number.context("no block in db")?.checked_sub(1) else {
             bail!("Pending block is genesis")
         };
 
@@ -277,6 +282,8 @@ async fn l2_pending_block_task(
 
         log::debug!("l2_pending_block_task: wrote pending block");
     }
+
+    Ok(())
 }
 
 pub struct L2SyncConfig {
@@ -288,10 +295,7 @@ pub struct L2SyncConfig {
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-/// `n_blocks` is optionally the total number of blocks to sync, for debugging/benchmark purposes.
 pub async fn sync(
-    // block_sender: Sender<DeoxysBlock>,
-    // command_sink: CommandSink,
     provider: SequencerGatewayProvider,
     config: L2SyncConfig,
     block_metrics: Option<BlockMetrics>,

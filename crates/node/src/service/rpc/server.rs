@@ -18,6 +18,7 @@ use jsonrpsee::server::middleware::http::{HostFilterLayer, ProxyGetRequestLayer}
 use jsonrpsee::server::middleware::rpc::RpcServiceBuilder;
 use jsonrpsee::server::{stop_channel, ws, BatchRequestConfig, PingConfig, StopHandle, TowerServiceBuilder};
 use jsonrpsee::{Methods, RpcModule};
+use mc_sync::utils::wait_or_graceful_shutdown;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tower::Service;
@@ -186,7 +187,7 @@ pub async fn start_server(
 
     join_set.spawn(async move {
         let graceful = server.with_graceful_shutdown(async move { stop_handle.shutdown().await });
-        let _ = graceful.await;
+        let _ = wait_or_graceful_shutdown(graceful).await;
         Ok(())
     });
 

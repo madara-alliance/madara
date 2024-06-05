@@ -20,6 +20,7 @@ use starknet_api::hash::StarkHash;
 
 use crate::metrics::block_metrics::BlockMetrics;
 use crate::utility::convert_log_state_update;
+use crate::utils::channel_wait_or_graceful_shutdown;
 use crate::utils::constant::LOG_STATE_UPDTATE_TOPIC;
 
 /// Contains the Starknet verified state on L1
@@ -157,7 +158,7 @@ impl EthereumClient {
 
         let mut event_stream = event_filter.stream().await.context("initiatializing event stream")?;
 
-        while let Some(event_result) = event_stream.next().await {
+        while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
             let log = event_result.context("listening for events")?;
             let format_event =
                 convert_log_state_update(log.clone()).context("formatting event into an L1StateUpdate")?;

@@ -18,16 +18,13 @@ pub mod starknet_sync_worker {
     use anyhow::Context;
     use mc_db::DeoxysBackend;
     use mc_telemetry::TelemetryHandle;
-    use mp_convert::state_update::ToStateUpdateCore;
     use mp_felt::FeltWrapper;
     use reqwest::Url;
     use starknet_ff::FieldElement;
-    use starknet_providers::sequencer::models::BlockId;
     use starknet_providers::SequencerGatewayProvider;
 
     use self::fetch::fetchers::FetchConfig;
     use super::*;
-    use crate::l2::verify_l2;
     use crate::metrics::block_metrics::BlockMetrics;
 
     #[allow(clippy::too_many_arguments)]
@@ -65,18 +62,9 @@ pub mod starknet_sync_worker {
             None => provider,
         };
 
-        if starting_block == 1 {
-            let state_update = provider
-                .get_state_update(BlockId::Number(0))
-                .await
-                .context("getting state update for genesis block")?
-                .to_state_update_core();
-            verify_l2(0, &state_update)?;
-        }
-
-        tokio::select!(
-            res = l1::sync(l1_url.clone(), block_metrics.clone(), l1_core_address) => res.context("syncing L1 state")?,
-            res = l2::sync(
+        tokio::try_join!(
+            l1::sync(l1_url.clone(), block_metrics.clone(), l1_core_address),
+            l2::sync(
                 provider,
                 L2SyncConfig {
                     first_block: starting_block,
@@ -88,9 +76,8 @@ pub mod starknet_sync_worker {
                 block_metrics,
                 chain_id,
                 telemetry,
-            ) => res.context("syncing L2 state")?,
-            _ = tokio::signal::ctrl_c() => {}, // graceful shutdown
-        );
+            ),
+        )?;
 
         Ok(())
     }
