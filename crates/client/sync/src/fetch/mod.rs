@@ -61,8 +61,7 @@ pub async fn l2_fetch_task(
 
         let mut interval = tokio::time::interval(sync_polling_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        while let Some(_) = wait_or_graceful_shutdown(interval.tick()).await {
-
+        while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
             loop {
                 match fetch_block_and_updates(next_block, Arc::clone(&provider)).await {
                     Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {

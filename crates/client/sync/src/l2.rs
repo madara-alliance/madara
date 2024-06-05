@@ -208,17 +208,19 @@ async fn l2_block_conversion_task(
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
     let conversion_stream = stream::unfold((updates_receiver, chain_id), |(mut updates_recv, chain_id)| async move {
-        channel_wait_or_graceful_shutdown(updates_recv.recv()).await.map(|L2BlockAndUpdates { block, state_update, class_update, .. }| {
-            (
-                spawn_compute(move || {
-                    let sw = PerfStopwatch::new();
-                    let converted_block = convert_block(block, chain_id).context("converting block")?;
-                    stopwatch_end!(sw, "convert_block: {:?}");
-                    anyhow::Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
-                }),
-                (updates_recv, chain_id),
-            )
-        })
+        channel_wait_or_graceful_shutdown(updates_recv.recv()).await.map(
+            |L2BlockAndUpdates { block, state_update, class_update, .. }| {
+                (
+                    spawn_compute(move || {
+                        let sw = PerfStopwatch::new();
+                        let converted_block = convert_block(block, chain_id).context("converting block")?;
+                        stopwatch_end!(sw, "convert_block: {:?}");
+                        anyhow::Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
+                    }),
+                    (updates_recv, chain_id),
+                )
+            },
+        )
     });
 
     let mut stream = pin!(conversion_stream.buffered(10));
@@ -247,12 +249,12 @@ async fn l2_pending_block_task(
     // we start the pending block task only once the node has been fully sync
     if sync_finished_cb.await.is_err() {
         // channel closed
-        return Ok(())
+        return Ok(());
     }
 
     let mut interval = tokio::time::interval(Duration::from_secs(2)); // TODO(cli): make interval configurable
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    while let Some(_) = wait_or_graceful_shutdown(interval.tick()).await {
+    while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
         let storage = DeoxysBackend::mapping();
 
         let StateUpdateWithBlock { state_update, block } = provider

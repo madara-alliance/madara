@@ -1,6 +1,7 @@
 #![macro_use]
 #![allow(clippy::new_without_default)]
-use std::{sync::atomic::{AtomicBool, Ordering}, time::{Duration, Instant}};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use futures::Future;
 
