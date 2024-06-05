@@ -44,12 +44,10 @@ pub fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<F
 
 #[cfg(test)]
 mod tests {
-    use starknet_types_core::felt::Felt;
-
-    use crate::commitments::classes::CONTRACT_CLASS_HASH_VERSION;
+    use super::*;
 
     #[test]
     fn test_contract_class_hash_version() {
-        assert_eq!(CONTRACT_CLASS_HASH_VERSION, Felt::from_hex("CONTRACT_CLASS_LEAF_V0").unwrap());
+        assert_eq!(CONTRACT_CLASS_HASH_VERSION, Felt::from_bytes_be_slice("CONTRACT_CLASS_LEAF_V0".as_bytes()));
     }
 }

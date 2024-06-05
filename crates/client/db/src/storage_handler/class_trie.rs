@@ -74,7 +74,6 @@ impl ClassTrieViewMut<'_> {
     pub fn update(&mut self, updates: Vec<(&ClassHash, Felt)>) -> Result<(), DeoxysStorageError> {
         for (key, value) in updates {
             let key = conv_class_key(key);
-            let value = Felt::from_bytes_be(&value.to_bytes_be());
             self.0
                 .insert(bonsai_identifier::CLASS, &key, &value)
                 .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?;
