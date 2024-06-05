@@ -24,7 +24,7 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Duration;
 
-use crate::commitments::lib::{build_commitment_state_diff, update_state_root};
+use crate::commitments::{build_commitment_state_diff, update_state_root};
 use crate::convert::{convert_block, ConvertedBlock};
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
