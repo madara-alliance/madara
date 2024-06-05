@@ -3,6 +3,7 @@
 ## Next release
 
 - chore: update dependencies
+- feat(infra): Added boilerplate to deploy a grafana/prometheus dashboard
 - refacor: use db hash
 - refactor: l2-sync
 - refactor: remove crate mp-mapping-sync

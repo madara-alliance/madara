@@ -1,0 +1,128 @@
+version: "3.8"
+
+services:
+  deoxys:
+    build:
+      context: ../../deoxys
+      dockerfile: Dockerfile
+    container_name: deoxys
+    restart: unless-stopped
+    ports:
+      - "9944:9944"
+      - "9615:9615"
+    volumes:
+      - /var/lib/deoxys:/var/lib/deoxys
+    command:
+      [
+        "--deoxys",
+        "--rpc-port",
+        "9944",
+        "--network",
+        "main",
+        "--rpc-external",
+        "--rpc-cors",
+        "*",
+        "--rpc-methods",
+        "Safe",
+        "--l1-endpoint",
+        "${DEOXYS_ETHEREUM_API_URL}",
+        "--rpc-max-connections",
+        "100",
+        "--base-path",
+        "/var/lib/deoxys",
+        "--prometheus-external",
+      ]
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    links:
+      - cadvisor:cadvisor
+      - influxdb:influxdb
+    depends_on:
+      - cadvisor
+      - influxdb
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - /:/host:ro,rslave
+    command:
+      - "--path.rootfs=/host"
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - --collector.filesystem.ignored-mount-points
+      - "^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)"
+    ports:
+      - "9100:9100"
+
+  cadvisor:
+    container_name: cadvisor
+    image: gcr.io/cadvisor/cadvisor:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - "/:/rootfs"
+      - "/var/run:/var/run"
+      - "/sys:/sys"
+      - "/var/lib/docker/:/var/lib/docker"
+      - "/dev/disk/:/dev/disk"
+    privileged: true
+    devices:
+      - "/dev/kmsg"
+
+  grafana:
+    image: grafana/grafana
+    user: "472"
+    container_name: grafana
+    ports:
+      - 3001:3000
+    restart: unless-stopped
+    volumes:
+      - ./grafana/dashboard.yml:/etc/grafana/provisioning/dashboards/main.yml
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/datasources/datasource.yml:/etc/grafana/provisioning/datasources/main.yml
+
+  influxdb:
+    container_name: influxdb
+    image: influxdb:latest
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    volumes:
+      - ./influxdb:/var/lib/influxdb
+    environment:
+      - INFLUXDB_DB=mydb
+      - INFLUXDB_HTTP_AUTH_ENABLED=true
+      - INFLUXDB_ADMIN_USER=admin
+      - INFLUXDB_ADMIN_PASSWORD=adminpassword
+      - INFLUXDB_USER=user
+      - INFLUXDB_USER_PASSWORD=userpassword
+
+  telegraf:
+    container_name: telegraf
+    image: telegraf:latest
+    restart: unless-stopped
+    volumes:
+      - ./telegraf/etc/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - /var/lib/deoxys:/var/lib/deoxys
+    depends_on:
+      - influxdb
+    links:
+      - influxdb
+    ports:
+      - "8125:8125"
+
+networks:
+  loki-net:
+    external: true
