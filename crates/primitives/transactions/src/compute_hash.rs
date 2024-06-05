@@ -14,7 +14,7 @@ use starknet_api::transaction::{
     ResourceBoundsMapping, Transaction, TransactionHash,
 };
 use starknet_core::crypto::compute_hash_on_elements;
-use starknet_core::utils::starknet_keccak;
+use starknet_core::utils::{starknet_keccak};
 use starknet_crypto::FieldElement;
 
 use starknet_types_core::hash::{Pedersen, StarkHash}; //, Poseidon};
@@ -479,18 +479,16 @@ impl ComputeTransactionHash for DeployTransaction {
         block_number: Option<u64>,
     ) -> TransactionHash {
         let chain_id = chain_id.into();
-        let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
+        let constructor_calldata = convert_calldata_as_felt(self.constructor_calldata.clone());
 
-        let contract_address = Felt252Wrapper::from(
-            calculate_contract_address(
+        let contract_address = Felt::from_bytes_be(
+            &calculate_contract_address(
                 self.contract_address_salt,
                 self.class_hash,
                 &self.constructor_calldata,
                 Default::default(),
-            )
-            .unwrap(),
-        )
-        .into();
+            ).unwrap().0.0.0
+        );
 
         compute_hash_given_contract_address::<H>(
             self.clone(),
@@ -607,38 +605,38 @@ impl ComputeTransactionHash for L1HandlerTransaction {
 
 pub fn compute_hash_given_contract_address<H: HasherT>(
     transaction: DeployTransaction,
-    chain_id: FieldElement,
-    contract_address: FieldElement,
+    chain_id: Felt,
+    contract_address: Felt,
     _is_query: bool,
     block_number: Option<u64>,
-    constructor_calldata: &[FieldElement],
+    constructor_calldata: &[Felt],
 ) -> TransactionHash {
-    let prefix = FieldElement::from_byte_slice_be(DEPLOY_PREFIX).unwrap();
-    let version = Felt252Wrapper::from(transaction.version.0).into();
-    let constructor_calldata = compute_hash_on_elements(constructor_calldata);
+    let prefix = Felt::from_bytes_be_slice(DEPLOY_PREFIX);
+    let version = Felt::from_bytes_be(&transaction.version.0.0).into();
+    
+    let constructor_calldata = Pedersen::hash_array(constructor_calldata);
 
-    let constructor = starknet_keccak(b"constructor");
+    let constructor = Felt::from_bytes_be(
+        &starknet_keccak(b"constructor").to_bytes_be());
 
     if block_number > Some(LEGACY_BLOCK_NUMBER) {
-        Felt252Wrapper(H::compute_hash_on_elements(&[
+        TransactionHash(StarkFelt(Pedersen::hash_array(&[
             prefix,
             version,
             contract_address,
             constructor,
             constructor_calldata,
-            FieldElement::ZERO,
+            Felt::ZERO,
             chain_id,
-        ]))
-        .into()
+        ]).to_bytes_be()))
     } else {
-        Felt252Wrapper(H::compute_hash_on_elements(&[
+        TransactionHash(StarkFelt(Pedersen::hash_array(&[
             prefix,
             contract_address,
             constructor,
             constructor_calldata,
             chain_id,
-        ]))
-        .into()
+        ]).to_bytes_be()))
     }
 }
 
