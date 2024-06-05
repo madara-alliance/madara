@@ -23,5 +23,5 @@ use crate::Starknet;
 /// transactions. In case the specified block is not found, returns a `StarknetRpcApiError` with
 /// `BlockNotFound`.
 pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
-    Ok(get_block::get_block_with_txs(starknet, &block_id.into())?)
+    get_block::get_block_with_txs(starknet, &block_id.into())
 }

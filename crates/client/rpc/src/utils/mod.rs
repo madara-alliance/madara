@@ -13,15 +13,15 @@ use crate::StarknetRpcApiError;
 macro_rules! bail_internal_server_error {
     ($msg:literal $(,)?) => {{
         log::error!("{:#}:", anyhow::anyhow!($msg));
-        return ::core::result::Result::Err(crate::StarknetRpcApiError::InternalServerError.into())
+        return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     }};
     ($err:expr $(,)?) => {
         log::error!("{:#}:", anyhow::anyhow!($err));
-        return ::core::result::Result::Err(crate::StarknetRpcApiError::InternalServerError.into())
+        return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     };
     ($fmt:expr, $($arg:tt)*) => {
         log::error!("{:#}:", anyhow::anyhow!($fmt, $($arg)*));
-        return ::core::result::Result::Err(crate::StarknetRpcApiError::InternalServerError.into())
+        return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     };
 }
 

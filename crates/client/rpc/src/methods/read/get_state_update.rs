@@ -26,7 +26,7 @@ use crate::Starknet;
 /// state update or a pending state update. If the block is not found, returns a
 /// `StarknetRpcApiError` with `BlockNotFound`.
 pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate> {
-    let block = starknet.get_block_info(block_id.clone())?;
+    let block = starknet.get_block_info(block_id)?;
     let new_root = block.header().global_state_root.into_field_element();
     let block_hash = block.block_hash().into_field_element();
 

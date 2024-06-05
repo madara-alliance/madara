@@ -45,5 +45,5 @@ pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: FieldEleme
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
     let tx =
         block.transactions().get(tx_info.tx_index).ok_or_internal_server_error("Storage block transaction mismatch")?;
-    Ok(to_starknet_core_tx(&tx, transaction_hash))
+    Ok(to_starknet_core_tx(tx, transaction_hash))
 }

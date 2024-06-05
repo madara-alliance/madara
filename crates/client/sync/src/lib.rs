@@ -30,6 +30,7 @@ pub mod starknet_sync_worker {
     use crate::l2::verify_l2;
     use crate::metrics::block_metrics::BlockMetrics;
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn sync(
         fetch_config: FetchConfig,
         l1_url: Url,
@@ -42,7 +43,6 @@ pub mod starknet_sync_worker {
     ) -> anyhow::Result<()> {
         // let starting_block = starting_block + 1;
         let chain_id = chain_id.into_stark_felt();
-
 
         let starting_block = if let Some(starting_block) = starting_block {
             starting_block
@@ -79,7 +79,7 @@ pub mod starknet_sync_worker {
             res = l2::sync(
                 provider,
                 L2SyncConfig {
-                    first_block: starting_block.into(),
+                    first_block: starting_block,
                     n_blocks_to_sync: fetch_config.n_blocks_to_sync,
                     verify: fetch_config.verify,
                     sync_polling_interval: fetch_config.sync_polling_interval,
@@ -88,7 +88,8 @@ pub mod starknet_sync_worker {
                 block_metrics,
                 chain_id,
                 telemetry,
-            ) => res.context("syncing L2 state")?
+            ) => res.context("syncing L2 state")?,
+            _ = tokio::signal::ctrl_c() => {}, // graceful shutdown
         );
 
         Ok(())

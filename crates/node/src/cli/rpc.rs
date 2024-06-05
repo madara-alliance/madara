@@ -1,9 +1,7 @@
-use std::{
-    convert::Infallible,
-    net::{Ipv4Addr, SocketAddr},
-    num::NonZeroU32,
-    str::FromStr,
-};
+use std::convert::Infallible;
+use std::net::{Ipv4Addr, SocketAddr};
+use std::num::NonZeroU32;
+use std::str::FromStr;
 
 use clap::ValueEnum;
 use ip_network::IpNetwork;
@@ -60,11 +58,7 @@ impl FromStr for Cors {
             }
         }
 
-        if is_all {
-            Ok(Cors::All)
-        } else {
-            Ok(Cors::List(origins))
-        }
+        if is_all { Ok(Cors::All) } else { Ok(Cors::List(origins)) }
     }
 }
 
@@ -166,7 +160,7 @@ pub struct RpcParams {
 
 impl RpcParams {
     pub fn cors(&self) -> Option<Vec<String>> {
-        let cors = self.rpc_cors.clone().map(|c| c).unwrap_or_else(|| {
+        let cors = self.rpc_cors.clone().unwrap_or_else(|| {
             Cors::List(vec![
                 "http://localhost:*".into(),
                 "http://127.0.0.1:*".into(),
@@ -187,19 +181,17 @@ impl RpcParams {
         } else {
             Ipv4Addr::LOCALHOST
         };
-        let rpc_addr = SocketAddr::new(interface.into(), self.rpc_port);
-        rpc_addr
+
+        SocketAddr::new(interface.into(), self.rpc_port)
     }
 
     pub fn batch_config(&self) -> BatchRequestConfig {
-        let cfg = if self.rpc_disable_batch_requests {
+        if self.rpc_disable_batch_requests {
             BatchRequestConfig::Disabled
         } else if let Some(l) = self.rpc_max_batch_request_len {
             BatchRequestConfig::Limit(l)
         } else {
             BatchRequestConfig::Unlimited
-        };
-
-        cfg
+        }
     }
 }

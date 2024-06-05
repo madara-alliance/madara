@@ -11,6 +11,7 @@ use mc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, Con
 use mc_db::storage_handler::DeoxysStorageError;
 use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
+use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_block::{BlockId, BlockTag, DeoxysBlock};
 use mp_felt::{trim_hash, FeltWrapper};
 use serde::Deserialize;
@@ -19,8 +20,8 @@ use starknet_core::types::StateUpdate;
 use starknet_providers::sequencer::models::StateUpdateWithBlock;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinSet;
 use tokio::time::Duration;
-use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 
 use crate::commitments::lib::{build_commitment_state_diff, csd_calculate_state_root};
 use crate::convert::convert_block;
@@ -167,19 +168,22 @@ async fn l2_verify_and_apply_task(
             global_state_root.into_field_element()
         );
 
-        telemetry.send(VerbosityLevel::Info, serde_json::json!({
-            "best": format!("{:#x}", block_hash.into_field_element()),
-            "height": block_n,
-            "origin": "Own",
-            "msg": "block.import",
-        }));
+        telemetry.send(
+            VerbosityLevel::Info,
+            serde_json::json!({
+                "best": format!("{:#x}", block_hash.into_field_element()),
+                "height": block_n,
+                "origin": "Own",
+                "msg": "block.import",
+            }),
+        );
 
         // compact DB every 1k blocks
         if block_n % 1000 == 0 {
             DeoxysBackend::compact();
         }
 
-        if backup_every_n_blocks.is_some_and(|backup_every_n_blocks| block_n % backup_every_n_blocks as u64 == 0) {
+        if backup_every_n_blocks.is_some_and(|backup_every_n_blocks| block_n % backup_every_n_blocks == 0) {
             log::info!("⏳ Backing up database at block {block_n}...");
             let sw = PerfStopwatch::new();
             DeoxysBackend::backup().await.context("backing up database")?;
@@ -204,8 +208,8 @@ async fn l2_block_conversion_task(
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
     let conversion_stream = stream::unfold((updates_receiver, chain_id), |(mut updates_recv, chain_id)| async move {
-        match updates_recv.recv().await {
-            Some(L2BlockAndUpdates { block, state_update, class_update, .. }) => Some((
+        updates_recv.recv().await.map(|L2BlockAndUpdates { block, state_update, class_update, .. }| {
+            (
                 spawn_compute(move || {
                     let sw = PerfStopwatch::new();
                     let converted_block = convert_block(block, chain_id).context("converting block")?;
@@ -213,9 +217,8 @@ async fn l2_block_conversion_task(
                     Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
                 }),
                 (updates_recv, chain_id),
-            )),
-            None => None,
-        }
+            )
+        })
     });
 
     conversion_stream
@@ -311,7 +314,8 @@ pub async fn sync(
     // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
     // starves the tokio worker
 
-    let mut fetch_task = tokio::spawn(l2_fetch_task(
+    let mut join_set = JoinSet::new();
+    join_set.spawn(l2_fetch_task(
         config.first_block,
         config.n_blocks_to_sync,
         fetch_stream_sender,
@@ -319,9 +323,8 @@ pub async fn sync(
         config.sync_polling_interval,
         once_caught_up_cb_sender,
     ));
-    let mut block_conversion_task =
-        tokio::spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender, chain_id));
-    let mut verify_and_apply_task = tokio::spawn(l2_verify_and_apply_task(
+    join_set.spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender, chain_id));
+    join_set.spawn(l2_verify_and_apply_task(
         block_conv_receiver,
         config.verify,
         config.backup_every_n_blocks,
@@ -329,25 +332,12 @@ pub async fn sync(
         Arc::clone(&sync_timer),
         telemetry,
     ));
-    let mut pending_block_task = tokio::spawn(l2_pending_block_task(once_caught_up_cb_receiver, provider, chain_id));
+    join_set.spawn(l2_pending_block_task(once_caught_up_cb_receiver, provider, chain_id));
 
-    tokio::select!(
-        // update pending block task
-        res = &mut fetch_task => res.context("task was canceled")?,
-        res = &mut block_conversion_task => res.context("task was canceled")?,
-        res = &mut verify_and_apply_task => res.context("task was canceled")?,
-        res = &mut pending_block_task => res.context("task was canceled")?,
-        _ = tokio::signal::ctrl_c() => Ok(()), // graceful shutdown
-    )?;
+    while let Some(res) = join_set.join_next().await {
+        res.context("task was dropped")??;
+    }
 
-    // one of the task exited, which means it has dropped its channel and downstream tasks should be
-    // able to detect that and gracefully finish their business this ensures no task outlive their
-    // parent
-    let (a, b, c, d) = tokio::join!(fetch_task, block_conversion_task, verify_and_apply_task, pending_block_task);
-    a.context("task was canceled")?
-        .and(b.context("task was canceled")?)
-        .and(c.context("task was canceled")?)
-        .and(d.context("task was canceled")?)?;
     Ok(())
 }
 

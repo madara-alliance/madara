@@ -1,33 +1,29 @@
-use super::middleware::{Metrics, MiddlewareLayer, RpcMetrics};
+#![allow(clippy::declare_interior_mutable_const)]
+#![allow(clippy::borrow_interior_mutable_const)]
+
+use std::convert::Infallible;
+use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroU32;
+use std::str::FromStr;
+use std::time::Duration;
+
 use forwarded_header_value::ForwardedHeaderValue;
-use hyper::{
-    header::{HeaderName, HeaderValue},
-    server::conn::AddrStream,
-    service::{make_service_fn, service_fn},
-    Request,
-};
+use hyper::header::{HeaderName, HeaderValue};
+use hyper::server::conn::AddrStream;
+use hyper::service::{make_service_fn, service_fn};
+use hyper::Request;
 use ip_network::IpNetwork;
-use jsonrpsee::{
-    core::id_providers::RandomStringIdProvider,
-    server::{middleware::rpc::RpcServiceBuilder, BatchRequestConfig},
-};
-use jsonrpsee::{
-    server::{
-        middleware::http::{HostFilterLayer, ProxyGetRequestLayer},
-        stop_channel, ws, PingConfig, StopHandle, TowerServiceBuilder,
-    },
-    Methods, RpcModule,
-};
-use std::{
-    convert::Infallible,
-    net::{IpAddr, SocketAddr},
-    num::NonZeroU32,
-    str::FromStr,
-    time::Duration,
-};
-use tokio::{net::TcpListener, task::JoinSet};
+use jsonrpsee::core::id_providers::RandomStringIdProvider;
+use jsonrpsee::server::middleware::http::{HostFilterLayer, ProxyGetRequestLayer};
+use jsonrpsee::server::middleware::rpc::RpcServiceBuilder;
+use jsonrpsee::server::{stop_channel, ws, BatchRequestConfig, PingConfig, StopHandle, TowerServiceBuilder};
+use jsonrpsee::{Methods, RpcModule};
+use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 use tower::Service;
 use tower_http::cors::{AllowOrigin, CorsLayer};
+
+use super::middleware::{Metrics, MiddlewareLayer, RpcMetrics};
 
 const MEGABYTE: u32 = 1024 * 1024;
 
@@ -170,9 +166,13 @@ pub async fn start_server(
                         // Spawn a task to handle when the connection is closed.
                         tokio::spawn(async move {
                             let now = std::time::Instant::now();
-                            middleware_layer.as_ref().map(|m| m.ws_connect());
+                            if let Some(m) = middleware_layer.as_ref() {
+                                m.ws_connect()
+                            }
                             on_disconnect.await;
-                            middleware_layer.as_ref().map(|m| m.ws_disconnect(now));
+                            if let Some(m) = middleware_layer.as_ref() {
+                                m.ws_disconnect(now)
+                            }
                         });
                     }
 
@@ -247,11 +247,7 @@ pub(crate) fn try_into_cors(maybe_cors: Option<&Vec<String>>) -> anyhow::Result<
 }
 
 pub(crate) fn format_cors(maybe_cors: Option<&Vec<String>>) -> String {
-    if let Some(cors) = maybe_cors {
-        format!("{:?}", cors)
-    } else {
-        format!("{:?}", ["*"])
-    }
+    if let Some(cors) = maybe_cors { format!("{:?}", cors) } else { format!("{:?}", ["*"]) }
 }
 
 /// Extracts the IP addr from the HTTP request.

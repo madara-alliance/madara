@@ -1,5 +1,8 @@
-use jsonrpsee::{server::ServerHandle, RpcModule};
-use mc_rpc::{ChainConfig, Felt, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+use jsonrpsee::server::ServerHandle;
+use jsonrpsee::RpcModule;
+use mc_rpc::{
+    ChainConfig, Felt, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
+};
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
 use tokio::task::JoinSet;
@@ -23,7 +26,10 @@ impl RpcService {
             (RpcMethods::Unsafe, _) => (true, true, true),
             (RpcMethods::Auto, false) => (true, true, true),
             (RpcMethods::Auto, true) => {
-                log::warn!("Option `--rpc-external` will hide Write and Trace endpoints. To enable them, please pass `--rpc-methods unsafe`.");
+                log::warn!(
+                    "Option `--rpc-external` will hide Write and Trace endpoints. To enable them, please pass \
+                     `--rpc-methods unsafe`."
+                );
                 (true, false, false)
             }
         };

@@ -1,4 +1,9 @@
-use std::{borrow::Cow, env, fs, fs::File, io, io::Read, path::PathBuf, process::Command};
+use std::borrow::Cow;
+use std::env;
+use std::fs::{self, File};
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 pub fn main() {
     generate_cargo_keys();
@@ -8,7 +13,7 @@ pub fn generate_cargo_keys() {
     let commit = if let Ok(hash) = std::env::var("GIT_COMMIT_HASH") {
         Cow::from(hash.trim().to_owned())
     } else {
-        match Command::new("git").args(&["rev-parse", "--short=11", "HEAD"]).output() {
+        match Command::new("git").args(["rev-parse", "--short=11", "HEAD"]).output() {
             Ok(o) if o.status.success() => {
                 let sha = String::from_utf8_lossy(&o.stdout).trim().to_owned();
                 Cow::from(sha)
@@ -61,7 +66,7 @@ pub fn rerun_if_git_head_changed() {
 }
 
 // Code taken from https://github.com/rustyhorde/vergen/blob/8d522db8c8e16e26c0fc9ea8e6b0247cbf5cca84/src/output/envvar.rs
-fn get_git_paths(path: &PathBuf) -> Result<Option<Vec<PathBuf>>, io::Error> {
+fn get_git_paths(path: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
     let git_dir_or_file = path.join(".git");
 
     if let Ok(metadata) = fs::metadata(&git_dir_or_file) {

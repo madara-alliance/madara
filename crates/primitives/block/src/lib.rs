@@ -16,7 +16,7 @@ pub type BlockTransactions = Vec<Transaction>;
 /// Block Events
 pub type BlockEvents = Vec<OrderedEvents>;
 
-pub use primitive_types::{U256, H160};
+pub use primitive_types::{H160, U256};
 
 /// Block tag.
 ///

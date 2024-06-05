@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use mc_sync::{fetch::fetchers::FetchConfig, utils::constant::starknet_core_address};
+use mc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::utils::constant::starknet_core_address;
 use primitive_types::H160;
 use url::Url;
 

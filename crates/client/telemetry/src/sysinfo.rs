@@ -22,7 +22,7 @@ impl SysInfo {
 
         SysInfo {
             core_count: if probe.cpus().is_empty() { None } else { Some(probe.cpus().len() as _) },
-            cpu: probe.cpus().get(0).map(|cpu| cpu.brand().into()),
+            cpu: probe.cpus().first().map(|cpu| cpu.brand().into()),
             linux_distro: sysinfo::System::long_os_version(),
             linux_kernel: sysinfo::System::kernel_version(),
             memory: Some(probe.total_memory()),
@@ -32,22 +32,22 @@ impl SysInfo {
 
     pub fn show(&self) {
         if let Some(val) = &self.linux_distro {
-            log::info!("💻 Operating system: {}", val)
+            log::info!(target: "deoxys", "💻 Operating system: {}", val)
         }
         if let Some(val) = &self.cpu_arch {
-            log::info!("💻 CPU architecture: {}", val)
+            log::info!(target: "deoxys", "💻 CPU architecture: {}", val)
         }
         if let Some(val) = &self.cpu {
-            log::info!("💻 CPU: {}", val)
+            log::info!(target: "deoxys", "💻 CPU: {}", val)
         }
         if let Some(val) = &self.core_count {
-            log::info!("💻 CPU cores: {}", val)
+            log::info!(target: "deoxys", "💻 CPU cores: {}", val)
         }
         if let Some(val) = &self.memory {
-            log::info!("💻 Memory: {}MB", val / 1024 / 1024)
+            log::info!(target: "deoxys", "💻 Memory: {}MB", val / 1024 / 1024)
         }
         if let Some(val) = &self.linux_kernel {
-            log::info!("💻 Kernel: {}", val)
+            log::info!(target: "deoxys", "💻 Kernel: {}", val)
         }
     }
 }

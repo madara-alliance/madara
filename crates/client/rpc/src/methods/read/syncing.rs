@@ -40,8 +40,8 @@ pub async fn syncing(starknet: &Starknet) -> RpcResult<SyncStatusType> {
     Ok(SyncStatusType::Syncing(SyncStatus {
         starting_block_num,
         starting_block_hash,
-        highest_block_num: current_block_num.clone(), // TODO(merge): is this correct,?
-        highest_block_hash: current_block_hash.clone(),
+        highest_block_num: current_block_num, // TODO(merge): is this correct,?
+        highest_block_hash: current_block_hash,
         current_block_num,
         current_block_hash,
     }))

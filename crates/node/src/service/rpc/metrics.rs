@@ -1,6 +1,7 @@
 use std::time::Instant;
 
-use jsonrpsee::{types::Request, MethodResponse};
+use jsonrpsee::types::Request;
+use jsonrpsee::MethodResponse;
 use prometheus_endpoint::{register, Counter, CounterVec, HistogramOpts, HistogramVec, Opts, Registry, U64};
 
 /// Histogram time buckets in microseconds.
@@ -77,13 +78,17 @@ impl RpcMetrics {
     }
 
     pub(crate) fn ws_connect(&self) {
-        self.ws_sessions_opened.as_ref().map(|counter| counter.inc());
+        if let Some(counter) = self.ws_sessions_opened.as_ref() {
+            counter.inc()
+        }
     }
 
     pub(crate) fn ws_disconnect(&self, now: Instant) {
         let micros = now.elapsed().as_secs();
 
-        self.ws_sessions_closed.as_ref().map(|counter| counter.inc());
+        if let Some(counter) = self.ws_sessions_closed.as_ref() {
+            counter.inc()
+        }
         self.ws_sessions_time.with_label_values(&["ws"]).observe(micros as _);
     }
 

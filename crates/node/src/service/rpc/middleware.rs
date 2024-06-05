@@ -1,22 +1,17 @@
 //! JSON-RPC specific middleware.
 
+use std::num::NonZeroU32;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use futures::future::{BoxFuture, FutureExt};
-use governor::RateLimiter;
-use governor::{clock::Clock, Jitter};
-use governor::{
-    clock::{DefaultClock, QuantaClock},
-    middleware::NoOpMiddleware,
-    state::{InMemoryState, NotKeyed},
-    Quota,
-};
+use governor::clock::{Clock, DefaultClock, QuantaClock};
+use governor::middleware::NoOpMiddleware;
+use governor::state::{InMemoryState, NotKeyed};
+use governor::{Jitter, Quota, RateLimiter};
 use jsonrpsee::server::middleware::rpc::RpcServiceT;
 use jsonrpsee::types::{ErrorObject, Request};
 use jsonrpsee::MethodResponse;
-use std::{
-    num::NonZeroU32,
-    sync::Arc,
-    time::{Duration, Instant},
-};
 
 pub use super::metrics::{Metrics, RpcMetrics};
 
@@ -60,12 +55,16 @@ impl MiddlewareLayer {
 
     /// Register a new websocket connection.
     pub fn ws_connect(&self) {
-        self.metrics.as_ref().map(|m| m.ws_connect());
+        if let Some(m) = self.metrics.as_ref() {
+            m.ws_connect()
+        }
     }
 
     /// Register that a websocket connection was closed.
     pub fn ws_disconnect(&self, now: Instant) {
-        self.metrics.as_ref().map(|m| m.ws_disconnect(now));
+        if let Some(m) = self.metrics.as_ref() {
+            m.ws_disconnect(now)
+        }
     }
 }
 
@@ -92,7 +91,9 @@ where
     fn call(&self, req: Request<'a>) -> Self::Future {
         let now = Instant::now();
 
-        self.metrics.as_ref().map(|m| m.on_call(&req));
+        if let Some(m) = self.metrics.as_ref() {
+            m.on_call(&req)
+        }
 
         let service = self.service.clone();
         let rate_limit = self.rate_limit.clone();
@@ -125,7 +126,9 @@ where
             }
 
             let rp = service.call(req.clone()).await;
-            metrics.as_ref().map(|m| m.on_response(&req, &rp, is_rate_limited, now));
+            if let Some(m) = metrics.as_ref() {
+                m.on_response(&req, &rp, is_rate_limited, now)
+            }
 
             rp
         }

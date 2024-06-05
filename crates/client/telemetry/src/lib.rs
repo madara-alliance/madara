@@ -1,8 +1,11 @@
+use std::sync::Arc;
+use std::time::SystemTime;
+
 use anyhow::Context;
 use futures::SinkExt;
 use reqwest_websocket::{Message, RequestBuilderExt};
-use std::{sync::Arc, time::SystemTime};
-use tokio::{sync::mpsc, task::JoinSet};
+use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 
 mod sysinfo;
 pub use sysinfo::*;
@@ -23,7 +26,6 @@ pub struct TelemetryEvent {
 pub struct TelemetryHandle(Option<Arc<mpsc::Sender<TelemetryEvent>>>);
 
 impl TelemetryHandle {
-    pub fn new() {}
     pub fn send(&self, verbosity: VerbosityLevel, message: serde_json::Value) {
         if message.get("msg").is_none() {
             log::warn!("Telemetry messages should have a message type");

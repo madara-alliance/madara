@@ -30,10 +30,7 @@ pub fn calculate_transaction_hash_with_signature<H: HasherT>(
     transaction: &Transaction,
     chain_id: Felt252Wrapper,
     block_number: u64,
-) -> FieldElement
-where
-    H: HasherT,
-{
+) -> FieldElement {
     let include_signature = block_number >= 61394;
 
     let (signature_hash, tx_hash) = rayon::join(

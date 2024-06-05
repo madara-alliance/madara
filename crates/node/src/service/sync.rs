@@ -1,5 +1,6 @@
 use anyhow::Context;
-use mc_sync::{fetch::fetchers::FetchConfig, metrics::block_metrics::BlockMetrics};
+use mc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::metrics::block_metrics::BlockMetrics;
 use mc_telemetry::TelemetryHandle;
 use primitive_types::H160;
 use starknet_core::types::FieldElement;

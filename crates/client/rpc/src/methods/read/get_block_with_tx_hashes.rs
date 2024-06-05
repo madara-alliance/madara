@@ -17,5 +17,5 @@ use crate::Starknet;
 /// a pending block with transaction hashes, depending on the state of the requested block.
 /// In case the block is not found, returns a `StarknetRpcApiError` with `BlockNotFound`.
 pub fn get_block_with_tx_hashes(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes> {
-    Ok(get_block::get_block_with_tx_hashes(starknet, &block_id.into())?)
+    get_block::get_block_with_tx_hashes(starknet, &block_id.into())
 }

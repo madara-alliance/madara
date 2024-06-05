@@ -3,7 +3,8 @@ use mp_block::{BlockId, BlockTag};
 use mp_felt::{Felt252Wrapper, FeltWrapper};
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use starknet_core::types::{
-    BlockStatus, BlockWithTxHashes, BlockWithTxs, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, PendingBlockWithTxHashes, PendingBlockWithTxs
+    BlockStatus, BlockWithTxHashes, BlockWithTxs, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+    PendingBlockWithTxHashes, PendingBlockWithTxs,
 };
 
 use crate::errors::StarknetRpcApiError;

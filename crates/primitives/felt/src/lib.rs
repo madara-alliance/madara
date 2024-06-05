@@ -24,9 +24,9 @@ use cairo_vm::felt::Felt252;
 pub use convert::*;
 #[cfg(feature = "parity-scale-codec")]
 use parity_scale_codec::{Decode, Encode, EncodeLike, Error, Input, MaxEncodedLen, Output};
+use primitive_types::{H256, U256};
 #[cfg(feature = "scale-info")]
 use scale_info::{build::Fields, Path, Type, TypeInfo};
-use primitive_types::{H256, U256};
 use starknet_api::hash::StarkFelt;
 use starknet_ff::{FieldElement, FromByteSliceError, FromStrError};
 use starknet_types_core::felt::Felt;
