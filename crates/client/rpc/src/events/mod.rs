@@ -78,18 +78,8 @@ where
         let block_hash = block_hash_from_block_n(block_number)?;
 
         // get txs hashes from cache or compute them
-        let block_txs_hashes: Vec<_> = txs_hashes_from_block_hash(block_hash)?
-            .into_iter()
-            .map(|h| {
-                Felt252Wrapper::try_from(h)
-                    .map(|f| f.0)
-                    .map_err(|e| {
-                        log::error!("'{e}'");
-                        StarknetRpcApiError::InternalServerError
-                    })
-                    .unwrap()
-            })
-            .collect();
+        let block_txs_hashes: Vec<_> =
+            txs_hashes_from_block_hash(block_hash)?.into_iter().map(|h| Felt252Wrapper::from(h).0).collect();
         Ok(block_txs_hashes)
     }
 

@@ -1,5 +1,5 @@
+use std::fmt;
 use std::num::ParseIntError;
-use std::{fmt, u64};
 
 #[derive(PartialEq, Eq, Debug, Default)]
 pub struct ContinuationToken {

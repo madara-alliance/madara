@@ -1,9 +1,7 @@
 //! Configuration of the pallets used in the runtime.
 //! The pallets used in the runtime are configured here.
 //! This file is used to generate the `construct_runtime!` macro.
-pub use frame_support::traits::{
-    ConstBool, ConstU32, ConstU64, OnTimestampSet,
-};
+pub use frame_support::traits::{ConstBool, ConstU32, ConstU64, OnTimestampSet};
 pub use frame_support::weights::constants::RocksDbWeight;
 pub use frame_support::StorageValue;
 use mp_types::block::DHashT;

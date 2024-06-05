@@ -85,29 +85,29 @@ impl MappingDb {
             _ => vec![commitment.block_hash],
         };
 
-        transaction.put_cf(&block_mapping_col, &commitment.starknet_block_hash.encode(), &substrate_hashes.encode());
+        transaction.put_cf(&block_mapping_col, commitment.starknet_block_hash.encode(), substrate_hashes.encode());
 
-        transaction.put_cf(&synced_mapping_col, &commitment.block_hash.encode(), &true.encode());
+        transaction.put_cf(&synced_mapping_col, commitment.block_hash.encode(), true.encode());
 
         for transaction_hash in commitment.starknet_transaction_hashes.iter() {
-            transaction.put_cf(&transaction_mapping_col, &transaction_hash.encode(), &commitment.block_hash.encode());
+            transaction.put_cf(&transaction_mapping_col, transaction_hash.encode(), commitment.block_hash.encode());
         }
 
         transaction.put_cf(
             &starknet_tx_hashes_col,
-            &commitment.starknet_block_hash.encode(),
-            &commitment.starknet_transaction_hashes.encode(),
+            commitment.starknet_block_hash.encode(),
+            commitment.starknet_transaction_hashes.encode(),
         );
 
         transaction.put_cf(
             &starknet_block_hashes_col,
-            &commitment.block_number.encode(),
-            &commitment.starknet_block_hash.encode(),
+            commitment.block_number.encode(),
+            commitment.starknet_block_hash.encode(),
         );
         transaction.put_cf(
             &starknet_block_numbers_col,
-            &commitment.starknet_block_hash.encode(),
-            &commitment.block_number.encode(),
+            commitment.starknet_block_hash.encode(),
+            commitment.block_number.encode(),
         );
 
         self.db.write(transaction)?;

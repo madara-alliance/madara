@@ -172,8 +172,7 @@ pub trait StorageViewMut {
 
     /// Applies all changes up to this point.
     ///
-    /// * `block_number`: point in the chain at which to apply the new changes. Must be
-    /// incremental
+    /// * `block_number`: point in the chain at which to apply the new changes. Must be incremental
     fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 

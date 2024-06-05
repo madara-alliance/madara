@@ -116,10 +116,7 @@ pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStat
 /// # Returns
 ///
 /// The state commitment as a `Felt252Wrapper`.
-pub fn calculate_state_root<H: HasherT>(
-    contracts_trie_root: Felt252Wrapper,
-    classes_trie_root: Felt252Wrapper,
-) -> Felt252Wrapper
+pub fn calculate_state_root<H>(contracts_trie_root: Felt252Wrapper, classes_trie_root: Felt252Wrapper) -> Felt252Wrapper
 where
     H: HasherT,
 {

@@ -48,7 +48,7 @@ where
 // # Returns
 // * `Result<Block, StarknetRpcApiError>` - A Result with the corresponding Starknet block
 // or Error.
-pub fn starknet_block_from_substrate_hash<B: BlockT, C, BE>(
+pub fn starknet_block_from_substrate_hash<B, C, BE>(
     client: &C,
     target_number: <<B>::Header as HeaderT>::Number,
 ) -> Result<DeoxysBlock, StarknetRpcApiError>
