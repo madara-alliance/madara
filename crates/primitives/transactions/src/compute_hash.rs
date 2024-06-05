@@ -8,10 +8,7 @@ use starknet_api::core::calculate_contract_address;
 use starknet_api::data_availability::DataAvailabilityMode;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
-    Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3,
-    DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction,
-    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, Resource,
-    ResourceBoundsMapping, Transaction, TransactionHash,
+    Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, PaymasterData, Resource, ResourceBoundsMapping, Tip, Transaction, TransactionHash
 };
 
 use starknet_core::utils::starknet_keccak;
@@ -39,9 +36,35 @@ pub trait ComputeTransactionHash {
     ) -> TransactionHash;
 }
 
+#[inline]
 fn convert_calldata(calldata: Calldata) -> Vec<Felt> {
     // calldata.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect()
     calldata.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect()
+}
+
+#[inline]
+fn compute_calldata_hash(calldata: Calldata) -> Felt {
+    let calldata_tmp = convert_calldata(calldata);
+    let calldata_tmp_bis = calldata_tmp.as_slice();
+    Pedersen::hash_array(calldata_tmp_bis) 
+}
+
+#[inline]
+fn compute_gas_hash(tip: &Tip, resource_bounds: &ResourceBoundsMapping) -> Felt {
+    let felt_tmp_a = Felt::try_from(tip.0).unwrap();
+    let felt_tmp_b = prepare_resource_bound_value(resource_bounds, Resource::L1Gas);
+    let felt_tmp_c = prepare_resource_bound_value(resource_bounds, Resource::L2Gas);
+    let gas_as_felt = &[felt_tmp_a, felt_tmp_b, felt_tmp_c];
+
+    Pedersen::hash_array(gas_as_felt)
+}
+
+#[inline]
+fn compute_paymaster_hash(paymaster_data : &PaymasterData) -> Felt {
+    let paymaster_tmp = 
+        paymaster_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
+    let paymaster_tmp_bis = paymaster_tmp.as_slice();
+    Pedersen::hash_array(paymaster_tmp_bis)
 }
 
 // Use a mapping from execution resources to get corresponding fee bounds
@@ -100,10 +123,7 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
         let sender_address = Felt::from_bytes_be(&self.contract_address.0.0.0);
         let entrypoint_selector = Felt::from_bytes_be(&self.entry_point_selector.0.0);
 
-        let calldata_tmp = convert_calldata(self.calldata.clone());
-        let calldata_tmp_bis = calldata_tmp.as_slice();
-        let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);
-        
+        let calldata_hash = compute_calldata_hash(self.calldata.clone());
         let max_fee = Felt::from(self.max_fee.0);
 
         // Check for deprecated environment
@@ -141,10 +161,8 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
         let sender_address  = Felt::from_bytes_be(&self.sender_address.0.0.0);
         let entrypoint_selector = Felt::ZERO;
 
-        let calldata_tmp = convert_calldata(self.calldata.clone());
-        let calldata_tmp_bis = calldata_tmp.as_slice();
-        let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);
-        
+        let calldata_hash = compute_calldata_hash(self.calldata.clone());
+
         let max_fee = Felt::from(self.max_fee.0);
         let nonce = Felt::from_bytes_be(&self.nonce.0.0);
 
@@ -173,16 +191,8 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
             if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
         let sender_address = Felt::from_bytes_be(&self.sender_address.0.0.0);
 
-        let felt_tmp_a = Felt::try_from(self.tip.0).unwrap();
-        let felt_tmp_b = prepare_resource_bound_value(&self.resource_bounds, Resource::L1Gas);
-        let felt_tmp_c = prepare_resource_bound_value(&self.resource_bounds, Resource::L2Gas);
-        let gas_as_felt = &[felt_tmp_a, felt_tmp_b, felt_tmp_c];
-        let gas_hash = Pedersen::hash_array(gas_as_felt);
-
-        let paymaster_tmp = 
-            &self.paymaster_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
-        let paymaster_tmp_bis = paymaster_tmp.as_slice();
-        let paymaster_hash = Pedersen::hash_array(paymaster_tmp_bis);
+        let gas_hash = compute_gas_hash(&self.tip, &self.resource_bounds);
+        let paymaster_hash = compute_paymaster_hash(&self.paymaster_data);
 
         let nonce = Felt::from_bytes_be(&self.nonce.0.0);
         let data_availability_modes = prepare_data_availability_modes(
@@ -194,11 +204,7 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
                 &self.account_deployment_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
             let account_deployment_data_tmp_bis = account_deployment_data_tmp.as_slice();
             let account_deployment_data_hash = Pedersen::hash_array(account_deployment_data_tmp_bis);
-
-
-            let calldata_tmp = convert_calldata(self.calldata.clone());
-            let calldata_tmp_bis = calldata_tmp.as_slice();
-            let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);    
+            let calldata_hash = compute_calldata_hash(self.calldata.clone());    
 
             Pedersen::hash_array(&[account_deployment_data_hash, calldata_hash])
         };
@@ -325,16 +331,8 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
             if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
         let sender_address = Felt::from_bytes_be(&self.sender_address.0.0.0);
         
-        let felt_tmp_a = Felt::try_from(self.tip.0).unwrap();
-        let felt_tmp_b = prepare_resource_bound_value(&self.resource_bounds, Resource::L1Gas);
-        let felt_tmp_c = prepare_resource_bound_value(&self.resource_bounds, Resource::L2Gas);
-        let gas_as_felt = &[felt_tmp_a, felt_tmp_b, felt_tmp_c];
-        let gas_hash = Pedersen::hash_array(gas_as_felt);
-
-        let paymaster_tmp = 
-            &self.paymaster_data.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect::<Vec<_>>();
-        let paymaster_tmp_bis = paymaster_tmp.as_slice();
-        let paymaster_hash = Pedersen::hash_array(paymaster_tmp_bis);
+        let gas_hash = compute_gas_hash(&self.tip, &self.resource_bounds);
+        let paymaster_hash = compute_paymaster_hash(&self.paymaster_data);
 
         let nonce = Felt::from_bytes_be(&self.nonce.0.0);
         let data_availability_modes = prepare_data_availability_modes(
@@ -490,16 +488,8 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
             .unwrap().0.0.0
         );
 
-        let felt_tmp_a = Felt::try_from(self.tip.0).unwrap();
-        let felt_tmp_b = prepare_resource_bound_value(&self.resource_bounds, Resource::L1Gas);
-        let felt_tmp_c = prepare_resource_bound_value(&self.resource_bounds, Resource::L2Gas);
-        let gas_as_felt = &[felt_tmp_a, felt_tmp_b, felt_tmp_c];
-        let gas_hash = Pedersen::hash_array(gas_as_felt);
-
-        let paymaster_tmp = 
-            &self.paymaster_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
-        let paymaster_tmp_bis = paymaster_tmp.as_slice();
-        let paymaster_hash = Pedersen::hash_array(paymaster_tmp_bis);
+        let gas_hash = compute_gas_hash(&self.tip, &self.resource_bounds);
+        let paymaster_hash = compute_paymaster_hash(&self.paymaster_data);
 
         let nonce = Felt::from_bytes_be(&self.nonce.0.0);
         let data_availability_modes = prepare_data_availability_modes(
