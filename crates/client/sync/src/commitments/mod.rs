@@ -4,6 +4,9 @@ mod events;
 mod transactions;
 
 use blockifier::state::cached_state::CommitmentStateDiff;
+use classes::class_trie_root;
+use contracts::contract_trie_root;
+use events::memory_event_commitment;
 use indexmap::IndexMap;
 use mp_convert::field_element::FromFieldElement;
 use mp_felt::Felt252Wrapper;
@@ -18,10 +21,6 @@ use starknet_core::types::{
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
-
-use classes::class_trie_root;
-use contracts::contract_trie_root;
-use events::memory_event_commitment;
 use transactions::memory_transaction_commitment;
 
 /// "STARKNET_STATE_V0"
