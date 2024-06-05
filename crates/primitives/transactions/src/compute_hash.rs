@@ -1,9 +1,12 @@
+// use std::intrinsics::mir::Field;
+
 use alloc::vec::Vec;
 
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use starknet_api::core::calculate_contract_address;
 use starknet_api::data_availability::DataAvailabilityMode;
+use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
     Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3,
     DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction,
@@ -14,11 +17,11 @@ use starknet_core::crypto::compute_hash_on_elements;
 use starknet_core::utils::starknet_keccak;
 use starknet_crypto::FieldElement;
 
-use starknet_types_core::hash::{Pedersen, Poseidon};
+use starknet_types_core::hash::{Pedersen, StarkHash}; //, Poseidon};
 use starknet_types_core::felt::Felt;
 
 use super::SIMULATE_TX_VERSION_OFFSET;
-use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK};
+use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK, SIMULATE_TX_VERSION_OFFSET_FELT};
 
 const DECLARE_PREFIX: &[u8] = b"declare";
 const DEPLOY_ACCOUNT_PREFIX: &[u8] = b"deploy_account";
@@ -41,6 +44,10 @@ fn convert_calldata(calldata: Calldata) -> Vec<FieldElement> {
     calldata.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect()
 }
 
+fn convert_calldata_as_felt(calldata: Calldata) -> Vec<Felt> {
+    calldata.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect()
+}
+
 // Use a mapping from execution resources to get corresponding fee bounds
 // Encodes this information into 32-byte buffer then converts it into FieldElement
 fn prepare_resource_bound_value(resource_bounds_mapping: &ResourceBoundsMapping, resource: Resource) -> FieldElement {
@@ -56,6 +63,22 @@ fn prepare_resource_bound_value(resource_bounds_mapping: &ResourceBoundsMapping,
 
     // Safe to unwrap because we left most significant bit of the buffer empty
     FieldElement::from_bytes_be(&buffer).unwrap()
+}
+
+// Use a mapping from execution resources to get corresponding fee bounds
+// Encodes this information into 32-byte buffer then converts it into FieldElement
+fn prepare_resource_bound_value_as_felt(resource_bounds_mapping: &ResourceBoundsMapping, resource: Resource) -> Felt {
+    let mut buffer = [0u8; 32];
+    buffer[2..8].copy_from_slice(match resource {
+        Resource::L1Gas => L1_GAS,
+        Resource::L2Gas => L2_GAS,
+    });
+    if let Some(resource_bounds) = resource_bounds_mapping.0.get(&resource) {
+        buffer[8..16].copy_from_slice(&resource_bounds.max_amount.to_be_bytes());
+        buffer[16..].copy_from_slice(&resource_bounds.max_price_per_unit.to_be_bytes());
+    };
+
+    Felt::from_bytes_be(&buffer)
 }
 
 fn prepare_data_availability_modes(
@@ -93,16 +116,20 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
         offset_version: bool,
         block_number: Option<u64>,
     ) -> TransactionHash {
-        let prefix = FieldElement::from_byte_slice_be(INVOKE_PREFIX).unwrap();
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { FieldElement::ZERO };
-        let sender_address = Felt252Wrapper::from(self.contract_address).into();
-        let entrypoint_selector = Felt252Wrapper::from(self.entry_point_selector).into();
-        let calldata_hash = compute_hash_on_elements(&convert_calldata(self.calldata.clone()));
-        let max_fee = FieldElement::from(self.max_fee.0);
+        let prefix = Felt::from_bytes_be_slice(INVOKE_PREFIX);
+        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT } else { Felt::ZERO };
+        let sender_address = Felt::from_bytes_be(&self.contract_address.0.0.0);
+        let entrypoint_selector = Felt::from_bytes_be(&self.entry_point_selector.0.0);
+
+        let calldata_tmp = convert_calldata_as_felt(self.calldata.clone());
+        let calldata_tmp_bis = calldata_tmp.as_slice();
+        let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);
+        
+        let max_fee = Felt::from(self.max_fee.0);
 
         // Check for deprecated environment
         if block_number > Some(LEGACY_BLOCK_NUMBER) {
-            Felt252Wrapper(H::compute_hash_on_elements(&[
+            TransactionHash(StarkFelt(Pedersen::hash_array(&[
                 prefix,
                 version,
                 sender_address,
@@ -110,17 +137,15 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
                 calldata_hash,
                 max_fee,
                 chain_id.into(),
-            ]))
-            .into()
+            ]).to_bytes_be()))
         } else {
-            Felt252Wrapper(H::compute_hash_on_elements(&[
+            TransactionHash(StarkFelt(Pedersen::hash_array(&[
                 prefix,
                 sender_address,
                 entrypoint_selector,
                 calldata_hash,
                 chain_id.into(),
-            ]))
-            .into()
+            ]).to_bytes_be()))
         }
     }
 }
@@ -132,15 +157,19 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
-        let prefix = FieldElement::from_byte_slice_be(INVOKE_PREFIX).unwrap();
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::ONE } else { FieldElement::ONE };
-        let sender_address = Felt252Wrapper::from(self.sender_address).into();
-        let entrypoint_selector = FieldElement::ZERO;
-        let calldata_hash = compute_hash_on_elements(&convert_calldata(self.calldata.clone()));
-        let max_fee = FieldElement::from(self.max_fee.0);
-        let nonce = Felt252Wrapper::from(self.nonce.0).into();
+        let prefix = Felt::from_bytes_be_slice(INVOKE_PREFIX);
+        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::ONE } else { Felt::ONE };
+        let sender_address  = Felt::from_bytes_be(&self.sender_address.0.0.0);
+        let entrypoint_selector = Felt::ZERO;
 
-        Felt252Wrapper(H::compute_hash_on_elements(&[
+        let calldata_tmp = convert_calldata_as_felt(self.calldata.clone());
+        let calldata_tmp_bis = calldata_tmp.as_slice();
+        let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);
+        
+        let max_fee = Felt::from(self.max_fee.0);
+        let nonce = Felt::from_bytes_be(&self.nonce.0.0);
+
+        TransactionHash(StarkFelt(Pedersen::hash_array(&[
             prefix,
             version,
             sender_address,
@@ -149,8 +178,7 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
             max_fee,
             chain_id.into(),
             nonce,
-        ]))
-        .into()
+        ]).to_bytes_be()))
     }
 }
 
@@ -161,32 +189,42 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
-        let prefix = FieldElement::from_byte_slice_be(INVOKE_PREFIX).unwrap();
+        let prefix = Felt::from_bytes_be_slice(INVOKE_PREFIX);
         let version =
-            if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::THREE } else { FieldElement::THREE };
-        let sender_address = Felt252Wrapper::from(self.sender_address).into();
-        let gas_hash = compute_hash_on_elements(&[
-            FieldElement::from(self.tip.0),
-            prepare_resource_bound_value(&self.resource_bounds, Resource::L1Gas),
-            prepare_resource_bound_value(&self.resource_bounds, Resource::L2Gas),
-        ]);
-        let paymaster_hash = compute_hash_on_elements(
-            &self.paymaster_data.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect::<Vec<_>>(),
-        );
-        let nonce = Felt252Wrapper::from(self.nonce.0).into();
-        let data_availability_modes =
-            prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
+            if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::THREE } else { Felt::THREE };
+        let sender_address = Felt::from_bytes_be(&self.sender_address.0.0.0);
+
+        // self.tip.0 is a u64
+        let felt_tmp_a = Felt::try_from(self.tip.0).unwrap();
+        let felt_tmp_b = prepare_resource_bound_value_as_felt(&self.resource_bounds, Resource::L1Gas);
+        let felt_tmp_c = prepare_resource_bound_value_as_felt(&self.resource_bounds, Resource::L2Gas);
+        let gas_as_felt = &[felt_tmp_a, felt_tmp_b, felt_tmp_c];
+        let gas_hash = Pedersen::hash_array(gas_as_felt);
+
+        let paymaster_tmp = 
+            &self.paymaster_data.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect::<Vec<_>>();
+        let paymaster_tmp_bis = paymaster_tmp.as_slice();
+        let paymaster_hash = Pedersen::hash_array(paymaster_tmp_bis);
+
+        let nonce = Felt::from_bytes_be(&self.nonce.0.0);
+        let data_availability_modes = Felt::ZERO; // TODO
+
+        // prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
         let data_hash = {
-            let account_deployment_data_hash = compute_hash_on_elements(
-                &self.account_deployment_data.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect::<Vec<_>>(),
-            );
-            let calldata_hash = compute_hash_on_elements(
-                &self.calldata.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect::<Vec<_>>(),
-            );
-            compute_hash_on_elements(&[account_deployment_data_hash, calldata_hash])
+            let account_deployment_data_tmp = 
+                &self.account_deployment_data.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect::<Vec<_>>();
+            let account_deployment_data_tmp_bis = account_deployment_data_tmp.as_slice();
+            let account_deployment_data_hash = Pedersen::hash_array(account_deployment_data_tmp_bis);
+
+
+            let calldata_tmp = convert_calldata_as_felt(self.calldata.clone());
+            let calldata_tmp_bis = calldata_tmp.as_slice();
+            let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);    
+
+            Pedersen::hash_array(&[account_deployment_data_hash, calldata_hash])
         };
 
-        Felt252Wrapper(H::compute_hash_on_elements(&[
+        TransactionHash(StarkFelt(Pedersen::hash_array(&[
             prefix,
             version,
             sender_address,
@@ -196,8 +234,7 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
             nonce,
             data_availability_modes,
             data_hash,
-        ]))
-        .into()
+            ]).to_bytes_be()))
     }
 }
 
@@ -580,4 +617,13 @@ pub fn compute_hash_given_contract_address<H: HasherT>(
         ]))
         .into()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    // use super::*;
+
+    // #[test]
+    // fn test() {
+    // }
 }
