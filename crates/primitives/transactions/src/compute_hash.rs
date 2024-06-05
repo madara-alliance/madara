@@ -205,7 +205,6 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
             if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::THREE } else { Felt::THREE };
         let sender_address = Felt::from_bytes_be(&self.sender_address.0.0.0);
 
-        // self.tip.0 is a u64
         let felt_tmp_a = Felt::try_from(self.tip.0).unwrap();
         let felt_tmp_b = prepare_resource_bound_value_as_felt(&self.resource_bounds, Resource::L1Gas);
         let felt_tmp_c = prepare_resource_bound_value_as_felt(&self.resource_bounds, Resource::L2Gas);
@@ -224,7 +223,7 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
         
         let data_hash = {
             let account_deployment_data_tmp = 
-                &self.account_deployment_data.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect::<Vec<_>>();
+                &self.account_deployment_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
             let account_deployment_data_tmp_bis = account_deployment_data_tmp.as_slice();
             let account_deployment_data_hash = Pedersen::hash_array(account_deployment_data_tmp_bis);
 
@@ -353,26 +352,34 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
-        let prefix = FieldElement::from_byte_slice_be(DECLARE_PREFIX).unwrap();
+        let prefix = Felt::from_bytes_be_slice(DECLARE_PREFIX);
         let version =
-            if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::THREE } else { FieldElement::THREE };
-        let sender_address = Felt252Wrapper::from(self.sender_address).into();
-        let gas_hash = compute_hash_on_elements(&[
-            FieldElement::from(self.tip.0),
-            prepare_resource_bound_value(&self.resource_bounds, Resource::L1Gas),
-            prepare_resource_bound_value(&self.resource_bounds, Resource::L2Gas),
-        ]);
-        let paymaster_hash = compute_hash_on_elements(
-            &self.paymaster_data.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect::<Vec<_>>(),
-        );
-        let nonce = Felt252Wrapper::from(self.nonce.0).into();
-        let data_availability_modes =
-            prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
-        let account_deployment_data_hash = compute_hash_on_elements(
-            &self.account_deployment_data.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect::<Vec<_>>(),
-        );
+            if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::THREE } else { Felt::THREE };
+        let sender_address = Felt::from_bytes_be(&self.sender_address.0.0.0);
+        
+        let felt_tmp_a = Felt::try_from(self.tip.0).unwrap();
+        let felt_tmp_b = prepare_resource_bound_value_as_felt(&self.resource_bounds, Resource::L1Gas);
+        let felt_tmp_c = prepare_resource_bound_value_as_felt(&self.resource_bounds, Resource::L2Gas);
+        let gas_as_felt = &[felt_tmp_a, felt_tmp_b, felt_tmp_c];
+        let gas_hash = Pedersen::hash_array(gas_as_felt);
 
-        Felt252Wrapper(H::compute_hash_on_elements(&[
+        let paymaster_tmp = 
+            &self.paymaster_data.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect::<Vec<_>>();
+        let paymaster_tmp_bis = paymaster_tmp.as_slice();
+        let paymaster_hash = Pedersen::hash_array(paymaster_tmp_bis);
+
+        let nonce = Felt::from_bytes_be(&self.nonce.0.0);
+        let data_availability_modes = prepare_data_availability_modes_as_felt(
+                self.nonce_data_availability_mode, self.fee_data_availability_mode
+            );
+        
+
+        let account_deployment_data_tmp = 
+            &self.account_deployment_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
+        let account_deployment_data_tmp_bis = account_deployment_data_tmp.as_slice();
+        let account_deployment_data_hash = Pedersen::hash_array(account_deployment_data_tmp_bis);
+
+        TransactionHash(StarkFelt(Pedersen::hash_array(&[
             prefix,
             version,
             sender_address,
@@ -382,10 +389,9 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
             nonce,
             data_availability_modes,
             account_deployment_data_hash,
-            Felt252Wrapper::from(self.class_hash).into(),
-            Felt252Wrapper::from(self.compiled_class_hash).into(),
-        ]))
-        .into()
+            Felt::from_bytes_be(&self.class_hash.0.0),
+            Felt::from_bytes_be(&self.compiled_class_hash.0.0),
+        ]).to_bytes_be()))
     }
 }
 
