@@ -1,6 +1,5 @@
 use anyhow::Context;
 use futures::SinkExt;
-use reqwest::Client;
 use reqwest_websocket::{Message, RequestBuilderExt};
 use std::{sync::Arc, time::SystemTime};
 use tokio::{sync::mpsc, task::JoinSet};
@@ -62,7 +61,7 @@ impl TelemetryService {
         let mut rx = self.start_state.take().context("the service has already been started")?;
 
         join_set.spawn(async move {
-            let client = &reqwest::ClientBuilder::new().http1_only().build().context("building reqwest client")?;
+            let client = &reqwest::Client::default();
             let mut clients = futures::future::join_all(telemetry_endpoints.iter().map(|(endpoint, pr)| async move {
                 let websocket = match client.get(endpoint).upgrade().send().await {
                     Ok(ws) => ws,
