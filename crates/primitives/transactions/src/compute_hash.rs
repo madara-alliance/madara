@@ -433,7 +433,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
-        let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
+        let constructor_calldata = convert_calldata_as_felt(self.constructor_calldata.clone());
 
         let contract_address = Felt252Wrapper::from(
             calculate_contract_address(
@@ -445,18 +445,20 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
             .unwrap(),
         )
         .into();
-        let prefix = FieldElement::from_byte_slice_be(DEPLOY_ACCOUNT_PREFIX).unwrap();
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + FieldElement::ONE } else { FieldElement::ONE };
-        let entrypoint_selector = FieldElement::ZERO;
-        let mut calldata: Vec<FieldElement> = Vec::with_capacity(constructor_calldata.len() + 2);
-        calldata.push(Felt252Wrapper::from(self.class_hash).into());
-        calldata.push(Felt252Wrapper::from(self.contract_address_salt).into());
+        let prefix = Felt::from_bytes_be_slice(DEPLOY_ACCOUNT_PREFIX);
+        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET_FELT + Felt::ONE } else { Felt::ONE };
+        let entrypoint_selector = Felt::ZERO;
+        
+        let mut calldata: Vec<Felt> = Vec::with_capacity(constructor_calldata.len() + 2);
+        calldata.push(Felt::from_bytes_be(&self.class_hash.0.0));
+        calldata.push(Felt::from_bytes_be(&self.contract_address_salt.0.0));
         calldata.extend_from_slice(&constructor_calldata);
-        let calldata_hash = compute_hash_on_elements(&calldata);
-        let max_fee = FieldElement::from(self.max_fee.0);
-        let nonce = Felt252Wrapper::from(self.nonce).into();
+        let calldata_hash = Pedersen::hash_array(&calldata.as_slice());
+        
+        let max_fee = Felt::from(self.max_fee.0);
+        let nonce = Felt::from_bytes_be(&self.nonce.0.0);
 
-        Felt252Wrapper(H::compute_hash_on_elements(&[
+        TransactionHash(StarkFelt(Pedersen::hash_array(&[
             prefix,
             version,
             contract_address,
@@ -465,8 +467,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
             max_fee,
             chain_id.into(),
             nonce,
-        ]))
-        .into()
+        ]).to_bytes_be()))
     }
 }
 
