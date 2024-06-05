@@ -155,7 +155,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_contract_class_hash_version() {
+    fn test_starknet_state_version() {
         assert_eq!(STARKNET_STATE_PREFIX, Felt::from_bytes_be_slice("STARKNET_STATE_V0".as_bytes()));
     }
 }
