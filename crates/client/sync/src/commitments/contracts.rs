@@ -121,5 +121,5 @@ fn class_hash_and_nonce(
         Some(nonce) => *nonce,
         None => storage_handler::contract_nonces().get(contract_address)?.unwrap_or_default(),
     };
-    Ok((Felt::from_bytes_be(&class_hash.0.0), Felt::from_bytes_be(&nonce.0.0)))
+    Ok((Felt::from_bytes_be(&class_hash.0 .0), Felt::from_bytes_be(&nonce.0 .0)))
 }
