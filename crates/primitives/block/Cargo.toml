@@ -26,8 +26,8 @@ anyhow = { workspace = true, optional = true }
 parity-scale-codec = { workspace = true, features = [
   "derive",
 ], optional = true }
-scale-info = { workspace = true, features = ["derive"], optional = true }
 primitive-types.workspace = true
+scale-info = { workspace = true, features = ["derive"], optional = true }
 
 [dev-dependencies]
 mp-felt = { workspace = true }

@@ -7,5 +7,5 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-primitive-types.workspace = true
 mp-hashers = { workspace = true }
+primitive-types.workspace = true

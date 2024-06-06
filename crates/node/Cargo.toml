@@ -25,9 +25,9 @@ async-trait = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true, features = ["thread-pool"] }
 log = { workspace = true }
+mc-telemetry = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
-mc-telemetry = { workspace = true }
 
 prometheus-endpoint = { workspace = true }
 
@@ -51,16 +51,16 @@ reqwest = { workspace = true }
 url = { workspace = true }
 
 anyhow.workspace = true
-rayon.workspace = true
-tower.workspace = true
+env_logger = "0.11.3"
+forwarded-header-value = "0.1.1"
 governor.workspace = true
 hyper.workspace = true
 ip_network.workspace = true
 jsonrpsee.workspace = true
-forwarded-header-value = "0.1.1"
-tower-http.workspace = true
+rayon.workspace = true
 serde_json.workspace = true
-env_logger = "0.11.3"
+tower-http.workspace = true
+tower.workspace = true
 
 [features]
 default = []
