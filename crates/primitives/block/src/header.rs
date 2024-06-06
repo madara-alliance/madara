@@ -17,7 +17,6 @@ use starknet_core::types::FieldElement;
 /// The status of the block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub enum BlockStatus {
     #[cfg_attr(feature = "serde", serde(rename = "PENDING"))]
     Pending,
@@ -44,7 +43,6 @@ impl From<BlockStatus> for starknet_core::types::BlockStatus {
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-// #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 /// Starknet header definition.
 pub struct Header {
     /// The hash of this block’s parent.
@@ -66,7 +64,7 @@ pub struct Header {
     /// A commitment to the events produced in this block
     pub event_commitment: StarkHash,
     /// The version of the Starknet protocol used when creating this block
-    pub protocol_version: Felt252Wrapper, // TODO: Verify if the type can be changed to u8 for the protocol version
+    pub protocol_version: String, // TODO: Verify if the type can be changed to u8 for the protocol version
     /// Gas prices for this block
     pub l1_gas_price: Option<GasPrices>,
     /// The mode of data availability for this block
@@ -101,7 +99,7 @@ impl Header {
         transaction_commitment: StarkHash,
         event_count: u128,
         event_commitment: StarkHash,
-        protocol_version: Felt252Wrapper,
+        protocol_version: String,
         gas_prices: Option<GasPrices>,
         l1_da_mode: L1DataAvailabilityMode,
         extra_data: Option<U256>,

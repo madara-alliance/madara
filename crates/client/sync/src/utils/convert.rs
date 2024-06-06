@@ -49,7 +49,7 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock
     let event_commitment = Felt252Wrapper::from(event_commitment).into();
     let txs_hashes: Vec<StarkFelt> = txs_hashes.into_iter().map(Felt252Wrapper::from).map(Into::into).collect();
 
-    let protocol_version = starknet_version(&block.starknet_version);
+    let protocol_version = block.starknet_version.unwrap_or_default();
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
     let extra_data = Some(mp_block::U256::from_big_endian(&block_hash.to_bytes_be()));
@@ -258,17 +258,6 @@ fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
         contract_address: contract_address(tx.contract_address),
         entry_point_selector: entry_point(tx.entry_point_selector),
         calldata: call_data(tx.calldata),
-    }
-}
-
-/// Converts a starknet version string to a felt value.
-/// If the string contains more than 31 bytes, the function panics.
-fn starknet_version(version: &Option<String>) -> Felt252Wrapper {
-    match version {
-        Some(version) => {
-            Felt252Wrapper::try_from(version.as_bytes()).expect("Failed to convert version to felt: string is too long")
-        }
-        None => Felt252Wrapper::ZERO,
     }
 }
 

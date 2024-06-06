@@ -22,8 +22,6 @@ use core::fmt;
 
 use cairo_vm::felt::Felt252;
 pub use convert::*;
-#[cfg(feature = "parity-scale-codec")]
-use parity_scale_codec::{Decode, Encode, EncodeLike, Error, Input, MaxEncodedLen, Output};
 use primitive_types::{H256, U256};
 #[cfg(feature = "scale-info")]
 use scale_info::{build::Fields, Path, Type, TypeInfo};
@@ -312,54 +310,6 @@ impl From<Felt252Wrapper> for StarkFelt {
     }
 }
 
-/// SCALE trait.
-#[cfg(feature = "parity-scale-codec")]
-impl Encode for Felt252Wrapper {
-    fn encode_to<T: Output + ?Sized>(&self, dest: &mut T) {
-        dest.write(&self.0.to_bytes_be());
-    }
-}
-
-/// SCALE trait.
-#[cfg(feature = "parity-scale-codec")]
-impl EncodeLike for Felt252Wrapper {}
-
-/// SCALE trait.
-#[cfg(feature = "parity-scale-codec")]
-impl MaxEncodedLen for Felt252Wrapper {
-    fn max_encoded_len() -> usize {
-        32
-    }
-}
-
-/// SCALE trait.
-#[cfg(feature = "parity-scale-codec")]
-impl Decode for Felt252Wrapper {
-    fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
-        let mut buf: [u8; 32] = [0; 32];
-        input.read(&mut buf)?;
-
-        match Felt252Wrapper::try_from(&buf) {
-            Ok(felt) => Ok(felt),
-            Err(e) => Err(Error::from("Can't get FieldElement from input buffer.").chain(hex::encode(buf)).chain(e)),
-        }
-    }
-}
-
-/// SCALE trait.
-#[cfg(feature = "scale-info")]
-impl TypeInfo for Felt252Wrapper {
-    type Identity = Self;
-
-    // The type info is saying that the field element must be seen as an
-    // array of bytes.
-    fn type_info() -> Type {
-        Type::builder()
-            .path(Path::new("Felt252Wrapper", module_path!()))
-            .composite(Fields::unnamed().field(|f| f.ty::<[u8; 32]>().type_name("FieldElement")))
-    }
-}
-
 #[derive(Debug, PartialEq, Error)]
 /// Error related to Felt252Wrapper.
 pub enum Felt252WrapperError {
@@ -484,34 +434,6 @@ mod felt252_wrapper_tests {
         let h2: H256 = felt2.into();
         let h2_expected = H256::from_low_u64_be(2);
         assert_eq!(h2, h2_expected);
-    }
-
-    #[test]
-    #[cfg(feature = "parity-scale-codec")]
-    fn encode_decode_scale() {
-        let felt = Felt252Wrapper::ONE;
-        let encoded = felt.encode();
-        let decoded = Felt252Wrapper::decode(&mut &encoded[..]);
-        assert_eq!(decoded, Ok(Felt252Wrapper(FieldElement::ONE)));
-
-        let felt = Felt252Wrapper::from_hex_be("0x1234").unwrap();
-        let encoded = felt.encode();
-        let decoded = Felt252Wrapper::decode(&mut &encoded[..]);
-        assert_eq!(felt, decoded.unwrap());
-    }
-
-    #[test]
-    #[cfg(feature = "parity-scale-codec")]
-    fn vec_encode_decode_scale() {
-        let input = vec![
-            Felt252Wrapper::ONE,
-            Felt252Wrapper::TWO,
-            Felt252Wrapper::from_dec_str("1000000000").unwrap(),
-            Felt252Wrapper::MAX,
-        ];
-        let encoded = input.encode();
-        let decoded = Vec::<Felt252Wrapper>::decode(&mut &encoded[..]);
-        assert_eq!(decoded, Ok(input));
     }
 
     #[test]

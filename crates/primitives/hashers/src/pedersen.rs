@@ -10,8 +10,6 @@ use super::HasherT;
 /// The Pedersen hasher.
 #[derive(Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub struct PedersenHasher;
 
 unsafe impl Send for PedersenHasher {}
