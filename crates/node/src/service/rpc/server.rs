@@ -253,7 +253,11 @@ pub(crate) fn try_into_cors(maybe_cors: Option<&Vec<String>>) -> anyhow::Result<
 }
 
 pub(crate) fn format_cors(maybe_cors: Option<&Vec<String>>) -> String {
-    if let Some(cors) = maybe_cors { format!("{:?}", cors) } else { format!("{:?}", ["*"]) }
+    if let Some(cors) = maybe_cors {
+        format!("{:?}", cors)
+    } else {
+        format!("{:?}", ["*"])
+    }
 }
 
 /// Extracts the IP addr from the HTTP request.

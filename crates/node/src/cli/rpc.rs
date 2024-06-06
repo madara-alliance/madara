@@ -58,7 +58,11 @@ impl FromStr for Cors {
             }
         }
 
-        if is_all { Ok(Cors::All) } else { Ok(Cors::List(origins)) }
+        if is_all {
+            Ok(Cors::All)
+        } else {
+            Ok(Cors::List(origins))
+        }
     }
 }
 

@@ -13,7 +13,7 @@ pub(crate) const CONTRACT_NONCES_PREFIX_EXTRACTOR: usize = 32;
 pub struct ContractAddressK([u8; 32]);
 impl From<ContractAddress> for ContractAddressK {
     fn from(value: ContractAddress) -> Self {
-        Self(value.0.0.bytes().try_into().unwrap())
+        Self(value.0 .0.bytes().try_into().unwrap())
     }
 }
 impl Deref for ContractAddressK {
