@@ -1,18 +1,10 @@
-use jsonrpsee::core::error::Error;
 use jsonrpsee::core::RpcResult;
 use mc_db::storage_handler;
-use mc_sync::l2::get_pending_state_update;
-use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
-use mp_types::block::DBlockT;
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sp_blockchain::HeaderBackend;
+use mp_felt::FeltWrapper;
 use starknet_core::types::{BlockId, BlockTag, FieldElement, MaybePendingStateUpdate, StateUpdate};
 
-use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
-use crate::utils::helpers::block_hash_from_block_n;
+use crate::utils::ResultExt;
 use crate::Starknet;
 
 /// Get the information about the result of executing the requested block.
@@ -33,62 +25,35 @@ use crate::Starknet;
 /// the state of the network as a result of the block's execution. This can include a confirmed
 /// state update or a pending state update. If the block is not found, returns a
 /// `StarknetRpcApiError` with `BlockNotFound`.
-pub fn get_state_update<BE, C, H>(
-    starknet: &Starknet<BE, C, H>,
-    block_id: BlockId,
-) -> RpcResult<MaybePendingStateUpdate>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    match block_id {
-        BlockId::Tag(BlockTag::Pending) => get_state_update_pending(),
-        _ => get_state_update_finalized(starknet, block_id),
-    }
-}
-
-fn get_state_update_finalized<BE, C, H>(
-    starknet: &Starknet<BE, C, H>,
-    block_id: BlockId,
-) -> RpcResult<MaybePendingStateUpdate>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
-
-    let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-    let block_number = starknet_block.header().block_number;
-    let block_hash = block_hash_from_block_n(block_number)?;
-
-    let new_root = Felt252Wrapper::from(starknet_block.header().global_state_root).into();
+pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate> {
+    let block = starknet.get_block_info(block_id)?;
+    let new_root = block.header().global_state_root.into_field_element();
+    let block_hash = block.block_hash().into_field_element();
 
     // Get the old root from the previous block if it exists, otherwise default to zero.
-    let old_root = if starknet_block.header().block_number > 0 {
-        let previous_substrate_block_hash =
-            starknet.substrate_block_hash_from_starknet_block(BlockId::Number(block_number - 1))?;
-        let previous_starknet_block = get_block_by_block_hash(starknet.client.as_ref(), previous_substrate_block_hash)?;
-        Felt252Wrapper::from(previous_starknet_block.header().global_state_root).into()
+    let old_root = if let Some(block_n) = block.block_n().checked_sub(1) {
+        let info = starknet.get_block_info(BlockId::Number(block_n))?;
+        info.header().global_state_root.into_field_element()
     } else {
         FieldElement::default()
     };
 
-    let state_diff = storage_handler::block_state_diff()
-        .get(block_number)
-        .map_err(|e| {
-            log::error!("Failed to get state diff: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
-        .ok_or(StarknetRpcApiError::BlockNotFound)?;
+    match block_id {
+        BlockId::Tag(BlockTag::Pending) => {
+            let state_update = starknet
+                .block_storage()
+                .get_pending_block_state_update()
+                .or_internal_server_error("Failed to get pending state update")?
+                .ok_or(StarknetRpcApiError::BlockNotFound)?;
+            Ok(MaybePendingStateUpdate::PendingUpdate(state_update))
+        }
+        _ => {
+            let state_diff = storage_handler::block_state_diff()
+                .get(block.block_n())
+                .or_internal_server_error("Failed to get state diff")?
+                .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    Ok(MaybePendingStateUpdate::Update(StateUpdate { block_hash, old_root, new_root, state_diff }))
-}
-
-fn get_state_update_pending() -> RpcResult<MaybePendingStateUpdate> {
-    match get_pending_state_update() {
-        Some(state_update) => Ok(MaybePendingStateUpdate::PendingUpdate(state_update)),
-        None => Err(Error::Custom("Failed to retrieve pending state update, node not yet synchronized".to_string())),
+            Ok(MaybePendingStateUpdate::Update(StateUpdate { block_hash, old_root, new_root, state_diff }))
+        }
     }
 }

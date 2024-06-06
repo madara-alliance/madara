@@ -3,30 +3,22 @@
 //! It uses the deoxys client and backend in order to answer queries.
 
 mod constants;
-pub mod deoxys_backend_client;
 mod errors;
 mod events;
 mod methods;
 mod types;
 pub mod utils;
 
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use mc_sync::utility;
-use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
-use mp_types::block::{DBlockT, DHashT, DHeaderT};
-use sc_network_sync::SyncingService;
+use mc_db::mapping_db::MappingDb;
+use mc_db::DeoxysBackend;
+use mp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use sp_arithmetic::traits::UniqueSaturatedInto;
-use sp_blockchain::HeaderBackend;
-use sp_core::H256;
-use sp_runtime::traits::Header as HeaderT;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
@@ -36,13 +28,8 @@ use starknet_core::types::{
     MaybePendingStateUpdate, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
     SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
-use utils::helpers::block_n_from_id;
-
-use crate::deoxys_backend_client::get_block_by_block_hash;
-use crate::methods::get_block::{
-    get_block_with_tx_hashes_finalized, get_block_with_tx_hashes_pending, get_block_with_txs_finalized,
-    get_block_with_txs_pending,
-};
+use starknet_providers::{SequencerGatewayProvider, Url};
+use utils::ResultExt;
 
 // Starknet RPC API trait and types
 //
@@ -203,74 +190,85 @@ pub trait StarknetTraceRpcApi {
     async fn trace_transaction(&self, transaction_hash: FieldElement) -> RpcResult<TransactionTraceWithHash>;
 }
 
+#[derive(Clone)]
+pub struct ChainConfig {
+    pub chain_id: Felt,
+    pub feeder_gateway: Url,
+    pub gateway: Url,
+}
+
 /// A Starknet RPC server for Deoxys
-pub struct Starknet<BE, C, H> {
-    client: Arc<C>,
-    sync_service: Arc<SyncingService<DBlockT>>,
-    starting_block: <DHeaderT as HeaderT>::Number,
-    _marker: PhantomData<(DBlockT, BE, H)>,
+pub struct Starknet {
+    starting_block: u64,
+    chain_config: ChainConfig,
 }
 
-#[allow(clippy::too_many_arguments)]
-impl<BE, C, H> Starknet<BE, C, H> {
-    pub fn new(
-        client: Arc<C>,
-        sync_service: Arc<SyncingService<DBlockT>>,
-        starting_block: <DHeaderT as HeaderT>::Number,
-    ) -> Self {
-        Self { client, sync_service, starting_block, _marker: PhantomData }
+impl Starknet {
+    pub fn new(starting_block: u64, chain_config: ChainConfig) -> Self {
+        Self { starting_block, chain_config }
     }
-}
 
-impl<BE, C, H> Starknet<BE, C, H> {
+    pub fn make_sequencer_provider(&self) -> SequencerGatewayProvider {
+        SequencerGatewayProvider::new(
+            self.chain_config.feeder_gateway.clone(),
+            self.chain_config.gateway.clone(),
+            self.chain_config.chain_id.0,
+        )
+    }
+
+    pub fn block_storage(&self) -> &MappingDb {
+        DeoxysBackend::mapping()
+    }
+
+    pub fn get_block_info(&self, block_id: impl Into<mp_block::BlockId>) -> RpcResult<DeoxysBlockInfo> {
+        Ok(self
+            .block_storage()
+            .get_block_info(&block_id.into())
+            .or_internal_server_error("Error getting block from storage")?
+            .ok_or(StarknetRpcApiError::BlockNotFound)?)
+    }
+
+    pub fn get_block_n(&self, block_id: impl Into<mp_block::BlockId>) -> RpcResult<u64> {
+        Ok(self
+            .block_storage()
+            .get_block_n(&block_id.into())
+            .or_internal_server_error("Error getting block from storage")?
+            .ok_or(StarknetRpcApiError::BlockNotFound)?)
+    }
+
+    pub fn get_block(&self, block_id: impl Into<mp_block::BlockId>) -> RpcResult<DeoxysBlock> {
+        Ok(self
+            .block_storage()
+            .get_block(&block_id.into())
+            .or_internal_server_error("Error getting block from storage")?
+            .ok_or(StarknetRpcApiError::BlockNotFound)?)
+    }
+
+    pub fn get_block_inner(&self, block_id: impl Into<mp_block::BlockId>) -> RpcResult<DeoxysBlockInner> {
+        Ok(self
+            .block_storage()
+            .get_block_inner(&block_id.into())
+            .or_internal_server_error("Error getting block from storage")?
+            .ok_or(StarknetRpcApiError::BlockNotFound)?)
+    }
+
     fn chain_id(&self) -> RpcResult<Felt> {
-        Ok(Felt(utility::chain_id()))
+        Ok(self.chain_config.chain_id)
     }
-}
 
-impl<BE, C, H> Starknet<BE, C, H>
-where
-    C: HeaderBackend<DBlockT> + 'static,
-{
     pub fn current_block_number(&self) -> RpcResult<u64> {
-        Ok(UniqueSaturatedInto::<u64>::unique_saturated_into(self.client.info().best_number))
+        self.get_block_n(mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
     }
-}
 
-impl<BE, C, H> Starknet<BE, C, H>
-where
-    C: HeaderBackend<DBlockT> + 'static,
-{
     pub fn current_spec_version(&self) -> RpcResult<String> {
         Ok("0.7.1".to_string())
     }
-}
 
-impl<BE, C, H> Starknet<BE, C, H>
-where
-    C: HeaderBackend<DBlockT> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    pub fn current_block_hash(&self) -> Result<H256, StarknetRpcApiError> {
-        let substrate_block_hash = self.client.info().best_hash;
-
-        let starknet_block = match get_block_by_block_hash(self.client.as_ref(), substrate_block_hash) {
-            Ok(block) => block,
-            Err(_) => return Err(StarknetRpcApiError::BlockNotFound),
-        };
-        Ok(starknet_block.header().hash::<H>().into())
-    }
-
-    /// Returns the substrate block hash corresponding to the given Starknet block id
-    fn substrate_block_hash_from_starknet_block(&self, block_id: BlockId) -> Result<DHashT, StarknetRpcApiError> {
-        if let BlockId::Hash(block_hash) = block_id {
-            deoxys_backend_client::load_hash(self.client.as_ref(), Felt252Wrapper::from(block_hash).into())?
-        } else {
-            let block_number = block_n_from_id(block_id)?;
-            self.client
-                .hash(UniqueSaturatedInto::unique_saturated_into(block_number))
-                .map_err(|_| StarknetRpcApiError::BlockNotFound)?
-        }
-        .ok_or(StarknetRpcApiError::BlockNotFound)
+    pub fn get_l1_last_confirmed_block(&self) -> RpcResult<u64> {
+        Ok(self
+            .block_storage()
+            .get_l1_last_confirmed_block()
+            .or_internal_server_error("Error getting L1 last confirmed block")?
+            .unwrap_or_default())
     }
 }

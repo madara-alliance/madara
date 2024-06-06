@@ -1,12 +1,8 @@
 use blockifier::transaction::objects::{FeeType, HasRelatedFeeType, TransactionExecutionInfo};
 use jsonrpsee::core::RpcResult;
-use mp_hashers::HasherT;
 use mp_simulations::SimulationFlags;
 use mp_transactions::from_broadcasted_transactions::ToAccountTransaction;
 use mp_transactions::TxType;
-use mp_types::block::DBlockT;
-use sc_client_api::{Backend, BlockBackend, StorageProvider};
-use sp_blockchain::HeaderBackend;
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulatedTransaction, SimulationFlag,
 };
@@ -15,24 +11,19 @@ use super::lib::ConvertCallInfoToExecuteInvocationError;
 use super::utils::tx_execution_infos_to_tx_trace;
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
-use crate::utils::helpers::block_n_from_id;
+use crate::utils::ResultExt;
 use crate::{utils, Starknet};
 
-pub async fn simulate_transactions<BE, C, H>(
-    starknet: &Starknet<BE, C, H>,
+pub async fn simulate_transactions(
+    starknet: &Starknet,
     block_id: BlockId,
     transactions: Vec<BroadcastedTransaction>,
     simulation_flags: Vec<SimulationFlag>,
-) -> RpcResult<Vec<SimulatedTransaction>>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
+) -> RpcResult<Vec<SimulatedTransaction>> {
+    let block_info = starknet.get_block_info(block_id)?;
 
-    let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
-    let block_number = block_n_from_id(block_id)?;
+    let block_context = block_context(starknet, &block_info)?;
+    let block_number = block_info.block_n();
 
     let simulation_flags = SimulationFlags {
         validate: !simulation_flags.contains(&SimulationFlag::SkipValidate),
@@ -45,12 +36,8 @@ where
         BroadcastedTransaction::DeployAccount(_) => tx.to_account_transaction().map(|tx| (TxType::DeployAccount, tx)),
     });
     let (tx_types, user_transactions) =
-        itertools::process_results(tx_type_and_tx_iterator, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>()).map_err(
-            |e| {
-                log::error!("Failed to convert BroadcastedTransaction to UserTransaction: {e}");
-                StarknetRpcApiError::InternalServerError
-            },
-        )?;
+        itertools::process_results(tx_type_and_tx_iterator, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>())
+            .or_internal_server_error("Failed to convert BroadcastedTransaction to UserTransaction")?;
 
     let fee_types = user_transactions.iter().map(|tx| tx.fee_type()).collect::<Vec<_>>();
 

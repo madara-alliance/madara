@@ -2,45 +2,32 @@
 members = [
   "crates/client/db",
   "crates/client/sync",
-  "crates/client/genesis-data-provider",
   "crates/client/rpc",
+  "crates/client/telemetry",
   "crates/node",
-  "crates/pallets/starknet",
-  "crates/pallets/starknet/runtime_api/",
   "crates/primitives/block",
-  "crates/primitives/chain-id",
   "crates/primitives/convert",
-  "crates/primitives/digest-log",
   "crates/primitives/felt",
-  "crates/primitives/genesis-config/",
   "crates/primitives/hashers",
   "crates/primitives/program-hash",
-  "crates/primitives/sequencer-address",
   "crates/primitives/transactions",
   "crates/primitives/types",
-  "crates/runtime",
 ]
 resolver = "2"
 # All previous except for `starknet-rpc-test` and `starknet-e2e-test`
 # We don't want `cargo test` to trigger its tests
 default-members = [
   "crates/client/db",
-  "crates/client/genesis-data-provider",
+  "crates/client/sync",
   "crates/client/rpc",
+  "crates/client/telemetry",
   "crates/node",
-  "crates/pallets/starknet",
-  "crates/pallets/starknet/runtime_api/",
   "crates/primitives/block",
-  "crates/primitives/chain-id",
-  "crates/primitives/digest-log",
   "crates/primitives/felt",
-  "crates/primitives/genesis-config/",
   "crates/primitives/hashers",
   "crates/primitives/program-hash",
-  "crates/primitives/sequencer-address",
   "crates/primitives/transactions",
   "crates/primitives/types",
-  "crates/runtime",
 ]
 
 [profile.dev]
@@ -68,160 +55,22 @@ version = "0.1.0"
 rocksdb = { version = "0.21", features = [
   # "multi-threaded-cf",
 ] }
-# Substrate frame dependencies
-frame-benchmarking = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-frame-benchmarking-cli = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false }
-frame-executive = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-frame-support = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-frame-system = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-frame-system-benchmarking = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-frame-system-rpc-runtime-api = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-frame-try-runtime = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-substrate-frame-rpc-system = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false }
-
-# Substrate primitives dependencies
-sp-api = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-arithmetic = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-block-builder = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-blockchain = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false }
-sp-consensus = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-consensus-aura = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-consensus-grandpa = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-core = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-database = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false }
-sp-inherents = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-io = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-keyring = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false }
-sp-offchain = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-runtime = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-session = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-state-machine = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-statement-store = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-std = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-storage = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-timestamp = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-
-sp-transaction-pool = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-trie = { version = "22.0.0", git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-sp-version = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false, features = [
-  "std",
-] }
-
-# Substrate client dependencies
-sc-client-db = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-consensus = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-network = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-network-common = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-network-sync = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-# For integration tests in order to create blocks on demand
-sc-basic-authorship = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-block-builder = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-
-sc-cli = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-
-sc-client-api = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-consensus-aura = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-consensus-grandpa = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-consensus-manual-seal = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std", default-features = false }
-sc-executor = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-keystore = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-offchain = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-proposer-metrics = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-rpc = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-rpc-api = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-service = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-telemetry = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-transaction-pool = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-transaction-pool-api = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-sc-utils = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-substrate-test-runtime-client = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
 # Substrate build & tools dependencies
 prometheus-endpoint = { package = "substrate-prometheus-endpoint", version = "0.10.0-dev", git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-substrate-build-script-utils = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-substrate-wasm-builder = { git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 parity-scale-codec = { version = "3.2.2", default-features = false, features = [
   "std",
 ] }
-
-# Substrate Frame pallet
-pallet-aura = { default-features = true, git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-pallet-grandpa = { default-features = true, git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-pallet-timestamp = { default-features = true, git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 
 # Bonsai trie dependencies
 bonsai-trie = { default-features = false, git = "https://github.com/keep-starknet-strange/bonsai-trie.git", branch = "oss", features = [
   "std",
 ] }
 
-# Deoxys pallets
-pallet-starknet = { path = "crates/pallets/starknet", default-features = false, features = [
-  "std",
-] }
-pallet-starknet-runtime-api = { path = "crates/pallets/starknet/runtime_api", default-features = false, features = [
-  "std",
-] }
 # Deoxys primtitives
 mp-block = { path = "crates/primitives/block", default-features = false }
-mp-chain-id = { path = "crates/primitives/chain-id", default-features = false }
 mp-convert = { path = "crates/primitives/convert", default-features = false }
-mp-digest-log = { path = "crates/primitives/digest-log", default-features = false, features = [
-  "std",
-] }
 mp-felt = { path = "crates/primitives/felt", default-features = false }
-mp-genesis-config = { path = "crates/primitives/genesis-config", default-features = false }
 mp-hashers = { path = "crates/primitives/hashers", default-features = false }
 mp-program-hash = { path = "crates/primitives/program-hash", default-features = false }
 mp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
@@ -230,16 +79,10 @@ mp-transactions = { path = "crates/primitives/transactions", default-features = 
 mp-types = { path = "crates/primitives/types", default-features = false }
 
 # Deoxys client
+mc-telemetry = { path = "crates/client/telemetry" }
 mc-db = { path = "crates/client/db" }
-mc-genesis-data-provider = { path = "crates/client/genesis-data-provider" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-sync = { path = "crates/client/sync", default-features = false }
-
-# Deoxys runtime
-deoxys-runtime = { path = "crates/runtime" }
-
-# TUI Dashboard
-deoxys-tui = { path = "crates/tui" }
 
 # Starknet dependencies
 # Cairo Virtual Machine
@@ -248,16 +91,10 @@ cairo-vm = { git = "https://github.com/kasarlabs/cairo-vm", branch = "feature/sc
   "parity-scale-codec",
   "std",
 ] }
-
-# temporary fokr fix for `failed deserialization when accessible_scopes is missing`
-# until we can update to commit c974e5c is starknet-rs
-starknet-accounts = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
-starknet-contract = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
 starknet-crypto = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
 starknet-ff = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
 starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
-starknet-signers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
 
 starknet-types-core = { version = "0.1", default-features = false, features = [
   "hash",
@@ -269,11 +106,7 @@ starknet_api = { git = "https://github.com/kasarlabs/starknet-api", branch = "fe
   "testing",
   "parity-scale-codec",
 ] }
-
-# Cairo lang
-cairo-lang-starknet = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
 cairo-lang-starknet-classes = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
-cairo-lang-casm = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
 cairo-lang-utils = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
 
 # Ethers: using the same versions as in Anvil
@@ -289,22 +122,25 @@ clap = { version = "4.4.8", default-features = false, features = ["std"] }
 derive_more = { version = "0.99.17", default-features = false }
 flate2 = "1.0.28"
 futures = { version = "0.3.29", default-features = false, features = ["std"] }
-futures-timer = { version = "3.0.2", default-features = false }
-hashbrown = "0.14.2"
 hex = { version = "0.4.3", default-features = false, features = ["std"] }
 indexmap = "2.2.5"
 itertools = "0.12.1"
-jsonrpsee = { version = "0.16.3", default-features = false }
+jsonrpsee = { version = "0.22", default-features = false, features = [
+  "server",
+] }
+tower = { version = "0.4.13", features = ["util"] }
+tower-http = { version = "0.4.4", features = ["cors"] }
+governor = "0.6.3"
+hyper = { version = "0.14", features = ["server"] }
+ip_network = "0.4.1"
 lazy_static = { version = "1.4.0", default-features = false }
 once_cell = "1.19.0"
 log = { version = "0.4.20", default-features = false, features = ["std"] }
 num-traits = "0.2.17"
 num-bigint = "0.4.4"
-phf = { version = "0.11", default-features = false, features = ["std"] }
-pretty_assertions = "1.4.0"
 primitive-types = "0.12.2"
 rand = "0.8.5"
-reqwest = { version = "0.11.22", default-features = false }
+reqwest = { version = "0.12.4", features = ["json"] }
 rstest = "0.18.1"
 scale-info = { version = "2.10.0", default-features = false, features = [
   "std",
@@ -314,7 +150,6 @@ serde_json = { version = "1.0.108", default-features = false, features = [
   "std",
 ] }
 serde_with = { version = "2.3.3", default-features = false }
-sha3 = { version = "0.10.8", default-features = false, features = ["std"] }
 thiserror = "1.0.50"
 thiserror-no-std = "2.0.2"
 tokio = "1.34.0"
@@ -322,6 +157,3 @@ url = "2.4.1"
 rayon = "1.10.0"
 crossbeam-skiplist = "0.1"
 bincode = "1.3.3"
-
-[patch."https://github.com/w3f/ring-vrf"]
-bandersnatch_vrfs = { git = "https://github.com/w3f/ring-vrf?rev=3ddc20", version = "0.0.4", rev = "3ddc20" }

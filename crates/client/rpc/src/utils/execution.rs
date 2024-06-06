@@ -13,12 +13,11 @@ use blockifier::transaction::objects::{
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use blockifier::versioned_constants::VersionedConstants;
+use jsonrpsee::core::RpcResult;
 use mc_db::storage_handler::{self, StorageView};
+use mp_block::DeoxysBlockInfo;
 use mp_felt::Felt252Wrapper;
-use mp_genesis_config::{ETH_TOKEN_ADDR, STRK_TOKEN_ADDR};
 use mp_simulations::SimulationFlags;
-use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::Block as BlockT;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::StarkHash;
@@ -28,26 +27,24 @@ use starknet_ff::FieldElement;
 
 use super::blockifier_state_adapter::BlockifierStateAdapter;
 use crate::errors::StarknetRpcApiError;
-use crate::get_block_by_block_hash;
+use crate::utils::ResultExt;
+use crate::Starknet;
 
-pub fn block_context<B, C>(
-    client: &C,
-    substrate_block_hash: <B as BlockT>::Hash,
-) -> Result<BlockContext, StarknetRpcApiError>
-where
-    B: BlockT,
-    C: HeaderBackend<B>,
-{
-    let block = get_block_by_block_hash(client, substrate_block_hash).map_err(|e| {
-        log::error!("Failed to retrieve block by block hash: {e}");
-        StarknetRpcApiError::BlockNotFound
-    })?;
-    let block_header = block.header();
+// 0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7
+pub const ETH_TOKEN_ADDR: FieldElement =
+    FieldElement::from_mont([4380532846569209554, 17839402928228694863, 17240401758547432026, 418961398025637529]);
+
+// 0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
+pub const STRK_TOKEN_ADDR: FieldElement =
+    FieldElement::from_mont([16432072983745651214, 1325769094487018516, 5134018303144032807, 468300854463065062]);
+
+pub fn block_context(_client: &Starknet, block_info: &DeoxysBlockInfo) -> Result<BlockContext, StarknetRpcApiError> {
+    let block_header = block_info.header();
 
     // safe unwrap because address is always valid and static
     let fee_token_address = FeeTokenAddresses {
-        strk_fee_token_address: StarkHash::new_unchecked(STRK_TOKEN_ADDR.0.to_bytes_be()).try_into().unwrap(),
-        eth_fee_token_address: StarkHash::new_unchecked(ETH_TOKEN_ADDR.0.to_bytes_be()).try_into().unwrap(),
+        strk_fee_token_address: StarkHash::new_unchecked(STRK_TOKEN_ADDR.to_bytes_be()).try_into().unwrap(),
+        eth_fee_token_address: StarkHash::new_unchecked(ETH_TOKEN_ADDR.to_bytes_be()).try_into().unwrap(),
     };
     let chain_id = starknet_api::core::ChainId("SN_MAIN".to_string());
 
@@ -96,9 +93,11 @@ pub fn call_contract(
     function_selector: EntryPointSelector,
     calldata: Calldata,
     block_context: &BlockContext,
-) -> Result<Vec<Felt252Wrapper>, ()> {
+) -> RpcResult<Vec<Felt252Wrapper>> {
     // Get class hash
-    let class_hash = storage_handler::contract_class_hash().get(&address).map_err(|_| ())?;
+    let class_hash = storage_handler::contract_class_hash()
+        .get(&address)
+        .or_internal_server_error("Error getting contract class hash")?;
 
     let entrypoint = CallEntryPoint {
         class_hash,
@@ -120,23 +119,25 @@ pub fn call_contract(
         }),
         false,
     )
-    .map_err(|_| ())?;
+    .map_err(|err| {
+        log::error!("Transaction execution error: {err}");
+        StarknetRpcApiError::TxnExecutionError
+    })?;
 
-    match entrypoint.execute(
-        &mut BlockifierStateAdapter::new(block_context.block_info().block_number.0),
-        &mut resources,
-        &mut entry_point_execution_context,
-    ) {
-        Ok(v) => {
-            log::debug!("Successfully called a smart contract function: {:?}", v);
-            let result = v.execution.retdata.0.iter().map(|x| (*x).into()).collect();
-            Ok(result)
-        }
-        Err(e) => {
-            log::error!("failed to call smart contract {:?}", e);
-            Err(())
-        }
-    }
+    let res = entrypoint
+        .execute(
+            &mut BlockifierStateAdapter::new(block_context.block_info().block_number.0),
+            &mut resources,
+            &mut entry_point_execution_context,
+        )
+        .map_err(|err| {
+            log::error!("Entry point execution error: {err}");
+            StarknetRpcApiError::TxnExecutionError
+        })?;
+
+    log::debug!("Successfully called a smart contract function: {:?}", res);
+    let result = res.execution.retdata.0.iter().map(|x| (*x).into()).collect();
+    Ok(result)
 }
 
 pub fn estimate_fee(

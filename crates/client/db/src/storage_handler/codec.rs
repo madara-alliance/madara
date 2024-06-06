@@ -1,7 +1,9 @@
 use std::io::{self, Cursor, Read, Write};
 
+use starknet_api::block::BlockHash;
 use starknet_api::core::{ClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
+use starknet_api::transaction::TransactionHash;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -36,23 +38,26 @@ impl Decode for StarkFelt {
     }
 }
 
-impl Encode for ContractAddress {
-    fn encode(&self) -> Result<Vec<u8>, Error> {
-        self.0.encode()
-    }
+macro_rules! impl_for_wrapper {
+    ($arg:ty) => {
+        impl Encode for $arg {
+            fn encode(&self) -> Result<Vec<u8>, Error> {
+                self.0.encode()
+            }
+        }
+        impl Decode for $arg {
+            fn decode(bytes: &[u8]) -> Result<Self, Error> {
+                Ok(Self(Decode::decode(bytes)?))
+            }
+        }
+    };
 }
 
-impl Decode for ContractAddress {
-    fn decode(bytes: &[u8]) -> Result<Self, Error> {
-        Ok(ContractAddress(PatriciaKey(StarkFelt::decode(bytes)?)))
-    }
-}
-
-impl Encode for ClassHash {
-    fn encode(&self) -> Result<Vec<u8>, Error> {
-        self.0.encode()
-    }
-}
+impl_for_wrapper!(PatriciaKey);
+impl_for_wrapper!(BlockHash);
+impl_for_wrapper!(ClassHash);
+impl_for_wrapper!(TransactionHash);
+impl_for_wrapper!(ContractAddress);
 
 impl Encode for Nonce {
     fn encode(&self) -> Result<Vec<u8>, Error> {
@@ -65,12 +70,6 @@ impl Decode for Nonce {
     fn decode(bytes: &[u8]) -> Result<Self, Error> {
         let nonce = u64::decode(bytes)?;
         Ok(Nonce(StarkFelt::from(nonce)))
-    }
-}
-
-impl Decode for ClassHash {
-    fn decode(bytes: &[u8]) -> Result<Self, Error> {
-        Ok(ClassHash(StarkFelt::decode(bytes)?))
     }
 }
 

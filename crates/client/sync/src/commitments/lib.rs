@@ -119,10 +119,7 @@ pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStat
 pub fn calculate_state_root<H: HasherT>(
     contracts_trie_root: Felt252Wrapper,
     classes_trie_root: Felt252Wrapper,
-) -> Felt252Wrapper
-where
-    H: HasherT,
-{
+) -> Felt252Wrapper {
     let starknet_state_prefix = Felt252Wrapper::try_from("STARKNET_STATE_V0".as_bytes()).unwrap();
 
     if classes_trie_root == Felt252Wrapper::ZERO {
@@ -148,7 +145,7 @@ where
 ///
 ///
 /// The updated state root as a `Felt252Wrapper`.
-pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt252Wrapper {
+pub fn csd_calculate_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt252Wrapper {
     // Update contract and its storage tries
     let (contract_trie_root, class_trie_root) = rayon::join(
         || contract_trie_root(&csd, block_number).expect("Failed to compute contract root"),

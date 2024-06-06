@@ -34,7 +34,12 @@ primitive-types = { workspace = true }
 rand = { workspace = true }
 rodio = { version = "0.17", optional = true }
 serde = { workspace = true, default-features = true }
-tokio = { workspace = true, features = ["macros", "parking_lot", "test-util"] }
+tokio = { workspace = true, features = [
+  "macros",
+  "parking_lot",
+  "test-util",
+  "signal",
+] }
 url = { workspace = true }
 
 starknet-core = { workspace = true }
@@ -45,13 +50,10 @@ starknet-ff = { workspace = true, default-features = false, features = [
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true }
 
-sc-consensus-manual-seal.workspace = true
-sp-blockchain = { workspace = true, default-features = true }
-sp-core = { workspace = true, features = ["std"] }
-
 bitvec = { workspace = true }
 bonsai-trie = { workspace = true }
 mc-db = { workspace = true }
+mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-convert = { workspace = true }
 mp-felt = { workspace = true }

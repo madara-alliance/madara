@@ -1,11 +1,6 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use jsonrpsee::core::RpcResult;
-use mp_hashers::HasherT;
 use mp_transactions::from_broadcasted_transactions::ToAccountTransaction;
-use mp_types::block::DBlockT;
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
 
 use crate::errors::StarknetRpcApiError;
@@ -22,20 +17,14 @@ use crate::{utils, Starknet};
 /// # Returns
 ///
 /// * `fee_estimate` - fee estimate in gwei
-pub async fn estimate_fee<BE, C, H>(
-    starknet: &Starknet<BE, C, H>,
+pub async fn estimate_fee(
+    starknet: &Starknet,
     request: Vec<BroadcastedTransaction>,
     simulation_flags: Vec<SimulationFlagForEstimateFee>,
     block_id: BlockId,
-) -> RpcResult<Vec<FeeEstimate>>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let substrate_block_hash = starknet.substrate_block_hash_from_starknet_block(block_id)?;
-
-    let block_context = block_context(starknet.client.as_ref(), substrate_block_hash)?;
+) -> RpcResult<Vec<FeeEstimate>> {
+    let block_info = starknet.get_block_info(block_id)?;
+    let block_context = block_context(starknet, &block_info)?;
 
     let transactions = request
         .into_iter()

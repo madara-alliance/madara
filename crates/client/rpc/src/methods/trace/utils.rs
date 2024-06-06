@@ -240,3 +240,25 @@ pub fn tx_execution_infos_to_tx_trace(
 
     Ok(tx_trace)
 }
+
+// // TODO: move to mod utils
+// pub fn block_number_by_id(id: BlockId) -> Result<u64, StarknetRpcApiError> {
+//     let (latest_block_hash, latest_block_number) =
+// DeoxysBackend::meta().get_latest_block_hash_and_number()?;     match id {
+//         // Check if the block corresponding to the number is stored in the database
+//         BlockId::Number(number) => match
+// DeoxysBackend::mapping().starknet_block_hash_from_block_number(number)? {             Some(_) =>
+// Ok(number),             None => Err(StarknetRpcApiError::BlockNotFound),
+//         },
+//         BlockId::Hash(block_hash) => {
+//             match
+// DeoxysBackend::mapping().block_number_from_starknet_block_hash(StarkFelt(block_hash.
+// to_bytes_be()))? {                 Some(block_number) => Ok(block_number),
+//                 None if block_hash == latest_block_hash => Ok(latest_block_number),
+//                 None => Err(StarknetRpcApiError::BlockNotFound),
+//             }
+//         }
+//         BlockId::Tag(BlockTag::Latest) => Ok(latest_block_number),
+//         BlockId::Tag(BlockTag::Pending) => Ok(latest_block_number + 1),
+//     }
+// }

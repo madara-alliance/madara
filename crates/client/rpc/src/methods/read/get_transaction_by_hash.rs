@@ -1,17 +1,12 @@
 use jsonrpsee::core::RpcResult;
-use mc_db::DeoxysBackend;
 use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
-use mp_types::block::DBlockT;
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sp_blockchain::HeaderBackend;
+use starknet_api::hash::StarkFelt;
+use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{FieldElement, Transaction};
 
-use crate::deoxys_backend_client::get_block_by_block_hash;
 use crate::errors::StarknetRpcApiError;
-use crate::utils::helpers::{block_hash_from_block_n, txs_hashes_from_block_hash};
+use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
 
 /// Get the details and status of a submitted transaction.
@@ -41,39 +36,14 @@ use crate::Starknet;
 /// - `BLOCK_NOT_FOUND` if the specified block is not found.
 /// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
 ///   system's capacity.
-pub fn get_transaction_by_hash<BE, C, H>(
-    starknet: &Starknet<BE, C, H>,
-    transaction_hash: FieldElement,
-) -> RpcResult<Transaction>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let substrate_block_hash = DeoxysBackend::mapping()
-        .substrate_block_hash_from_transaction_hash(Felt252Wrapper::from(transaction_hash).into())
-        .map_err(|e| {
-            log::error!("Failed to get substrate block hash from transaction hash: {}", e);
-            StarknetRpcApiError::InternalServerError
-        })?
+pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: FieldElement) -> RpcResult<Transaction> {
+    let tx_hash = TransactionHash(StarkFelt::from(Felt252Wrapper(transaction_hash)));
+    let (block, tx_info) = starknet
+        .block_storage()
+        .find_tx_hash_block(&tx_hash)
+        .or_internal_server_error("Error getting block from tx hash")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-
-    let starknet_block = get_block_by_block_hash(starknet.client.as_ref(), substrate_block_hash)?;
-    let block_number = starknet_block.header().block_number;
-    let starknet_block_hash = block_hash_from_block_n(block_number)?;
-
-    let transaction_hash = Felt252Wrapper::from(transaction_hash);
-
-    let transaction = txs_hashes_from_block_hash(starknet_block_hash)?
-        .into_iter()
-        .zip(starknet_block.transactions())
-        .find(|(tx_hash, _)| *tx_hash == transaction_hash.into())
-        .map(|(_, tx)| tx.clone());
-
-    match transaction {
-        Some(tx) => Ok(to_starknet_core_tx(tx, transaction_hash.into())),
-        // This should never happen, because the transaction hash is checked above when getting block hash from
-        // transaction hash.
-        None => Err(StarknetRpcApiError::InternalServerError.into()),
-    }
+    let tx =
+        block.transactions().get(tx_info.tx_index).ok_or_internal_server_error("Storage block transaction mismatch")?;
+    Ok(to_starknet_core_tx(tx, transaction_hash))
 }
