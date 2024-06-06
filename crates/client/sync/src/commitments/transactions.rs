@@ -5,13 +5,11 @@ use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mc_db::storage_handler::bonsai_identifier;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
-use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use rayon::prelude::*;
 use starknet_api::transaction::Transaction;
-use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
-use starknet_types_core::hash::Pedersen;
+use starknet_types_core::hash::{Pedersen, StarkHash};
 
 /// Compute the combined hash of the transaction hash and the signature.
 ///
@@ -26,11 +24,11 @@ use starknet_types_core::hash::Pedersen;
 /// # Returns
 ///
 /// The transaction hash with signature.
-pub fn calculate_transaction_hash_with_signature<H: HasherT>(
+pub fn calculate_transaction_hash_with_signature(
     transaction: &Transaction,
     chain_id: Felt252Wrapper,
     block_number: u64,
-) -> FieldElement {
+) -> Felt {
     let include_signature = block_number >= 61394;
 
     let (signature_hash, tx_hash) = rayon::join(
@@ -39,20 +37,16 @@ pub fn calculate_transaction_hash_with_signature<H: HasherT>(
                 // Include signatures for Invoke transactions or for all transactions
                 let signature = invoke_tx.signature();
 
-                H::compute_hash_on_elements(
-                    &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
-                )
+                Pedersen::hash_array(&signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>())
             }
             Transaction::Declare(declare_tx) => {
                 // Include signatures for Declare transactions if the block number is greater than 61394 (mainnet)
                 if include_signature {
                     let signature = declare_tx.signature();
 
-                    H::compute_hash_on_elements(
-                        &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
-                    )
+                    Pedersen::hash_array(&signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>())
                 } else {
-                    H::compute_hash_on_elements(&[])
+                    Pedersen::hash_array(&[])
                 }
             }
             Transaction::DeployAccount(deploy_account_tx) => {
@@ -61,20 +55,21 @@ pub fn calculate_transaction_hash_with_signature<H: HasherT>(
                 if include_signature {
                     let signature = deploy_account_tx.signature();
 
-                    H::compute_hash_on_elements(
-                        &signature.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
-                    )
+                    Pedersen::hash_array(&signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>())
                 } else {
-                    H::compute_hash_on_elements(&[])
+                    Pedersen::hash_array(&[])
                 }
             }
-            Transaction::L1Handler(_) => H::compute_hash_on_elements(&[]),
-            _ => H::compute_hash_on_elements(&[]),
+            Transaction::L1Handler(_) => Pedersen::hash_array(&[]),
+            _ => Pedersen::hash_array(&[]),
         },
-        || Felt252Wrapper::from(transaction.compute_hash::<H>(chain_id, false, Some(block_number)).0).into(),
+        || {
+            Felt252Wrapper::from(transaction.compute_hash::<PedersenHasher>(chain_id, false, Some(block_number)).0)
+                .into()
+        },
     );
 
-    H::hash_elements(tx_hash, signature_hash)
+    Pedersen::hash(&tx_hash, &signature_hash)
 }
 
 /// Calculate the transaction commitment in memory using HashMapDb (which is more efficient for this
@@ -88,12 +83,12 @@ pub fn calculate_transaction_hash_with_signature<H: HasherT>(
 ///
 /// # Returns
 ///
-/// The transaction commitment as `Felt252Wrapper`.
+/// The transaction commitment as `Felt`.
 pub fn memory_transaction_commitment(
     transactions: &[Transaction],
     chain_id: Felt252Wrapper,
     block_number: u64,
-) -> Result<(Felt252Wrapper, Vec<FieldElement>), String> {
+) -> Result<(Felt, Vec<Felt>), String> {
     // TODO @cchudant refacto/optimise this function
     let config = BonsaiStorageConfig::default();
     let bonsai_db = HashMapDb::<BasicId>::default();
@@ -104,13 +99,13 @@ pub fn memory_transaction_commitment(
     // transaction hashes are computed in parallel
     let txs = transactions
         .par_iter()
-        .map(|tx| calculate_transaction_hash_with_signature::<PedersenHasher>(tx, chain_id, block_number))
+        .map(|tx| calculate_transaction_hash_with_signature(tx, chain_id, block_number))
         .collect::<Vec<_>>();
 
     // once transaction hashes have finished computing, they are inserted into the local Bonsai db
     for (i, &tx_hash) in txs.iter().enumerate() {
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
-        let value = Felt::from(Felt252Wrapper::from(tx_hash));
+        let value = tx_hash;
         bonsai_storage.insert(identifier, key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
     }
 
@@ -120,5 +115,5 @@ pub fn memory_transaction_commitment(
     bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
     let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
-    Ok((Felt252Wrapper::from(root_hash), txs))
+    Ok((root_hash, txs))
 }
