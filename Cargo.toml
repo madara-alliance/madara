@@ -58,7 +58,7 @@ rocksdb = { version = "0.21", features = [
 
 # Substrate build & tools dependencies
 prometheus-endpoint = { package = "substrate-prometheus-endpoint", version = "0.10.0-dev", git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-parity-scale-codec = { version = "3.2.2", default-features = false, features = [
+parity-scale-codec = { version = "3.2", default-features = false, features = [
   "std",
 ] }
 
@@ -116,44 +116,44 @@ ethers = { git = "https://github.com/gakonst/ethers-rs" }
 anyhow = "1.0"
 assert_matches = "1.5"
 async-trait = "0.1"
-bitvec = { version = "1.0.1", default-features = false, features = ["std"] }
-base64 = "0.13.1"
-clap = { version = "4.4.8", default-features = false, features = ["std"] }
-derive_more = { version = "0.99.17", default-features = false }
-flate2 = "1.0.28"
-futures = { version = "0.3.29", default-features = false, features = ["std"] }
-hex = { version = "0.4.3", default-features = false, features = ["std"] }
-indexmap = "2.2.5"
-itertools = "0.12.1"
+bitvec = { version = "1.0", default-features = false, features = ["std"] }
+base64 = "0.13"
+clap = { version = "4.4", default-features = false, features = ["std"] }
+derive_more = { version = "0.99", default-features = false }
+flate2 = "1.0"
+futures = { version = "0.3", default-features = false, features = ["std"] }
+hex = { version = "0.4", default-features = false, features = ["std"] }
+indexmap = "2.2"
+itertools = "0.12"
 jsonrpsee = { version = "0.22", default-features = false, features = [
   "server",
 ] }
-tower = { version = "0.4.13", features = ["util"] }
-tower-http = { version = "0.4.4", features = ["cors"] }
-governor = "0.6.3"
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.4", features = ["cors"] }
+governor = "0.6"
 hyper = { version = "0.14", features = ["server"] }
-ip_network = "0.4.1"
-lazy_static = { version = "1.4.0", default-features = false }
-once_cell = "1.19.0"
-log = { version = "0.4.20", default-features = false, features = ["std"] }
-num-traits = "0.2.17"
-num-bigint = "0.4.4"
-primitive-types = "0.12.2"
-rand = "0.8.5"
-reqwest = { version = "0.12.4", features = ["json"] }
-rstest = "0.18.1"
-scale-info = { version = "2.10.0", default-features = false, features = [
+ip_network = "0.4"
+lazy_static = { version = "1.4", default-features = false }
+once_cell = "1.19"
+log = { version = "0.4", default-features = false, features = ["std"] }
+num-traits = "0.2"
+num-bigint = "0.4"
+primitive-types = "0.12"
+rand = "0.8"
+reqwest = { version = "0.12", features = ["json"] }
+rstest = "0.18"
+scale-info = { version = "2.10", default-features = false, features = [
   "std",
 ] }
-serde = { version = "1.0.192", default-features = false, features = ["std"] }
-serde_json = { version = "1.0.108", default-features = false, features = [
+serde = { version = "1.0", default-features = false, features = ["std"] }
+serde_json = { version = "1.0", default-features = false, features = [
   "std",
 ] }
-serde_with = { version = "2.3.3", default-features = false }
-thiserror = "1.0.50"
-thiserror-no-std = "2.0.2"
-tokio = "1.34.0"
-url = "2.4.1"
-rayon = "1.10.0"
+serde_with = { version = "2.3", default-features = false }
+thiserror = "1.0"
+thiserror-no-std = "2.0"
+tokio = "1.34"
+url = "2.4"
+rayon = "1.10"
 crossbeam-skiplist = "0.1"
-bincode = "1.3.3"
+bincode = "1.3"

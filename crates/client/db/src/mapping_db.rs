@@ -139,58 +139,17 @@ impl MappingDb {
         Ok(())
     }
 
-    /// Register that a Substate block has been seen and map it to the Statknet block it contains
-    pub fn write_hashes(&self, commitment: MappingCommitment<DBlockT>) -> Result<(), DbError> {
-        let synced_mapping_col = self.db.get_column(Column::SyncedMapping);
-        let block_mapping_col = self.db.get_column(Column::BlockMapping);
-        let transaction_mapping_col = self.db.get_column(Column::TransactionMapping);
-        let starknet_tx_hashes_col = self.db.get_column(Column::StarknetTransactionHashesMapping);
-        let starknet_block_hashes_col = self.db.get_column(Column::StarknetBlockHashesMapping);
-        let starknet_block_numbers_col = self.db.get_column(Column::StarknetBlockNumberMapping);
+    pub fn write_no_pending(&self, tx: &mut WriteBatchWithTransaction) -> Result<()> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        tx.delete_cf(&col, ROW_PENDING_INFO);
+        tx.delete_cf(&col, ROW_PENDING_INNER);
+        tx.delete_cf(&col, ROW_PENDING_STATE_UPDATE);
+        Ok(())
+    }
 
-        let mut transaction: WriteBatchWithTransaction<true> = Default::default();
-
-        let substrate_hashes = match self.substrate_block_hash(commitment.starknet_block_hash) {
-            Ok(Some(mut data)) => {
-                data.push(commitment.block_hash);
-                // log::warn!(
-                //     target: "fc-db",
-                //     "Possible equivocation at starknet block hash {} {:?}",
-                //     &commitment.starknet_block_hash,
-                //     &data
-                // );
-                data
-            }
-            _ => vec![commitment.block_hash],
-        };
-
-        transaction.put_cf(&block_mapping_col, &commitment.starknet_block_hash.encode(), &substrate_hashes.encode());
-
-        transaction.put_cf(&synced_mapping_col, &commitment.block_hash.encode(), &true.encode());
-
-        for transaction_hash in commitment.starknet_transaction_hashes.iter() {
-            transaction.put_cf(&transaction_mapping_col, &transaction_hash.encode(), &commitment.block_hash.encode());
-        }
-
-        transaction.put_cf(
-            &starknet_tx_hashes_col,
-            &commitment.starknet_block_hash.encode(),
-            &commitment.starknet_transaction_hashes.encode(),
-        );
-
-        transaction.put_cf(
-            &starknet_block_hashes_col,
-            &commitment.block_number.encode(),
-            &commitment.starknet_block_hash.encode(),
-        );
-        transaction.put_cf(
-            &starknet_block_numbers_col,
-            &commitment.starknet_block_hash.encode(),
-            &commitment.block_number.encode(),
-        );
-
-        self.db.write(transaction)?;
-
+    pub fn write_last_confirmed_block(&self, tx: &mut WriteBatchWithTransaction, l1_last: u64) -> Result<()> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        tx.put_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK, codec::Encode::encode(&l1_last)?);
         Ok(())
     }
 

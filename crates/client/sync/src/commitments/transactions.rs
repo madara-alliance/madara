@@ -26,7 +26,7 @@ use starknet_types_core::hash::Pedersen;
 /// # Returns
 ///
 /// The transaction hash with signature.
-pub fn calculate_transaction_hash_with_signature<H>(
+pub fn calculate_transaction_hash_with_signature<H: HasherT>(
     transaction: &Transaction,
     chain_id: Felt252Wrapper,
     block_number: u64,

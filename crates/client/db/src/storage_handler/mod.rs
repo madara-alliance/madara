@@ -259,7 +259,7 @@ pub fn block_state_diff() -> BlockStateDiffView {
 }
 
 fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {
-    identifier.0 .0 .0.as_bytes_ref()
+    identifier.0 .0 .0.as_ref()
 }
 
 fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
