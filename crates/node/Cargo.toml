@@ -4,8 +4,7 @@ authors = [
   "KSS <https://github.com/keep-starknet-strange>",
   "Substrate DevHub <https://github.com/substrate-developer-hub>",
 ]
-build = "build.rs"
-description = "Deoxys node."
+description = "Deoxys node"
 edition.workspace = true
 homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
@@ -13,6 +12,7 @@ name = "deoxys"
 publish = false
 repository = "https://github.com/kasarlabs/deoxys"
 version.workspace = true
+build = "build.rs"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
@@ -25,68 +25,23 @@ async-trait = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true, features = ["thread-pool"] }
 log = { workspace = true }
+mc-telemetry = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
 
-frame-system = { workspace = true }
-sc-basic-authorship = { workspace = true }
-sc-cli = { workspace = true }
-sc-client-api = { workspace = true }
-sc-consensus = { workspace = true }
-sc-consensus-manual-seal = { workspace = true }
-sc-executor = { workspace = true }
-sc-network = { workspace = true }
-sc-network-sync = { workspace = true }
-sc-service = { workspace = true }
-sc-telemetry = { workspace = true }
-sc-transaction-pool = { workspace = true }
-sc-transaction-pool-api = { workspace = true }
-sp-core = { workspace = true }
-sp-inherents = { workspace = true }
-sp-keyring = { workspace = true }
-sp-runtime = { workspace = true }
-sp-state-machine = { workspace = true }
-sp-statement-store = { workspace = true }
-sp-timestamp = { workspace = true }
-
-# These dependencies are used for the node template's RPCs
-jsonrpsee = { workspace = true, features = ["server"] }
-
-# Substrate primitives dependencies
-sp-api = { workspace = true }
-sp-block-builder = { workspace = true }
-sp-blockchain = { workspace = true }
-# Substrate client dependencies
 prometheus-endpoint = { workspace = true }
-sc-rpc-api = { workspace = true }
-# Substrate frame dependencies
-# no substrate frame pallet dependencies for now
-
-# Substrate tools dependencies
-substrate-frame-rpc-system = { workspace = true }
-# These dependencies are used for runtime benchmarking
-frame-benchmarking = { workspace = true }
-frame-benchmarking-cli = { workspace = true }
 
 # Starknet
-deoxys-runtime = { workspace = true }
 mc-db = { workspace = true }
 mc-rpc = { workspace = true }
-pallet-starknet = { workspace = true }
-pallet-starknet-runtime-api = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 
-# Deoxys utils
-mc-genesis-data-provider = { workspace = true }
-
 # Primitives
 mp-block = { workspace = true }
-mp-digest-log = { workspace = true }
+mp-felt = { workspace = true }
 mp-types = { workspace = true }
-
-# CLI-specific dependencies
-try-runtime-cli = { optional = true, git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
+primitive-types = { workspace = true }
 
 #Deoxys
 deoxys-tui = { optional = true, path = "../tui" }
@@ -96,22 +51,18 @@ reqwest = { workspace = true }
 url = { workspace = true }
 
 anyhow.workspace = true
+env_logger = "0.11.3"
+forwarded-header-value = "0.1.1"
+governor.workspace = true
+hyper.workspace = true
+ip_network.workspace = true
+jsonrpsee.workspace = true
 rayon.workspace = true
-
-[build-dependencies]
-substrate-build-script-utils = { workspace = true }
+serde_json.workspace = true
+tower-http.workspace = true
+tower.workspace = true
 
 [features]
 default = []
 sound = ["mc-sync/m"]
-# Dependencies that are only required if runtime benchmarking should be build.
-runtime-benchmarks = [
-  "frame-benchmarking-cli/runtime-benchmarks",
-  "frame-benchmarking/runtime-benchmarks",
-  "deoxys-runtime/runtime-benchmarks",
-]
-# Enable features that allow the runtime to be tried and debugged. Name might be subject to change
-# in the near future.
-disable-transaction-fee = ["deoxys-runtime/disable-transaction-fee"]
-try-runtime = ["deoxys-runtime/try-runtime", "try-runtime-cli/try-runtime"]
 tui = ["deoxys-tui"]

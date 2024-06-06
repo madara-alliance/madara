@@ -3,25 +3,6 @@ use std::num::NonZeroU128;
 use mp_block::DeoxysBlock;
 use starknet_core::types::{FieldElement, L1DataAvailabilityMode, ResourcePrice};
 
-pub(crate) fn parent_hash(block: &DeoxysBlock) -> FieldElement {
-    // safe unwrap() FieldElement from Starkfelt
-    FieldElement::from_bytes_be(&block.header().parent_block_hash.0).unwrap()
-}
-
-pub(crate) fn new_root(block: &DeoxysBlock) -> FieldElement {
-    // safe unwrap() FieldElement from Starkfelt
-    FieldElement::from_bytes_be(&block.header().global_state_root.0).unwrap()
-}
-
-pub(crate) fn timestamp(block: &DeoxysBlock) -> u64 {
-    block.header().block_timestamp
-}
-
-pub(crate) fn sequencer_address(block: &DeoxysBlock) -> FieldElement {
-    // safe unwrap() FieldElement from Starkfelt
-    FieldElement::from_bytes_be(&block.header().sequencer_address.0 .0 .0).unwrap()
-}
-
 pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
     // 1 is a special value that means 0 because the gas price is stored as a NonZeroU128
     fn non_zeo_u128_to_field_element(value: NonZeroU128) -> FieldElement {

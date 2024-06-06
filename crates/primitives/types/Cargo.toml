@@ -7,10 +7,5 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-
-# Substrate
-sp-core = { workspace = true }
-sp-runtime = { workspace = true }
-
-# Deoxys primitives
 mp-hashers = { workspace = true }
+primitive-types.workspace = true
