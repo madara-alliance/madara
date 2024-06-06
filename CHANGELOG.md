@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor: enforce Felt type as much as possible into compute_hash.rs (changes in cascade)
 - feat(infra): Added boilerplate to deploy a grafana/prometheus dashboard
 - refacor: use db hash
 - refactor: l2-sync
