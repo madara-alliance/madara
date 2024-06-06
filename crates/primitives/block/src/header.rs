@@ -42,7 +42,6 @@ impl From<BlockStatus> for starknet_core::types::BlockStatus {
 
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 /// Starknet header definition.
 pub struct Header {
     /// The hash of this block’s parent.

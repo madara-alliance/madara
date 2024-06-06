@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use mp_types::block::DHashT;
 // Substrate
-use parity_scale_codec::{Decode, Encode};
 use starknet_ff::FieldElement;
 
 use crate::{Column, DatabaseExt, DbError, DB};
@@ -15,31 +13,12 @@ pub struct MetaDb {
     pub(crate) db: Arc<DB>,
 }
 
-const CURRENT_SYNCING_TIPS: &[u8] = b"CURRENT_SYNCING_TIPS";
 const CURRENT_SYNC_BLOCK: &[u8] = b"CURRENT_SYNC_BLOCK";
 const LATEST_BLOCK_HASH_AND_NUMBER: &[u8] = b"LATEST_BLOCK_HASH_AND_NUMBER";
 
 impl MetaDb {
     pub(crate) fn new(db: Arc<DB>) -> Self {
         Self { db }
-    }
-
-    /// Retrieve the current tips of the synced chain
-    pub fn current_syncing_tips(&self) -> Result<Vec<DHashT>, DbError> {
-        let column = self.db.get_column(Column::Meta);
-
-        match self.db.get_cf(&column, CURRENT_SYNCING_TIPS)? {
-            Some(raw) => Ok(Vec::<DHashT>::decode(&mut &raw[..])?),
-            None => Ok(Vec::new()),
-        }
-    }
-
-    /// Store the current tips of the synced chain
-    pub fn write_current_syncing_tips(&self, tips: Vec<DHashT>) -> Result<(), DbError> {
-        let column = self.db.get_column(Column::Meta);
-
-        self.db.put_cf(&column, CURRENT_SYNCING_TIPS, tips.encode())?;
-        Ok(())
     }
 
     pub fn current_sync_block(&self) -> Result<u64, DbError> {
@@ -68,15 +47,15 @@ impl MetaDb {
                 std::str::from_utf8(LATEST_BLOCK_HASH_AND_NUMBER).unwrap().to_string(),
             ),
         )?;
-        let (hash_mont, number) = <([u64; 4], u64)>::decode(&mut &res[..])?;
-        Ok((FieldElement::from_mont(hash_mont), number))
+        let (hash, number) = bincode::deserialize(&res)?;
+        Ok((hash, number))
     }
 
     pub fn set_latest_block_hash_and_number(&self, hash: FieldElement, number: u64) -> Result<(), DbError> {
         self.db.put_cf(
             &self.db.get_column(Column::Meta),
             LATEST_BLOCK_HASH_AND_NUMBER,
-            (hash.into_mont(), number).encode(),
+            bincode::serialize(&(hash, number))?,
         )?;
         Ok(())
     }

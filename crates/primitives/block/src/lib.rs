@@ -10,12 +10,6 @@ pub use ordered_events::*;
 use starknet_api::block::BlockHash;
 use starknet_api::transaction::{Transaction, TransactionHash};
 
-/// Block Transactions
-pub type BlockTransactions = Vec<Transaction>;
-
-/// Block Events
-pub type BlockEvents = Vec<OrderedEvents>;
-
 pub use primitive_types::{H160, U256};
 
 /// Block tag.
@@ -77,7 +71,7 @@ impl From<BlockId> for starknet_core::types::BlockId {
 
 // Light version of the block with block_hash
 #[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DeoxysBlockInfo {
     header: Header,
     block_hash: BlockHash,
@@ -104,30 +98,30 @@ impl DeoxysBlockInfo {
 }
 
 #[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DeoxysBlockInner {
     /// The block transactions.
-    transactions: BlockTransactions, // Vec<starknet_api::transaction::Transaction>,
+    transactions: Vec<Transaction>, // Vec<starknet_api::transaction::Transaction>,
     /// The block events.
-    events: BlockEvents,
+    events: Vec<OrderedEvents>,
 }
 
 impl DeoxysBlockInner {
-    pub fn new(transactions: BlockTransactions, events: BlockEvents) -> Self {
+    pub fn new(transactions: Vec<Transaction>, events: Vec<OrderedEvents>) -> Self {
         Self { transactions, events }
     }
 
-    pub fn transactions(&self) -> &BlockTransactions {
+    pub fn transactions(&self) -> &[Transaction] {
         &self.transactions
     }
-    pub fn events(&self) -> &BlockEvents {
+    pub fn events(&self) -> &[OrderedEvents] {
         &self.events
     }
 }
 
 /// Starknet block definition.
 #[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DeoxysBlock {
     info: DeoxysBlockInfo,
     inner: DeoxysBlockInner,
@@ -159,10 +153,10 @@ impl DeoxysBlock {
     pub fn inner(&self) -> &DeoxysBlockInner {
         &self.inner
     }
-    pub fn transactions(&self) -> &BlockTransactions {
+    pub fn transactions(&self) -> &[Transaction] {
         &self.inner.transactions
     }
-    pub fn events(&self) -> &BlockEvents {
+    pub fn events(&self) -> &[OrderedEvents] {
         &self.inner.events
     }
 }

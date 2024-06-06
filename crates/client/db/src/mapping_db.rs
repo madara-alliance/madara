@@ -15,8 +15,6 @@ pub enum MappingDbError {
     #[error("db number format error")]
     NumberFormat,
     #[error("value codec error: {0}")]
-    ParityCodec(#[from] parity_scale_codec::Error),
-    #[error("value codec error: {0}")]
     Codec(#[from] codec::Error),
     #[error("value codec error: {0}")]
     Bincode(#[from] bincode::Error),
@@ -77,7 +75,7 @@ impl MappingDb {
         let col = self.db.get_column(Column::BlockNToBlockInfo);
         let res = self.db.get_cf(&col, codec::Encode::encode(&block_n)?)?;
         let Some(res) = res else { return Ok(None) };
-        let block = parity_scale_codec::Decode::decode(&mut res.as_ref())?;
+        let block = bincode::deserialize(&res)?;
         Ok(Some(block))
     }
 
@@ -85,7 +83,7 @@ impl MappingDb {
         let col = self.db.get_column(Column::BlockNToBlockInner);
         let res = self.db.get_cf(&col, codec::Encode::encode(&block_n)?)?;
         let Some(res) = res else { return Ok(None) };
-        let block = parity_scale_codec::Decode::decode(&mut res.as_ref())?;
+        let block = bincode::deserialize(&res)?;
         Ok(Some(block))
     }
 
@@ -99,21 +97,21 @@ impl MappingDb {
     fn get_pending_block_info(&self) -> Result<Option<DeoxysBlockInfo>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INFO)? else { return Ok(None) };
-        let res = parity_scale_codec::Decode::decode(&mut res.as_ref())?;
+        let res = bincode::deserialize(&res)?;
         Ok(Some(res))
     }
 
     fn get_pending_block_inner(&self) -> Result<Option<DeoxysBlockInner>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INNER)? else { return Ok(None) };
-        let res = parity_scale_codec::Decode::decode(&mut res.as_ref())?;
+        let res = bincode::deserialize(&res)?;
         Ok(Some(res))
     }
 
     pub fn get_l1_last_confirmed_block(&self) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK)? else { return Ok(None) };
-        let res = parity_scale_codec::Decode::decode(&mut res.as_ref())?;
+        let res = bincode::deserialize(&res)?;
         Ok(Some(res))
     }
 
@@ -133,8 +131,8 @@ impl MappingDb {
         state_update: &PendingStateUpdate,
     ) -> Result<()> {
         let col = self.db.get_column(Column::BlockStorageMeta);
-        tx.put_cf(&col, ROW_PENDING_INFO, parity_scale_codec::Encode::encode(block.info()));
-        tx.put_cf(&col, ROW_PENDING_INNER, parity_scale_codec::Encode::encode(block.inner()));
+        tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(block.info())?);
+        tx.put_cf(&col, ROW_PENDING_INNER, bincode::serialize(block.inner())?);
         tx.put_cf(&col, ROW_PENDING_STATE_UPDATE, bincode::serialize(&state_update)?);
         Ok(())
     }
@@ -171,7 +169,7 @@ impl MappingDb {
         }
 
         tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
-        tx.put_cf(&block_n_to_block, &block_n_encoded, parity_scale_codec::Encode::encode(&block));
+        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(&block)?);
         tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
 
         self.write_no_pending(tx)
