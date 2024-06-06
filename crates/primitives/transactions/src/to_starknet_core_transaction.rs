@@ -10,7 +10,7 @@ use starknet_api::transaction::{
 use starknet_core::types::{ResourceBounds, ResourceBoundsMapping as CoreResourceBoundsMapping};
 use starknet_crypto::FieldElement;
 
-pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> starknet_core::types::Transaction {
+pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> starknet_core::types::Transaction {
     match tx {
         Transaction::Declare(tx) => {
             let tx = match tx {
@@ -295,7 +295,7 @@ pub fn to_starknet_core_tx(tx: Transaction, transaction_hash: FieldElement) -> s
 }
 
 // TODO (Tbelleng): Custom function here so check if value are correct
-pub fn api_resources_to_core_ressources(resource: ResourceBoundsMapping) -> CoreResourceBoundsMapping {
+pub fn api_resources_to_core_ressources(resource: &ResourceBoundsMapping) -> CoreResourceBoundsMapping {
     let l1_gas = resource.0.get(&Resource::L1Gas).unwrap();
 
     let l2_gas = resource.0.get(&Resource::L2Gas).unwrap();
@@ -310,7 +310,7 @@ pub fn api_resources_to_core_ressources(resource: ResourceBoundsMapping) -> Core
 }
 
 pub fn api_da_to_core_da(
-    mode: starknet_api::data_availability::DataAvailabilityMode,
+    mode: &starknet_api::data_availability::DataAvailabilityMode,
 ) -> Option<starknet_core::types::DataAvailabilityMode> {
     match mode {
         starknet_api::data_availability::DataAvailabilityMode::L1 => {

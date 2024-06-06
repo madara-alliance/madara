@@ -1,15 +1,9 @@
 use jsonrpsee::core::RpcResult;
-use mc_sync::utility::{chain_id, feeder_gateway, gateway};
-use mp_hashers::HasherT;
-use mp_types::block::DBlockT;
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sp_blockchain::HeaderBackend;
 use starknet_core::types::{BroadcastedDeployAccountTransaction, DeployAccountTransactionResult};
-use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
+use starknet_providers::{Provider, ProviderError};
 
 use crate::errors::StarknetRpcApiError;
-use crate::Starknet;
+use crate::{bail_internal_server_error, Starknet};
 
 /// Add an Deploy Account Transaction
 ///
@@ -21,26 +15,18 @@ use crate::Starknet;
 ///
 /// * `transaction_hash` - transaction hash corresponding to the invocation
 /// * `contract_address` - address of the deployed contract account
-pub async fn add_deploy_account_transaction<BE, C, H>(
-    _starknet: &Starknet<BE, C, H>,
+pub async fn add_deploy_account_transaction(
+    starknet: &Starknet,
     deploy_account_transaction: BroadcastedDeployAccountTransaction,
-) -> RpcResult<DeployAccountTransactionResult>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let sequencer = SequencerGatewayProvider::new(feeder_gateway(), gateway(), chain_id());
+) -> RpcResult<DeployAccountTransactionResult> {
+    let sequencer = starknet.make_sequencer_provider();
 
     let sequencer_response = match sequencer.add_deploy_account_transaction(deploy_account_transaction).await {
         Ok(response) => response,
         Err(ProviderError::StarknetError(e)) => {
             return Err(StarknetRpcApiError::from(e).into());
         }
-        Err(e) => {
-            log::error!("Failed to add invoke transaction to sequencer: {e}");
-            return Err(StarknetRpcApiError::InternalServerError.into());
-        }
+        Err(e) => bail_internal_server_error!("Failed to add invoke transaction to sequencer: {e}"),
     };
 
     Ok(sequencer_response)

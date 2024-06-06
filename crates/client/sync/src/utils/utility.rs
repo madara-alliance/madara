@@ -2,40 +2,35 @@
 
 use anyhow::{bail, Context};
 use ethers::types::{I256, U256};
-use once_cell::sync::OnceCell;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde_json::Value;
-use sp_core::H160;
 use starknet_api::hash::StarkFelt;
-use starknet_ff::FieldElement;
-use url::Url;
 
-use crate::fetch::fetchers::FetchConfig;
 use crate::l1::{L1StateUpdate, LogStateUpdate};
 
-static CONFIG: OnceCell<FetchConfig> = OnceCell::new();
+// static CONFIG: OnceCell<FetchConfig> = OnceCell::new();
 
-/// this function needs to be called only once at the start of the program
-pub fn set_config(config: &FetchConfig) {
-    CONFIG.set(config.clone()).expect("CONFIG already initialized");
-}
+// /// this function needs to be called only once at the start of the program
+// pub fn set_config(config: &FetchConfig) {
+//     CONFIG.set(config.clone()).expect("CONFIG already initialized");
+// }
 
-pub fn chain_id() -> FieldElement {
-    CONFIG.get().expect("CONFIG not initialized").chain_id
-}
+// pub fn chain_id() -> FieldElement {
+//     CONFIG.get().expect("CONFIG not initialized").chain_id
+// }
 
-pub fn l1_core_address() -> H160 {
-    CONFIG.get().expect("CONFIG not initialized").l1_core_address
-}
+// pub fn l1_core_address() -> mp_block::H160 {
+//     CONFIG.get().expect("CONFIG not initialized").l1_core_address
+// }
 
-pub fn gateway() -> Url {
-    CONFIG.get().expect("CONFIG not initialized").gateway.clone()
-}
+// pub fn gateway() -> Url {
+//     CONFIG.get().expect("CONFIG not initialized").gateway.clone()
+// }
 
-pub fn feeder_gateway() -> Url {
-    CONFIG.get().expect("CONFIG not initialized").feeder_gateway.clone()
-}
+// pub fn feeder_gateway() -> Url {
+//     CONFIG.get().expect("CONFIG not initialized").feeder_gateway.clone()
+// }
 
 /// Returns a random Pokémon name.
 pub async fn get_random_pokemon_name() -> Result<String, Box<dyn std::error::Error>> {

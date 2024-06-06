@@ -1,203 +1,314 @@
 use std::sync::Arc;
 
-use mp_types::block::{DBlockT, DHashT};
-// Substrate
-use parity_scale_codec::{Decode, Encode};
-use rocksdb::WriteBatchWithTransaction;
-use sp_runtime::traits::Block as BlockT;
-use starknet_api::hash::StarkHash;
+use mp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
+use starknet_api::block::BlockHash;
+use starknet_api::transaction::TransactionHash;
+use starknet_core::types::PendingStateUpdate;
 
-use crate::{Column, DatabaseExt, DbError, DB};
+use crate::storage_handler::codec;
+use crate::{Column, DatabaseExt, WriteBatchWithTransaction, DB};
 
-/// The mapping to write in db
-#[derive(Debug)]
-pub struct MappingCommitment<B: BlockT> {
-    pub block_number: u64,
-    pub block_hash: B::Hash,
-    pub starknet_block_hash: StarkHash,
-    pub starknet_transaction_hashes: Vec<StarkHash>,
+#[derive(Debug, thiserror::Error)]
+pub enum MappingDbError {
+    #[error("rocksdb error: {0}")]
+    RocksDBError(#[from] rocksdb::Error),
+    #[error("db number format error")]
+    NumberFormat,
+    #[error("value codec error: {0}")]
+    ParityCodec(#[from] parity_scale_codec::Error),
+    #[error("value codec error: {0}")]
+    Codec(#[from] codec::Error),
+    #[error("value codec error: {0}")]
+    Bincode(#[from] bincode::Error),
 }
+
+type Result<T, E = MappingDbError> = std::result::Result<T, E>;
 
 /// Allow interaction with the mapping db
 pub struct MappingDb {
     db: Arc<DB>,
 }
 
+#[derive(Debug, Clone)]
+pub enum BlockStorageType {
+    Pending,
+    BlockN(u64),
+}
+
+const ROW_PENDING_INFO: &[u8] = b"pending_info";
+const ROW_PENDING_STATE_UPDATE: &[u8] = b"pending_state_update";
+const ROW_PENDING_INNER: &[u8] = b"pending";
+const ROW_SYNC_TIP: &[u8] = b"sync_tip";
+const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
+
+#[derive(Debug, Clone)]
+pub struct TxStorageInfo {
+    pub storage_type: BlockStorageType,
+    pub tx_index: usize,
+}
+
+// TODO(error-handling): replace all of the else { return Ok(None) } with hard errors for
+// inconsistent state.
 impl MappingDb {
     /// Creates a new instance of the mapping database.
     pub(crate) fn new(db: Arc<DB>) -> Self {
         Self { db }
     }
 
-    /// Check if the given block hash has already been processed
-    pub fn is_synced(&self, block_hash: &DHashT) -> Result<bool, DbError> {
-        let synced_mapping_col = self.db.get_column(Column::SyncedMapping);
+    // DB read operations
 
-        match self.db.get_cf(&synced_mapping_col, block_hash.encode())? {
-            Some(raw) => Ok(bool::decode(&mut &raw[..])?),
-            None => Ok(false),
-        }
+    fn tx_hash_to_block_n(&self, tx_hash: &TransactionHash) -> Result<Option<u64>> {
+        let col = self.db.get_column(Column::TxHashToBlockN);
+        let res = self.db.get_cf(&col, codec::Encode::encode(tx_hash)?)?;
+        let Some(res) = res else { return Ok(None) };
+        let block_n = codec::Decode::decode(&res)?;
+        Ok(Some(block_n))
     }
 
-    /// Return the hash of the Substrate block wrapping the Starknet block with given hash
-    ///
-    /// Under some circumstances it can return multiples blocks hashes, meaning that the result has
-    /// to be checked against the actual blockchain state in order to find the good one.
-    pub fn substrate_block_hash(&self, starknet_block_hash: StarkHash) -> Result<Option<Vec<DHashT>>, DbError> {
-        let block_mapping_col = self.db.get_column(Column::BlockMapping);
-
-        match self.db.get_cf(&block_mapping_col, starknet_block_hash.encode())? {
-            Some(raw) => Ok(Some(Vec::<DHashT>::decode(&mut &raw[..])?)),
-            None => Ok(None),
-        }
+    fn block_hash_to_block_n(&self, block_hash: &BlockHash) -> Result<Option<u64>> {
+        let col = self.db.get_column(Column::BlockHashToBlockN);
+        let res = self.db.get_cf(&col, codec::Encode::encode(block_hash)?)?;
+        let Some(res) = res else { return Ok(None) };
+        let block_n = codec::Decode::decode(&res)?;
+        Ok(Some(block_n))
     }
 
-    /// Register that a Substrate block has been seen, without it containing a Starknet one
-    pub fn write_none(&self, block_hash: DHashT) -> Result<(), DbError> {
-        let synced_mapping_col = self.db.get_column(Column::SyncedMapping);
+    fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<DeoxysBlockInfo>> {
+        let col = self.db.get_column(Column::BlockNToBlockInfo);
+        let res = self.db.get_cf(&col, codec::Encode::encode(&block_n)?)?;
+        let Some(res) = res else { return Ok(None) };
+        let block = parity_scale_codec::Decode::decode(&mut res.as_ref())?;
+        Ok(Some(block))
+    }
 
-        self.db.put_cf(&synced_mapping_col, block_hash.encode(), true.encode())?;
+    fn get_block_inner_from_block_n(&self, block_n: u64) -> Result<Option<DeoxysBlockInner>> {
+        let col = self.db.get_column(Column::BlockNToBlockInner);
+        let res = self.db.get_cf(&col, codec::Encode::encode(&block_n)?)?;
+        let Some(res) = res else { return Ok(None) };
+        let block = parity_scale_codec::Decode::decode(&mut res.as_ref())?;
+        Ok(Some(block))
+    }
+
+    fn get_latest_block_n(&self) -> Result<Option<u64>> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        let Some(res) = self.db.get_cf(&col, ROW_SYNC_TIP)? else { return Ok(None) };
+        let res = codec::Decode::decode(&res)?;
+        Ok(Some(res))
+    }
+
+    fn get_pending_block_info(&self) -> Result<Option<DeoxysBlockInfo>> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        let Some(res) = self.db.get_cf(&col, ROW_PENDING_INFO)? else { return Ok(None) };
+        let res = parity_scale_codec::Decode::decode(&mut res.as_ref())?;
+        Ok(Some(res))
+    }
+
+    fn get_pending_block_inner(&self) -> Result<Option<DeoxysBlockInner>> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        let Some(res) = self.db.get_cf(&col, ROW_PENDING_INNER)? else { return Ok(None) };
+        let res = parity_scale_codec::Decode::decode(&mut res.as_ref())?;
+        Ok(Some(res))
+    }
+
+    pub fn get_l1_last_confirmed_block(&self) -> Result<Option<u64>> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        let Some(res) = self.db.get_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK)? else { return Ok(None) };
+        let res = parity_scale_codec::Decode::decode(&mut res.as_ref())?;
+        Ok(Some(res))
+    }
+
+    pub fn get_pending_block_state_update(&self) -> Result<Option<PendingStateUpdate>> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        let Some(res) = self.db.get_cf(&col, ROW_PENDING_STATE_UPDATE)? else { return Ok(None) };
+        let res = bincode::deserialize(&res)?;
+        Ok(Some(res))
+    }
+
+    // DB write
+
+    pub fn write_pending(
+        &self,
+        tx: &mut WriteBatchWithTransaction,
+        block: &DeoxysBlock,
+        state_update: &PendingStateUpdate,
+    ) -> Result<()> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        tx.put_cf(&col, ROW_PENDING_INFO, parity_scale_codec::Encode::encode(block.info()));
+        tx.put_cf(&col, ROW_PENDING_INNER, parity_scale_codec::Encode::encode(block.inner()));
+        tx.put_cf(&col, ROW_PENDING_STATE_UPDATE, bincode::serialize(&state_update)?);
         Ok(())
     }
 
-    /// Register that a Substate block has been seen and map it to the Statknet block it contains
-    pub fn write_hashes(&self, commitment: MappingCommitment<DBlockT>) -> Result<(), DbError> {
-        let synced_mapping_col = self.db.get_column(Column::SyncedMapping);
-        let block_mapping_col = self.db.get_column(Column::BlockMapping);
-        let transaction_mapping_col = self.db.get_column(Column::TransactionMapping);
-        let starknet_tx_hashes_col = self.db.get_column(Column::StarknetTransactionHashesMapping);
-        let starknet_block_hashes_col = self.db.get_column(Column::StarknetBlockHashesMapping);
-        let starknet_block_numbers_col = self.db.get_column(Column::StarknetBlockNumberMapping);
+    pub fn write_no_pending(&self, tx: &mut WriteBatchWithTransaction) -> Result<()> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        tx.delete_cf(&col, ROW_PENDING_INFO);
+        tx.delete_cf(&col, ROW_PENDING_INNER);
+        tx.delete_cf(&col, ROW_PENDING_STATE_UPDATE);
+        Ok(())
+    }
 
-        let mut transaction: WriteBatchWithTransaction<true> = Default::default();
+    pub fn write_last_confirmed_block(&self, tx: &mut WriteBatchWithTransaction, l1_last: u64) -> Result<()> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        tx.put_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK, codec::Encode::encode(&l1_last)?);
+        Ok(())
+    }
 
-        let substrate_hashes = match self.substrate_block_hash(commitment.starknet_block_hash) {
-            Ok(Some(mut data)) => {
-                data.push(commitment.block_hash);
-                // log::warn!(
-                //     target: "fc-db",
-                //     "Possible equivocation at starknet block hash {} {:?}",
-                //     &commitment.starknet_block_hash,
-                //     &data
-                // );
-                data
+    pub fn write_no_last_confirmed_block(&self, tx: &mut WriteBatchWithTransaction) -> Result<()> {
+        self.write_last_confirmed_block(tx, 0)
+    }
+
+    pub fn write_new_block(&self, tx: &mut WriteBatchWithTransaction, block: &DeoxysBlock) -> Result<()> {
+        let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
+        let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
+        let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
+        let meta = self.db.get_column(Column::BlockStorageMeta);
+
+        let block_hash_encoded = codec::Encode::encode(block.block_hash())?;
+        let block_n_encoded = codec::Encode::encode(&block.block_n())?;
+
+        for hash in block.tx_hashes() {
+            tx.put_cf(&tx_hash_to_block_n, codec::Encode::encode(hash)?, &block_n_encoded);
+        }
+
+        tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
+        tx.put_cf(&block_n_to_block, &block_n_encoded, parity_scale_codec::Encode::encode(&block));
+        tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
+
+        self.write_no_pending(tx)
+    }
+
+    // Convenience functions
+
+    fn id_to_storage_type(&self, id: &BlockId) -> Result<Option<BlockStorageType>> {
+        match id {
+            BlockId::Hash(felt) => {
+                Ok(self.block_hash_to_block_n(&BlockHash::from(*felt))?.map(BlockStorageType::BlockN))
             }
-            _ => vec![commitment.block_hash],
-        };
-
-        transaction.put_cf(&block_mapping_col, &commitment.starknet_block_hash.encode(), &substrate_hashes.encode());
-
-        transaction.put_cf(&synced_mapping_col, &commitment.block_hash.encode(), &true.encode());
-
-        for transaction_hash in commitment.starknet_transaction_hashes.iter() {
-            transaction.put_cf(&transaction_mapping_col, &transaction_hash.encode(), &commitment.block_hash.encode());
+            BlockId::Number(block_n) => Ok(Some(BlockStorageType::BlockN(*block_n))),
+            BlockId::Tag(BlockTag::Latest) => Ok(self.get_latest_block_n()?.map(BlockStorageType::BlockN)),
+            BlockId::Tag(BlockTag::Pending) => Ok(Some(BlockStorageType::Pending)),
         }
-
-        transaction.put_cf(
-            &starknet_tx_hashes_col,
-            &commitment.starknet_block_hash.encode(),
-            &commitment.starknet_transaction_hashes.encode(),
-        );
-
-        transaction.put_cf(
-            &starknet_block_hashes_col,
-            &commitment.block_number.encode(),
-            &commitment.starknet_block_hash.encode(),
-        );
-        transaction.put_cf(
-            &starknet_block_numbers_col,
-            &commitment.starknet_block_hash.encode(),
-            &commitment.block_number.encode(),
-        );
-
-        self.db.write(transaction)?;
-
-        Ok(())
     }
 
-    /// Retrieves the substrate block hash
-    /// associated with the given transaction hash, if any.
-    ///
-    /// # Arguments
-    ///
-    /// * `transaction_hash` - the transaction hash to search for. H256 is used here because it's a
-    ///   native type of substrate, and we are sure it's SCALE encoding is optimized and will not
-    ///   change.
-    pub fn substrate_block_hash_from_transaction_hash(
+    fn storage_to_info(&self, id: &BlockStorageType) -> Result<Option<DeoxysBlockInfo>> {
+        match id {
+            BlockStorageType::Pending => self.get_pending_block_info(),
+            BlockStorageType::BlockN(block_n) => self.get_block_info_from_block_n(*block_n),
+        }
+    }
+
+    fn storage_to_inner(&self, id: &BlockStorageType) -> Result<Option<DeoxysBlockInner>> {
+        match id {
+            BlockStorageType::Pending => self.get_pending_block_inner(),
+            BlockStorageType::BlockN(block_n) => self.get_block_inner_from_block_n(*block_n),
+        }
+    }
+
+    // BlockId
+
+    pub fn get_block_n(&self, id: &BlockId) -> Result<Option<u64>> {
+        let Some(ty) = self.id_to_storage_type(id)? else { return Ok(None) };
+        match &ty {
+            BlockStorageType::BlockN(block_id) => Ok(Some(*block_id)),
+            BlockStorageType::Pending => Ok(self.storage_to_info(&ty)?.map(|e| e.block_n())),
+        }
+    }
+
+    pub fn get_block_hash(&self, id: &BlockId) -> Result<Option<BlockHash>> {
+        match id {
+            BlockId::Hash(felt) => Ok(Some(BlockHash::from(*felt))),
+            _ => Ok(self.get_block_info(id)?.map(|info| *info.block_hash())),
+        }
+    }
+
+    pub fn get_block_info(&self, id: &BlockId) -> Result<Option<DeoxysBlockInfo>> {
+        let Some(ty) = self.id_to_storage_type(id)? else { return Ok(None) };
+        self.storage_to_info(&ty)
+    }
+
+    pub fn get_block_inner(&self, id: &BlockId) -> Result<Option<DeoxysBlockInner>> {
+        let Some(ty) = self.id_to_storage_type(id)? else { return Ok(None) };
+        self.storage_to_inner(&ty)
+    }
+
+    pub fn get_block(&self, id: &BlockId) -> Result<Option<DeoxysBlock>> {
+        let Some(ty) = self.id_to_storage_type(id)? else { return Ok(None) };
+        let Some(info) = self.storage_to_info(&ty)? else { return Ok(None) };
+        let Some(inner) = self.storage_to_inner(&ty)? else { return Ok(None) };
+        Ok(Some(DeoxysBlock::new(info, inner)))
+    }
+
+    // Tx hashes and tx status
+
+    /// Returns the index of the tx.
+    pub fn find_tx_hash_block_info(
         &self,
-        transaction_hash: StarkHash,
-    ) -> Result<Option<DHashT>, DbError> {
-        let transaction_mapping_col = self.db.get_column(Column::TransactionMapping);
-
-        match self.db.get_cf(&transaction_mapping_col, transaction_hash.encode())? {
-            Some(raw) => Ok(Some(<DHashT>::decode(&mut &raw[..])?)),
-            None => Ok(None),
+        tx_hash: &TransactionHash,
+    ) -> Result<Option<(DeoxysBlockInfo, TxStorageInfo)>> {
+        match self.tx_hash_to_block_n(tx_hash)? {
+            Some(block_n) => {
+                let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                Ok(Some((info, TxStorageInfo { storage_type: BlockStorageType::BlockN(block_n), tx_index })))
+            }
+            None => {
+                let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                Ok(Some((info, TxStorageInfo { storage_type: BlockStorageType::Pending, tx_index })))
+            }
         }
     }
 
-    /// Returns the list of transaction hashes for the given block hash.
-    ///
-    /// # Arguments
-    ///
-    /// * `starknet_hash` - the hash of the starknet block to search for.
-    ///
-    /// # Returns
-    ///
-    /// The list of transaction hashes.
-    ///
-    /// This function may return `None` for two separate reasons:
-    ///
-    /// - The cache is disabled.
-    /// - The provided `starknet_hash` is not present in the cache.
-    pub fn transaction_hashes_from_block_hash(
-        &self,
-        starknet_block_hash: StarkHash,
-    ) -> Result<Option<Vec<StarkHash>>, DbError> {
-        let starknet_tx_hashes_col = self.db.get_column(Column::StarknetTransactionHashesMapping);
-
-        match self.db.get_cf(&starknet_tx_hashes_col, starknet_block_hash.encode())? {
-            Some(raw) => Ok(Some(Vec::<StarkHash>::decode(&mut &raw[..])?)),
-            None => Ok(None),
+    /// Returns the index of the tx.
+    pub fn find_tx_hash_block(&self, tx_hash: &TransactionHash) -> Result<Option<(DeoxysBlock, TxStorageInfo)>> {
+        match self.tx_hash_to_block_n(tx_hash)? {
+            Some(block_n) => {
+                let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                let Some(inner) = self.get_pending_block_inner()? else { return Ok(None) };
+                Ok(Some((
+                    DeoxysBlock::new(info, inner),
+                    TxStorageInfo { storage_type: BlockStorageType::BlockN(block_n), tx_index },
+                )))
+            }
+            None => {
+                let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                let Some(inner) = self.get_pending_block_inner()? else { return Ok(None) };
+                Ok(Some((
+                    DeoxysBlock::new(info, inner),
+                    TxStorageInfo { storage_type: BlockStorageType::Pending, tx_index },
+                )))
+            }
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `block_number` - the block number to search for.
-    ///
-    /// # Returns
-    ///
-    /// The block hash of a given block number.
-    ///
-    /// This function may return `None` if the provided `block_number` is not present in the cache.
-    pub fn starknet_block_hash_from_block_number(&self, block_number: u64) -> Result<Option<StarkHash>, DbError> {
-        let starknet_block_hashes_col = self.db.get_column(Column::StarknetBlockHashesMapping);
+    // pub fn get_tx_status(&self, tx_info: &TxStorageInfo) {
 
-        match self.db.get_cf(&starknet_block_hashes_col, block_number.encode())? {
-            Some(raw) => Ok(Some(<StarkHash>::decode(&mut &raw[..])?)),
-            None => Ok(None),
-        }
-    }
+    // }
 
-    /// # Arguments
-    ///
-    /// * `starknet_block_hash` - the block number to search for.
-    ///
-    /// # Returns
-    ///
-    /// The block hash of a given block number.
-    ///
-    /// This function may return `None` if the provided `starknet_block_hash` is not present in the
-    /// cache.
-    pub fn block_number_from_starknet_block_hash(
-        &self,
-        starknet_block_hash: StarkHash,
-    ) -> Result<Option<u64>, DbError> {
-        let starknet_block_numbers_col = self.db.get_column(Column::StarknetBlockNumberMapping);
+    // pub fn get_block_n_from_tx_hash(&self, tx_hash: &TransactionHash) -> Result<Option<u64>> {
+    //     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)? else { return Ok(None) };
+    //     Ok(Some(block_n))
+    // }
 
-        match self.db.get_cf(&starknet_block_numbers_col, starknet_block_hash.encode())? {
-            Some(raw) => Ok(Some(u64::decode(&mut &raw[..])?)),
-            None => Ok(None),
-        }
-    }
+    // pub fn get_block_info_from_tx_hash(&self, tx_hash: &TransactionHash) ->
+    // Result<Option<DeoxysBlockInfo>> {     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)?
+    // else { return Ok(None) };     let Some(block_info) =
+    // self.get_block_info_from_block_n(block_n)? else { return Ok(None) };     Ok(Some(block_info))
+    // }
+
+    // pub fn get_block_inner_from_tx_hash(&self, tx_hash: &TransactionHash) ->
+    // Result<Option<DeoxysBlockInner>> {     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)?
+    // else { return Ok(None) };     let Some(block_inner) =
+    // self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
+    //     Ok(Some(block_inner))
+    // }
+
+    // pub fn get_block_from_tx_hash(&self, tx_hash: &TransactionHash) -> Result<Option<DeoxysBlock>> {
+    //     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)? else { return Ok(None) };
+    //     let Some(block_info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
+    //     let Some(block_inner) = self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
+    //     Ok(Some(DeoxysBlock::new(block_info, block_inner)))
+    // }
 }

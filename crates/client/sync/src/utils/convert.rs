@@ -5,12 +5,13 @@ use std::num::NonZeroU128;
 use std::sync::Arc;
 
 use blockifier::block::GasPrices;
-use mp_block::DeoxysBlock;
+use mp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
 use mp_felt::Felt252Wrapper;
+use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
     DeclareTransaction, DeployAccountTransaction, DeployAccountTransactionV1, DeployTransaction, Event,
-    InvokeTransaction, L1HandlerTransaction, Transaction,
+    InvokeTransaction, L1HandlerTransaction, Transaction, TransactionHash,
 };
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, PendingStateUpdate,
@@ -25,16 +26,9 @@ use starknet_types_core::felt::Felt;
 
 use crate::commitments::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
-use crate::utility;
-
-pub struct ConvertedBlock {
-    pub block: DeoxysBlock,
-    pub block_hash: StarkFelt,
-    pub txs_hashes: Vec<StarkFelt>,
-}
 
 /// Compute heavy, this should only be called in a rayon ctx
-pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
+pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock, L2SyncError> {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
@@ -47,7 +41,8 @@ pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
     let transaction_count = transactions.len() as u128;
     let event_count = events.len() as u128;
 
-    let ((transaction_commitment, txs_hashes), event_commitment) = commitments(&transactions, &events, block_number);
+    let ((transaction_commitment, txs_hashes), event_commitment) =
+        commitments(&transactions, &events, block_number, chain_id);
 
     // Provisory conversion while Starknet-api doesn't support the universal `Felt` type
     let transaction_commitment = Felt252Wrapper::from(transaction_commitment).into();
@@ -57,7 +52,7 @@ pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
     let protocol_version = starknet_version(&block.starknet_version);
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
-    let extra_data = Some(sp_core::U256::from_big_endian(&block_hash.to_bytes_be()));
+    let extra_data = Some(mp_block::U256::from_big_endian(&block_hash.to_bytes_be()));
 
     let header = mp_block::Header {
         parent_block_hash,
@@ -88,11 +83,16 @@ pub fn convert_block(block: p::Block) -> Result<ConvertedBlock, L2SyncError> {
         .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
         .collect();
 
-    Ok(ConvertedBlock {
-        block: DeoxysBlock::new(header, transactions, ordered_events),
-        block_hash: felt(block_hash),
-        txs_hashes,
-    })
+    let block = DeoxysBlock::new(
+        DeoxysBlockInfo::new(
+            header,
+            txs_hashes.into_iter().map(TransactionHash).collect(),
+            BlockHash(felt(block_hash)),
+        ),
+        DeoxysBlockInner::new(transactions, ordered_events),
+    );
+
+    Ok(block)
 }
 
 fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {
@@ -421,17 +421,12 @@ fn commitments(
     transactions: &[starknet_api::transaction::Transaction],
     events: &[starknet_api::transaction::Event],
     block_number: u64,
+    chain_id: StarkFelt,
 ) -> ((Felt, Vec<Felt>), Felt) {
-    let chain_id = chain_id();
-
     let ((commitment_tx, txs_hashes), commitment_event) =
-        calculate_tx_and_event_commitments(transactions, events, chain_id, block_number);
+        calculate_tx_and_event_commitments(transactions, events, chain_id.into(), block_number);
 
     ((commitment_tx, txs_hashes), commitment_event)
-}
-
-fn chain_id() -> mp_felt::Felt252Wrapper {
-    utility::chain_id().into()
 }
 
 fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {

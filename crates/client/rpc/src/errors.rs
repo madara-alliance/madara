@@ -1,8 +1,14 @@
-use jsonrpsee::types::error::{CallError, ErrorObject};
 use mc_db::storage_handler::DeoxysStorageError;
 use mc_db::DbError;
-use pallet_starknet_runtime_api::StarknetTransactionExecutionError;
 use starknet_core::types::StarknetError;
+
+pub enum StarknetTransactionExecutionError {
+    ContractNotFound,
+    ClassAlreadyDeclared,
+    ClassHashNotFound,
+    InvalidContractClass,
+    ContractError,
+}
 
 // Comes from the RPC Spec:
 // https://github.com/starkware-libs/starknet-specs/blob/0e859ff905795f789f1dfd6f7340cdaf5015acc8/api/starknet_write_api.json#L227
@@ -134,9 +140,9 @@ impl From<StarknetTransactionExecutionError> for StarknetRpcApiError {
     }
 }
 
-impl From<StarknetRpcApiError> for jsonrpsee::core::Error {
+impl From<StarknetRpcApiError> for jsonrpsee::types::ErrorObjectOwned {
     fn from(err: StarknetRpcApiError) -> Self {
-        jsonrpsee::core::Error::Call(CallError::Custom(ErrorObject::owned((&err).into(), err.to_string(), err.data())))
+        jsonrpsee::types::ErrorObjectOwned::owned((&err).into(), err.to_string(), err.data())
     }
 }
 

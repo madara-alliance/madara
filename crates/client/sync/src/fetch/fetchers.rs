@@ -7,7 +7,6 @@ use mc_db::storage_handler::primitives::contract_class::{ContractClassData, Cont
 use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
 use mp_block::DeoxysBlock;
 use mp_convert::state_update::ToStateUpdateCore;
-use sp_core::H160;
 use starknet_api::core::ClassHash;
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
@@ -33,12 +32,10 @@ pub struct FetchConfig {
     pub feeder_gateway: Url,
     /// The ID of the chain served by the sequencer gateway.
     pub chain_id: starknet_ff::FieldElement,
-    /// The number of tasks spawned to fetch blocks and state updates.
-    pub workers: u32,
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
     /// The L1 contract core address
-    pub l1_core_address: H160,
+    pub l1_core_address: mp_block::H160,
     /// Whether to check the root of the state update
     pub verify: bool,
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.
@@ -102,7 +99,7 @@ where
     }
 }
 
-pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBlock, String> {
+pub async fn fetch_apply_genesis_block(config: FetchConfig, chain_id: StarkFelt) -> Result<DeoxysBlock, String> {
     let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
     let client = match &config.api_key {
         Some(api_key) => client.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
@@ -110,7 +107,7 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig) -> Result<DeoxysBloc
     };
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    Ok(crate::convert::convert_block(block).expect("invalid genesis block").block)
+    Ok(crate::convert::convert_block(block, chain_id).expect("invalid genesis block"))
 }
 
 /// retrieves state update with block from Starknet sequencer in only one request

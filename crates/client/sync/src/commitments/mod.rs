@@ -145,7 +145,7 @@ pub fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) 
 ///
 ///
 /// The updated state root as a `Felt`.
-pub fn update_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt {
+pub fn csd_calculate_state_root(csd: CommitmentStateDiff, block_number: u64) -> Felt {
     // Update contract and its storage tries
     let (contract_trie_root, class_trie_root) = rayon::join(
         || contract_trie_root(&csd, block_number).expect("Failed to compute contract root"),
