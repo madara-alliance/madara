@@ -9,6 +9,7 @@ use starknet_core::types::{
 
 use super::lib::ConvertCallInfoToExecuteInvocationError;
 use super::utils::tx_execution_infos_to_tx_trace;
+use super::utils::tx_execution_infos_to_tx_trace;
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
 use crate::utils::ResultExt;

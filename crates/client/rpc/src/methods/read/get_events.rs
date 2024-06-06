@@ -7,6 +7,7 @@ use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::StarknetRpcApiError;
 use crate::events::get_block_events;
 use crate::types::ContinuationToken;
+use crate::utils::helpers::block_n_from_id;
 use crate::Starknet;
 
 /// Returns all events matching the given filter.

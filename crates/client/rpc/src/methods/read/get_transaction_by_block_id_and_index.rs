@@ -4,6 +4,7 @@ use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use starknet_core::types::{BlockId, Transaction};
 
 use crate::errors::StarknetRpcApiError;
+use crate::utils::helpers::{block_hash_from_block_n, txs_hashes_from_block_hash};
 use crate::Starknet;
 
 /// Get the details of a transaction by a given block id and index.

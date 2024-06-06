@@ -2,6 +2,7 @@ use jsonrpsee::core::RpcResult;
 use starknet_core::types::{FieldElement, TransactionStatus};
 
 use crate::errors::StarknetRpcApiError;
+use crate::utils::helpers::{block_hash_from_block_n, txs_hashes_from_block_hash};
 use crate::Starknet;
 
 /// Gets the Transaction Status, Including Mempool Status and Execution Details
