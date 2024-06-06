@@ -8,7 +8,7 @@ use starknet_api::core::calculate_contract_address;
 use starknet_api::data_availability::DataAvailabilityMode;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
-    Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, PaymasterData, Resource, ResourceBoundsMapping, Tip, Transaction, TransactionHash
+    AccountDeploymentData, Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, PaymasterData, Resource, ResourceBoundsMapping, Tip, Transaction, TransactionHash
 };
 
 use starknet_core::utils::starknet_keccak;
@@ -44,18 +44,16 @@ fn convert_calldata(calldata: Calldata) -> Vec<Felt> {
 
 #[inline]
 fn compute_calldata_hash(calldata: Calldata) -> Felt {
-    let calldata_tmp = convert_calldata(calldata);
-    let calldata_tmp_bis = calldata_tmp.as_slice();
-    Pedersen::hash_array(calldata_tmp_bis) 
+    Pedersen::hash_array(convert_calldata(calldata).as_slice()) 
 }
 
 #[inline]
 fn compute_gas_hash(tip: &Tip, resource_bounds: &ResourceBoundsMapping) -> Felt {
-    let felt_tmp_a = Felt::try_from(tip.0).unwrap();
-    let felt_tmp_b = prepare_resource_bound_value(resource_bounds, Resource::L1Gas);
-    let felt_tmp_c = prepare_resource_bound_value(resource_bounds, Resource::L2Gas);
-    let gas_as_felt = &[felt_tmp_a, felt_tmp_b, felt_tmp_c];
-
+    let gas_as_felt = &[
+        Felt::try_from(tip.0).unwrap(), 
+        prepare_resource_bound_value(resource_bounds, Resource::L1Gas),
+        prepare_resource_bound_value(resource_bounds, Resource::L2Gas) 
+        ];
     Pedersen::hash_array(gas_as_felt)
 }
 
@@ -63,8 +61,14 @@ fn compute_gas_hash(tip: &Tip, resource_bounds: &ResourceBoundsMapping) -> Felt 
 fn compute_paymaster_hash(paymaster_data : &PaymasterData) -> Felt {
     let paymaster_tmp = 
         paymaster_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
-    let paymaster_tmp_bis = paymaster_tmp.as_slice();
-    Pedersen::hash_array(paymaster_tmp_bis)
+    Pedersen::hash_array(paymaster_tmp.as_slice())
+}
+
+#[inline]
+fn compute_account_deployment_hash(account_deployment_data : &AccountDeploymentData) -> Felt {
+    let account_deployment_data_tmp = 
+        &account_deployment_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
+    Pedersen::hash_array(account_deployment_data_tmp.as_slice())
 }
 
 // Use a mapping from execution resources to get corresponding fee bounds
@@ -200,12 +204,8 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
             );
         
         let data_hash = {
-            let account_deployment_data_tmp = 
-                &self.account_deployment_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
-            let account_deployment_data_tmp_bis = account_deployment_data_tmp.as_slice();
-            let account_deployment_data_hash = Pedersen::hash_array(account_deployment_data_tmp_bis);
+            let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);            
             let calldata_hash = compute_calldata_hash(self.calldata.clone());    
-
             Pedersen::hash_array(&[account_deployment_data_hash, calldata_hash])
         };
 
@@ -340,11 +340,8 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
             );
         
 
-        let account_deployment_data_tmp = 
-            &self.account_deployment_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
-        let account_deployment_data_tmp_bis = account_deployment_data_tmp.as_slice();
-        let account_deployment_data_hash = Pedersen::hash_array(account_deployment_data_tmp_bis);
-
+        let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);            
+            
         TransactionHash(StarkFelt(Pedersen::hash_array(&[
             prefix,
             version,
