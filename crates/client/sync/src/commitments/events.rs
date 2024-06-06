@@ -3,14 +3,10 @@ use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mc_db::storage_handler::bonsai_identifier;
-use mp_felt::Felt252Wrapper;
-use mp_hashers::pedersen::PedersenHasher;
-use mp_hashers::HasherT;
 use rayon::prelude::*;
 use starknet_api::transaction::Event;
-use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
-use starknet_types_core::hash::Pedersen;
+use starknet_types_core::hash::{Pedersen, StarkHash};
 
 /// Calculate the hash of the event.
 ///
@@ -20,33 +16,22 @@ use starknet_types_core::hash::Pedersen;
 ///
 /// # Returns
 ///
-/// The event hash as `FieldElement`.
-pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
+/// The event hash as `Felt`.
+pub fn calculate_event_hash(event: &Event) -> Felt {
     let (keys_hash, data_hash) = rayon::join(
         || {
-            H::compute_hash_on_elements(
-                &event
-                    .content
-                    .keys
-                    .iter()
-                    .map(|key| FieldElement::from(Felt252Wrapper::from(key.0)))
-                    .collect::<Vec<FieldElement>>(),
+            Pedersen::hash_array(
+                &event.content.keys.iter().map(|key| Felt::from_bytes_be(&key.0.0)).collect::<Vec<Felt>>(),
             )
         },
         || {
-            H::compute_hash_on_elements(
-                &event
-                    .content
-                    .data
-                    .0
-                    .iter()
-                    .map(|data| FieldElement::from(Felt252Wrapper::from(*data)))
-                    .collect::<Vec<FieldElement>>(),
+            Pedersen::hash_array(
+                &event.content.data.0.iter().map(|data| Felt::from_bytes_be(&data.0)).collect::<Vec<Felt>>(),
             )
         },
     );
-    let from_address = FieldElement::from(Felt252Wrapper::from(event.from_address.0 .0));
-    H::compute_hash_on_elements(&[from_address, keys_hash, data_hash])
+    let from_address = Felt::from_bytes_be(&event.from_address.0.0.0);
+    Pedersen::hash_array(&[from_address, keys_hash, data_hash])
 }
 
 /// Calculate the event commitment in memory using HashMapDb (which is more efficient for this
@@ -58,11 +43,10 @@ pub fn calculate_event_hash<H: HasherT>(event: &Event) -> FieldElement {
 ///
 /// # Returns
 ///
-/// The event commitment as `Felt252Wrapper`.
-pub fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, String> {
-    // TODO @cchudant refacto/optimise this function
+/// The event commitment as `Felt`.
+pub fn memory_event_commitment(events: &[Event]) -> Result<Felt, String> {
     if events.is_empty() {
-        return Ok(Felt252Wrapper::ZERO);
+        return Ok(Felt::ZERO);
     }
 
     let config = BonsaiStorageConfig::default();
@@ -72,12 +56,12 @@ pub fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, Strin
     let identifier = bonsai_identifier::EVENT;
 
     // event hashes are computed in parallel
-    let events = events.par_iter().map(calculate_event_hash::<PedersenHasher>).collect::<Vec<_>>();
+    let events = events.par_iter().map(calculate_event_hash).collect::<Vec<_>>();
 
     // once event hashes have finished computing, they are inserted into the local Bonsai db
     for (i, event_hash) in events.into_iter().enumerate() {
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
-        let value = Felt::from(Felt252Wrapper::from(event_hash));
+        let value = event_hash;
         bonsai_storage.insert(identifier, key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
     }
 
@@ -93,5 +77,5 @@ pub fn memory_event_commitment(events: &[Event]) -> Result<Felt252Wrapper, Strin
     bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
     let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
-    Ok(Felt252Wrapper::from(root_hash))
+    Ok(root_hash)
 }

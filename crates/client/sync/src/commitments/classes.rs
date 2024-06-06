@@ -1,14 +1,12 @@
 use blockifier::state::cached_state::CommitmentStateDiff;
 use mc_db::storage_handler::{self, DeoxysStorageError};
-use mp_felt::Felt252Wrapper;
-use mp_hashers::poseidon::PoseidonHasher;
-use mp_hashers::HasherT;
 use rayon::prelude::*;
-use starknet_ff::FieldElement;
+use starknet_types_core::felt::Felt;
+use starknet_types_core::hash::{Poseidon, StarkHash};
 
 // "CONTRACT_CLASS_LEAF_V0"
-const CONTRACT_CLASS_HASH_VERSION: FieldElement =
-    FieldElement::from_mont([9331882290187415277, 12057587991035439952, 18444375821049509847, 115292049744600508]);
+const CONTRACT_CLASS_HASH_VERSION: Felt =
+    Felt::from_raw([115292049744600508, 18444375821049509847, 12057587991035439952, 9331882290187415277]);
 
 /// Calculates the class trie root
 ///
@@ -21,7 +19,7 @@ const CONTRACT_CLASS_HASH_VERSION: FieldElement =
 /// # Returns
 ///
 /// The class root.
-pub fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt252Wrapper, DeoxysStorageError> {
+pub fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<Felt, DeoxysStorageError> {
     let mut handler_class = storage_handler::class_trie_mut();
 
     let updates = csd
@@ -29,9 +27,9 @@ pub fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<F
         .iter()
         .par_bridge()
         .map(|(class_hash, compiled_class_hash)| {
-            let compiled_class_hash = FieldElement::from_bytes_be(&compiled_class_hash.0 .0).unwrap();
+            let compiled_class_hash = Felt::from_bytes_be(&compiled_class_hash.0.0);
 
-            let hash = PoseidonHasher::hash_elements(CONTRACT_CLASS_HASH_VERSION, compiled_class_hash);
+            let hash = Poseidon::hash(&CONTRACT_CLASS_HASH_VERSION, &compiled_class_hash);
 
             (class_hash, hash)
         })
@@ -41,7 +39,7 @@ pub fn class_trie_root(csd: &CommitmentStateDiff, block_number: u64) -> Result<F
     handler_class.update(updates)?;
     handler_class.commit(block_number)?;
 
-    Ok(handler_class.root()?.into())
+    handler_class.root()
 }
 
 #[cfg(test)]
@@ -50,9 +48,6 @@ mod tests {
 
     #[test]
     fn test_contract_class_hash_version() {
-        assert_eq!(
-            CONTRACT_CLASS_HASH_VERSION,
-            FieldElement::from_byte_slice_be("CONTRACT_CLASS_LEAF_V0".as_bytes()).unwrap(),
-        );
+        assert_eq!(CONTRACT_CLASS_HASH_VERSION, Felt::from_bytes_be_slice("CONTRACT_CLASS_LEAF_V0".as_bytes()));
     }
 }
