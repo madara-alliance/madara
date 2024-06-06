@@ -15,7 +15,7 @@ jobs:
           shared-key: "cache"
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-08-24
+          toolchain: 1.78
 
       - name: Check the project
         run: |

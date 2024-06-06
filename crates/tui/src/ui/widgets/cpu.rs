@@ -21,9 +21,11 @@ pub fn render_cpu(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_cpu_graph(frame: &mut Frame, app: &App, area: Rect) {
     let serie = continuous(smooth_serie(&app.data.cpu_usage, 5));
-    let datasets = vec![
-        Dataset::default().name("CPU").marker(Marker::Braille).style(Style::default().fg(Color::Cyan)).data(&serie),
-    ];
+    let datasets = vec![Dataset::default()
+        .name("CPU")
+        .marker(Marker::Braille)
+        .style(Style::default().fg(Color::Cyan))
+        .data(&serie)];
     let chart = Chart::new(datasets)
         .x_axis(Axis::default().title("t").style(Style::default().fg(Color::Gray)).labels(vec![]).bounds([0., 100.]))
         .y_axis(

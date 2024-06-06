@@ -24,9 +24,11 @@ fn render_memory_gauge(frame: &mut Frame, app: &App, area: Rect) {
 fn render_memory_graph(frame: &mut Frame, app: &App, area: Rect) {
     let fserie: Vec<f64> = app.data.memory_usage.clone().into_iter().map(|elm| elm as f64 / 1000000.).collect();
     let serie = continuous(smooth_serie(&fserie, 5));
-    let datasets = vec![
-        Dataset::default().name("RAM").marker(Marker::Braille).style(Style::default().fg(Color::Magenta)).data(&serie),
-    ];
+    let datasets = vec![Dataset::default()
+        .name("RAM")
+        .marker(Marker::Braille)
+        .style(Style::default().fg(Color::Magenta))
+        .data(&serie)];
     let chart = Chart::new(datasets)
         .x_axis(Axis::default().title("t").style(Style::default().fg(Color::Gray)).labels(vec![]).bounds([0., 100.]))
         .y_axis(

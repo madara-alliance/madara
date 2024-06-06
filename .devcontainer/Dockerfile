@@ -27,6 +27,4 @@ RUN sudo apt-get update \
         htop \
         jq \
         tree \
-    && rustup toolchain install nightly \
-    && rustup default nightly \
     && sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"

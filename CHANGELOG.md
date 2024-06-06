@@ -2,6 +2,7 @@
 
 ## Next release
 
+- chore: update dependencies
 - fix(hashers): cleaned hashers using types core hashers and Felt
 - refactor: remove substrate block storage
 - feat(infra): Added boilerplate to deploy a grafana/prometheus dashboard
