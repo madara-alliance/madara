@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(rpc): fixed block storage column
 - refactor: remove substrate block storage
 - feat(infra): Added boilerplate to deploy a grafana/prometheus dashboard
 - refacor: use db hash

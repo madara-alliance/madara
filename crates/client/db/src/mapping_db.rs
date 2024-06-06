@@ -113,9 +113,9 @@ impl MappingDb {
     pub fn get_l1_last_confirmed_block(&self) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK)? else { return Ok(None) };
-        let res = codec::Decode::decode(&mut res.as_ref())?;
+        let res = codec::Decode::decode(res.as_ref())?;
         Ok(Some(res))
-    }
+    }    
 
     pub fn get_pending_block_state_update(&self) -> Result<Option<PendingStateUpdate>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
