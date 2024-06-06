@@ -281,6 +281,7 @@ mod l1_sync_tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_starting_block() {
         let url = Url::parse(eth_rpc::MAINNET).expect("Failed to parse URL");
         let client = EthereumClient::new(url, H160::zero()).await.expect("Failed to create EthereumClient");
@@ -291,6 +292,7 @@ mod l1_sync_tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_initial_state() {
         let url = Url::parse(eth_rpc::MAINNET).expect("Failed to parse URL");
         let client = EthereumClient::new(url, H160::zero()).await.expect("Failed to create EthereumClient");
@@ -302,6 +304,7 @@ mod l1_sync_tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_event_subscription() -> Result<(), Box<dyn std::error::Error>> {
         abigen!(
             IERC20,

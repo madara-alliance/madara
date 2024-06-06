@@ -307,7 +307,7 @@ fn from_legacy_entry_points_by_type(entries: &LegacyEntryPointsByType) -> IndexM
 /// Returns a [LegacyContractEntryPoint] (starknet-rs) from a [EntryPoint]
 /// (starknet-api)
 fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryPoint, FromByteArrayError> {
-    let selector = FieldElement::from_bytes_be(&entry_point.selector.0.0)?;
+    let selector = FieldElement::from_bytes_be(&entry_point.selector.0 .0)?;
     let offset = entry_point.offset.0;
     Ok(LegacyContractEntryPoint { selector, offset })
 }
@@ -315,7 +315,7 @@ fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryP
 /// Returns a [SierraEntryPoint] (starknet-rs) from a [EntryPointV1]
 /// (starknet-api)
 fn to_entry_point(entry_point: EntryPointV1, index: u64) -> Result<SierraEntryPoint, FromByteArrayError> {
-    let selector = FieldElement::from_bytes_be(&entry_point.selector.0.0)?;
+    let selector = FieldElement::from_bytes_be(&entry_point.selector.0 .0)?;
     let function_idx = index;
     Ok(SierraEntryPoint { selector, function_idx })
 }

@@ -14,16 +14,16 @@ use mc_db::DeoxysBackend;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_block::{BlockId, BlockTag, DeoxysBlock};
 use mp_felt::{trim_hash, FeltWrapper};
-use serde::Deserialize;
-use starknet_api::hash::{StarkFelt, StarkHash};
+use starknet_api::hash::StarkFelt;
 use starknet_core::types::StateUpdate;
 use starknet_providers::sequencer::models::StateUpdateWithBlock;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
+use starknet_types_core::felt::Felt;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Duration;
 
-use crate::commitments::lib::{build_commitment_state_diff, csd_calculate_state_root};
+use crate::commitments::{build_commitment_state_diff, csd_calculate_state_root};
 use crate::convert::convert_block;
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
@@ -59,11 +59,11 @@ pub enum L2SyncError {
 }
 
 /// Contains the latest Starknet verified state on L2
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct L2StateUpdate {
     pub block_number: u64,
-    pub global_root: StarkHash,
-    pub block_hash: StarkHash,
+    pub global_root: Felt,
+    pub block_hash: Felt,
 }
 
 fn store_new_block(block: &DeoxysBlock) -> Result<(), DeoxysStorageError> {
@@ -108,7 +108,7 @@ async fn l2_verify_and_apply_task(
             })
             .await?;
 
-            if global_state_root != state_root {
+            if global_state_root.0 != state_root.to_bytes_be() {
                 // TODO(fault tolerance): we should have a single rocksdb transaction for the whole l2 update.
                 // let prev_block = block_n.checked_sub(1).expect("no block to revert to");
 
@@ -377,9 +377,9 @@ async fn update_sync_metrics(
 }
 
 /// Verify and update the L2 state according to the latest state update
-pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> anyhow::Result<StarkFelt> {
+pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> anyhow::Result<Felt> {
     let csd = build_commitment_state_diff(state_update);
     let state_root = csd_calculate_state_root(csd, block_number);
 
-    Ok(state_root.into())
+    Ok(state_root)
 }
