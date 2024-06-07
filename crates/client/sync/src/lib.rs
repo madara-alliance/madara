@@ -50,7 +50,7 @@ pub mod starknet_sync_worker {
                 .unwrap_or_default() as _
         };
 
-        log::info!("☕ Starting L2 sync from block {}", starting_block);
+        log::info!("⛓️  Starting L2 sync from block {}", starting_block);
 
         let provider = SequencerGatewayProvider::new(
             fetch_config.gateway.clone(),
@@ -74,6 +74,7 @@ pub mod starknet_sync_worker {
                     backup_every_n_blocks,
                 },
                 block_metrics,
+                starting_block,
                 chain_id,
                 telemetry,
             ),

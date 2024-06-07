@@ -10,7 +10,7 @@ use ethers::types::{Address, BlockNumber as EthBlockNumber, Filter, TransactionR
 use ethers::utils::hex::decode;
 use futures::stream::StreamExt;
 use mc_db::{DeoxysBackend, WriteBatchWithTransaction};
-use mp_felt::Felt252Wrapper;
+use mp_felt::{trim_hash, Felt252Wrapper};
 use primitive_types::H256;
 use prometheus_endpoint::prometheus::core::Number;
 use reqwest::Url;
@@ -172,10 +172,10 @@ impl EthereumClient {
 /// Update the L1 state with the latest data
 pub fn update_l1(state_update: L1StateUpdate, block_metrics: Option<BlockMetrics>) -> anyhow::Result<()> {
     log::info!(
-        "🔄 Updated L1 head: Number: #{}, Hash: {}, Root: {}",
+        "🔄 Updated L1 head #{} ({}) with state root ({})",
         state_update.block_number,
-        state_update.block_hash,
-        state_update.global_root
+        trim_hash(&Felt252Wrapper::from(state_update.block_hash)),
+        trim_hash(&Felt252Wrapper::from(state_update.global_root))
     );
 
     if let Some(block_metrics) = block_metrics {

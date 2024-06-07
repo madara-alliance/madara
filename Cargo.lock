@@ -1935,6 +1935,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "clap",
  "deoxys-tui",
  "env_logger",

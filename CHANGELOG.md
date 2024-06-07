@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(logs): fixed some logs and others
 - fix(rpc): fixed block storage column
 - chore: update dependencies
 - fix(hashers): cleaned hashers using types core hashers and Felt
