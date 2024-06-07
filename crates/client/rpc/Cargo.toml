@@ -37,7 +37,6 @@ log = { workspace = true, default-features = true }
 mp-block = { workspace = true, default-features = true }
 mp-convert = { workspace = true, default-features = true }
 mp-felt = { workspace = true, default-features = true }
-mp-hashers = { workspace = true, default-features = true }
 mp-simulations = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
 mp-types = { workspace = true }
