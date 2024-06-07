@@ -16,7 +16,6 @@ indexmap = { workspace = true }
 mp-felt = { workspace = true }
 starknet-core = { workspace = true }
 starknet-crypto = { workspace = true, features = ["alloc"] }
-starknet-ff = { workspace = true, features = ["alloc"] }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
@@ -42,7 +41,6 @@ assert_matches = { workspace = true }
 [features]
 default = ["std"]
 std = [
-  "starknet-ff/std",
   "starknet-core/std",
   "mp-felt/std",
   # Optional

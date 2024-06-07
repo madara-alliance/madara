@@ -21,7 +21,7 @@ parity-scale-codec = { workspace = true, default-features = true, features = [
 
 # Deoxys crates
 mp-block = { workspace = true, features = ["std", "parity-scale-codec"] }
-mp-convert = { workspace = true, features = ["std"] }
+mp-convert = { workspace = true }
 mp-felt = { workspace = true, features = ["std", "serde"] }
 mp-transactions = { workspace = true, features = ["std", "serde", "client"] }
 mp-types = { workspace = true }
