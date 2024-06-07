@@ -158,28 +158,28 @@ impl Header {
         if self.block_number >= 833 {
             // Computes the block hash for blocks generated after Cairo 0.7.0
             let data: &[Felt] = &[
-                Felt::try_from(self.block_number).unwrap(),           // block number
-                Felt::from_bytes_be(&self.global_state_root.0),      // global state root
-                Felt::from_bytes_be(&self.sequencer_address.0.0.0),      // sequencer address
-                Felt::try_from(self.block_timestamp).unwrap(),        // block timestamp
-                Felt::try_from(self.transaction_count).unwrap(),      // number of transactions
-                Felt::from_bytes_be(&self.transaction_commitment.0), // transaction commitment
-                Felt::try_from(self.event_count).unwrap(),            // number of events
-                Felt::from_bytes_be(&self.event_commitment.0),       // event commitment
-                Felt::ZERO,               // reserved: protocol version
-                Felt::ZERO,               // reserved: extra data
-                Felt::from_bytes_be(&self.parent_block_hash.0),      // parent block hash
+                Felt::from(self.block_number),                        // block number
+                Felt::from_bytes_be(&self.global_state_root.0),       // global state root
+                Felt::from_bytes_be(&self.sequencer_address.0 .0 .0), // sequencer address
+                Felt::from(self.block_timestamp),                     // block timestamp
+                Felt::from(self.transaction_count),                   // number of transactions
+                Felt::from_bytes_be(&self.transaction_commitment.0),  // transaction commitment
+                Felt::from(self.event_count),                         // number of events
+                Felt::from_bytes_be(&self.event_commitment.0),        // event commitment
+                Felt::ZERO,                                           // reserved: protocol version
+                Felt::ZERO,                                           // reserved: extra data
+                Felt::from_bytes_be(&self.parent_block_hash.0),       // parent block hash
             ];
 
             Pedersen::hash_array(data)
         } else {
             // Computes the block hash for blocks generated before Cairo 0.7.0
             let data: &[Felt] = &[
-                Felt::try_from(self.block_number).unwrap(),
+                Felt::from(self.block_number),
                 Felt::from_bytes_be(&self.global_state_root.0),
                 Felt::ZERO,
                 Felt::ZERO,
-                Felt::try_from(self.transaction_count).unwrap(),
+                Felt::from(self.transaction_count),
                 Felt::from_bytes_be(&self.transaction_commitment.0),
                 Felt::ZERO,
                 Felt::ZERO,

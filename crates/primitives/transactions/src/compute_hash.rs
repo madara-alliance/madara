@@ -52,7 +52,7 @@ fn compute_calldata_hash(calldata: Calldata) -> Felt {
 #[inline]
 fn compute_gas_hash(tip: &Tip, resource_bounds: &ResourceBoundsMapping) -> Felt {
     let gas_as_felt = &[
-        Felt::try_from(tip.0).unwrap(),
+        Felt::from(tip.0),
         prepare_resource_bound_value(resource_bounds, Resource::L1Gas),
         prepare_resource_bound_value(resource_bounds, Resource::L2Gas),
     ];
@@ -424,7 +424,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
         calldata.push(Felt::from_bytes_be(&self.class_hash.0 .0));
         calldata.push(Felt::from_bytes_be(&self.contract_address_salt.0 .0));
         calldata.extend_from_slice(&constructor_calldata);
-        let calldata_hash = Pedersen::hash_array(&calldata.as_slice());
+        let calldata_hash = Pedersen::hash_array(calldata.as_slice());
 
         let max_fee = Felt::from(self.max_fee.0);
         let nonce = Felt::from_bytes_be(&self.nonce.0 .0);
@@ -505,7 +505,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
         let data_availability_modes =
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
 
-        let constructor_calldata_hash = Pedersen::hash_array(&constructor_calldata.as_slice());
+        let constructor_calldata_hash = Pedersen::hash_array(constructor_calldata.as_slice());
 
         TransactionHash(StarkFelt(
             Pedersen::hash_array(&[
@@ -583,7 +583,7 @@ pub fn compute_hash_given_contract_address(
     constructor_calldata: &[Felt],
 ) -> TransactionHash {
     let prefix = Felt::from_bytes_be_slice(DEPLOY_PREFIX);
-    let version = Felt::from_bytes_be(&transaction.version.0 .0).into();
+    let version = Felt::from_bytes_be(&transaction.version.0 .0);
 
     let constructor_calldata = Pedersen::hash_array(constructor_calldata);
 
