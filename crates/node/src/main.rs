@@ -2,6 +2,7 @@
 #![warn(missing_docs)]
 
 use anyhow::Context;
+use chrono::Local;
 use clap::Parser;
 
 mod cli;
@@ -12,6 +13,7 @@ use cli::RunCmd;
 use mc_telemetry::{SysInfo, TelemetryService};
 use service::{DatabaseService, RpcService, SyncService};
 use tokio::task::JoinSet;
+use std::io::Write;
 
 const GREET_IMPL_NAME: &str = "Deoxys";
 const GREET_SUPPORT_URL: &str = "https://kasar.io";
@@ -20,8 +22,12 @@ const GREET_AUTHORS: &[&str] =
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format(|buf, record| {
+            let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
+            writeln!(buf, "[{} {}] {}", ts, record.level(), record.args())
+        })
+        .init();   
     crate::util::setup_rayon_threadpool()?;
     let mut run_cmd: RunCmd = RunCmd::parse();
     let node_name = run_cmd.node_name_or_provide().await.to_string();

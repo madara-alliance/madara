@@ -51,6 +51,7 @@ reqwest = { workspace = true }
 url = { workspace = true }
 
 anyhow.workspace = true
+chrono = "0.4.38"
 env_logger = "0.11.3"
 forwarded-header-value = "0.1.1"
 governor.workspace = true
