@@ -12,13 +12,12 @@ mod util;
 use cli::RunCmd;
 use mc_telemetry::{SysInfo, TelemetryService};
 use service::{DatabaseService, RpcService, SyncService};
-use tokio::task::JoinSet;
 use std::io::Write;
+use tokio::task::JoinSet;
 
 const GREET_IMPL_NAME: &str = "Deoxys";
 const GREET_SUPPORT_URL: &str = "https://kasar.io";
-const GREET_AUTHORS: &[&str] =
-    &["Kasar <https://github.com/kasarlabs>"];
+const GREET_AUTHORS: &[&str] = &["Kasar <https://github.com/kasarlabs>"];
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

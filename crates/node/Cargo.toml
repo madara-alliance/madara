@@ -1,7 +1,5 @@
 [package]
-authors = [
-  "Kasar <https://github.com/kasarlabs>"
-]
+authors = ["Kasar <https://github.com/kasarlabs>"]
 description = "Deoxys node"
 edition.workspace = true
 homepage = "https://github.com/kasarlabs/deoxys"

@@ -3,9 +3,7 @@ name = "mc-db"
 version.workspace = true
 edition.workspace = true
 description = "Starknet database backend"
-authors = [
-  "Kasar <https://github.com/kasarlabs>"
-]
+authors = ["Kasar <https://github.com/kasarlabs>"]
 homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
 publish = false
