@@ -2,6 +2,7 @@
 #![warn(missing_docs)]
 
 use anyhow::Context;
+use chrono::Local;
 use clap::Parser;
 
 mod cli;
@@ -12,15 +13,21 @@ use cli::RunCmd;
 use mc_telemetry::{SysInfo, TelemetryService};
 use service::{DatabaseService, RpcService, SyncService};
 use tokio::task::JoinSet;
+use std::io::Write;
 
 const GREET_IMPL_NAME: &str = "Deoxys";
 const GREET_SUPPORT_URL: &str = "https://kasar.io";
 const GREET_AUTHORS: &[&str] =
-    &["Kasar <https://github.com/kasarlabs>", "KSS <https://github.com/keep-starknet-strange>"];
+    &["Kasar <https://github.com/kasarlabs>"];
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format(|buf, record| {
+            let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
+            writeln!(buf, "[{} {}] {}", ts, record.level(), record.args())
+        })
+        .init();
 
     crate::util::setup_rayon_threadpool()?;
     let mut run_cmd: RunCmd = RunCmd::parse();
@@ -30,11 +37,11 @@ async fn main() -> anyhow::Result<()> {
     log::info!("👽 {} Node", GREET_IMPL_NAME);
     log::info!("✌️  Version {}", node_version);
     for author in GREET_AUTHORS {
-        log::info!("❤️   by {}", author);
+        log::info!("❤️   By {}", author);
     }
     log::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
-    log::info!("👤 Role: full node");
-    log::info!("🏷  Node name: {}", node_name);
+    log::info!("🏷  Node Name: {}", node_name);
+    log::info!("👤 Role: Full Node");
 
     let sys_info = SysInfo::probe();
     sys_info.show();

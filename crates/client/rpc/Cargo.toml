@@ -1,8 +1,6 @@
 [package]
 authors = [
-  "Kasar <https://github.com/kasarlabs>",
-  "KSS <https://github.com/keep-starknet-strange>",
-  "Substrate DevHub <https://github.com/substrate-developer-hub>",
+  "Kasar <https://github.com/kasarlabs>"
 ]
 description = "Starknet RPC compatibility layer for Substrate"
 edition.workspace = true
