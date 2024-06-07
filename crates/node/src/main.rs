@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
     log::info!("👽 {} Node", GREET_IMPL_NAME);
     log::info!("✌️  Version {}", node_version);
     for author in GREET_AUTHORS {
-        log::info!("❤️   By {}", author);
+        log::info!("❤️  By {}", author);
     }
     log::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
     log::info!("🏷  Node Name: {}", node_name);
