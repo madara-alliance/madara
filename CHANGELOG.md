@@ -2,7 +2,8 @@
 
 ## Next release
 
-- refactor: enforce Felt type as much as possible into compute_hash.rs (changes in cascade)
+- fix(felt): enforce Felt type as much as possible into compute_hash.rs
+- fix(logs): fixed some logs and others
 - fix(rpc): fixed block storage column
 - chore: update dependencies
 - fix(hashers): cleaned hashers using types core hashers and Felt

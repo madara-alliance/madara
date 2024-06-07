@@ -1,9 +1,5 @@
 [package]
-authors = [
-  "Kasar <https://github.com/kasarlabs>",
-  "KSS <https://github.com/keep-starknet-strange>",
-  "Substrate DevHub <https://github.com/substrate-developer-hub>",
-]
+authors = ["Kasar <https://github.com/kasarlabs>"]
 description = "Deoxys node"
 edition.workspace = true
 homepage = "https://github.com/kasarlabs/deoxys"
@@ -51,6 +47,7 @@ reqwest = { workspace = true }
 url = { workspace = true }
 
 anyhow.workspace = true
+chrono = "0.4.38"
 env_logger = "0.11.3"
 forwarded-header-value = "0.1.1"
 governor.workspace = true

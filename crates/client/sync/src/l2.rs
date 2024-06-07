@@ -85,6 +85,7 @@ async fn l2_verify_and_apply_task(
     verify: bool,
     backup_every_n_blocks: Option<u64>,
     block_metrics: Option<BlockMetrics>,
+    starting_block: u64,
     sync_timer: Arc<Mutex<Option<Instant>>>,
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
@@ -149,6 +150,7 @@ async fn l2_verify_and_apply_task(
         update_sync_metrics(
             // &mut command_sink,
             block_n,
+            starting_block,
             block_metrics.as_ref(),
             sync_timer.clone(),
         )
@@ -301,6 +303,7 @@ pub async fn sync(
     provider: SequencerGatewayProvider,
     config: L2SyncConfig,
     block_metrics: Option<BlockMetrics>,
+    starting_block: u64,
     chain_id: StarkFelt,
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
@@ -335,6 +338,7 @@ pub async fn sync(
         config.verify,
         config.backup_every_n_blocks,
         block_metrics,
+        starting_block,
         Arc::clone(&sync_timer),
         telemetry,
     ));
@@ -349,6 +353,7 @@ pub async fn sync(
 
 async fn update_sync_metrics(
     block_number: u64,
+    starting_block: u64,
     block_metrics: Option<&BlockMetrics>,
     sync_timer: Arc<Mutex<Option<Instant>>>,
 ) -> anyhow::Result<()> {
@@ -370,7 +375,7 @@ async fn update_sync_metrics(
         let sync_time = block_metrics.l2_sync_time.get() + elapsed_time;
         block_metrics.l2_sync_time.set(sync_time);
         block_metrics.l2_latest_sync_time.set(elapsed_time);
-        block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / block_number as f64);
+        block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / (block_number - starting_block) as f64);
     }
 
     Ok(())

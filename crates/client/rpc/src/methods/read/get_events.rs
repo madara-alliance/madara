@@ -41,7 +41,7 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Rpc
         return Err(StarknetRpcApiError::PageSizeTooBig.into());
     }
 
-    // Get the substrate block numbers for the requested range
+    // Get the block numbers for the requested range
     let (from_block, to_block, latest_block) =
         block_range(starknet, filter.event_filter.from_block, filter.event_filter.to_block)?;
 

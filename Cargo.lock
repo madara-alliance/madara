@@ -1935,6 +1935,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "clap",
  "deoxys-tui",
  "env_logger",
@@ -3997,6 +3998,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-types-core",
  "starknet_api",
 ]
 
