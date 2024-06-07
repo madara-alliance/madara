@@ -10,7 +10,6 @@ use cairo_vm::types::relocatable::MaybeRelocatable;
 use serde::de::MapAccess;
 use serde::{de, Deserialize, Deserializer, Serialize};
 
-#[cfg_attr(all(feature = "arbitrary", feature = "std"), derive(Arbitrary))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProgramWrapper {
     pub shared_program_data: Arc<SharedProgramDataWrapper>,
@@ -37,17 +36,13 @@ pub struct HintsCollectionWrapper {
     pub hints_ranges: Vec<HintRange>,
 }
 
-#[cfg_attr(all(feature = "arbitrary", feature = "std"), derive(Arbitrary))]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub struct HintParamsWrapper {
     pub code: String,
     pub accessible_scopes: Vec<String>,
     pub flow_tracking_data: FlowTrackingDataWrapper,
 }
 
-#[cfg_attr(all(feature = "arbitrary", feature = "std"), derive(Arbitrary))]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct FlowTrackingDataWrapper {
     pub ap_tracking: ApTracking,
@@ -55,18 +50,16 @@ pub struct FlowTrackingDataWrapper {
     pub reference_ids: BTreeMap<String, usize>,
 }
 
-#[cfg_attr(all(feature = "arbitrary", feature = "std"), derive(Arbitrary))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AttributeWrapper {
     pub name: String,
     pub start_pc: usize,
     pub end_pc: usize,
     pub value: String,
-    #[cfg_attr(all(feature = "arbitrary", feature = "std"), serde(skip_serializing_if = "Option::is_none"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub flow_tracking_data: Option<FlowTrackingDataWrapper>,
 }
 
-#[cfg_attr(all(feature = "arbitrary", feature = "std"), derive(Arbitrary))]
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct IdentifierWrapper {
     pub pc: Option<usize>,

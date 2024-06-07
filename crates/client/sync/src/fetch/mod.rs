@@ -1,15 +1,15 @@
-use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures::prelude::*;
 use starknet_core::types::StarknetError;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use self::fetchers::L2BlockAndUpdates;
 use crate::fetch::fetchers::fetch_block_and_updates;
 use crate::l2::L2SyncError;
+use crate::utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 
 pub mod fetchers;
 
@@ -19,6 +19,7 @@ pub async fn l2_fetch_task(
     fetch_stream_sender: mpsc::Sender<L2BlockAndUpdates>,
     provider: Arc<SequencerGatewayProvider>,
     sync_polling_interval: Option<Duration>,
+    once_caught_up_callback: oneshot::Sender<()>,
 ) -> anyhow::Result<()> {
     // First, catch up with the chain
 
@@ -33,36 +34,45 @@ pub async fn l2_fetch_task(
 
         // Have 10 fetches in parallel at once, using futures Buffered
         let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
-        while let Some((block_n, val)) = pin!(fetch_stream.next()).await {
+        while let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next()).await {
             log::debug!("got {:?}", block_n);
 
             match val {
                 Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
+                    log::info!("🥳 The sync process caught up with the tip of the chain.");
                     break;
                 }
-                val => fetch_stream_sender.send(val?).await.expect("reciever task is closed"),
+                val => {
+                    if fetch_stream_sender.send(val?).await.is_err() {
+                        // join error
+                        break;
+                    }
+                }
             }
 
             next_block = block_n + 1;
         }
     };
 
-    log::info!("🥳 The sync process caught up with the tip of the chain.");
+    let _ = once_caught_up_callback.send(());
 
     if let Some(sync_polling_interval) = sync_polling_interval {
         // Polling
 
         let mut interval = tokio::time::interval(sync_polling_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            interval.tick().await;
-
+        while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
             loop {
                 match fetch_block_and_updates(next_block, Arc::clone(&provider)).await {
                     Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
                         break;
                     }
-                    val => fetch_stream_sender.send(val?).await.expect("reciever task is closed"),
+                    val => {
+                        if fetch_stream_sender.send(val?).await.is_err() {
+                            // stream closed
+                            break;
+                        }
+                    }
                 }
 
                 next_block += 1;

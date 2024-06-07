@@ -36,7 +36,7 @@ pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_
             to_address: FieldElement::from_byte_slice_be(message.message.to_address.0.to_fixed_bytes().as_slice())
                 .unwrap(),
             from_address: {
-                let felt_wrapper: Felt252Wrapper = Felt252Wrapper::from(call_info.call.storage_address.0.0);
+                let felt_wrapper: Felt252Wrapper = Felt252Wrapper::from(call_info.call.storage_address.0 .0);
                 FieldElement::from(felt_wrapper)
             },
         })
@@ -132,10 +132,10 @@ fn try_get_funtion_invocation_from_call_info(
     };
 
     Ok(starknet_core::types::FunctionInvocation {
-        contract_address: FieldElement::from(Felt252Wrapper::from(call_info.call.storage_address.0.0)),
+        contract_address: FieldElement::from(Felt252Wrapper::from(call_info.call.storage_address.0 .0)),
         entry_point_selector: FieldElement::from(Felt252Wrapper::from(call_info.call.entry_point_selector.0)),
         calldata: call_info.call.calldata.0.iter().map(|x| FieldElement::from(Felt252Wrapper::from(*x))).collect(),
-        caller_address: FieldElement::from(Felt252Wrapper::from(call_info.call.caller_address.0.0)),
+        caller_address: FieldElement::from(Felt252Wrapper::from(call_info.call.caller_address.0 .0)),
         class_hash,
         entry_point_type,
         call_type,
@@ -240,3 +240,25 @@ pub fn tx_execution_infos_to_tx_trace(
 
     Ok(tx_trace)
 }
+
+// // TODO: move to mod utils
+// pub fn block_number_by_id(id: BlockId) -> Result<u64, StarknetRpcApiError> {
+//     let (latest_block_hash, latest_block_number) =
+// DeoxysBackend::meta().get_latest_block_hash_and_number()?;     match id {
+//         // Check if the block corresponding to the number is stored in the database
+//         BlockId::Number(number) => match
+// DeoxysBackend::mapping().starknet_block_hash_from_block_number(number)? {             Some(_) =>
+// Ok(number),             None => Err(StarknetRpcApiError::BlockNotFound),
+//         },
+//         BlockId::Hash(block_hash) => {
+//             match
+// DeoxysBackend::mapping().block_number_from_starknet_block_hash(StarkFelt(block_hash.
+// to_bytes_be()))? {                 Some(block_number) => Ok(block_number),
+//                 None if block_hash == latest_block_hash => Ok(latest_block_number),
+//                 None => Err(StarknetRpcApiError::BlockNotFound),
+//             }
+//         }
+//         BlockId::Tag(BlockTag::Latest) => Ok(latest_block_number),
+//         BlockId::Tag(BlockTag::Pending) => Ok(latest_block_number + 1),
+//     }
+// }

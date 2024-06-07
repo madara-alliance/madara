@@ -1,17 +1,12 @@
 use jsonrpsee::core::RpcResult;
-use mp_felt::Felt252Wrapper;
-use mp_hashers::HasherT;
-use mp_types::block::DBlockT;
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sp_blockchain::HeaderBackend;
+use mp_felt::FeltWrapper;
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage};
 use starknet_ff::FieldElement;
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::StarknetRpcApiError;
+use crate::events::get_block_events;
 use crate::types::ContinuationToken;
-use crate::utils::helpers::block_n_from_id;
 use crate::Starknet;
 
 /// Returns all events matching the given filter.
@@ -34,13 +29,8 @@ use crate::Starknet;
 /// block in which they occurred, and the transaction that triggered them. In case of
 /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
 /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
-pub async fn get_events<BE, C, H>(starknet: &Starknet<BE, C, H>, filter: EventFilterWithPage) -> RpcResult<EventsPage>
-where
-    BE: Backend<DBlockT> + 'static,
-    C: HeaderBackend<DBlockT> + BlockBackend<DBlockT> + StorageProvider<DBlockT, BE> + 'static,
-    H: HasherT + Send + Sync + 'static,
-{
-    let from_address = filter.event_filter.address.map(Felt252Wrapper::from);
+pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> RpcResult<EventsPage> {
+    let from_address = filter.event_filter.address.map(FeltWrapper::into_field_element);
     let keys = filter.event_filter.keys.unwrap_or_default();
     let chunk_size = filter.result_page_request.chunk_size;
 
@@ -53,7 +43,7 @@ where
 
     // Get the substrate block numbers for the requested range
     let (from_block, to_block, latest_block) =
-        block_range(filter.event_filter.from_block, filter.event_filter.to_block)?;
+        block_range(starknet, filter.event_filter.from_block, filter.event_filter.to_block)?;
 
     let continuation_token = match filter.result_page_request.continuation_token {
         Some(token) => ContinuationToken::parse(token).map_err(|e| {
@@ -72,14 +62,16 @@ where
     let mut filtered_events: Vec<EmittedEvent> = Vec::new();
 
     for current_block in from_block..=to_block {
-        let block_filtered_events: Vec<EmittedEvent> = if current_block <= latest_block {
-            starknet.get_block_events(BlockId::Number(current_block))?
+        let (pending, block) = if current_block <= latest_block {
+            (false, starknet.get_block(BlockId::Number(current_block))?)
         } else {
-            starknet.get_block_events(BlockId::Tag(BlockTag::Pending))?
-        }
-        .into_iter()
-        .filter(|event| event_match_filter(event, from_address, &keys))
-        .collect();
+            (true, starknet.get_block(BlockId::Tag(BlockTag::Pending))?)
+        };
+
+        let block_filtered_events: Vec<EmittedEvent> = get_block_events(starknet, &block, pending)
+            .into_iter()
+            .filter(|event| event_match_filter(event, from_address, &keys))
+            .collect();
 
         if current_block == from_block && (block_filtered_events.len() as u64) < continuation_token.event_n {
             return Err(StarknetRpcApiError::InvalidContinuationToken.into());
@@ -108,8 +100,8 @@ where
 }
 
 #[inline]
-fn event_match_filter(event: &EmittedEvent, address: Option<Felt252Wrapper>, keys: &[Vec<FieldElement>]) -> bool {
-    let match_from_address = address.map_or(true, |addr| addr.0 == event.from_address);
+fn event_match_filter(event: &EmittedEvent, address: Option<FieldElement>, keys: &[Vec<FieldElement>]) -> bool {
+    let match_from_address = address.map_or(true, |addr| addr == event.from_address);
     let match_keys = keys
         .iter()
         .enumerate()
@@ -117,26 +109,21 @@ fn event_match_filter(event: &EmittedEvent, address: Option<Felt252Wrapper>, key
     match_from_address && match_keys
 }
 
-fn block_range(from_block: Option<BlockId>, to_block: Option<BlockId>) -> Result<(u64, u64, u64), StarknetRpcApiError> {
-    let latest = block_n_from_id(BlockId::Tag(BlockTag::Latest)).map_err(|e| {
-        log::error!("'{e}'");
-        StarknetRpcApiError::BlockNotFound
-    })?;
-    let from = if from_block == Some(BlockId::Tag(BlockTag::Pending)) {
-        latest + 1
-    } else {
-        block_n_from_id(from_block.unwrap_or(BlockId::Number(0))).map_err(|e| {
-            log::error!("'{e}'");
-            StarknetRpcApiError::BlockNotFound
-        })?
+fn block_range(
+    starknet: &Starknet,
+    from_block: Option<BlockId>,
+    to_block: Option<BlockId>,
+) -> RpcResult<(u64, u64, u64)> {
+    let latest_block_n = starknet.get_block_n(BlockId::Tag(BlockTag::Latest))?;
+    let from_block_n = match from_block {
+        Some(BlockId::Tag(BlockTag::Pending)) => latest_block_n + 1,
+        Some(block_id) => starknet.get_block_n(block_id)?,
+        None => 0,
     };
-    let to = if to_block == Some(BlockId::Tag(BlockTag::Pending)) {
-        latest + 1
-    } else {
-        block_n_from_id(to_block.unwrap_or(BlockId::Number(0))).map_err(|e| {
-            log::error!("'{e}'");
-            StarknetRpcApiError::BlockNotFound
-        })?
+    let to_block_n = match to_block {
+        Some(BlockId::Tag(BlockTag::Pending)) => latest_block_n + 1,
+        Some(block_id) => starknet.get_block_n(block_id)?,
+        None => latest_block_n,
     };
-    Ok((from, to, latest))
+    Ok((from_block_n, to_block_n, latest_block_n))
 }

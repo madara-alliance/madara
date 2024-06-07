@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use bitvec::prelude::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
-use sp_core::hexdisplay::AsBytesRef;
 use starknet_api::core::{ClassHash, ContractAddress};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -19,12 +18,13 @@ use self::contract_storage::{ContractStorageView, ContractStorageViewMut};
 use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
 use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
 use self::history::HistoryError;
+use crate::mapping_db::MappingDbError;
 use crate::DeoxysBackend;
 
 pub mod benchmark;
 pub mod block_state_diff;
 mod class_trie;
-mod codec;
+pub mod codec;
 mod contract_class_data;
 mod contract_class_hashes;
 pub(crate) mod contract_data;
@@ -70,6 +70,8 @@ pub enum DeoxysStorageError {
     StorageRevertError(StorageType, u64),
     #[error("failed to parse history")]
     StorageHistoryError(#[from] HistoryError),
+    #[error("mapping db error")]
+    MappingDbError(#[from] MappingDbError),
     #[error("invalid block number")]
     InvalidBlockNumber,
     #[error("invalid nonce")]
@@ -172,8 +174,7 @@ pub trait StorageViewMut {
 
     /// Applies all changes up to this point.
     ///
-    /// * `block_number`: point in the chain at which to apply the new changes. Must be
-    /// incremental
+    /// * `block_number`: point in the chain at which to apply the new changes. Must be incremental
     fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
@@ -258,15 +259,15 @@ pub fn block_state_diff() -> BlockStateDiffView {
 }
 
 fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {
-    identifier.0.0.0.as_bytes_ref()
+    identifier.0 .0 .0.as_ref()
 }
 
 fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
-    key.0.0.0.as_bits()[5..].to_owned()
+    key.0 .0 .0.as_bits()[5..].to_owned()
 }
 
 fn conv_contract_storage_key(key: &StorageKey) -> BitVec<u8, Msb0> {
-    key.0.0.0.as_bits()[5..].to_owned()
+    key.0 .0 .0.as_bits()[5..].to_owned()
 }
 
 fn conv_contract_value(value: StarkFelt) -> Felt {
@@ -274,5 +275,5 @@ fn conv_contract_value(value: StarkFelt) -> Felt {
 }
 
 fn conv_class_key(key: &ClassHash) -> BitVec<u8, Msb0> {
-    key.0.0.as_bits()[5..].to_owned()
+    key.0 .0.as_bits()[5..].to_owned()
 }

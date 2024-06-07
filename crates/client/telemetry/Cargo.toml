@@ -1,0 +1,55 @@
+[package]
+name = "mc-telemetry"
+version.workspace = true
+edition.workspace = true
+description = "Deoxys telemetry"
+authors = ["Kasar <https://github.com/kasarlabs>"]
+homepage = "https://github.com/kasarlabs/deoxys"
+license = "MIT"
+publish = false
+repository = "https://github.com/kasarlabs/deoxys"
+build = "build.rs"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+indexmap = { workspace = true }
+parity-scale-codec = { workspace = true, default-features = true, features = [
+  "derive",
+] }
+
+# Deoxys crates
+mp-block = { workspace = true, features = ["std", "parity-scale-codec"] }
+mp-convert = { workspace = true, features = ["std"] }
+mp-felt = { workspace = true, features = ["std", "serde"] }
+mp-transactions = { workspace = true, features = ["std", "serde", "client"] }
+mp-types = { workspace = true }
+
+# Starknet crates
+bonsai-trie = { workspace = true }
+starknet-core = { workspace = true }
+starknet-ff = { workspace = true, default-features = false, features = [
+  "alloc",
+  "serde",
+] }
+starknet-types-core = { workspace = true }
+starknet_api = { workspace = true, default-features = true }
+
+# Other crates
+anyhow.workspace = true
+async-trait = { workspace = true }
+base64 = { workspace = true }
+chrono = "0.4.35"
+futures = { workspace = true }
+itertools = { workspace = true }
+log = { workspace = true, default-features = true }
+rayon = { workspace = true }
+reqwest = { workspace = true }
+reqwest-websocket = "0.3.0"
+rocksdb.workspace = true
+serde = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = "0.30.12"
+thiserror = { workspace = true }
+tokio = { workspace = true }

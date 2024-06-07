@@ -5,7 +5,7 @@ use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
 use blockifier::versioned_constants::VersionedConstants;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
-use sp_core::U256;
+use primitive_types::U256;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_api::data_availability::L1DataAvailabilityMode;

@@ -119,7 +119,7 @@ impl From<Felt252Wrapper> for StorageKey {
 
 impl From<StorageKey> for Felt252Wrapper {
     fn from(value: StorageKey) -> Self {
-        value.0.0.into()
+        value.0 .0.into()
     }
 }
 
