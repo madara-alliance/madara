@@ -15,17 +15,13 @@ use starknet_core::types::FieldElement;
 /// Block status.
 ///
 /// The status of the block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BlockStatus {
-    #[cfg_attr(feature = "serde", serde(rename = "PENDING"))]
     Pending,
     #[default]
-    #[cfg_attr(feature = "serde", serde(rename = "ACCEPTED_ON_L2"))]
     AcceptedOnL2,
-    #[cfg_attr(feature = "serde", serde(rename = "ACCEPTED_ON_L1"))]
     AcceptedOnL1,
-    #[cfg_attr(feature = "serde", serde(rename = "REJECTED"))]
     Rejected,
 }
 
@@ -40,8 +36,7 @@ impl From<BlockStatus> for starknet_core::types::BlockStatus {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 /// Starknet header definition.
 pub struct Header {
     /// The hash of this block’s parent.

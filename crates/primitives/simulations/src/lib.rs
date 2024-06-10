@@ -1,10 +1,3 @@
-#![cfg_attr(not(feature = "std"), no_std)]
-
-#[doc(hidden)]
-pub extern crate alloc;
-
-use alloc::vec::Vec;
-
 use starknet_core::types::SimulationFlag;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

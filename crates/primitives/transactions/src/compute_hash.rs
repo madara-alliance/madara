@@ -1,5 +1,3 @@
-use alloc::vec::Vec;
-
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use starknet_api::core::calculate_contract_address;

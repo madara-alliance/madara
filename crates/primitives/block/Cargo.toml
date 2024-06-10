@@ -16,38 +16,17 @@ lazy_static = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-transactions = { workspace = true }
-serde = { workspace = true, features = ["derive"], optional = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 starknet-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Optionals
-anyhow = { workspace = true, optional = true }
-parity-scale-codec = { workspace = true, features = [
-  "derive",
-], optional = true }
+anyhow = { workspace = true }
+parity-scale-codec = { workspace = true, features = ["derive"] }
 primitive-types.workspace = true
-scale-info = { workspace = true, features = ["derive"], optional = true }
+scale-info = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
-
-[features]
-default = ["std"]
-parity-scale-codec = [
-  "dep:parity-scale-codec",
-  "mp-felt/parity-scale-codec",
-  "mp-transactions/parity-scale-codec",
-]
-scale-info = ["dep:scale-info"]
-std = [
-  "mp-felt/std",
-  "mp-hashers/std",
-  "mp-transactions/std",
-  "serde/std",
-  # Optionals
-  "anyhow",
-  "parity-scale-codec?/std",
-  "scale-info?/std",
-]

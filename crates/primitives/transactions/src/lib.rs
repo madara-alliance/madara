@@ -1,16 +1,7 @@
-//! Starknet transaction related functionality.
-#![cfg_attr(not(feature = "std"), no_std)]
-
-#[doc(hidden)]
-pub extern crate alloc;
-
 pub mod compute_hash;
-#[cfg(feature = "client")]
 pub mod from_broadcasted_transactions;
 pub mod getters;
-#[cfg(feature = "client")]
 pub mod to_starknet_core_transaction;
-#[cfg(feature = "client")]
 pub mod utils;
 
 use blockifier::transaction::account_transaction::AccountTransaction;
@@ -30,8 +21,7 @@ pub const LEGACY_L1_HANDLER_BLOCK: u64 = 854;
 /// Wrapper type for transaction execution error.
 /// Different tx types.
 /// See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/` for more details.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TxType {
     /// Regular invoke transaction.
     Invoke,

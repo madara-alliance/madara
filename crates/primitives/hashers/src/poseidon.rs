@@ -1,5 +1,4 @@
 //! Poseidon hash module.
-use alloc::vec::Vec;
 
 use mp_felt::Felt252Wrapper;
 use starknet_crypto::{poseidon_hash, poseidon_hash_many, FieldElement};
@@ -7,8 +6,7 @@ use starknet_crypto::{poseidon_hash, poseidon_hash_many, FieldElement};
 use super::HasherT;
 
 /// The poseidon hasher.
-#[derive(Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct PoseidonHasher;
 
 unsafe impl Send for PoseidonHasher {}

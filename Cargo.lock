@@ -580,7 +580,6 @@ dependencies = [
  "parity-scale-codec",
  "phf",
  "rstest 0.17.0",
- "scale-info",
  "serde",
  "serde_json",
  "sha3",
@@ -758,7 +757,6 @@ dependencies = [
  "num-bigint",
  "num-traits 0.2.19",
  "parity-scale-codec",
- "scale-info",
  "serde",
 ]
 
@@ -1246,7 +1244,6 @@ dependencies = [
  "num-traits 0.2.19",
  "once_cell",
  "parity-scale-codec",
- "scale-info",
  "serde",
  "serde_json",
  "sha3",
@@ -1304,7 +1301,6 @@ dependencies = [
  "num-bigint",
  "num-traits 0.2.19",
  "parity-scale-codec",
- "scale-info",
  "schemars",
  "serde",
 ]
@@ -2247,7 +2243,7 @@ dependencies = [
  "sha2",
  "sha3",
  "thiserror",
- "uuid 0.8.2",
+ "uuid",
 ]
 
 [[package]]
@@ -3803,7 +3799,6 @@ dependencies = [
  "starknet_api",
  "thiserror",
  "tokio",
- "uuid 1.8.0",
 ]
 
 [[package]]
@@ -4046,8 +4041,6 @@ name = "mp-hashers"
 version = "0.1.0"
 dependencies = [
  "mp-felt",
- "parity-scale-codec",
- "scale-info",
  "serde",
  "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
  "starknet-crypto 0.6.2 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
@@ -4065,8 +4058,6 @@ dependencies = [
 name = "mp-simulations"
 version = "0.1.0"
 dependencies = [
- "parity-scale-codec",
- "scale-info",
  "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
 ]
 
@@ -4084,7 +4075,6 @@ dependencies = [
  "mp-felt",
  "mp-hashers",
  "num-bigint",
- "parity-scale-codec",
  "scale-info",
  "serde",
  "serde_json",
@@ -6263,7 +6253,6 @@ dependencies = [
  "once_cell",
  "parity-scale-codec",
  "primitive-types",
- "scale-info",
  "serde",
  "serde_json",
  "starknet-crypto 0.5.2",
@@ -7054,12 +7043,6 @@ dependencies = [
  "getrandom",
  "serde",
 ]
-
-[[package]]
-name = "uuid"
-version = "1.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a183cf7feeba97b4dd1c0d46788634f6221d87fa961b305bed08c851829efcc0"
 
 [[package]]
 name = "valuable"

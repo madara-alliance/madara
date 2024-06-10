@@ -1,5 +1,5 @@
-use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use blockifier::execution::contract_class::{
     ClassInfo, ContractClass, ContractClassV0, ContractClassV0Inner, ContractClassV1,

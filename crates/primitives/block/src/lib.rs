@@ -1,7 +1,5 @@
 //! Starknet block primitives.
 
-use alloc::vec::Vec;
-
 mod header;
 mod ordered_events;
 pub use header::Header;
@@ -15,12 +13,10 @@ pub use primitive_types::{H160, U256};
 /// Block tag.
 ///
 /// A tag specifying a dynamic reference to a block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum BlockTag {
-    #[cfg_attr(feature = "serde", serde(rename = "latest"))]
     Latest,
-    #[cfg_attr(feature = "serde", serde(rename = "pending"))]
     Pending,
 }
 
@@ -70,8 +66,7 @@ impl From<BlockId> for starknet_core::types::BlockId {
 }
 
 // Light version of the block with block_hash
-#[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInfo {
     header: Header,
     block_hash: BlockHash,
@@ -97,8 +92,7 @@ impl DeoxysBlockInfo {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInner {
     /// The block transactions.
     transactions: Vec<Transaction>, // Vec<starknet_api::transaction::Transaction>,
@@ -120,8 +114,7 @@ impl DeoxysBlockInner {
 }
 
 /// Starknet block definition.
-#[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlock {
     info: DeoxysBlockInfo,
     inner: DeoxysBlockInner,

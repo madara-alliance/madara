@@ -1,5 +1,4 @@
 //! Pedersen hash module.
-use alloc::vec::Vec;
 
 use mp_felt::Felt252Wrapper;
 use starknet_core::crypto::compute_hash_on_elements;
@@ -8,8 +7,7 @@ use starknet_crypto::{pedersen_hash, FieldElement};
 use super::HasherT;
 
 /// The Pedersen hasher.
-#[derive(Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct PedersenHasher;
 
 unsafe impl Send for PedersenHasher {}

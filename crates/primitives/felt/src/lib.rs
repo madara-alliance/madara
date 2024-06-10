@@ -7,15 +7,12 @@
 //! The [`Felt252Wrapper`] implements the traits for SCALE encoding, and wrap
 //! the [`FieldElement`] type from starknet-ff.
 
-#![cfg_attr(not(feature = "std"), no_std)]
-
 #[doc(hidden)]
 pub extern crate alloc;
 
 mod starkware_types_conversions;
 
 mod convert;
-#[cfg(feature = "serde")]
 pub mod with_serde;
 use alloc::string::{String, ToString};
 use core::fmt;
@@ -23,18 +20,14 @@ use core::fmt;
 use cairo_vm::felt::Felt252;
 pub use convert::*;
 use primitive_types::{H256, U256};
-#[cfg(feature = "scale-info")]
-use scale_info::{build::Fields, Path, Type, TypeInfo};
 use starknet_api::hash::StarkFelt;
 use starknet_ff::{FieldElement, FromByteSliceError, FromStrError};
 use starknet_types_core::felt::Felt;
 use thiserror_no_std::Error;
 
-#[cfg(feature = "serde")]
 pub use crate::with_serde::*;
 
-#[derive(Clone, PartialEq, PartialOrd, Ord, Hash, Eq, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, PartialEq, PartialOrd, Ord, Hash, Eq, Copy, serde::Serialize, serde::Deserialize)]
 #[repr(transparent)]
 pub struct Felt252Wrapper(pub FieldElement);
 
