@@ -1,4 +1,5 @@
 use starknet_api::state::StorageKey;
+use starknet_api::hash::StarkFelt;
 use starknet_api::{block as stb, core as stcore, transaction as sttx};
 
 use super::Felt252Wrapper;
@@ -65,13 +66,14 @@ impl From<stcore::CompiledClassHash> for Felt252Wrapper {
 
 impl From<Felt252Wrapper> for stcore::PatriciaKey {
     fn from(value: Felt252Wrapper) -> Self {
-        Self(value.into())
+        let value: StarkFelt = value.into();
+        Self::try_from(value).expect("Failed to convert Felt252Wrapper to PatriciaKey")
     }
 }
 
 impl From<stcore::PatriciaKey> for Felt252Wrapper {
     fn from(value: stcore::PatriciaKey) -> Self {
-        value.0.into()
+        (*value.key()).into()
     }
 }
 
@@ -119,7 +121,7 @@ impl From<Felt252Wrapper> for StorageKey {
 
 impl From<StorageKey> for Felt252Wrapper {
     fn from(value: StorageKey) -> Self {
-        value.0 .0.into()
+        (*value.0.key()).into()
     }
 }
 

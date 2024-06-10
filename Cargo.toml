@@ -56,9 +56,7 @@ rocksdb = { version = "0.21", features = [
 
 # Substrate build & tools dependencies
 prometheus-endpoint = { package = "substrate-prometheus-endpoint", version = "0.10.0-dev", git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
-parity-scale-codec = { version = "3.2", default-features = false, features = [
-  "std",
-] }
+
 
 # Bonsai trie dependencies
 bonsai-trie = { default-features = false, git = "https://github.com/keep-starknet-strange/bonsai-trie.git", branch = "oss", features = [
@@ -88,10 +86,10 @@ cairo-vm = { git = "https://github.com/kasarlabs/cairo-vm", branch = "feature/sc
   "parity-scale-codec",
   "std",
 ] }
-starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
-starknet-crypto = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
-starknet-ff = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
-starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
+starknet-core = "0.10"
+starknet-crypto = "0.6"
+starknet-ff = "0.3"
+starknet-providers = "0.10"
 
 starknet-types-core = { version = "0.1", default-features = false, features = [
   "hash",
@@ -99,10 +97,9 @@ starknet-types-core = { version = "0.1", default-features = false, features = [
 ] }
 
 blockifier = { git = "https://github.com/kasarlabs/blockifier", branch = "feature/scale-codec-v6" }
-starknet_api = { git = "https://github.com/kasarlabs/starknet-api", branch = "feature/scale-codec", features = [
-  "testing",
-  "parity-scale-codec",
-] }
+
+starknet_api = "=0.10.0"
+
 cairo-lang-starknet-classes = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
 cairo-lang-utils = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
 
@@ -150,3 +147,9 @@ url = "2.4"
 rayon = "1.10"
 crossbeam-skiplist = "0.1"
 bincode = "1.3"
+
+[patch.crates-io]
+starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+starknet-ff = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+starknet_api = { git = "https://github.com/KasarLabs/starknet-api.git", branch = "feature/scale-codec" }

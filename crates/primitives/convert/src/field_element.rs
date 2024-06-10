@@ -57,13 +57,13 @@ impl FromFieldElement<&FieldElement> for Nonce {
 
 impl FromFieldElement<FieldElement> for PatriciaKey {
     fn from_field_element(value: FieldElement) -> Self {
-        Self(StarkFelt::from_field_element(value))
+        StarkFelt::from_field_element(value).try_into().unwrap()
     }
 }
 
 impl FromFieldElement<&FieldElement> for PatriciaKey {
     fn from_field_element(value: &FieldElement) -> Self {
-        Self(StarkFelt::from_field_element(value))
+        StarkFelt::from_field_element(value).try_into().unwrap()
     }
 }
 

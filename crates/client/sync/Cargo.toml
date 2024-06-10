@@ -41,9 +41,7 @@ tokio = { workspace = true, features = [
 url = { workspace = true }
 
 starknet-core = { workspace = true }
-starknet-ff = { workspace = true, default-features = false, features = [
-  "serde",
-] }
+starknet-ff = { workspace = true }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true }
 

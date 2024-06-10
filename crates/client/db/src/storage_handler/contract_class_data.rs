@@ -1,5 +1,4 @@
 use crossbeam_skiplist::SkipMap;
-use parity_scale_codec::{Decode, Encode};
 use rocksdb::WriteBatchWithTransaction;
 use starknet_api::core::ClassHash;
 
@@ -22,7 +21,7 @@ impl StorageView for ContractClassDataView {
         let contract_class_data = db
             .get_cf(&column, bincode::serialize(&class_hash)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassData))?
-            .map(|bytes| StorageContractClassData::decode(&mut &bytes[..]));
+            .map(|bytes| bincode::deserialize(&bytes[..]));
 
         match contract_class_data {
             Some(Ok(contract_class_data)) => Ok(Some(contract_class_data)),
@@ -58,7 +57,7 @@ impl StorageViewMut for ContractClassDataViewMut {
 
         let mut batch = WriteBatchWithTransaction::<true>::default();
         for (key, value) in self.0.into_iter() {
-            batch.put_cf(&column, bincode::serialize(&key)?, value.encode());
+            batch.put_cf(&column, bincode::serialize(&key)?, bincode::serialize(&value)?);
         }
         db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassData))
     }

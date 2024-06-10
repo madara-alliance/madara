@@ -12,7 +12,7 @@ use flate2::write::GzEncoder;
 use indexmap::IndexMap;
 use mp_felt::Felt252Wrapper;
 use mp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
-use parity_scale_codec::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
@@ -22,7 +22,7 @@ use starknet_core::types::{
     LegacyEntryPointsByType, SierraEntryPoint,
 };
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StorageContractClassData {
     pub contract_class: ContractClassBlockifier,
     pub abi: ContractAbi,
@@ -31,22 +31,22 @@ pub struct StorageContractClassData {
     pub block_number: u64,
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone,  Serialize, Deserialize)]
 pub struct StorageContractData {
     pub class_hash: ClassHash,
     pub nonce: Nonce,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub struct ClassUpdateWrapper(pub Vec<ContractClassData>);
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub struct ContractClassData {
     pub hash: ClassHash,
     pub contract_class: ContractClassWrapper,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub struct ContractClassWrapper {
     pub contract: ContractClassBlockifier,
     pub abi: ContractAbi,
@@ -55,7 +55,7 @@ pub struct ContractClassWrapper {
 }
 // TODO: move this somewhere more sensible? Would be a good idea to decouple
 // publicly available storage data from wrapper classes
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub enum ContractAbi {
     Sierra(String),
     Cairo(Option<Vec<AbiEntryWrapper>>),
@@ -71,14 +71,14 @@ impl ContractAbi {
     }
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub enum AbiEntryWrapper {
     Function(AbiFunctionEntryWrapper),
     Event(AbiEventEntryWrapper),
     Struct(AbiStructEntryWrapper),
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub struct AbiFunctionEntryWrapper {
     // Function abi type
     pub r#type: AbiFunctionTypeWrapper,
@@ -92,7 +92,7 @@ pub struct AbiFunctionEntryWrapper {
     pub state_mutability: Option<AbiFunctionStateMutabilityWrapper>,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub struct AbiEventEntryWrapper {
     /// Event abi type
     pub r#type: AbiEventTypeWrapper,
@@ -104,7 +104,7 @@ pub struct AbiEventEntryWrapper {
     pub data: Vec<AbiTypedParameterWrapper>,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub struct AbiStructEntryWrapper {
     pub r#type: AbiStructTypeWrapper,
     pub name: String,
@@ -112,7 +112,7 @@ pub struct AbiStructEntryWrapper {
     pub members: Vec<AbiStructMemberWrapper>,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub struct AbiStructMemberWrapper {
     /// The parameter's name
     pub name: String,
@@ -122,29 +122,29 @@ pub struct AbiStructMemberWrapper {
     pub offset: u64,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub enum AbiFunctionTypeWrapper {
     Function,
     L1handler,
     Constructor,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub enum AbiEventTypeWrapper {
     Event,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub enum AbiStructTypeWrapper {
     Struct,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub enum AbiFunctionStateMutabilityWrapper {
     View,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug,  Serialize, Deserialize)]
 pub struct AbiTypedParameterWrapper {
     pub name: String,
     pub r#type: String,

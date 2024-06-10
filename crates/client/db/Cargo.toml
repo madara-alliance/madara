@@ -20,9 +20,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 cairo-vm = { workspace = true }
 flate2 = { workspace = true }
 indexmap = { workspace = true }
-parity-scale-codec = { workspace = true, default-features = true, features = [
-  "derive",
-] }
 
 # Deoxys crates
 mp-block = { workspace = true }

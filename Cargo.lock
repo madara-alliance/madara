@@ -1948,7 +1948,7 @@ dependencies = [
  "rayon",
  "reqwest 0.12.4",
  "serde_json",
- "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-core 0.10.0",
  "substrate-prometheus-endpoint",
  "tokio",
  "tower",
@@ -3778,13 +3778,12 @@ dependencies = [
  "mp-convert",
  "mp-felt",
  "mp-transactions",
- "parity-scale-codec",
  "rayon",
  "rocksdb",
  "serde",
  "serde_json",
- "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-core 0.10.0",
+ "starknet-ff",
  "starknet-types-core",
  "starknet_api",
  "thiserror",
@@ -3812,8 +3811,8 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_with",
- "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-core 0.10.0",
+ "starknet-ff",
  "starknet-providers 0.10.0",
  "starknet_api",
  "thiserror",
@@ -3848,8 +3847,8 @@ dependencies = [
  "rodio",
  "serde",
  "serde_json",
- "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-core 0.10.0",
+ "starknet-ff",
  "starknet-providers 0.10.0",
  "starknet-types-core",
  "starknet_api",
@@ -3953,7 +3952,7 @@ dependencies = [
  "primitive-types",
  "serde",
  "serde_json",
- "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-core 0.10.0",
  "starknet_api",
 ]
 
@@ -3961,8 +3960,8 @@ dependencies = [
 name = "mp-convert"
 version = "0.1.0"
 dependencies = [
- "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-core 0.10.0",
+ "starknet-ff",
  "starknet-providers 0.10.0",
  "starknet_api",
 ]
@@ -3975,8 +3974,8 @@ dependencies = [
  "primitive-types",
  "serde",
  "serde_with",
- "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-core 0.10.0",
+ "starknet-ff",
  "starknet-types-core",
  "starknet_api",
  "thiserror-no-std",
@@ -3988,8 +3987,8 @@ version = "0.1.0"
 dependencies = [
  "mp-felt",
  "serde",
- "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-crypto 0.6.2 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-core 0.10.0",
+ "starknet-crypto 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -3997,14 +3996,14 @@ name = "mp-program-hash"
 version = "0.1.0"
 dependencies = [
  "mp-felt",
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-ff",
 ]
 
 [[package]]
 name = "mp-simulations"
 version = "0.1.0"
 dependencies = [
- "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-core 0.10.0",
 ]
 
 [[package]]
@@ -4023,9 +4022,9 @@ dependencies = [
  "num-bigint",
  "serde",
  "serde_json",
- "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-crypto 0.6.2 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-core 0.10.0",
+ "starknet-crypto 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-ff",
  "starknet_api",
  "thiserror",
 ]
@@ -5875,7 +5874,7 @@ dependencies = [
  "starknet-contract",
  "starknet-core 0.9.0",
  "starknet-crypto 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "starknet-ff 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-ff",
  "starknet-macros",
  "starknet-providers 0.9.0",
  "starknet-signers",
@@ -5925,25 +5924,7 @@ dependencies = [
  "serde_with",
  "sha3",
  "starknet-crypto 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "starknet-ff 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "starknet-core"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ed286d637e34fb8ae1cd2f9615120ec8ff38d1cffd311ed7fdd497cdd2bd01f"
-dependencies = [
- "base64 0.21.7",
- "flate2",
- "hex",
- "serde",
- "serde_json",
- "serde_json_pythonic",
- "serde_with",
- "sha3",
- "starknet-crypto 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "starknet-ff 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-ff",
 ]
 
 [[package]]
@@ -5961,7 +5942,7 @@ dependencies = [
  "serde_with",
  "sha3",
  "starknet-crypto 0.6.2 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-ff",
 ]
 
 [[package]]
@@ -5980,7 +5961,7 @@ dependencies = [
  "sha2",
  "starknet-crypto-codegen 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "starknet-curve 0.3.0",
- "starknet-ff 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-ff",
  "zeroize",
 ]
 
@@ -6000,7 +5981,7 @@ dependencies = [
  "sha2",
  "starknet-crypto-codegen 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "starknet-curve 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "starknet-ff 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-ff",
  "zeroize",
 ]
 
@@ -6019,7 +6000,7 @@ dependencies = [
  "sha2",
  "starknet-crypto-codegen 0.3.3 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
  "starknet-curve 0.4.2 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-ff",
  "zeroize",
 ]
 
@@ -6030,7 +6011,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbc159a1934c7be9761c237333a57febe060ace2bc9e3b337a59a37af206d19f"
 dependencies = [
  "starknet-curve 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "starknet-ff 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-ff",
  "syn 2.0.66",
 ]
 
@@ -6040,7 +6021,7 @@ version = "0.3.3"
 source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#860268b32a9024c311790a3ea074759123cafb6c"
 dependencies = [
  "starknet-curve 0.4.2 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-ff",
  "syn 2.0.66",
 ]
 
@@ -6050,7 +6031,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "252610baff59e4c4332ce3569f7469c5d3f9b415a2240d698fb238b2b4fc0942"
 dependencies = [
- "starknet-ff 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-ff",
 ]
 
 [[package]]
@@ -6059,7 +6040,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1c383518bb312751e4be80f53e8644034aa99a0afb29d7ac41b89a997db875b"
 dependencies = [
- "starknet-ff 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-ff",
 ]
 
 [[package]]
@@ -6067,14 +6048,13 @@ name = "starknet-curve"
 version = "0.4.2"
 source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#860268b32a9024c311790a3ea074759123cafb6c"
 dependencies = [
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-ff",
 ]
 
 [[package]]
 name = "starknet-ff"
 version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7abf1b44ec5b18d87c1ae5f54590ca9d0699ef4dd5b2ffa66fc97f24613ec585"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#860268b32a9024c311790a3ea074759123cafb6c"
 dependencies = [
  "ark-ff",
  "bigdecimal",
@@ -6086,25 +6066,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "starknet-ff"
-version = "0.3.7"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#860268b32a9024c311790a3ea074759123cafb6c"
-dependencies = [
- "ark-ff",
- "bigdecimal",
- "crypto-bigint",
- "getrandom",
- "hex",
- "serde",
-]
-
-[[package]]
 name = "starknet-macros"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95d549d3078bdbe775d0deaa8ddb57a19942989ce7c1f2dfd60beeb322bb4945"
 dependencies = [
- "starknet-core 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-core 0.10.0",
  "syn 2.0.66",
 ]
 
@@ -6142,7 +6109,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "starknet-core 0.10.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-core 0.10.0",
  "thiserror",
  "url",
 ]
@@ -6181,7 +6148,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.10.0"
-source = "git+https://github.com/kasarlabs/starknet-api?branch=feature/scale-codec#0b2633d5acf7c2e4e4688bf0235ca9b15dc805a7"
+source = "git+https://github.com/KasarLabs/starknet-api.git?branch=feature/scale-codec#0b2633d5acf7c2e4e4688bf0235ca9b15dc805a7"
 dependencies = [
  "cairo-lang-starknet-classes 2.6.0",
  "derive_more",
