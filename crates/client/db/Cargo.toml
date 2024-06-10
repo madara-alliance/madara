@@ -30,7 +30,6 @@ mp-block = { workspace = true }
 mp-convert = { workspace = true }
 mp-felt = { workspace = true }
 mp-transactions = { workspace = true }
-mp-types = { workspace = true }
 
 # Starknet crates
 blockifier = { workspace = true }

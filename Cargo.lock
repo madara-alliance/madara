@@ -1947,7 +1947,6 @@ dependencies = [
  "mc-telemetry",
  "mp-block",
  "mp-felt",
- "mp-types",
  "parity-scale-codec",
  "primitive-types",
  "rayon",
@@ -3787,7 +3786,6 @@ dependencies = [
  "mp-convert",
  "mp-felt",
  "mp-transactions",
- "mp-types",
  "parity-scale-codec",
  "rayon",
  "rocksdb",
@@ -3820,7 +3818,6 @@ dependencies = [
  "mp-hashers",
  "mp-simulations",
  "mp-transactions",
- "mp-types",
  "rstest 0.18.2",
  "serde",
  "serde_with",
@@ -3853,7 +3850,6 @@ dependencies = [
  "mp-felt",
  "mp-hashers",
  "mp-transactions",
- "mp-types",
  "num-traits 0.2.19",
  "once_cell",
  "primitive-types",
@@ -3891,7 +3887,6 @@ dependencies = [
  "mp-convert",
  "mp-felt",
  "mp-transactions",
- "mp-types",
  "parity-scale-codec",
  "rayon",
  "reqwest 0.12.4",
@@ -4083,14 +4078,6 @@ dependencies = [
  "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
  "starknet_api",
  "thiserror",
-]
-
-[[package]]
-name = "mp-types"
-version = "0.1.0"
-dependencies = [
- "mp-hashers",
- "primitive-types",
 ]
 
 [[package]]

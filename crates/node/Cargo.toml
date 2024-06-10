@@ -40,7 +40,6 @@ starknet-providers = { workspace = true }
 # Primitives
 mp-block = { workspace = true }
 mp-felt = { workspace = true }
-mp-types = { workspace = true }
 primitive-types = { workspace = true }
 
 #Deoxys

@@ -44,7 +44,6 @@ mp-felt = { workspace = true, default-features = true }
 mp-hashers = { workspace = true, default-features = true }
 mp-simulations = { workspace = true }
 mp-transactions = { workspace = true }
-mp-types = { workspace = true }
 serde = { workspace = true, default-features = true }
 serde_with = { workspace = true }
 thiserror = { workspace = true }
