@@ -4,7 +4,7 @@ use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::metrics::block_metrics::BlockMetrics;
 use mc_telemetry::TelemetryHandle;
 use primitive_types::H160;
-use starknet_core::types::FieldElement;
+use starknet_types_core::felt::Felt;
 use tokio::task::JoinSet;
 use url::Url;
 
@@ -18,7 +18,7 @@ pub struct SyncService {
     l1_core_address: H160,
     starting_block: Option<u64>,
     block_metrics: BlockMetrics,
-    chain_id: FieldElement,
+    chain_id: Felt,
     start_params: Option<TelemetryHandle>,
 }
 

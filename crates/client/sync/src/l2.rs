@@ -17,7 +17,6 @@ use mp_block::{BlockId, BlockTag, DeoxysBlock};
 use mp_convert::core_felt::CoreFelt;
 use mp_felt::{trim_hash, FeltWrapper};
 use num_traits::FromPrimitive;
-use starknet_api::hash::StarkFelt;
 use starknet_core::types::StateUpdate;
 use starknet_providers::sequencer::models::StateUpdateWithBlock;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
@@ -209,7 +208,7 @@ pub struct L2ConvertedBlockAndUpdates {
 async fn l2_block_conversion_task(
     updates_receiver: mpsc::Receiver<L2BlockAndUpdates>,
     output: mpsc::Sender<L2ConvertedBlockAndUpdates>,
-    chain_id: StarkFelt,
+    chain_id: Felt,
 ) -> anyhow::Result<()> {
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
@@ -242,7 +241,7 @@ async fn l2_block_conversion_task(
 async fn l2_pending_block_task(
     sync_finished_cb: oneshot::Receiver<()>,
     provider: Arc<SequencerGatewayProvider>,
-    chain_id: StarkFelt,
+    chain_id: Felt,
 ) -> anyhow::Result<()> {
     // clear pending status
     {
@@ -308,7 +307,7 @@ pub async fn sync(
     config: L2SyncConfig,
     block_metrics: BlockMetrics,
     starting_block: u64,
-    chain_id: StarkFelt,
+    chain_id: Felt,
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(30);

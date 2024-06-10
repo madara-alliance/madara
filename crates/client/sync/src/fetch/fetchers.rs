@@ -7,8 +7,8 @@ use mc_db::storage_handler::primitives::contract_class::{ContractClassData, Cont
 use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
 use mp_block::DeoxysBlock;
 use mp_convert::state_update::ToStateUpdateCore;
+use mp_felt::FeltWrapper;
 use starknet_api::core::ClassHash;
-use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
     BlockId as BlockIdCore, DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate,
 };
@@ -17,6 +17,8 @@ use starknet_providers::sequencer::models::{self as p, BlockId};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use tokio::task::JoinSet;
 use url::Url;
+
+use starknet_types_core::felt::Felt;
 
 use crate::l2::L2SyncError;
 use crate::stopwatch_end;
@@ -31,7 +33,7 @@ pub struct FetchConfig {
     /// The URL of the feeder gateway.
     pub feeder_gateway: Url,
     /// The ID of the chain served by the sequencer gateway.
-    pub chain_id: starknet_ff::FieldElement,
+    pub chain_id: Felt,
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
     /// The L1 contract core address
@@ -99,8 +101,8 @@ where
     }
 }
 
-pub async fn fetch_apply_genesis_block(config: FetchConfig, chain_id: StarkFelt) -> Result<DeoxysBlock, String> {
-    let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
+pub async fn fetch_apply_genesis_block(config: FetchConfig, chain_id: Felt) -> Result<DeoxysBlock, String> {
+    let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id.into_field_element());
     let client = match &config.api_key {
         Some(api_key) => client.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
         None => client,

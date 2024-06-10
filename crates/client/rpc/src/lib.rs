@@ -17,6 +17,7 @@ use jsonrpsee::proc_macros::rpc;
 use mc_db::mapping_db::MappingDb;
 use mc_db::DeoxysBackend;
 use mp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
+use mp_felt::FeltWrapper;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_core::serde::unsigned_field_element::UfeHex;
@@ -192,7 +193,7 @@ pub trait StarknetTraceRpcApi {
 
 #[derive(Clone)]
 pub struct ChainConfig {
-    pub chain_id: Felt,
+    pub chain_id: starknet_types_core::felt::Felt,
     pub feeder_gateway: Url,
     pub gateway: Url,
 }
@@ -212,7 +213,7 @@ impl Starknet {
         SequencerGatewayProvider::new(
             self.chain_config.feeder_gateway.clone(),
             self.chain_config.gateway.clone(),
-            self.chain_config.chain_id.0,
+            self.chain_config.chain_id.into_field_element(),
         )
     }
 
@@ -253,7 +254,8 @@ impl Starknet {
     }
 
     fn chain_id(&self) -> RpcResult<Felt> {
-        Ok(self.chain_config.chain_id)
+        let chain_id_as_wrong_felt = Felt(self.chain_config.chain_id.into_field_element());
+        Ok(chain_id_as_wrong_felt)
     }
 
     pub fn current_block_number(&self) -> RpcResult<u64> {

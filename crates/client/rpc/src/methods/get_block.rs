@@ -11,7 +11,6 @@ use crate::errors::StarknetRpcApiError;
 use crate::utils::block::{l1_da_mode, l1_data_gas_price, l1_gas_price, starknet_version};
 use crate::utils::ResultExt;
 use crate::Starknet;
-use starknet_types_core::felt::Felt;
 
 pub(crate) fn get_block_with_txs(starknet: &Starknet, block_id: &BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
     let block = starknet
@@ -89,8 +88,7 @@ pub(crate) fn get_block_with_tx_hashes(
         .or_internal_server_error("Error getting block from db")?
         .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    let block_hash = Felt::from_bytes_be(&block.block_hash().0.0);
-    let block_hash_as_field = block_hash.into_field_element();
+    let block_hash_as_field = block.block_hash().into_field_element();
 
     let block_txs_hashes = block.tx_hashes().iter().map(FeltWrapper::into_field_element).collect::<Vec<_>>();
 

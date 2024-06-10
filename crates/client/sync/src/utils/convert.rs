@@ -22,12 +22,13 @@ use starknet_providers::sequencer::models::state_update::{
     DeclaredContract, DeployedContract, StateDiff as StateDiffProvider, StorageDiff as StorageDiffProvider,
 };
 use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
+use starknet_types_core::felt::Felt;
 
 use crate::commitments::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
 
 /// Compute heavy, this should only be called in a rayon ctx
-pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock, L2SyncError> {
+pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2SyncError> {
     // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);

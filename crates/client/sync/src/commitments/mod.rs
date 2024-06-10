@@ -9,7 +9,6 @@ use contracts::contract_trie_root;
 use events::memory_event_commitment;
 use indexmap::IndexMap;
 use mp_convert::field_element::FromFieldElement;
-use mp_felt::Felt252Wrapper;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
@@ -42,7 +41,7 @@ const STARKNET_STATE_PREFIX: Felt =
 pub fn calculate_tx_and_event_commitments(
     transactions: &[Transaction],
     events: &[Event],
-    chain_id: Felt252Wrapper,
+    chain_id: Felt,
     block_number: u64,
 ) -> ((Felt, Vec<Felt>), Felt) {
     let (commitment_tx, commitment_event) = rayon::join(

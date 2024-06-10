@@ -1,4 +1,3 @@
-use mp_felt::Felt252Wrapper;
 use starknet_api::core::calculate_contract_address;
 use starknet_api::data_availability::DataAvailabilityMode;
 use starknet_api::hash::StarkFelt;
@@ -29,7 +28,7 @@ const L2_GAS: &[u8] = b"L2_GAS";
 pub trait ComputeTransactionHash {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         block_number: Option<u64>,
     ) -> TransactionHash;
@@ -104,7 +103,7 @@ fn prepare_data_availability_modes(
 impl ComputeTransactionHash for Transaction {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         block_number: Option<u64>,
     ) -> TransactionHash {
@@ -121,7 +120,7 @@ impl ComputeTransactionHash for Transaction {
 impl ComputeTransactionHash for InvokeTransactionV0 {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         block_number: Option<u64>,
     ) -> TransactionHash {
@@ -143,13 +142,13 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
                     entrypoint_selector,
                     calldata_hash,
                     max_fee,
-                    chain_id.into(),
+                    chain_id,
                 ])
                 .to_bytes_be(),
             ))
         } else {
             TransactionHash(StarkFelt::new_unchecked(
-                Pedersen::hash_array(&[prefix, sender_address, entrypoint_selector, calldata_hash, chain_id.into()])
+                Pedersen::hash_array(&[prefix, sender_address, entrypoint_selector, calldata_hash, chain_id])
                     .to_bytes_be(),
             ))
         }
@@ -159,7 +158,7 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
 impl ComputeTransactionHash for InvokeTransactionV1 {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
@@ -181,7 +180,7 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
                 entrypoint_selector,
                 calldata_hash,
                 max_fee,
-                chain_id.into(),
+                chain_id,
                 nonce,
             ])
             .to_bytes_be(),
@@ -192,7 +191,7 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
 impl ComputeTransactionHash for InvokeTransactionV3 {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
@@ -217,7 +216,7 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
                 sender_address,
                 gas_hash,
                 paymaster_hash,
-                chain_id.into(),
+                chain_id,
                 nonce,
                 data_availability_modes,
                 account_deployment_data_hash,
@@ -231,7 +230,7 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
 impl ComputeTransactionHash for InvokeTransaction {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         block_number: Option<u64>,
     ) -> TransactionHash {
@@ -246,7 +245,7 @@ impl ComputeTransactionHash for InvokeTransaction {
 impl ComputeTransactionHash for DeclareTransactionV0V1 {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         block_number: Option<u64>,
     ) -> TransactionHash {
@@ -280,7 +279,7 @@ impl ComputeTransactionHash for DeclareTransactionV0V1 {
                 entrypoint_selector,
                 class_or_nothing_hash,
                 max_fee,
-                chain_id.into(),
+                chain_id,
                 nonce_or_class_hash,
             ])
             .to_bytes_be(),
@@ -291,7 +290,7 @@ impl ComputeTransactionHash for DeclareTransactionV0V1 {
 impl ComputeTransactionHash for DeclareTransactionV2 {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
@@ -315,7 +314,7 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
                 entrypoint_selector,
                 calldata,
                 max_fee,
-                chain_id.into(),
+                chain_id,
                 nonce,
                 compiled_class_hash,
             ])
@@ -327,7 +326,7 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
 impl ComputeTransactionHash for DeclareTransactionV3 {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
@@ -351,7 +350,7 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
                 sender_address,
                 gas_hash,
                 paymaster_hash,
-                chain_id.into(),
+                chain_id,
                 nonce,
                 data_availability_modes,
                 account_deployment_data_hash,
@@ -366,7 +365,7 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
 impl ComputeTransactionHash for DeclareTransaction {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
@@ -383,7 +382,7 @@ impl ComputeTransactionHash for DeclareTransaction {
 impl ComputeTransactionHash for DeployAccountTransaction {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         block_number: Option<u64>,
     ) -> TransactionHash {
@@ -397,7 +396,7 @@ impl ComputeTransactionHash for DeployAccountTransaction {
 impl ComputeTransactionHash for DeployAccountTransactionV1 {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
@@ -433,7 +432,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
                 entrypoint_selector,
                 calldata_hash,
                 max_fee,
-                chain_id.into(),
+                chain_id,
                 nonce,
             ])
             .to_bytes_be(),
@@ -442,8 +441,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
 }
 
 impl ComputeTransactionHash for DeployTransaction {
-    fn compute_hash(&self, chain_id: Felt252Wrapper, is_query: bool, block_number: Option<u64>) -> TransactionHash {
-        let chain_id = chain_id.into();
+    fn compute_hash(&self, chain_id: Felt, is_query: bool, block_number: Option<u64>) -> TransactionHash {
         let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
 
         let contract_address = calculate_contract_address(
@@ -469,7 +467,7 @@ impl ComputeTransactionHash for DeployTransaction {
 impl ComputeTransactionHash for DeployAccountTransactionV3 {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         _block_number: Option<u64>,
     ) -> TransactionHash {
@@ -502,7 +500,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
                 contract_address,
                 gas_hash,
                 paymaster_hash,
-                chain_id.into(),
+                chain_id,
                 nonce,
                 data_availability_modes,
                 constructor_calldata_hash,
@@ -517,7 +515,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
 impl ComputeTransactionHash for L1HandlerTransaction {
     fn compute_hash(
         &self,
-        chain_id: Felt252Wrapper,
+        chain_id: Felt,
         offset_version: bool,
         block_number: Option<u64>,
     ) -> TransactionHash {

@@ -16,6 +16,7 @@ use blockifier::versioned_constants::VersionedConstants;
 use jsonrpsee::core::RpcResult;
 use mc_db::storage_handler::{self, StorageView};
 use mp_block::DeoxysBlockInfo;
+use mp_convert::core_felt::CoreFelt;
 use mp_simulations::SimulationFlags;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
@@ -136,7 +137,7 @@ pub fn call_contract(
 
     log::debug!("Successfully called a smart contract function: {:?}", res);
     let result = res.execution.retdata.0.iter().map(
-        |x| Felt::from_bytes_be(&(*x).0)
+        |x| x.into_core_felt()
     ).collect();
     Ok(result)
 }

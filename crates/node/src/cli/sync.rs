@@ -118,12 +118,14 @@ impl NetworkType {
         format!("{}/feeder_gateway", self.uri()).parse().unwrap()
     }
 
-    pub fn chain_id(&self) -> starknet_core::types::FieldElement {
-        match self {
+    pub fn chain_id(&self) -> starknet_types_core::felt::Felt {
+        let tmp = match self {
             NetworkType::Main => starknet_core::types::FieldElement::from_byte_slice_be(b"SN_MAIN").unwrap(),
             NetworkType::Test => starknet_core::types::FieldElement::from_byte_slice_be(b"SN_SEPOLIA").unwrap(),
             NetworkType::Integration => starknet_core::types::FieldElement::from_byte_slice_be(b"SN_INTE").unwrap(),
-        }
+        };
+
+        starknet_types_core::felt::Felt::from_bytes_be(&tmp.to_bytes_be())
     }
 
     pub fn l1_core_address(&self) -> H160 {

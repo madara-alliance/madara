@@ -1900,6 +1900,8 @@ dependencies = [
  "reqwest 0.12.4",
  "serde_json",
  "starknet-core",
+ "starknet-providers",
+ "starknet-types-core",
  "tokio",
  "tower",
  "tower-http",

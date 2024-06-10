@@ -14,13 +14,14 @@ pub use utils::{convert, utility};
 
 use crate::l2::L2SyncConfig;
 
+use starknet_types_core::felt::Felt;
+
 pub mod starknet_sync_worker {
     use anyhow::Context;
     use mc_db::DeoxysBackend;
     use mc_telemetry::TelemetryHandle;
     use mp_felt::FeltWrapper;
     use reqwest::Url;
-    use starknet_ff::FieldElement;
     use starknet_providers::SequencerGatewayProvider;
 
     use self::fetch::fetchers::FetchConfig;
@@ -35,12 +36,11 @@ pub mod starknet_sync_worker {
         starting_block: Option<u64>,
         backup_every_n_blocks: Option<u64>,
         block_metrics: BlockMetrics,
-        chain_id: FieldElement,
+        chain_id: Felt,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<()> {
         // let starting_block = starting_block + 1;
-        let chain_id = chain_id.into_stark_felt();
-
+        
         let starting_block = if let Some(starting_block) = starting_block {
             starting_block
         } else {
@@ -55,7 +55,7 @@ pub mod starknet_sync_worker {
         let provider = SequencerGatewayProvider::new(
             fetch_config.gateway.clone(),
             fetch_config.feeder_gateway.clone(),
-            fetch_config.chain_id,
+            fetch_config.chain_id.into_field_element(),
         );
         let provider = match &fetch_config.api_key {
             Some(api_key) => provider.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
