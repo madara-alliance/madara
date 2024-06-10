@@ -4,7 +4,6 @@ use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mc_db::storage_handler::bonsai_identifier;
 use mp_convert::core_felt::CoreFelt;
-use mp_felt::Felt252Wrapper;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use rayon::prelude::*;
 use starknet_api::transaction::Transaction;
@@ -63,7 +62,7 @@ pub fn calculate_transaction_hash_with_signature(
             Transaction::L1Handler(_) => Pedersen::hash_array(&[]),
             _ => Pedersen::hash_array(&[]),
         },
-        || Felt252Wrapper::from(transaction.compute_hash(chain_id, false, Some(block_number)).0).into(),
+        || transaction.compute_hash(chain_id, false, Some(block_number)).into_core_felt(),
     );
 
     (Pedersen::hash(&tx_hash, &signature_hash), tx_hash)
