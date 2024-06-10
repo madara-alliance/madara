@@ -1,5 +1,8 @@
 use jsonrpsee::core::RpcResult;
-use mp_felt::Felt252Wrapper;
+use mp_convert::field_element::FromFieldElement;
+use mp_felt::{FeltWrapper};
+use starknet_api::core::{ContractAddress, EntryPointSelector};//, EntryPointSelector};
+use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{BlockId, FunctionCall};
 
@@ -31,15 +34,19 @@ pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> Rp
     let block_info = starknet.get_block_info(block_id)?;
     let block_context = block_context(starknet, &block_info)?;
 
-    let calldata = Calldata(Arc::new(request.calldata.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()));
+    let calldata_as_starkfelt = request.calldata.iter().map(
+        |x| StarkFelt::from_field_element(*x)
+    ).collect();
+    let calldata = Calldata(Arc::new(calldata_as_starkfelt));
 
-    let result = utils::execution::call_contract(
-        Felt252Wrapper(request.contract_address).into(),
-        Felt252Wrapper(request.entry_point_selector).into(),
+    let result_as_felt_vector = utils::execution::call_contract(
+        ContractAddress::from_field_element(request.contract_address),
+        EntryPointSelector(request.entry_point_selector.into_stark_felt()),
         calldata,
         &block_context,
     )
     .or_internal_server_error("Request parameters error")?;
 
-    Ok(result.iter().map(|x| format!("{:#x}", x.0)).collect())
+    Ok(
+        result_as_felt_vector.iter().map(|x| x.to_string()).collect())
 }

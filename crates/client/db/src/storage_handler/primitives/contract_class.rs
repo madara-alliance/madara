@@ -10,7 +10,6 @@ use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use indexmap::IndexMap;
-use mp_felt::FeltWrapper;
 use mp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
@@ -21,6 +20,8 @@ use starknet_core::types::{
     FlattenedSierraClass, FromByteArrayError, LegacyContractAbiEntry, LegacyContractEntryPoint,
     LegacyEntryPointsByType, SierraEntryPoint,
 };
+
+use mp_felt::FeltWrapper;
 
 #[derive(Debug, Encode, Decode)]
 pub struct StorageContractClassData {
