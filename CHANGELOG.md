@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(classes): remove the classes ordenation to allow fork rebasements
 - fix(felt): enforce Felt type as much as possible into compute_hash.rs
 - fix(logs): fixed some logs and others
 - fix(rpc): fixed block storage column
