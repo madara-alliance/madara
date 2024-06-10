@@ -1,15 +1,15 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use mp_felt::Felt252Wrapper;
 use starknet_api::transaction::TransactionHash;
+use starknet_types_core::felt::Felt;
 
 use crate::TxType;
 
 pub trait Getters {
-    fn sender_address(&self) -> Felt252Wrapper;
-    fn signature(&self) -> Vec<Felt252Wrapper>;
-    fn calldata(&self) -> Option<Vec<Felt252Wrapper>>;
-    fn nonce(&self) -> Option<Felt252Wrapper>;
+    fn sender_address(&self) -> Felt;
+    fn signature(&self) -> Vec<Felt>;
+    fn calldata(&self) -> Option<Vec<Felt>>;
+    fn nonce(&self) -> Option<Felt>;
     fn tx_type(&self) -> TxType;
 }
 
@@ -18,41 +18,41 @@ pub trait Hash {
 }
 
 impl Getters for AccountTransaction {
-    fn sender_address(&self) -> Felt252Wrapper {
+    fn sender_address(&self) -> Felt {
         match self {
-            AccountTransaction::Declare(tx) => tx.tx.sender_address().into(),
-            AccountTransaction::DeployAccount(tx) => tx.tx.contract_address_salt().into(),
-            AccountTransaction::Invoke(tx) => tx.tx.sender_address().into(),
+            AccountTransaction::Declare(tx) => Felt::from_bytes_be(&tx.tx.sender_address().0.0.0),
+            AccountTransaction::DeployAccount(tx) => Felt::from_bytes_be(&tx.tx.contract_address_salt().0.0),
+            AccountTransaction::Invoke(tx) => Felt::from_bytes_be(&tx.tx.sender_address().0.0.0),
         }
     }
 
-    fn signature(&self) -> Vec<Felt252Wrapper> {
+    fn signature(&self) -> Vec<Felt> {
         match self {
-            AccountTransaction::Declare(tx) => tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x)).collect(),
+            AccountTransaction::Declare(tx) => tx.tx.signature().0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect(),
             AccountTransaction::DeployAccount(tx) => {
-                tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x)).collect()
+                tx.tx.signature().0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect()
             }
-            AccountTransaction::Invoke(tx) => tx.tx.signature().0.iter().map(|x| Felt252Wrapper::from(*x)).collect(),
+            AccountTransaction::Invoke(tx) => tx.tx.signature().0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect(),
         }
     }
 
-    fn calldata(&self) -> Option<Vec<Felt252Wrapper>> {
+    fn calldata(&self) -> Option<Vec<Felt>> {
         match self {
             AccountTransaction::Declare(..) => None,
             AccountTransaction::DeployAccount(tx) => {
-                Some(tx.tx.constructor_calldata().0.iter().map(|x| Felt252Wrapper::from(*x)).collect())
+                Some(tx.tx.constructor_calldata().0.iter().map(|x| Felt::from_bytes_be(&x.0) ).collect())
             }
             AccountTransaction::Invoke(tx) => {
-                Some(tx.tx.calldata().0.iter().map(|x| Felt252Wrapper::from(*x)).collect())
+                Some(tx.tx.calldata().0.iter().map(|x| Felt::from_bytes_be(&x.0) ).collect())
             }
         }
     }
 
-    fn nonce(&self) -> Option<Felt252Wrapper> {
+    fn nonce(&self) -> Option<Felt> {
         match self {
-            AccountTransaction::Declare(tx) => Some(tx.tx.nonce().0.into()),
-            AccountTransaction::DeployAccount(tx) => Some(tx.tx.nonce().0.into()),
-            AccountTransaction::Invoke(tx) => Some(tx.tx.nonce().0.into()),
+            AccountTransaction::Declare(tx) => Some( Felt::from_bytes_be(&tx.tx.nonce().0.0) ),
+            AccountTransaction::DeployAccount(tx) => Some( Felt::from_bytes_be(&tx.tx.nonce().0.0) ),
+            AccountTransaction::Invoke(tx) => Some( Felt::from_bytes_be(&tx.tx.nonce().0.0) ),
         }
     }
 
