@@ -20,8 +20,5 @@ starknet_api = { workspace = true }
 thiserror-no-std = { workspace = true }
 
 # Optional
-hex = { workspace = true }
-parity-scale-codec = { workspace = true, features = ["derive"] }
-scale-info = { workspace = true, features = ["derive"] }
 serde = { workspace = true, features = ["derive"] }
 serde_with = { workspace = true }

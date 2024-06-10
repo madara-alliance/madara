@@ -21,12 +21,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 name = "deoxys"
 
 [dependencies]
-async-trait = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true, features = ["thread-pool"] }
 log = { workspace = true }
 mc-telemetry = { workspace = true }
-serde = { workspace = true }
 tokio = { workspace = true }
 
 prometheus-endpoint = { workspace = true }
@@ -35,17 +33,13 @@ prometheus-endpoint = { workspace = true }
 mc-db = { workspace = true }
 mc-rpc = { workspace = true }
 starknet-core = { workspace = true }
-starknet-providers = { workspace = true }
 
 # Primitives
-mp-block = { workspace = true }
-mp-felt = { workspace = true }
 primitive-types = { workspace = true }
 
 #Deoxys
 deoxys-tui = { optional = true, path = "../tui" }
 mc-sync = { workspace = true }
-parity-scale-codec = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true }
 url = { workspace = true }
 

@@ -15,17 +15,13 @@ blockifier = { workspace = true }
 lazy_static = { workspace = true }
 mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
-mp-transactions = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 starknet-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Optionals
-anyhow = { workspace = true }
-parity-scale-codec = { workspace = true, features = ["derive"] }
 primitive-types.workspace = true
-scale-info = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 mp-felt = { workspace = true }
