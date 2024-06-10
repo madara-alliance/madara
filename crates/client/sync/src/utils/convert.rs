@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use blockifier::block::GasPrices;
 use mp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use mp_felt::Felt252Wrapper;
+use mp_felt::FeltWrapper;
 use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
@@ -45,9 +45,9 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2S
         commitments(&transactions, &events, block_number, chain_id);
 
     // Provisory conversion while Starknet-api doesn't support the universal `Felt` type
-    let transaction_commitment = Felt252Wrapper::from(transaction_commitment).into();
-    let event_commitment = Felt252Wrapper::from(event_commitment).into();
-    let txs_hashes: Vec<StarkFelt> = txs_hashes.into_iter().map(Felt252Wrapper::from).map(Into::into).collect();
+    let transaction_commitment = transaction_commitment.into_stark_felt();
+    let event_commitment = event_commitment.into_stark_felt();
+    let txs_hashes: Vec<StarkFelt> = txs_hashes.iter().map(|felt| (*felt).into_stark_felt()).collect();
 
     let protocol_version = starknet_version(&block.starknet_version);
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
@@ -64,13 +64,13 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2S
         transaction_commitment,
         event_count,
         event_commitment,
-        protocol_version,
+        protocol_version: protocol_version.into_stark_felt(), 
         l1_gas_price,
         l1_da_mode,
         extra_data,
     };
 
-    let computed_block_hash: FieldElement = Felt252Wrapper::from(header.hash()).into();
+    let computed_block_hash: FieldElement = header.hash().into_field_element();
     // mismatched block hash is allowed for blocks 1466..=2242
     if computed_block_hash != block_hash && !(1466..=2242).contains(&block_number) {
         return Err(L2SyncError::MismatchedBlockHash(block_number));
@@ -263,12 +263,12 @@ fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
 
 /// Converts a starknet version string to a felt value.
 /// If the string contains more than 31 bytes, the function panics.
-fn starknet_version(version: &Option<String>) -> Felt252Wrapper {
+fn starknet_version(version: &Option<String>) -> Felt {
     match version {
         Some(version) => {
-            Felt252Wrapper::try_from(version.as_bytes()).expect("Failed to convert version to felt: string is too long")
+            Felt::from_bytes_le_slice(&version.as_bytes())
         }
-        None => Felt252Wrapper::ZERO,
+        None => Felt::ZERO,
     }
 }
 

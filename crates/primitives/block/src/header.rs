@@ -3,12 +3,11 @@ use core::num::NonZeroU128;
 use blockifier::block::{BlockInfo, GasPrices};
 use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
 use blockifier::versioned_constants::VersionedConstants;
-use mp_felt::Felt252Wrapper;
 use primitive_types::U256;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_api::data_availability::L1DataAvailabilityMode;
-use starknet_api::hash::StarkHash;
+use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 use starknet_types_core::hash::StarkHash as StarkHashTrait;
@@ -67,7 +66,7 @@ pub struct Header {
     /// A commitment to the events produced in this block
     pub event_commitment: StarkHash,
     /// The version of the Starknet protocol used when creating this block
-    pub protocol_version: Felt252Wrapper, // TODO: Verify if the type can be changed to u8 for the protocol version
+    pub protocol_version: StarkFelt, // TODO: Verify if the type can be changed to u8 for the protocol version
     /// Gas prices for this block
     pub l1_gas_price: Option<GasPrices>,
     /// The mode of data availability for this block
@@ -102,7 +101,7 @@ impl Header {
         transaction_commitment: StarkHash,
         event_count: u128,
         event_commitment: StarkHash,
-        protocol_version: Felt252Wrapper,
+        protocol_version: StarkFelt,
         gas_prices: Option<GasPrices>,
         l1_da_mode: L1DataAvailabilityMode,
         extra_data: Option<U256>,

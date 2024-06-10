@@ -44,5 +44,5 @@ pub(crate) fn l1_da_mode(block: &DeoxysBlock) -> L1DataAvailabilityMode {
 }
 
 pub(crate) fn starknet_version(block: &DeoxysBlock) -> String {
-    block.header().protocol_version.from_utf8().expect("starknet version should be a valid utf8 string")
+    block.header().protocol_version.to_string()
 }
