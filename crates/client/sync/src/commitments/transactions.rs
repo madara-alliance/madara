@@ -27,7 +27,7 @@ pub fn calculate_transaction_hash_with_signature(
     transaction: &Transaction,
     chain_id: Felt252Wrapper,
     block_number: u64,
-) -> Felt {
+) -> (Felt, Felt) {
     let include_signature = block_number >= 61394;
 
     let (signature_hash, tx_hash) = rayon::join(
@@ -65,7 +65,7 @@ pub fn calculate_transaction_hash_with_signature(
         || Felt252Wrapper::from(transaction.compute_hash(chain_id, false, Some(block_number)).0).into(),
     );
 
-    Pedersen::hash(&tx_hash, &signature_hash)
+    (Pedersen::hash(&tx_hash, &signature_hash), tx_hash)
 }
 
 /// Calculate the transaction commitment in memory using HashMapDb (which is more efficient for this
@@ -98,11 +98,14 @@ pub fn memory_transaction_commitment(
         .map(|tx| calculate_transaction_hash_with_signature(tx, chain_id, block_number))
         .collect::<Vec<_>>();
 
+    let mut tx_hashes: Vec<Felt> = Vec::with_capacity(txs.len());
+
     // once transaction hashes have finished computing, they are inserted into the local Bonsai db
-    for (i, &tx_hash) in txs.iter().enumerate() {
+    for (i, &(tx_hash_signature, tx_hash)) in txs.iter().enumerate() {
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
-        let value = tx_hash;
+        let value = tx_hash_signature;
         bonsai_storage.insert(identifier, key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
+        tx_hashes.push(tx_hash);
     }
 
     let mut id_builder = BasicIdBuilder::new();
@@ -111,5 +114,5 @@ pub fn memory_transaction_commitment(
     bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
     let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
 
-    Ok((root_hash, txs))
+    Ok((root_hash, tx_hashes))
 }
