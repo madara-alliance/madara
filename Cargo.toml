@@ -9,7 +9,6 @@ members = [
   "crates/primitives/block",
   "crates/primitives/convert",
   "crates/primitives/felt",
-  "crates/primitives/hashers",
   "crates/primitives/program-hash",
   "crates/primitives/transactions",
   "crates/primitives/types",
@@ -26,7 +25,6 @@ default-members = [
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/felt",
-  "crates/primitives/hashers",
   "crates/primitives/program-hash",
   "crates/primitives/transactions",
   "crates/primitives/types",
@@ -72,7 +70,6 @@ bonsai-trie = { default-features = false, git = "https://github.com/keep-starkne
 mp-block = { path = "crates/primitives/block", default-features = false }
 mp-convert = { path = "crates/primitives/convert", default-features = false }
 mp-felt = { path = "crates/primitives/felt", default-features = false }
-mp-hashers = { path = "crates/primitives/hashers", default-features = false }
 mp-program-hash = { path = "crates/primitives/program-hash", default-features = false }
 mp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
 mp-simulations = { path = "crates/primitives/simulations", default-features = false }

@@ -15,7 +15,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 # Deoxys client
 mc-db = { workspace = true }
-mc-sync = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true, default-features = true }
@@ -37,7 +36,6 @@ log = { workspace = true, default-features = true }
 mp-block = { workspace = true, default-features = true }
 mp-convert = { workspace = true, default-features = true }
 mp-felt = { workspace = true, default-features = true }
-mp-hashers = { workspace = true, default-features = true }
 mp-simulations = { workspace = true }
 mp-transactions = { workspace = true, features = ["client"] }
 mp-types = { workspace = true }

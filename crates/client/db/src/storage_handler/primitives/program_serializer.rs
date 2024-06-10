@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::program::{AttributeWrapper, FlowTrackingDataWrapper, HintParamsWrapper, IdentifierWrapper, ProgramWrapper};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub(crate) struct ProgramSerializer {
+pub(crate) struct ProgramSerializerWrapper {
     pub prime: String,
     pub builtins: Vec<BuiltinName>,
     pub data: Vec<MaybeRelocatable>,
@@ -62,8 +62,8 @@ pub struct DebugInfoWrapper {
     pub(crate) instruction_locations: BTreeMap<usize, InstructionLocation>,
 }
 
-pub fn serialize_program(program: &ProgramWrapper) -> Result<Vec<u8>, ProgramError> {
-    let program_serializer: ProgramSerializer = ProgramSerializer::from(program);
+pub fn serialize_ordered_program(program: &ProgramWrapper) -> Result<Vec<u8>, ProgramError> {
+    let program_serializer: ProgramSerializerWrapper = ProgramSerializerWrapper::from(program);
     let bytes: Vec<u8> = serde_json::to_vec(&program_serializer)?;
     Ok(bytes)
 }
@@ -73,7 +73,7 @@ pub fn prime(program: &ProgramWrapper) -> &str {
     PRIME_STR
 }
 
-impl From<&ProgramWrapper> for ProgramSerializer {
+impl From<&ProgramWrapper> for ProgramSerializerWrapper {
     fn from(program: &ProgramWrapper) -> Self {
         let references = program
             .shared_program_data
@@ -106,7 +106,7 @@ impl From<&ProgramWrapper> for ProgramSerializer {
             hints.insert(key, new_hints_params);
         }
 
-        ProgramSerializer {
+        ProgramSerializerWrapper {
             prime: prime(program).into(),
             builtins: program.builtins.clone(),
             data: program.shared_program_data.data.clone(),
