@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use blockifier::execution::contract_class::{
@@ -15,7 +15,6 @@ use cairo_lang_starknet_classes::contract_class::{
 use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
-use indexmap::IndexMap;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use num_bigint::{BigInt, BigUint, Sign};
@@ -445,7 +444,7 @@ fn instantiate_blockifier_contract_class(
     let program: Program = Program::from_bytes(&program_decompressed_bytes, None)
         .map_err(|_| BroadcastedTransactionConversionError::ProgramDeserializationFailed)?;
 
-    let mut entry_points_by_type = <IndexMap<EntryPointType, Vec<EntryPoint>>>::new();
+    let mut entry_points_by_type = <HashMap<EntryPointType, Vec<EntryPoint>>>::new();
     entry_points_by_type.insert(
         EntryPointType::Constructor,
         contract_class
@@ -454,8 +453,8 @@ fn instantiate_blockifier_contract_class(
             .iter()
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
-                    selector: EntryPointSelector(StarkFelt(entry_point.selector.to_bytes_be())),
-                    offset: EntryPointOffset(entry_point.offset),
+                    selector: EntryPointSelector(entry_point.selector.into()),
+                    offset: EntryPointOffset(entry_point.offset as usize),
                 }
             })
             .collect::<Vec<EntryPoint>>(),
@@ -468,8 +467,8 @@ fn instantiate_blockifier_contract_class(
             .iter()
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
-                    selector: EntryPointSelector(StarkFelt(entry_point.selector.to_bytes_be())),
-                    offset: EntryPointOffset(entry_point.offset),
+                    selector: EntryPointSelector(entry_point.selector.into()),
+                    offset: EntryPointOffset(entry_point.offset as usize),
                 }
             })
             .collect::<Vec<EntryPoint>>(),
@@ -482,8 +481,8 @@ fn instantiate_blockifier_contract_class(
             .iter()
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
-                    selector: EntryPointSelector(StarkFelt(entry_point.selector.to_bytes_be())),
-                    offset: EntryPointOffset(entry_point.offset),
+                    selector: EntryPointSelector(entry_point.selector.into()),
+                    offset: EntryPointOffset(entry_point.offset as usize),
                 }
             })
             .collect::<Vec<EntryPoint>>(),

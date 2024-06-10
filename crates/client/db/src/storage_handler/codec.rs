@@ -38,6 +38,19 @@ impl Decode for StarkFelt {
     }
 }
 
+impl Encode for PatriciaKey {
+    fn encode(&self) -> Result<Vec<u8>, Error> {
+        self.key().encode()
+    }
+}
+
+impl Decode for PatriciaKey {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        let inner = StarkFelt::decode(bytes)?;
+        Ok(inner.try_into().map_err(|_| Error::DecodeError)?)
+    }
+}
+
 macro_rules! impl_for_wrapper {
     ($arg:ty) => {
         impl Encode for $arg {
@@ -53,7 +66,6 @@ macro_rules! impl_for_wrapper {
     };
 }
 
-impl_for_wrapper!(PatriciaKey);
 impl_for_wrapper!(BlockHash);
 impl_for_wrapper!(ClassHash);
 impl_for_wrapper!(TransactionHash);

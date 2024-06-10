@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use cairo_vm::felt::Felt252;
 use cairo_vm::hint_processor::hint_processor_definition::HintReference;
-use cairo_vm::serde::deserialize_program::{felt_from_number, ApTracking, BuiltinName, InstructionLocation, Member};
+use cairo_vm::serde::deserialize_program::{ApTracking, BuiltinName, InstructionLocation, Member};
 use cairo_vm::types::program::{HintRange, Program};
 use cairo_vm::types::relocatable::MaybeRelocatable;
 use serde::de::MapAccess;
