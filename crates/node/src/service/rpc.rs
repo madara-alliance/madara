@@ -1,7 +1,7 @@
 use jsonrpsee::server::ServerHandle;
 use jsonrpsee::RpcModule;
 use mc_rpc::{
-    ChainConfig, Felt, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
+    ChainConfig, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
 };
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
@@ -35,7 +35,7 @@ impl RpcService {
         };
 
         let chain_config = ChainConfig {
-            chain_id: Felt(network_type.chain_id()),
+            chain_id: network_type.chain_id(),
             feeder_gateway: network_type.feeder_gateway(),
             gateway: network_type.gateway(),
         };

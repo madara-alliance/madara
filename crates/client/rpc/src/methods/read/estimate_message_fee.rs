@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use blockifier::transaction::transactions::L1HandlerTransaction;
 use jsonrpsee::core::RpcResult;
-use mp_felt::{Felt252Wrapper, FeltWrapper};
+use mp_felt::FeltWrapper;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
@@ -39,7 +39,7 @@ pub async fn estimate_message_fee(
     let block_context = block_context(starknet, &block_info)?;
     let block_number = block_info.block_n();
 
-    let chain_id = Felt::from_bytes_be(&starknet.chain_config.chain_id.0.to_bytes_be());
+    let chain_id = starknet.chain_config.chain_id;
     let transaction = convert_message_into_tx(message, chain_id, Some(block_number));
 
     let message_fee = utils::execution::estimate_message_fee(transaction, &block_context)
@@ -57,8 +57,6 @@ pub fn convert_message_into_tx(
         .chain(message.payload.into_iter().map(FeltWrapper::into_stark_felt))
         .collect();
 
-    
-
     let tx = starknet_api::transaction::L1HandlerTransaction {
         version: TransactionVersion::ZERO,
         nonce: Nonce(StarkFelt::ZERO),
@@ -71,7 +69,7 @@ pub fn convert_message_into_tx(
         calldata: Calldata(Arc::new(calldata)),
     };
     // TODO(merge): recheck if this is correct
-    let tx_hash = tx.compute_hash(Felt252Wrapper::from(chain_id), true, block_number);
+    let tx_hash = tx.compute_hash(chain_id, true, block_number);
 
     L1HandlerTransaction { tx, tx_hash, paid_fee_on_l1: Fee(10) } //TODO: fix with real fee
 }

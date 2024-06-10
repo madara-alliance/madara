@@ -25,7 +25,7 @@ use starknet_types_core::hash::{Pedersen, StarkHash};
 /// The transaction hash with signature.
 pub fn calculate_transaction_hash_with_signature(
     transaction: &Transaction,
-    chain_id: Felt252Wrapper,
+    chain_id: Felt,
     block_number: u64,
 ) -> (Felt, Felt) {
     let include_signature = block_number >= 61394;
@@ -82,7 +82,7 @@ pub fn calculate_transaction_hash_with_signature(
 /// The transaction commitment as `Felt`.
 pub fn memory_transaction_commitment(
     transactions: &[Transaction],
-    chain_id: Felt252Wrapper,
+    chain_id: Felt,
     block_number: u64,
 ) -> Result<(Felt, Vec<Felt>), String> {
     // TODO @cchudant refacto/optimise this function

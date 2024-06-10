@@ -1907,6 +1907,7 @@ dependencies = [
  "serde_json",
  "starknet-core",
  "starknet-providers",
+ "starknet-types-core",
  "substrate-prometheus-endpoint",
  "tokio",
  "tower",
