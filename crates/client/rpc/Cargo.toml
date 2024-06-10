@@ -22,6 +22,7 @@ starknet-core = { workspace = true }
 starknet-ff = { workspace = true }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
+starknet-types-core = { workspace = true }
 
 # Others
 anyhow = { workspace = true }

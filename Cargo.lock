@@ -3722,6 +3722,7 @@ dependencies = [
  "starknet-core",
  "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
  "starknet-providers",
+ "starknet-types-core",
  "starknet_api",
  "thiserror",
 ]
