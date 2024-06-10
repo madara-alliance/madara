@@ -1,4 +1,3 @@
-// use mp_hashers::pedersen::PedersenHasher;
 use primitive_types::H256;
 
 // Deoxys block number type

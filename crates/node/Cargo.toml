@@ -40,7 +40,6 @@ mp-types = { workspace = true }
 primitive-types = { workspace = true }
 
 #Deoxys
-deoxys-tui = { optional = true, path = "../tui" }
 mc-sync = { workspace = true }
 parity-scale-codec = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true }
@@ -62,4 +61,3 @@ tower.workspace = true
 [features]
 default = []
 sound = ["mc-sync/m"]
-tui = ["deoxys-tui"]
