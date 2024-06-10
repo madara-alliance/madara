@@ -36,7 +36,6 @@ pub trait ComputeTransactionHash {
 
 #[inline]
 fn convert_calldata(calldata: Calldata) -> Vec<Felt> {
-    // calldata.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect()
     calldata.0.iter().map(CoreFelt::into_core_felt).collect()
 }
 
