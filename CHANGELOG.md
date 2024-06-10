@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: re-add prometheus, doc cli args, log format
 - fix(logs): fixed some logs and others
 - fix(rpc): fixed block storage column
 - chore: update dependencies
