@@ -25,11 +25,10 @@ mc-telemetry = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
 
-prometheus-endpoint = { workspace = true }
-
 # Starknet
 mc-db = { workspace = true }
 mc-rpc = { workspace = true }
+mc-metrics = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 

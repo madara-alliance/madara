@@ -12,7 +12,7 @@ use forwarded_header_value::ForwardedHeaderValue;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::Request;
+use hyper::{Body, Request, Response, StatusCode};
 use ip_network::IpNetwork;
 use jsonrpsee::core::id_providers::RandomStringIdProvider;
 use jsonrpsee::server::middleware::http::{HostFilterLayer, ProxyGetRequestLayer};
@@ -37,7 +37,7 @@ pub struct ServerConfig {
     pub max_subs_per_conn: u32,
     pub max_payload_in_mb: u32,
     pub max_payload_out_mb: u32,
-    pub metrics: Option<RpcMetrics>,
+    pub metrics: RpcMetrics,
     pub message_buffer_capacity: u32,
     pub rpc_api: RpcModule<()>,
     /// Batch request config.
@@ -54,7 +54,7 @@ pub struct ServerConfig {
 struct PerConnection<RpcMiddleware, HttpMiddleware> {
     methods: Methods,
     stop_handle: StopHandle,
-    metrics: Option<RpcMetrics>,
+    metrics: RpcMetrics,
     service_builder: TowerServiceBuilder<RpcMiddleware, HttpMiddleware>,
 }
 
@@ -143,13 +143,9 @@ pub async fn start_server(
                 let is_websocket = ws::is_upgrade_request(&req);
                 let transport_label = if is_websocket { "ws" } else { "http" };
 
-                let middleware_layer = match (metrics, rate_limit_cfg) {
-                    (None, None) => None,
-                    (Some(metrics), None) => {
-                        Some(MiddlewareLayer::new().with_metrics(Metrics::new(metrics, transport_label)))
-                    }
-                    (None, Some(rate_limit)) => Some(MiddlewareLayer::new().with_rate_limit_per_minute(rate_limit)),
-                    (Some(metrics), Some(rate_limit)) => Some(
+                let middleware_layer = match rate_limit_cfg {
+                    None => Some(MiddlewareLayer::new().with_metrics(Metrics::new(metrics, transport_label))),
+                    Some(rate_limit) => Some(
                         MiddlewareLayer::new()
                             .with_metrics(Metrics::new(metrics, transport_label))
                             .with_rate_limit_per_minute(rate_limit),
@@ -161,23 +157,27 @@ pub async fn start_server(
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
 
                 async move {
-                    if is_websocket {
-                        let on_disconnect = svc.on_session_closed();
+                    if req.uri().path() == "/health" {
+                        Ok(Response::builder().status(StatusCode::OK).body(Body::from("OK"))?)
+                    } else {
+                        if is_websocket {
+                            let on_disconnect = svc.on_session_closed();
 
-                        // Spawn a task to handle when the connection is closed.
-                        tokio::spawn(async move {
-                            let now = std::time::Instant::now();
-                            if let Some(m) = middleware_layer.as_ref() {
-                                m.ws_connect()
-                            }
-                            on_disconnect.await;
-                            if let Some(m) = middleware_layer.as_ref() {
-                                m.ws_disconnect(now)
-                            }
-                        });
+                            // Spawn a task to handle when the connection is closed.
+                            tokio::spawn(async move {
+                                let now = std::time::Instant::now();
+                                if let Some(m) = middleware_layer.as_ref() {
+                                    m.ws_connect()
+                                }
+                                on_disconnect.await;
+                                if let Some(m) = middleware_layer.as_ref() {
+                                    m.ws_disconnect(now)
+                                }
+                            });
+                        }
+
+                        svc.call(req).await
                     }
-
-                    svc.call(req).await
                 }
             }))
         }

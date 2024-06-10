@@ -1,0 +1,25 @@
+[package]
+name = "mc-metrics"
+version.workspace = true
+edition.workspace = true
+description = "Deoxys prometheus service"
+authors = ["Kasar <https://github.com/kasarlabs>"]
+homepage = "https://github.com/kasarlabs/deoxys"
+license = "MIT"
+publish = false
+repository = "https://github.com/kasarlabs/deoxys"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+itertools.workspace = true
+log.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+prometheus.workspace = true
+hyper.workspace = true
