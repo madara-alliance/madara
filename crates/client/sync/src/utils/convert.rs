@@ -22,7 +22,6 @@ use starknet_providers::sequencer::models::state_update::{
     DeclaredContract, DeployedContract, StateDiff as StateDiffProvider, StorageDiff as StorageDiffProvider,
 };
 use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
-use starknet_types_core::felt::Felt;
 
 use crate::commitments::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
@@ -42,13 +41,17 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock
     let event_count = events.len() as u128;
 
     let ((transaction_commitment, txs_hashes), event_commitment) =
-        commitments(&transactions, &events, block_number, chain_id);
+        calculate_tx_and_event_commitments(&transactions, &events, chain_id.into(), block_number);
 
     // Provisory conversion while Starknet-api doesn't support the universal `Felt` type
     let transaction_commitment = Felt252Wrapper::from(transaction_commitment).into();
     let event_commitment = Felt252Wrapper::from(event_commitment).into();
     let txs_hashes: Vec<StarkFelt> = txs_hashes.into_iter().map(Felt252Wrapper::from).map(Into::into).collect();
-
+    if block_number == 524437 {
+        for hash in &txs_hashes {
+            println!("\"{}\"", hash);
+        }
+    }
     let protocol_version = starknet_version(&block.starknet_version);
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
@@ -419,18 +422,6 @@ fn event(event: &p::Event) -> starknet_api::transaction::Event {
             data: EventData(event.data.iter().copied().map(felt).collect()),
         },
     }
-}
-
-fn commitments(
-    transactions: &[starknet_api::transaction::Transaction],
-    events: &[starknet_api::transaction::Event],
-    block_number: u64,
-    chain_id: StarkFelt,
-) -> ((Felt, Vec<Felt>), Felt) {
-    let ((commitment_tx, txs_hashes), commitment_event) =
-        calculate_tx_and_event_commitments(transactions, events, chain_id.into(), block_number);
-
-    ((commitment_tx, txs_hashes), commitment_event)
 }
 
 fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {
