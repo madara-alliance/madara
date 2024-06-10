@@ -31,22 +31,22 @@ pub struct StorageContractClassData {
     pub block_number: u64,
 }
 
-#[derive(Debug, Clone,  Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageContractData {
     pub class_hash: ClassHash,
     pub nonce: Nonce,
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ClassUpdateWrapper(pub Vec<ContractClassData>);
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ContractClassData {
     pub hash: ClassHash,
     pub contract_class: ContractClassWrapper,
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ContractClassWrapper {
     pub contract: ContractClassBlockifier,
     pub abi: ContractAbi,
@@ -55,7 +55,7 @@ pub struct ContractClassWrapper {
 }
 // TODO: move this somewhere more sensible? Would be a good idea to decouple
 // publicly available storage data from wrapper classes
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum ContractAbi {
     Sierra(String),
     Cairo(Option<Vec<AbiEntryWrapper>>),
@@ -71,14 +71,14 @@ impl ContractAbi {
     }
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum AbiEntryWrapper {
     Function(AbiFunctionEntryWrapper),
     Event(AbiEventEntryWrapper),
     Struct(AbiStructEntryWrapper),
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AbiFunctionEntryWrapper {
     // Function abi type
     pub r#type: AbiFunctionTypeWrapper,
@@ -92,7 +92,7 @@ pub struct AbiFunctionEntryWrapper {
     pub state_mutability: Option<AbiFunctionStateMutabilityWrapper>,
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AbiEventEntryWrapper {
     /// Event abi type
     pub r#type: AbiEventTypeWrapper,
@@ -104,7 +104,7 @@ pub struct AbiEventEntryWrapper {
     pub data: Vec<AbiTypedParameterWrapper>,
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AbiStructEntryWrapper {
     pub r#type: AbiStructTypeWrapper,
     pub name: String,
@@ -112,7 +112,7 @@ pub struct AbiStructEntryWrapper {
     pub members: Vec<AbiStructMemberWrapper>,
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AbiStructMemberWrapper {
     /// The parameter's name
     pub name: String,
@@ -122,29 +122,29 @@ pub struct AbiStructMemberWrapper {
     pub offset: u64,
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum AbiFunctionTypeWrapper {
     Function,
     L1handler,
     Constructor,
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum AbiEventTypeWrapper {
     Event,
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum AbiStructTypeWrapper {
     Struct,
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum AbiFunctionStateMutabilityWrapper {
     View,
 }
 
-#[derive(Debug,  Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AbiTypedParameterWrapper {
     pub name: String,
     pub r#type: String,
