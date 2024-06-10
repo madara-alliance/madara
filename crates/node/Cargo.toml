@@ -27,8 +27,8 @@ tokio = { workspace = true }
 
 # Starknet
 mc-db = { workspace = true }
-mc-rpc = { workspace = true }
 mc-metrics = { workspace = true }
+mc-rpc = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 

@@ -53,8 +53,8 @@ starknet_api = { workspace = true }
 bitvec = { workspace = true }
 bonsai-trie = { workspace = true }
 mc-db = { workspace = true }
-mc-telemetry = { workspace = true }
 mc-metrics = { workspace = true }
+mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-convert = { workspace = true }
 mp-felt = { workspace = true }
