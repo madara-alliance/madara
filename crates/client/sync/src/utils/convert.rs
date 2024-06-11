@@ -47,11 +47,6 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock
     let transaction_commitment = Felt252Wrapper::from(transaction_commitment).into();
     let event_commitment = Felt252Wrapper::from(event_commitment).into();
     let txs_hashes: Vec<StarkFelt> = txs_hashes.into_iter().map(Felt252Wrapper::from).map(Into::into).collect();
-    if block_number == 524439 {
-        for hash in &txs_hashes {
-            println!("\"{}\"", hash);
-        }
-    }
     let protocol_version = starknet_version(&block.starknet_version);
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
