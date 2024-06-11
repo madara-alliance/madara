@@ -31,7 +31,7 @@ indexmap = { workspace = true }
 itertools = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
-  "server",
+  "server"
 ] }
 log = { workspace = true, default-features = true }
 mp-block = { workspace = true, default-features = true }

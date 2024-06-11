@@ -3,6 +3,8 @@
 ## Next release
 
 - refactor: massive Felt252Wrapper removal
+- fix(metrics): fixed some metrics endpoints
+- fix(metrics): fix prometheus endpoint port
 - fix(hashes): Fix invoke tx hashes for version v3
 - fix: re-add prometheus, doc cli args, log format
 - fix(program): Changed visibility of program serializer + archived
