@@ -56,7 +56,7 @@ pub fn convert_message_into_tx(message: MsgFromL1, chain_id: Felt, block_number:
     let tx = starknet_api::transaction::L1HandlerTransaction {
         version: TransactionVersion::ZERO,
         nonce: Nonce(StarkFelt::ZERO),
-        contract_address: ContractAddress(PatriciaKey(message.to_address.into_stark_felt().into())),
+        contract_address: ContractAddress(PatriciaKey(message.to_address.into_stark_felt())),
         entry_point_selector: EntryPointSelector(message.entry_point_selector.into_stark_felt()),
         calldata: Calldata(Arc::new(calldata)),
     };

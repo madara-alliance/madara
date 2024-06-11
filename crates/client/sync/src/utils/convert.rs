@@ -43,7 +43,7 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2S
     let event_count = events.len() as u128;
 
     let ((transaction_commitment, txs_hashes), event_commitment) =
-        calculate_tx_and_event_commitments(&transactions, &events, chain_id.into(), block_number);
+        calculate_tx_and_event_commitments(&transactions, &events, chain_id, block_number);
 
     // Provisory conversion while Starknet-api doesn't support the universal `Felt` type
     let transaction_commitment = transaction_commitment.into_stark_felt();
@@ -265,7 +265,7 @@ fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
 /// If the string contains more than 31 bytes, the function panics.
 fn starknet_version(version: &Option<String>) -> Felt {
     match version {
-        Some(version) => Felt::from_bytes_le_slice(&version.as_bytes()),
+        Some(version) => Felt::from_bytes_le_slice(version.as_bytes()),
         None => Felt::ZERO,
     }
 }
