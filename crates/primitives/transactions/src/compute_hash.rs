@@ -13,7 +13,7 @@ use starknet_api::transaction::{
 use starknet_core::utils::starknet_keccak;
 
 use starknet_types_core::felt::Felt;
-use starknet_types_core::hash::{Pedersen, StarkHash}; //, Poseidon};
+use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash}; //, Poseidon};
 
 use super::SIMULATE_TX_VERSION_OFFSET;
 use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK};
@@ -41,8 +41,13 @@ fn convert_calldata(calldata: Calldata) -> Vec<Felt> {
 }
 
 #[inline]
-fn compute_calldata_hash(calldata: Calldata) -> Felt {
+fn compute_calldata_hash_pedersen(calldata: Calldata) -> Felt {
     Pedersen::hash_array(convert_calldata(calldata).as_slice())
+}
+
+#[inline]
+fn compute_calldata_hash_poseidon(calldata: Calldata) -> Felt {
+    Poseidon::hash_array(convert_calldata(calldata).as_slice())
 }
 
 #[inline]
@@ -52,20 +57,20 @@ fn compute_gas_hash(tip: &Tip, resource_bounds: &ResourceBoundsMapping) -> Felt 
         prepare_resource_bound_value(resource_bounds, Resource::L1Gas),
         prepare_resource_bound_value(resource_bounds, Resource::L2Gas),
     ];
-    Pedersen::hash_array(gas_as_felt)
+    Poseidon::hash_array(gas_as_felt)
 }
 
 #[inline]
 fn compute_paymaster_hash(paymaster_data: &PaymasterData) -> Felt {
     let paymaster_tmp = paymaster_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
-    Pedersen::hash_array(paymaster_tmp.as_slice())
+    Poseidon::hash_array(paymaster_tmp.as_slice())
 }
 
 #[inline]
 fn compute_account_deployment_hash(account_deployment_data: &AccountDeploymentData) -> Felt {
     let account_deployment_data_tmp =
         &account_deployment_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
-    Pedersen::hash_array(account_deployment_data_tmp.as_slice())
+    Poseidon::hash_array(account_deployment_data_tmp.as_slice())
 }
 
 // Use a mapping from execution resources to get corresponding fee bounds
@@ -124,7 +129,7 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
         let sender_address = Felt::from_bytes_be(&self.contract_address.0 .0 .0);
         let entrypoint_selector = Felt::from_bytes_be(&self.entry_point_selector.0 .0);
 
-        let calldata_hash = compute_calldata_hash(self.calldata.clone());
+        let calldata_hash = compute_calldata_hash_pedersen(self.calldata.clone());
         let max_fee = Felt::from(self.max_fee.0);
 
         // Check for deprecated environment
@@ -162,7 +167,7 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
         let sender_address = Felt::from_bytes_be(&self.sender_address.0 .0 .0);
         let entrypoint_selector = Felt::ZERO;
 
-        let calldata_hash = compute_calldata_hash(self.calldata.clone());
+        let calldata_hash = compute_calldata_hash_pedersen(self.calldata.clone());
 
         let max_fee = Felt::from(self.max_fee.0);
         let nonce = Felt::from_bytes_be(&self.nonce.0 .0);
@@ -201,14 +206,11 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
         let data_availability_modes =
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
 
-        let data_hash = {
-            let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);
-            let calldata_hash = compute_calldata_hash(self.calldata.clone());
-            Pedersen::hash_array(&[account_deployment_data_hash, calldata_hash])
-        };
+        let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);
+        let calldata_hash = compute_calldata_hash_poseidon(self.calldata.clone());
 
         TransactionHash(StarkFelt(
-            Pedersen::hash_array(&[
+            Poseidon::hash_array(&[
                 prefix,
                 version,
                 sender_address,
@@ -217,7 +219,8 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
                 chain_id,
                 nonce,
                 data_availability_modes,
-                data_hash,
+                account_deployment_data_hash,
+                calldata_hash,
             ])
             .to_bytes_be(),
         ))
@@ -341,7 +344,7 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
         let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);
 
         TransactionHash(StarkFelt(
-            Pedersen::hash_array(&[
+            Poseidon::hash_array(&[
                 prefix,
                 version,
                 sender_address,
@@ -500,10 +503,10 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
         let data_availability_modes =
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
 
-        let constructor_calldata_hash = Pedersen::hash_array(constructor_calldata.as_slice());
+        let constructor_calldata_hash = Poseidon::hash_array(constructor_calldata.as_slice());
 
         TransactionHash(StarkFelt(
-            Pedersen::hash_array(&[
+            Poseidon::hash_array(&[
                 prefix,
                 version,
                 contract_address,
