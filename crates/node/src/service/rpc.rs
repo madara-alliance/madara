@@ -1,5 +1,6 @@
 use jsonrpsee::server::ServerHandle;
 use jsonrpsee::RpcModule;
+use mc_metrics::MetricsRegistry;
 use mc_rpc::{
     ChainConfig, Felt, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
 };
@@ -18,7 +19,7 @@ pub struct RpcService {
     server_handle: Option<ServerHandle>,
 }
 impl RpcService {
-    pub fn new(config: &RpcParams, network_type: NetworkType) -> anyhow::Result<Self> {
+    pub fn new(config: &RpcParams, network_type: NetworkType, metrics_handle: MetricsRegistry) -> anyhow::Result<Self> {
         let mut rpc_api = RpcModule::new(());
 
         let (read, write, trace) = match (config.rpc_methods, config.rpc_external) {
@@ -51,7 +52,7 @@ impl RpcService {
             rpc_api.merge(StarknetTraceRpcApiServer::into_rpc(Starknet::new(0, chain_config.clone())))?;
         }
 
-        let metrics = RpcMetrics::new(None)?; // TODO: metrics prometheus_registry
+        let metrics = RpcMetrics::register(&metrics_handle)?;
 
         Ok(Self {
             server_config: ServerConfig {
