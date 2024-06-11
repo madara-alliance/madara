@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 mod header;
 mod ordered_events;
 pub use header::Header;
-use mp_felt::Felt252Wrapper;
+use mp_felt::FeltWrapper;
 pub use ordered_events::*;
 use starknet_api::block::BlockHash;
 use starknet_api::transaction::{Transaction, TransactionHash};
@@ -17,6 +17,7 @@ pub type BlockTransactions = Vec<Transaction>;
 pub type BlockEvents = Vec<OrderedEvents>;
 
 pub use primitive_types::{H160, U256};
+use starknet_types_core::felt::Felt;
 
 /// Block tag.
 ///
@@ -55,7 +56,7 @@ impl From<BlockTag> for starknet_core::types::BlockTag {
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub enum BlockId {
-    Hash(Felt252Wrapper),
+    Hash(Felt),
     Number(u64),
     Tag(BlockTag),
 }
@@ -63,7 +64,7 @@ pub enum BlockId {
 impl From<starknet_core::types::BlockId> for BlockId {
     fn from(value: starknet_core::types::BlockId) -> Self {
         match value {
-            starknet_core::types::BlockId::Hash(felt) => BlockId::Hash(Felt252Wrapper(felt)),
+            starknet_core::types::BlockId::Hash(felt) => BlockId::Hash(Felt::from_bytes_be(&felt.to_bytes_be())),
             starknet_core::types::BlockId::Number(number) => BlockId::Number(number),
             starknet_core::types::BlockId::Tag(tag) => BlockId::Tag(tag.into()),
         }
@@ -72,7 +73,7 @@ impl From<starknet_core::types::BlockId> for BlockId {
 impl From<BlockId> for starknet_core::types::BlockId {
     fn from(value: BlockId) -> Self {
         match value {
-            BlockId::Hash(felt) => starknet_core::types::BlockId::Hash(felt.0),
+            BlockId::Hash(felt) => starknet_core::types::BlockId::Hash(felt.into_field_element()),
             BlockId::Number(number) => starknet_core::types::BlockId::Number(number),
             BlockId::Tag(tag) => starknet_core::types::BlockId::Tag(tag.into()),
         }
