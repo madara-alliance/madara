@@ -224,7 +224,7 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
                 nonce,
                 data_availability_modes,
                 account_deployment_data_hash,
-                calldata_hash
+                calldata_hash,
             ])
             .to_bytes_be(),
         ))
@@ -348,7 +348,7 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
         let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);
 
         TransactionHash(StarkFelt(
-            Pedersen::hash_array(&[
+            Poseidon::hash_array(&[
                 prefix,
                 version,
                 sender_address,
@@ -508,10 +508,10 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
         let data_availability_modes =
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
 
-        let constructor_calldata_hash = Pedersen::hash_array(constructor_calldata.as_slice());
+        let constructor_calldata_hash = Poseidon::hash_array(constructor_calldata.as_slice());
 
         TransactionHash(StarkFelt(
-            Pedersen::hash_array(&[
+            Poseidon::hash_array(&[
                 prefix,
                 version,
                 contract_address,

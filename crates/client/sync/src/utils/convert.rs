@@ -494,5 +494,3 @@ fn nonces(nonces: HashMap<FieldElement, FieldElement>) -> Vec<NonceUpdate> {
     // and not `nonce` -> `contract_address`
     nonces.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect()
 }
-
-
