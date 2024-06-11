@@ -47,7 +47,7 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock
     let transaction_commitment = Felt252Wrapper::from(transaction_commitment).into();
     let event_commitment = Felt252Wrapper::from(event_commitment).into();
     let txs_hashes: Vec<StarkFelt> = txs_hashes.into_iter().map(Felt252Wrapper::from).map(Into::into).collect();
-    if block_number == 524437 {
+    if block_number == 524439 {
         for hash in &txs_hashes {
             println!("\"{}\"", hash);
         }
@@ -494,3 +494,5 @@ fn nonces(nonces: HashMap<FieldElement, FieldElement>) -> Vec<NonceUpdate> {
     // and not `nonce` -> `contract_address`
     nonces.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect()
 }
+
+
