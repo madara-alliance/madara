@@ -102,7 +102,11 @@ where
 }
 
 pub async fn fetch_apply_genesis_block(config: FetchConfig, chain_id: Felt) -> Result<DeoxysBlock, String> {
-    let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id.into_field_element());
+    let client = SequencerGatewayProvider::new(
+        config.gateway.clone(),
+        config.feeder_gateway.clone(),
+        config.chain_id.into_field_element(),
+    );
     let client = match &config.api_key {
         Some(api_key) => client.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
         None => client,

@@ -168,17 +168,11 @@ pub fn to_contract_class_sierra(sierra_class: &ContractClassV1, abi: String) -> 
         .program
         .iter_data()
         .filter_map(|maybe_relocatable| {
-            maybe_relocatable.get_int_ref().map(
-                |felt| Felt::from_bytes_be(
-                    &((*felt).to_be_bytes()))
-            )
+            maybe_relocatable.get_int_ref().map(|felt| Felt::from_bytes_be(&((*felt).to_be_bytes())))
         })
         .collect::<Vec<Felt>>();
 
-
-    let sierra_program_as_field =  sierra_program.iter().map(
-        |felt| felt.into_field_element()
-    ).collect();
+    let sierra_program_as_field = sierra_program.iter().map(|felt| felt.into_field_element()).collect();
 
     Ok(ContractClassCore::Sierra(FlattenedSierraClass {
         sierra_program: sierra_program_as_field,

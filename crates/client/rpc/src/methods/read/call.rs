@@ -1,7 +1,7 @@
 use jsonrpsee::core::RpcResult;
 use mp_convert::field_element::FromFieldElement;
-use mp_felt::{FeltWrapper};
-use starknet_api::core::{ContractAddress, EntryPointSelector};//, EntryPointSelector};
+use mp_felt::FeltWrapper;
+use starknet_api::core::{ContractAddress, EntryPointSelector}; //, EntryPointSelector};
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{BlockId, FunctionCall};
@@ -34,9 +34,7 @@ pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> Rp
     let block_info = starknet.get_block_info(block_id)?;
     let block_context = block_context(starknet, &block_info)?;
 
-    let calldata_as_starkfelt = request.calldata.iter().map(
-        |x| StarkFelt::from_field_element(*x)
-    ).collect();
+    let calldata_as_starkfelt = request.calldata.iter().map(|x| StarkFelt::from_field_element(*x)).collect();
     let calldata = Calldata(Arc::new(calldata_as_starkfelt));
 
     let result_as_felt_vector = utils::execution::call_contract(
@@ -47,6 +45,5 @@ pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> Rp
     )
     .or_internal_server_error("Request parameters error")?;
 
-    Ok(
-        result_as_felt_vector.iter().map(|x| x.to_string()).collect())
+    Ok(result_as_felt_vector.iter().map(|x| x.to_string()).collect())
 }

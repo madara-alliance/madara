@@ -48,11 +48,7 @@ pub async fn estimate_message_fee(
     Ok(message_fee)
 }
 
-pub fn convert_message_into_tx(
-    message: MsgFromL1,
-    chain_id: Felt,
-    block_number: Option<u64>,
-) -> L1HandlerTransaction {
+pub fn convert_message_into_tx(message: MsgFromL1, chain_id: Felt, block_number: Option<u64>) -> L1HandlerTransaction {
     let calldata = std::iter::once(message.from_address.into_stark_felt())
         .chain(message.payload.into_iter().map(FeltWrapper::into_stark_felt))
         .collect();
