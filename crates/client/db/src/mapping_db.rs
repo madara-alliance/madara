@@ -170,7 +170,7 @@ impl MappingDb {
         }
 
         tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
-        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(block.info()));
+        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(block.info())?);
         tx.put_cf(&block_n_to_block_inner, &block_n_encoded, bincode::serialize(block.inner())?);
         tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
 
