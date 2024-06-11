@@ -344,7 +344,7 @@ impl Drop for DBDropHook {
     fn drop(&mut self) {
         let backend = BACKEND_SINGLETON.get().unwrap() as *const _ as *mut Arc<DeoxysBackend>;
         let db = DB_SINGLETON.get().unwrap() as *const _ as *mut Arc<DB>;
-        log::info!("⏳ Closing database properly...");
+        log::info!("⏳ Gracefully closing the database...");
         // TODO(HACK): again, i can't emphasize enough how bad of a hack this is
         unsafe {
             std::ptr::drop_in_place(backend);

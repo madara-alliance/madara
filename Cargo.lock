@@ -710,7 +710,7 @@ checksum = "ade8366b8bd5ba243f0a58f036cc0ca8a2f069cff1a2351ef1cac6b083e16fc0"
 [[package]]
 name = "cairo-felt"
 version = "0.9.1"
-source = "git+https://github.com/bidzyyys/cairo-vm.git?branch=feature/scale-codec#eb835a9034e208a1756226d64e004cb55e417b96"
+source = "git+https://github.com/bidzyyys/cairo-vm?branch=feature/scale-codec#eb835a9034e208a1756226d64e004cb55e417b96"
 dependencies = [
  "lazy_static",
  "num-bigint",
@@ -994,7 +994,7 @@ version = "2.6.0-rc.0"
 source = "git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec#8aceb3b55e7fb9dcfd1c00a37a62235fab4b4916"
 dependencies = [
  "anyhow",
- "cairo-felt 0.9.1 (git+https://github.com/bidzyyys/cairo-vm.git?branch=feature/scale-codec)",
+ "cairo-felt 0.9.1 (git+https://github.com/bidzyyys/cairo-vm?branch=feature/scale-codec)",
  "cairo-lang-utils 2.6.0-rc.0",
  "const-fnv1a-hash",
  "convert_case 0.6.0",
@@ -1122,7 +1122,7 @@ version = "2.6.0-rc.0"
 source = "git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec#8aceb3b55e7fb9dcfd1c00a37a62235fab4b4916"
 dependencies = [
  "assert_matches",
- "cairo-felt 0.9.1 (git+https://github.com/bidzyyys/cairo-vm.git?branch=feature/scale-codec)",
+ "cairo-felt 0.9.1 (git+https://github.com/bidzyyys/cairo-vm?branch=feature/scale-codec)",
  "cairo-lang-casm 2.6.0-rc.0",
  "cairo-lang-sierra 2.6.0-rc.0",
  "cairo-lang-sierra-ap-change 2.6.0-rc.0",
@@ -1209,7 +1209,7 @@ name = "cairo-lang-starknet-classes"
 version = "2.6.0-rc.0"
 source = "git+https://github.com/bidzyyys/cairo.git?branch=feature/scale-codec#8aceb3b55e7fb9dcfd1c00a37a62235fab4b4916"
 dependencies = [
- "cairo-felt 0.9.1 (git+https://github.com/bidzyyys/cairo-vm.git?branch=feature/scale-codec)",
+ "cairo-felt 0.9.1 (git+https://github.com/bidzyyys/cairo-vm?branch=feature/scale-codec)",
  "cairo-lang-casm 2.6.0-rc.0",
  "cairo-lang-sierra 2.6.0-rc.0",
  "cairo-lang-sierra-to-casm 2.6.0-rc.0",
@@ -1460,8 +1460,10 @@ version = "4.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae129e2e766ae0ec03484e609954119f123cc1fe650337e155d03b022f24f7b4"
 dependencies = [
+ "anstream",
  "anstyle",
  "clap_lex",
+ "strsim 0.11.1",
 ]
 
 [[package]]
@@ -1893,6 +1895,7 @@ dependencies = [
  "jsonrpsee",
  "log",
  "mc-db",
+ "mc-metrics",
  "mc-rpc",
  "mc-sync",
  "mc-telemetry",
@@ -1907,7 +1910,6 @@ dependencies = [
  "serde_json",
  "starknet-core",
  "starknet-providers",
- "substrate-prometheus-endpoint",
  "tokio",
  "tower",
  "tower-http",
@@ -3699,6 +3701,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mc-metrics"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "hyper 0.14.29",
+ "itertools 0.12.1",
+ "log",
+ "prometheus",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "mc-rpc"
 version = "0.1.0"
 dependencies = [
@@ -3742,6 +3759,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mc-db",
+ "mc-metrics",
  "mc-telemetry",
  "mp-block",
  "mp-convert",
@@ -3762,7 +3780,6 @@ dependencies = [
  "starknet-providers",
  "starknet-types-core",
  "starknet_api",
- "substrate-prometheus-endpoint",
  "thiserror",
  "tokio",
  "url",
@@ -4686,6 +4703,7 @@ dependencies = [
  "lazy_static",
  "memchr",
  "parking_lot 0.12.3",
+ "protobuf",
  "thiserror",
 ]
 
@@ -4704,6 +4722,12 @@ dependencies = [
  "regex-syntax",
  "unarray",
 ]
+
+[[package]]
+name = "protobuf"
+version = "2.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
 name = "quanta"
@@ -5310,9 +5334,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "0.8.21"
+version = "0.8.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09c024468a378b7e36765cd36702b7a90cc3cba11654f6685c8f233408e89e92"
+checksum = "45a28f4c49489add4ce10783f7911893516f15afe45d015608d41faca6bc4d29"
 dependencies = [
  "dyn-clone",
  "indexmap 1.9.3",
@@ -5323,14 +5347,14 @@ dependencies = [
 
 [[package]]
 name = "schemars_derive"
-version = "0.8.21"
+version = "0.8.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1eee588578aff73f856ab961cd2f79e36bc45d7ded33a7562adba4667aecc0e"
+checksum = "c767fd6fa65d9ccf9cf026122c1b555f2ef9a4f0cea69da4d7dbc3e258d30967"
 dependencies = [
  "proc-macro2",
  "quote",
  "serde_derive_internals",
- "syn 2.0.66",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -5441,13 +5465,13 @@ dependencies = [
 
 [[package]]
 name = "serde_derive_internals"
-version = "0.29.1"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
+checksum = "85bf8229e7920a9f636479437026331ce11aa132b4dde37d121944a44d6e5f3c"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.66",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -5989,18 +6013,6 @@ dependencies = [
  "quote",
  "rustversion",
  "syn 2.0.66",
-]
-
-[[package]]
-name = "substrate-prometheus-endpoint"
-version = "0.10.0-dev"
-source = "git+https://github.com/kasarlabs/polkadot-sdk?branch=release-polkadot-v1.3.0-std#c78d3ab6ffec9e4fd28a0ee853c3291b68d27246"
-dependencies = [
- "hyper 0.14.29",
- "log",
- "prometheus",
- "thiserror",
- "tokio",
 ]
 
 [[package]]
