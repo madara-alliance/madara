@@ -210,11 +210,8 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
         let data_availability_modes =
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
 
-        let data_hash = {
-            let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);
-            let calldata_hash = compute_calldata_hash_poseidon(self.calldata.clone());
-            Poseidon::hash_array(&[account_deployment_data_hash, calldata_hash])
-        };
+        let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);
+        let calldata_hash = compute_calldata_hash_poseidon(self.calldata.clone());
 
         TransactionHash(StarkFelt(
             Poseidon::hash_array(&[
@@ -226,7 +223,8 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
                 chain_id.into(),
                 nonce,
                 data_availability_modes,
-                data_hash,
+                account_deployment_data_hash,
+                calldata_hash
             ])
             .to_bytes_be(),
         ))
