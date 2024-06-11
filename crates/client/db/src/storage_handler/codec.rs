@@ -47,7 +47,7 @@ impl Encode for PatriciaKey {
 impl Decode for PatriciaKey {
     fn decode(bytes: &[u8]) -> Result<Self, Error> {
         let inner = StarkFelt::decode(bytes)?;
-        Ok(inner.try_into().map_err(|_| Error::DecodeError)?)
+        inner.try_into().map_err(|_| Error::DecodeError)
     }
 }
 

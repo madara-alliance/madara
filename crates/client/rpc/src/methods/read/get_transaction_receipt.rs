@@ -201,7 +201,7 @@ pub fn receipt(
                 execution_resources,
                 execution_result,
                 // Safe to unwrap because StarkFelt is same as FieldElement
-                contract_address: contract_address.key().clone().into(),
+                contract_address: (*contract_address.key()).into(),
             })
         }
         Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {

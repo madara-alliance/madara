@@ -15,7 +15,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 cairo-vm = { workspace = true }
 flate2 = { workspace = true }
-indexmap = { workspace = true }
 
 # Deoxys crates
 mp-block = { workspace = true }

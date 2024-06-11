@@ -132,10 +132,10 @@ fn try_get_funtion_invocation_from_call_info(
     };
 
     Ok(starknet_core::types::FunctionInvocation {
-        contract_address: call_info.call.storage_address.0.key().clone().into(),
+        contract_address: (*call_info.call.storage_address.0.key()).into(),
         entry_point_selector: FieldElement::from(Felt252Wrapper::from(call_info.call.entry_point_selector.0)),
         calldata: call_info.call.calldata.0.iter().map(|x| FieldElement::from(Felt252Wrapper::from(*x))).collect(),
-        caller_address: call_info.call.caller_address.0.key().clone().into(),
+        caller_address: (*call_info.call.caller_address.0.key()).into(),
         class_hash,
         entry_point_type,
         call_type,

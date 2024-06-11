@@ -291,9 +291,9 @@ mod l1_sync_tests {
         let client = EthereumClient::new(url, H160::zero()).await.expect("Failed to create EthereumClient");
 
         let initial_state = EthereumClient::get_initial_state(&client).await.expect("Failed to get initial state");
-        assert!(!initial_state.global_root.0.is_empty(), "Global root should not be empty");
+        assert!(!initial_state.global_root.bytes().is_empty(), "Global root should not be empty");
         assert!(!initial_state.block_number > 0, "Block number should be greater than 0");
-        assert!(!initial_state.block_hash.0.is_empty(), "Block hash should not be empty");
+        assert!(!initial_state.block_hash.bytes().is_empty(), "Block hash should not be empty");
     }
 
     #[tokio::test]
