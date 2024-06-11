@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(hashes): Fix invoke tx hashes for version v3
 - fix: re-add prometheus, doc cli args, log format
 - fix(program): Changed visibility of program serializer + archived
 - fix(classes): remove the classes ordenation to allow fork rebasements

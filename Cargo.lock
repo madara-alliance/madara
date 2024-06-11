@@ -3893,6 +3893,7 @@ dependencies = [
  "anyhow",
  "blockifier",
  "lazy_static",
+ "log",
  "mp-felt",
  "parity-scale-codec",
  "primitive-types",
