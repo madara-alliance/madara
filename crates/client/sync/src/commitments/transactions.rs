@@ -61,7 +61,7 @@ pub fn calculate_transaction_hash_with_signature(
             Transaction::L1Handler(_) => Pedersen::hash_array(&[]),
             _ => Pedersen::hash_array(&[]),
         },
-        || Felt::from_bytes_be(&transaction.compute_hash(chain_id, false, Some(block_number)).0.0),
+        || Felt::from_bytes_be(&transaction.compute_hash(chain_id, false, Some(block_number)).0 .0),
     );
 
     (Pedersen::hash(&tx_hash, &signature_hash), tx_hash)

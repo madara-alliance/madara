@@ -40,7 +40,7 @@ pub mod starknet_sync_worker {
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<()> {
         // let starting_block = starting_block + 1;
-        
+
         let starting_block = if let Some(starting_block) = starting_block {
             starting_block
         } else {

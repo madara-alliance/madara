@@ -89,7 +89,7 @@ pub(crate) fn get_block_with_tx_hashes(
         .or_internal_server_error("Error getting block from db")?
         .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    let block_hash = Felt::from_bytes_be(&block.block_hash().0.0);
+    let block_hash = Felt::from_bytes_be(&block.block_hash().0 .0);
     let block_hash_as_field = block_hash.into_field_element();
 
     let block_txs_hashes = block.tx_hashes().iter().map(FeltWrapper::into_field_element).collect::<Vec<_>>();

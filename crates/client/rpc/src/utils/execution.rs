@@ -136,9 +136,7 @@ pub fn call_contract(
         })?;
 
     log::debug!("Successfully called a smart contract function: {:?}", res);
-    let result = res.execution.retdata.0.iter().map(
-        |x| Felt::from_bytes_be(&(*x).0)
-    ).collect();
+    let result = res.execution.retdata.0.iter().map(|x| Felt::from_bytes_be(&(*x).0)).collect();
     Ok(result)
 }
 

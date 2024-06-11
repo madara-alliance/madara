@@ -1,5 +1,5 @@
 use jsonrpsee::core::RpcResult;
-use mp_felt::{FeltWrapper};
+use mp_felt::FeltWrapper;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{FieldElement, Transaction};

@@ -64,7 +64,7 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2S
         transaction_commitment,
         event_count,
         event_commitment,
-        protocol_version: protocol_version.into_stark_felt(), 
+        protocol_version: protocol_version.into_stark_felt(),
         l1_gas_price,
         l1_da_mode,
         extra_data,
@@ -265,9 +265,7 @@ fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
 /// If the string contains more than 31 bytes, the function panics.
 fn starknet_version(version: &Option<String>) -> Felt {
     match version {
-        Some(version) => {
-            Felt::from_bytes_le_slice(&version.as_bytes())
-        }
+        Some(version) => Felt::from_bytes_le_slice(&version.as_bytes()),
         None => Felt::ZERO,
     }
 }

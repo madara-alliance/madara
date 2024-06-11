@@ -18,7 +18,9 @@ use flate2::read::GzDecoder;
 use indexmap::IndexMap;
 use mp_felt::{Felt252Wrapper, FeltWrapper};
 use num_bigint::{BigInt, BigUint, Sign};
-use starknet_api::core::{calculate_contract_address, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce, PatriciaKey};
+use starknet_api::core::{
+    calculate_contract_address, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce, PatriciaKey,
+};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{self as stx, ContractAddressSalt};
@@ -81,11 +83,9 @@ fn fee_from_field(fee: FieldElement) -> stx::Fee {
     // let as_u8x32 = fee.to_bytes_be();
     // let as_u128 = u8x32_to_u128(as_u8x32)
 
-    let as_u128 = u128::try_from(
-        Felt252Wrapper::from(fee)
-    )
-    .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
-    .unwrap();
+    let as_u128 = u128::try_from(Felt252Wrapper::from(fee))
+        .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
+        .unwrap();
 
     stx::Fee(as_u128)
 }
@@ -361,11 +361,7 @@ fn deploy_account_to_account_transaction(
                 nonce: Nonce(nonce.into_stark_felt()),
                 contract_address_salt: ContractAddressSalt(contract_address_salt.into_stark_felt()),
                 constructor_calldata: stx::Calldata(
-                    constructor_calldata
-                        .iter()
-                        .map(|x| x.into_stark_felt())
-                        .collect::<Vec<StarkFelt>>()
-                        .into(),
+                    constructor_calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
                 ),
                 class_hash: ClassHash(class_hash.into_stark_felt()),
             });
@@ -404,11 +400,7 @@ fn deploy_account_to_account_transaction(
                 nonce: Nonce(nonce.into_stark_felt()),
                 contract_address_salt: ContractAddressSalt(contract_address_salt.into_stark_felt()),
                 constructor_calldata: stx::Calldata(
-                    constructor_calldata
-                        .iter()
-                        .map(|x| x.into_stark_felt())
-                        .collect::<Vec<StarkFelt>>()
-                        .into(),
+                    constructor_calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
                 ),
                 class_hash: ClassHash(class_hash.into_stark_felt()),
                 resource_bounds: core_resources_to_api_resources(resource_bounds),

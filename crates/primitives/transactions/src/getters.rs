@@ -20,9 +20,9 @@ pub trait Hash {
 impl Getters for AccountTransaction {
     fn sender_address(&self) -> Felt {
         match self {
-            AccountTransaction::Declare(tx) => Felt::from_bytes_be(&tx.tx.sender_address().0.0.0),
-            AccountTransaction::DeployAccount(tx) => Felt::from_bytes_be(&tx.tx.contract_address_salt().0.0),
-            AccountTransaction::Invoke(tx) => Felt::from_bytes_be(&tx.tx.sender_address().0.0.0),
+            AccountTransaction::Declare(tx) => Felt::from_bytes_be(&tx.tx.sender_address().0 .0 .0),
+            AccountTransaction::DeployAccount(tx) => Felt::from_bytes_be(&tx.tx.contract_address_salt().0 .0),
+            AccountTransaction::Invoke(tx) => Felt::from_bytes_be(&tx.tx.sender_address().0 .0 .0),
         }
     }
 
@@ -40,19 +40,19 @@ impl Getters for AccountTransaction {
         match self {
             AccountTransaction::Declare(..) => None,
             AccountTransaction::DeployAccount(tx) => {
-                Some(tx.tx.constructor_calldata().0.iter().map(|x| Felt::from_bytes_be(&x.0) ).collect())
+                Some(tx.tx.constructor_calldata().0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect())
             }
             AccountTransaction::Invoke(tx) => {
-                Some(tx.tx.calldata().0.iter().map(|x| Felt::from_bytes_be(&x.0) ).collect())
+                Some(tx.tx.calldata().0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect())
             }
         }
     }
 
     fn nonce(&self) -> Option<Felt> {
         match self {
-            AccountTransaction::Declare(tx) => Some( Felt::from_bytes_be(&tx.tx.nonce().0.0) ),
-            AccountTransaction::DeployAccount(tx) => Some( Felt::from_bytes_be(&tx.tx.nonce().0.0) ),
-            AccountTransaction::Invoke(tx) => Some( Felt::from_bytes_be(&tx.tx.nonce().0.0) ),
+            AccountTransaction::Declare(tx) => Some(Felt::from_bytes_be(&tx.tx.nonce().0 .0)),
+            AccountTransaction::DeployAccount(tx) => Some(Felt::from_bytes_be(&tx.tx.nonce().0 .0)),
+            AccountTransaction::Invoke(tx) => Some(Felt::from_bytes_be(&tx.tx.nonce().0 .0)),
         }
     }
 
