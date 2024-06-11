@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use blockifier::state::cached_state::CommitmentStateDiff;
 use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
+use mp_convert::core_felt::CoreFelt;
 use rayon::prelude::*;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
@@ -121,5 +122,5 @@ fn class_hash_and_nonce(
         Some(nonce) => *nonce,
         None => storage_handler::contract_nonces().get(contract_address)?.unwrap_or_default(),
     };
-    Ok((Felt::from_bytes_be(&class_hash.0 .0), Felt::from_bytes_be(&nonce.0 .0)))
+    Ok((class_hash.into_core_felt(), nonce.into_core_felt()))
 }

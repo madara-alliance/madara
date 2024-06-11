@@ -53,7 +53,6 @@ mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-convert = { workspace = true }
 mp-felt = { workspace = true }
-mp-hashers = { workspace = true }
 mp-transactions = { workspace = true }
 num-traits = { workspace = true }
 rayon = { workspace = true }

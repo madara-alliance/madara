@@ -69,7 +69,6 @@ bonsai-trie = { default-features = false, git = "https://github.com/keep-starkne
 mp-block = { path = "crates/primitives/block" }
 mp-convert = { path = "crates/primitives/convert" }
 mp-felt = { path = "crates/primitives/felt" }
-mp-hashers = { path = "crates/primitives/hashers" }
 mp-program-hash = { path = "crates/primitives/program-hash" }
 mp-sequencer-address = { path = "crates/primitives/sequencer-address" }
 mp-simulations = { path = "crates/primitives/simulations" }

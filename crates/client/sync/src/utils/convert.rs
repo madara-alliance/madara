@@ -269,7 +269,7 @@ fn signature(signature: Vec<starknet_ff::FieldElement>) -> starknet_api::transac
 }
 
 fn contract_address(address: starknet_ff::FieldElement) -> starknet_api::core::ContractAddress {
-    starknet_api::core::ContractAddress(starknet_api::core::PatriciaKey(felt(address)))
+    starknet_api::core::ContractAddress(felt(address).try_into().unwrap())
 }
 
 fn entry_point(entry_point: starknet_ff::FieldElement) -> starknet_api::core::EntryPointSelector {

@@ -15,7 +15,6 @@ blockifier = { workspace = true }
 lazy_static = { workspace = true }
 log = { workspace = true }
 mp-felt = { workspace = true }
-mp-hashers = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 starknet-core = { workspace = true }
@@ -23,8 +22,8 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Optionals
+mp-convert = { workspace = true }
 primitive-types.workspace = true
 
 [dev-dependencies]
 mp-felt = { workspace = true }
-mp-hashers = { workspace = true }

@@ -3,7 +3,7 @@ use core::num::NonZeroU128;
 use blockifier::block::{BlockInfo, GasPrices};
 use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
 use blockifier::versioned_constants::VersionedConstants;
-use mp_felt::Felt252Wrapper;
+use mp_convert::core_felt::CoreFelt;
 use primitive_types::U256;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::core::{ChainId, ContractAddress};
@@ -150,17 +150,17 @@ impl Header {
         if self.block_number >= 833 {
             // Computes the block hash for blocks generated after Cairo 0.7.0
             let data: &[Felt] = &[
-                Felt::from(self.block_number),                        // block number
-                Felt::from_bytes_be(&self.global_state_root.0),       // global state root
-                Felt::from_bytes_be(&self.sequencer_address.0 .0 .0), // sequencer address
-                Felt::from(self.block_timestamp),                     // block timestamp
-                Felt::from(self.transaction_count),                   // number of transactions
-                Felt::from_bytes_be(&self.transaction_commitment.0),  // transaction commitment
-                Felt::from(self.event_count),                         // number of events
-                Felt::from_bytes_be(&self.event_commitment.0),        // event commitment
-                Felt::ZERO,                                           // reserved: protocol version
-                Felt::ZERO,                                           // reserved: extra data
-                Felt::from_bytes_be(&self.parent_block_hash.0),       // parent block hash
+                Felt::from(self.block_number),                // block number
+                self.global_state_root.into_core_felt(),      // global state root
+                self.sequencer_address.into_core_felt(),      // sequencer address
+                Felt::from(self.block_timestamp),             // block timestamp
+                Felt::from(self.transaction_count),           // number of transactions
+                self.transaction_commitment.into_core_felt(), // transaction commitment
+                Felt::from(self.event_count),                 // number of events
+                self.event_commitment.into_core_felt(),       // event commitment
+                Felt::ZERO,                                   // reserved: protocol version
+                Felt::ZERO,                                   // reserved: extra data
+                self.parent_block_hash.into_core_felt(),      // parent block hash
             ];
 
             Pedersen::hash_array(data)
@@ -168,17 +168,17 @@ impl Header {
             // Computes the block hash for blocks generated before Cairo 0.7.0
             let data: &[Felt] = &[
                 Felt::from(self.block_number),
-                Felt::from_bytes_be(&self.global_state_root.0),
+                self.global_state_root.into_core_felt(),
                 Felt::ZERO,
                 Felt::ZERO,
                 Felt::from(self.transaction_count),
-                Felt::from_bytes_be(&self.transaction_commitment.0),
+                self.transaction_commitment.into_core_felt(),
                 Felt::ZERO,
                 Felt::ZERO,
                 Felt::ZERO,
                 Felt::ZERO,
                 Felt::from_bytes_be_slice(b"SN_MAIN"),
-                Felt::from_bytes_be(&self.parent_block_hash.0),
+                self.parent_block_hash.into_core_felt(),
             ];
 
             Pedersen::hash_array(data)

@@ -21,7 +21,7 @@ use crate::utils::execution::{block_context, re_execute_transactions};
 use crate::utils::transaction::blockifier_transactions;
 use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
-
+use mp_convert::core_felt::CoreFelt;
 /// Get the transaction receipt by the transaction hash.
 ///
 /// This function retrieves the transaction receipt for a specific transaction identified by its
@@ -201,7 +201,7 @@ pub fn receipt(
                 execution_resources,
                 execution_result,
                 // Safe to unwrap because StarkFelt is same as FieldElement
-                contract_address: FieldElement::from_bytes_be(&contract_address.0 .0 .0).unwrap(),
+                contract_address: contract_address.key().clone().into(),
             })
         }
         Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {
