@@ -16,7 +16,6 @@ use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
 use mp_felt::Felt252Wrapper;
-use mp_hashers::pedersen::PedersenHasher;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_api::core::{calculate_contract_address, EntryPointSelector};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
@@ -125,7 +124,7 @@ fn declare_to_account_transaction(
             });
 
             // TODO: defaulted chain id
-            let tx_hash = declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = declare_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
             let class_info = ClassInfo::new(
                 &blockifier_contract_class,
                 contract_class.clone().program.len(),
@@ -175,7 +174,7 @@ fn declare_to_account_transaction(
             });
 
             // TODO: use real chain id
-            let tx_hash = declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = declare_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
             let class_info = ClassInfo::new(
                 &blockifier_contract_class,
                 contract_class.sierra_program.len(),
@@ -238,7 +237,7 @@ fn declare_to_account_transaction(
             });
 
             // TODO: use real chain id
-            let tx_hash = declare_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = declare_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
             let class_info = ClassInfo::new(
                 &blockifier_contract_class,
                 contract_class.sierra_program.len(),
@@ -284,7 +283,7 @@ fn invoke_to_account_transaction(
                 ),
             });
 
-            let tx_hash = invoke_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = invoke_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
 
             let tx = btx::InvokeTransaction::new(invoke_tx, tx_hash);
 
@@ -324,7 +323,7 @@ fn invoke_to_account_transaction(
                 fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
             });
 
-            let tx_hash = invoke_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = invoke_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
 
             let tx = btx::InvokeTransaction::new(invoke_tx, tx_hash);
 
@@ -368,7 +367,7 @@ fn deploy_account_to_account_transaction(
                 class_hash: Felt252Wrapper::from(class_hash).into(),
             });
 
-            let tx_hash = deploy_account_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = deploy_account_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
 
             let contract_address = calculate_contract_address(
                 Felt252Wrapper::from(contract_address_salt).into(),
@@ -418,7 +417,7 @@ fn deploy_account_to_account_transaction(
                 fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
             });
 
-            let tx_hash = deploy_account_tx.compute_hash::<PedersenHasher>(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = deploy_account_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
 
             let contract_address = calculate_contract_address(
                 Felt252Wrapper::from(contract_address_salt).into(),

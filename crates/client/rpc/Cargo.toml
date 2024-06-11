@@ -1,9 +1,5 @@
 [package]
-authors = [
-  "Kasar <https://github.com/kasarlabs>",
-  "KSS <https://github.com/keep-starknet-strange>",
-  "Substrate DevHub <https://github.com/substrate-developer-hub>",
-]
+authors = ["Kasar <https://github.com/kasarlabs>"]
 description = "Starknet RPC compatibility layer for Substrate"
 edition.workspace = true
 homepage = "https://github.com/kasarlabs/deoxys"
@@ -40,7 +36,6 @@ log = { workspace = true, default-features = true }
 mp-block = { workspace = true, default-features = true }
 mp-convert = { workspace = true, default-features = true }
 mp-felt = { workspace = true, default-features = true }
-mp-hashers = { workspace = true, default-features = true }
 mp-simulations = { workspace = true }
 mp-transactions = { workspace = true }
 serde = { workspace = true, default-features = true }

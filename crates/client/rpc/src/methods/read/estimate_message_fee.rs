@@ -3,7 +3,6 @@ use std::sync::Arc;
 use blockifier::transaction::transactions::L1HandlerTransaction;
 use jsonrpsee::core::RpcResult;
 use mp_felt::{Felt252Wrapper, FeltWrapper};
-use mp_hashers::pedersen::PedersenHasher;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use starknet_api::core::Nonce;
 use starknet_api::hash::StarkFelt;
@@ -63,7 +62,7 @@ pub fn convert_message_into_tx(
         calldata: Calldata(Arc::new(calldata)),
     };
     // TODO(merge): recheck if this is correct
-    let tx_hash = tx.compute_hash::<PedersenHasher>(chain_id, true, block_number);
+    let tx_hash = tx.compute_hash(chain_id, true, block_number);
 
     L1HandlerTransaction { tx, tx_hash, paid_fee_on_l1: Fee(10) } //TODO: fix with real fee
 }

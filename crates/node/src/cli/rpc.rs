@@ -68,19 +68,20 @@ impl FromStr for Cors {
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct RpcParams {
-    /// Enable the rpc server
+    /// Disable the RPC server.
     #[arg(long)]
     pub rpc_disabled: bool,
 
-    /// Listen to all RPC interfaces.
-    /// Default is local. Note: not all RPC methods are safe to be exposed publicly.
+    /// Listen to all network interfaces. This usually means that the RPC server will be accessible externally.
+    /// Please note that some endpoints should not be exposed to the outside world - by default, enabling remote access
+    /// will disable these endpoints. To re-enable them, use `--rpc-methods unsafe`
     #[arg(long)]
     pub rpc_external: bool,
 
     /// RPC methods to expose.
     #[arg(
 		long,
-		value_name = "METHOD SET",
+		value_name = "METHOD",
 		value_enum,
 		ignore_case = true,
 		default_value_t = RpcMethods::Auto,
@@ -97,27 +98,26 @@ pub struct RpcParams {
     #[arg(long)]
     pub rpc_rate_limit: Option<NonZeroU32>,
 
-    /// Disable RPC rate limiting for certain ip addresses.
+    /// Disable RPC rate limiting for certain ip addresses or ranges.
     ///
-    /// Each IP address must be in CIDR notation such as `1.2.3.4/24`.
+    /// Each IP address must be in the following notation: `1.2.3.4/24`.
     #[arg(long, num_args = 1..)]
     pub rpc_rate_limit_whitelisted_ips: Vec<IpNetwork>,
 
     /// Trust proxy headers for disable rate limiting.
     ///
-    /// By default the rpc server will not trust headers such `X-Real-IP`, `X-Forwarded-For` and
-    /// `Forwarded` and this option will make the rpc server to trust these headers.
+    /// When using a reverse proxy setup, the real requester IP is usually added to the headers as `X-Real-IP` or `X-Forwarded-For`.
+    /// By default, the RPC server will not trust these headers.
     ///
-    /// For instance this may be secure if the rpc server is behind a reverse proxy and that the
-    /// proxy always sets these headers.
+    /// This is currently only useful for rate-limiting reasons.
     #[arg(long)]
     pub rpc_rate_limit_trust_proxy_headers: bool,
 
-    /// Set the maximum RPC request payload size for both HTTP and WS in megabytes.
+    /// Set the maximum RPC request payload size for both HTTP and WebSockets in megabytes.
     #[arg(long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB)]
     pub rpc_max_request_size: u32,
 
-    /// Set the maximum RPC response payload size for both HTTP and WS in megabytes.
+    /// Set the maximum RPC response payload size for both HTTP and WebSockets in megabytes.
     #[arg(long, default_value_t = RPC_DEFAULT_MAX_RESPONSE_SIZE_MB)]
     pub rpc_max_response_size: u32,
 
@@ -125,39 +125,35 @@ pub struct RpcParams {
     #[arg(long, default_value_t = RPC_DEFAULT_MAX_SUBS_PER_CONN)]
     pub rpc_max_subscriptions_per_connection: u32,
 
-    /// Specify JSON-RPC server TCP port.
+    /// The RPC port to listen at.
     #[arg(long, value_name = "PORT", default_value_t = RPC_DEFAULT_PORT)]
     pub rpc_port: u16,
 
-    /// Maximum number of RPC server connections.
+    /// Maximum number of RPC server connections at a given time.
     #[arg(long, value_name = "COUNT", default_value_t = RPC_DEFAULT_MAX_CONNECTIONS)]
     pub rpc_max_connections: u32,
 
-    /// The number of messages the RPC server is allowed to keep in memory.
-    ///
-    /// If the buffer becomes full then the server will not process
-    /// new messages until the connected client start reading the
-    /// underlying messages.
-    ///
-    /// This applies per connection which includes both
-    /// JSON-RPC methods calls and subscriptions.
+    /// The maximum number of messages that can be kept in memory at a given time, per connection.
+    /// The server enforces backpressure, and this buffering is useful when the client cannot keep up with our server.
     #[arg(long, default_value_t = RPC_DEFAULT_MESSAGE_CAPACITY_PER_CONN)]
     pub rpc_message_buffer_capacity_per_connection: u32,
 
-    /// Disable RPC batch requests
+    /// Disable RPC batch requests.
     #[arg(long, alias = "rpc_no_batch_requests", conflicts_with_all = &["rpc_max_batch_request_len"])]
     pub rpc_disable_batch_requests: bool,
 
-    /// Limit the max length per RPC batch request
+    /// Limit the max length per RPC batch requests.
     #[arg(long, conflicts_with_all = &["rpc_disable_batch_requests"], value_name = "LEN")]
     pub rpc_max_batch_request_len: Option<u32>,
 
-    /// Specify browser *origins* allowed to access the HTTP & WS RPC servers.
+    /// Specify browser *origins* allowed to access the HTTP & WebSocket RPC servers.
     ///
-    /// A comma-separated list of origins (protocol://domain or special `null`
-    /// value). Value of `all` will disable origin validation. Default is to
-    /// allow localhost and <https://polkadot.js.org> origins. When running in
-    /// `--dev` mode the default is to allow all origins.
+    /// For most purposes, an origin can be thought of as just `protocol://domain`.
+    /// By default, only browser requests from localhost will work.
+    ///
+    /// This argument is a comma separated list of origins, or the special `null` value.
+    ///
+    /// Learn more about CORS and web security at <https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS>.
     #[arg(long, value_name = "ORIGINS")]
     pub rpc_cors: Option<Cors>,
 }
@@ -180,13 +176,13 @@ impl RpcParams {
     }
 
     pub fn addr(&self) -> SocketAddr {
-        let interface = if self.rpc_external {
+        let listen_addr = if self.rpc_external {
             Ipv4Addr::UNSPECIFIED // listen on 0.0.0.0
         } else {
             Ipv4Addr::LOCALHOST
         };
 
-        SocketAddr::new(interface.into(), self.rpc_port)
+        SocketAddr::new(listen_addr.into(), self.rpc_port)
     }
 
     pub fn batch_config(&self) -> BatchRequestConfig {

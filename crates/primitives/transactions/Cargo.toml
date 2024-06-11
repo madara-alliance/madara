@@ -14,7 +14,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 blockifier = { workspace = true }
 indexmap = { workspace = true }
 mp-felt = { workspace = true }
-mp-hashers = { workspace = true }
 starknet-core = { workspace = true }
 starknet-crypto = { workspace = true }
 starknet-ff = { workspace = true }

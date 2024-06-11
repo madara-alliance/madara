@@ -1,9 +1,5 @@
 [package]
-authors = [
-  "Kasar <https://github.com/kasarlabs>",
-  "KSS <https://github.com/keep-starknet-strange>",
-  "Substrate DevHub <https://github.com/substrate-developer-hub>",
-]
+authors = ["Kasar <https://github.com/kasarlabs>"]
 description = "Deoxys node"
 edition.workspace = true
 homepage = "https://github.com/kasarlabs/deoxys"
@@ -27,10 +23,9 @@ log = { workspace = true }
 mc-telemetry = { workspace = true }
 tokio = { workspace = true }
 
-prometheus-endpoint = { workspace = true }
-
 # Starknet
 mc-db = { workspace = true }
+mc-metrics = { workspace = true }
 mc-rpc = { workspace = true }
 starknet-core = { workspace = true }
 
@@ -38,12 +33,12 @@ starknet-core = { workspace = true }
 primitive-types = { workspace = true }
 
 #Deoxys
-deoxys-tui = { optional = true, path = "../tui" }
 mc-sync = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }
 
 anyhow.workspace = true
+chrono = "0.4.38"
 env_logger = "0.11.3"
 forwarded-header-value = "0.1.1"
 governor.workspace = true
@@ -58,4 +53,3 @@ tower.workspace = true
 [features]
 default = []
 sound = ["mc-sync/m"]
-tui = ["deoxys-tui"]

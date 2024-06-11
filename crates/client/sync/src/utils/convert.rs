@@ -22,7 +22,6 @@ use starknet_providers::sequencer::models::state_update::{
     DeclaredContract, DeployedContract, StateDiff as StateDiffProvider, StorageDiff as StorageDiffProvider,
 };
 use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
-use starknet_types_core::felt::Felt;
 
 use crate::commitments::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
@@ -42,7 +41,7 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock
     let event_count = events.len() as u128;
 
     let ((transaction_commitment, txs_hashes), event_commitment) =
-        commitments(&transactions, &events, block_number, chain_id);
+        calculate_tx_and_event_commitments(&transactions, &events, chain_id.into(), block_number);
 
     // Provisory conversion while Starknet-api doesn't support the universal `Felt` type
     let transaction_commitment = Felt252Wrapper::from(transaction_commitment).into();
@@ -70,7 +69,7 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock
         extra_data,
     };
 
-    let computed_block_hash: FieldElement = header.hash::<mp_hashers::pedersen::PedersenHasher>().into();
+    let computed_block_hash: FieldElement = Felt252Wrapper::from(header.hash()).into();
     // mismatched block hash is allowed for blocks 1466..=2242
     if computed_block_hash != block_hash && !(1466..=2242).contains(&block_number) {
         return Err(L2SyncError::MismatchedBlockHash(block_number));
@@ -408,18 +407,6 @@ fn event(event: &p::Event) -> starknet_api::transaction::Event {
             data: EventData(event.data.iter().copied().map(felt).collect()),
         },
     }
-}
-
-fn commitments(
-    transactions: &[starknet_api::transaction::Transaction],
-    events: &[starknet_api::transaction::Event],
-    block_number: u64,
-    chain_id: StarkFelt,
-) -> ((Felt, Vec<Felt>), Felt) {
-    let ((commitment_tx, txs_hashes), commitment_event) =
-        calculate_tx_and_event_commitments(transactions, events, chain_id.into(), block_number);
-
-    ((commitment_tx, txs_hashes), commitment_event)
 }
 
 fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {

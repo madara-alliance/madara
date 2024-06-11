@@ -10,9 +10,8 @@ use ethers::types::{Address, BlockNumber as EthBlockNumber, Filter, TransactionR
 use ethers::utils::hex::decode;
 use futures::stream::StreamExt;
 use mc_db::{DeoxysBackend, WriteBatchWithTransaction};
-use mp_felt::Felt252Wrapper;
+use mp_felt::{trim_hash, Felt252Wrapper};
 use primitive_types::H256;
-use prometheus_endpoint::prometheus::core::Number;
 use reqwest::Url;
 use serde::Deserialize;
 use serde_json::Value;
@@ -140,11 +139,7 @@ impl EthereumClient {
 
     /// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
     /// verified state
-    pub async fn listen_and_update_state(
-        &self,
-        start_block: u64,
-        block_metrics: Option<BlockMetrics>,
-    ) -> anyhow::Result<()> {
+    pub async fn listen_and_update_state(&self, start_block: u64, block_metrics: BlockMetrics) -> anyhow::Result<()> {
         let client = self.provider.clone();
         let address: Address = self.l1_core_address;
         abigen!(
@@ -170,17 +165,15 @@ impl EthereumClient {
 }
 
 /// Update the L1 state with the latest data
-pub fn update_l1(state_update: L1StateUpdate, block_metrics: Option<BlockMetrics>) -> anyhow::Result<()> {
+pub fn update_l1(state_update: L1StateUpdate, block_metrics: BlockMetrics) -> anyhow::Result<()> {
     log::info!(
-        "🔄 Updated L1 head: Number: #{}, Hash: {}, Root: {}",
+        "🔄 Updated L1 head #{} ({}) with state root ({})",
         state_update.block_number,
-        state_update.block_hash,
-        state_update.global_root
+        trim_hash(&Felt252Wrapper::from(state_update.block_hash)),
+        trim_hash(&Felt252Wrapper::from(state_update.global_root))
     );
 
-    if let Some(block_metrics) = block_metrics {
-        block_metrics.l1_block_number.set(state_update.block_number.into_f64());
-    }
+    block_metrics.l1_block_number.set(state_update.block_number as f64);
 
     let mut tx = WriteBatchWithTransaction::default();
     DeoxysBackend::mapping()
@@ -226,7 +219,7 @@ pub fn update_l1(state_update: L1StateUpdate, block_metrics: Option<BlockMetrics
 // }
 
 /// Syncronize with the L1 latest state updates
-pub async fn sync(l1_url: Url, block_metrics: Option<BlockMetrics>, l1_core_address: Address) -> anyhow::Result<()> {
+pub async fn sync(l1_url: Url, block_metrics: BlockMetrics, l1_core_address: Address) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     {
         let mut tx = WriteBatchWithTransaction::default();

@@ -159,6 +159,7 @@ impl MappingDb {
         let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
         let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
         let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
+        let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
         let meta = self.db.get_column(Column::BlockStorageMeta);
 
         let block_hash_encoded = codec::Encode::encode(block.block_hash())?;
@@ -169,7 +170,8 @@ impl MappingDb {
         }
 
         tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
-        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(&block)?);
+        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(block.info()));
+        tx.put_cf(&block_n_to_block_inner, &block_n_encoded, bincode::serialize(block.inner())?);
         tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
 
         self.write_no_pending(tx)

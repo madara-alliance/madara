@@ -48,6 +48,7 @@ starknet_api = { workspace = true }
 bitvec = { workspace = true }
 bonsai-trie = { workspace = true }
 mc-db = { workspace = true }
+mc-metrics = { workspace = true }
 mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-convert = { workspace = true }
@@ -55,7 +56,6 @@ mp-felt = { workspace = true }
 mp-hashers = { workspace = true }
 mp-transactions = { workspace = true }
 num-traits = { workspace = true }
-prometheus-endpoint = { workspace = true }
 rayon = { workspace = true }
 starknet-types-core = { workspace = true }
 thiserror.workspace = true
