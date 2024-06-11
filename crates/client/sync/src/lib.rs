@@ -35,7 +35,7 @@ pub mod starknet_sync_worker {
         l1_core_address: ethers::abi::Address,
         starting_block: Option<u64>,
         backup_every_n_blocks: Option<u64>,
-        block_metrics: Option<BlockMetrics>,
+        block_metrics: BlockMetrics,
         chain_id: Felt,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<()> {

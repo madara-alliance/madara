@@ -1,4 +1,5 @@
 use anyhow::Context;
+use mc_metrics::MetricsRegistry;
 use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::metrics::block_metrics::BlockMetrics;
 use mc_telemetry::TelemetryHandle;
@@ -16,7 +17,7 @@ pub struct SyncService {
     l1_endpoint: Url,
     l1_core_address: H160,
     starting_block: Option<u64>,
-    block_metrics: Option<BlockMetrics>,
+    block_metrics: BlockMetrics,
     chain_id: Felt,
     start_params: Option<TelemetryHandle>,
 }
@@ -24,9 +25,10 @@ pub struct SyncService {
 impl SyncService {
     pub fn new(
         config: &SyncParams,
-        block_metrics: Option<BlockMetrics>,
+        metrics_handle: MetricsRegistry,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
+        let block_metrics = BlockMetrics::register(&metrics_handle)?;
         Ok(Self {
             fetch_config: config.block_fetch_config(),
             l1_endpoint: config.l1_endpoint.clone(),

@@ -3,14 +3,14 @@ use clap::Args;
 /// Parameters used to config telemetry.
 #[derive(Debug, Clone, Args)]
 pub struct TelemetryParams {
-    /// Disable connecting to the Substrate telemetry server.
-    /// Telemetry is on by default on global chains.
+    /// Disable connecting to the Deoxys telemetry server.
+    /// Telemetry is enable by default.
     #[arg(long)]
     pub no_telemetry: bool,
 
-    /// The URL of the telemetry server to connect to.
-    /// This flag can be passed multiple times as a means to specify multiple
-    /// telemetry endpoints. Verbosity levels range from 0-9, with 0 denoting
+    /// The URL of the telemetry server.
+    /// Pass this flag multiple times specify multiple telemetry endpoints.
+    /// Verbosity levels range from 0-9, with 0 denoting
     /// the least verbosity.
     /// Expected format is 'URL VERBOSITY', e.g. `--telemetry-url 'wss://foo/bar 0'`.
     #[arg(

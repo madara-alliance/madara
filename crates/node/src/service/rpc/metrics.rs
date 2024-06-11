@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use jsonrpsee::types::Request;
 use jsonrpsee::MethodResponse;
-use prometheus_endpoint::{register, Counter, CounterVec, HistogramOpts, HistogramVec, Opts, Registry, U64};
+use mc_metrics::{Counter, CounterVec, HistogramOpts, HistogramVec, MetricsRegistry, Opts, PrometheusError, U64};
 
 /// Histogram time buckets in microseconds.
 const HISTOGRAM_BUCKETS: [f64; 11] =
@@ -28,53 +28,33 @@ pub struct RpcMetrics {
 
 impl RpcMetrics {
     /// Create an instance of metrics
-    pub fn new(metrics_registry: Option<&Registry>) -> anyhow::Result<Option<Self>> {
-        if let Some(metrics_registry) = metrics_registry {
-            Ok(Some(Self {
-                calls_time: register(
-                    HistogramVec::new(
-                        HistogramOpts::new("rpc_calls_time", "Total time [μs] of processed RPC calls")
-                            .buckets(HISTOGRAM_BUCKETS.to_vec()),
-                        &["protocol", "method", "is_rate_limited"],
-                    )?,
-                    metrics_registry,
-                )?,
-                calls_started: register(
-                    CounterVec::new(
-                        Opts::new("rpc_calls_started", "Number of received RPC calls (unique un-batched requests)"),
-                        &["protocol", "method"],
-                    )?,
-                    metrics_registry,
-                )?,
-                calls_finished: register(
-                    CounterVec::new(
-                        Opts::new("rpc_calls_finished", "Number of processed RPC calls (unique un-batched requests)"),
-                        &["protocol", "method", "is_error", "is_rate_limited"],
-                    )?,
-                    metrics_registry,
-                )?,
-                ws_sessions_opened: register(
-                    Counter::new("rpc_sessions_opened", "Number of persistent RPC sessions opened")?,
-                    metrics_registry,
-                )?
+    pub fn register(registry: &MetricsRegistry) -> Result<Self, PrometheusError> {
+        Ok(Self {
+            calls_time: registry.register(HistogramVec::new(
+                HistogramOpts::new("rpc_calls_time", "Total time [μs] of processed RPC calls")
+                    .buckets(HISTOGRAM_BUCKETS.to_vec()),
+                &["protocol", "method", "is_rate_limited"],
+            )?)?,
+            calls_started: registry.register(CounterVec::new(
+                Opts::new("rpc_calls_started", "Number of received RPC calls (unique un-batched requests)"),
+                &["protocol", "method"],
+            )?)?,
+            calls_finished: registry.register(CounterVec::new(
+                Opts::new("rpc_calls_finished", "Number of processed RPC calls (unique un-batched requests)"),
+                &["protocol", "method", "is_error", "is_rate_limited"],
+            )?)?,
+            ws_sessions_opened: registry
+                .register(Counter::new("rpc_sessions_opened", "Number of persistent RPC sessions opened")?)?
                 .into(),
-                ws_sessions_closed: register(
-                    Counter::new("rpc_sessions_closed", "Number of persistent RPC sessions closed")?,
-                    metrics_registry,
-                )?
+            ws_sessions_closed: registry
+                .register(Counter::new("rpc_sessions_closed", "Number of persistent RPC sessions closed")?)?
                 .into(),
-                ws_sessions_time: register(
-                    HistogramVec::new(
-                        HistogramOpts::new("rpc_sessions_time", "Total time [s] for each websocket session")
-                            .buckets(HISTOGRAM_BUCKETS.to_vec()),
-                        &["protocol"],
-                    )?,
-                    metrics_registry,
-                )?,
-            }))
-        } else {
-            Ok(None)
-        }
+            ws_sessions_time: registry.register(HistogramVec::new(
+                HistogramOpts::new("rpc_sessions_time", "Total time [s] for each websocket session")
+                    .buckets(HISTOGRAM_BUCKETS.to_vec()),
+                &["protocol"],
+            )?)?,
+        })
     }
 
     pub(crate) fn ws_connect(&self) {

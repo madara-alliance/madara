@@ -209,8 +209,8 @@ pub fn to_contract_class_cairo(
     let entry_points_by_type = to_legacy_entry_points_by_type(&entry_points_by_type)?;
     // Here we order the program passing it to a wrapper of BTreeMaps in order to always obtain the same
     // result due to HashMap disruptions
-    let ordered_program = order_program(&contract_class.program);
-    let compressed_program = compress(&serialize_program(&ordered_program)?)?;
+    // let ordered_program = order_program(&contract_class.program);
+    let compressed_program = compress(&contract_class.program.serialize()?)?;
     let encoded_program = base64::encode(compressed_program);
     Ok(ContractClassCore::Legacy(CompressedLegacyContractClass {
         program: encoded_program.into(),
@@ -342,9 +342,6 @@ use starknet_core::types::{
     LegacyStructAbiEntry, LegacyStructAbiType, LegacyStructMember, LegacyTypedParameter,
 };
 use starknet_types_core::felt::Felt;
-
-use crate::storage_handler::primitives::program::order_program;
-use crate::storage_handler::primitives::program_serializer::serialize_program;
 
 // Wrapper Class conversion
 

@@ -83,7 +83,7 @@ async fn l2_verify_and_apply_task(
     mut updates_receiver: mpsc::Receiver<L2ConvertedBlockAndUpdates>,
     verify: bool,
     backup_every_n_blocks: Option<u64>,
-    block_metrics: Option<BlockMetrics>,
+    block_metrics: BlockMetrics,
     starting_block: u64,
     sync_timer: Arc<Mutex<Option<Instant>>>,
     telemetry: TelemetryHandle,
@@ -150,7 +150,7 @@ async fn l2_verify_and_apply_task(
             // &mut command_sink,
             block_n,
             starting_block,
-            block_metrics.as_ref(),
+            &block_metrics,
             sync_timer.clone(),
         )
         .await?;
@@ -301,7 +301,7 @@ pub struct L2SyncConfig {
 pub async fn sync(
     provider: SequencerGatewayProvider,
     config: L2SyncConfig,
-    block_metrics: Option<BlockMetrics>,
+    block_metrics: BlockMetrics,
     starting_block: u64,
     chain_id: Felt,
     telemetry: TelemetryHandle,
@@ -353,29 +353,27 @@ pub async fn sync(
 async fn update_sync_metrics(
     block_number: u64,
     starting_block: u64,
-    block_metrics: Option<&BlockMetrics>,
+    block_metrics: &BlockMetrics,
     sync_timer: Arc<Mutex<Option<Instant>>>,
 ) -> anyhow::Result<()> {
     // Update Block sync time metrics
-    if let Some(block_metrics) = block_metrics {
-        let elapsed_time;
-        {
-            let mut timer_guard = sync_timer.lock().unwrap();
-            if let Some(start_time) = *timer_guard {
-                elapsed_time = start_time.elapsed().as_secs_f64();
-                *timer_guard = Some(Instant::now());
-            } else {
-                // For the first block, there is no previous timer set
-                elapsed_time = 0.0;
-                *timer_guard = Some(Instant::now());
-            }
+    let elapsed_time;
+    {
+        let mut timer_guard = sync_timer.lock().unwrap();
+        if let Some(start_time) = *timer_guard {
+            elapsed_time = start_time.elapsed().as_secs_f64();
+            *timer_guard = Some(Instant::now());
+        } else {
+            // For the first block, there is no previous timer set
+            elapsed_time = 0.0;
+            *timer_guard = Some(Instant::now());
         }
-
-        let sync_time = block_metrics.l2_sync_time.get() + elapsed_time;
-        block_metrics.l2_sync_time.set(sync_time);
-        block_metrics.l2_latest_sync_time.set(elapsed_time);
-        block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / (block_number - starting_block) as f64);
     }
+
+    let sync_time = block_metrics.l2_sync_time.get() + elapsed_time;
+    block_metrics.l2_sync_time.set(sync_time);
+    block_metrics.l2_latest_sync_time.set(elapsed_time);
+    block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / (block_number - starting_block) as f64);
 
     Ok(())
 }

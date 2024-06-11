@@ -2,6 +2,10 @@
 
 ## Next release
 
+- refactor: massive Felt252Wrapper removal
+- fix: re-add prometheus, doc cli args, log format
+- fix(program): Changed visibility of program serializer + archived
+- fix(classes): remove the classes ordenation to allow fork rebasements
 - fix(felt): enforce Felt type as much as possible into compute_hash.rs
 - fix(logs): fixed some logs and others
 - fix(rpc): fixed block storage column
