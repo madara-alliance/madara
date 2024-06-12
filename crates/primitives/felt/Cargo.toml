@@ -1,5 +1,5 @@
 [package]
-name = "mp-felt"
+name = "dp-felt"
 version.workspace = true
 edition.workspace = true
 license = "MIT"

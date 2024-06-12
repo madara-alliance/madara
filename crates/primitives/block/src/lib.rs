@@ -2,8 +2,8 @@
 
 mod header;
 mod ordered_events;
+use dp_felt::FeltWrapper;
 pub use header::Header;
-use mp_felt::FeltWrapper;
 pub use ordered_events::*;
 use starknet_api::block::BlockHash;
 use starknet_api::transaction::{Transaction, TransactionHash};

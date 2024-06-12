@@ -9,8 +9,8 @@ mod service;
 mod util;
 
 use cli::RunCmd;
-use mc_metrics::MetricsService;
-use mc_telemetry::{SysInfo, TelemetryService};
+use dc_metrics::MetricsService;
+use dc_telemetry::{SysInfo, TelemetryService};
 use service::{DatabaseService, RpcService, SyncService};
 use tokio::task::JoinSet;
 

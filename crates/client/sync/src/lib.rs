@@ -18,9 +18,9 @@ use starknet_types_core::felt::Felt;
 
 pub mod starknet_sync_worker {
     use anyhow::Context;
-    use mc_db::DeoxysBackend;
-    use mc_telemetry::TelemetryHandle;
-    use mp_felt::FeltWrapper;
+    use dc_db::DeoxysBackend;
+    use dc_telemetry::TelemetryHandle;
+    use dp_felt::FeltWrapper;
     use reqwest::Url;
     use starknet_providers::SequencerGatewayProvider;
 
@@ -45,7 +45,7 @@ pub mod starknet_sync_worker {
             starting_block
         } else {
             DeoxysBackend::mapping()
-                .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+                .get_block_n(&dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
                 .context("getting sync tip")?
                 .unwrap_or_default() as _
         };

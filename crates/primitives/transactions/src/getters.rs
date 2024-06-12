@@ -1,6 +1,6 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use mp_convert::core_felt::CoreFelt;
+use dp_convert::core_felt::CoreFelt;
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 
@@ -30,9 +30,7 @@ impl Getters for AccountTransaction {
     fn signature(&self) -> Vec<Felt> {
         match self {
             AccountTransaction::Declare(tx) => tx.tx.signature().0.iter().map(|x| x.into_core_felt()).collect(),
-            AccountTransaction::DeployAccount(tx) => {
-                tx.tx.signature().0.iter().map(|x| x.into_core_felt()).collect()
-            }
+            AccountTransaction::DeployAccount(tx) => tx.tx.signature().0.iter().map(|x| x.into_core_felt()).collect(),
             AccountTransaction::Invoke(tx) => tx.tx.signature().0.iter().map(|x| x.into_core_felt()).collect(),
         }
     }
@@ -43,17 +41,15 @@ impl Getters for AccountTransaction {
             AccountTransaction::DeployAccount(tx) => {
                 Some(tx.tx.constructor_calldata().0.iter().map(|x| x.into_core_felt()).collect())
             }
-            AccountTransaction::Invoke(tx) => {
-                Some(tx.tx.calldata().0.iter().map(|x| x.into_core_felt()).collect())
-            }
+            AccountTransaction::Invoke(tx) => Some(tx.tx.calldata().0.iter().map(|x| x.into_core_felt()).collect()),
         }
     }
 
     fn nonce(&self) -> Option<Felt> {
         match self {
-            AccountTransaction::Declare(tx) => Some( tx.tx.nonce().into_core_felt() ),
-            AccountTransaction::DeployAccount(tx) => Some( tx.tx.nonce().into_core_felt() ),
-            AccountTransaction::Invoke(tx) => Some( tx.tx.nonce().into_core_felt() ),
+            AccountTransaction::Declare(tx) => Some(tx.tx.nonce().into_core_felt()),
+            AccountTransaction::DeployAccount(tx) => Some(tx.tx.nonce().into_core_felt()),
+            AccountTransaction::Invoke(tx) => Some(tx.tx.nonce().into_core_felt()),
         }
     }
 

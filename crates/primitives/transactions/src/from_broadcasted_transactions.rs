@@ -15,10 +15,12 @@ use cairo_lang_starknet_classes::contract_class::{
 };
 use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
+use dp_felt::{Felt252Wrapper, FeltWrapper};
 use flate2::read::GzDecoder;
-use mp_felt::{Felt252Wrapper, FeltWrapper};
 use num_bigint::{BigInt, BigUint, Sign};
-use starknet_api::core::{calculate_contract_address, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce};
+use starknet_api::core::{
+    calculate_contract_address, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce,
+};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{self as stx, ContractAddressSalt};
@@ -38,7 +40,7 @@ use starknet_types_core::felt::Felt;
 
 use crate::compute_hash::ComputeTransactionHash;
 
-const CONTRACT_ADDRESS_ERROR : &str = "expected contract address";
+const CONTRACT_ADDRESS_ERROR: &str = "expected contract address";
 
 #[derive(Debug, thiserror::Error)]
 pub enum BroadcastedTransactionConversionError {
@@ -135,7 +137,8 @@ fn declare_to_account_transaction(
                 ),
                 nonce: Nonce(nonce.into_stark_felt()),
                 class_hash: ClassHash(class_hash.into_stark_felt()),
-                sender_address: ContractAddress::try_from(sender_address.into_stark_felt()).expect("expected contract address"),
+                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                    .expect("expected contract address"),
             });
 
             // TODO: defaulted chain id
@@ -180,7 +183,8 @@ fn declare_to_account_transaction(
                 ),
                 nonce: Nonce(nonce.into_stark_felt()),
                 class_hash: ClassHash(contract_class.class_hash().into_stark_felt()),
-                sender_address: ContractAddress::try_from(sender_address.into_stark_felt()).expect("expected contract address"),
+                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                    .expect("expected contract address"),
                 compiled_class_hash: CompiledClassHash(compiled_class_hash.into_stark_felt()),
             });
 
@@ -232,7 +236,8 @@ fn declare_to_account_transaction(
                     signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 nonce: Nonce(nonce.into_stark_felt()),
-                sender_address: ContractAddress::try_from(sender_address.into_stark_felt()).expect(CONTRACT_ADDRESS_ERROR),
+                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                    .expect(CONTRACT_ADDRESS_ERROR),
                 class_hash,
                 compiled_class_hash: CompiledClassHash(compiled_class_hash.into_stark_felt()),
                 resource_bounds: core_resources_to_api_resources(resource_bounds),
@@ -284,7 +289,8 @@ fn invoke_to_account_transaction(
                     signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 nonce: Nonce(nonce.into_stark_felt()),
-                sender_address: ContractAddress::try_from(sender_address.into_stark_felt()).expect(CONTRACT_ADDRESS_ERROR),
+                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                    .expect(CONTRACT_ADDRESS_ERROR),
                 calldata: stx::Calldata(
                     calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
                 ),
@@ -314,7 +320,8 @@ fn invoke_to_account_transaction(
                     signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 nonce: Nonce(nonce.into_stark_felt()),
-                sender_address: ContractAddress::try_from(sender_address.into_stark_felt()).expect(CONTRACT_ADDRESS_ERROR),
+                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                    .expect(CONTRACT_ADDRESS_ERROR),
                 calldata: stx::Calldata(
                     calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
                 ),

@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use mc_db::storage_handler;
-use mp_felt::FeltWrapper;
-use mp_transactions::TxType;
+use dc_db::storage_handler;
+use dp_felt::FeltWrapper;
+use dp_transactions::TxType;
 use starknet_api::core::ContractAddress;
 use starknet_core::types::{
     ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
@@ -21,21 +21,14 @@ pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_
         .l2_to_l1_messages
         .iter()
         .enumerate()
-        .map(|(index, message)| 
-            starknet_core::types::OrderedMessage {
-                order: index as u64,
-                payload: message
-                    .message
-                    .payload
-                    .0
-                    .iter()
-                    .map(|x| x.into_field_element())
-                    .collect(),
-                to_address: FieldElement::from_byte_slice_be(message.message.to_address.0.to_fixed_bytes().as_slice())
-                    .unwrap(),
-                from_address: call_info.call.storage_address.into_field_element()
-            }
-        ).collect()
+        .map(|(index, message)| starknet_core::types::OrderedMessage {
+            order: index as u64,
+            payload: message.message.payload.0.iter().map(|x| x.into_field_element()).collect(),
+            to_address: FieldElement::from_byte_slice_be(message.message.to_address.0.to_fixed_bytes().as_slice())
+                .unwrap(),
+            from_address: call_info.call.storage_address.into_field_element(),
+        })
+        .collect()
 }
 
 fn blockifier_to_starknet_rs_ordered_events(

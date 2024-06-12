@@ -3,7 +3,7 @@ use core::num::NonZeroU128;
 use blockifier::block::{BlockInfo, GasPrices};
 use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
 use blockifier::versioned_constants::VersionedConstants;
-use mp_convert::core_felt::CoreFelt;
+use dp_convert::core_felt::CoreFelt;
 use primitive_types::U256;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::core::{ChainId, ContractAddress};

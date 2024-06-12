@@ -1,5 +1,5 @@
 [package]
-name = "mc-telemetry"
+name = "dc-telemetry"
 version.workspace = true
 edition.workspace = true
 description = "Deoxys telemetry service"

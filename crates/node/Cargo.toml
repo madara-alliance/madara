@@ -18,15 +18,15 @@ name = "deoxys"
 
 [dependencies]
 clap = { workspace = true, features = ["derive"] }
+dc-telemetry = { workspace = true }
 futures = { workspace = true, features = ["thread-pool"] }
 log = { workspace = true }
-mc-telemetry = { workspace = true }
 tokio = { workspace = true }
 
 # Starknet
-mc-db = { workspace = true }
-mc-metrics = { workspace = true }
-mc-rpc = { workspace = true }
+dc-db = { workspace = true }
+dc-metrics = { workspace = true }
+dc-rpc = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
@@ -35,7 +35,7 @@ starknet-types-core = { workspace = true }
 primitive-types = { workspace = true }
 
 #Deoxys
-mc-sync = { workspace = true }
+dc-sync = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }
 
@@ -54,4 +54,4 @@ tower.workspace = true
 
 [features]
 default = []
-sound = ["mc-sync/m"]
+sound = ["dc-sync/m"]

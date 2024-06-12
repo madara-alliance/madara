@@ -1,5 +1,5 @@
 [package]
-name = "mp-transactions"
+name = "dp-transactions"
 version.workspace = true
 edition.workspace = true
 license = "MIT"
@@ -15,9 +15,9 @@ blockifier = { workspace = true }
 cairo-lang-starknet-classes = { workspace = true }
 cairo-lang-utils = { workspace = true }
 cairo-vm = { workspace = true }
+dp-felt = { workspace = true }
 flate2 = { workspace = true }
 indexmap = { workspace = true }
-mp-felt = { workspace = true }
 num-bigint = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -27,7 +27,7 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 thiserror = { workspace = true }
 
-mp-convert = { workspace = true }
+dp-convert = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }

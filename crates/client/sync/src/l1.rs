@@ -3,22 +3,24 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
+use dc_db::{DeoxysBackend, WriteBatchWithTransaction};
+use dp_convert::core_felt::CoreFelt;
+use dp_felt::FeltWrapper;
 use ethers::contract::{abigen, EthEvent};
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::types::transaction::eip2718::TypedTransaction;
 use ethers::types::{Address, BlockNumber as EthBlockNumber, Filter, TransactionRequest, I256, U256, U64};
 use ethers::utils::hex::decode;
 use futures::stream::StreamExt;
-use mc_db::{DeoxysBackend, WriteBatchWithTransaction};
-use mp_felt::{trim_hash, Felt252Wrapper};
 use primitive_types::H256;
 use reqwest::Url;
 use serde::Deserialize;
 use serde_json::Value;
-use starknet_api::hash::StarkHash;
+use starknet_api::hash::{StarkFelt, StarkHash};
+use starknet_types_core::felt::Felt;
 
 use crate::metrics::block_metrics::BlockMetrics;
-use crate::utility::convert_log_state_update;
+use crate::utility::{convert_log_state_update, trim_hash};
 use crate::utils::channel_wait_or_graceful_shutdown;
 use crate::utils::constant::LOG_STATE_UPDTATE_TOPIC;
 
@@ -109,23 +111,23 @@ impl EthereumClient {
     }
 
     /// Get the last Starknet state root verified on L1
-    pub async fn get_last_state_root(&self) -> Result<StarkHash> {
+    pub async fn get_last_state_root(&self) -> Result<StarkFelt> {
         let data = decode("9588eca2")?;
         let to: Address = self.l1_core_address;
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last state root");
-        Ok(StarkHash::from(Felt252Wrapper::from_hex_be(&result.to_string()).expect("Failed to parse state root")))
+        Ok(Felt::from_hex_unchecked(&result.to_string()).into_stark_felt())
     }
 
     /// Get the last Starknet block hash verified on L1
-    pub async fn get_last_block_hash(&self) -> Result<StarkHash> {
+    pub async fn get_last_block_hash(&self) -> Result<StarkFelt> {
         let data = decode("0x382d83e3")?;
         let to: Address = self.l1_core_address;
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last block hash");
-        Ok(StarkHash::from(Felt252Wrapper::from_hex_be(&result.to_string()).expect("Failed to parse block hash")))
+        Ok(Felt::from_hex_unchecked(&result.to_string()).into_stark_felt())
     }
 
     /// Get the last Starknet state update verified on the L1
@@ -169,8 +171,8 @@ pub fn update_l1(state_update: L1StateUpdate, block_metrics: BlockMetrics) -> an
     log::info!(
         "🔄 Updated L1 head #{} ({}) with state root ({})",
         state_update.block_number,
-        trim_hash(&Felt252Wrapper::from(state_update.block_hash)),
-        trim_hash(&Felt252Wrapper::from(state_update.global_root))
+        trim_hash(&state_update.block_hash.into_core_felt()),
+        trim_hash(&state_update.global_root.into_core_felt())
     );
 
     block_metrics.l1_block_number.set(state_update.block_number as f64);

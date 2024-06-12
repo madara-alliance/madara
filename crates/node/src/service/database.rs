@@ -1,5 +1,5 @@
 use anyhow::Context;
-use mc_db::{DBDropHook, DeoxysBackend};
+use dc_db::{DBDropHook, DeoxysBackend};
 
 use crate::cli::DbParams;
 

@@ -4,18 +4,18 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use anyhow::{bail, Context};
+use dc_db::mapping_db::MappingDbError;
+use dc_db::rocksdb::WriteBatchWithTransaction;
+use dc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
+use dc_db::storage_handler::DeoxysStorageError;
+use dc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
+use dc_db::DeoxysBackend;
+use dc_telemetry::{TelemetryHandle, VerbosityLevel};
+use dp_block::Header;
+use dp_block::{BlockId, BlockTag, DeoxysBlock};
+use dp_convert::core_felt::CoreFelt;
+use dp_felt::FeltWrapper;
 use futures::{stream, StreamExt};
-use mc_db::mapping_db::MappingDbError;
-use mc_db::rocksdb::WriteBatchWithTransaction;
-use mc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
-use mc_db::storage_handler::DeoxysStorageError;
-use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
-use mc_db::DeoxysBackend;
-use mc_telemetry::{TelemetryHandle, VerbosityLevel};
-use mp_block::Header;
-use mp_block::{BlockId, BlockTag, DeoxysBlock};
-use mp_convert::core_felt::CoreFelt;
-use mp_felt::{trim_hash, FeltWrapper};
 use num_traits::FromPrimitive;
 use starknet_core::types::StateUpdate;
 use starknet_providers::sequencer::models::StateUpdateWithBlock;
@@ -31,6 +31,7 @@ use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::metrics::block_metrics::BlockMetrics;
 use crate::stopwatch_end;
+use crate::utility::trim_hash;
 use crate::utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
 
 /// Prefer this compared to [`tokio::spawn_blocking`], as spawn_blocking creates new OS threads and
@@ -163,8 +164,8 @@ async fn l2_verify_and_apply_task(
         log::info!(
             "✨ Imported #{} ({}) and updated state root ({})",
             block_n,
-            trim_hash(&block_hash.into()),
-            trim_hash(&global_state_root.into())
+            trim_hash(&block_hash.into_core_felt()),
+            trim_hash(&global_state_root.into_core_felt())
         );
         log::debug!(
             "Imported #{} ({:#x}) and updated state root ({:#x})",

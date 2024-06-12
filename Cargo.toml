@@ -9,7 +9,6 @@ members = [
   "crates/primitives/block",
   "crates/primitives/convert",
   "crates/primitives/felt",
-  "crates/primitives/program-hash",
   "crates/primitives/transactions",
 ]
 resolver = "2"
@@ -24,7 +23,6 @@ default-members = [
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/felt",
-  "crates/primitives/program-hash",
   "crates/primitives/transactions",
 ]
 
@@ -66,20 +64,20 @@ bonsai-trie = { default-features = false, git = "https://github.com/keep-starkne
 ] }
 
 # Deoxys primtitives
-mp-block = { path = "crates/primitives/block" }
-mp-convert = { path = "crates/primitives/convert" }
-mp-felt = { path = "crates/primitives/felt" }
-mp-program-hash = { path = "crates/primitives/program-hash" }
-mp-sequencer-address = { path = "crates/primitives/sequencer-address" }
-mp-simulations = { path = "crates/primitives/simulations" }
-mp-transactions = { path = "crates/primitives/transactions" }
+dp-block = { path = "crates/primitives/block", default-features = false }
+dp-convert = { path = "crates/primitives/convert", default-features = false }
+dp-felt = { path = "crates/primitives/felt", default-features = false }
+dp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
+dp-simulations = { path = "crates/primitives/simulations", default-features = false }
+dp-transactions = { path = "crates/primitives/transactions", default-features = false }
+dp-types = { path = "crates/primitives/types", default-features = false }
 
 # Deoxys client
-mc-telemetry = { path = "crates/client/telemetry" }
-mc-db = { path = "crates/client/db" }
-mc-rpc = { path = "crates/client/rpc" }
-mc-sync = { path = "crates/client/sync" }
-mc-metrics = { path = "crates/client/metrics" }
+dc-telemetry = { path = "crates/client/telemetry" }
+dc-db = { path = "crates/client/db" }
+dc-rpc = { path = "crates/client/rpc" }
+dc-sync = { path = "crates/client/sync" }
+dc-metrics = { path = "crates/client/metrics" }
 
 # Starknet dependencies
 # Cairo Virtual Machine
