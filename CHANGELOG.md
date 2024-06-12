@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(l1): added l1 free rpc url if none is provided
 - cleanup: clean DB statics
 - refactor: improve compatibility without forks
 - fix(metrics): fixed some metrics endpoints

@@ -177,22 +177,28 @@ pub fn update_l1(
     state_update: L1StateUpdate,
     block_metrics: BlockMetrics,
 ) -> anyhow::Result<()> {
-    log::info!(
-        "🔄 Updated L1 head #{} ({}) with state root ({})",
-        state_update.block_number,
-        trim_hash(&state_update.block_hash.into_core_felt()),
-        trim_hash(&state_update.global_root.into_core_felt())
-    );
+    // This is a provisory check to avoid updating the state with an L1StateUpdate that should not have been detected
+    //
+    // TODO: Remove this check when the L1StateUpdate is properly verified
+    if state_update.block_number > 500000u64 {
+        log::info!(
+            "🔄 Updated L1 head #{} ({}) with state root ({})",
+            state_update.block_number,
+            trim_hash(&state_update.block_hash.into_core_felt()),
+            trim_hash(&state_update.global_root.into_core_felt())
+        );
 
-    block_metrics.l1_block_number.set(state_update.block_number as f64);
+        block_metrics.l1_block_number.set(state_update.block_number as f64);
 
-    let mut tx = WriteBatchWithTransaction::default();
-    backend
-        .mapping()
-        .write_last_confirmed_block(&mut tx, state_update.block_number)
-        .context("setting l1 last confirmed block number")?;
-    backend.expose_db().write(tx).context("writing pending block to db")?;
-    log::debug!("update_l1: wrote last confirmed block number");
+        let mut tx = WriteBatchWithTransaction::default();
+        backend
+            .mapping()
+            .write_last_confirmed_block(&mut tx, state_update.block_number)
+            .context("setting l1 last confirmed block number")?;
+        backend.expose_db().write(tx).context("writing pending block to db")?;
+        log::debug!("update_l1: wrote last confirmed block number");
+    }
+
     Ok(())
 }
 

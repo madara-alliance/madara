@@ -5855,7 +5855,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.10.0"
-source = "git+https://github.com/kasarlabs/starknet-api?branch=feature/scale-codec#0b2633d5acf7c2e4e4688bf0235ca9b15dc805a7"
+source = "git+https://github.com/kasarlabs/starknet-api?branch=feature/scale-codec#4311390268d65f660ff40ec291e09e6f58e88e60"
 dependencies = [
  "cairo-lang-starknet-classes 2.6.0",
  "derive_more",
