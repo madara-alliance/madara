@@ -82,9 +82,7 @@ impl ToAccountTransaction for BroadcastedTransaction {
 
 #[inline]
 fn fee_from_field(fee: FieldElement) -> stx::Fee {
-    let as_u128 = u128::try_from(fee)
-        .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
-        .unwrap(); 
+    let as_u128 = u128::try_from(fee).map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig).unwrap();
 
     stx::Fee(as_u128)
 }
