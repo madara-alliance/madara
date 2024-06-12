@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor: wip removing all 252felt
 - fest: store reverted txs hashes
 - feat(l1): added l1 free rpc url if none is provided
 - cleanup: clean DB statics
