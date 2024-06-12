@@ -216,7 +216,7 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                         .iter()
                         .map(|x| Felt252Wrapper::from(*x).into())
                         .collect::<Vec<FieldElement>>(),
-                    contract_address: Felt252Wrapper::from(contract_address.0).into(),
+                    contract_address: (*contract_address.0.key()).into(),
                     entry_point_selector: Felt252Wrapper::from(entry_point_selector.0).into(),
                     calldata: calldata.0.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<FieldElement>>(),
                 }),

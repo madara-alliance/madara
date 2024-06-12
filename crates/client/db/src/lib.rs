@@ -142,6 +142,8 @@ pub enum Column {
     /// Meta column for block storage (sync tip, pending block)
     BlockStorageMeta,
 
+    RevertedTxs,
+
     /// Contract class hash to class data
     ContractClassData,
 
@@ -204,6 +206,7 @@ impl Column {
             TxHashToBlockN,
             BlockHashToBlockN,
             BlockStorageMeta,
+            RevertedTxs,
             ContractClassData,
             ContractToClassHashes,
             ContractToNonces,
@@ -232,6 +235,7 @@ impl Column {
             TxHashToBlockN => "tx_hash_to_block_n",
             BlockHashToBlockN => "block_hash_to_block_n",
             BlockStorageMeta => "block_storage_meta",
+            RevertedTxs => "reverted_txs",
             BonsaiContractsTrie => "bonsai_contracts_trie",
             BonsaiContractsFlat => "bonsai_contracts_flat",
             BonsaiContractsLog => "bonsai_contracts_log",
