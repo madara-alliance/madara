@@ -1,11 +1,11 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use anyhow::Context;
+use dp_utils::{wait_or_graceful_shutdown, StopHandle};
 use hyper::{
     service::{make_service_fn, service_fn},
     Body, Request, Response, Server, StatusCode,
 };
-use dp_utils::{wait_or_graceful_shutdown, StopHandle};
 use prometheus::{core::Collector, Encoder, TextEncoder};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
 

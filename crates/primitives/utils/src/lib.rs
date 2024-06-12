@@ -45,8 +45,7 @@ pub async fn channel_wait_or_graceful_shutdown<T>(future: impl Future<Output = O
     wait_or_graceful_shutdown(future).await?
 }
 
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StopHandle(Option<oneshot::Sender<()>>);
 
 impl StopHandle {

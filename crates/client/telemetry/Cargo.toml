@@ -13,9 +13,9 @@ repository = "https://github.com/kasarlabs/deoxys"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
-dp-utils = { workspace = true }
 anyhow.workspace = true
 chrono = "0.4.35"
+dp-utils = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true, default-features = true }
 reqwest = { workspace = true }

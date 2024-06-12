@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use dc_db::storage_handler::primitives::contract_class::{ContractClassData, ContractClassWrapper};
 use dc_db::storage_handler::{DeoxysStorageError, StorageView};
+use dc_db::DeoxysBackend;
 use dp_block::DeoxysBlock;
 use dp_convert::state_update::ToStateUpdateCore;
-use itertools::Itertools;
-use dc_db::DeoxysBackend;
 use dp_utils::{stopwatch_end, PerfStopwatch};
+use itertools::Itertools;
 use starknet_api::core::ClassHash;
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
