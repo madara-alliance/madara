@@ -1,4 +1,3 @@
-use starknet_types_core::felt::Felt;
 use std::vec::Vec;
 
 use dp_felt::FeltWrapper;
@@ -23,7 +22,7 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     sender_address,
                 }) => starknet_core::types::DeclareTransaction::V0(starknet_core::types::DeclareTransactionV0 {
                     transaction_hash,
-                    max_fee: Felt::from(max_fee.0).into_field_element(),
+                    max_fee: FieldElement::from(max_fee.0),
                     signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
                     class_hash: class_hash.0.into_field_element(),
                     sender_address: sender_address.0.into_field_element(),
@@ -37,7 +36,7 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     ..
                 }) => starknet_core::types::DeclareTransaction::V1(starknet_core::types::DeclareTransactionV1 {
                     transaction_hash,
-                    max_fee: Felt::from(max_fee.0).into_field_element(),
+                    max_fee: FieldElement::from(max_fee.0),
                     signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
                     nonce: nonce.into_field_element(),
                     class_hash: class_hash.into_field_element(),
@@ -53,7 +52,7 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     ..
                 }) => starknet_core::types::DeclareTransaction::V2(starknet_core::types::DeclareTransactionV2 {
                     transaction_hash,
-                    max_fee: Felt::from(max_fee.0).into_field_element(),
+                    max_fee: FieldElement::from(max_fee.0),
                     signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
                     nonce: nonce.into_field_element(),
                     class_hash: class_hash.into_field_element(),
@@ -111,7 +110,7 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                 }) => starknet_core::types::DeployAccountTransaction::V1(
                     starknet_core::types::DeployAccountTransactionV1 {
                         transaction_hash,
-                        max_fee: Felt::from(max_fee.0).into_field_element(),
+                        max_fee: FieldElement::from(max_fee.0),
                         signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
                         nonce: nonce.into_field_element(),
                         contract_address_salt: contract_address_salt.0.into_field_element(),
@@ -187,7 +186,7 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     calldata,
                 }) => starknet_core::types::InvokeTransaction::V0(starknet_core::types::InvokeTransactionV0 {
                     transaction_hash,
-                    max_fee: Felt::from(max_fee.0).into_field_element(),
+                    max_fee: FieldElement::from(max_fee.0),
                     signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
                     contract_address: contract_address.into_field_element(),
                     entry_point_selector: entry_point_selector.0.into_field_element(),
@@ -202,7 +201,7 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     ..
                 }) => starknet_core::types::InvokeTransaction::V1(starknet_core::types::InvokeTransactionV1 {
                     transaction_hash,
-                    max_fee: Felt::from(max_fee.0).into_field_element(),
+                    max_fee: FieldElement::from(max_fee.0),
                     signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
                     nonce: nonce.into_field_element(),
                     sender_address: sender_address.into_field_element(),

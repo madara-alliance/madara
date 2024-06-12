@@ -15,7 +15,7 @@ use cairo_lang_starknet_classes::contract_class::{
 };
 use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
-use dp_felt::{Felt252Wrapper, FeltWrapper};
+use dp_felt::FeltWrapper;
 use flate2::read::GzDecoder;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_api::core::{
@@ -82,12 +82,9 @@ impl ToAccountTransaction for BroadcastedTransaction {
 
 #[inline]
 fn fee_from_field(fee: FieldElement) -> stx::Fee {
-    // let as_u8x32 = fee.to_bytes_be();
-    // let as_u128 = u8x32_to_u128(as_u8x32)
-
-    let as_u128 = u128::try_from(Felt252Wrapper::from(fee))
+    let as_u128 = u128::try_from(fee)
         .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
-        .unwrap();
+        .unwrap(); 
 
     stx::Fee(as_u128)
 }
