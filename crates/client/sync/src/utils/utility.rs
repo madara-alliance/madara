@@ -9,6 +9,7 @@ use rand::thread_rng;
 use reqwest::Client;
 use serde_json::Value;
 use starknet_api::hash::StarkFelt;
+use thiserror::Error;
 
 use crate::l1::{L1StateUpdate, LogStateUpdate};
 
@@ -86,31 +87,62 @@ pub fn convert_log_state_update(log_state_update: LogStateUpdate) -> anyhow::Res
     Ok(L1StateUpdate { block_number, global_root, block_hash })
 }
 
-async fn l1_free_rpc_check(url: &str) -> Result<u128, Box<dyn std::error::Error>> {
-    let client = Client::new();
-    let start = Instant::now();
-    let response = client.get(url).send().await?;
-    if response.status().is_success() {
-        Ok(start.elapsed().as_millis())
-    } else {
-        Ok(u128::MAX)
-    }
+#[derive(Error, Debug)]
+pub enum RpcError {
+    #[error("HTTP request failed for L1 Free RPC check")]
+    HttpRequest(#[from] reqwest::Error),
+    #[error("No suitable L1 Free RPC Url found")]
+    NoSuitableUrl,
 }
 
-pub async fn l1_free_rpc_get() -> Result<&'static str, Box<dyn std::error::Error>> {
-    let mut best_url = None;
-    let mut best_latency = u128::MAX;
+struct RpcChecker {
+    client: Client,
+    urls: &'static [&'static str],
+    best_url: Option<&'static str>,
+    best_latency: u128,
+}
 
-    for &url in L1_FREE_RPC_URLS.iter() {
-        match l1_free_rpc_check(url).await {
-            Ok(latency) if latency < best_latency => {
-                best_latency = latency;
-                best_url = Some(url);
-            }
-            Ok(_) => {}
-            Err(_) => {}
+impl RpcChecker {
+    fn new(urls: &'static [&'static str]) -> Self {
+        RpcChecker {
+            client: Client::new(),
+            urls,
+            best_url: None,
+            best_latency: u128::MAX,
         }
     }
 
-    best_url.ok_or_else(|| "No suitable RPC URL found".into())
+    async fn l1_free_rpc_check(&self, url: &str) -> Result<u128, RpcError> {
+        let start = Instant::now();
+        let response = self.client.get(url).send().await?;
+        if response.status().is_success() {
+            Ok(start.elapsed().as_millis())
+        } else {
+            Ok(u128::MAX)
+        }
+    }
+
+    async fn l1_free_rpc_best(&mut self) -> Result<&'static str, RpcError> {
+        for &url in self.urls.iter() {
+            match self.l1_free_rpc_check(url).await {
+                Ok(latency) if latency < self.best_latency => {
+                    log::info!("New best URL found: {} with latency {} ms", url, latency);
+                    self.best_latency = latency;
+                    self.best_url = Some(url);
+                }
+                Ok(latency) => {
+                    log::info!("URL {} has latency {} ms, which is not better than the current best {} ms", url, latency, self.best_latency);
+                }
+                Err(e) => {
+                    log::warn!("Failed to check latency for URL {}: {:?}", url, e);
+                }
+            }
+        }
+        self.best_url.ok_or(RpcError::NoSuitableUrl)
+    }
+}
+
+pub async fn l1_free_rpc_get() -> Result<&'static str, RpcError> {
+    let mut rpc_checker = RpcChecker::new(L1_FREE_RPC_URLS);
+    rpc_checker.l1_free_rpc_best().await
 }

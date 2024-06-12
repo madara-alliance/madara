@@ -35,7 +35,7 @@ impl SyncService {
         );
         Ok(Self {
             fetch_config: config.block_fetch_config(),
-            l1_endpoint: config.l1_endpoint.clone().unwrap(),
+            l1_endpoint: l1_endpoint,
             l1_core_address: config.network.l1_core_address(),
             starting_block: config.starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
