@@ -674,7 +674,7 @@ mod serde_contract_class {
             }
         }
 
-        const FIELDS: & [&str] = &["version", "program", "entry_points_by_type"];
+        const FIELDS: &[&str] = &["version", "program", "entry_points_by_type"];
         deserializer.deserialize_struct("ContractClassBlockifier", FIELDS, ContractClassBlockifierVisitor)
     }
 }
