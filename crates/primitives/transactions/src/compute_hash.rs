@@ -459,7 +459,6 @@ impl ComputeTransactionHash for L1HandlerTransaction {
         let calldata_hash = Pedersen::hash_array(calldata_tdp_bis);
 
         let nonce = self.nonce.into_core_felt();
-        let chain_id = chain_id.into();
 
         if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && block_number.is_some() {
             TransactionHash(StarkFelt::new_unchecked(
