@@ -585,9 +585,22 @@ impl From<AbiTypedParameterWrapper> for LegacyTypedParameter {
 }
 
 mod serde_contract_class {
+
     use super::*;
-    use serde::ser::SerializeStruct;
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    #[derive(Serialize, Deserialize)]
+    enum ContractClassBlockifierWrapper {
+        V0(ContractClassBlockifierV0Wrapper),
+        //    V1(ContractClassBlockifierV0Wrapper),
+    }
+    #[derive(Serialize, Deserialize)]
+    struct ContractClassBlockifierV0Wrapper {
+        program: Vec<u8>,
+        entry_points_by_type: HashMap<EntryPointType, Vec<EntryPoint>>,
+    }
 
     pub fn serialize<S>(contract_class: &ContractClassBlockifier, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -595,13 +608,15 @@ mod serde_contract_class {
     {
         match contract_class {
             ContractClassBlockifier::V0(contract) => {
-                let mut state = serializer.serialize_struct("ContractClassBlockifier", 3)?;
-                state.serialize_field("version", "V0")?;
-                state.serialize_field("program", &serde_bytes::Bytes::new(&contract.program.serialize().unwrap()))?;
-                state.serialize_field("entry_points_by_type", &contract.entry_points_by_type)?;
-                state.end()
+                let contract_class = ContractClassBlockifierWrapper::V0(ContractClassBlockifierV0Wrapper {
+                    program: contract.0.program.serialize().unwrap(),
+                    entry_points_by_type: contract.0.entry_points_by_type.clone(),
+                });
+                contract_class.serialize(serializer)
             }
-            ContractClassBlockifier::V1(contract) => unimplemented!("V1 serialization not implemented"),
+            ContractClassBlockifier::V1(contract) => {
+                unimplemented!("V1 serialization not implemented")
+            }
         }
     }
 
@@ -609,72 +624,14 @@ mod serde_contract_class {
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "lowercase")]
-        enum Field {
-            Version,
-            Program,
-            EntryPointsByType,
-        }
-
-        struct ContractClassBlockifierVisitor;
-
-        impl<'de> serde::de::Visitor<'de> for ContractClassBlockifierVisitor {
-            type Value = ContractClassBlockifier;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("struct ContractClassBlockifier")
-            }
-
-            fn visit_map<V>(self, mut map: V) -> Result<ContractClassBlockifier, V::Error>
-            where
-                V: serde::de::MapAccess<'de>,
-            {
-                let mut version = None;
-                let mut program = None;
-                let mut entry_points_by_type = None;
-                while let Some(key) = map.next_key()? {
-                    match key {
-                        Field::Version => {
-                            if version.is_some() {
-                                return Err(serde::de::Error::duplicate_field("version"));
-                            }
-                            version = Some(map.next_value()?);
-                        }
-                        Field::Program => {
-                            if program.is_some() {
-                                return Err(serde::de::Error::duplicate_field("program"));
-                            }
-                            program = Some(map.next_value::<serde_bytes::ByteBuf>()?.into_vec());
-                        }
-                        Field::EntryPointsByType => {
-                            if entry_points_by_type.is_some() {
-                                return Err(serde::de::Error::duplicate_field("entry_points_by_type"));
-                            }
-                            entry_points_by_type = Some(map.next_value()?);
-                        }
-                    }
-                }
-                let version: String = version.ok_or_else(|| serde::de::Error::missing_field("version"))?;
-                let program: Vec<u8> = program.ok_or_else(|| serde::de::Error::missing_field("program"))?;
-                let entry_points_by_type: HashMap<EntryPointType, Vec<EntryPoint>> =
-                    entry_points_by_type.ok_or_else(|| serde::de::Error::missing_field("entry_points_by_type"))?;
-
-                match version.as_str() {
-                    "V0" => {
-                        let program = Program::deserialize(&program, None).map_err(serde::de::Error::custom)?;
-                        Ok(ContractClassBlockifier::V0(ContractClassV0(Arc::new(ContractClassV0Inner {
-                            program,
-                            entry_points_by_type,
-                        }))))
-                    }
-                    "V1" => unimplemented!("V1 deserialization not implemented"),
-                    _ => Err(serde::de::Error::unknown_variant(&version, &["V0", "V1"])),
-                }
+        let contract_class = ContractClassBlockifierWrapper::deserialize(deserializer)?;
+        match contract_class {
+            ContractClassBlockifierWrapper::V0(contract) => {
+                let program = Program::from_bytes(&contract.program, None).unwrap();
+                let entry_points_by_type = contract.entry_points_by_type;
+                let contract_class = ContractClassV0(Arc::new(ContractClassV0Inner { program, entry_points_by_type }));
+                Ok(ContractClassBlockifier::V0(contract_class))
             }
         }
-
-        const FIELDS: &[&str] = &["version", "program", "entry_points_by_type"];
-        deserializer.deserialize_struct("ContractClassBlockifier", FIELDS, ContractClassBlockifierVisitor)
     }
 }
