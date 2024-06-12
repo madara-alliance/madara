@@ -1,7 +1,7 @@
-use jsonrpsee::server::ServerHandle;
-use jsonrpsee::RpcModule;
 use dc_metrics::MetricsRegistry;
 use dc_rpc::{ChainConfig, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+use jsonrpsee::server::ServerHandle;
+use jsonrpsee::RpcModule;
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
 use tokio::task::JoinSet;
