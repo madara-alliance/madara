@@ -1,7 +1,11 @@
+use std::sync::Arc;
+
 use anyhow::Context;
+use dc_db::{DatabaseService, DeoxysBackend};
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
+use dc_sync::utility::l1_free_rpc_get;
 use dc_telemetry::TelemetryHandle;
 use primitive_types::H160;
 use starknet_types_core::felt::Felt;
@@ -12,6 +16,7 @@ use crate::cli::SyncParams;
 
 #[derive(Clone)]
 pub struct SyncService {
+    db_backend: Arc<DeoxysBackend>,
     fetch_config: FetchConfig,
     backup_every_n_blocks: Option<u64>,
     l1_endpoint: Url,
@@ -23,15 +28,23 @@ pub struct SyncService {
 }
 
 impl SyncService {
-    pub fn new(
+    pub async fn new(
         config: &SyncParams,
+        db: &DatabaseService,
         metrics_handle: MetricsRegistry,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
+        let l1_endpoint = if let Some(l1_rpc_url) = &config.l1_endpoint {
+            l1_rpc_url.clone()
+        } else {
+            let l1_rpc_url = l1_free_rpc_get().await.expect("finding the best RPC URL");
+            Url::parse(l1_rpc_url).expect("parsing the RPC URL")
+        };
         Ok(Self {
+            db_backend: Arc::clone(db.backend()),
             fetch_config: config.block_fetch_config(),
-            l1_endpoint: config.l1_endpoint.clone(),
+            l1_endpoint,
             l1_core_address: config.network.l1_core_address(),
             starting_block: config.starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
@@ -53,8 +66,10 @@ impl SyncService {
         } = self.clone();
         let telemetry = self.start_params.take().context("service already started")?;
 
+        let db_backend = Arc::clone(&self.db_backend);
         join_set.spawn(async move {
             dc_sync::starknet_sync_worker::sync(
+                &db_backend,
                 fetch_config,
                 l1_endpoint,
                 l1_core_address,

@@ -8,6 +8,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::Context;
+use dp_utils::wait_or_graceful_shutdown;
 use forwarded_header_value::ForwardedHeaderValue;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::server::conn::AddrStream;
@@ -186,14 +187,12 @@ pub async fn start_server(
     let server = hyper::Server::from_tcp(std_listener)?.serve(make_service);
 
     join_set.spawn(async move {
-        let stop_future = async move {
-            tokio::select! {
-                _ = tokio::signal::ctrl_c() => {},
-                _ = stop_handle.shutdown() => {},
-            }
-        };
-
-        server.with_graceful_shutdown(stop_future).await.context("running rpc server")
+        server
+            .with_graceful_shutdown(async {
+                wait_or_graceful_shutdown(stop_handle.shutdown()).await;
+            })
+            .await
+            .context("running rpc server")
     });
 
     log::info!(

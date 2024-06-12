@@ -10,6 +10,7 @@ members = [
   "crates/primitives/convert",
   "crates/primitives/felt",
   "crates/primitives/transactions",
+  "crates/primitives/utils",
 ]
 resolver = "2"
 # All previous except for `starknet-rpc-test` and `starknet-e2e-test`
@@ -24,6 +25,7 @@ default-members = [
   "crates/primitives/block",
   "crates/primitives/felt",
   "crates/primitives/transactions",
+  "crates/primitives/utils",
 ]
 
 [profile.dev]
@@ -52,8 +54,6 @@ rocksdb = { version = "0.21", features = [
   # "multi-threaded-cf",
 ] }
 
-# Substrate build & tools dependencies
-prometheus-endpoint = { package = "substrate-prometheus-endpoint", version = "0.10.0-dev", git = "https://github.com/kasarlabs/polkadot-sdk", branch = "release-polkadot-v1.3.0-std" }
 parity-scale-codec = { version = "3.2", default-features = false, features = [
   "std",
 ] }
@@ -71,6 +71,7 @@ dp-sequencer-address = { path = "crates/primitives/sequencer-address", default-f
 dp-simulations = { path = "crates/primitives/simulations", default-features = false }
 dp-transactions = { path = "crates/primitives/transactions", default-features = false }
 dp-types = { path = "crates/primitives/types", default-features = false }
+dp-utils = { path = "crates/primitives/utils", default-features = false }
 
 # Deoxys client
 dc-telemetry = { path = "crates/client/telemetry" }

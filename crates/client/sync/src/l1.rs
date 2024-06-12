@@ -6,6 +6,7 @@ use anyhow::{bail, Context, Result};
 use dc_db::{DeoxysBackend, WriteBatchWithTransaction};
 use dp_convert::core_felt::CoreFelt;
 use dp_felt::FeltWrapper;
+use dp_utils::channel_wait_or_graceful_shutdown;
 use ethers::contract::{abigen, EthEvent};
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::types::transaction::eip2718::TypedTransaction;
@@ -21,7 +22,6 @@ use starknet_types_core::felt::Felt;
 
 use crate::metrics::block_metrics::BlockMetrics;
 use crate::utility::{convert_log_state_update, trim_hash};
-use crate::utils::channel_wait_or_graceful_shutdown;
 use crate::utils::constant::LOG_STATE_UPDTATE_TOPIC;
 
 /// Contains the Starknet verified state on L1
@@ -141,7 +141,12 @@ impl EthereumClient {
 
     /// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
     /// verified state
-    pub async fn listen_and_update_state(&self, start_block: u64, block_metrics: BlockMetrics) -> anyhow::Result<()> {
+    pub async fn listen_and_update_state(
+        &self,
+        backend: &DeoxysBackend,
+        start_block: u64,
+        block_metrics: BlockMetrics,
+    ) -> anyhow::Result<()> {
         let client = self.provider.clone();
         let address: Address = self.l1_core_address;
         abigen!(
@@ -159,7 +164,7 @@ impl EthereumClient {
             let log = event_result.context("listening for events")?;
             let format_event =
                 convert_log_state_update(log.clone()).context("formatting event into an L1StateUpdate")?;
-            update_l1(format_event, block_metrics.clone())?;
+            update_l1(backend, format_event, block_metrics.clone())?;
         }
 
         Ok(())
@@ -167,22 +172,33 @@ impl EthereumClient {
 }
 
 /// Update the L1 state with the latest data
-pub fn update_l1(state_update: L1StateUpdate, block_metrics: BlockMetrics) -> anyhow::Result<()> {
-    log::info!(
-        "🔄 Updated L1 head #{} ({}) with state root ({})",
-        state_update.block_number,
-        trim_hash(&state_update.block_hash.into_core_felt()),
-        trim_hash(&state_update.global_root.into_core_felt())
-    );
+pub fn update_l1(
+    backend: &DeoxysBackend,
+    state_update: L1StateUpdate,
+    block_metrics: BlockMetrics,
+) -> anyhow::Result<()> {
+    // This is a provisory check to avoid updating the state with an L1StateUpdate that should not have been detected
+    //
+    // TODO: Remove this check when the L1StateUpdate is properly verified
+    if state_update.block_number > 500000u64 {
+        log::info!(
+            "🔄 Updated L1 head #{} ({}) with state root ({})",
+            state_update.block_number,
+            trim_hash(&state_update.block_hash.into_core_felt()),
+            trim_hash(&state_update.global_root.into_core_felt())
+        );
 
-    block_metrics.l1_block_number.set(state_update.block_number as f64);
+        block_metrics.l1_block_number.set(state_update.block_number as f64);
 
-    let mut tx = WriteBatchWithTransaction::default();
-    DeoxysBackend::mapping()
-        .write_last_confirmed_block(&mut tx, state_update.block_number)
-        .context("setting l1 last confirmed block number")?;
-    DeoxysBackend::expose_db().write(tx).context("writing pending block to db")?;
-    log::debug!("update_l1: wrote last confirmed block number");
+        let mut tx = WriteBatchWithTransaction::default();
+        backend
+            .mapping()
+            .write_last_confirmed_block(&mut tx, state_update.block_number)
+            .context("setting l1 last confirmed block number")?;
+        backend.expose_db().write(tx).context("writing pending block to db")?;
+        log::debug!("update_l1: wrote last confirmed block number");
+    }
+
     Ok(())
 }
 
@@ -221,14 +237,17 @@ pub fn update_l1(state_update: L1StateUpdate, block_metrics: BlockMetrics) -> an
 // }
 
 /// Syncronize with the L1 latest state updates
-pub async fn sync(l1_url: Url, block_metrics: BlockMetrics, l1_core_address: Address) -> anyhow::Result<()> {
+pub async fn sync(
+    backend: &DeoxysBackend,
+    l1_url: Url,
+    block_metrics: BlockMetrics,
+    l1_core_address: Address,
+) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     {
         let mut tx = WriteBatchWithTransaction::default();
-        DeoxysBackend::mapping()
-            .write_no_last_confirmed_block(&mut tx)
-            .context("clearing l1 last confirmed block number")?;
-        DeoxysBackend::expose_db().write(tx).context("writing pending block to db")?;
+        backend.mapping().write_no_last_confirmed_block(&mut tx).context("clearing l1 last confirmed block number")?;
+        backend.expose_db().write(tx).context("writing pending block to db")?;
         log::debug!("update_l1: cleared confirmed block number");
     }
 
@@ -238,12 +257,12 @@ pub async fn sync(l1_url: Url, block_metrics: BlockMetrics, l1_core_address: Add
 
     // Get and store the latest verified state
     let initial_state = EthereumClient::get_initial_state(&client).await.context("getting initial ethereum state")?;
-    update_l1(initial_state, block_metrics.clone())?;
+    update_l1(backend, initial_state, block_metrics.clone())?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    let start_block =
-        EthereumClient::get_last_event_block_number(&client).await.context("retrieving the last event block number")?;
-    EthereumClient::listen_and_update_state(&client, start_block, block_metrics)
+    let start_block = client.get_last_event_block_number().await.context("retrieving the last event block number")?;
+    client
+        .listen_and_update_state(backend, start_block, block_metrics)
         .await
         .context("subscribing to the LogStateUpdate event")?;
 

@@ -20,3 +20,5 @@ tokio.workspace = true
 
 hyper.workspace = true
 prometheus.workspace = true
+
+dp-utils.workspace = true

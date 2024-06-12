@@ -76,9 +76,9 @@ pub async fn get_transaction_receipt(
         .take(tx_index + 1)
         .collect();
 
-    let transactions_blockifier = blockifier_transactions(transaction_with_hash)?;
+    let transactions_blockifier = blockifier_transactions(starknet, transaction_with_hash)?;
 
-    let execution_infos = execution_infos(transactions_blockifier, &block_context)?;
+    let execution_infos = execution_infos(starknet, transactions_blockifier, &block_context)?;
 
     let receipt = receipt(starknet, transaction, &execution_infos, transaction_hash, &tx_info.storage_type)?;
 
@@ -94,6 +94,7 @@ pub async fn get_transaction_receipt(
 }
 
 pub(crate) fn execution_infos(
+    starknet: &Starknet,
     transactions: Vec<btx::Transaction>,
     block_context: &BlockContext,
 ) -> RpcResult<TransactionExecutionInfo> {
@@ -106,7 +107,7 @@ pub(crate) fn execution_infos(
     let last = transactions;
     let prev = vec![];
 
-    let execution_infos = re_execute_transactions(prev, last, block_context)
+    let execution_infos = re_execute_transactions(starknet, prev, last, block_context)
         .map_err(|e| {
             log::error!("Failed to re-execute transactions: {e}");
             StarknetRpcApiError::InternalServerError

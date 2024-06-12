@@ -1,6 +1,6 @@
 [package]
 authors = ["Kasar <https://github.com/kasarlabs>"]
-description = "Starknet RPC compatibility layer for Substrate"
+description = "Starknet RPCs for Deoxys"
 edition.workspace = true
 homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
@@ -32,6 +32,7 @@ dp-convert = { workspace = true, default-features = true }
 dp-felt = { workspace = true, default-features = true }
 dp-simulations = { workspace = true }
 dp-transactions = { workspace = true }
+dp-utils = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [

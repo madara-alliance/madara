@@ -37,7 +37,8 @@ pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> Rp
     let calldata_as_starkfelt = request.calldata.iter().map(|x| StarkFelt::from_field_element(*x)).collect();
     let calldata = Calldata(Arc::new(calldata_as_starkfelt));
 
-    let result_as_felt_vector = utils::execution::call_contract(
+    let result = utils::execution::call_contract(
+        starknet,
         ContractAddress::from_field_element(request.contract_address),
         EntryPointSelector(request.entry_point_selector.into_stark_felt()),
         calldata,
@@ -45,5 +46,5 @@ pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> Rp
     )
     .or_internal_server_error("Request parameters error")?;
 
-    Ok(result_as_felt_vector.iter().map(|x| x.to_string()).collect())
+    Ok(result.iter().map(|x| x.to_string()).collect())
 }

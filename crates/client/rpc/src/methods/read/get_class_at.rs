@@ -1,5 +1,5 @@
 use dc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
-use dc_db::storage_handler::{self, StorageView};
+use dc_db::storage_handler::StorageView;
 use dp_convert::field_element::FromFieldElement;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::ContractAddress;
@@ -36,13 +36,17 @@ pub fn get_class_at(
     let block_number = starknet.get_block_n(block_id)?;
     let key = ContractAddress::from_field_element(contract_address);
 
-    let class_hash = storage_handler::contract_class_hash()
+    let class_hash = starknet
+        .backend
+        .contract_class_hash()
         .get_at(&key, block_number)
         .or_internal_server_error("Failed to retrieve contract class")?
         .ok_or(StarknetRpcApiError::ContractNotFound)?;
 
     // The class need to be stored
-    let Some(contract_class_data) = storage_handler::contract_class_data()
+    let Some(contract_class_data) = starknet
+        .backend
+        .contract_class_data()
         .get(&class_hash)
         .or_internal_server_error("Failed to retrieve contract class from hash")?
     else {

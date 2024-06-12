@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use dc_db::storage_handler;
 use dp_felt::FeltWrapper;
 use dp_transactions::TxType;
 use starknet_api::core::ContractAddress;
@@ -12,6 +11,8 @@ use starknet_core::types::{
     L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace,
 };
 use starknet_ff::FieldElement;
+
+use crate::Starknet;
 
 use super::lib::*;
 
@@ -51,6 +52,7 @@ fn blockifier_to_starknet_rs_ordered_events(
 }
 
 fn try_get_funtion_invocation_from_call_info(
+    starknet: &Starknet,
     call_info: &CallInfo,
     class_hash_cache: &mut HashMap<ContractAddress, FieldElement>,
     block_number: u64,
@@ -61,7 +63,7 @@ fn try_get_funtion_invocation_from_call_info(
     let inner_calls = call_info
         .inner_calls
         .iter()
-        .map(|call| try_get_funtion_invocation_from_call_info(call, class_hash_cache, block_number))
+        .map(|call| try_get_funtion_invocation_from_call_info(starknet, call, class_hash_cache, block_number))
         .collect::<Result<_, _>>()?;
 
     // TODO: check why this is here
@@ -93,7 +95,7 @@ fn try_get_funtion_invocation_from_call_info(
     } else {
         // Compute and cache the class hash
         let Ok(Some(class_hash)) =
-            storage_handler::contract_class_hash().get_at(&call_info.call.storage_address, block_number)
+            starknet.backend.contract_class_hash().get_at(&call_info.call.storage_address, block_number)
         else {
             return Err(TryFuntionInvocationFromCallInfoError::ContractNotFound);
         };
@@ -135,6 +137,7 @@ fn try_get_funtion_invocation_from_call_info(
 }
 
 pub fn tx_execution_infos_to_tx_trace(
+    starknet: &Starknet,
     tx_type: TxType,
     tx_exec_info: &TransactionExecutionInfo,
     block_number: u64,
@@ -163,14 +166,18 @@ pub fn tx_execution_infos_to_tx_trace(
     let validate_invocation = tx_exec_info
         .validate_call_info
         .as_ref()
-        .map(|call_info| try_get_funtion_invocation_from_call_info(call_info, &mut class_hash_cache, block_number))
+        .map(|call_info| {
+            try_get_funtion_invocation_from_call_info(starknet, call_info, &mut class_hash_cache, block_number)
+        })
         .transpose()?;
     // If simulated with `SimulationFlag::SkipFeeCharge` this will be `None`
     // therefore we cannot unwrap it
     let fee_transfer_invocation = tx_exec_info
         .fee_transfer_call_info
         .as_ref()
-        .map(|call_info| try_get_funtion_invocation_from_call_info(call_info, &mut class_hash_cache, block_number))
+        .map(|call_info| {
+            try_get_funtion_invocation_from_call_info(starknet, call_info, &mut class_hash_cache, block_number)
+        })
         .transpose()?;
 
     let tx_trace = match tx_type {
@@ -180,6 +187,7 @@ pub fn tx_execution_infos_to_tx_trace(
                 ExecuteInvocation::Reverted(RevertedInvocation { revert_reason: e.clone() })
             } else {
                 ExecuteInvocation::Success(try_get_funtion_invocation_from_call_info(
+                    starknet,
                     // Safe to unwrap because is only `None`  for `Declare` txs
                     tx_exec_info.execute_call_info.as_ref().unwrap(),
                     &mut class_hash_cache,
@@ -202,6 +210,7 @@ pub fn tx_execution_infos_to_tx_trace(
             TransactionTrace::DeployAccount(DeployAccountTransactionTrace {
                 validate_invocation,
                 constructor_invocation: try_get_funtion_invocation_from_call_info(
+                    starknet,
                     // Safe to unwrap because is only `None` for `Declare` txs
                     tx_exec_info.execute_call_info.as_ref().unwrap(),
                     &mut class_hash_cache,
@@ -215,6 +224,7 @@ pub fn tx_execution_infos_to_tx_trace(
         }
         TxType::L1Handler => TransactionTrace::L1Handler(L1HandlerTransactionTrace {
             function_invocation: try_get_funtion_invocation_from_call_info(
+                starknet,
                 // Safe to unwrap because is only `None` for `Declare` txs
                 tx_exec_info.execute_call_info.as_ref().unwrap(),
                 &mut class_hash_cache,

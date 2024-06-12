@@ -17,6 +17,7 @@ use dp_convert::core_felt::CoreFelt;
 use dp_felt::FeltWrapper;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
+use starknet_api::transaction::TransactionHash;
 use starknet_core::types::StateUpdate;
 use starknet_providers::sequencer::models::StateUpdateWithBlock;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
@@ -30,25 +31,10 @@ use crate::convert::convert_block;
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::metrics::block_metrics::BlockMetrics;
-use crate::stopwatch_end;
 use crate::utility::trim_hash;
-use crate::utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
-
-/// Prefer this compared to [`tokio::spawn_blocking`], as spawn_blocking creates new OS threads and
-/// we don't really need that
-async fn spawn_compute<F, R>(func: F) -> R
-where
-    F: FnOnce() -> R + Send + 'static,
-    R: Send + 'static,
-{
-    let (tx, rx) = tokio::sync::oneshot::channel();
-
-    rayon::spawn(move || {
-        let _result = tx.send(func());
-    });
-
-    rx.await.expect("tokio channel closed")
-}
+use dp_utils::{
+    channel_wait_or_graceful_shutdown, spawn_compute, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch,
+};
 
 // TODO: add more error variants, which are more explicit
 #[derive(thiserror::Error, Debug)]
@@ -69,21 +55,27 @@ pub struct L2StateUpdate {
     pub block_hash: Felt,
 }
 
-fn store_new_block(block: &DeoxysBlock) -> Result<(), DeoxysStorageError> {
+fn store_new_block(
+    backend: &DeoxysBackend,
+    block: &DeoxysBlock,
+    reverted_txs: &[TransactionHash],
+) -> Result<(), DeoxysStorageError> {
     let sw = PerfStopwatch::new();
     let mut tx = WriteBatchWithTransaction::default();
 
-    let mapping = DeoxysBackend::mapping();
-    mapping.write_new_block(&mut tx, block)?;
+    let mapping = backend.mapping();
+    mapping.write_new_block(&mut tx, block, reverted_txs)?;
 
-    let db_access = DeoxysBackend::expose_db();
+    let db_access = backend.expose_db();
     db_access.write(tx).map_err(MappingDbError::from)?;
 
     stopwatch_end!(sw, "end store_new_block {}: {:?}", block.block_n());
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn l2_verify_and_apply_task(
+    backend: Arc<DeoxysBackend>,
     mut updates_receiver: mpsc::Receiver<L2ConvertedBlockAndUpdates>,
     verify: bool,
     backup_every_n_blocks: Option<u64>,
@@ -92,7 +84,7 @@ async fn l2_verify_and_apply_task(
     sync_timer: Arc<Mutex<Option<Instant>>>,
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
-    while let Some(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update }) =
+    while let Some(L2ConvertedBlockAndUpdates { converted_block, reverted_txs, state_update, class_update }) =
         channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await
     {
         let block_n = converted_block.block_n();
@@ -102,10 +94,11 @@ async fn l2_verify_and_apply_task(
         let state_update = if verify {
             let state_update = Arc::new(state_update);
             let state_update_1 = Arc::clone(&state_update);
+            let backend = Arc::clone(&backend);
 
             let state_root = spawn_compute(move || {
                 let sw = PerfStopwatch::new();
-                let state_root = verify_l2(block_n, &state_update)?;
+                let state_root = verify_l2(&backend, block_n, &state_update)?;
                 stopwatch_end!(sw, "verify_l2: {:?}");
 
                 anyhow::Ok(state_root)
@@ -135,14 +128,14 @@ async fn l2_verify_and_apply_task(
         let storage_diffs = state_update.state_diff.storage_diffs.clone();
 
         let (r1, (r2, (r3, r4))) = rayon::join(
-            || store_new_block(&converted_block),
+            || store_new_block(&backend, &converted_block, &reverted_txs),
             || {
                 rayon::join(
-                    || store_state_update(block_n, state_update),
+                    || store_state_update(&backend, block_n, state_update),
                     || {
                         rayon::join(
-                            || store_class_update(block_n, ClassUpdateWrapper(class_update)),
-                            || store_key_update(block_n, &storage_diffs),
+                            || store_class_update(&backend, block_n, ClassUpdateWrapper(class_update)),
+                            || store_key_update(&backend, block_n, &storage_diffs),
                         )
                     },
                 )
@@ -160,7 +153,6 @@ async fn l2_verify_and_apply_task(
         )
         .await?;
 
-        DeoxysBackend::meta().set_current_sync_block(block_n).context("setting current sync block")?;
         log::info!(
             "✨ Imported #{} ({}) and updated state root ({})",
             block_n,
@@ -184,15 +176,10 @@ async fn l2_verify_and_apply_task(
             }),
         );
 
-        // compact DB every 1k blocks
-        if block_n % 1000 == 0 {
-            DeoxysBackend::compact();
-        }
-
         if backup_every_n_blocks.is_some_and(|backup_every_n_blocks| block_n % backup_every_n_blocks == 0) {
             log::info!("⏳ Backing up database at block {block_n}...");
             let sw = PerfStopwatch::new();
-            DeoxysBackend::backup().await.context("backing up database")?;
+            backend.backup().await.context("backing up database")?;
             log::info!("✅ Database backup is done ({:?})", sw.elapsed());
         }
     }
@@ -202,6 +189,7 @@ async fn l2_verify_and_apply_task(
 
 pub struct L2ConvertedBlockAndUpdates {
     pub converted_block: DeoxysBlock,
+    pub reverted_txs: Vec<TransactionHash>,
     pub state_update: StateUpdate,
     pub class_update: Vec<ContractClassData>,
 }
@@ -221,7 +209,12 @@ async fn l2_block_conversion_task(
                         let sw = PerfStopwatch::new();
                         let converted_block = convert_block(block, chain_id).context("converting block")?;
                         stopwatch_end!(sw, "convert_block: {:?}");
-                        anyhow::Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
+                        anyhow::Ok(L2ConvertedBlockAndUpdates {
+                            converted_block: converted_block.block,
+                            reverted_txs: converted_block.reverted_txs,
+                            state_update,
+                            class_update,
+                        })
                     }),
                     (updates_recv, chain_id),
                 )
@@ -240,15 +233,18 @@ async fn l2_block_conversion_task(
 }
 
 async fn l2_pending_block_task(
+    backend: Arc<DeoxysBackend>,
     sync_finished_cb: oneshot::Receiver<()>,
     provider: Arc<SequencerGatewayProvider>,
     chain_id: Felt,
 ) -> anyhow::Result<()> {
+    let backend = &backend;
+
     // clear pending status
     {
         let mut tx = WriteBatchWithTransaction::default();
-        DeoxysBackend::mapping().write_no_pending(&mut tx).context("clearing pending status")?;
-        DeoxysBackend::expose_db().write(tx).context("writing pending block to db")?;
+        backend.mapping().write_no_pending(&mut tx).context("clearing pending status")?;
+        backend.expose_db().write(tx).context("writing pending block to db")?;
         log::debug!("l2_pending_block_task: startup: wrote no pending");
     }
 
@@ -261,7 +257,7 @@ async fn l2_pending_block_task(
     let mut interval = tokio::time::interval(Duration::from_secs(2)); // TODO(cli): make interval configurable
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
-        let storage = DeoxysBackend::mapping();
+        let storage = backend.mapping();
 
         let StateUpdateWithBlock { state_update, block } = provider
             .get_state_update_with_block(starknet_providers::sequencer::models::BlockId::Pending)
@@ -280,13 +276,13 @@ async fn l2_pending_block_task(
                 .context("converting pending block")?;
             let storage_update = crate::convert::state_update(state_update);
             storage
-                .write_pending(&mut tx, &block, &storage_update)
+                .write_pending(&mut tx, &block.block, &storage_update)
                 .context("writing pending to rocksdb transaction")?;
         } else {
             storage.write_no_pending(&mut tx).context("writing no pending to rocksdb transaction")?;
         }
 
-        DeoxysBackend::expose_db().write(tx).context("writing pending block to db")?;
+        backend.expose_db().write(tx).context("writing pending block to db")?;
 
         log::debug!("l2_pending_block_task: wrote pending block");
     }
@@ -304,6 +300,7 @@ pub struct L2SyncConfig {
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
 pub async fn sync(
+    backend: &Arc<DeoxysBackend>,
     provider: SequencerGatewayProvider,
     config: L2SyncConfig,
     block_metrics: BlockMetrics,
@@ -329,6 +326,7 @@ pub async fn sync(
 
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(
+        Arc::clone(backend),
         config.first_block,
         config.n_blocks_to_sync,
         fetch_stream_sender,
@@ -338,6 +336,7 @@ pub async fn sync(
     ));
     join_set.spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender, chain_id));
     join_set.spawn(l2_verify_and_apply_task(
+        Arc::clone(backend),
         block_conv_receiver,
         config.verify,
         config.backup_every_n_blocks,
@@ -346,7 +345,7 @@ pub async fn sync(
         Arc::clone(&sync_timer),
         telemetry,
     ));
-    join_set.spawn(l2_pending_block_task(once_caught_up_cb_receiver, provider, chain_id));
+    join_set.spawn(l2_pending_block_task(Arc::clone(backend), once_caught_up_cb_receiver, provider, chain_id));
 
     while let Some(res) = join_set.join_next().await {
         res.context("task was dropped")??;
@@ -394,9 +393,9 @@ async fn update_sync_metrics(
 }
 
 /// Verify and update the L2 state according to the latest state update
-pub fn verify_l2(block_number: u64, state_update: &StateUpdate) -> anyhow::Result<Felt> {
+pub fn verify_l2(backend: &DeoxysBackend, block_number: u64, state_update: &StateUpdate) -> anyhow::Result<Felt> {
     let csd = build_commitment_state_diff(state_update);
-    let state_root = csd_calculate_state_root(csd, block_number);
+    let state_root = csd_calculate_state_root(backend, csd, block_number);
 
     Ok(state_root)
 }

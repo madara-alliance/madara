@@ -1,9 +1,11 @@
+use dc_db::DatabaseService;
 use dc_metrics::MetricsRegistry;
 use dc_rpc::{ChainConfig, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use jsonrpsee::server::ServerHandle;
 use jsonrpsee::RpcModule;
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
+use std::sync::Arc;
 use tokio::task::JoinSet;
 
 use crate::cli::{NetworkType, RpcMethods, RpcParams};
@@ -17,7 +19,12 @@ pub struct RpcService {
     server_handle: Option<ServerHandle>,
 }
 impl RpcService {
-    pub fn new(config: &RpcParams, network_type: NetworkType, metrics_handle: MetricsRegistry) -> anyhow::Result<Self> {
+    pub fn new(
+        config: &RpcParams,
+        db: &DatabaseService,
+        network_type: NetworkType,
+        metrics_handle: MetricsRegistry,
+    ) -> anyhow::Result<Self> {
         let mut rpc_api = RpcModule::new(());
 
         let (read, write, trace) = match (config.rpc_methods, config.rpc_external) {
@@ -41,13 +48,25 @@ impl RpcService {
 
         if read {
             // TODO: staring block
-            rpc_api.merge(StarknetReadRpcApiServer::into_rpc(Starknet::new(0, chain_config.clone())))?;
+            rpc_api.merge(StarknetReadRpcApiServer::into_rpc(Starknet::new(
+                Arc::clone(db.backend()),
+                0,
+                chain_config.clone(),
+            )))?;
         }
         if write {
-            rpc_api.merge(StarknetWriteRpcApiServer::into_rpc(Starknet::new(0, chain_config.clone())))?;
+            rpc_api.merge(StarknetWriteRpcApiServer::into_rpc(Starknet::new(
+                Arc::clone(db.backend()),
+                0,
+                chain_config.clone(),
+            )))?;
         }
         if trace {
-            rpc_api.merge(StarknetTraceRpcApiServer::into_rpc(Starknet::new(0, chain_config.clone())))?;
+            rpc_api.merge(StarknetTraceRpcApiServer::into_rpc(Starknet::new(
+                Arc::clone(db.backend()),
+                0,
+                chain_config.clone(),
+            )))?;
         }
 
         let metrics = RpcMetrics::register(&metrics_handle)?;

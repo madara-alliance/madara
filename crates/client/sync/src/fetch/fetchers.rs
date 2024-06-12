@@ -3,10 +3,12 @@ use core::time::Duration;
 use std::sync::Arc;
 
 use dc_db::storage_handler::primitives::contract_class::{ContractClassData, ContractClassWrapper};
-use dc_db::storage_handler::{self, DeoxysStorageError, StorageView};
+use dc_db::storage_handler::{DeoxysStorageError, StorageView};
+use dc_db::DeoxysBackend;
 use dp_block::DeoxysBlock;
 use dp_convert::state_update::ToStateUpdateCore;
 use dp_felt::FeltWrapper;
+use dp_utils::{stopwatch_end, PerfStopwatch};
 use itertools::Itertools;
 use starknet_api::core::ClassHash;
 use starknet_core::types::{
@@ -21,8 +23,6 @@ use url::Url;
 use starknet_types_core::felt::Felt;
 
 use crate::l2::L2SyncError;
-use crate::stopwatch_end;
-use crate::utils::PerfStopwatch;
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
 /// feeder.
@@ -56,6 +56,7 @@ pub struct L2BlockAndUpdates {
 }
 
 pub async fn fetch_block_and_updates(
+    backend: &DeoxysBackend,
     block_n: u64,
     provider: Arc<SequencerGatewayProvider>,
 ) -> Result<L2BlockAndUpdates, L2SyncError> {
@@ -65,7 +66,7 @@ pub async fn fetch_block_and_updates(
     let sw = PerfStopwatch::new();
     let (state_update, block) =
         retry(|| fetch_state_update_with_block(&provider, block_n), MAX_RETRY, base_delay).await?;
-    let class_update = fetch_class_update(&provider, &state_update, block_n).await?;
+    let class_update = fetch_class_update(backend, &provider, &state_update, block_n).await?;
 
     stopwatch_end!(sw, "fetching {}: {:?}", block_n);
     Ok(L2BlockAndUpdates { block_n, block, state_update, class_update })
@@ -113,7 +114,7 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig, chain_id: Felt) -> R
     };
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    Ok(crate::convert::convert_block(block, chain_id).expect("invalid genesis block"))
+    Ok(crate::convert::convert_block(block, chain_id).expect("invalid genesis block").block)
 }
 
 /// retrieves state update with block from Starknet sequencer in only one request
@@ -128,6 +129,7 @@ async fn fetch_state_update_with_block(
 
 /// retrieves class updates from Starknet sequencer
 async fn fetch_class_update(
+    backend: &DeoxysBackend,
     provider: &SequencerGatewayProvider,
     state_update: &StateUpdate,
     block_number: u64,
@@ -149,7 +151,7 @@ async fn fetch_class_update(
         )
         .chain(state_update.state_diff.deprecated_declared_classes.iter())
         .unique()
-        .filter_map(|class_hash| match is_missing_class(class_hash) {
+        .filter_map(|class_hash| match is_missing_class(backend, class_hash) {
             Ok(true) => Some(Ok(class_hash)),
             Ok(false) => None,
             Err(e) => Some(Err(e)),
@@ -196,11 +198,11 @@ async fn fetch_class(
     })
 }
 
-/// Check if a class is stored in the local Substrate db.
+/// Check if a class is stored in the db.
 ///
 /// Since a change in class definition will result in a change in class hash,
 /// this means we only need to check for class hashes in the db.
-fn is_missing_class(class_hash: &FieldElement) -> Result<bool, DeoxysStorageError> {
+fn is_missing_class(backend: &DeoxysBackend, class_hash: &FieldElement) -> Result<bool, DeoxysStorageError> {
     let class_hash = ClassHash((*class_hash).into());
-    storage_handler::contract_class_data().contains(&class_hash).map(|x| !x)
+    backend.contract_class_data().contains(&class_hash).map(|x| !x)
 }

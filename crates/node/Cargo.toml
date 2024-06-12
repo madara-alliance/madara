@@ -32,6 +32,7 @@ starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
 
 # Primitives
+dp-utils = { workspace = true }
 primitive-types = { workspace = true }
 
 #Deoxys
