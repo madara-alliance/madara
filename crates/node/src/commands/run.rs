@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use mc_sync::fetch::fetchers::{fetch_apply_genesis_block, FetchConfig};
-use mc_sync::utility::set_config;
-use mc_sync::utils::constant::starknet_core_address;
+use dc_sync::fetch::fetchers::{fetch_apply_genesis_block, FetchConfig};
+use dc_sync::utility::set_config;
+use dc_sync::utils::constant::starknet_core_address;
 use reqwest::Url;
 use sc_cli::{RunCmd, SubstrateCli};
 use sp_core::H160;

@@ -1,5 +1,5 @@
 [package]
-name = "mp-program-hash"
+name = "dp-program-hash"
 version.workspace = true
 edition.workspace = true
 license = "MIT"
@@ -13,6 +13,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Deoxys Primitives
-mp-felt = { workspace = true }
+dp-felt = { workspace = true }
 # Starknet dependencies
 starknet-ff = { workspace = true }

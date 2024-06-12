@@ -2,11 +2,11 @@
 use core::time::Duration;
 use std::sync::Arc;
 
+use dc_db::storage_handler::primitives::contract_class::{ContractClassData, ContractClassWrapper};
+use dc_db::storage_handler::{self, DeoxysStorageError, StorageView};
+use dp_block::DeoxysBlock;
+use dp_convert::state_update::ToStateUpdateCore;
 use itertools::Itertools;
-use mc_db::storage_handler::primitives::contract_class::{ContractClassData, ContractClassWrapper};
-use mc_db::storage_handler::{self, DeoxysStorageError, StorageView};
-use mp_block::DeoxysBlock;
-use mp_convert::state_update::ToStateUpdateCore;
 use starknet_api::core::ClassHash;
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
@@ -35,7 +35,7 @@ pub struct FetchConfig {
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
     /// The L1 contract core address
-    pub l1_core_address: mp_block::H160,
+    pub l1_core_address: dp_block::H160,
     /// Whether to check the root of the state update
     pub verify: bool,
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.

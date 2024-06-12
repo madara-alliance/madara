@@ -1,5 +1,5 @@
 [package]
-name = "mc-metrics"
+name = "dc-metrics"
 version.workspace = true
 edition.workspace = true
 description = "Deoxys prometheus service"

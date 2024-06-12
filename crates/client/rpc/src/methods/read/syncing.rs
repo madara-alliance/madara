@@ -1,6 +1,6 @@
+use dp_block::{BlockId, BlockTag};
+use dp_felt::FeltWrapper;
 use jsonrpsee::core::RpcResult;
-use mp_block::{BlockId, BlockTag};
-use mp_felt::FeltWrapper;
 use starknet_core::types::{SyncStatus, SyncStatusType};
 
 use crate::utils::ResultExt;
@@ -14,7 +14,7 @@ use crate::Starknet;
 ///
 /// ### Returns
 ///
-/// * `Syncing` - An Enum that can either be a `mc_rpc_core::SyncStatus` struct representing the
+/// * `Syncing` - An Enum that can either be a `dc_rpc_core::SyncStatus` struct representing the
 ///   sync status, or a `Boolean` (`false`) indicating that the node is not currently synchronizing.
 ///
 /// This is an asynchronous function due to its reliance on `sync_service.best_seen_block()`,

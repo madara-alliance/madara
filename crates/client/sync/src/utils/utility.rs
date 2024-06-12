@@ -21,7 +21,7 @@ use crate::l1::{L1StateUpdate, LogStateUpdate};
 //     CONFIG.get().expect("CONFIG not initialized").chain_id
 // }
 
-// pub fn l1_core_address() -> mp_block::H160 {
+// pub fn l1_core_address() -> dp_block::H160 {
 //     CONFIG.get().expect("CONFIG not initialized").l1_core_address
 // }
 

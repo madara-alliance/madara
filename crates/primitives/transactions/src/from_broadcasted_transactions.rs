@@ -15,8 +15,8 @@ use cairo_lang_starknet_classes::contract_class::{
 };
 use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
+use dp_felt::Felt252Wrapper;
 use flate2::read::GzDecoder;
-use mp_felt::Felt252Wrapper;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_api::core::{calculate_contract_address, EntryPointSelector};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};

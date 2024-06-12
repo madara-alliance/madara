@@ -1,8 +1,8 @@
 use anyhow::Context;
-use mc_metrics::MetricsRegistry;
-use mc_sync::fetch::fetchers::FetchConfig;
-use mc_sync::metrics::block_metrics::BlockMetrics;
-use mc_telemetry::TelemetryHandle;
+use dc_metrics::MetricsRegistry;
+use dc_sync::fetch::fetchers::FetchConfig;
+use dc_sync::metrics::block_metrics::BlockMetrics;
+use dc_telemetry::TelemetryHandle;
 use primitive_types::H160;
 use starknet_core::types::FieldElement;
 use tokio::task::JoinSet;
@@ -54,7 +54,7 @@ impl SyncService {
         let telemetry = self.start_params.take().context("service already started")?;
 
         join_set.spawn(async move {
-            mc_sync::starknet_sync_worker::sync(
+            dc_sync::starknet_sync_worker::sync(
                 fetch_config,
                 l1_endpoint,
                 l1_core_address,
