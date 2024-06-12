@@ -160,7 +160,7 @@
     "l2_gas_index": 1,
     "validate_rounding_consts": {
       "validate_block_number_rounding": 100,
-      "validate_timestamp_rounding": 3600
+      "validate_timestadp_rounding": 3600
     }
   },
   "os_resources": {

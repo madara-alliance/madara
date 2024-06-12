@@ -1,5 +1,5 @@
+use dp_felt::Felt252Wrapper;
 use jsonrpsee::core::RpcResult;
-use mp_felt::Felt252Wrapper;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{BlockId, FunctionCall};
 
@@ -34,6 +34,7 @@ pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> Rp
     let calldata = Calldata(Arc::new(request.calldata.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()));
 
     let result = utils::execution::call_contract(
+        starknet,
         Felt252Wrapper(request.contract_address).into(),
         Felt252Wrapper(request.entry_point_selector).into(),
         calldata,

@@ -9,34 +9,11 @@ use rand::thread_rng;
 use reqwest::Client;
 use serde_json::Value;
 use starknet_api::hash::StarkFelt;
+use starknet_types_core::felt::Felt;
 use thiserror::Error;
-
-use crate::l1::{L1StateUpdate, LogStateUpdate};
-
 use super::constant::L1_FREE_RPC_URLS;
 
-// static CONFIG: OnceCell<FetchConfig> = OnceCell::new();
-
-// /// this function needs to be called only once at the start of the program
-// pub fn set_config(config: &FetchConfig) {
-//     CONFIG.set(config.clone()).expect("CONFIG already initialized");
-// }
-
-// pub fn chain_id() -> FieldElement {
-//     CONFIG.get().expect("CONFIG not initialized").chain_id
-// }
-
-// pub fn l1_core_address() -> mp_block::H160 {
-//     CONFIG.get().expect("CONFIG not initialized").l1_core_address
-// }
-
-// pub fn gateway() -> Url {
-//     CONFIG.get().expect("CONFIG not initialized").gateway.clone()
-// }
-
-// pub fn feeder_gateway() -> Url {
-//     CONFIG.get().expect("CONFIG not initialized").feeder_gateway.clone()
-// }
+use crate::l1::{L1StateUpdate, LogStateUpdate};
 
 /// Returns a random Pokémon name.
 pub async fn get_random_pokemon_name() -> Result<String, Box<dyn std::error::Error>> {
@@ -49,23 +26,6 @@ pub async fn get_random_pokemon_name() -> Result<String, Box<dyn std::error::Err
     let random_pokemon = pokemon_array.choose(&mut rng).unwrap();
 
     Ok(random_pokemon["name"].as_str().unwrap().to_string())
-}
-
-/// Returns a truncated version of the given address
-pub fn format_address(address: &str) -> String {
-    let mut formatted_address = if address.starts_with("0x") { address.to_string() } else { format!("0x{}", address) };
-
-    if let Some(non_zero_index) = formatted_address[2..].find(|c: char| c != '0') {
-        formatted_address = format!("0x{}", &formatted_address[2 + non_zero_index..]);
-    }
-
-    if formatted_address.len() > 10 {
-        let start = &formatted_address[0..6];
-        let end = &formatted_address[formatted_address.len() - 4..];
-        format!("{}...{}", start, end)
-    } else {
-        formatted_address
-    }
 }
 
 pub fn u256_to_starkfelt(u256: U256) -> anyhow::Result<StarkFelt> {
@@ -154,4 +114,14 @@ impl RpcChecker {
 pub async fn l1_free_rpc_get() -> Result<&'static str, RpcError> {
     let mut rpc_checker = RpcChecker::new(L1_FREE_RPC_URLS);
     rpc_checker.l1_free_rpc_best().await
+}
+
+pub fn trim_hash(hash: &Felt) -> String {
+    let hash_str = format!("{:#x}", hash);
+    let hash_len = hash_str.len();
+
+    let prefix = &hash_str[..6 + 2];
+    let suffix = &hash_str[hash_len - 6..];
+
+    format!("{}...{}", prefix, suffix)
 }

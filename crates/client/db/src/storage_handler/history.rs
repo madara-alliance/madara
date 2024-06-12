@@ -1,5 +1,5 @@
-use std::marker::PhantomData;
 use std::ops::Deref;
+use std::{marker::PhantomData, sync::Arc};
 
 use crossbeam_skiplist::SkipMap;
 use rayon::prelude::ParallelIterator;
@@ -8,7 +8,7 @@ use rocksdb::{IteratorMode, ReadOptions, WriteBatchWithTransaction};
 use thiserror::Error;
 
 use super::{codec, DeoxysStorageError, StorageView, StorageViewMut};
-use crate::{Column, DatabaseExt, DeoxysBackend, DB};
+use crate::{Column, DatabaseExt, DB};
 
 #[derive(Debug, Error)]
 pub enum HistoryError {
@@ -16,8 +16,6 @@ pub enum HistoryError {
     RocksDBError(#[from] rocksdb::Error),
     #[error("db number format error")]
     NumberFormat,
-    #[error("value codec error: {0}")]
-    ParityCodec(#[from] parity_scale_codec::Error),
     #[error("value codec error: {0}")]
     Codec(#[from] codec::Error),
 }
@@ -87,10 +85,10 @@ pub trait AsHistoryView {
     fn column() -> Column;
 }
 
-pub struct HistoryView<R: AsHistoryView>(PhantomData<R>);
+pub struct HistoryView<R: AsHistoryView>(Arc<DB>, PhantomData<R>);
 impl<R: AsHistoryView> HistoryView<R> {
-    pub(crate) fn new() -> Self {
-        Self(PhantomData)
+    pub(crate) fn new(backend: Arc<DB>) -> Self {
+        Self(backend, PhantomData)
     }
 }
 
@@ -99,7 +97,7 @@ impl<R: AsHistoryView> StorageView for HistoryView<R> {
     type VALUE = R::T;
 
     fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
+        let db = &self.0;
         let key = R::KeyBin::from(key.clone());
         let history = History::open(R::column(), key);
 
@@ -115,7 +113,7 @@ impl<R: AsHistoryView> StorageView for HistoryView<R> {
 
 impl<R: AsHistoryView> HistoryView<R> {
     pub fn get_at(&self, key: &R::Key, block_number: u64) -> Result<Option<R::T>, DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
+        let db = &self.0;
         let key = R::KeyBin::from(key.clone());
         let history = History::open(R::column(), key);
 
@@ -125,11 +123,11 @@ impl<R: AsHistoryView> HistoryView<R> {
     }
 }
 
-#[derive(Default, Debug)]
-pub struct HistoryViewMut<R: AsHistoryView>(SkipMap<R::Key, R::T>);
+#[derive(Debug)]
+pub struct HistoryViewMut<R: AsHistoryView>(Arc<DB>, SkipMap<R::Key, R::T>);
 impl<R: AsHistoryView> HistoryViewMut<R> {
-    pub(crate) fn new() -> Self {
-        Self(Default::default())
+    pub(crate) fn new(backend: Arc<DB>) -> Self {
+        Self(backend, Default::default())
     }
 }
 
@@ -142,7 +140,7 @@ impl<R: AsHistoryView> StorageViewMut for HistoryViewMut<R> {
     /// * `key`: identifier used to inser data.
     /// * `value`: encodable data to save to the database.
     fn insert(&self, key: Self::KEY, value: Self::VALUE) -> Result<(), DeoxysStorageError> {
-        self.0.insert(key, value);
+        self.1.insert(key, value);
         Ok(())
     }
 
@@ -150,9 +148,9 @@ impl<R: AsHistoryView> StorageViewMut for HistoryViewMut<R> {
     ///
     /// * `block_number`: point in the chain at which to apply the new changes. Must be incremental
     fn commit(self, block_number: u64) -> Result<(), DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
+        let db = &self.0;
 
-        let as_vec = self.0.into_iter().collect::<Vec<_>>(); // todo: use proper datastructure that supports rayon
+        let as_vec = self.1.into_iter().collect::<Vec<_>>(); // todo: use proper datastructure that supports rayon
 
         as_vec.deref().par_chunks(1024).try_for_each(|chunk| {
             let mut batch = WriteBatchWithTransaction::<true>::default();
@@ -174,10 +172,10 @@ impl<R: AsHistoryView> StorageView for HistoryViewMut<R> {
     type VALUE = R::T;
 
     fn get(&self, key: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
-        if let Some(entry) = self.0.get(key) {
+        if let Some(entry) = self.1.get(key) {
             return Ok(Some(entry.value().clone()));
         }
-        HistoryView::<R>::new().get(key)
+        HistoryView::<R>::new(Arc::clone(&self.0)).get(key)
     }
 
     fn contains(&self, key: &Self::KEY) -> Result<bool, DeoxysStorageError> {

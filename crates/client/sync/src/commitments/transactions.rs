@@ -2,9 +2,10 @@ use bitvec::prelude::*;
 use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use mc_db::storage_handler::bonsai_identifier;
-use mp_felt::Felt252Wrapper;
-use mp_transactions::compute_hash::ComputeTransactionHash;
+use dc_db::storage_handler::bonsai_identifier;
+use dp_convert::core_felt::CoreFelt;
+use dp_felt::Felt252Wrapper;
+use dp_transactions::compute_hash::ComputeTransactionHash;
 use rayon::prelude::*;
 use starknet_api::transaction::Transaction;
 use starknet_types_core::felt::Felt;
@@ -36,14 +37,14 @@ pub fn calculate_transaction_hash_with_signature(
                 // Include signatures for Invoke transactions or for all transactions
                 let signature = invoke_tx.signature();
 
-                Pedersen::hash_array(&signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>())
+                Pedersen::hash_array(&signature.0.iter().map(CoreFelt::into_core_felt).collect::<Vec<Felt>>())
             }
             Transaction::Declare(declare_tx) => {
                 // Include signatures for Declare transactions if the block number is greater than 61394 (mainnet)
                 if include_signature {
                     let signature = declare_tx.signature();
 
-                    Pedersen::hash_array(&signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>())
+                    Pedersen::hash_array(&signature.0.iter().map(CoreFelt::into_core_felt).collect::<Vec<Felt>>())
                 } else {
                     Pedersen::hash_array(&[])
                 }
@@ -54,7 +55,7 @@ pub fn calculate_transaction_hash_with_signature(
                 if include_signature {
                     let signature = deploy_account_tx.signature();
 
-                    Pedersen::hash_array(&signature.0.iter().map(|x| Felt::from_bytes_be(&x.0)).collect::<Vec<Felt>>())
+                    Pedersen::hash_array(&signature.0.iter().map(CoreFelt::into_core_felt).collect::<Vec<Felt>>())
                 } else {
                     Pedersen::hash_array(&[])
                 }

@@ -1,6 +1,6 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use mp_felt::Felt252Wrapper;
+use dp_felt::Felt252Wrapper;
 use starknet_api::transaction::TransactionHash;
 
 use crate::TxType;

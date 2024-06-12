@@ -5,8 +5,8 @@ use std::num::NonZeroU128;
 use std::sync::Arc;
 
 use blockifier::block::GasPrices;
-use mp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use mp_felt::Felt252Wrapper;
+use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
+use dp_felt::Felt252Wrapper;
 use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
@@ -28,7 +28,7 @@ use crate::l2::L2SyncError;
 
 /// Compute heavy, this should only be called in a rayon ctx
 pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock, L2SyncError> {
-    // converts starknet_provider transactions and events to mp_transactions and starknet_api events
+    // converts starknet_provider transactions and events to dp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
     let events = events(&block.transaction_receipts);
     let parent_block_hash = felt(block.parent_block_hash);
@@ -47,12 +47,13 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock
     let transaction_commitment = Felt252Wrapper::from(transaction_commitment).into();
     let event_commitment = Felt252Wrapper::from(event_commitment).into();
     let txs_hashes: Vec<StarkFelt> = txs_hashes.into_iter().map(Felt252Wrapper::from).map(Into::into).collect();
-    let protocol_version = starknet_version(&block.starknet_version);
+
+    let protocol_version = block.starknet_version.unwrap_or_default();
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
-    let extra_data = Some(mp_block::U256::from_big_endian(&block_hash.to_bytes_be()));
+    let extra_data = Some(dp_block::U256::from_big_endian(&block_hash.to_bytes_be()));
 
-    let header = mp_block::Header {
+    let header = dp_block::Header {
         parent_block_hash,
         block_number,
         block_timestamp,
@@ -73,12 +74,12 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock
     if computed_block_hash != block_hash && !(1466..=2242).contains(&block_number) {
         return Err(L2SyncError::MismatchedBlockHash(block_number));
     }
-    let ordered_events: Vec<mp_block::OrderedEvents> = block
+    let ordered_events: Vec<dp_block::OrderedEvents> = block
         .transaction_receipts
         .iter()
         .enumerate()
         .filter(|(_, r)| !r.events.is_empty())
-        .map(|(i, r)| mp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
+        .map(|(i, r)| dp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
         .collect();
 
     let block = DeoxysBlock::new(
@@ -259,17 +260,6 @@ fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
     }
 }
 
-/// Converts a starknet version string to a felt value.
-/// If the string contains more than 31 bytes, the function panics.
-fn starknet_version(version: &Option<String>) -> Felt252Wrapper {
-    match version {
-        Some(version) => {
-            Felt252Wrapper::try_from(version.as_bytes()).expect("Failed to convert version to felt: string is too long")
-        }
-        None => Felt252Wrapper::ZERO,
-    }
-}
-
 fn fee(felt: starknet_ff::FieldElement) -> starknet_api::transaction::Fee {
     starknet_api::transaction::Fee(felt.try_into().expect("Value out of range for u128"))
 }
@@ -279,7 +269,7 @@ fn signature(signature: Vec<starknet_ff::FieldElement>) -> starknet_api::transac
 }
 
 fn contract_address(address: starknet_ff::FieldElement) -> starknet_api::core::ContractAddress {
-    starknet_api::core::ContractAddress(starknet_api::core::PatriciaKey(felt(address)))
+    starknet_api::core::ContractAddress(felt(address).try_into().unwrap())
 }
 
 fn entry_point(entry_point: starknet_ff::FieldElement) -> starknet_api::core::EntryPointSelector {

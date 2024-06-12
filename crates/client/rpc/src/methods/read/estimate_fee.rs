@@ -1,6 +1,6 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
+use dp_transactions::from_broadcasted_transactions::ToAccountTransaction;
 use jsonrpsee::core::RpcResult;
-use mp_transactions::from_broadcasted_transactions::ToAccountTransaction;
 use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
 
 use crate::errors::StarknetRpcApiError;
@@ -40,8 +40,8 @@ pub async fn estimate_fee(
 
     let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
 
-    let fee_estimates =
-        utils::execution::estimate_fee(account_transactions, validate, &block_context).map_err(|e| {
+    let fee_estimates = utils::execution::estimate_fee(starknet, account_transactions, validate, &block_context)
+        .map_err(|e| {
             log::error!("Failed to call function: {:#?}", e);
             StarknetRpcApiError::ContractError
         })?;

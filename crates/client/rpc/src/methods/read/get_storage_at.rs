@@ -1,7 +1,6 @@
+use dp_convert::field_element::FromFieldElement;
+use dp_felt::FeltWrapper;
 use jsonrpsee::core::RpcResult;
-use mc_db::storage_handler::{self};
-use mp_convert::field_element::FromFieldElement;
-use mp_felt::FeltWrapper;
 use starknet_api::core::ContractAddress;
 use starknet_api::state::StorageKey;
 use starknet_core::types::{BlockId, FieldElement};
@@ -51,7 +50,9 @@ pub fn get_storage_at(
     let key = StorageKey::from_field_element(key);
 
     // Check if the contract exists at the given address in the specified block.
-    match storage_handler::contract_class_hash()
+    match starknet
+        .backend
+        .contract_class_hash()
         .is_contract_deployed_at(&contract_address, block_number)
         .or_internal_server_error("Failed to check if contract is deployed")?
     {
@@ -59,7 +60,9 @@ pub fn get_storage_at(
         false => return Err(StarknetRpcApiError::ContractNotFound.into()),
     }
 
-    let felt = storage_handler::contract_storage()
+    let felt = starknet
+        .backend
+        .contract_storage()
         .get_at(&(contract_address, key), block_number)
         .or_internal_server_error("Failed to retrieve contract storage")?
         .unwrap_or_default();

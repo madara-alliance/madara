@@ -1,6 +1,6 @@
 use std::num::NonZeroU128;
 
-use mp_block::DeoxysBlock;
+use dp_block::DeoxysBlock;
 use starknet_core::types::{FieldElement, L1DataAvailabilityMode, ResourcePrice};
 
 pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {
@@ -44,5 +44,5 @@ pub(crate) fn l1_da_mode(block: &DeoxysBlock) -> L1DataAvailabilityMode {
 }
 
 pub(crate) fn starknet_version(block: &DeoxysBlock) -> String {
-    block.header().protocol_version.from_utf8().expect("starknet version should be a valid utf8 string")
+    block.header().protocol_version.clone()
 }

@@ -1,7 +1,7 @@
 use std::vec::Vec;
 
 /// Here we transform starknet-api transactions into starknet-core trasnactions
-use mp_felt::Felt252Wrapper;
+use dp_felt::Felt252Wrapper;
 use starknet_api::transaction::{
     DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
     DeployAccountTransactionV1, DeployAccountTransactionV3, InvokeTransaction, InvokeTransactionV0,

@@ -1,21 +1,26 @@
 use std::collections::HashMap;
 
-use mp_convert::field_element::FromFieldElement;
+use dp_convert::field_element::FromFieldElement;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
+use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate,
     StorageEntry,
 };
-use storage_handler::primitives::contract_class::{
+
+use crate::storage_handler::primitives::contract_class::{
     ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData,
 };
+use crate::storage_handler::{DeoxysStorageError, StorageViewMut};
+use crate::DeoxysBackend;
 
-use crate::storage_handler::{self, DeoxysStorageError, StorageViewMut};
-
-pub fn store_state_update(block_number: u64, state_update: StateUpdate) -> Result<(), DeoxysStorageError> {
+pub fn store_state_update(
+    backend: &DeoxysBackend,
+    block_number: u64,
+    state_update: StateUpdate,
+) -> Result<(), DeoxysStorageError> {
     let state_diff = state_update.state_diff.clone();
     let nonce_map: HashMap<ContractAddress, Nonce> = state_update
         .state_diff
@@ -23,7 +28,7 @@ pub fn store_state_update(block_number: u64, state_update: StateUpdate) -> Resul
         .into_iter()
         .map(|NonceUpdate { contract_address, nonce }| {
             (
-                ContractAddress(PatriciaKey(StarkFelt::new_unchecked(contract_address.to_bytes_be()))),
+                ContractAddress(StarkFelt::from(contract_address).try_into().unwrap()),
                 Nonce(StarkFelt::new_unchecked(nonce.to_bytes_be())),
             )
         })
@@ -33,8 +38,8 @@ pub fn store_state_update(block_number: u64, state_update: StateUpdate) -> Resul
 
     // Contract address to class hash and nonce update
     let task_1 = || {
-        let handler_contract_data_class = storage_handler::contract_class_hash_mut();
-        let handler_contract_data_nonces = storage_handler::contract_nonces_mut();
+        let handler_contract_data_class = backend.contract_class_hash_mut();
+        let handler_contract_data_nonces = backend.contract_nonces_mut();
 
         state_update
             .state_diff
@@ -76,7 +81,7 @@ pub fn store_state_update(block_number: u64, state_update: StateUpdate) -> Resul
 
     // Class hash to compiled class hash update
     let task_2 = || {
-        let handler_contract_class_hashes = storage_handler::contract_class_hashes_mut();
+        let handler_contract_class_hashes = backend.contract_class_hashes_mut();
 
         state_update
             .state_diff
@@ -96,15 +101,19 @@ pub fn store_state_update(block_number: u64, state_update: StateUpdate) -> Resul
     };
 
     // Block number to state diff update
-    let task_3 = || storage_handler::block_state_diff().insert(block_number, state_diff);
+    let task_3 = || backend.block_state_diff().insert(block_number, state_diff);
 
     let (result1, (result2, result3)) = rayon::join(task_1, || rayon::join(task_2, task_3));
 
     result1.and(result2).and(result3)
 }
 
-pub fn store_class_update(block_number: u64, class_update: ClassUpdateWrapper) -> Result<(), DeoxysStorageError> {
-    let handler_contract_class_data_mut = storage_handler::contract_class_data_mut();
+pub fn store_class_update(
+    backend: &DeoxysBackend,
+    block_number: u64,
+    class_update: ClassUpdateWrapper,
+) -> Result<(), DeoxysStorageError> {
+    let handler_contract_class_data_mut = backend.contract_class_data_mut();
 
     class_update.0.into_iter().for_each(
         |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
@@ -124,10 +133,11 @@ pub fn store_class_update(block_number: u64, class_update: ClassUpdateWrapper) -
 }
 
 pub fn store_key_update(
+    backend: &DeoxysBackend,
     block_number: u64,
     storage_diffs: &[ContractStorageDiffItem],
 ) -> Result<(), DeoxysStorageError> {
-    let handler_storage = storage_handler::contract_storage_mut();
+    let handler_storage = backend.contract_storage_mut();
 
     storage_diffs.into_par_iter().try_for_each(|ContractStorageDiffItem { address, storage_entries }| {
         let contract_address = ContractAddress::from_field_element(*address);

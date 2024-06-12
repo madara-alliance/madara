@@ -1,9 +1,9 @@
 [package]
-name = "mp-transactions"
+name = "dp-transactions"
 version.workspace = true
 edition.workspace = true
 license = "MIT"
-description = "Starknet primitives for Substrate."
+description = "Starknet primitives for Deoxys."
 authors = { workspace = true }
 repository = { workspace = true }
 
@@ -12,63 +12,22 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 blockifier = { workspace = true }
+cairo-lang-starknet-classes = { workspace = true }
+cairo-lang-utils = { workspace = true }
+cairo-vm = { workspace = true }
+dp-felt = { workspace = true }
+flate2 = { workspace = true }
 indexmap = { workspace = true }
-mp-felt = { workspace = true }
+num-bigint = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 starknet-core = { workspace = true }
-starknet-crypto = { workspace = true, features = ["alloc"] }
+starknet-crypto = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
+thiserror = { workspace = true }
 
-# Optional (client)
-cairo-lang-starknet-classes = { workspace = true, optional = true }
-cairo-lang-utils = { workspace = true, optional = true }
-cairo-vm = { workspace = true, optional = true }
-flate2 = { workspace = true, optional = true }
-num-bigint = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
-thiserror = { workspace = true, optional = true }
-
-# Other optional
-parity-scale-codec = { workspace = true, features = [
-  "derive",
-], optional = true }
-scale-info = { workspace = true, features = ["derive"], optional = true }
-serde = { workspace = true, features = ["derive"], optional = true }
+dp-convert = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
-
-[features]
-default = ["std"]
-std = [
-  "starknet-core/std",
-  "mp-felt/std",
-  # Optional
-  "parity-scale-codec?/std",
-  "scale-info?/std",
-  "serde?/std",
-  "serde_json?/std",
-  "cairo-vm?/std",
-]
-client = [
-  "std",
-  "dep:flate2",
-  "dep:cairo-lang-utils",
-  "dep:num-bigint",
-  "dep:serde_json",
-  "dep:thiserror",
-  "dep:cairo-vm",
-  "dep:cairo-lang-starknet-classes",
-]
-parity-scale-codec = [
-  "dep:parity-scale-codec",
-  "mp-felt/parity-scale-codec",
-  "starknet_api/parity-scale-codec",
-]
-scale-info = [
-  "dep:scale-info",
-  "mp-felt/scale-info",
-  "starknet_api/scale-info",
-  "blockifier/scale-info",
-]
-serde = ["dep:serde", "mp-felt/serde"]

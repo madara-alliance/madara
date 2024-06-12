@@ -1,10 +1,10 @@
 [package]
 authors = ["Kasar <https://github.com/kasarlabs>"]
-description = "Starknet RPC compatibility layer for Substrate"
+description = "Starknet RPCs for Deoxys"
 edition.workspace = true
 homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
-name = "mc-rpc"
+name = "dc-rpc"
 publish = false
 repository = "https://github.com/kasarlabs/deoxys"
 version.workspace = true
@@ -14,7 +14,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 # Deoxys client
-mc-db = { workspace = true }
+dc-db = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true, default-features = true }
@@ -26,6 +26,12 @@ starknet_api = { workspace = true, default-features = true }
 # Others
 anyhow = { workspace = true }
 cairo-vm = { workspace = true }
+dp-block = { workspace = true, default-features = true }
+dp-convert = { workspace = true, default-features = true }
+dp-felt = { workspace = true, default-features = true }
+dp-simulations = { workspace = true }
+dp-transactions = { workspace = true }
+dp-utils = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
@@ -33,12 +39,6 @@ jsonrpsee = { workspace = true, default-features = true, features = [
   "server",
 ] }
 log = { workspace = true, default-features = true }
-mp-block = { workspace = true, default-features = true }
-mp-convert = { workspace = true, default-features = true }
-mp-felt = { workspace = true, default-features = true }
-mp-simulations = { workspace = true }
-mp-transactions = { workspace = true, features = ["client"] }
-mp-types = { workspace = true }
 serde = { workspace = true, default-features = true }
 serde_with = { workspace = true }
 thiserror = { workspace = true }

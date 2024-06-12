@@ -9,9 +9,8 @@ members = [
   "crates/primitives/block",
   "crates/primitives/convert",
   "crates/primitives/felt",
-  "crates/primitives/program-hash",
   "crates/primitives/transactions",
-  "crates/primitives/types",
+  "crates/primitives/utils",
 ]
 resolver = "2"
 # All previous except for `starknet-rpc-test` and `starknet-e2e-test`
@@ -25,9 +24,8 @@ default-members = [
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/felt",
-  "crates/primitives/program-hash",
   "crates/primitives/transactions",
-  "crates/primitives/types",
+  "crates/primitives/utils",
 ]
 
 [profile.dev]
@@ -56,7 +54,6 @@ rocksdb = { version = "0.21", features = [
   # "multi-threaded-cf",
 ] }
 
-# Substrate build & tools dependencies
 parity-scale-codec = { version = "3.2", default-features = false, features = [
   "std",
 ] }
@@ -67,45 +64,50 @@ bonsai-trie = { default-features = false, git = "https://github.com/keep-starkne
 ] }
 
 # Deoxys primtitives
-mp-block = { path = "crates/primitives/block", default-features = false }
-mp-convert = { path = "crates/primitives/convert", default-features = false }
-mp-felt = { path = "crates/primitives/felt", default-features = false }
-mp-program-hash = { path = "crates/primitives/program-hash", default-features = false }
-mp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
-mp-simulations = { path = "crates/primitives/simulations", default-features = false }
-mp-transactions = { path = "crates/primitives/transactions", default-features = false }
-mp-types = { path = "crates/primitives/types", default-features = false }
+dp-block = { path = "crates/primitives/block", default-features = false }
+dp-convert = { path = "crates/primitives/convert", default-features = false }
+dp-felt = { path = "crates/primitives/felt", default-features = false }
+dp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
+dp-simulations = { path = "crates/primitives/simulations", default-features = false }
+dp-transactions = { path = "crates/primitives/transactions", default-features = false }
+dp-types = { path = "crates/primitives/types", default-features = false }
+dp-utils = { path = "crates/primitives/utils", default-features = false }
 
 # Deoxys client
-mc-telemetry = { path = "crates/client/telemetry" }
-mc-db = { path = "crates/client/db" }
-mc-rpc = { path = "crates/client/rpc" }
-mc-sync = { path = "crates/client/sync", default-features = false }
-mc-metrics = { path = "crates/client/metrics" }
+dc-telemetry = { path = "crates/client/telemetry" }
+dc-db = { path = "crates/client/db" }
+dc-rpc = { path = "crates/client/rpc" }
+dc-sync = { path = "crates/client/sync" }
+dc-metrics = { path = "crates/client/metrics" }
 
 # Starknet dependencies
 # Cairo Virtual Machine
+# cairo-vm = "=0.9.2"
 cairo-vm = { git = "https://github.com/kasarlabs/cairo-vm", branch = "feature/scale-codec", default-features = false, features = [
   "cairo-1-hints",
   "parity-scale-codec",
   "std",
 ] }
-starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
-starknet-crypto = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
-starknet-ff = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
-starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork", default-features = false }
+
+starknet-core = "0.10"
+starknet-crypto = "0.6"
+starknet-ff = "0.3"
+starknet-providers = "0.10"
 
 starknet-types-core = { version = "0.1", default-features = false, features = [
   "hash",
-  "parity-scale-codec",
 ] }
 
+# blockifier = "=0.6.0-rc.2"
 blockifier = { git = "https://github.com/kasarlabs/blockifier", branch = "feature/scale-codec-v6" }
+# starknet_api = "=0.10.0"
 starknet_api = { git = "https://github.com/kasarlabs/starknet-api", branch = "feature/scale-codec", features = [
   "testing",
   "parity-scale-codec",
 ] }
+# cairo-lang-starknet-classes = "2.6.0"
 cairo-lang-starknet-classes = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
+# cairo-lang-utils = "2.6.0"
 cairo-lang-utils = { git = "https://github.com/kasarlabs/cairo.git", branch = "feature/scale-codec" }
 
 # Ethers: using the same versions as in Anvil
@@ -141,7 +143,6 @@ primitive-types = "0.12"
 rand = "0.8"
 reqwest = { version = "0.12", features = ["json"] }
 rstest = "0.18"
-scale-info = { version = "2.10", default-features = false, features = ["std"] }
 serde = { version = "1.0", default-features = false, features = ["std"] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_with = { version = "2.3", default-features = false }
@@ -153,3 +154,8 @@ rayon = "1.10"
 crossbeam-skiplist = "0.1"
 bincode = "1.3"
 prometheus = "0.13.4"
+
+[patch.crates-io]
+starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+starknet-ff = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }

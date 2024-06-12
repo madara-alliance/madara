@@ -9,29 +9,20 @@ use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
 
-use self::block_state_diff::BlockStateDiffView;
-use self::class_trie::{ClassTrieView, ClassTrieViewMut};
-use self::contract_class_data::{ContractClassDataView, ContractClassDataViewMut};
-use self::contract_class_hashes::{ContractClassHashesView, ContractClassHashesViewMut};
-use self::contract_data::{ContractClassView, ContractClassViewMut, ContractNoncesView, ContractNoncesViewMut};
-use self::contract_storage::{ContractStorageView, ContractStorageViewMut};
-use self::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
-use self::contract_trie::{ContractTrieView, ContractTrieViewMut};
 use self::history::HistoryError;
 use crate::mapping_db::MappingDbError;
-use crate::DeoxysBackend;
 
 pub mod benchmark;
 pub mod block_state_diff;
-mod class_trie;
+pub mod class_trie;
 pub mod codec;
-mod contract_class_data;
-mod contract_class_hashes;
+pub mod contract_class_data;
+pub mod contract_class_hashes;
 pub(crate) mod contract_data;
 pub(crate) mod contract_storage;
-mod contract_storage_trie;
-mod contract_trie;
-mod history;
+pub mod contract_storage_trie;
+pub mod contract_trie;
+pub mod history;
 pub mod primitives;
 pub mod query;
 
@@ -190,90 +181,25 @@ pub trait StorageViewRevetible: StorageViewMut {
     async fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
-pub fn contract_trie_mut<'a>() -> ContractTrieViewMut<'a> {
-    ContractTrieViewMut(DeoxysBackend::bonsai_contract().write().unwrap())
-}
-
-pub fn contract_trie<'a>() -> ContractTrieView<'a> {
-    ContractTrieView(DeoxysBackend::bonsai_contract().read().unwrap())
-}
-
-pub fn contract_storage_trie_mut<'a>() -> ContractStorageTrieViewMut<'a> {
-    ContractStorageTrieViewMut(DeoxysBackend::bonsai_storage().write().unwrap())
-}
-
-pub fn contract_storage_trie<'a>() -> ContractStorageTrieView<'a> {
-    ContractStorageTrieView(DeoxysBackend::bonsai_storage().read().unwrap())
-}
-
-pub fn contract_storage_mut() -> ContractStorageViewMut {
-    ContractStorageViewMut::new()
-}
-
-pub fn contract_storage() -> ContractStorageView {
-    ContractStorageView::new()
-}
-
-pub fn class_trie_mut<'a>() -> ClassTrieViewMut<'a> {
-    ClassTrieViewMut(DeoxysBackend::bonsai_class().write().unwrap())
-}
-
-pub fn class_trie<'a>() -> ClassTrieView<'a> {
-    ClassTrieView(DeoxysBackend::bonsai_class().read().unwrap())
-}
-
-pub fn contract_class_data_mut() -> ContractClassDataViewMut {
-    ContractClassDataViewMut::default()
-}
-
-pub fn contract_class_data() -> ContractClassDataView {
-    ContractClassDataView
-}
-
-pub fn contract_class_hashes_mut() -> ContractClassHashesViewMut {
-    ContractClassHashesViewMut::default()
-}
-
-pub fn contract_class_hashes() -> ContractClassHashesView {
-    ContractClassHashesView
-}
-
-pub fn contract_class_hash() -> ContractClassView {
-    ContractClassView::new()
-}
-
-pub fn contract_class_hash_mut() -> ContractClassViewMut {
-    ContractClassViewMut::new()
-}
-
-pub fn contract_nonces() -> ContractNoncesView {
-    ContractNoncesView::new()
-}
-
-pub fn contract_nonces_mut() -> ContractNoncesViewMut {
-    ContractNoncesViewMut::new()
-}
-
-pub fn block_state_diff() -> BlockStateDiffView {
-    BlockStateDiffView
-}
-
 fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {
-    identifier.0 .0 .0.as_ref()
+    identifier.0.key().bytes()
 }
 
 fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
-    key.0 .0 .0.as_bits()[5..].to_owned()
+    let bytes = key.0.key().bytes();
+    bytes.as_bits()[5..].to_owned()
 }
 
 fn conv_contract_storage_key(key: &StorageKey) -> BitVec<u8, Msb0> {
-    key.0 .0 .0.as_bits()[5..].to_owned()
+    let bytes = key.0.key().bytes();
+    bytes.as_bits()[5..].to_owned()
 }
 
 fn conv_contract_value(value: StarkFelt) -> Felt {
-    Felt::from_bytes_be(&value.0)
+    Felt::from_bytes_be_slice(value.bytes())
 }
 
 fn conv_class_key(key: &ClassHash) -> BitVec<u8, Msb0> {
-    key.0 .0.as_bits()[5..].to_owned()
+    let bytes = key.0.bytes();
+    bytes.as_bits()[5..].to_owned()
 }

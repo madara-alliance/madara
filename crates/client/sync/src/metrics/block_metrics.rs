@@ -1,4 +1,4 @@
-use mc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
+use dc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
 
 #[derive(Clone, Debug)]
 pub struct BlockMetrics {

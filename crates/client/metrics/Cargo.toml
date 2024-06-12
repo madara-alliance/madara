@@ -1,5 +1,5 @@
 [package]
-name = "mc-metrics"
+name = "dc-metrics"
 version.workspace = true
 edition.workspace = true
 description = "Deoxys prometheus service"
@@ -14,12 +14,11 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 anyhow.workspace = true
-async-trait.workspace = true
-futures.workspace = true
-itertools.workspace = true
 log.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
 hyper.workspace = true
 prometheus.workspace = true
+
+dp-utils.workspace = true

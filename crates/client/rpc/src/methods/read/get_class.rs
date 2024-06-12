@@ -1,7 +1,7 @@
+use dc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
+use dc_db::storage_handler::StorageView;
+use dp_convert::field_element::FromFieldElement;
 use jsonrpsee::core::RpcResult;
-use mc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
-use mc_db::storage_handler::{self, StorageView};
-use mp_convert::field_element::FromFieldElement;
 use starknet_api::core::ClassHash;
 use starknet_core::types::{BlockId, ContractClass, FieldElement};
 
@@ -27,7 +27,9 @@ pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: FieldElemen
     // TODO: get class for the given block when block_number will be stored in
     // `StorageContractClassData`
 
-    let class = storage_handler::contract_class_data()
+    let class = starknet
+        .backend
+        .contract_class_data()
         .get(&class_hash)
         .or_internal_server_error("Failed to retrieve contract class")?
         .ok_or(StarknetRpcApiError::ClassHashNotFound)?;

@@ -11,12 +11,12 @@ pub mod utils;
 
 use std::sync::Arc;
 
+use dc_db::mapping_db::MappingDb;
+use dc_db::DeoxysBackend;
+use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use mc_db::mapping_db::MappingDb;
-use mc_db::DeoxysBackend;
-use mp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_core::serde::unsigned_field_element::UfeHex;
@@ -199,13 +199,14 @@ pub struct ChainConfig {
 
 /// A Starknet RPC server for Deoxys
 pub struct Starknet {
+    backend: Arc<DeoxysBackend>,
     starting_block: u64,
     chain_config: ChainConfig,
 }
 
 impl Starknet {
-    pub fn new(starting_block: u64, chain_config: ChainConfig) -> Self {
-        Self { starting_block, chain_config }
+    pub fn new(backend: Arc<DeoxysBackend>, starting_block: u64, chain_config: ChainConfig) -> Self {
+        Self { backend, starting_block, chain_config }
     }
 
     pub fn make_sequencer_provider(&self) -> SequencerGatewayProvider {
@@ -217,10 +218,10 @@ impl Starknet {
     }
 
     pub fn block_storage(&self) -> &MappingDb {
-        DeoxysBackend::mapping()
+        self.backend.mapping()
     }
 
-    pub fn get_block_info(&self, block_id: impl Into<mp_block::BlockId>) -> RpcResult<DeoxysBlockInfo> {
+    pub fn get_block_info(&self, block_id: impl Into<dp_block::BlockId>) -> RpcResult<DeoxysBlockInfo> {
         Ok(self
             .block_storage()
             .get_block_info(&block_id.into())
@@ -228,7 +229,7 @@ impl Starknet {
             .ok_or(StarknetRpcApiError::BlockNotFound)?)
     }
 
-    pub fn get_block_n(&self, block_id: impl Into<mp_block::BlockId>) -> RpcResult<u64> {
+    pub fn get_block_n(&self, block_id: impl Into<dp_block::BlockId>) -> RpcResult<u64> {
         Ok(self
             .block_storage()
             .get_block_n(&block_id.into())
@@ -236,7 +237,7 @@ impl Starknet {
             .ok_or(StarknetRpcApiError::BlockNotFound)?)
     }
 
-    pub fn get_block(&self, block_id: impl Into<mp_block::BlockId>) -> RpcResult<DeoxysBlock> {
+    pub fn get_block(&self, block_id: impl Into<dp_block::BlockId>) -> RpcResult<DeoxysBlock> {
         Ok(self
             .block_storage()
             .get_block(&block_id.into())
@@ -244,7 +245,7 @@ impl Starknet {
             .ok_or(StarknetRpcApiError::BlockNotFound)?)
     }
 
-    pub fn get_block_inner(&self, block_id: impl Into<mp_block::BlockId>) -> RpcResult<DeoxysBlockInner> {
+    pub fn get_block_inner(&self, block_id: impl Into<dp_block::BlockId>) -> RpcResult<DeoxysBlockInner> {
         Ok(self
             .block_storage()
             .get_block_inner(&block_id.into())
@@ -257,7 +258,7 @@ impl Starknet {
     }
 
     pub fn current_block_number(&self) -> RpcResult<u64> {
-        self.get_block_n(mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+        self.get_block_n(dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
     }
 
     pub fn current_spec_version(&self) -> RpcResult<String> {

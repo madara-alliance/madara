@@ -1,4 +1,3 @@
-use mc_db::DeoxysBackend;
 use starknet_providers::sequencer::models::Block as StarknetBlock;
 
 /// Check for a reorg on Starknet and fix the current state if detected.
@@ -17,18 +16,19 @@ use starknet_providers::sequencer::models::Block as StarknetBlock;
 ///
 /// ### Returns
 /// This function will return a `Bool` returning `true` if a reorg was detected and `false` if not.
-pub async fn reorg(block: StarknetBlock) -> bool {
-    let last_synced_block_hash = DeoxysBackend::meta().get_latest_block_hash_and_number().unwrap().0;
-    if block.parent_block_hash != last_synced_block_hash {
-        let mut new_lsbh = last_synced_block_hash;
-        while block.parent_block_hash != new_lsbh {
-            // 1. Remove the last synced block in the digest
-            // 2. Remove all the downloaded stuff from the state updates
-            new_lsbh = DeoxysBackend::meta().get_latest_block_hash_and_number().unwrap().0;
-        }
-        // 3. Revert the state commitment tries to the correct block number
-        true
-    } else {
-        false
-    }
+pub async fn reorg(_block: StarknetBlock) -> bool {
+    todo!()
+    // let last_synced_block_hash = DeoxysBackend::meta().get_latest_block_hash_and_number().unwrap().0;
+    // if block.parent_block_hash != last_synced_block_hash {
+    //     let mut new_lsbh = last_synced_block_hash;
+    //     while block.parent_block_hash != new_lsbh {
+    //         // 1. Remove the last synced block in the digest
+    //         // 2. Remove all the downloaded stuff from the state updates
+    //         new_lsbh = DeoxysBackend::meta().get_latest_block_hash_and_number().unwrap().0;
+    //     }
+    //     // 3. Revert the state commitment tries to the correct block number
+    //     true
+    // } else {
+    //     false
+    // }
 }
