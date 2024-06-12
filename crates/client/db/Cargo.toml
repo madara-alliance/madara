@@ -40,8 +40,7 @@ crossbeam-skiplist = { workspace = true }
 log = { workspace = true, default-features = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
-serde = { workspace = true }
-serde_bytes = "0.11"
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+indexmap = { workspace = true }
+parity-scale-codec = { version = "3.6.5", features = ["derive"]}

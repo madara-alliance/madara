@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use indexmap::IndexMap;
 use std::sync::Arc;
 
 use blockifier::execution::contract_class::{
@@ -443,7 +444,7 @@ fn instantiate_blockifier_contract_class(
     let program: Program = Program::from_bytes(&program_decompressed_bytes, None)
         .map_err(|_| BroadcastedTransactionConversionError::ProgramDeserializationFailed)?;
 
-    let mut entry_points_by_type = <HashMap<EntryPointType, Vec<EntryPoint>>>::new();
+    let mut entry_points_by_type = <IndexMap<EntryPointType, Vec<EntryPoint>>>::new();
     entry_points_by_type.insert(
         EntryPointType::Constructor,
         contract_class
@@ -453,7 +454,7 @@ fn instantiate_blockifier_contract_class(
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
                     selector: EntryPointSelector(entry_point.selector.into()),
-                    offset: EntryPointOffset(entry_point.offset as usize),
+                    offset: EntryPointOffset(entry_point.offset),
                 }
             })
             .collect::<Vec<EntryPoint>>(),
@@ -467,7 +468,7 @@ fn instantiate_blockifier_contract_class(
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
                     selector: EntryPointSelector(entry_point.selector.into()),
-                    offset: EntryPointOffset(entry_point.offset as usize),
+                    offset: EntryPointOffset(entry_point.offset),
                 }
             })
             .collect::<Vec<EntryPoint>>(),
@@ -481,7 +482,7 @@ fn instantiate_blockifier_contract_class(
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
                     selector: EntryPointSelector(entry_point.selector.into()),
-                    offset: EntryPointOffset(entry_point.offset as usize),
+                    offset: EntryPointOffset(entry_point.offset),
                 }
             })
             .collect::<Vec<EntryPoint>>(),

@@ -6,48 +6,45 @@ use anyhow::anyhow;
 use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1, EntryPointV1,
 };
+use indexmap::IndexMap;
 use cairo_vm::types::program::Program;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use mp_felt::Felt252Wrapper;
 use mp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
-use serde::{Deserialize, Serialize};
 use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
+use parity_scale_codec::{Decode, Encode};
 use starknet_core::types::{
     CompressedLegacyContractClass, ContractClass as ContractClassCore, EntryPointsByType, FlattenedSierraClass,
     FromByteArrayError, LegacyContractAbiEntry, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Encode, Decode)]
 pub struct StorageContractClassData {
-    #[serde(with = "serde_contract_class")]
     pub contract_class: ContractClassBlockifier,
     pub abi: ContractAbi,
     pub sierra_program_length: u64,
     pub abi_length: u64,
     pub block_number: u64,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct StorageContractData {
     pub class_hash: ClassHash,
     pub nonce: Nonce,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct ClassUpdateWrapper(pub Vec<ContractClassData>);
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct ContractClassData {
     pub hash: ClassHash,
     pub contract_class: ContractClassWrapper,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct ContractClassWrapper {
-    #[serde(with = "serde_contract_class")]
     pub contract: ContractClassBlockifier,
     pub abi: ContractAbi,
     pub sierra_program_length: u64,
@@ -55,7 +52,7 @@ pub struct ContractClassWrapper {
 }
 // TODO: move this somewhere more sensible? Would be a good idea to decouple
 // publicly available storage data from wrapper classes
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum ContractAbi {
     Sierra(String),
     Cairo(Option<Vec<AbiEntryWrapper>>),
@@ -71,14 +68,14 @@ impl ContractAbi {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum AbiEntryWrapper {
     Function(AbiFunctionEntryWrapper),
     Event(AbiEventEntryWrapper),
     Struct(AbiStructEntryWrapper),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct AbiFunctionEntryWrapper {
     // Function abi type
     pub r#type: AbiFunctionTypeWrapper,
@@ -92,7 +89,7 @@ pub struct AbiFunctionEntryWrapper {
     pub state_mutability: Option<AbiFunctionStateMutabilityWrapper>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct AbiEventEntryWrapper {
     /// Event abi type
     pub r#type: AbiEventTypeWrapper,
@@ -104,7 +101,7 @@ pub struct AbiEventEntryWrapper {
     pub data: Vec<AbiTypedParameterWrapper>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct AbiStructEntryWrapper {
     pub r#type: AbiStructTypeWrapper,
     pub name: String,
@@ -112,7 +109,7 @@ pub struct AbiStructEntryWrapper {
     pub members: Vec<AbiStructMemberWrapper>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct AbiStructMemberWrapper {
     /// The parameter's name
     pub name: String,
@@ -122,29 +119,29 @@ pub struct AbiStructMemberWrapper {
     pub offset: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum AbiFunctionTypeWrapper {
     Function,
     L1handler,
     Constructor,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum AbiEventTypeWrapper {
     Event,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum AbiStructTypeWrapper {
     Struct,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum AbiFunctionStateMutabilityWrapper {
     View,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct AbiTypedParameterWrapper {
     pub name: String,
     pub r#type: String,
@@ -293,12 +290,12 @@ fn to_entry_points_by_type(entries: &HashMap<EntryPointType, Vec<EntryPointV1>>)
 
 /// Returns a [IndexMap<EntryPointType, Vec<EntryPoint>>] from a
 /// [LegacyEntryPointsByType]
-fn from_legacy_entry_points_by_type(entries: &LegacyEntryPointsByType) -> HashMap<EntryPointType, Vec<EntryPoint>> {
+fn from_legacy_entry_points_by_type(entries: &LegacyEntryPointsByType) -> IndexMap<EntryPointType, Vec<EntryPoint>> {
     core::iter::empty()
         .chain(entries.constructor.iter().map(|entry| (EntryPointType::Constructor, entry)))
         .chain(entries.external.iter().map(|entry| (EntryPointType::External, entry)))
         .chain(entries.l1_handler.iter().map(|entry| (EntryPointType::L1Handler, entry)))
-        .fold(HashMap::new(), |mut map, (entry_type, entry)| {
+        .fold(IndexMap::new(), |mut map, (entry_type, entry)| {
             map.entry(entry_type).or_default().push(from_legacy_entry_point(entry));
             map
         })
@@ -308,7 +305,7 @@ fn from_legacy_entry_points_by_type(entries: &LegacyEntryPointsByType) -> HashMa
 /// (starknet-api)
 fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryPoint, FromByteArrayError> {
     let selector = entry_point.selector.0.into();
-    let offset = entry_point.offset.0 as u64;
+    let offset = entry_point.offset.0;
     Ok(LegacyContractEntryPoint { selector, offset })
 }
 
@@ -324,7 +321,7 @@ fn to_entry_point(entry_point: EntryPointV1, index: u64) -> Result<SierraEntryPo
 /// (starknet-rs)
 fn from_legacy_entry_point(entry_point: &LegacyContractEntryPoint) -> EntryPoint {
     let selector = EntryPointSelector(StarkFelt::new_unchecked(entry_point.selector.to_bytes_be()));
-    let offset = EntryPointOffset(entry_point.offset as usize);
+    let offset = EntryPointOffset(entry_point.offset);
     EntryPoint { selector, offset }
 }
 
@@ -581,57 +578,5 @@ impl From<LegacyTypedParameter> for AbiTypedParameterWrapper {
 impl From<AbiTypedParameterWrapper> for LegacyTypedParameter {
     fn from(abi_typed_parameter: AbiTypedParameterWrapper) -> Self {
         LegacyTypedParameter { name: abi_typed_parameter.name, r#type: abi_typed_parameter.r#type }
-    }
-}
-
-mod serde_contract_class {
-
-    use super::*;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
-    #[derive(Serialize, Deserialize)]
-    enum ContractClassBlockifierWrapper {
-        V0(ContractClassBlockifierV0Wrapper),
-        //    V1(ContractClassBlockifierV0Wrapper),
-    }
-    #[derive(Serialize, Deserialize)]
-    struct ContractClassBlockifierV0Wrapper {
-        program: Vec<u8>,
-        entry_points_by_type: HashMap<EntryPointType, Vec<EntryPoint>>,
-    }
-
-    pub fn serialize<S>(contract_class: &ContractClassBlockifier, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match contract_class {
-            ContractClassBlockifier::V0(contract) => {
-                let contract_class = ContractClassBlockifierWrapper::V0(ContractClassBlockifierV0Wrapper {
-                    program: contract.0.program.serialize().unwrap(),
-                    entry_points_by_type: contract.0.entry_points_by_type.clone(),
-                });
-                contract_class.serialize(serializer)
-            }
-            ContractClassBlockifier::V1(contract) => {
-                unimplemented!("V1 serialization not implemented")
-            }
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<ContractClassBlockifier, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let contract_class = ContractClassBlockifierWrapper::deserialize(deserializer)?;
-        match contract_class {
-            ContractClassBlockifierWrapper::V0(contract) => {
-                let program = Program::deserialize(&contract.program, None).unwrap();
-                let entry_points_by_type = contract.entry_points_by_type;
-                let contract_class = ContractClassV0(Arc::new(ContractClassV0Inner { program, entry_points_by_type }));
-                Ok(ContractClassBlockifier::V0(contract_class))
-            }
-        }
     }
 }

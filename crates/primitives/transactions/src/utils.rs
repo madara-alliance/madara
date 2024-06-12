@@ -7,7 +7,7 @@ use num_bigint::BigUint;
 
 fn starknet_api_entry_point_to_contract_entry_point(value: &starknet_api::state::EntryPoint) -> ContractEntryPoint {
     ContractEntryPoint {
-        function_idx: value.function_idx.0,
+        function_idx: value.function_idx.0 as usize,
         selector: BigUint::from_bytes_be(value.selector.0.bytes()),
     }
 }
