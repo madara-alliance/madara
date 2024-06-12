@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use anyhow::Context;
+use dp_utils::channel_wait_or_graceful_shutdown;
 use futures::SinkExt;
 use reqwest_websocket::{Message, RequestBuilderExt};
 use tokio::sync::mpsc;
@@ -85,12 +86,7 @@ impl TelemetryService {
 
             let rx = &mut rx;
 
-            while let Some(event) = tokio::select! {
-                _ = tokio::signal::ctrl_c() => {
-                    None
-                }
-                res = rx.recv() => res,
-            } {
+            while let Some(event) = channel_wait_or_graceful_shutdown(rx.recv()).await {
                 log::debug!(
                     "Sending telemetry event '{}'.",
                     event.message.get("msg").and_then(|e| e.as_str()).unwrap_or("<unknown>")

@@ -1,18 +1,7 @@
-//! A database backend storing data about deoxys chain
-//!
-//! # Usefulness
-//! Starknet RPC methods use Starknet block hash as arguments to access on-chain values.
-//! Because the Starknet blocks are wrapped inside the Substrate ones, we have no simple way to
-//! index the chain storage using this hash.
-//! Rather than iterating over all the Substrate blocks in order to find the one wrapping the
-//! requested Starknet one, we maintain a StarknetBlockHash to SubstrateBlock hash mapping.
-//!
-//! # Databases supported
-//! `paritydb` and `rocksdb` are both supported, behind the `kvdb-rocksd` and `parity-db` feature
-//! flags. Support for custom databases is possible but not supported yet.
+//! Deoxys database
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::Arc;
 use std::{fmt, fs};
 
 use anyhow::{Context, Result};
@@ -20,7 +9,6 @@ use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use mapping_db::MappingDb;
-use meta_db::MetaDb;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
 mod error;
@@ -29,14 +17,22 @@ use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Env, MultiThreaded, OptimisticTransactionDB, Options,
     SliceTransform,
 };
-use starknet_types_core::hash::{Pedersen, Poseidon};
+use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 pub mod bonsai_db;
-mod meta_db;
 pub mod storage_handler;
 pub mod storage_updates;
 
 pub use error::{BonsaiDbError, DbError};
-use storage_handler::bonsai_identifier;
+use storage_handler::block_state_diff::BlockStateDiffView;
+use storage_handler::class_trie::{ClassTrieView, ClassTrieViewMut};
+use storage_handler::contract_class_data::{ContractClassDataView, ContractClassDataViewMut};
+use storage_handler::contract_class_hashes::{ContractClassHashesView, ContractClassHashesViewMut};
+use storage_handler::contract_data::{
+    ContractClassView, ContractClassViewMut, ContractNoncesView, ContractNoncesViewMut,
+};
+use storage_handler::contract_storage::{ContractStorageView, ContractStorageViewMut};
+use storage_handler::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
+use storage_handler::contract_trie::{ContractTrieView, ContractTrieViewMut};
 use tokio::sync::{mpsc, oneshot};
 
 const DB_HASH_LEN: usize = 32;
@@ -48,12 +44,12 @@ pub type DB = OptimisticTransactionDB<MultiThreaded>;
 pub use rocksdb;
 pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<true>;
 
-pub(crate) fn open_rocksdb(
+pub(crate) async fn open_rocksdb(
     path: &Path,
     create: bool,
     backup_dir: Option<PathBuf>,
     restore_from_latest_backup: bool,
-) -> Result<OptimisticTransactionDB<MultiThreaded>> {
+) -> Result<(Arc<OptimisticTransactionDB<MultiThreaded>>, Option<mpsc::Sender<BackupRequest>>)> {
     let mut opts = Options::default();
     opts.set_report_bg_io_stats(true);
     opts.set_use_fsync(false);
@@ -66,10 +62,8 @@ pub(crate) fn open_rocksdb(
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     opts.increase_parallelism(cores);
 
-    if let Some(backup_dir) = backup_dir {
-        let (restored_cb_sender, restored_cb_recv) = std::sync::mpsc::channel();
-        // we use a channel from std because we're in a tokio context and the function is async
-        // TODO make the function async or somethign..
+    let backup_hande = if let Some(backup_dir) = backup_dir {
+        let (restored_cb_sender, restored_cb_recv) = oneshot::channel();
 
         let (sender, receiver) = mpsc::channel(1);
         let db_path = path.to_owned();
@@ -77,12 +71,15 @@ pub(crate) fn open_rocksdb(
             spawn_backup_db_task(&backup_dir, restore_from_latest_backup, &db_path, restored_cb_sender, receiver)
                 .expect("database backup thread")
         });
-        DB_BACKUP_SINGLETON.set(sender).ok().context("backend already initialized")?;
 
         log::debug!("blocking on db restoration");
-        restored_cb_recv.recv().context("restoring database")?;
+        restored_cb_recv.await.context("restoring database")?;
         log::debug!("done blocking on db restoration");
-    }
+
+        Some(sender)
+    } else {
+        None
+    };
 
     log::debug!("opening db at {:?}", path.display());
     let db = OptimisticTransactionDB::<MultiThreaded>::open_cf_descriptors(
@@ -91,18 +88,17 @@ pub(crate) fn open_rocksdb(
         Column::ALL.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name(), col.rocksdb_options())),
     )?;
 
-    Ok(db)
+    Ok((Arc::new(db), backup_hande))
 }
 
+/// This runs in anothr thread as the backup engine is not thread safe
 fn spawn_backup_db_task(
     backup_dir: &Path,
     restore_from_latest_backup: bool,
     db_path: &Path,
-    db_restored_cb: std::sync::mpsc::Sender<()>,
+    db_restored_cb: oneshot::Sender<()>,
     mut recv: mpsc::Receiver<BackupRequest>,
 ) -> Result<()> {
-    // we use a thread to do that as backup engine is not thread safe
-
     let mut backup_opts = BackupEngineOptions::new(backup_dir).context("creating backup options")?;
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     backup_opts.set_max_background_operations(cores);
@@ -121,11 +117,9 @@ fn spawn_backup_db_task(
     }
 
     db_restored_cb.send(()).ok().context("receiver dropped")?;
-    drop(db_restored_cb);
 
-    while let Some(BackupRequest(callback)) = recv.blocking_recv() {
-        let db = DB_SINGLETON.get().context("getting rocksdb instance")?;
-        engine.create_new_backup_flush(db, true).context("creating rocksdb backup")?;
+    while let Some(BackupRequest { callback, db }) = recv.blocking_recv() {
+        engine.create_new_backup_flush(&db, true).context("creating rocksdb backup")?;
         let _ = callback.send(());
     }
 
@@ -135,19 +129,6 @@ fn spawn_backup_db_task(
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Column {
     Meta,
-
-    // // Starknet block hash to Substrate block hash
-    // BlockMapping,
-    // // Substrate block hash to true if it contains a Starknet block
-    // // SyncedMapping,
-    // // Transaction hash to Substrate block hash
-    // TransactionMapping,
-    // /// Starknet block hash to list of starknet transaction hashes
-    // StarknetTransactionHashesMapping,
-    // /// Block number to block Starknet block hash
-    // StarknetBlockHashesMapping,
-    // /// Starknet block hash to block number
-    // StarknetBlockNumberMapping,
 
     // Blocks storage
     // block_n => Block info
@@ -310,162 +291,194 @@ impl DatabaseExt for DB {
 }
 
 /// Deoxys client database backend singleton.
-///
-/// New instance returned upon first creation only and should only be passed to Substrate
-/// functions. Use the static functions defined below to access individual backend databases
-/// instead.
-///
-/// * `meta`: stores data aboud the current state of the chain.
-/// * `mapping`: maps Starknet blocks to Substrate blocks.
-/// * `da`: store Data Availability info that needs to be written to the Ethereum L1.
-/// * `messaging`: Stores Ethereum L1 messaging data.
-/// * `sierra_classes`: @antyro what is this for?
-/// * `bonsai_contract`: Bezu-bonsai trie used to compute the contract root.
-/// * `bonsai_storage`: Bezu-bonsai trie used to compute the storage root for each contract.
-/// * `bonsai_class`: Bezu-bonsai trie used to compute the class root.
+#[derive(Debug)]
 pub struct DeoxysBackend {
-    meta: Arc<MetaDb>,
     mapping: Arc<MappingDb>,
-    bonsai_contract: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
-    bonsai_storage: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
-    bonsai_class: RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>>,
+    backup_handle: Option<mpsc::Sender<BackupRequest>>,
+    db: Arc<DB>,
 }
 
-// Singleton backing instance for `DeoxysBackend`
-static BACKEND_SINGLETON: OnceLock<Arc<DeoxysBackend>> = OnceLock::new();
+pub struct DatabaseService {
+    handle: Arc<DeoxysBackend>,
+}
 
-static DB_SINGLETON: OnceLock<Arc<DB>> = OnceLock::new();
+impl DatabaseService {
+    pub async fn new(
+        base_path: &Path,
+        backup_dir: Option<PathBuf>,
+        restore_from_latest_backup: bool,
+    ) -> anyhow::Result<Self> {
+        log::info!("💾 Opening database at: {}", base_path.display());
 
-struct BackupRequest(oneshot::Sender<()>);
-static DB_BACKUP_SINGLETON: OnceLock<mpsc::Sender<BackupRequest>> = OnceLock::new();
+        let handle = DeoxysBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup)
+            .await
+            .context("opening database")?;
 
-pub struct DBDropHook; // TODO(HACK): db really really shouldnt be in a static
-impl Drop for DBDropHook {
+        Ok(Self { handle })
+    }
+
+    pub fn backend(&self) -> &Arc<DeoxysBackend> {
+        &self.handle
+    }
+}
+
+struct BackupRequest {
+    callback: oneshot::Sender<()>,
+    db: Arc<DB>,
+}
+
+impl Drop for DeoxysBackend {
     fn drop(&mut self) {
-        let backend = BACKEND_SINGLETON.get().unwrap() as *const _ as *mut Arc<DeoxysBackend>;
-        let db = DB_SINGLETON.get().unwrap() as *const _ as *mut Arc<DB>;
         log::info!("⏳ Gracefully closing the database...");
-        // TODO(HACK): again, i can't emphasize enough how bad of a hack this is
-        unsafe {
-            std::ptr::drop_in_place(backend);
-            std::ptr::drop_in_place(db);
-        }
     }
 }
 
 impl DeoxysBackend {
-    /// Initializes a local database, returning a singleton backend instance.
-    ///
-    /// This backend should only be used to pass to substrate functions. Use the static functions
-    /// defined below to access static fields instead.
-    pub fn open(
-        db_config_dir: &Path,
+    /// Open the db.
+    async fn open(
+        db_config_dir: PathBuf,
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
-    ) -> Result<&'static Arc<DeoxysBackend>> {
-        let db_path = db_config_dir.join("db"); //.deoxysdb/db
+    ) -> Result<Arc<DeoxysBackend>> {
+        let db_path = db_config_dir.join("db");
 
-        let db =
-            Arc::new(open_rocksdb(&db_path, true, backup_dir, restore_from_latest_backup).context("opening database")?);
-        DB_SINGLETON.set(db).ok().context("db already loaded")?;
+        let (db, backup_handle) =
+            open_rocksdb(&db_path, true, backup_dir, restore_from_latest_backup).await.context("opening database")?;
 
-        let db = DB_SINGLETON.get().unwrap();
+        let backend = Arc::new(Self { mapping: Arc::new(MappingDb::new(Arc::clone(&db))), backup_handle, db });
 
-        let bonsai_config = BonsaiStorageConfig {
-            max_saved_trie_logs: Some(0),
-            max_saved_snapshots: Some(0),
-            snapshot_interval: u64::MAX,
-        };
-
-        let mut bonsai_contract = BonsaiStorage::new(
-            BonsaiDb::new(
-                db,
-                DatabaseKeyMapping {
-                    flat: Column::BonsaiContractsFlat,
-                    trie: Column::BonsaiContractsTrie,
-                    log: Column::BonsaiContractsLog,
-                },
-            ),
-            bonsai_config.clone(),
-        )
-        .unwrap();
-        bonsai_contract.init_tree(bonsai_identifier::CONTRACT).unwrap();
-
-        let bonsai_contract_storage = BonsaiStorage::new(
-            BonsaiDb::new(
-                db,
-                DatabaseKeyMapping {
-                    flat: Column::BonsaiContractsStorageFlat,
-                    trie: Column::BonsaiContractsStorageTrie,
-                    log: Column::BonsaiContractsStorageLog,
-                },
-            ),
-            bonsai_config.clone(),
-        )
-        .unwrap();
-
-        let mut bonsai_classes = BonsaiStorage::new(
-            BonsaiDb::new(
-                db,
-                DatabaseKeyMapping {
-                    flat: Column::BonsaiClassesFlat,
-                    trie: Column::BonsaiClassesTrie,
-                    log: Column::BonsaiClassesLog,
-                },
-            ),
-            bonsai_config.clone(),
-        )
-        .unwrap();
-        bonsai_classes.init_tree(bonsai_identifier::CLASS).unwrap();
-
-        let backend = Arc::new(Self {
-            mapping: Arc::new(MappingDb::new(Arc::clone(db))),
-            meta: Arc::new(MetaDb::new(Arc::clone(db))),
-            bonsai_contract: RwLock::new(bonsai_contract),
-            bonsai_storage: RwLock::new(bonsai_contract_storage),
-            bonsai_class: RwLock::new(bonsai_classes),
-        });
-
-        BACKEND_SINGLETON.set(backend).ok().context("backend already initialized")?;
-
-        Ok(BACKEND_SINGLETON.get().unwrap())
+        Ok(backend)
     }
 
-    pub async fn backup() -> Result<()> {
-        let chann = DB_BACKUP_SINGLETON.get().context("backups are not enabled")?;
+    pub async fn backup(&self) -> Result<()> {
         let (callback_sender, callback_recv) = oneshot::channel();
-        chann.send(BackupRequest(callback_sender)).await.context("backups are not enabled")?;
+        let _res = self
+            .backup_handle
+            .as_ref()
+            .context("backups are not enabled")?
+            .try_send(BackupRequest { callback: callback_sender, db: Arc::clone(&self.db) });
         callback_recv.await.context("backups task died :(")?;
         Ok(())
     }
 
     /// Return the mapping database manager
-    pub fn mapping() -> &'static Arc<MappingDb> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.mapping).expect("Backend not initialized")
+    pub fn mapping(&self) -> &Arc<MappingDb> {
+        &self.mapping
     }
 
-    /// Return the meta database manager
-    pub fn meta() -> &'static Arc<MetaDb> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.meta).expect("Backend not initialized")
+    pub fn expose_db(&self) -> &Arc<DB> {
+        &self.db
     }
 
-    pub(crate) fn bonsai_contract() -> &'static RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_contract).expect("Backend not initialized")
+    pub fn contract_storage_mut(&self) -> ContractStorageViewMut {
+        ContractStorageViewMut::new(Arc::clone(&self.db))
     }
 
-    pub(crate) fn bonsai_storage() -> &'static RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_storage).expect("Backend not initialized")
+    pub fn contract_storage(&self) -> ContractStorageView {
+        ContractStorageView::new(Arc::clone(&self.db))
     }
 
-    pub(crate) fn bonsai_class() -> &'static RwLock<BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>> {
-        BACKEND_SINGLETON.get().map(|backend| &backend.bonsai_class).expect("Backend not initialized")
+    pub fn contract_class_data_mut(&self) -> ContractClassDataViewMut {
+        ContractClassDataViewMut::new(Arc::clone(&self.db))
     }
 
-    pub fn expose_db() -> &'static Arc<DB> {
-        DB_SINGLETON.get().expect("Databsae not initialized")
+    pub fn contract_class_data(&self) -> ContractClassDataView {
+        ContractClassDataView::new(Arc::clone(&self.db))
     }
 
-    pub fn compact() {
-        Self::expose_db().compact_range(None::<&[u8]>, None::<&[u8]>);
+    pub fn contract_class_hashes_mut(&self) -> ContractClassHashesViewMut {
+        ContractClassHashesViewMut::new(Arc::clone(&self.db))
+    }
+
+    pub fn contract_class_hashes(&self) -> ContractClassHashesView {
+        ContractClassHashesView::new(Arc::clone(&self.db))
+    }
+
+    pub fn contract_class_hash(&self) -> ContractClassView {
+        ContractClassView::new(Arc::clone(&self.db))
+    }
+
+    pub fn contract_class_hash_mut(&self) -> ContractClassViewMut {
+        ContractClassViewMut::new(Arc::clone(&self.db))
+    }
+
+    pub fn contract_nonces(&self) -> ContractNoncesView {
+        ContractNoncesView::new(Arc::clone(&self.db))
+    }
+
+    pub fn contract_nonces_mut(&self) -> ContractNoncesViewMut {
+        ContractNoncesViewMut::new(Arc::clone(&self.db))
+    }
+
+    pub fn block_state_diff(&self) -> BlockStateDiffView {
+        BlockStateDiffView::new(Arc::clone(&self.db))
+    }
+
+    // tries
+
+    pub(crate) fn get_bonsai<H: StarkHash + Send + Sync>(
+        &self,
+        map: DatabaseKeyMapping,
+    ) -> BonsaiStorage<BasicId, BonsaiDb<'_>, H> {
+        // UNWRAP: function actually cannot panic
+        let bonsai = BonsaiStorage::new(
+            BonsaiDb::new(&self.db, map),
+            BonsaiStorageConfig {
+                max_saved_trie_logs: Some(0),
+                max_saved_snapshots: Some(0),
+                snapshot_interval: u64::MAX,
+            },
+        )
+        .unwrap();
+
+        bonsai
+    }
+
+    pub(crate) fn bonsai_contract(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
+        self.get_bonsai(DatabaseKeyMapping {
+            flat: Column::BonsaiContractsFlat,
+            trie: Column::BonsaiContractsTrie,
+            log: Column::BonsaiContractsLog,
+        })
+    }
+
+    pub(crate) fn bonsai_storage(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
+        self.get_bonsai(DatabaseKeyMapping {
+            flat: Column::BonsaiContractsStorageFlat,
+            trie: Column::BonsaiContractsStorageTrie,
+            log: Column::BonsaiContractsStorageLog,
+        })
+    }
+
+    pub(crate) fn bonsai_class(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Poseidon> {
+        self.get_bonsai(DatabaseKeyMapping {
+            flat: Column::BonsaiClassesFlat,
+            trie: Column::BonsaiClassesTrie,
+            log: Column::BonsaiClassesLog,
+        })
+    }
+
+    pub fn contract_trie_mut(&self) -> ContractTrieViewMut<'_> {
+        ContractTrieViewMut(self.bonsai_contract())
+    }
+
+    pub fn contract_trie(&self) -> ContractTrieView<'_> {
+        ContractTrieView(self.bonsai_contract())
+    }
+
+    pub fn contract_storage_trie_mut(&self) -> ContractStorageTrieViewMut<'_> {
+        ContractStorageTrieViewMut(self.bonsai_storage())
+    }
+
+    pub fn contract_storage_trie(&self) -> ContractStorageTrieView<'_> {
+        ContractStorageTrieView(self.bonsai_storage())
+    }
+
+    pub fn class_trie_mut(&self) -> ClassTrieViewMut<'_> {
+        ClassTrieViewMut(self.bonsai_class())
+    }
+
+    pub fn class_trie(&self) -> ClassTrieView<'_> {
+        ClassTrieView(self.bonsai_class())
     }
 }

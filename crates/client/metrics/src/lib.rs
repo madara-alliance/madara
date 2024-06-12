@@ -1,6 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use anyhow::Context;
+use dp_utils::{wait_or_graceful_shutdown, StopHandle};
 use hyper::{
     service::{make_service_fn, service_fn},
     Body, Request, Response, Server, StatusCode,
@@ -67,7 +68,7 @@ pub struct MetricsService {
     prometheus_external: bool,
     prometheus_port: u16,
     registry: MetricsRegistry,
-    stop_signal: Option<oneshot::Sender<()>>,
+    stop_handle: StopHandle,
 }
 
 impl MetricsService {
@@ -77,7 +78,7 @@ impl MetricsService {
             prometheus_external,
             prometheus_port,
             registry: MetricsRegistry(if no_prometheus { None } else { Some(Default::default()) }),
-            stop_signal: None,
+            stop_handle: Default::default(),
         })
     }
 
@@ -119,6 +120,7 @@ impl MetricsService {
         });
 
         let (stop_send, stop_recv) = oneshot::channel();
+        self.stop_handle = StopHandle::new(Some(stop_send));
 
         join_set.spawn(async move {
             let socket = TcpListener::bind(addr).await.with_context(|| format!("opening socket server at {addr}"))?;
@@ -126,25 +128,12 @@ impl MetricsService {
                 .with_context(|| format!("opening socket server at {addr}"))?;
             log::info!("📈 Prometheus endpoint started at {}", listener.local_addr());
             let server = Server::builder(listener).serve(service).with_graceful_shutdown(async {
-                tokio::select! {
-                    _ = stop_recv => {},
-                    _ = tokio::signal::ctrl_c() => {},
-                }
+                wait_or_graceful_shutdown(stop_recv).await;
             });
             server.await.context("running prometheus server")?;
             Ok(())
         });
 
-        self.stop_signal = Some(stop_send);
-
         Ok(())
-    }
-}
-
-impl Drop for MetricsService {
-    fn drop(&mut self) {
-        if let Some(recv) = self.stop_signal.take() {
-            let _res = recv.send(());
-        }
     }
 }

@@ -15,6 +15,8 @@ pub use utils::{convert, utility};
 use crate::l2::L2SyncConfig;
 
 pub mod starknet_sync_worker {
+    use std::sync::Arc;
+
     use anyhow::Context;
     use dc_db::DeoxysBackend;
     use dc_telemetry::TelemetryHandle;
@@ -29,6 +31,7 @@ pub mod starknet_sync_worker {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn sync(
+        backend: &Arc<DeoxysBackend>,
         fetch_config: FetchConfig,
         l1_url: Url,
         l1_core_address: ethers::abi::Address,
@@ -44,7 +47,8 @@ pub mod starknet_sync_worker {
         let starting_block = if let Some(starting_block) = starting_block {
             starting_block
         } else {
-            DeoxysBackend::mapping()
+            backend
+                .mapping()
                 .get_block_n(&dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
                 .context("getting sync tip")?
                 .unwrap_or_default() as _
@@ -63,8 +67,9 @@ pub mod starknet_sync_worker {
         };
 
         tokio::try_join!(
-            l1::sync(l1_url.clone(), block_metrics.clone(), l1_core_address),
+            l1::sync(backend, l1_url.clone(), block_metrics.clone(), l1_core_address),
             l2::sync(
+                backend,
                 provider,
                 L2SyncConfig {
                     first_block: starting_block,

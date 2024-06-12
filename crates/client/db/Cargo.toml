@@ -21,6 +21,7 @@ dp-block = { workspace = true }
 dp-convert = { workspace = true }
 dp-felt = { workspace = true }
 dp-transactions = { workspace = true }
+dp-utils = { workspace = true }
 
 # Starknet crates
 blockifier = { workspace = true }

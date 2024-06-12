@@ -30,6 +30,7 @@ dc-rpc = { workspace = true }
 starknet-core = { workspace = true }
 
 # Primitives
+dp-utils = { workspace = true }
 primitive-types = { workspace = true }
 
 #Deoxys

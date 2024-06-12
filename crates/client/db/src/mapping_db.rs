@@ -23,6 +23,7 @@ pub enum MappingDbError {
 type Result<T, E = MappingDbError> = std::result::Result<T, E>;
 
 /// Allow interaction with the mapping db
+#[derive(Debug)]
 pub struct MappingDb {
     db: Arc<DB>,
 }

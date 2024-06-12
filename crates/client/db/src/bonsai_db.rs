@@ -29,7 +29,6 @@ impl DatabaseKeyMapping {
 }
 
 pub struct BonsaiDb<'db> {
-    /// Database interface for key-value operations.
     db: &'db DB,
     /// Mapping from `DatabaseKey` => rocksdb column name
     column_mapping: DatabaseKeyMapping,

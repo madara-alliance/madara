@@ -1,5 +1,3 @@
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
-
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
 use starknet_api::core::ClassHash;
@@ -9,8 +7,8 @@ use starknet_types_core::hash::Poseidon;
 use super::{bonsai_identifier, conv_class_key, DeoxysStorageError, StorageType, StorageView, TrieType};
 use crate::bonsai_db::BonsaiDb;
 
-pub struct ClassTrieView<'a>(pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>>);
-pub struct ClassTrieViewMut<'a>(pub(crate) RwLockWriteGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Poseidon>>);
+pub struct ClassTrieView<'a>(pub(crate) BonsaiStorage<BasicId, BonsaiDb<'a>, Poseidon>);
+pub struct ClassTrieViewMut<'a>(pub(crate) BonsaiStorage<BasicId, BonsaiDb<'a>, Poseidon>);
 
 impl StorageView for ClassTrieView<'_> {
     type KEY = ClassHash;

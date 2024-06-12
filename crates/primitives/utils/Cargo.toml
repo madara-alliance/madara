@@ -1,8 +1,8 @@
 [package]
-name = "dc-telemetry"
+name = "dp-utils"
 version.workspace = true
 edition.workspace = true
-description = "Deoxys telemetry service"
+description = "Deoxys utilities"
 authors = ["Kasar <https://github.com/kasarlabs>"]
 homepage = "https://github.com/kasarlabs/deoxys"
 license = "MIT"
@@ -14,12 +14,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 anyhow.workspace = true
-chrono = "0.4.35"
-dp-utils = { workspace = true }
-futures = { workspace = true }
-log = { workspace = true, default-features = true }
-reqwest = { workspace = true }
-reqwest-websocket = "0.3.0"
-serde_json = { workspace = true }
-sysinfo = "0.30.12"
-tokio = { workspace = true }
+async-trait.workspace = true
+futures.workspace = true
+itertools.workspace = true
+log.workspace = true
+rayon.workspace = true
+thiserror.workspace = true
+tokio.workspace = true

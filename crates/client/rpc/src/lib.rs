@@ -199,13 +199,14 @@ pub struct ChainConfig {
 
 /// A Starknet RPC server for Deoxys
 pub struct Starknet {
+    backend: Arc<DeoxysBackend>,
     starting_block: u64,
     chain_config: ChainConfig,
 }
 
 impl Starknet {
-    pub fn new(starting_block: u64, chain_config: ChainConfig) -> Self {
-        Self { starting_block, chain_config }
+    pub fn new(backend: Arc<DeoxysBackend>, starting_block: u64, chain_config: ChainConfig) -> Self {
+        Self { backend, starting_block, chain_config }
     }
 
     pub fn make_sequencer_provider(&self) -> SequencerGatewayProvider {
@@ -217,7 +218,7 @@ impl Starknet {
     }
 
     pub fn block_storage(&self) -> &MappingDb {
-        DeoxysBackend::mapping()
+        self.backend.mapping()
     }
 
     pub fn get_block_info(&self, block_id: impl Into<dp_block::BlockId>) -> RpcResult<DeoxysBlockInfo> {
