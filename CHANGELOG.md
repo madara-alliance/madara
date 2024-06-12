@@ -2,6 +2,7 @@
 
 ## Next release
 
+- cleanup: clean DB statics
 - refactor: improve compatibility without forks
 - fix(metrics): fixed some metrics endpoints
 - fix(metrics): fix prometheus endpoint port
