@@ -1,7 +1,7 @@
 use crossbeam_skiplist::SkipMap;
+use parity_scale_codec::{Decode, Encode};
 use rocksdb::WriteBatchWithTransaction;
 use starknet_api::core::ClassHash;
-use parity_scale_codec::{Decode, Encode};
 
 use super::primitives::contract_class::StorageContractClassData;
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};

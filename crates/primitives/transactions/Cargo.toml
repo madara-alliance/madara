@@ -16,6 +16,7 @@ cairo-lang-starknet-classes = { workspace = true }
 cairo-lang-utils = { workspace = true }
 cairo-vm = { workspace = true }
 flate2 = { workspace = true }
+indexmap = { workspace = true }
 mp-felt = { workspace = true }
 num-bigint = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -24,7 +25,6 @@ starknet-core = { workspace = true }
 starknet-crypto = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
-indexmap = { workspace = true }
 thiserror = { workspace = true }
 
 mp-convert = { workspace = true }

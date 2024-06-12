@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use indexmap::IndexMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use blockifier::execution::contract_class::{

@@ -12,6 +12,7 @@ use mc_db::storage_handler::DeoxysStorageError;
 use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
+use mp_block::Header;
 use mp_block::{BlockId, BlockTag, DeoxysBlock};
 use mp_convert::core_felt::CoreFelt;
 use mp_felt::{trim_hash, FeltWrapper};

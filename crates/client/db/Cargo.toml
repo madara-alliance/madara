@@ -37,10 +37,10 @@ base64 = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
 crossbeam-skiplist = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true, default-features = true }
+parity-scale-codec = { version = "3.6.5", features = ["derive"] }
 rayon = { workspace = true }
 rocksdb.workspace = true
 thiserror = { workspace = true }
 tokio = { workspace = true }
-indexmap = { workspace = true }
-parity-scale-codec = { version = "3.6.5", features = ["derive"]}
