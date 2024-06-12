@@ -104,12 +104,7 @@ struct RpcChecker {
 
 impl RpcChecker {
     fn new(urls: &'static [&'static str]) -> Self {
-        RpcChecker {
-            client: Client::new(),
-            urls,
-            best_url: None,
-            best_latency: u128::MAX,
-        }
+        RpcChecker { client: Client::new(), urls, best_url: None, best_latency: u128::MAX }
     }
 
     async fn l1_free_rpc_check(&self, url: &str) -> Result<u128, RpcError> {
@@ -123,22 +118,36 @@ impl RpcChecker {
     }
 
     async fn l1_free_rpc_best(&mut self) -> Result<&'static str, RpcError> {
+        log::info!("🕐 Checking for the best available free L1 RPC urls since none has been provided");
+        log::info!("⚠️ This should be for testing purposes only. We recommend providing your own L1 RPC endpoint.");
         for &url in self.urls.iter() {
             match self.l1_free_rpc_check(url).await {
                 Ok(latency) if latency < self.best_latency => {
-                    log::info!("New best URL found: {} with latency {} ms", url, latency);
+                    log::debug!("New best URL found: {} with latency {} ms", url, latency);
                     self.best_latency = latency;
                     self.best_url = Some(url);
                 }
                 Ok(latency) => {
-                    log::info!("URL {} has latency {} ms, which is not better than the current best {} ms", url, latency, self.best_latency);
+                    log::debug!(
+                        "URL {} has latency {} ms, which is not better than the current best {} ms",
+                        url,
+                        latency,
+                        self.best_latency
+                    );
                 }
                 Err(e) => {
-                    log::warn!("Failed to check latency for URL {}: {:?}", url, e);
+                    log::debug!("Failed to check latency for URL {}: {:?}", url, e);
                 }
             }
         }
-        self.best_url.ok_or(RpcError::NoSuitableUrl)
+        
+        match self.best_url {
+            Some(best_url) => {
+                log::info!("🔗 Using best L1 free RPC url found: {}", best_url);
+                Ok(best_url)
+            },
+            None => Err(RpcError::NoSuitableUrl),
+        }
     }
 }
 

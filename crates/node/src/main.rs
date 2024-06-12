@@ -56,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
         .context("initializing rpc service")?;
     let mut sync_service =
         SyncService::new(&run_cmd.sync_params, prometheus_service.registry(), telemetry_service.new_handle())
+            .await
             .context("initializing sync service")?;
 
     let mut task_set = JoinSet::new();

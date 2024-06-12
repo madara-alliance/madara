@@ -30,12 +30,15 @@ impl SyncService {
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
-        let l1_endpoint = config.l1_endpoint.clone().unwrap_or(
-            Url::parse(l1_free_rpc_get().await.expect("finding the best RPC URL")).expect("parsing the RPC URL"),
-        );
+        let l1_endpoint = if let Some(l1_rpc_url) = &config.l1_endpoint {
+            l1_rpc_url.clone()
+        } else {
+            let l1_rpc_url = l1_free_rpc_get().await.expect("finding the best RPC URL");
+            Url::parse(&l1_rpc_url).expect("parsing the RPC URL")
+        };
         Ok(Self {
             fetch_config: config.block_fetch_config(),
-            l1_endpoint: l1_endpoint,
+            l1_endpoint,
             l1_core_address: config.network.l1_core_address(),
             starting_block: config.starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
