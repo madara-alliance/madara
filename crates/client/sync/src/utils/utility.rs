@@ -1,13 +1,18 @@
 //! Utility functions for Deoxys.
 
+use std::time::Instant;
+
 use anyhow::{bail, Context};
 use ethers::types::{I256, U256};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use reqwest::Client;
 use serde_json::Value;
 use starknet_api::hash::StarkFelt;
 
 use crate::l1::{L1StateUpdate, LogStateUpdate};
+
+use super::constant::L1_FREE_RPC_URLS;
 
 // static CONFIG: OnceCell<FetchConfig> = OnceCell::new();
 
@@ -79,4 +84,33 @@ pub fn convert_log_state_update(log_state_update: LogStateUpdate) -> anyhow::Res
     let block_hash = u256_to_starkfelt(log_state_update.block_hash)?;
 
     Ok(L1StateUpdate { block_number, global_root, block_hash })
+}
+
+async fn l1_free_rpc_check(url: &str) -> Result<u128, Box<dyn std::error::Error>> {
+    let client = Client::new();
+    let start = Instant::now();
+    let response = client.get(url).send().await?;
+    if response.status().is_success() {
+        Ok(start.elapsed().as_millis())
+    } else {
+        Ok(u128::MAX)
+    }
+}
+
+pub async fn l1_free_rpc_get() -> Result<&'static str, Box<dyn std::error::Error>> {
+    let mut best_url = None;
+    let mut best_latency = u128::MAX;
+
+    for &url in L1_FREE_RPC_URLS.iter() {
+        match l1_free_rpc_check(url).await {
+            Ok(latency) if latency < best_latency => {
+                best_latency = latency;
+                best_url = Some(url);
+            }
+            Ok(_) => {}
+            Err(_) => {}
+        }
+    }
+
+    best_url.ok_or_else(|| "No suitable RPC URL found".into())
 }

@@ -15,9 +15,9 @@ pub struct SyncParams {
     #[clap(long)]
     pub sync_disabled: bool,
 
-    /// The L1 rpc endpoint url for state verification. Required.
+    /// The L1 rpc endpoint url for state verification.
     #[clap(long, value_parser = parse_url, value_name = "ETHEREUM RPC URL")]
-    pub l1_endpoint: Url,
+    pub l1_endpoint: Option<Url>,
 
     /// The block you want to start syncing from.
     #[clap(long, value_name = "BLOCK NUMBER")]

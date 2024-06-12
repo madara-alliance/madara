@@ -2,6 +2,7 @@ use anyhow::Context;
 use mc_metrics::MetricsRegistry;
 use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::metrics::block_metrics::BlockMetrics;
+use mc_sync::utility::l1_free_rpc_get;
 use mc_telemetry::TelemetryHandle;
 use primitive_types::H160;
 use starknet_core::types::FieldElement;
@@ -23,15 +24,18 @@ pub struct SyncService {
 }
 
 impl SyncService {
-    pub fn new(
+    pub async fn new(
         config: &SyncParams,
         metrics_handle: MetricsRegistry,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
+        let l1_endpoint = config.l1_endpoint.clone().unwrap_or(
+            Url::parse(l1_free_rpc_get().await.expect("finding the best RPC URL")).expect("parsing the RPC URL"),
+        );
         Ok(Self {
             fetch_config: config.block_fetch_config(),
-            l1_endpoint: config.l1_endpoint.clone(),
+            l1_endpoint: config.l1_endpoint.clone().unwrap(),
             l1_core_address: config.network.l1_core_address(),
             starting_block: config.starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
