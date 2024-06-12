@@ -156,7 +156,12 @@ impl MappingDb {
         self.write_last_confirmed_block(tx, 0)
     }
 
-    pub fn write_new_block(&self, tx: &mut WriteBatchWithTransaction, block: &DeoxysBlock, reverted_txs: &[TransactionHash]) -> Result<()> {
+    pub fn write_new_block(
+        &self,
+        tx: &mut WriteBatchWithTransaction,
+        block: &DeoxysBlock,
+        reverted_txs: &[TransactionHash],
+    ) -> Result<()> {
         let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
         let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
         let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);

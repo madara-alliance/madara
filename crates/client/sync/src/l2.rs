@@ -56,12 +56,16 @@ pub struct L2StateUpdate {
     pub block_hash: Felt,
 }
 
-fn store_new_block(backend: &DeoxysBackend, block: &DeoxysBlock, reverted_txs: &[TransactionHash]) -> Result<(), DeoxysStorageError> {
+fn store_new_block(
+    backend: &DeoxysBackend,
+    block: &DeoxysBlock,
+    reverted_txs: &[TransactionHash],
+) -> Result<(), DeoxysStorageError> {
     let sw = PerfStopwatch::new();
     let mut tx = WriteBatchWithTransaction::default();
 
     let mapping = backend.mapping();
-    mapping.write_new_block(&mut tx, block, everted_txs)?;
+    mapping.write_new_block(&mut tx, block, reverted_txs)?;
 
     let db_access = backend.expose_db();
     db_access.write(tx).map_err(MappingDbError::from)?;
@@ -81,7 +85,7 @@ async fn l2_verify_and_apply_task(
     sync_timer: Arc<Mutex<Option<Instant>>>,
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
-    while let Some(L2ConvertedBlockAndUpdates { converted_block,reverted_txs, state_update, class_update }) =
+    while let Some(L2ConvertedBlockAndUpdates { converted_block, reverted_txs, state_update, class_update }) =
         channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await
     {
         let block_n = converted_block.block_n();
@@ -206,7 +210,12 @@ async fn l2_block_conversion_task(
                         let sw = PerfStopwatch::new();
                         let converted_block = convert_block(block, chain_id).context("converting block")?;
                         stopwatch_end!(sw, "convert_block: {:?}");
-                        anyhow::Ok(L2ConvertedBlockAndUpdates { converted_block: converted_block.block, reverted_txs: converted_block.reverted_txs, state_update, class_update })
+                        anyhow::Ok(L2ConvertedBlockAndUpdates {
+                            converted_block: converted_block.block,
+                            reverted_txs: converted_block.reverted_txs,
+                            state_update,
+                            class_update,
+                        })
                     }),
                     (updates_recv, chain_id),
                 )
