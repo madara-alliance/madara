@@ -627,7 +627,7 @@ mod serde_contract_class {
         let contract_class = ContractClassBlockifierWrapper::deserialize(deserializer)?;
         match contract_class {
             ContractClassBlockifierWrapper::V0(contract) => {
-                let program = Program::from_bytes(&contract.program, None).unwrap();
+                let program = Program::deserialize(&contract.program, None).unwrap();
                 let entry_points_by_type = contract.entry_points_by_type;
                 let contract_class = ContractClassV0(Arc::new(ContractClassV0Inner { program, entry_points_by_type }));
                 Ok(ContractClassBlockifier::V0(contract_class))
