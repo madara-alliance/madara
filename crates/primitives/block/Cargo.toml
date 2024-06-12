@@ -3,7 +3,7 @@ authors = { workspace = true }
 description = "The starknet block"
 edition.workspace = true
 license = "MIT"
-name = "mp-block"
+name = "dp-block"
 repository = { workspace = true }
 version.workspace = true
 
@@ -12,8 +12,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 blockifier = { workspace = true }
+dp-felt = { workspace = true }
 lazy_static = { workspace = true }
-mp-felt = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 starknet-core = { workspace = true }
@@ -21,8 +21,8 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Optionals
-mp-convert = { workspace = true }
+dp-convert = { workspace = true }
 primitive-types.workspace = true
 
 [dev-dependencies]
-mp-felt = { workspace = true }
+dp-felt = { workspace = true }

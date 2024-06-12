@@ -1,4 +1,4 @@
-use mp_felt::Felt252Wrapper;
+use dp_felt::Felt252Wrapper;
 use starknet_api::core::calculate_contract_address;
 use starknet_api::data_availability::DataAvailabilityMode;
 use starknet_api::hash::StarkFelt;
@@ -16,7 +16,7 @@ use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash}; //, Poseidon};
 
 use super::SIMULATE_TX_VERSION_OFFSET;
 use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK};
-use mp_convert::core_felt::CoreFelt;
+use dp_convert::core_felt::CoreFelt;
 
 const DECLARE_PREFIX: &[u8] = b"declare";
 const DEPLOY_ACCOUNT_PREFIX: &[u8] = b"deploy_account";
@@ -528,8 +528,8 @@ impl ComputeTransactionHash for L1HandlerTransaction {
         let entrypoint_selector = self.entry_point_selector.into_core_felt();
 
         let calldata_tmp = convert_calldata(self.calldata.clone());
-        let calldata_tmp_bis = calldata_tmp.as_slice();
-        let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);
+        let calldata_tdp_bis = calldata_tmp.as_slice();
+        let calldata_hash = Pedersen::hash_array(calldata_tdp_bis);
 
         let nonce = self.nonce.into_core_felt();
         let chain_id = chain_id.into();

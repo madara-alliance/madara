@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
+use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
 use starknet_api::block::BlockHash;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::PendingStateUpdate;

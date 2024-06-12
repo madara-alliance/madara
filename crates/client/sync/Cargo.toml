@@ -4,7 +4,7 @@ description = "This crate is responsible to sync data"
 edition = "2021"
 homepage = "https://github.com/KasarLabs/deoxys"
 license = "MIT"
-name = "mc-sync"
+name = "dc-sync"
 publish = false
 repository = "https://github.com/KasarLabs/deoxys"
 version = "0.1.0"
@@ -47,13 +47,13 @@ starknet_api = { workspace = true }
 
 bitvec = { workspace = true }
 bonsai-trie = { workspace = true }
-mc-db = { workspace = true }
-mc-metrics = { workspace = true }
-mc-telemetry = { workspace = true }
-mp-block = { workspace = true }
-mp-convert = { workspace = true }
-mp-felt = { workspace = true }
-mp-transactions = { workspace = true }
+dc-db = { workspace = true }
+dc-metrics = { workspace = true }
+dc-telemetry = { workspace = true }
+dp-block = { workspace = true }
+dp-convert = { workspace = true }
+dp-felt = { workspace = true }
+dp-transactions = { workspace = true }
 num-traits = { workspace = true }
 rayon = { workspace = true }
 starknet-types-core = { workspace = true }

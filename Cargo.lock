@@ -1876,12 +1876,141 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
+name = "dc-db"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.13.1",
+ "bincode 1.3.3",
+ "bitvec",
+ "blockifier",
+ "bonsai-trie",
+ "cairo-vm",
+ "crossbeam-skiplist",
+ "dp-block",
+ "dp-convert",
+ "dp-felt",
+ "dp-transactions",
+ "flate2",
+ "indexmap 2.2.6",
+ "log",
+ "parity-scale-codec",
+ "rayon",
+ "rocksdb",
+ "starknet-core",
+ "starknet-ff",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "dc-metrics"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hyper 0.14.29",
+ "log",
+ "prometheus",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "dc-rpc"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blockifier",
+ "cairo-vm",
+ "dc-db",
+ "dp-block",
+ "dp-convert",
+ "dp-felt",
+ "dp-simulations",
+ "dp-transactions",
+ "indexmap 2.2.6",
+ "itertools 0.12.1",
+ "jsonrpsee",
+ "log",
+ "rstest 0.18.2",
+ "serde",
+ "serde_with",
+ "starknet-core",
+ "starknet-ff",
+ "starknet-providers",
+ "starknet_api",
+ "thiserror",
+]
+
+[[package]]
+name = "dc-sync"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitvec",
+ "blockifier",
+ "bonsai-trie",
+ "dc-db",
+ "dc-metrics",
+ "dc-telemetry",
+ "dp-block",
+ "dp-convert",
+ "dp-felt",
+ "dp-transactions",
+ "ethers",
+ "futures",
+ "hex",
+ "indexmap 2.2.6",
+ "itertools 0.12.1",
+ "log",
+ "num-traits 0.2.19",
+ "primitive-types",
+ "rand",
+ "rayon",
+ "reqwest 0.12.4",
+ "rodio",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-ff",
+ "starknet-providers",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "dc-telemetry"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "futures",
+ "log",
+ "reqwest 0.12.4",
+ "reqwest-websocket",
+ "serde_json",
+ "sysinfo",
+ "tokio",
+]
+
+[[package]]
 name = "deoxys"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "dc-db",
+ "dc-metrics",
+ "dc-rpc",
+ "dc-sync",
+ "dc-telemetry",
  "env_logger",
  "forwarded-header-value",
  "futures",
@@ -1890,11 +2019,6 @@ dependencies = [
  "ip_network",
  "jsonrpsee",
  "log",
- "mc-db",
- "mc-metrics",
- "mc-rpc",
- "mc-sync",
- "mc-telemetry",
  "primitive-types",
  "rayon",
  "reqwest 0.12.4",
@@ -2022,6 +2146,78 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.66",
+]
+
+[[package]]
+name = "dp-block"
+version = "0.1.0"
+dependencies = [
+ "blockifier",
+ "dp-convert",
+ "dp-felt",
+ "lazy_static",
+ "primitive-types",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-types-core",
+ "starknet_api",
+]
+
+[[package]]
+name = "dp-convert"
+version = "0.1.0"
+dependencies = [
+ "starknet-core",
+ "starknet-ff",
+ "starknet-providers",
+ "starknet-types-core",
+ "starknet_api",
+]
+
+[[package]]
+name = "dp-felt"
+version = "0.1.0"
+dependencies = [
+ "cairo-vm",
+ "primitive-types",
+ "serde",
+ "serde_with",
+ "starknet-core",
+ "starknet-ff",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror-no-std",
+]
+
+[[package]]
+name = "dp-simulations"
+version = "0.1.0"
+dependencies = [
+ "starknet-core",
+]
+
+[[package]]
+name = "dp-transactions"
+version = "0.1.0"
+dependencies = [
+ "assert_matches",
+ "blockifier",
+ "cairo-lang-starknet-classes 2.6.0",
+ "cairo-lang-utils 2.6.0",
+ "cairo-vm",
+ "dp-convert",
+ "dp-felt",
+ "flate2",
+ "indexmap 2.2.6",
+ "num-bigint",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-crypto 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
 ]
 
 [[package]]
@@ -3791,130 +3987,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-db"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.13.1",
- "bincode 1.3.3",
- "bitvec",
- "blockifier",
- "bonsai-trie",
- "cairo-vm",
- "crossbeam-skiplist",
- "flate2",
- "indexmap 2.2.6",
- "log",
- "mp-block",
- "mp-convert",
- "mp-felt",
- "mp-transactions",
- "parity-scale-codec",
- "rayon",
- "rocksdb",
- "starknet-core",
- "starknet-ff",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "mc-metrics"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "hyper 0.14.29",
- "log",
- "prometheus",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "mc-rpc"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "blockifier",
- "cairo-vm",
- "indexmap 2.2.6",
- "itertools 0.12.1",
- "jsonrpsee",
- "log",
- "mc-db",
- "mp-block",
- "mp-convert",
- "mp-felt",
- "mp-simulations",
- "mp-transactions",
- "rstest 0.18.2",
- "serde",
- "serde_with",
- "starknet-core",
- "starknet-ff",
- "starknet-providers",
- "starknet_api",
- "thiserror",
-]
-
-[[package]]
-name = "mc-sync"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitvec",
- "blockifier",
- "bonsai-trie",
- "ethers",
- "futures",
- "hex",
- "indexmap 2.2.6",
- "itertools 0.12.1",
- "log",
- "mc-db",
- "mc-metrics",
- "mc-telemetry",
- "mp-block",
- "mp-convert",
- "mp-felt",
- "mp-transactions",
- "num-traits 0.2.19",
- "primitive-types",
- "rand",
- "rayon",
- "reqwest 0.12.4",
- "rodio",
- "serde",
- "serde_json",
- "starknet-core",
- "starknet-ff",
- "starknet-providers",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "mc-telemetry"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "futures",
- "log",
- "reqwest 0.12.4",
- "reqwest-websocket",
- "serde_json",
- "sysinfo",
- "tokio",
-]
-
-[[package]]
 name = "md-5"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3979,86 +4051,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "mp-block"
-version = "0.1.0"
-dependencies = [
- "blockifier",
- "lazy_static",
- "mp-convert",
- "mp-felt",
- "primitive-types",
- "serde",
- "serde_json",
- "starknet-core",
- "starknet-types-core",
- "starknet_api",
-]
-
-[[package]]
-name = "mp-convert"
-version = "0.1.0"
-dependencies = [
- "starknet-core",
- "starknet-ff",
- "starknet-providers",
- "starknet-types-core",
- "starknet_api",
-]
-
-[[package]]
-name = "mp-felt"
-version = "0.1.0"
-dependencies = [
- "cairo-vm",
- "primitive-types",
- "serde",
- "serde_with",
- "starknet-core",
- "starknet-ff",
- "starknet-types-core",
- "starknet_api",
- "thiserror-no-std",
-]
-
-[[package]]
-name = "mp-program-hash"
-version = "0.1.0"
-dependencies = [
- "mp-felt",
- "starknet-ff",
-]
-
-[[package]]
-name = "mp-simulations"
-version = "0.1.0"
-dependencies = [
- "starknet-core",
-]
-
-[[package]]
-name = "mp-transactions"
-version = "0.1.0"
-dependencies = [
- "assert_matches",
- "blockifier",
- "cairo-lang-starknet-classes 2.6.0",
- "cairo-lang-utils 2.6.0",
- "cairo-vm",
- "flate2",
- "indexmap 2.2.6",
- "mp-convert",
- "mp-felt",
- "num-bigint",
- "serde",
- "serde_json",
- "starknet-core",
- "starknet-crypto 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
 ]
 
 [[package]]

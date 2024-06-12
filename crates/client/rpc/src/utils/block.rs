@@ -1,6 +1,6 @@
 use std::num::NonZeroU128;
 
-use mp_block::DeoxysBlock;
+use dp_block::DeoxysBlock;
 use starknet_core::types::{FieldElement, L1DataAvailabilityMode, ResourcePrice};
 
 pub(crate) fn l1_gas_price(block: &DeoxysBlock) -> ResourcePrice {

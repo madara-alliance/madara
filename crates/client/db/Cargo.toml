@@ -1,5 +1,5 @@
 [package]
-name = "mc-db"
+name = "dc-db"
 version.workspace = true
 edition.workspace = true
 description = "Starknet database backend"
@@ -17,10 +17,10 @@ cairo-vm = { workspace = true }
 flate2 = { workspace = true }
 
 # Deoxys crates
-mp-block = { workspace = true }
-mp-convert = { workspace = true }
-mp-felt = { workspace = true }
-mp-transactions = { workspace = true }
+dp-block = { workspace = true }
+dp-convert = { workspace = true }
+dp-felt = { workspace = true }
+dp-transactions = { workspace = true }
 
 # Starknet crates
 blockifier = { workspace = true }

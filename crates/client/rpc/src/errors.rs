@@ -1,5 +1,5 @@
-use mc_db::storage_handler::DeoxysStorageError;
-use mc_db::DbError;
+use dc_db::storage_handler::DeoxysStorageError;
+use dc_db::DbError;
 use starknet_core::types::StarknetError;
 
 pub enum StarknetTransactionExecutionError {

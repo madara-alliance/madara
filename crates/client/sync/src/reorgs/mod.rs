@@ -1,4 +1,4 @@
-use mc_db::DeoxysBackend;
+use dc_db::DeoxysBackend;
 use starknet_providers::sequencer::models::Block as StarknetBlock;
 
 /// Check for a reorg on Starknet and fix the current state if detected.
