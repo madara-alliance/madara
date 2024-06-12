@@ -1,7 +1,3 @@
-// use std::intrinsics::mir::Field;
-
-use alloc::vec::Vec;
-
 use mp_felt::Felt252Wrapper;
 use starknet_api::core::calculate_contract_address;
 use starknet_api::data_availability::DataAvailabilityMode;
@@ -20,6 +16,7 @@ use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash}; //, Poseidon};
 
 use super::SIMULATE_TX_VERSION_OFFSET;
 use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK};
+use mp_convert::core_felt::CoreFelt;
 
 const DECLARE_PREFIX: &[u8] = b"declare";
 const DEPLOY_ACCOUNT_PREFIX: &[u8] = b"deploy_account";
@@ -41,7 +38,7 @@ pub trait ComputeTransactionHash {
 #[inline]
 fn convert_calldata(calldata: Calldata) -> Vec<Felt> {
     // calldata.0.iter().map(|f| Felt252Wrapper::from(*f).into()).collect()
-    calldata.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect()
+    calldata.0.iter().map(CoreFelt::into_core_felt).collect()
 }
 
 #[inline]
@@ -66,14 +63,14 @@ fn compute_gas_hash(tip: &Tip, resource_bounds: &ResourceBoundsMapping) -> Felt 
 
 #[inline]
 fn compute_paymaster_hash(paymaster_data: &PaymasterData) -> Felt {
-    let paymaster_tmp = paymaster_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
+    let paymaster_tmp = paymaster_data.0.iter().map(CoreFelt::into_core_felt).collect::<Vec<_>>();
     Poseidon::hash_array(paymaster_tmp.as_slice())
 }
 
 #[inline]
 fn compute_account_deployment_hash(account_deployment_data: &AccountDeploymentData) -> Felt {
     let account_deployment_data_tmp =
-        &account_deployment_data.0.iter().map(|f| Felt::from_bytes_be(&f.0)).collect::<Vec<_>>();
+        &account_deployment_data.0.iter().map(CoreFelt::into_core_felt).collect::<Vec<_>>();
     Poseidon::hash_array(account_deployment_data_tmp.as_slice())
 }
 
@@ -130,15 +127,15 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
     ) -> TransactionHash {
         let prefix = Felt::from_bytes_be_slice(INVOKE_PREFIX);
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ZERO };
-        let sender_address = Felt::from_bytes_be(&self.contract_address.0 .0 .0);
-        let entrypoint_selector = Felt::from_bytes_be(&self.entry_point_selector.0 .0);
+        let sender_address = self.contract_address.into_core_felt();
+        let entrypoint_selector = self.entry_point_selector.into_core_felt();
 
         let calldata_hash = compute_calldata_hash_pedersen(self.calldata.clone());
         let max_fee = Felt::from(self.max_fee.0);
 
         // Check for deprecated environment
         if block_number > Some(LEGACY_BLOCK_NUMBER) {
-            TransactionHash(StarkFelt(
+            TransactionHash(StarkFelt::new_unchecked(
                 Pedersen::hash_array(&[
                     prefix,
                     version,
@@ -151,7 +148,7 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
                 .to_bytes_be(),
             ))
         } else {
-            TransactionHash(StarkFelt(
+            TransactionHash(StarkFelt::new_unchecked(
                 Pedersen::hash_array(&[prefix, sender_address, entrypoint_selector, calldata_hash, chain_id.into()])
                     .to_bytes_be(),
             ))
@@ -168,15 +165,15 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
     ) -> TransactionHash {
         let prefix = Felt::from_bytes_be_slice(INVOKE_PREFIX);
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::ONE } else { Felt::ONE };
-        let sender_address = Felt::from_bytes_be(&self.sender_address.0 .0 .0);
+        let sender_address = self.sender_address.into_core_felt();
         let entrypoint_selector = Felt::ZERO;
 
         let calldata_hash = compute_calldata_hash_pedersen(self.calldata.clone());
 
         let max_fee = Felt::from(self.max_fee.0);
-        let nonce = Felt::from_bytes_be(&self.nonce.0 .0);
+        let nonce = self.nonce.into_core_felt();
 
-        TransactionHash(StarkFelt(
+        TransactionHash(StarkFelt::new_unchecked(
             Pedersen::hash_array(&[
                 prefix,
                 version,
@@ -201,19 +198,19 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
     ) -> TransactionHash {
         let prefix = Felt::from_bytes_be_slice(INVOKE_PREFIX);
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
-        let sender_address = Felt::from_bytes_be(&self.sender_address.0 .0 .0);
+        let sender_address = self.sender_address.into_core_felt();
 
         let gas_hash = compute_gas_hash(&self.tip, &self.resource_bounds);
         let paymaster_hash = compute_paymaster_hash(&self.paymaster_data);
 
-        let nonce = Felt::from_bytes_be(&self.nonce.0 .0);
+        let nonce = self.nonce.into_core_felt();
         let data_availability_modes =
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
 
         let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);
         let calldata_hash = compute_calldata_hash_poseidon(self.calldata.clone());
 
-        TransactionHash(StarkFelt(
+        TransactionHash(StarkFelt::new_unchecked(
             Poseidon::hash_array(&[
                 prefix,
                 version,
@@ -263,19 +260,19 @@ impl ComputeTransactionHash for DeclareTransactionV0V1 {
             }
         };
 
-        let sender_address = Felt::from_bytes_be(&self.sender_address.0 .0 .0);
+        let sender_address = self.sender_address.into_core_felt();
         let entrypoint_selector = Felt::ZERO;
         let max_fee = Felt::from(self.max_fee.0);
 
-        let class_hash_as_felt = Felt::from_bytes_be(&self.class_hash.0 .0);
+        let class_hash_as_felt = self.class_hash.into_core_felt();
 
         let nonce_or_class_hash: Felt =
-            if version == Felt::ZERO { class_hash_as_felt } else { Felt::from_bytes_be(&self.nonce.0 .0) };
+            if version == Felt::ZERO { class_hash_as_felt } else { self.nonce.into_core_felt() };
 
         let class_or_nothing_hash =
             if version == Felt::ZERO { Pedersen::hash_array(&[]) } else { Pedersen::hash_array(&[class_hash_as_felt]) };
 
-        TransactionHash(StarkFelt(
+        TransactionHash(StarkFelt::new_unchecked(
             Pedersen::hash_array(&[
                 prefix,
                 version,
@@ -301,16 +298,16 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
         let prefix = Felt::from_bytes_be_slice(DECLARE_PREFIX);
 
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::TWO } else { Felt::TWO };
-        let sender_address = Felt::from_bytes_be(&self.sender_address.0 .0 .0);
+        let sender_address = self.sender_address.into_core_felt();
         let entrypoint_selector = Felt::ZERO;
 
-        let calldata = Pedersen::hash_array(&[Felt::from_bytes_be(&self.class_hash.0 .0)]);
+        let calldata = Pedersen::hash_array(&[self.class_hash.into_core_felt()]);
 
         let max_fee = Felt::from(self.max_fee.0);
-        let nonce = Felt::from_bytes_be(&self.nonce.0 .0);
-        let compiled_class_hash = Felt::from_bytes_be(&self.compiled_class_hash.0 .0);
+        let nonce = self.nonce.into_core_felt();
+        let compiled_class_hash = self.compiled_class_hash.into_core_felt();
 
-        TransactionHash(StarkFelt(
+        TransactionHash(StarkFelt::new_unchecked(
             Pedersen::hash_array(&[
                 prefix,
                 version,
@@ -336,18 +333,18 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
     ) -> TransactionHash {
         let prefix = Felt::from_bytes_be_slice(DECLARE_PREFIX);
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
-        let sender_address = Felt::from_bytes_be(&self.sender_address.0 .0 .0);
+        let sender_address = self.sender_address.into_core_felt();
 
         let gas_hash = compute_gas_hash(&self.tip, &self.resource_bounds);
         let paymaster_hash = compute_paymaster_hash(&self.paymaster_data);
 
-        let nonce = Felt::from_bytes_be(&self.nonce.0 .0);
+        let nonce = self.nonce.into_core_felt();
         let data_availability_modes =
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
 
         let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);
 
-        TransactionHash(StarkFelt(
+        TransactionHash(StarkFelt::new_unchecked(
             Poseidon::hash_array(&[
                 prefix,
                 version,
@@ -358,8 +355,8 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
                 nonce,
                 data_availability_modes,
                 account_deployment_data_hash,
-                Felt::from_bytes_be(&self.class_hash.0 .0),
-                Felt::from_bytes_be(&self.compiled_class_hash.0 .0),
+                self.class_hash.into_core_felt(),
+                self.compiled_class_hash.into_core_felt(),
             ])
             .to_bytes_be(),
         ))
@@ -406,33 +403,29 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
     ) -> TransactionHash {
         let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
 
-        let contract_address = Felt::from_bytes_be(
-            &calculate_contract_address(
-                self.contract_address_salt,
-                self.class_hash,
-                &self.constructor_calldata,
-                Default::default(),
-            )
-            .unwrap()
-            .0
-             .0
-             .0,
-        );
+        let contract_address = calculate_contract_address(
+            self.contract_address_salt,
+            self.class_hash,
+            &self.constructor_calldata,
+            Default::default(),
+        )
+        .unwrap()
+        .into_core_felt();
 
         let prefix = Felt::from_bytes_be_slice(DEPLOY_ACCOUNT_PREFIX);
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::ONE } else { Felt::ONE };
         let entrypoint_selector = Felt::ZERO;
 
         let mut calldata: Vec<Felt> = Vec::with_capacity(constructor_calldata.len() + 2);
-        calldata.push(Felt::from_bytes_be(&self.class_hash.0 .0));
-        calldata.push(Felt::from_bytes_be(&self.contract_address_salt.0 .0));
+        calldata.push(self.class_hash.into_core_felt());
+        calldata.push(self.contract_address_salt.into_core_felt());
         calldata.extend_from_slice(&constructor_calldata);
         let calldata_hash = Pedersen::hash_array(calldata.as_slice());
 
         let max_fee = Felt::from(self.max_fee.0);
-        let nonce = Felt::from_bytes_be(&self.nonce.0 .0);
+        let nonce = self.nonce.into_core_felt();
 
-        TransactionHash(StarkFelt(
+        TransactionHash(StarkFelt::new_unchecked(
             Pedersen::hash_array(&[
                 prefix,
                 version,
@@ -453,18 +446,14 @@ impl ComputeTransactionHash for DeployTransaction {
         let chain_id = chain_id.into();
         let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
 
-        let contract_address = Felt::from_bytes_be(
-            &calculate_contract_address(
-                self.contract_address_salt,
-                self.class_hash,
-                &self.constructor_calldata,
-                Default::default(),
-            )
-            .unwrap()
-            .0
-             .0
-             .0,
-        );
+        let contract_address = calculate_contract_address(
+            self.contract_address_salt,
+            self.class_hash,
+            &self.constructor_calldata,
+            Default::default(),
+        )
+        .unwrap()
+        .into_core_felt();
 
         compute_hash_given_contract_address(
             self.clone(),
@@ -488,29 +477,25 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
 
         let constructor_calldata = convert_calldata(self.constructor_calldata.clone());
-        let contract_address = Felt::from_bytes_be(
-            &calculate_contract_address(
-                self.contract_address_salt,
-                self.class_hash,
-                &self.constructor_calldata,
-                Default::default(),
-            )
-            .unwrap()
-            .0
-             .0
-             .0,
-        );
+        let contract_address = calculate_contract_address(
+            self.contract_address_salt,
+            self.class_hash,
+            &self.constructor_calldata,
+            Default::default(),
+        )
+        .unwrap()
+        .into_core_felt();
 
         let gas_hash = compute_gas_hash(&self.tip, &self.resource_bounds);
         let paymaster_hash = compute_paymaster_hash(&self.paymaster_data);
 
-        let nonce = Felt::from_bytes_be(&self.nonce.0 .0);
+        let nonce = self.nonce.into_core_felt();
         let data_availability_modes =
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
 
         let constructor_calldata_hash = Poseidon::hash_array(constructor_calldata.as_slice());
 
-        TransactionHash(StarkFelt(
+        TransactionHash(StarkFelt::new_unchecked(
             Poseidon::hash_array(&[
                 prefix,
                 version,
@@ -521,8 +506,8 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
                 nonce,
                 data_availability_modes,
                 constructor_calldata_hash,
-                Felt::from_bytes_be(&self.class_hash.0 .0),
-                Felt::from_bytes_be(&self.contract_address_salt.0 .0),
+                self.class_hash.into_core_felt(),
+                self.contract_address_salt.into_core_felt(),
             ])
             .to_bytes_be(),
         ))
@@ -539,28 +524,28 @@ impl ComputeTransactionHash for L1HandlerTransaction {
         let prefix = Felt::from_bytes_be_slice(L1_HANDLER_PREFIX);
         let invoke_prefix = Felt::from_bytes_be_slice(INVOKE_PREFIX);
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ZERO };
-        let contract_address = Felt::from_bytes_be(&self.contract_address.0 .0 .0);
-        let entrypoint_selector = Felt::from_bytes_be(&self.entry_point_selector.0 .0);
+        let contract_address = self.contract_address.into_core_felt();
+        let entrypoint_selector = self.entry_point_selector.into_core_felt();
 
         let calldata_tmp = convert_calldata(self.calldata.clone());
         let calldata_tmp_bis = calldata_tmp.as_slice();
         let calldata_hash = Pedersen::hash_array(calldata_tmp_bis);
 
-        let nonce = Felt::from_bytes_be(&self.nonce.0 .0);
+        let nonce = self.nonce.into_core_felt();
         let chain_id = chain_id.into();
 
         if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && block_number.is_some() {
-            TransactionHash(StarkFelt(
+            TransactionHash(StarkFelt::new_unchecked(
                 Pedersen::hash_array(&[invoke_prefix, contract_address, entrypoint_selector, calldata_hash, chain_id])
                     .to_bytes_be(),
             ))
         } else if block_number < Some(LEGACY_BLOCK_NUMBER) && block_number.is_some() {
-            TransactionHash(StarkFelt(
+            TransactionHash(StarkFelt::new_unchecked(
                 Pedersen::hash_array(&[prefix, contract_address, entrypoint_selector, calldata_hash, chain_id, nonce])
                     .to_bytes_be(),
             ))
         } else {
-            TransactionHash(StarkFelt(
+            TransactionHash(StarkFelt::new_unchecked(
                 Pedersen::hash_array(&[
                     prefix,
                     version,
@@ -586,14 +571,14 @@ pub fn compute_hash_given_contract_address(
     constructor_calldata: &[Felt],
 ) -> TransactionHash {
     let prefix = Felt::from_bytes_be_slice(DEPLOY_PREFIX);
-    let version = Felt::from_bytes_be(&transaction.version.0 .0);
+    let version = transaction.version.into_core_felt();
 
     let constructor_calldata = Pedersen::hash_array(constructor_calldata);
 
     let constructor = Felt::from_bytes_be(&starknet_keccak(b"constructor").to_bytes_be());
 
     if block_number > Some(LEGACY_BLOCK_NUMBER) {
-        TransactionHash(StarkFelt(
+        TransactionHash(StarkFelt::new_unchecked(
             Pedersen::hash_array(&[
                 prefix,
                 version,
@@ -606,7 +591,7 @@ pub fn compute_hash_given_contract_address(
             .to_bytes_be(),
         ))
     } else {
-        TransactionHash(StarkFelt(
+        TransactionHash(StarkFelt::new_unchecked(
             Pedersen::hash_array(&[prefix, contract_address, constructor, constructor_calldata, chain_id])
                 .to_bytes_be(),
         ))

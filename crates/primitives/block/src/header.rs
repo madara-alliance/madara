@@ -3,7 +3,7 @@ use core::num::NonZeroU128;
 use blockifier::block::{BlockInfo, GasPrices};
 use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
 use blockifier::versioned_constants::VersionedConstants;
-use mp_felt::Felt252Wrapper;
+use mp_convert::core_felt::CoreFelt;
 use primitive_types::U256;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::core::{ChainId, ContractAddress};
@@ -16,18 +16,13 @@ use starknet_types_core::hash::StarkHash as StarkHashTrait;
 /// Block status.
 ///
 /// The status of the block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BlockStatus {
-    #[cfg_attr(feature = "serde", serde(rename = "PENDING"))]
     Pending,
     #[default]
-    #[cfg_attr(feature = "serde", serde(rename = "ACCEPTED_ON_L2"))]
     AcceptedOnL2,
-    #[cfg_attr(feature = "serde", serde(rename = "ACCEPTED_ON_L1"))]
     AcceptedOnL1,
-    #[cfg_attr(feature = "serde", serde(rename = "REJECTED"))]
     Rejected,
 }
 
@@ -42,10 +37,7 @@ impl From<BlockStatus> for starknet_core::types::BlockStatus {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
-// #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 /// Starknet header definition.
 pub struct Header {
     /// The hash of this block’s parent.
@@ -67,7 +59,7 @@ pub struct Header {
     /// A commitment to the events produced in this block
     pub event_commitment: StarkHash,
     /// The version of the Starknet protocol used when creating this block
-    pub protocol_version: Felt252Wrapper, // TODO: Verify if the type can be changed to u8 for the protocol version
+    pub protocol_version: String, // TODO: Verify if the type can be changed to u8 for the protocol version
     /// Gas prices for this block
     pub l1_gas_price: Option<GasPrices>,
     /// The mode of data availability for this block
@@ -102,7 +94,7 @@ impl Header {
         transaction_commitment: StarkHash,
         event_count: u128,
         event_commitment: StarkHash,
-        protocol_version: Felt252Wrapper,
+        protocol_version: String,
         gas_prices: Option<GasPrices>,
         l1_da_mode: L1DataAvailabilityMode,
         extra_data: Option<U256>,
@@ -158,17 +150,17 @@ impl Header {
         if self.block_number >= 833 {
             // Computes the block hash for blocks generated after Cairo 0.7.0
             let data: &[Felt] = &[
-                Felt::from(self.block_number),                        // block number
-                Felt::from_bytes_be(&self.global_state_root.0),       // global state root
-                Felt::from_bytes_be(&self.sequencer_address.0 .0 .0), // sequencer address
-                Felt::from(self.block_timestamp),                     // block timestamp
-                Felt::from(self.transaction_count),                   // number of transactions
-                Felt::from_bytes_be(&self.transaction_commitment.0),  // transaction commitment
-                Felt::from(self.event_count),                         // number of events
-                Felt::from_bytes_be(&self.event_commitment.0),        // event commitment
-                Felt::ZERO,                                           // reserved: protocol version
-                Felt::ZERO,                                           // reserved: extra data
-                Felt::from_bytes_be(&self.parent_block_hash.0),       // parent block hash
+                Felt::from(self.block_number),                // block number
+                self.global_state_root.into_core_felt(),      // global state root
+                self.sequencer_address.into_core_felt(),      // sequencer address
+                Felt::from(self.block_timestamp),             // block timestamp
+                Felt::from(self.transaction_count),           // number of transactions
+                self.transaction_commitment.into_core_felt(), // transaction commitment
+                Felt::from(self.event_count),                 // number of events
+                self.event_commitment.into_core_felt(),       // event commitment
+                Felt::ZERO,                                   // reserved: protocol version
+                Felt::ZERO,                                   // reserved: extra data
+                self.parent_block_hash.into_core_felt(),      // parent block hash
             ];
 
             Pedersen::hash_array(data)
@@ -176,17 +168,17 @@ impl Header {
             // Computes the block hash for blocks generated before Cairo 0.7.0
             let data: &[Felt] = &[
                 Felt::from(self.block_number),
-                Felt::from_bytes_be(&self.global_state_root.0),
+                self.global_state_root.into_core_felt(),
                 Felt::ZERO,
                 Felt::ZERO,
                 Felt::from(self.transaction_count),
-                Felt::from_bytes_be(&self.transaction_commitment.0),
+                self.transaction_commitment.into_core_felt(),
                 Felt::ZERO,
                 Felt::ZERO,
                 Felt::ZERO,
                 Felt::ZERO,
                 Felt::from_bytes_be_slice(b"SN_MAIN"),
-                Felt::from_bytes_be(&self.parent_block_hash.0),
+                self.parent_block_hash.into_core_felt(),
             ];
 
             Pedersen::hash_array(data)

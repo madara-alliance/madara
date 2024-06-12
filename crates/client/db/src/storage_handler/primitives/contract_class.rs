@@ -17,9 +17,8 @@ use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
-    CompressedLegacyContractClass, ContractClass as ContractClassCore, EntryPointsByType, FieldElement,
-    FlattenedSierraClass, FromByteArrayError, LegacyContractAbiEntry, LegacyContractEntryPoint,
-    LegacyEntryPointsByType, SierraEntryPoint,
+    CompressedLegacyContractClass, ContractClass as ContractClassCore, EntryPointsByType, FlattenedSierraClass,
+    FromByteArrayError, LegacyContractAbiEntry, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
 };
 
 #[derive(Debug, Encode, Decode)]
@@ -30,23 +29,21 @@ pub struct StorageContractClassData {
     pub abi_length: u64,
     pub block_number: u64,
 }
-
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct StorageContractData {
     pub class_hash: ClassHash,
     pub nonce: Nonce,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct ClassUpdateWrapper(pub Vec<ContractClassData>);
-
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct ContractClassData {
     pub hash: ClassHash,
     pub contract_class: ContractClassWrapper,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct ContractClassWrapper {
     pub contract: ContractClassBlockifier,
     pub abi: ContractAbi,
@@ -55,7 +52,7 @@ pub struct ContractClassWrapper {
 }
 // TODO: move this somewhere more sensible? Would be a good idea to decouple
 // publicly available storage data from wrapper classes
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum ContractAbi {
     Sierra(String),
     Cairo(Option<Vec<AbiEntryWrapper>>),
@@ -71,14 +68,14 @@ impl ContractAbi {
     }
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum AbiEntryWrapper {
     Function(AbiFunctionEntryWrapper),
     Event(AbiEventEntryWrapper),
     Struct(AbiStructEntryWrapper),
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct AbiFunctionEntryWrapper {
     // Function abi type
     pub r#type: AbiFunctionTypeWrapper,
@@ -92,7 +89,7 @@ pub struct AbiFunctionEntryWrapper {
     pub state_mutability: Option<AbiFunctionStateMutabilityWrapper>,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct AbiEventEntryWrapper {
     /// Event abi type
     pub r#type: AbiEventTypeWrapper,
@@ -104,7 +101,7 @@ pub struct AbiEventEntryWrapper {
     pub data: Vec<AbiTypedParameterWrapper>,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct AbiStructEntryWrapper {
     pub r#type: AbiStructTypeWrapper,
     pub name: String,
@@ -112,7 +109,7 @@ pub struct AbiStructEntryWrapper {
     pub members: Vec<AbiStructMemberWrapper>,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct AbiStructMemberWrapper {
     /// The parameter's name
     pub name: String,
@@ -122,29 +119,29 @@ pub struct AbiStructMemberWrapper {
     pub offset: u64,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum AbiFunctionTypeWrapper {
     Function,
     L1handler,
     Constructor,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum AbiEventTypeWrapper {
     Event,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum AbiStructTypeWrapper {
     Struct,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum AbiFunctionStateMutabilityWrapper {
     View,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct AbiTypedParameterWrapper {
     pub name: String,
     pub r#type: String,
@@ -307,7 +304,7 @@ fn from_legacy_entry_points_by_type(entries: &LegacyEntryPointsByType) -> IndexM
 /// Returns a [LegacyContractEntryPoint] (starknet-rs) from a [EntryPoint]
 /// (starknet-api)
 fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryPoint, FromByteArrayError> {
-    let selector = FieldElement::from_bytes_be(&entry_point.selector.0 .0)?;
+    let selector = entry_point.selector.0.into();
     let offset = entry_point.offset.0;
     Ok(LegacyContractEntryPoint { selector, offset })
 }
@@ -315,7 +312,7 @@ fn to_legacy_entry_point(entry_point: EntryPoint) -> Result<LegacyContractEntryP
 /// Returns a [SierraEntryPoint] (starknet-rs) from a [EntryPointV1]
 /// (starknet-api)
 fn to_entry_point(entry_point: EntryPointV1, index: u64) -> Result<SierraEntryPoint, FromByteArrayError> {
-    let selector = FieldElement::from_bytes_be(&entry_point.selector.0 .0)?;
+    let selector = entry_point.selector.0.into();
     let function_idx = index;
     Ok(SierraEntryPoint { selector, function_idx })
 }
@@ -323,7 +320,7 @@ fn to_entry_point(entry_point: EntryPointV1, index: u64) -> Result<SierraEntryPo
 /// Returns a [EntryPoint] (starknet-api) from a [LegacyContractEntryPoint]
 /// (starknet-rs)
 fn from_legacy_entry_point(entry_point: &LegacyContractEntryPoint) -> EntryPoint {
-    let selector = EntryPointSelector(StarkFelt(entry_point.selector.to_bytes_be()));
+    let selector = EntryPointSelector(StarkFelt::new_unchecked(entry_point.selector.to_bytes_be()));
     let offset = EntryPointOffset(entry_point.offset);
     EntryPoint { selector, offset }
 }

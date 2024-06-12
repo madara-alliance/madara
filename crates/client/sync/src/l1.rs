@@ -10,7 +10,8 @@ use ethers::types::{Address, BlockNumber as EthBlockNumber, Filter, TransactionR
 use ethers::utils::hex::decode;
 use futures::stream::StreamExt;
 use mc_db::{DeoxysBackend, WriteBatchWithTransaction};
-use mp_felt::{trim_hash, Felt252Wrapper};
+use mp_convert::core_felt::CoreFelt;
+use mp_felt::Felt252Wrapper;
 use primitive_types::H256;
 use reqwest::Url;
 use serde::Deserialize;
@@ -18,7 +19,7 @@ use serde_json::Value;
 use starknet_api::hash::StarkHash;
 
 use crate::metrics::block_metrics::BlockMetrics;
-use crate::utility::convert_log_state_update;
+use crate::utility::{convert_log_state_update, trim_hash};
 use crate::utils::channel_wait_or_graceful_shutdown;
 use crate::utils::constant::LOG_STATE_UPDTATE_TOPIC;
 
@@ -169,8 +170,8 @@ pub fn update_l1(state_update: L1StateUpdate, block_metrics: BlockMetrics) -> an
     log::info!(
         "🔄 Updated L1 head #{} ({}) with state root ({})",
         state_update.block_number,
-        trim_hash(&Felt252Wrapper::from(state_update.block_hash)),
-        trim_hash(&Felt252Wrapper::from(state_update.global_root))
+        trim_hash(&state_update.block_hash.into_core_felt()),
+        trim_hash(&state_update.global_root.into_core_felt())
     );
 
     block_metrics.l1_block_number.set(state_update.block_number as f64);
@@ -291,9 +292,9 @@ mod l1_sync_tests {
         let client = EthereumClient::new(url, H160::zero()).await.expect("Failed to create EthereumClient");
 
         let initial_state = EthereumClient::get_initial_state(&client).await.expect("Failed to get initial state");
-        assert!(!initial_state.global_root.0.is_empty(), "Global root should not be empty");
+        assert!(!initial_state.global_root.bytes().is_empty(), "Global root should not be empty");
         assert!(!initial_state.block_number > 0, "Block number should be greater than 0");
-        assert!(!initial_state.block_hash.0.is_empty(), "Block hash should not be empty");
+        assert!(!initial_state.block_hash.bytes().is_empty(), "Block hash should not be empty");
     }
 
     #[tokio::test]

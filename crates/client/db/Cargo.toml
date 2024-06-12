@@ -13,31 +13,22 @@ repository = "https://github.com/kasarlabs/deoxys"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
-cairo-lang-starknet-classes = { workspace = true }
 cairo-vm = { workspace = true }
 flate2 = { workspace = true }
-indexmap = { workspace = true }
-parity-scale-codec = { workspace = true, default-features = true, features = [
-  "derive",
-] }
 
 # Deoxys crates
-mp-block = { workspace = true, features = ["std", "parity-scale-codec"] }
-mp-convert = { workspace = true, features = ["std"] }
-mp-felt = { workspace = true, features = ["std", "serde"] }
-mp-transactions = { workspace = true, features = ["std", "serde", "client"] }
-mp-types = { workspace = true }
+mp-block = { workspace = true }
+mp-convert = { workspace = true }
+mp-felt = { workspace = true }
+mp-transactions = { workspace = true }
 
 # Starknet crates
-blockifier = { workspace = true, features = ["testing"] }
+blockifier = { workspace = true }
 bonsai-trie = { workspace = true }
 starknet-core = { workspace = true }
-starknet-ff = { workspace = true, default-features = false, features = [
-  "alloc",
-  "serde",
-] }
+starknet-ff = { workspace = true }
 starknet-types-core = { workspace = true }
-starknet_api = { workspace = true, default-features = true }
+starknet_api = { workspace = true }
 
 # Other crates
 anyhow.workspace = true
@@ -46,12 +37,10 @@ base64 = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
 crossbeam-skiplist = { workspace = true }
-itertools = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true, default-features = true }
+parity-scale-codec = { version = "3.6.5", features = ["derive"] }
 rayon = { workspace = true }
 rocksdb.workspace = true
-serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-uuid = "1.4.1"

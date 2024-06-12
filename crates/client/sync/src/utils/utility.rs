@@ -6,6 +6,7 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde_json::Value;
 use starknet_api::hash::StarkFelt;
+use starknet_types_core::felt::Felt;
 
 use crate::l1::{L1StateUpdate, LogStateUpdate};
 
@@ -79,4 +80,14 @@ pub fn convert_log_state_update(log_state_update: LogStateUpdate) -> anyhow::Res
     let block_hash = u256_to_starkfelt(log_state_update.block_hash)?;
 
     Ok(L1StateUpdate { block_number, global_root, block_hash })
+}
+
+pub fn trim_hash(hash: &Felt) -> String {
+    let hash_str = format!("{:#x}", hash);
+    let hash_len = hash_str.len();
+
+    let prefix = &hash_str[..6 + 2];
+    let suffix = &hash_str[hash_len - 6..];
+
+    format!("{}...{}", prefix, suffix)
 }

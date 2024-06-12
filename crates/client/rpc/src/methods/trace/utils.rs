@@ -36,7 +36,7 @@ pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_
             to_address: FieldElement::from_byte_slice_be(message.message.to_address.0.to_fixed_bytes().as_slice())
                 .unwrap(),
             from_address: {
-                let felt_wrapper: Felt252Wrapper = Felt252Wrapper::from(call_info.call.storage_address.0 .0);
+                let felt_wrapper: Felt252Wrapper = Felt252Wrapper::from(call_info.call.storage_address);
                 FieldElement::from(felt_wrapper)
             },
         })
@@ -132,14 +132,14 @@ fn try_get_funtion_invocation_from_call_info(
     };
 
     Ok(starknet_core::types::FunctionInvocation {
-        contract_address: FieldElement::from(Felt252Wrapper::from(call_info.call.storage_address.0 .0)),
+        contract_address: (*call_info.call.storage_address.0.key()).into(),
         entry_point_selector: FieldElement::from(Felt252Wrapper::from(call_info.call.entry_point_selector.0)),
         calldata: call_info.call.calldata.0.iter().map(|x| FieldElement::from(Felt252Wrapper::from(*x))).collect(),
-        caller_address: FieldElement::from(Felt252Wrapper::from(call_info.call.caller_address.0 .0)),
+        caller_address: (*call_info.call.caller_address.0.key()).into(),
         class_hash,
         entry_point_type,
         call_type,
-        result: call_info.execution.retdata.0.iter().map(|x| FieldElement::from(Felt252Wrapper::from(*x))).collect(),
+        result: call_info.execution.retdata.0.iter().map(|x| (*x).into()).collect(),
         calls: inner_calls,
         events,
         messages,

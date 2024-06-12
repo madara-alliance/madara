@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use mp_convert::field_element::FromFieldElement;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce, PatriciaKey};
+use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_core::types::{
@@ -23,7 +23,7 @@ pub fn store_state_update(block_number: u64, state_update: StateUpdate) -> Resul
         .into_iter()
         .map(|NonceUpdate { contract_address, nonce }| {
             (
-                ContractAddress(PatriciaKey(StarkFelt::new_unchecked(contract_address.to_bytes_be()))),
+                ContractAddress(StarkFelt::from(contract_address).try_into().unwrap()),
                 Nonce(StarkFelt::new_unchecked(nonce.to_bytes_be())),
             )
         })

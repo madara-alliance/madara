@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor: improve compatibility without forks
 - fix(metrics): fixed some metrics endpoints
 - fix(metrics): fix prometheus endpoint port
 - fix(hashes): Fix invoke tx hashes for version v3

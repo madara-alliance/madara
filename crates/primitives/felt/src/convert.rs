@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use starknet_api::block::BlockHash;
 use starknet_api::core::{ClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
@@ -103,6 +105,24 @@ impl FeltWrapper for &EthAddress {
     }
 }
 
+impl FeltWrapper for PatriciaKey {
+    fn into_stark_felt(self) -> StarkFelt {
+        self.key().into_stark_felt()
+    }
+    fn into_field_element(self) -> FieldElement {
+        self.key().into_field_element()
+    }
+}
+
+impl FeltWrapper for &PatriciaKey {
+    fn into_stark_felt(self) -> StarkFelt {
+        self.deref().into_stark_felt()
+    }
+    fn into_field_element(self) -> FieldElement {
+        self.deref().into_field_element()
+    }
+}
+
 macro_rules! impl_for_wrapper {
     ($arg:ty) => {
         impl FeltWrapper for $arg {
@@ -125,7 +145,6 @@ macro_rules! impl_for_wrapper {
     };
 }
 
-impl_for_wrapper!(PatriciaKey);
 impl_for_wrapper!(BlockHash);
 impl_for_wrapper!(ClassHash);
 impl_for_wrapper!(TransactionHash);

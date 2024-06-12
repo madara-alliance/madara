@@ -10,7 +10,7 @@ pub(crate) fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> 
         .events
         .iter()
         .map(|ordered_event| Event {
-            from_address: FieldElement::from_byte_slice_be(address.0 .0.bytes()).unwrap(),
+            from_address: (*address.0.key()).into(),
             keys: ordered_event
                 .event
                 .keys
@@ -39,7 +39,7 @@ pub(crate) fn extract_messages_from_call_info(call_info: &CallInfo) -> Vec<MsgTo
         .l2_to_l1_messages
         .iter()
         .map(|msg| MsgToL1 {
-            from_address: FieldElement::from_byte_slice_be(address.0 .0.bytes()).unwrap(),
+            from_address: (*address.0.key()).into(),
             to_address: FieldElement::from_byte_slice_be(msg.message.to_address.0.to_fixed_bytes().as_slice()).unwrap(),
             payload: msg
                 .message

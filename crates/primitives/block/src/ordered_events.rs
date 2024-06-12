@@ -1,14 +1,6 @@
-#![cfg_attr(not(feature = "std"), no_std)]
 use starknet_api::transaction::Event;
 
-#[doc(hidden)]
-pub extern crate alloc;
-
-use alloc::vec::Vec;
-
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[derive(Clone, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 /// Starknet OrderEvents definition
 pub struct OrderedEvents {
     /// the index of the transaction in the block
