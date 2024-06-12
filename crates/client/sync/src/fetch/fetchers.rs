@@ -108,7 +108,7 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig, chain_id: StarkFelt)
     };
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    Ok(crate::convert::convert_block(block, chain_id).expect("invalid genesis block"))
+    Ok(crate::convert::convert_block(block, chain_id).expect("invalid genesis block").block)
 }
 
 /// retrieves state update with block from Starknet sequencer in only one request

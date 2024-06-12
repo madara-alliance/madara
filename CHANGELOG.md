@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fest: store reverted txs hashes
 - feat(l1): added l1 free rpc url if none is provided
 - cleanup: clean DB statics
 - refactor: improve compatibility without forks

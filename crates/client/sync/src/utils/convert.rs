@@ -26,10 +26,16 @@ use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdat
 use crate::commitments::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
 
+pub struct ConvertedBlock {
+    pub block: DeoxysBlock,
+    pub reverted_txs: Vec<TransactionHash>,
+}
+
 /// Compute heavy, this should only be called in a rayon ctx
-pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock, L2SyncError> {
+pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<ConvertedBlock, L2SyncError> {
     // converts starknet_provider transactions and events to dp_transactions and starknet_api events
     let transactions = transactions(block.transactions);
+    let reverted_transactions = reverted_transactions(&block.transaction_receipts);
     let events = events(&block.transaction_receipts);
     let parent_block_hash = felt(block.parent_block_hash);
     let block_hash = block.block_hash.expect("no block hash provided");
@@ -91,7 +97,7 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock
         DeoxysBlockInner::new(transactions, ordered_events),
     );
 
-    Ok(block)
+    Ok(ConvertedBlock { block, reverted_txs: reverted_transactions })
 }
 
 fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {
@@ -258,6 +264,14 @@ fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
         entry_point_selector: entry_point(tx.entry_point_selector),
         calldata: call_data(tx.calldata),
     }
+}
+
+fn reverted_transactions(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<TransactionHash> {
+    receipts
+        .iter()
+        .filter(|r| r.execution_status == Some(p::TransactionExecutionStatus::Reverted))
+        .map(|r| TransactionHash(felt(r.transaction_hash)))
+        .collect()
 }
 
 fn fee(felt: starknet_ff::FieldElement) -> starknet_api::transaction::Fee {
