@@ -140,12 +140,12 @@ impl RpcChecker {
                 }
             }
         }
-        
+
         match self.best_url {
             Some(best_url) => {
                 log::info!("🔗 Using best L1 free RPC url found: {}", best_url);
                 Ok(best_url)
-            },
+            }
             None => Err(RpcError::NoSuitableUrl),
         }
     }

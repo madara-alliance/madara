@@ -1,7 +1,4 @@
 //! Deoxys constants.
-
-use url::Url;
-
 // Starknet Core contract addresses on Ethereum.
 //
 // These addresses are used to verified the L2 state accross the L1.
@@ -22,7 +19,7 @@ pub const LOG_STATE_UPDTATE_TOPIC: &str = "0xd342ddf7a308dec111745b00315c14b7efb
 //
 // The list comes from DefiLlama's chainlist repository:
 // https://github.com/DefiLlama/chainlist
-pub const L1_FREE_RPC_URLS: &'static [&'static str] = &[
+pub const L1_FREE_RPC_URLS: &[&str] = &[
     "https://endpoints.omniatech.io/v1/eth/mainnet/public",
     "https://rpc.ankr.com/eth",
     "https://go.getblock.io/aefd01aa907c4805ba3c00a9e5b48c6b",

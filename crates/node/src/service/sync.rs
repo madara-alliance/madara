@@ -34,7 +34,7 @@ impl SyncService {
             l1_rpc_url.clone()
         } else {
             let l1_rpc_url = l1_free_rpc_get().await.expect("finding the best RPC URL");
-            Url::parse(&l1_rpc_url).expect("parsing the RPC URL")
+            Url::parse(l1_rpc_url).expect("parsing the RPC URL")
         };
         Ok(Self {
             fetch_config: config.block_fetch_config(),

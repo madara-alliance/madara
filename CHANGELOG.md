@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(l1): added l1 free rpc url if none is provided
 - fix(metrics): fixed some metrics endpoints
 - fix(metrics): fix prometheus endpoint port
 - fix(hashes): Fix invoke tx hashes for version v3
