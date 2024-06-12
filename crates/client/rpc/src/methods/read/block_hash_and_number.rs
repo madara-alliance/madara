@@ -2,6 +2,7 @@ use jsonrpsee::core::RpcResult;
 use mp_block::{BlockId, BlockTag};
 use mp_felt::FeltWrapper;
 use starknet_core::types::BlockHashAndNumber;
+use starknet_types_core::felt::Felt;
 
 use crate::Starknet;
 
@@ -17,7 +18,6 @@ use crate::Starknet;
 ///   network.
 pub fn block_hash_and_number(starknet: &Starknet) -> RpcResult<BlockHashAndNumber> {
     let block_info = starknet.get_block_info(BlockId::Tag(BlockTag::Latest))?;
-
 
     let block_hash = block_info.block_hash().into_field_element();
     let block_hash_as_field = block_hash.into_field_element();
