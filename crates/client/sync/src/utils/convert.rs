@@ -24,8 +24,6 @@ use starknet_providers::sequencer::models::state_update::{
 use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
 use starknet_types_core::felt::Felt;
 
-use starknet_types_core::felt::Felt;
-
 use crate::commitments::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
 

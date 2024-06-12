@@ -2,7 +2,6 @@ use jsonrpsee::core::RpcResult;
 use mp_block::{BlockId, BlockTag};
 use mp_felt::FeltWrapper;
 use starknet_core::types::BlockHashAndNumber;
-use starknet_types_core::felt::Felt;
 
 use crate::Starknet;
 

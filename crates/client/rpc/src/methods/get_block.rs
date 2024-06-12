@@ -11,7 +11,6 @@ use crate::errors::StarknetRpcApiError;
 use crate::utils::block::{l1_da_mode, l1_data_gas_price, l1_gas_price, starknet_version};
 use crate::utils::ResultExt;
 use crate::Starknet;
-use starknet_types_core::felt::Felt;
 
 pub(crate) fn get_block_with_txs(starknet: &Starknet, block_id: &BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
     let block = starknet

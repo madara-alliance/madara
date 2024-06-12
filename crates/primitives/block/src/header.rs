@@ -8,7 +8,7 @@ use primitive_types::U256;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_api::data_availability::L1DataAvailabilityMode;
-use starknet_api::hash::{StarkFelt, StarkHash};
+use starknet_api::hash::StarkHash;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 use starknet_types_core::hash::StarkHash as StarkHashTrait;
