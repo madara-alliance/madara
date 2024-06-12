@@ -180,7 +180,7 @@ pub fn update_l1(
     // This is a provisory check to avoid updating the state with an L1StateUpdate that should not have been detected
     //
     // TODO: Remove this check when the L1StateUpdate is properly verified
-    if (state_update.block_number as u64) > 500000u64 {
+    if state_update.block_number > 500000u64 {
         log::info!(
             "🔄 Updated L1 head #{} ({}) with state root ({})",
             state_update.block_number,

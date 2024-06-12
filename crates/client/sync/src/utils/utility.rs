@@ -2,6 +2,7 @@
 
 use std::time::Instant;
 
+use super::constant::L1_FREE_RPC_URLS;
 use anyhow::{bail, Context};
 use ethers::types::{I256, U256};
 use rand::seq::SliceRandom;
@@ -11,7 +12,6 @@ use serde_json::Value;
 use starknet_api::hash::StarkFelt;
 use starknet_types_core::felt::Felt;
 use thiserror::Error;
-use super::constant::L1_FREE_RPC_URLS;
 
 use crate::l1::{L1StateUpdate, LogStateUpdate};
 
