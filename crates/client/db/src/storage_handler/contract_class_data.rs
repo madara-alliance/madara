@@ -18,10 +18,10 @@ impl StorageView for ContractClassDataView {
         let db = DeoxysBackend::expose_db();
         let column = db.get_column(Column::ContractClassData);
 
-        let contract_class_data = db
+        let contract_class_data: Option<Result<StorageContractClassData, Box<bincode::ErrorKind>>> = db
             .get_cf(&column, bincode::serialize(&class_hash)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassData))?
-            .map(|bytes| bincode::deserialize(&bytes[..]));
+            .map(|bytes| bincode::deserialize::<Self::VALUE>(&bytes));
 
         match contract_class_data {
             Some(Ok(contract_class_data)) => Ok(Some(contract_class_data)),
