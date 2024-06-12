@@ -97,10 +97,14 @@ pub(crate) fn execution_infos(
     transactions: Vec<btx::Transaction>,
     block_context: &BlockContext,
 ) -> RpcResult<TransactionExecutionInfo> {
-    let (last, prev) = match transactions.split_last() {
-        Some((last, prev)) => (vec![last.clone()], prev.to_vec()),
-        None => (transactions, vec![]),
-    };
+    // TODO: fix this with vec
+    // let (last, prev) = match transactions.split_last() {
+    //     Some((last, prev)) => (vec![last.clone()], prev.to_vec()),
+    //     None => (transactions, vec![]),
+    // };
+
+    let last = transactions;
+    let prev = vec![];
 
     let execution_infos = re_execute_transactions(prev, last, block_context)
         .map_err(|e| {
@@ -201,7 +205,7 @@ pub fn receipt(
                 execution_resources,
                 execution_result,
                 // Safe to unwrap because StarkFelt is same as FieldElement
-                contract_address: FieldElement::from_bytes_be(&contract_address.0 .0 .0).unwrap(),
+                contract_address: (*contract_address.key()).into(),
             })
         }
         Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {

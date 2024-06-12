@@ -185,7 +185,7 @@ async fn fetch_class(
 ) -> Result<ContractClassData, ProviderError> {
     let core_class = provider.get_class(BlockIdCore::Number(block_number), class_hash).await?;
     Ok(ContractClassData {
-        hash: ClassHash(StarkFelt(class_hash.to_bytes_be())),
+        hash: ClassHash(class_hash.into()),
         contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
     })
 }
@@ -195,6 +195,6 @@ async fn fetch_class(
 /// Since a change in class definition will result in a change in class hash,
 /// this means we only need to check for class hashes in the db.
 fn is_missing_class(class_hash: &FieldElement) -> Result<bool, DeoxysStorageError> {
-    let class_hash = ClassHash(StarkFelt(class_hash.to_bytes_be()));
+    let class_hash = ClassHash((*class_hash).into());
     storage_handler::contract_class_data().contains(&class_hash).map(|x| !x)
 }

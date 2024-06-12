@@ -12,7 +12,9 @@ use mc_db::storage_handler::DeoxysStorageError;
 use mc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use mc_db::DeoxysBackend;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
-use mp_block::{BlockId, BlockTag, DeoxysBlock, Header};
+use mp_block::Header;
+use mp_block::{BlockId, BlockTag, DeoxysBlock};
+use mp_convert::core_felt::CoreFelt;
 use mp_felt::{trim_hash, FeltWrapper};
 use num_traits::FromPrimitive;
 use starknet_api::hash::StarkFelt;
@@ -110,7 +112,7 @@ async fn l2_verify_and_apply_task(
             })
             .await?;
 
-            if global_state_root.0 != state_root.to_bytes_be() {
+            if global_state_root.into_core_felt() != state_root {
                 // TODO(fault tolerance): we should have a single rocksdb transaction for the whole l2 update.
                 // let prev_block = block_n.checked_sub(1).expect("no block to revert to");
 

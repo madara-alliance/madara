@@ -59,10 +59,9 @@ pub fn re_execute_transactions(
     let charge_fee = block_context.block_info().gas_prices.eth_l1_gas_price.get() != 1;
     let mut cached_state = init_cached_state(block_context);
 
-    transactions_before
-        .into_iter()
-        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, true))
-        .collect::<Result<Vec<_>, _>>()?;
+    for tx in transactions_before {
+        tx.execute(&mut cached_state, block_context, charge_fee, true)?;
+    }
 
     let transactions_exec_infos = transactions_to_trace
         .into_iter()
@@ -146,8 +145,8 @@ pub fn estimate_fee(
     block_context: &BlockContext,
 ) -> Result<Vec<FeeEstimate>, TransactionExecutionError> {
     let fees = transactions
-        .iter()
-        .map(|tx| execute_fee_transaction(tx.clone(), validate, block_context))
+        .into_iter()
+        .map(|tx| execute_fee_transaction(tx, validate, block_context))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(fees)
 }
@@ -157,16 +156,15 @@ pub fn estimate_message_fee(
     block_context: &BlockContext,
 ) -> Result<FeeEstimate, TransactionExecutionError> {
     let mut cached_state = init_cached_state(block_context);
-
-    let tx_execution_infos = message.clone().execute(&mut cached_state, block_context, true, true)?;
-
-    // TODO: implement this
-    // if !tx_execution_infos.is_reverted() {}
-
     let unit = match message.fee_type() {
         blockifier::transaction::objects::FeeType::Strk => PriceUnit::Fri,
         blockifier::transaction::objects::FeeType::Eth => PriceUnit::Wei,
     };
+
+    let tx_execution_infos = message.execute(&mut cached_state, block_context, true, true)?;
+
+    // TODO: implement this
+    // if !tx_execution_infos.is_reverted() {}
 
     let fee = FeeEstimate {
         gas_consumed: FieldElement::from(

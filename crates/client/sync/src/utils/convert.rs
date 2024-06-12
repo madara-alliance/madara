@@ -47,7 +47,8 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<DeoxysBlock
     let transaction_commitment = Felt252Wrapper::from(transaction_commitment).into();
     let event_commitment = Felt252Wrapper::from(event_commitment).into();
     let txs_hashes: Vec<StarkFelt> = txs_hashes.into_iter().map(Felt252Wrapper::from).map(Into::into).collect();
-    let protocol_version = starknet_version(&block.starknet_version);
+
+    let protocol_version = block.starknet_version.unwrap_or_default();
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
     let extra_data = Some(mp_block::U256::from_big_endian(&block_hash.to_bytes_be()));
@@ -259,17 +260,6 @@ fn l1_handler_transaction(tx: p::L1HandlerTransaction) -> L1HandlerTransaction {
     }
 }
 
-/// Converts a starknet version string to a felt value.
-/// If the string contains more than 31 bytes, the function panics.
-fn starknet_version(version: &Option<String>) -> Felt252Wrapper {
-    match version {
-        Some(version) => {
-            Felt252Wrapper::try_from(version.as_bytes()).expect("Failed to convert version to felt: string is too long")
-        }
-        None => Felt252Wrapper::ZERO,
-    }
-}
-
 fn fee(felt: starknet_ff::FieldElement) -> starknet_api::transaction::Fee {
     starknet_api::transaction::Fee(felt.try_into().expect("Value out of range for u128"))
 }
@@ -279,7 +269,7 @@ fn signature(signature: Vec<starknet_ff::FieldElement>) -> starknet_api::transac
 }
 
 fn contract_address(address: starknet_ff::FieldElement) -> starknet_api::core::ContractAddress {
-    starknet_api::core::ContractAddress(starknet_api::core::PatriciaKey(felt(address)))
+    starknet_api::core::ContractAddress(felt(address).try_into().unwrap())
 }
 
 fn entry_point(entry_point: starknet_ff::FieldElement) -> starknet_api::core::EntryPointSelector {

@@ -19,8 +19,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 anyhow = "1.0.75"
 ethers = { workspace = true }
-lazy_static = { workspace = true }
-once_cell = { workspace = true }
 reqwest = { workspace = true }
 serde_json = "1"
 
@@ -43,10 +41,7 @@ tokio = { workspace = true, features = [
 url = { workspace = true }
 
 starknet-core = { workspace = true }
-starknet-ff = { workspace = true, default-features = false, features = [
-  "alloc",
-  "serde",
-] }
+starknet-ff = { workspace = true }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true }
 
@@ -58,8 +53,7 @@ mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-convert = { workspace = true }
 mp-felt = { workspace = true }
-mp-transactions = { workspace = true, features = ["client"] }
-mp-types = { workspace = true }
+mp-transactions = { workspace = true }
 num-traits = { workspace = true }
 rayon = { workspace = true }
 starknet-types-core = { workspace = true }

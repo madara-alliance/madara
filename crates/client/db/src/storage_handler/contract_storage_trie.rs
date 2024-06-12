@@ -2,7 +2,7 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
-use starknet_api::core::{ContractAddress, PatriciaKey};
+use starknet_api::core::ContractAddress;
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
@@ -53,7 +53,7 @@ impl ContractStorageTrieView<'_> {
             .get_key_value_pairs(conv_contract_identifier(identifier))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .into_iter()
-            .map(|(k, v)| (StorageKey(PatriciaKey(starkfelt(&k))), starkfelt(&v)))
+            .map(|(k, v)| (StorageKey(starkfelt(&k).try_into().unwrap()), starkfelt(&v)))
             .collect())
     }
 
@@ -106,7 +106,7 @@ impl ContractStorageTrieViewMut<'_> {
             .get_key_value_pairs(conv_contract_identifier(identifier))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .into_iter()
-            .map(|(k, v)| (StorageKey(PatriciaKey(starkfelt(&k))), starkfelt(&v)))
+            .map(|(k, v)| (StorageKey(starkfelt(&k).try_into().unwrap()), starkfelt(&v)))
             .collect())
     }
 
@@ -159,5 +159,5 @@ impl ContractStorageTrieViewMut<'_> {
 }
 
 fn starkfelt(bytes: &[u8]) -> StarkFelt {
-    StarkFelt(Felt::from_bytes_be_slice(bytes).to_bytes_be())
+    StarkFelt::new_unchecked(Felt::from_bytes_be_slice(bytes).to_bytes_be())
 }

@@ -17,8 +17,6 @@ pub enum HistoryError {
     #[error("db number format error")]
     NumberFormat,
     #[error("value codec error: {0}")]
-    ParityCodec(#[from] parity_scale_codec::Error),
-    #[error("value codec error: {0}")]
     Codec(#[from] codec::Error),
 }
 

@@ -42,8 +42,8 @@ impl BlockifierStateAdapter {
 
 impl StateReader for BlockifierStateAdapter {
     fn get_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
-        if contract_address.0 .0 == StarkFelt::ONE {
-            let block_number = key.0 .0.try_into().map_err(|_| StateError::OldBlockHashNotProvided)?;
+        if *contract_address.key() == StarkFelt::ONE {
+            let block_number = (*key.0.key()).try_into().map_err(|_| StateError::OldBlockHashNotProvided)?;
             match DeoxysBackend::mapping().get_block_hash(&BlockId::Number(block_number)) {
                 Ok(Some(block_hash)) => return Ok(block_hash.into_stark_felt()),
                 Ok(None) => return Err(StateError::OldBlockHashNotProvided),
@@ -62,7 +62,8 @@ impl StateReader for BlockifierStateAdapter {
                 Ok(None) => Ok(StarkFelt::default()),
                 Err(_) => Err(StateError::StateReadError(format!(
                     "Failed to retrieve storage value for contract {} at key {}",
-                    contract_address.0 .0, key.0 .0
+                    contract_address.0.key(),
+                    key.0.key()
                 ))),
             },
         }
@@ -76,7 +77,7 @@ impl StateReader for BlockifierStateAdapter {
                 Ok(None) => Ok(Nonce::default()),
                 Err(_) => Err(StateError::StateReadError(format!(
                     "Failed to retrieve nonce for contract {}",
-                    contract_address.0 .0
+                    contract_address.0.key()
                 ))),
             },
         }
@@ -90,7 +91,7 @@ impl StateReader for BlockifierStateAdapter {
                 Ok(None) => Ok(ClassHash::default()),
                 Err(_) => Err(StateError::StateReadError(format!(
                     "Failed to retrieve class hash for contract {}",
-                    contract_address.0 .0
+                    contract_address.0.key()
                 ))),
             },
         }

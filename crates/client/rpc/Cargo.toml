@@ -37,8 +37,7 @@ mp-block = { workspace = true, default-features = true }
 mp-convert = { workspace = true, default-features = true }
 mp-felt = { workspace = true, default-features = true }
 mp-simulations = { workspace = true }
-mp-transactions = { workspace = true, features = ["client"] }
-mp-types = { workspace = true }
+mp-transactions = { workspace = true }
 serde = { workspace = true, default-features = true }
 serde_with = { workspace = true }
 thiserror = { workspace = true }
