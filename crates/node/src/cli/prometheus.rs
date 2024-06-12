@@ -4,7 +4,7 @@ use clap::Args;
 #[derive(Debug, Clone, Args)]
 pub struct PrometheusParams {
     /// The port used by the prometheus RPC service.
-    #[arg(long, value_name = "PORT", default_value = "9939")]
+    #[arg(long, value_name = "PORT", default_value = "9615")]
     pub prometheus_port: u16,
     /// Listen on all network interfaces. This usually means the prometheus server will be accessible externally.
     #[arg(long)]

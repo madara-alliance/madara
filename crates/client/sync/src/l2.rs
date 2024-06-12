@@ -15,6 +15,7 @@ use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_block::{BlockId, BlockTag, DeoxysBlock};
 use mp_convert::core_felt::CoreFelt;
 use mp_felt::{trim_hash, FeltWrapper};
+use num_traits::FromPrimitive;
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::StateUpdate;
 use starknet_providers::sequencer::models::StateUpdateWithBlock;
@@ -151,6 +152,7 @@ async fn l2_verify_and_apply_task(
         update_sync_metrics(
             // &mut command_sink,
             block_n,
+            converted_block.header(),
             starting_block,
             &block_metrics,
             sync_timer.clone(),
@@ -354,6 +356,7 @@ pub async fn sync(
 
 async fn update_sync_metrics(
     block_number: u64,
+    block_header: &Header,
     starting_block: u64,
     block_metrics: &BlockMetrics,
     sync_timer: Arc<Mutex<Option<Instant>>>,
@@ -376,6 +379,15 @@ async fn update_sync_metrics(
     block_metrics.l2_sync_time.set(sync_time);
     block_metrics.l2_latest_sync_time.set(elapsed_time);
     block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / (block_number - starting_block) as f64);
+
+    block_metrics.l2_block_number.set(block_header.block_number as f64);
+    block_metrics.transaction_count.set(f64::from_u128(block_header.transaction_count).unwrap_or(f64::MIN));
+    block_metrics.event_count.set(f64::from_u128(block_header.event_count).unwrap_or(f64::MIN));
+
+    if let Some(l1_gas_price) = &block_header.l1_gas_price {
+        block_metrics.l1_gas_price_wei.set(f64::from_u128(l1_gas_price.eth_l1_gas_price.into()).unwrap_or(f64::MIN));
+        block_metrics.l1_gas_price_strk.set(f64::from_u128(l1_gas_price.strk_l1_gas_price.into()).unwrap_or(f64::MIN));
+    }
 
     Ok(())
 }
