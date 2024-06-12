@@ -41,11 +41,12 @@ pub async fn simulate_transactions(
 
     let fee_types = user_transactions.iter().map(|tx| tx.fee_type()).collect::<Vec<_>>();
 
-    let res = utils::execution::simulate_transactions(starknet,user_transactions, &simulation_flags, &block_context)
+    let res = utils::execution::simulate_transactions(starknet, user_transactions, &simulation_flags, &block_context)
         .map_err(|_| StarknetRpcApiError::ContractError)?;
 
-    let simulated_transactions = tx_execution_infos_to_simulated_transactions(starknet, tx_types, res, block_number, fee_types)
-        .map_err(StarknetRpcApiError::from)?;
+    let simulated_transactions =
+        tx_execution_infos_to_simulated_transactions(starknet, tx_types, res, block_number, fee_types)
+            .map_err(StarknetRpcApiError::from)?;
 
     Ok(simulated_transactions)
 }

@@ -40,7 +40,7 @@ pub async fn trace_transaction(
         .map(|(tx, tx_hash)| (tx, tx_hash.into_field_element()))
         .collect();
 
-    let transactions_blockifier = blockifier_transactions(starknet,transaction_with_hash)?;
+    let transactions_blockifier = blockifier_transactions(starknet, transaction_with_hash)?;
 
     let last_transaction =
         transactions_blockifier.last().ok_or_internal_server_error("There should be at least one transaction")?;
@@ -55,7 +55,7 @@ pub async fn trace_transaction(
         blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(_) => TxType::L1Handler,
     };
 
-    let execution_infos = execution_infos(starknet,transactions_blockifier, &block_context)?;
+    let execution_infos = execution_infos(starknet, transactions_blockifier, &block_context)?;
 
     let trace = tx_execution_infos_to_tx_trace(starknet, tx_type, &execution_infos, block_number)
         .or_internal_server_error("Converting execution infos to tx trace")?;

@@ -40,8 +40,8 @@ pub async fn estimate_fee(
 
     let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
 
-    let fee_estimates =
-        utils::execution::estimate_fee(starknet,account_transactions, validate, &block_context).map_err(|e| {
+    let fee_estimates = utils::execution::estimate_fee(starknet, account_transactions, validate, &block_context)
+        .map_err(|e| {
             log::error!("Failed to call function: {:#?}", e);
             StarknetRpcApiError::ContractError
         })?;

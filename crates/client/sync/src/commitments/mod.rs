@@ -149,8 +149,8 @@ pub fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) 
 pub fn csd_calculate_state_root(backend: &DeoxysBackend, csd: CommitmentStateDiff, block_number: u64) -> Felt {
     // Update contract and its storage tries
     let (contract_trie_root, class_trie_root) = rayon::join(
-        || contract_trie_root(&backend, &csd, block_number).expect("Failed to compute contract root"),
-        || class_trie_root(&backend, &csd, block_number).expect("Failed to compute class root"),
+        || contract_trie_root(backend, &csd, block_number).expect("Failed to compute contract root"),
+        || class_trie_root(backend, &csd, block_number).expect("Failed to compute class root"),
     );
     calculate_state_root(contract_trie_root, class_trie_root)
 }

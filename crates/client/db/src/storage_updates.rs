@@ -10,11 +10,17 @@ use starknet_core::types::{
     StorageEntry,
 };
 
-use crate::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData};
+use crate::storage_handler::primitives::contract_class::{
+    ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData,
+};
 use crate::storage_handler::{DeoxysStorageError, StorageViewMut};
 use crate::DeoxysBackend;
 
-pub fn store_state_update(backend: &DeoxysBackend, block_number: u64, state_update: StateUpdate) -> Result<(), DeoxysStorageError> {
+pub fn store_state_update(
+    backend: &DeoxysBackend,
+    block_number: u64,
+    state_update: StateUpdate,
+) -> Result<(), DeoxysStorageError> {
     let state_diff = state_update.state_diff.clone();
     let nonce_map: HashMap<ContractAddress, Nonce> = state_update
         .state_diff
@@ -102,7 +108,11 @@ pub fn store_state_update(backend: &DeoxysBackend, block_number: u64, state_upda
     result1.and(result2).and(result3)
 }
 
-pub fn store_class_update(backend: &DeoxysBackend, block_number: u64, class_update: ClassUpdateWrapper) -> Result<(), DeoxysStorageError> {
+pub fn store_class_update(
+    backend: &DeoxysBackend,
+    block_number: u64,
+    class_update: ClassUpdateWrapper,
+) -> Result<(), DeoxysStorageError> {
     let handler_contract_class_data_mut = backend.contract_class_data_mut();
 
     class_update.0.into_iter().for_each(

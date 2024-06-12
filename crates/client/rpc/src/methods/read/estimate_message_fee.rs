@@ -40,7 +40,7 @@ pub async fn estimate_message_fee(
 
     let transaction = convert_message_into_tx(message, starknet.chain_config.chain_id.0.into(), Some(block_number));
 
-    let message_fee = utils::execution::estimate_message_fee(starknet,transaction, &block_context)
+    let message_fee = utils::execution::estimate_message_fee(starknet, transaction, &block_context)
         .or_contract_error("Function execution failed")?;
 
     Ok(message_fee)

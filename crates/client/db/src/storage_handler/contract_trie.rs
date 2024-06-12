@@ -8,9 +8,7 @@ use super::{bonsai_identifier, conv_contract_key, DeoxysStorageError, StorageTyp
 use crate::bonsai_db::BonsaiDb;
 
 pub struct ContractTrieView<'a>(pub(crate) BonsaiStorage<BasicId, BonsaiDb<'a>, Pedersen>);
-pub struct ContractTrieViewMut<'a>(
-    pub(crate) BonsaiStorage<BasicId, BonsaiDb<'a>, Pedersen>,
-);
+pub struct ContractTrieViewMut<'a>(pub(crate) BonsaiStorage<BasicId, BonsaiDb<'a>, Pedersen>);
 
 impl StorageView for ContractTrieView<'_> {
     type KEY = ContractAddress;

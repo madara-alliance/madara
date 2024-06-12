@@ -240,9 +240,7 @@ pub async fn sync(
     // Clear L1 confirmed block at startup
     {
         let mut tx = WriteBatchWithTransaction::default();
-        backend.mapping()
-            .write_no_last_confirmed_block(&mut tx)
-            .context("clearing l1 last confirmed block number")?;
+        backend.mapping().write_no_last_confirmed_block(&mut tx).context("clearing l1 last confirmed block number")?;
         backend.expose_db().write(tx).context("writing pending block to db")?;
         log::debug!("update_l1: cleared confirmed block number");
     }

@@ -46,13 +46,9 @@ pub async fn channel_wait_or_graceful_shutdown<T>(future: impl Future<Output = O
 }
 
 #[derive(Debug)]
+#[derive(Default)]
 pub struct StopHandle(Option<oneshot::Sender<()>>);
 
-impl Default for StopHandle {
-    fn default() -> Self {
-        Self(None)
-    }
-}
 impl StopHandle {
     pub fn new(inner: Option<oneshot::Sender<()>>) -> Self {
         Self(inner)

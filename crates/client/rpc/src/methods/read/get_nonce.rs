@@ -27,7 +27,9 @@ use crate::{Felt, Starknet};
 pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
     let block_number = starknet.get_block_n(block_id)?;
     let key = ContractAddress::from_field_element(contract_address);
-    let felt = starknet.backend.contract_nonces()
+    let felt = starknet
+        .backend
+        .contract_nonces()
         .get_at(&key, block_number)
         .or_internal_server_error("Failed to retrieve contract class")?
         .ok_or(StarknetRpcApiError::ContractNotFound)?;

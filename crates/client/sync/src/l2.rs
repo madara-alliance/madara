@@ -69,6 +69,7 @@ fn store_new_block(backend: &DeoxysBackend, block: &DeoxysBlock) -> Result<(), D
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn l2_verify_and_apply_task(
     backend: Arc<DeoxysBackend>,
     mut updates_receiver: mpsc::Receiver<L2ConvertedBlockAndUpdates>,
@@ -315,7 +316,7 @@ pub async fn sync(
 
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(
-        Arc::clone(&backend),
+        Arc::clone(backend),
         config.first_block,
         config.n_blocks_to_sync,
         fetch_stream_sender,
@@ -325,7 +326,7 @@ pub async fn sync(
     ));
     join_set.spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender, chain_id));
     join_set.spawn(l2_verify_and_apply_task(
-        Arc::clone(&backend),
+        Arc::clone(backend),
         block_conv_receiver,
         config.verify,
         config.backup_every_n_blocks,
@@ -334,7 +335,7 @@ pub async fn sync(
         Arc::clone(&sync_timer),
         telemetry,
     ));
-    join_set.spawn(l2_pending_block_task(Arc::clone(&backend), once_caught_up_cb_receiver, provider, chain_id));
+    join_set.spawn(l2_pending_block_task(Arc::clone(backend), once_caught_up_cb_receiver, provider, chain_id));
 
     while let Some(res) = join_set.join_next().await {
         res.context("task was dropped")??;

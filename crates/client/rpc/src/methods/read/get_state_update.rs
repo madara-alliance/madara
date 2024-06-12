@@ -47,7 +47,9 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> RpcResult<May
             Ok(MaybePendingStateUpdate::PendingUpdate(state_update))
         }
         _ => {
-            let state_diff = starknet.backend.block_state_diff()
+            let state_diff = starknet
+                .backend
+                .block_state_diff()
                 .get(block.block_n())
                 .or_internal_server_error("Failed to get state diff")?
                 .ok_or(StarknetRpcApiError::BlockNotFound)?;

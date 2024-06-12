@@ -33,7 +33,8 @@ pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> Rp
 
     let calldata = Calldata(Arc::new(request.calldata.iter().map(|x| Felt252Wrapper::from(*x).into()).collect()));
 
-    let result = utils::execution::call_contract(starknet,
+    let result = utils::execution::call_contract(
+        starknet,
         Felt252Wrapper(request.contract_address).into(),
         Felt252Wrapper(request.entry_point_selector).into(),
         calldata,

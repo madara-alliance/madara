@@ -67,9 +67,9 @@ pub mod starknet_sync_worker {
         };
 
         tokio::try_join!(
-            l1::sync(&backend, l1_url.clone(), block_metrics.clone(), l1_core_address),
+            l1::sync(backend, l1_url.clone(), block_metrics.clone(), l1_core_address),
             l2::sync(
-                &backend,
+                backend,
                 provider,
                 L2SyncConfig {
                     first_block: starting_block,

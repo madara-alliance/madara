@@ -53,7 +53,8 @@ pub struct L2BlockAndUpdates {
     pub class_update: Vec<ContractClassData>,
 }
 
-pub async fn fetch_block_and_updates(backend: &DeoxysBackend,
+pub async fn fetch_block_and_updates(
+    backend: &DeoxysBackend,
     block_n: u64,
     provider: Arc<SequencerGatewayProvider>,
 ) -> Result<L2BlockAndUpdates, L2SyncError> {
@@ -121,7 +122,8 @@ async fn fetch_state_update_with_block(
 }
 
 /// retrieves class updates from Starknet sequencer
-async fn fetch_class_update(backend: &DeoxysBackend,
+async fn fetch_class_update(
+    backend: &DeoxysBackend,
     provider: &SequencerGatewayProvider,
     state_update: &StateUpdate,
     block_number: u64,
