@@ -3947,14 +3947,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mp-program-hash"
-version = "0.1.0"
-dependencies = [
- "mp-felt",
- "starknet-ff 0.3.7 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
-]
-
-[[package]]
 name = "mp-simulations"
 version = "0.1.0"
 dependencies = [
