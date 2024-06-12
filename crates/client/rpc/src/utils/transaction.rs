@@ -1,6 +1,5 @@
 use blockifier::execution::contract_class::ClassInfo;
 use blockifier::transaction::transaction_execution as btx;
-use dc_db::storage_handler;
 use dc_db::storage_handler::primitives::contract_class::StorageContractClassData;
 use dc_db::storage_handler::StorageView;
 use jsonrpsee::core::RpcResult;
@@ -9,14 +8,16 @@ use starknet_api::transaction::{Transaction, TransactionHash};
 use starknet_ff::FieldElement;
 
 use crate::errors::StarknetRpcApiError;
+use crate::Starknet;
 
 pub(crate) fn blockifier_transactions(
+    starknet: &Starknet,
     transaction_with_hash: Vec<(Transaction, FieldElement)>,
 ) -> RpcResult<Vec<btx::Transaction>> {
     let transactions = transaction_with_hash
             .iter()
             .filter(|(tx, _)| !matches!(tx, Transaction::Deploy(_))) // deploy transaction was not supported by blockifier
-            .map(|(tx, hash)| to_blockifier_transactions(tx, &TransactionHash(StarkFelt::new_unchecked(hash.to_bytes_be()))))
+            .map(|(tx, hash)| to_blockifier_transactions(starknet, tx, &TransactionHash(StarkFelt::new_unchecked(hash.to_bytes_be()))))
             .collect::<Result<Vec<_>, _>>()?;
 
     Ok(transactions)
@@ -27,6 +28,7 @@ pub(crate) fn blockifier_transactions(
 /// **note:** this function does not support deploy transaction
 /// because it is not supported by blockifier
 pub(crate) fn to_blockifier_transactions(
+    starknet: &Starknet,
     transaction: &Transaction,
     tx_hash: &TransactionHash,
 ) -> RpcResult<btx::Transaction> {
@@ -39,7 +41,7 @@ pub(crate) fn to_blockifier_transactions(
         Transaction::Declare(declare_tx) => {
             let class_hash = declare_tx.class_hash();
 
-            let Ok(Some(class_data)) = storage_handler::contract_class_data().get(&class_hash) else {
+            let Ok(Some(class_data)) = starknet.backend.contract_class_data().get(&class_hash) else {
                 log::error!("Failed to retrieve class from class_hash '{class_hash}'");
                 return Err(StarknetRpcApiError::ContractNotFound.into());
             };

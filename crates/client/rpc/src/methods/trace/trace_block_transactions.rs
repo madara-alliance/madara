@@ -31,11 +31,11 @@ pub async fn trace_block_transactions(
         .filter(|(tx, _)| !matches!(tx, Transaction::Deploy(_)))
         .collect();
 
-    let transactions_blockifier = blockifier_transactions(transaction_with_hash.clone())?;
+    let transactions_blockifier = blockifier_transactions(starknet,transaction_with_hash.clone())?;
 
     let mut transactions_traces = Vec::new();
 
-    let execution_infos = re_execute_transactions(vec![], transactions_blockifier, &block_context)
+    let execution_infos = re_execute_transactions(starknet,vec![], transactions_blockifier, &block_context)
         .or_internal_server_error("Failed to re-execute transactions")?;
 
     for ((transaction, tx_hash), tx_exec_info) in transaction_with_hash.iter().zip(execution_infos) {
@@ -47,7 +47,7 @@ pub async fn trace_block_transactions(
             Transaction::Deploy(_) => unreachable!(),
         };
 
-        let trace = tx_execution_infos_to_tx_trace(tx_type, &tx_exec_info, block_number)
+        let trace = tx_execution_infos_to_tx_trace(starknet, tx_type, &tx_exec_info, block_number)
             .or_internal_server_error("Failed to generate trace")?;
         let transaction_trace = TransactionTraceWithHash { trace_root: trace, transaction_hash: *tx_hash };
         transactions_traces.push(transaction_trace);

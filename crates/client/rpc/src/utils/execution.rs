@@ -13,7 +13,7 @@ use blockifier::transaction::objects::{
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
 use blockifier::versioned_constants::VersionedConstants;
-use dc_db::storage_handler::{self, StorageView};
+use dc_db::storage_handler::StorageView;
 use dp_block::DeoxysBlockInfo;
 use dp_felt::Felt252Wrapper;
 use dp_simulations::SimulationFlags;
@@ -52,12 +52,13 @@ pub fn block_context(_client: &Starknet, block_info: &DeoxysBlockInfo) -> Result
 }
 
 pub fn re_execute_transactions(
+    starknet: &Starknet,
     transactions_before: Vec<Transaction>,
     transactions_to_trace: Vec<Transaction>,
     block_context: &BlockContext,
 ) -> Result<Vec<TransactionExecutionInfo>, TransactionExecutionError> {
     let charge_fee = block_context.block_info().gas_prices.eth_l1_gas_price.get() != 1;
-    let mut cached_state = init_cached_state(block_context);
+    let mut cached_state = init_cached_state(starknet, block_context);
 
     for tx in transactions_before {
         tx.execute(&mut cached_state, block_context, charge_fee, true)?;
@@ -72,11 +73,12 @@ pub fn re_execute_transactions(
 }
 
 pub fn simulate_transactions(
+    starknet: &Starknet,
     transactions: Vec<AccountTransaction>,
     simulation_flags: &SimulationFlags,
     block_context: &BlockContext,
 ) -> Result<Vec<TransactionExecutionInfo>, TransactionExecutionError> {
-    let mut cached_state = init_cached_state(block_context);
+    let mut cached_state = init_cached_state(starknet, block_context);
 
     let tx_execution_results = transactions
         .into_iter()
@@ -88,13 +90,16 @@ pub fn simulate_transactions(
 
 /// Call a smart contract function.
 pub fn call_contract(
+    starknet: &Starknet,
     address: ContractAddress,
     function_selector: EntryPointSelector,
     calldata: Calldata,
     block_context: &BlockContext,
 ) -> RpcResult<Vec<Felt252Wrapper>> {
     // Get class hash
-    let class_hash = storage_handler::contract_class_hash()
+    let class_hash = starknet
+        .backend
+        .contract_class_hash()
         .get(&address)
         .or_internal_server_error("Error getting contract class hash")?;
 
@@ -125,7 +130,7 @@ pub fn call_contract(
 
     let res = entrypoint
         .execute(
-            &mut BlockifierStateAdapter::new(block_context.block_info().block_number.0),
+            &mut BlockifierStateAdapter::new(Arc::clone(&starknet.backend), block_context.block_info().block_number.0),
             &mut resources,
             &mut entry_point_execution_context,
         )
@@ -140,28 +145,34 @@ pub fn call_contract(
 }
 
 pub fn estimate_fee(
+    starknet: &Starknet,
     transactions: Vec<AccountTransaction>,
     validate: bool,
     block_context: &BlockContext,
 ) -> Result<Vec<FeeEstimate>, TransactionExecutionError> {
     let fees = transactions
         .into_iter()
-        .map(|tx| execute_fee_transaction(tx, validate, block_context))
+        .map(|tx| execute_fee_transaction(starknet, tx.clone(), validate, block_context))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(fees)
 }
 
 pub fn estimate_message_fee(
+    starknet: &Starknet,
     message: L1HandlerTransaction,
     block_context: &BlockContext,
 ) -> Result<FeeEstimate, TransactionExecutionError> {
-    let mut cached_state = init_cached_state(block_context);
+    let mut cached_state = init_cached_state(starknet, block_context);
+
+    let tx_execution_infos = message.clone().execute(&mut cached_state, block_context, true, true)?;
+
+    // TODO: implement this
+    // if !tx_execution_infos.is_reverted() {}
+
     let unit = match message.fee_type() {
         blockifier::transaction::objects::FeeType::Strk => PriceUnit::Fri,
         blockifier::transaction::objects::FeeType::Eth => PriceUnit::Wei,
     };
-
-    let tx_execution_infos = message.execute(&mut cached_state, block_context, true, true)?;
 
     // TODO: implement this
     // if !tx_execution_infos.is_reverted() {}
@@ -180,11 +191,12 @@ pub fn estimate_message_fee(
 }
 
 fn execute_fee_transaction(
+    starknet: &Starknet,
     transaction: AccountTransaction,
     validate: bool,
     block_context: &BlockContext,
 ) -> Result<FeeEstimate, TransactionExecutionError> {
-    let mut cached_state = init_cached_state(block_context);
+    let mut cached_state = init_cached_state(starknet, block_context);
 
     let fee_type = transaction.fee_type();
 
@@ -249,7 +261,10 @@ pub fn from_tx_info_and_gas_price(
     }
 }
 
-fn init_cached_state(block_context: &BlockContext) -> CachedState<BlockifierStateAdapter> {
+fn init_cached_state(starknet: &Starknet, block_context: &BlockContext) -> CachedState<BlockifierStateAdapter> {
     let block_number = block_context.block_info().block_number.0;
-    CachedState::new(BlockifierStateAdapter::new(block_number - 1), GlobalContractCache::new(16))
+    CachedState::new(
+        BlockifierStateAdapter::new(Arc::clone(&starknet.backend), block_number - 1), // TODO(panic): check if this -1 operation can overflow!!
+        GlobalContractCache::new(16),
+    )
 }

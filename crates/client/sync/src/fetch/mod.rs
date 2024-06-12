@@ -2,6 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::prelude::*;
+use dc_db::DeoxysBackend;
+use dp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use starknet_core::types::StarknetError;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::{mpsc, oneshot};
@@ -9,11 +11,11 @@ use tokio::sync::{mpsc, oneshot};
 use self::fetchers::L2BlockAndUpdates;
 use crate::fetch::fetchers::fetch_block_and_updates;
 use crate::l2::L2SyncError;
-use crate::utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 
 pub mod fetchers;
 
 pub async fn l2_fetch_task(
+    backend: Arc<DeoxysBackend>,
     first_block: u64,
     n_blocks_to_sync: Option<u64>,
     fetch_stream_sender: mpsc::Sender<L2BlockAndUpdates>,
@@ -22,6 +24,7 @@ pub async fn l2_fetch_task(
     once_caught_up_callback: oneshot::Sender<()>,
 ) -> anyhow::Result<()> {
     // First, catch up with the chain
+    let backend = &backend;
 
     let mut next_block = first_block;
 
@@ -29,7 +32,7 @@ pub async fn l2_fetch_task(
         // Fetch blocks and updates in parallel one time before looping
         let fetch_stream = (first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
             let provider = Arc::clone(&provider);
-            async move { (block_n, fetch_block_and_updates(block_n, provider).await) }
+            async move { (block_n, fetch_block_and_updates(backend, block_n, provider).await) }
         });
 
         // Have 10 fetches in parallel at once, using futures Buffered
@@ -63,7 +66,7 @@ pub async fn l2_fetch_task(
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
             loop {
-                match fetch_block_and_updates(next_block, Arc::clone(&provider)).await {
+                match fetch_block_and_updates(backend, next_block, Arc::clone(&provider)).await {
                     Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
                         break;
                     }

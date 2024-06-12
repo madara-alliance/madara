@@ -1,20 +1,33 @@
+use std::sync::Arc;
+
 use crossbeam_skiplist::SkipMap;
 use rocksdb::WriteBatchWithTransaction;
 use starknet_api::core::{ClassHash, CompiledClassHash};
 
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
-use crate::{Column, DatabaseExt, DeoxysBackend};
+use crate::{Column, DatabaseExt, DB};
 
-#[derive(Default, Debug)]
-pub struct ContractClassHashesViewMut(SkipMap<ClassHash, CompiledClassHash>);
-pub struct ContractClassHashesView;
+pub struct ContractClassHashesView(Arc<DB>);
+#[derive(Debug)]
+pub struct ContractClassHashesViewMut(Arc<DB>, SkipMap<ClassHash, CompiledClassHash>);
+
+impl ContractClassHashesView {
+    pub(crate) fn new(backend: Arc<DB>) -> Self {
+        Self(backend)
+    }
+}
+impl ContractClassHashesViewMut {
+    pub(crate) fn new(backend: Arc<DB>) -> Self {
+        Self(backend, Default::default())
+    }
+}
 
 impl StorageView for ContractClassHashesView {
     type KEY = ClassHash;
     type VALUE = CompiledClassHash;
 
     fn get(&self, class_hash: &Self::KEY) -> Result<Option<Self::VALUE>, super::DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
+        let db = &self.0;
         let column = db.get_column(Column::ContractClassHashes);
 
         let compiled_class_hash = db
@@ -30,7 +43,7 @@ impl StorageView for ContractClassHashesView {
     }
 
     fn contains(&self, class_hash: &Self::KEY) -> Result<bool, super::DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
+        let db = &self.0;
         let column = db.get_column(Column::ContractClassHashes);
 
         match db.key_may_exist_cf(&column, bincode::serialize(&class_hash)?) {
@@ -45,16 +58,16 @@ impl StorageViewMut for ContractClassHashesViewMut {
     type VALUE = CompiledClassHash;
 
     fn insert(&self, class_hash: Self::KEY, compiled_class_hash: Self::VALUE) -> Result<(), DeoxysStorageError> {
-        self.0.insert(class_hash, compiled_class_hash);
+        self.1.insert(class_hash, compiled_class_hash);
         Ok(())
     }
 
     fn commit(self, _block_number: u64) -> Result<(), DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
+        let db = &self.0;
         let column = db.get_column(Column::ContractClassHashes);
 
         let mut batch = WriteBatchWithTransaction::<true>::default();
-        for (key, value) in self.0.into_iter() {
+        for (key, value) in self.1.into_iter() {
             batch.put_cf(&column, bincode::serialize(&key)?, bincode::serialize(&value)?);
         }
         db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassHashes))

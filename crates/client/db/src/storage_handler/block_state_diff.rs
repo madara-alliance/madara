@@ -1,13 +1,20 @@
+use std::sync::Arc;
+
 use starknet_core::types::StateDiff;
 
 use super::{DeoxysStorageError, StorageType};
-use crate::{Column, DatabaseExt, DeoxysBackend};
+use crate::{Column, DatabaseExt, DB};
 
-pub struct BlockStateDiffView;
+pub struct BlockStateDiffView(Arc<DB>);
+impl BlockStateDiffView {
+    pub(crate) fn new(backend: Arc<DB>) -> Self {
+        Self(backend)
+    }
+}
 
 impl BlockStateDiffView {
     pub fn insert(&mut self, block_number: u64, state_diff: StateDiff) -> Result<(), DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
+        let db = &self.0;
         let column = db.get_column(Column::BlockStateDiff);
         let block_number: u32 = block_number.try_into().map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
 
@@ -16,7 +23,7 @@ impl BlockStateDiffView {
     }
 
     pub fn get(&self, block_number: u64) -> Result<Option<StateDiff>, DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
+        let db = &self.0;
         let column = db.get_column(Column::BlockStateDiff);
         let block_number: u32 = block_number.try_into().map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
 
@@ -33,7 +40,7 @@ impl BlockStateDiffView {
     }
 
     pub fn contains(&self, block_number: u64) -> Result<bool, DeoxysStorageError> {
-        let db = DeoxysBackend::expose_db();
+        let db = &self.0;
         let column = db.get_column(Column::BlockStateDiff);
 
         match db.key_may_exist_cf(&column, bincode::serialize(&block_number)?) {

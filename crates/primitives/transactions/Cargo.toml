@@ -3,7 +3,7 @@ name = "dp-transactions"
 version.workspace = true
 edition.workspace = true
 license = "MIT"
-description = "Starknet primitives for Substrate."
+description = "Starknet primitives for Deoxys."
 authors = { workspace = true }
 repository = { workspace = true }
 

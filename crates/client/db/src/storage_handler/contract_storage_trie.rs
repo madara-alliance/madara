@@ -1,5 +1,3 @@
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
-
 use bonsai_trie::id::BasicId;
 use bonsai_trie::BonsaiStorage;
 use starknet_api::core::ContractAddress;
@@ -13,12 +11,8 @@ use super::{
 };
 use crate::bonsai_db::BonsaiDb;
 
-pub struct ContractStorageTrieView<'a>(
-    pub(crate) RwLockReadGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
-);
-pub struct ContractStorageTrieViewMut<'a>(
-    pub(crate) RwLockWriteGuard<'a, BonsaiStorage<BasicId, BonsaiDb<'static>, Pedersen>>,
-);
+pub struct ContractStorageTrieView<'a>(pub(crate) BonsaiStorage<BasicId, BonsaiDb<'a>, Pedersen>);
+pub struct ContractStorageTrieViewMut<'a>(pub(crate) BonsaiStorage<BasicId, BonsaiDb<'a>, Pedersen>);
 
 impl ContractStorageTrieView<'_> {
     pub fn get(&self, identifier: &ContractAddress, key: &StorageKey) -> Result<Option<Felt>, DeoxysStorageError> {

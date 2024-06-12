@@ -1,4 +1,3 @@
-use dc_db::storage_handler;
 use dp_convert::field_element::FromFieldElement;
 use dp_felt::FeltWrapper;
 use jsonrpsee::core::RpcResult;
@@ -25,7 +24,7 @@ pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_addres
     let block_number = starknet.get_block_n(block_id)?;
     let key = ContractAddress::from_field_element(contract_address);
 
-    let class_hash = storage_handler::contract_class_hash()
+    let class_hash = starknet.backend.contract_class_hash()
         .get_at(&key, block_number)
         .or_internal_server_error("Failed to retrieve contract class hash")?
         .ok_or(StarknetRpcApiError::ContractNotFound)?;

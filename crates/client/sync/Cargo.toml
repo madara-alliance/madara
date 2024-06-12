@@ -50,6 +50,7 @@ bonsai-trie = { workspace = true }
 dc-db = { workspace = true }
 dc-metrics = { workspace = true }
 dc-telemetry = { workspace = true }
+dp-utils = { workspace = true }
 dp-block = { workspace = true }
 dp-convert = { workspace = true }
 dp-felt = { workspace = true }

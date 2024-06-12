@@ -31,9 +31,9 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
         .filter(|(tx, _)| !matches!(tx, Transaction::Deploy(_)))
         .collect();
 
-    let transactions_blockifier = blockifier_transactions(transaction_with_hash.clone())?;
+    let transactions_blockifier = blockifier_transactions(starknet,transaction_with_hash.clone())?;
 
-    let execution_infos = re_execute_transactions(vec![], transactions_blockifier, &block_context)
+    let execution_infos = re_execute_transactions(starknet,vec![], transactions_blockifier, &block_context)
         .or_internal_server_error("Failed to re-execute transactions")?;
 
     let transactions_core: Vec<_> = transaction_with_hash

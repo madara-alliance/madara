@@ -9,9 +9,10 @@ mod service;
 mod util;
 
 use cli::RunCmd;
+use dc_db::DatabaseService;
 use dc_metrics::MetricsService;
 use dc_telemetry::{SysInfo, TelemetryService};
-use service::{DatabaseService, RpcService, SyncService};
+use service::{RpcService, SyncService};
 use tokio::task::JoinSet;
 
 const GREET_IMPL_NAME: &str = "Deoxys";
@@ -51,11 +52,17 @@ async fn main() -> anyhow::Result<()> {
     )
     .context("initializing prometheus metrics service")?;
 
-    let _db = DatabaseService::open(&run_cmd.db_params).context("initializing db service")?;
-    let mut rpc = RpcService::new(&run_cmd.rpc_params, run_cmd.sync_params.network, prometheus_service.registry())
+    let db = DatabaseService::new(
+        &run_cmd.db_params.base_path,
+        run_cmd.db_params.backup_dir.clone(),
+        run_cmd.db_params.restore_from_latest_backup,
+    )
+    .await
+    .context("initializing db service")?;
+    let mut rpc = RpcService::new(&run_cmd.rpc_params, &db, run_cmd.sync_params.network, prometheus_service.registry())
         .context("initializing rpc service")?;
     let mut sync_service =
-        SyncService::new(&run_cmd.sync_params, prometheus_service.registry(), telemetry_service.new_handle())
+        SyncService::new(&run_cmd.sync_params, &db, prometheus_service.registry(), telemetry_service.new_handle())
             .context("initializing sync service")?;
 
     let mut task_set = JoinSet::new();

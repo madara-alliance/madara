@@ -19,6 +19,7 @@ use jsonrpsee::server::middleware::http::{HostFilterLayer, ProxyGetRequestLayer}
 use jsonrpsee::server::middleware::rpc::RpcServiceBuilder;
 use jsonrpsee::server::{stop_channel, ws, BatchRequestConfig, PingConfig, StopHandle, TowerServiceBuilder};
 use jsonrpsee::{Methods, RpcModule};
+use dp_utils::wait_or_graceful_shutdown;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tower::Service;
@@ -186,14 +187,12 @@ pub async fn start_server(
     let server = hyper::Server::from_tcp(std_listener)?.serve(make_service);
 
     join_set.spawn(async move {
-        let stop_future = async move {
-            tokio::select! {
-                _ = tokio::signal::ctrl_c() => {},
-                _ = stop_handle.shutdown() => {},
-            }
-        };
-
-        server.with_graceful_shutdown(stop_future).await.context("running rpc server")
+        server
+            .with_graceful_shutdown(async {
+                wait_or_graceful_shutdown(stop_handle.shutdown()).await;
+            })
+            .await
+            .context("running rpc server")
     });
 
     log::info!(

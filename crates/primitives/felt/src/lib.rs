@@ -1,8 +1,7 @@
 //! # Felt252 - FieldElement wrapper.
 //!
 //! Starknet base type is a [`FieldElement`] from starknet-ff crate.
-//! Substrate primitives are passed back and forth between client
-//! and runtime using SCALE encoding: https://docs.substrate.io/reference/scale-codec/.
+//! We use Parity Scale encoding: https://docs.substrate.io/reference/scale-codec/.
 //!
 //! The [`Felt252Wrapper`] implements the traits for SCALE encoding, and wrap
 //! the [`FieldElement`] type from starknet-ff.
