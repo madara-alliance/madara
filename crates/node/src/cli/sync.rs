@@ -64,6 +64,8 @@ impl SyncParams {
     pub fn block_fetch_config(&self) -> FetchConfig {
         let chain_id = self.network.chain_id();
 
+        log::info!("🌐 Network: {}", self.network.network_name());
+
         let gateway = self.network.gateway();
         let feeder_gateway = self.network.feeder_gateway();
         let l1_core_address = self.network.l1_core_address();
@@ -131,6 +133,14 @@ impl NetworkType {
             NetworkType::Main => starknet_core_address::MAINNET.parse().unwrap(),
             NetworkType::Test => starknet_core_address::SEPOLIA_TESTNET.parse().unwrap(),
             NetworkType::Integration => starknet_core_address::SEPOLIA_INTEGRATION.parse().unwrap(),
+        }
+    }
+
+    pub fn network_name(&self) -> &'static str {
+        match self {
+            NetworkType::Main => "Mainnet",
+            NetworkType::Test => "Testnet",
+            NetworkType::Integration => "Integration",
         }
     }
 }

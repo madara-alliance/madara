@@ -8,7 +8,7 @@ use primitive_types::U256;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_api::data_availability::L1DataAvailabilityMode;
-use starknet_api::hash::StarkHash;
+use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 use starknet_types_core::hash::StarkHash as StarkHashTrait;
@@ -146,8 +146,10 @@ impl Header {
     }
 
     /// Compute the hash of the header.
-    pub fn hash(&self) -> Felt {
-        if self.block_number >= 833 {
+    pub fn hash(&self, chain_id: StarkFelt) -> Felt {
+        if self.block_number >= 833 || chain_id.into_core_felt() == Felt::from_bytes_be_slice(b"SN_SEPOLIA") {
+            log::info!("ARAH");
+            log::info!("block: {}, tx commitment: {:?}, event commitment {:?}", self.block_number, self.transaction_commitment, self.event_commitment);
             // Computes the block hash for blocks generated after Cairo 0.7.0
             let data: &[Felt] = &[
                 Felt::from(self.block_number),                // block number
@@ -165,6 +167,7 @@ impl Header {
 
             Pedersen::hash_array(data)
         } else {
+            log::info!("ARAH 2");
             // Computes the block hash for blocks generated before Cairo 0.7.0
             let data: &[Felt] = &[
                 Felt::from(self.block_number),

@@ -8,7 +8,6 @@ use classes::class_trie_root;
 use contracts::contract_trie_root;
 use dc_db::DeoxysBackend;
 use dp_convert::field_element::FromFieldElement;
-use dp_felt::Felt252Wrapper;
 use events::memory_event_commitment;
 use indexmap::IndexMap;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
@@ -43,7 +42,7 @@ const STARKNET_STATE_PREFIX: Felt =
 pub fn calculate_tx_and_event_commitments(
     transactions: &[Transaction],
     events: &[Event],
-    chain_id: Felt252Wrapper,
+    chain_id: Felt,
     block_number: u64,
 ) -> ((Felt, Vec<Felt>), Felt) {
     let (commitment_tx, commitment_event) = rayon::join(

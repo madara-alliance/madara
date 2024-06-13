@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use blockifier::block::GasPrices;
 use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
+use dp_convert::core_felt::CoreFelt;
 use dp_felt::Felt252Wrapper;
 use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkFelt;
@@ -45,9 +46,8 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<ConvertedBl
     let sequencer_address = block.sequencer_address.map_or(contract_address(FieldElement::ZERO), contract_address);
     let transaction_count = transactions.len() as u128;
     let event_count = events.len() as u128;
-
     let ((transaction_commitment, txs_hashes), event_commitment) =
-        calculate_tx_and_event_commitments(&transactions, &events, chain_id.into(), block_number);
+        calculate_tx_and_event_commitments(&transactions, &events, chain_id.into_core_felt(), block_number);
 
     // Provisory conversion while Starknet-api doesn't support the universal `Felt` type
     let transaction_commitment = Felt252Wrapper::from(transaction_commitment).into();
@@ -75,7 +75,7 @@ pub fn convert_block(block: p::Block, chain_id: StarkFelt) -> Result<ConvertedBl
         extra_data,
     };
 
-    let computed_block_hash: FieldElement = Felt252Wrapper::from(header.hash()).into();
+    let computed_block_hash: FieldElement = Felt252Wrapper::from(header.hash(chain_id)).into();
     // mismatched block hash is allowed for blocks 1466..=2242
     if computed_block_hash != block_hash && !(1466..=2242).contains(&block_number) {
         return Err(L2SyncError::MismatchedBlockHash(block_number));

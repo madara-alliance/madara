@@ -26,10 +26,10 @@ use starknet_types_core::hash::{Pedersen, StarkHash};
 /// The transaction hash with signature.
 pub fn calculate_transaction_hash_with_signature(
     transaction: &Transaction,
-    chain_id: Felt252Wrapper,
+    chain_id: Felt,
     block_number: u64,
 ) -> (Felt, Felt) {
-    let include_signature = block_number >= 61394;
+    let include_signature = block_number >= 61394 || chain_id == Felt::from_bytes_be_slice(b"SN_SEPOLIA");
 
     let (signature_hash, tx_hash) = rayon::join(
         || match transaction {
@@ -63,7 +63,7 @@ pub fn calculate_transaction_hash_with_signature(
             Transaction::L1Handler(_) => Pedersen::hash_array(&[]),
             _ => Pedersen::hash_array(&[]),
         },
-        || Felt252Wrapper::from(transaction.compute_hash(chain_id, false, Some(block_number)).0).into(),
+        || Felt252Wrapper::from(transaction.compute_hash(chain_id.into(), false, Some(block_number)).0).into(),
     );
 
     (Pedersen::hash(&tx_hash, &signature_hash), tx_hash)
@@ -83,7 +83,7 @@ pub fn calculate_transaction_hash_with_signature(
 /// The transaction commitment as `Felt`.
 pub fn memory_transaction_commitment(
     transactions: &[Transaction],
-    chain_id: Felt252Wrapper,
+    chain_id: Felt,
     block_number: u64,
 ) -> Result<(Felt, Vec<Felt>), String> {
     // TODO @cchudant refacto/optimise this function

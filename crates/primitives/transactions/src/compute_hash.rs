@@ -134,7 +134,7 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
         let max_fee = Felt::from(self.max_fee.0);
 
         // Check for deprecated environment
-        if block_number > Some(LEGACY_BLOCK_NUMBER) {
+        if block_number > Some(LEGACY_BLOCK_NUMBER) || chain_id == Felt252Wrapper::from_hex_be("SN_SEPOLIA").unwrap() {
             TransactionHash(StarkFelt::new_unchecked(
                 Pedersen::hash_array(&[
                     prefix,
@@ -534,12 +534,12 @@ impl ComputeTransactionHash for L1HandlerTransaction {
         let nonce = self.nonce.into_core_felt();
         let chain_id = chain_id.into();
 
-        if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && block_number.is_some() {
+        if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && block_number.is_some() && chain_id != Felt::from_bytes_be_slice(b"SN_SEPOLIA") {
             TransactionHash(StarkFelt::new_unchecked(
                 Pedersen::hash_array(&[invoke_prefix, contract_address, entrypoint_selector, calldata_hash, chain_id])
                     .to_bytes_be(),
             ))
-        } else if block_number < Some(LEGACY_BLOCK_NUMBER) && block_number.is_some() {
+        } else if block_number < Some(LEGACY_BLOCK_NUMBER) && block_number.is_some() && chain_id != Felt::from_bytes_be_slice(b"SN_SEPOLIA") {
             TransactionHash(StarkFelt::new_unchecked(
                 Pedersen::hash_array(&[prefix, contract_address, entrypoint_selector, calldata_hash, chain_id, nonce])
                     .to_bytes_be(),
@@ -577,7 +577,7 @@ pub fn compute_hash_given_contract_address(
 
     let constructor = Felt::from_bytes_be(&starknet_keccak(b"constructor").to_bytes_be());
 
-    if block_number > Some(LEGACY_BLOCK_NUMBER) {
+    if block_number > Some(LEGACY_BLOCK_NUMBER) || chain_id == Felt::from_bytes_be_slice(b"SN_SEPOLIA") {
         TransactionHash(StarkFelt::new_unchecked(
             Pedersen::hash_array(&[
                 prefix,

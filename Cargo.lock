@@ -2151,6 +2151,7 @@ dependencies = [
  "dp-convert",
  "dp-felt",
  "lazy_static",
+ "log",
  "primitive-types",
  "serde",
  "serde_json",

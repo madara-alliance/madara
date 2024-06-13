@@ -19,6 +19,7 @@ serde_json = { workspace = true }
 starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
+log = { workspace = true }
 
 # Optionals
 dp-convert = { workspace = true }
