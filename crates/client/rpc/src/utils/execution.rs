@@ -15,7 +15,7 @@ use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTran
 use blockifier::versioned_constants::VersionedConstants;
 use dc_db::storage_handler::StorageView;
 use dp_block::DeoxysBlockInfo;
-use dp_felt::Felt252Wrapper;
+use dp_convert::core_felt::CoreFelt;
 use dp_simulations::SimulationFlags;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
@@ -24,6 +24,7 @@ use starknet_api::hash::StarkHash;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{FeeEstimate, PriceUnit};
 use starknet_ff::FieldElement;
+use starknet_types_core::felt::Felt;
 
 use super::blockifier_state_adapter::BlockifierStateAdapter;
 use crate::errors::StarknetRpcApiError;
@@ -95,7 +96,7 @@ pub fn call_contract(
     function_selector: EntryPointSelector,
     calldata: Calldata,
     block_context: &BlockContext,
-) -> RpcResult<Vec<Felt252Wrapper>> {
+) -> RpcResult<Vec<Felt>> {
     // Get class hash
     let class_hash = starknet
         .backend
@@ -140,7 +141,7 @@ pub fn call_contract(
         })?;
 
     log::debug!("Successfully called a smart contract function: {:?}", res);
-    let result = res.execution.retdata.0.iter().map(|x| (*x).into()).collect();
+    let result = res.execution.retdata.0.iter().map(|x| x.into_core_felt()).collect();
     Ok(result)
 }
 

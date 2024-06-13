@@ -1,7 +1,6 @@
-use dp_felt::Felt252Wrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
-use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{FieldElement, Transaction};
 
@@ -37,7 +36,7 @@ use crate::Starknet;
 /// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
 ///   system's capacity.
 pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: FieldElement) -> RpcResult<Transaction> {
-    let tx_hash = TransactionHash(StarkFelt::from(Felt252Wrapper(transaction_hash)));
+    let tx_hash = TransactionHash(transaction_hash.into_stark_felt());
     let (block, tx_info) = starknet
         .block_storage()
         .find_tx_hash_block(&tx_hash)

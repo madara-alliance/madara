@@ -4,7 +4,6 @@ use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use dc_db::storage_handler::bonsai_identifier;
 use dp_convert::core_felt::CoreFelt;
-use dp_felt::Felt252Wrapper;
 use dp_transactions::compute_hash::ComputeTransactionHash;
 use rayon::prelude::*;
 use starknet_api::transaction::Transaction;
@@ -26,7 +25,7 @@ use starknet_types_core::hash::{Pedersen, StarkHash};
 /// The transaction hash with signature.
 pub fn calculate_transaction_hash_with_signature(
     transaction: &Transaction,
-    chain_id: Felt252Wrapper,
+    chain_id: Felt,
     block_number: u64,
 ) -> (Felt, Felt) {
     let include_signature = block_number >= 61394;
@@ -63,7 +62,7 @@ pub fn calculate_transaction_hash_with_signature(
             Transaction::L1Handler(_) => Pedersen::hash_array(&[]),
             _ => Pedersen::hash_array(&[]),
         },
-        || Felt252Wrapper::from(transaction.compute_hash(chain_id, false, Some(block_number)).0).into(),
+        || transaction.compute_hash(chain_id, false, Some(block_number)).into_core_felt(),
     );
 
     (Pedersen::hash(&tx_hash, &signature_hash), tx_hash)
@@ -83,7 +82,7 @@ pub fn calculate_transaction_hash_with_signature(
 /// The transaction commitment as `Felt`.
 pub fn memory_transaction_commitment(
     transactions: &[Transaction],
-    chain_id: Felt252Wrapper,
+    chain_id: Felt,
     block_number: u64,
 ) -> Result<(Felt, Vec<Felt>), String> {
     // TODO @cchudant refacto/optimise this function

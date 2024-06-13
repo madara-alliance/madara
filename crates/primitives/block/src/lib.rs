@@ -2,13 +2,14 @@
 
 mod header;
 mod ordered_events;
-use dp_felt::Felt252Wrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 pub use header::Header;
 pub use ordered_events::*;
 use starknet_api::block::BlockHash;
 use starknet_api::transaction::{Transaction, TransactionHash};
 
 pub use primitive_types::{H160, U256};
+use starknet_types_core::felt::Felt;
 
 /// Block tag.
 ///
@@ -41,7 +42,7 @@ impl From<BlockTag> for starknet_core::types::BlockTag {
 /// Block hash, number or tag
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockId {
-    Hash(Felt252Wrapper),
+    Hash(Felt),
     Number(u64),
     Tag(BlockTag),
 }
@@ -49,7 +50,7 @@ pub enum BlockId {
 impl From<starknet_core::types::BlockId> for BlockId {
     fn from(value: starknet_core::types::BlockId) -> Self {
         match value {
-            starknet_core::types::BlockId::Hash(felt) => BlockId::Hash(Felt252Wrapper(felt)),
+            starknet_core::types::BlockId::Hash(felt) => BlockId::Hash(Felt::from_bytes_be(&felt.to_bytes_be())),
             starknet_core::types::BlockId::Number(number) => BlockId::Number(number),
             starknet_core::types::BlockId::Tag(tag) => BlockId::Tag(tag.into()),
         }
@@ -58,7 +59,7 @@ impl From<starknet_core::types::BlockId> for BlockId {
 impl From<BlockId> for starknet_core::types::BlockId {
     fn from(value: BlockId) -> Self {
         match value {
-            BlockId::Hash(felt) => starknet_core::types::BlockId::Hash(felt.0),
+            BlockId::Hash(felt) => starknet_core::types::BlockId::Hash(felt.into_field_element()),
             BlockId::Number(number) => starknet_core::types::BlockId::Number(number),
             BlockId::Tag(tag) => starknet_core::types::BlockId::Tag(tag.into()),
         }

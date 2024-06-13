@@ -15,7 +15,6 @@ blockifier = { workspace = true }
 cairo-lang-starknet-classes = { workspace = true }
 cairo-lang-utils = { workspace = true }
 cairo-vm = { workspace = true }
-dp-felt = { workspace = true }
 flate2 = { workspace = true }
 indexmap = { workspace = true }
 num-bigint = { workspace = true }

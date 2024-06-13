@@ -1890,7 +1890,6 @@ dependencies = [
  "crossbeam-skiplist",
  "dp-block",
  "dp-convert",
- "dp-felt",
  "dp-transactions",
  "dp-utils",
  "flate2",
@@ -1930,7 +1929,6 @@ dependencies = [
  "dc-db",
  "dp-block",
  "dp-convert",
- "dp-felt",
  "dp-simulations",
  "dp-transactions",
  "dp-utils",
@@ -1944,6 +1942,7 @@ dependencies = [
  "starknet-core",
  "starknet-ff",
  "starknet-providers",
+ "starknet-types-core",
  "starknet_api",
  "thiserror",
 ]
@@ -1961,7 +1960,6 @@ dependencies = [
  "dc-telemetry",
  "dp-block",
  "dp-convert",
- "dp-felt",
  "dp-transactions",
  "dp-utils",
  "ethers",
@@ -2030,6 +2028,8 @@ dependencies = [
  "reqwest 0.12.4",
  "serde_json",
  "starknet-core",
+ "starknet-providers",
+ "starknet-types-core",
  "tokio",
  "tower",
  "tower-http",
@@ -2149,7 +2149,6 @@ version = "0.1.0"
 dependencies = [
  "blockifier",
  "dp-convert",
- "dp-felt",
  "lazy_static",
  "primitive-types",
  "serde",
@@ -2171,21 +2170,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dp-felt"
-version = "0.1.0"
-dependencies = [
- "cairo-vm",
- "primitive-types",
- "serde",
- "serde_with",
- "starknet-core",
- "starknet-ff",
- "starknet-types-core",
- "starknet_api",
- "thiserror-no-std",
-]
-
-[[package]]
 name = "dp-simulations"
 version = "0.1.0"
 dependencies = [
@@ -2202,7 +2186,6 @@ dependencies = [
  "cairo-lang-utils 2.6.0",
  "cairo-vm",
  "dp-convert",
- "dp-felt",
  "flate2",
  "indexmap 2.2.6",
  "num-bigint",

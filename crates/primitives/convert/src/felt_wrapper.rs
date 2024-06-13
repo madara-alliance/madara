@@ -8,7 +8,11 @@ use starknet_core::types::EthAddress;
 use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 
-use crate::Felt252Wrapper;
+macro_rules! cannot_convert {
+    ($X:ty, $Y:ty) => {
+        concat!("cannot convert this ", stringify!($X), " to a ", stringify!($Y))
+    };
+}
 
 pub trait FeltWrapper {
     fn into_stark_felt(self) -> StarkFelt;
@@ -17,7 +21,7 @@ pub trait FeltWrapper {
 
 impl FeltWrapper for FieldElement {
     fn into_stark_felt(self) -> StarkFelt {
-        Felt252Wrapper(self).into()
+        StarkFelt::new_unchecked(self.to_bytes_be())
     }
     fn into_field_element(self) -> FieldElement {
         self
@@ -26,7 +30,7 @@ impl FeltWrapper for FieldElement {
 
 impl FeltWrapper for &FieldElement {
     fn into_stark_felt(self) -> StarkFelt {
-        Felt252Wrapper(*self).into()
+        StarkFelt::new_unchecked(self.to_bytes_be())
     }
     fn into_field_element(self) -> FieldElement {
         *self
@@ -38,7 +42,7 @@ impl FeltWrapper for StarkFelt {
         self
     }
     fn into_field_element(self) -> FieldElement {
-        Felt252Wrapper::from(self).into()
+        FieldElement::from_byte_slice_be(self.bytes()).expect(cannot_convert!(StarkFelt, FieldElement))
     }
 }
 
@@ -47,38 +51,20 @@ impl FeltWrapper for &StarkFelt {
         *self
     }
     fn into_field_element(self) -> FieldElement {
-        Felt252Wrapper::from(*self).into()
+        (*self).into_field_element()
     }
 }
 
 impl FeltWrapper for Felt {
     fn into_stark_felt(self) -> StarkFelt {
-        Felt252Wrapper::from(self).into()
+        StarkFelt::new_unchecked(self.to_bytes_be())
     }
     fn into_field_element(self) -> FieldElement {
-        Felt252Wrapper::from(self).into()
+        FieldElement::from_bytes_be(&self.to_bytes_be()).expect(cannot_convert!(Felt, FieldElement))
     }
 }
 
 impl FeltWrapper for &Felt {
-    fn into_stark_felt(self) -> StarkFelt {
-        Felt252Wrapper::from(*self).into()
-    }
-    fn into_field_element(self) -> FieldElement {
-        Felt252Wrapper::from(*self).into()
-    }
-}
-
-impl FeltWrapper for Felt252Wrapper {
-    fn into_stark_felt(self) -> StarkFelt {
-        self.into()
-    }
-    fn into_field_element(self) -> FieldElement {
-        self.into()
-    }
-}
-
-impl FeltWrapper for &Felt252Wrapper {
     fn into_stark_felt(self) -> StarkFelt {
         (*self).into_stark_felt()
     }
@@ -89,10 +75,14 @@ impl FeltWrapper for &Felt252Wrapper {
 
 impl FeltWrapper for EthAddress {
     fn into_stark_felt(self) -> StarkFelt {
-        Felt252Wrapper::from(self).into()
+        let mut output = [0u8; 32];
+        output[..20].copy_from_slice(self.as_bytes());
+        StarkFelt::new_unchecked(output)
     }
     fn into_field_element(self) -> FieldElement {
-        Felt252Wrapper::from(self).into()
+        let mut output = [0u8; 32];
+        output[..20].copy_from_slice(self.as_bytes());
+        FieldElement::from_bytes_be(&output).expect(cannot_convert!(EthAddress, FieldElement))
     }
 }
 

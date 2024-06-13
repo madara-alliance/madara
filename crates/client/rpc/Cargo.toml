@@ -21,6 +21,7 @@ blockifier = { workspace = true, default-features = true }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true }
 starknet-providers = { workspace = true }
+starknet-types-core = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 
 # Others
@@ -28,7 +29,6 @@ anyhow = { workspace = true }
 cairo-vm = { workspace = true }
 dp-block = { workspace = true, default-features = true }
 dp-convert = { workspace = true, default-features = true }
-dp-felt = { workspace = true, default-features = true }
 dp-simulations = { workspace = true }
 dp-transactions = { workspace = true }
 dp-utils = { workspace = true }
