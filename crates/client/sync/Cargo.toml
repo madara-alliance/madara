@@ -52,7 +52,6 @@ dc-metrics = { workspace = true }
 dc-telemetry = { workspace = true }
 dp-block = { workspace = true }
 dp-convert = { workspace = true }
-dp-felt = { workspace = true }
 dp-transactions = { workspace = true }
 dp-utils = { workspace = true }
 num-traits = { workspace = true }

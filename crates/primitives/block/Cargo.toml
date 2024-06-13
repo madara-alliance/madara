@@ -12,7 +12,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 blockifier = { workspace = true }
-dp-felt = { workspace = true }
 lazy_static = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -23,6 +22,3 @@ starknet_api = { workspace = true }
 # Optionals
 dp-convert = { workspace = true }
 primitive-types.workspace = true
-
-[dev-dependencies]
-dp-felt = { workspace = true }
