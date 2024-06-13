@@ -112,7 +112,7 @@ impl MappingDb {
     pub fn get_l1_last_confirmed_block(&self) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK)? else { return Ok(None) };
-        let res = bincode::deserialize(&res)?;
+        let res = codec::Decode::decode(&res)?;
         Ok(Some(res))
     }
 
