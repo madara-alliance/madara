@@ -14,7 +14,7 @@ use std::sync::Arc;
 use dc_db::mapping_db::MappingDb;
 use dc_db::DeoxysBackend;
 use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;

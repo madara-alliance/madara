@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use starknet_api::block::BlockHash;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::PendingStateUpdate;

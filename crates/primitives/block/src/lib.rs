@@ -2,7 +2,7 @@
 
 mod header;
 mod ordered_events;
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 pub use header::Header;
 pub use ordered_events::*;
 use starknet_api::block::BlockHash;

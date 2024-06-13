@@ -7,7 +7,7 @@ use dc_db::storage_handler::{DeoxysStorageError, StorageView};
 use dc_db::DeoxysBackend;
 use dp_block::DeoxysBlock;
 use dp_convert::state_update::ToStateUpdateCore;
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use dp_utils::{stopwatch_end, PerfStopwatch};
 use itertools::Itertools;
 use starknet_api::core::ClassHash;

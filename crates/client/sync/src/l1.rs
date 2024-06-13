@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::{bail, Context, Result};
 use dc_db::{DeoxysBackend, WriteBatchWithTransaction};
 use dp_convert::core_felt::CoreFelt;
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use dp_utils::channel_wait_or_graceful_shutdown;
 use ethers::contract::{abigen, EthEvent};
 use ethers::providers::{Http, Middleware, Provider};

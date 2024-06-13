@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use dp_transactions::TxType;
 use starknet_api::core::ContractAddress;
 use starknet_core::types::{

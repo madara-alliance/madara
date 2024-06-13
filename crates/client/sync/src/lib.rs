@@ -22,7 +22,7 @@ pub mod starknet_sync_worker {
     use anyhow::Context;
     use dc_db::DeoxysBackend;
     use dc_telemetry::TelemetryHandle;
-    use dp_felt::FeltWrapper;
+    use dp_convert::felt_wrapper::FeltWrapper;
     use reqwest::Url;
     use starknet_providers::SequencerGatewayProvider;
 

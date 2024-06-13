@@ -14,7 +14,7 @@ use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::Header;
 use dp_block::{BlockId, BlockTag, DeoxysBlock};
 use dp_convert::core_felt::CoreFelt;
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
 use starknet_api::transaction::TransactionHash;

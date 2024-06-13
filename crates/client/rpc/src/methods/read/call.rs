@@ -1,5 +1,5 @@
 use dp_convert::field_element::FromFieldElement;
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::hash::StarkFelt;

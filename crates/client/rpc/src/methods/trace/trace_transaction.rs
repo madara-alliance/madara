@@ -1,5 +1,5 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use dp_transactions::TxType;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::{Transaction, TransactionHash};

@@ -1,6 +1,6 @@
 use std::vec::Vec;
 
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 /// Here we transform starknet-api transactions into starknet-core trasnactions
 use starknet_api::transaction::{
     DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
