@@ -44,7 +44,7 @@ impl FeltWrapper for StarkFelt {
         self
     }
     fn into_field_element(self) -> FieldElement {
-        FieldElement::from_byte_slice_be(&self.bytes()).expect(cannot_convert!(StarkFelt, FieldElement))
+        FieldElement::from_byte_slice_be(self.bytes()).expect(cannot_convert!(StarkFelt, FieldElement))
     }
 }
 
