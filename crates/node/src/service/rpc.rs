@@ -1,8 +1,6 @@
 use dc_db::DatabaseService;
 use dc_metrics::MetricsRegistry;
-use dc_rpc::{
-    ChainConfig, Felt, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer,
-};
+use dc_rpc::{ChainConfig, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
 use jsonrpsee::server::ServerHandle;
 use jsonrpsee::RpcModule;
 use metrics::RpcMetrics;
@@ -43,7 +41,7 @@ impl RpcService {
         };
 
         let chain_config = ChainConfig {
-            chain_id: Felt(network_type.chain_id()),
+            chain_id: network_type.chain_id(),
             feeder_gateway: network_type.feeder_gateway(),
             gateway: network_type.gateway(),
         };

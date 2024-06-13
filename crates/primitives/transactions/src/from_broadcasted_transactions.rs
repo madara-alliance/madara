@@ -15,13 +15,15 @@ use cairo_lang_starknet_classes::contract_class::{
 };
 use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
-use dp_felt::Felt252Wrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use flate2::read::GzDecoder;
 use num_bigint::{BigInt, BigUint, Sign};
-use starknet_api::core::{calculate_contract_address, EntryPointSelector};
+use starknet_api::core::{
+    calculate_contract_address, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce,
+};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
-use starknet_api::transaction::{self as stx};
+use starknet_api::transaction::{self as stx, ContractAddressSalt};
 use starknet_core::types::contract::legacy::{
     LegacyContractClass, LegacyEntrypointOffset, RawLegacyEntryPoint, RawLegacyEntryPoints,
 };
@@ -34,8 +36,11 @@ use starknet_core::types::{
     FlattenedSierraClass, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
 };
 use starknet_crypto::FieldElement;
+use starknet_types_core::felt::Felt;
 
 use crate::compute_hash::ComputeTransactionHash;
+
+const CONTRACT_ADDRESS_ERROR: &str = "expected contract address";
 
 #[derive(Debug, thiserror::Error)]
 pub enum BroadcastedTransactionConversionError {
@@ -70,6 +75,16 @@ impl ToAccountTransaction for BroadcastedTransaction {
             BroadcastedTransaction::DeployAccount(tx) => deploy_account_to_account_transaction(tx.clone()),
         }
     }
+}
+
+// TODO : IMPLEMENT
+// fn u8x32_to_u128(let as_u8x32:[u8; 32]) -> u128 {}
+
+#[inline]
+fn fee_from_field(fee: FieldElement) -> stx::Fee {
+    let as_u128 = u128::try_from(fee).map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig).unwrap();
+
+    stx::Fee(as_u128)
 }
 
 fn declare_to_account_transaction(
@@ -111,21 +126,18 @@ fn declare_to_account_transaction(
             let blockifier_contract_class = instantiate_blockifier_contract_class(&contract_class, decompressed_bytes)?;
 
             let declare_tx = stx::DeclareTransaction::V1(stx::DeclareTransactionV0V1 {
-                max_fee: stx::Fee(
-                    u128::try_from(Felt252Wrapper::from(max_fee))
-                        .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
-                        .unwrap(),
-                ),
+                max_fee: fee_from_field(max_fee),
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Felt252Wrapper::from(nonce).into(),
-                class_hash: Felt252Wrapper::from(class_hash).into(),
-                sender_address: Felt252Wrapper::from(sender_address).into(),
+                nonce: Nonce(nonce.into_stark_felt()),
+                class_hash: ClassHash(class_hash.into_stark_felt()),
+                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                    .expect("expected contract address"),
             });
 
             // TODO: defaulted chain id
-            let tx_hash = declare_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = declare_tx.compute_hash(Felt::ZERO, false, None);
             let class_info = ClassInfo::new(
                 &blockifier_contract_class,
                 contract_class.clone().program.len(),
@@ -160,22 +172,19 @@ fn declare_to_account_transaction(
             );
 
             let declare_tx = stx::DeclareTransaction::V2(stx::DeclareTransactionV2 {
-                max_fee: stx::Fee(
-                    u128::try_from(Felt252Wrapper::from(max_fee))
-                        .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
-                        .unwrap(),
-                ),
+                max_fee: fee_from_field(max_fee),
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Felt252Wrapper::from(nonce).into(),
-                class_hash: Felt252Wrapper::from(contract_class.class_hash()).into(),
-                sender_address: Felt252Wrapper::from(sender_address).into(),
-                compiled_class_hash: Felt252Wrapper::from(compiled_class_hash).into(),
+                nonce: Nonce(nonce.into_stark_felt()),
+                class_hash: ClassHash(contract_class.class_hash().into_stark_felt()),
+                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                    .expect("expected contract address"),
+                compiled_class_hash: CompiledClassHash(compiled_class_hash.into_stark_felt()),
             });
 
             // TODO: use real chain id
-            let tx_hash = declare_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = declare_tx.compute_hash(Felt::ZERO, false, None);
             let class_info = ClassInfo::new(
                 &blockifier_contract_class,
                 contract_class.sierra_program.len(),
@@ -215,30 +224,31 @@ fn declare_to_account_transaction(
             );
 
             let class_hash = contract_class.clone().class_hash();
-            let class_hash = Felt252Wrapper::from(class_hash).into();
+            let class_hash = ClassHash(class_hash.into_stark_felt());
 
             let declare_tx = stx::DeclareTransaction::V3(stx::DeclareTransactionV3 {
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Felt252Wrapper::from(nonce).into(),
-                sender_address: Felt252Wrapper::from(sender_address).into(),
+                nonce: Nonce(nonce.into_stark_felt()),
+                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                    .expect(CONTRACT_ADDRESS_ERROR),
                 class_hash,
-                compiled_class_hash: Felt252Wrapper::from(compiled_class_hash).into(),
+                compiled_class_hash: CompiledClassHash(compiled_class_hash.into_stark_felt()),
                 resource_bounds: core_resources_to_api_resources(resource_bounds),
                 tip: stx::Tip(tip),
                 paymaster_data: stx::PaymasterData(
-                    paymaster_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    paymaster_data.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 account_deployment_data: stx::AccountDeploymentData(
-                    account_deployment_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    account_deployment_data.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
                 fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
             });
 
             // TODO: use real chain id
-            let tx_hash = declare_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = declare_tx.compute_hash(Felt::ZERO, false, None);
             let class_info = ClassInfo::new(
                 &blockifier_contract_class,
                 contract_class.sierra_program.len(),
@@ -269,22 +279,19 @@ fn invoke_to_account_transaction(
             ..
         }) => {
             let invoke_tx = stx::InvokeTransaction::V1(stx::InvokeTransactionV1 {
-                max_fee: stx::Fee(
-                    u128::try_from(Felt252Wrapper::from(max_fee))
-                        .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
-                        .unwrap(),
-                ),
+                max_fee: fee_from_field(max_fee),
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Felt252Wrapper::from(nonce).into(),
-                sender_address: Felt252Wrapper::from(sender_address).into(),
+                nonce: Nonce(nonce.into_stark_felt()),
+                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                    .expect(CONTRACT_ADDRESS_ERROR),
                 calldata: stx::Calldata(
-                    calldata.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>().into(),
+                    calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
                 ),
             });
 
-            let tx_hash = invoke_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = invoke_tx.compute_hash(Felt::ZERO, false, None);
 
             let tx = btx::InvokeTransaction::new(invoke_tx, tx_hash);
 
@@ -305,26 +312,27 @@ fn invoke_to_account_transaction(
         }) => {
             let invoke_tx = stx::InvokeTransaction::V3(stx::InvokeTransactionV3 {
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Felt252Wrapper::from(nonce).into(),
-                sender_address: Felt252Wrapper::from(sender_address).into(),
+                nonce: Nonce(nonce.into_stark_felt()),
+                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                    .expect(CONTRACT_ADDRESS_ERROR),
                 calldata: stx::Calldata(
-                    calldata.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>().into(),
+                    calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
                 ),
                 resource_bounds: core_resources_to_api_resources(resource_bounds),
                 tip: stx::Tip(tip),
                 paymaster_data: stx::PaymasterData(
-                    paymaster_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    paymaster_data.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 account_deployment_data: stx::AccountDeploymentData(
-                    account_deployment_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    account_deployment_data.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
                 fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
             });
 
-            let tx_hash = invoke_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = invoke_tx.compute_hash(Felt::ZERO, false, None);
 
             let tx = btx::InvokeTransaction::new(invoke_tx, tx_hash);
 
@@ -348,31 +356,23 @@ fn deploy_account_to_account_transaction(
             is_query: _,
         }) => {
             let deploy_account_tx = stx::DeployAccountTransaction::V1(stx::DeployAccountTransactionV1 {
-                max_fee: stx::Fee(
-                    u128::try_from(Felt252Wrapper::from(max_fee))
-                        .map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)
-                        .unwrap(),
-                ),
+                max_fee: fee_from_field(max_fee),
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Felt252Wrapper::from(nonce).into(),
-                contract_address_salt: Felt252Wrapper::from(contract_address_salt).into(),
+                nonce: Nonce(nonce.into_stark_felt()),
+                contract_address_salt: ContractAddressSalt(contract_address_salt.into_stark_felt()),
                 constructor_calldata: stx::Calldata(
-                    constructor_calldata
-                        .iter()
-                        .map(|x| Felt252Wrapper::from(*x).into())
-                        .collect::<Vec<StarkFelt>>()
-                        .into(),
+                    constructor_calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
                 ),
-                class_hash: Felt252Wrapper::from(class_hash).into(),
+                class_hash: ClassHash(class_hash.into_stark_felt()),
             });
 
-            let tx_hash = deploy_account_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = deploy_account_tx.compute_hash(Felt::ZERO, false, None);
 
             let contract_address = calculate_contract_address(
-                Felt252Wrapper::from(contract_address_salt).into(),
-                Felt252Wrapper::from(class_hash).into(),
+                ContractAddressSalt(contract_address_salt.into_stark_felt()),
+                ClassHash(class_hash.into_stark_felt()),
                 &deploy_account_tx.constructor_calldata(),
                 Default::default(),
             )
@@ -397,32 +397,28 @@ fn deploy_account_to_account_transaction(
         }) => {
             let deploy_account_tx = stx::DeployAccountTransaction::V3(stx::DeployAccountTransactionV3 {
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Felt252Wrapper::from(nonce).into(),
-                contract_address_salt: Felt252Wrapper::from(contract_address_salt).into(),
+                nonce: Nonce(nonce.into_stark_felt()),
+                contract_address_salt: ContractAddressSalt(contract_address_salt.into_stark_felt()),
                 constructor_calldata: stx::Calldata(
-                    constructor_calldata
-                        .iter()
-                        .map(|x| Felt252Wrapper::from(*x).into())
-                        .collect::<Vec<StarkFelt>>()
-                        .into(),
+                    constructor_calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
                 ),
-                class_hash: Felt252Wrapper::from(class_hash).into(),
+                class_hash: ClassHash(class_hash.into_stark_felt()),
                 resource_bounds: core_resources_to_api_resources(resource_bounds),
                 tip: stx::Tip(tip),
                 paymaster_data: stx::PaymasterData(
-                    paymaster_data.iter().map(|x| Felt252Wrapper::from(*x).into()).collect::<Vec<StarkFelt>>(),
+                    paymaster_data.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
                 fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
             });
 
-            let tx_hash = deploy_account_tx.compute_hash(Felt252Wrapper::ZERO, false, None);
+            let tx_hash = deploy_account_tx.compute_hash(Felt::ZERO, false, None);
 
             let contract_address = calculate_contract_address(
-                Felt252Wrapper::from(contract_address_salt).into(),
-                Felt252Wrapper::from(class_hash).into(),
+                ContractAddressSalt(contract_address_salt.into_stark_felt()),
+                ClassHash(class_hash.into_stark_felt()),
                 &deploy_account_tx.constructor_calldata(),
                 Default::default(),
             )

@@ -1,4 +1,4 @@
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage};
 use starknet_ff::FieldElement;

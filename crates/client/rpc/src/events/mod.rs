@@ -1,5 +1,5 @@
 use dp_block::DeoxysBlock;
-use dp_felt::FeltWrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use starknet_core::types::EmittedEvent;
 
 use crate::Starknet;

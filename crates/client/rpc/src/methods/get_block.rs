@@ -1,5 +1,5 @@
 use dp_block::{BlockId, BlockTag};
-use dp_felt::{Felt252Wrapper, FeltWrapper};
+use dp_convert::felt_wrapper::FeltWrapper;
 use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{
@@ -88,7 +88,7 @@ pub(crate) fn get_block_with_tx_hashes(
         .or_internal_server_error("Error getting block from db")?
         .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    let block_hash = Felt252Wrapper::from(block.block_hash().0).0;
+    let block_hash_as_field = block.block_hash().into_field_element();
     let block_txs_hashes = block.tx_hashes().iter().map(FeltWrapper::into_field_element).collect::<Vec<_>>();
 
     let parent_hash = block.header().parent_block_hash.into_field_element();
@@ -125,7 +125,7 @@ pub(crate) fn get_block_with_tx_hashes(
             let block_with_tx_hashes = BlockWithTxHashes {
                 transactions: block_txs_hashes,
                 status,
-                block_hash,
+                block_hash: block_hash_as_field,
                 parent_hash,
                 block_number,
                 new_root,

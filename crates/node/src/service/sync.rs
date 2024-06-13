@@ -8,7 +8,7 @@ use dc_sync::metrics::block_metrics::BlockMetrics;
 use dc_sync::utility::l1_free_rpc_get;
 use dc_telemetry::TelemetryHandle;
 use primitive_types::H160;
-use starknet_core::types::FieldElement;
+use starknet_types_core::felt::Felt;
 use tokio::task::JoinSet;
 use url::Url;
 
@@ -23,7 +23,7 @@ pub struct SyncService {
     l1_core_address: H160,
     starting_block: Option<u64>,
     block_metrics: BlockMetrics,
-    chain_id: FieldElement,
+    chain_id: Felt,
     start_params: Option<TelemetryHandle>,
 }
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use dp_felt::Felt252Wrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use dp_transactions::TxType;
 use starknet_api::core::ContractAddress;
 use starknet_core::types::{
@@ -24,22 +24,10 @@ pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_
         .enumerate()
         .map(|(index, message)| starknet_core::types::OrderedMessage {
             order: index as u64,
-            payload: message
-                .message
-                .payload
-                .0
-                .iter()
-                .map(|x| {
-                    let felt_wrapper: Felt252Wrapper = Felt252Wrapper::from(*x);
-                    FieldElement::from(felt_wrapper)
-                })
-                .collect(),
+            payload: message.message.payload.0.iter().map(|x| x.into_field_element()).collect(),
             to_address: FieldElement::from_byte_slice_be(message.message.to_address.0.to_fixed_bytes().as_slice())
                 .unwrap(),
-            from_address: {
-                let felt_wrapper: Felt252Wrapper = Felt252Wrapper::from(call_info.call.storage_address);
-                FieldElement::from(felt_wrapper)
-            },
+            from_address: call_info.call.storage_address.into_field_element(),
         })
         .collect()
 }
@@ -101,8 +89,7 @@ fn try_get_funtion_invocation_from_call_info(
     // Blockifier call info does not give use the class_hash "if it can be deducted from the storage
     // address". We have to do this decution ourselves here
     let class_hash = if let Some(class_hash) = call_info.call.class_hash {
-        let felt_wrapper: Felt252Wrapper = Felt252Wrapper::from(class_hash.0);
-        FieldElement::from(felt_wrapper)
+        class_hash.into_field_element()
     } else if let Some(cached_hash) = class_hash_cache.get(&call_info.call.storage_address) {
         *cached_hash
     } else {
@@ -134,14 +121,14 @@ fn try_get_funtion_invocation_from_call_info(
     };
 
     Ok(starknet_core::types::FunctionInvocation {
-        contract_address: (*call_info.call.storage_address.0.key()).into(),
-        entry_point_selector: FieldElement::from(Felt252Wrapper::from(call_info.call.entry_point_selector.0)),
-        calldata: call_info.call.calldata.0.iter().map(|x| FieldElement::from(Felt252Wrapper::from(*x))).collect(),
-        caller_address: (*call_info.call.caller_address.0.key()).into(),
+        contract_address: call_info.call.storage_address.0.into_field_element(),
+        entry_point_selector: call_info.call.entry_point_selector.0.into_field_element(),
+        calldata: call_info.call.calldata.0.iter().map(|x| x.into_field_element()).collect(),
+        caller_address: call_info.call.caller_address.0.into_field_element(),
         class_hash,
         entry_point_type,
         call_type,
-        result: call_info.execution.retdata.0.iter().map(|x| (*x).into()).collect(),
+        result: call_info.execution.retdata.0.iter().map(|x| x.into_field_element()).collect(),
         calls: inner_calls,
         events,
         messages,

@@ -2,6 +2,8 @@
 
 ## Next release
 
+- refactor: remove primitives/felt
+- refactor: move convert.rs to felt_wrapper.rs
 - fix(decode): fix mapping db decoding
 - feat: store reverted txs hashes
 - feat(l1): added l1 free rpc url if none is provided

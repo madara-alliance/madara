@@ -19,7 +19,6 @@ flate2 = { workspace = true }
 # Deoxys crates
 dp-block = { workspace = true }
 dp-convert = { workspace = true }
-dp-felt = { workspace = true }
 dp-transactions = { workspace = true }
 dp-utils = { workspace = true }
 

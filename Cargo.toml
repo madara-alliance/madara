@@ -8,7 +8,6 @@ members = [
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/convert",
-  "crates/primitives/felt",
   "crates/primitives/transactions",
   "crates/primitives/utils",
 ]
@@ -23,7 +22,6 @@ default-members = [
   "crates/client/metrics",
   "crates/node",
   "crates/primitives/block",
-  "crates/primitives/felt",
   "crates/primitives/transactions",
   "crates/primitives/utils",
 ]
@@ -66,7 +64,6 @@ bonsai-trie = { default-features = false, git = "https://github.com/keep-starkne
 # Deoxys primtitives
 dp-block = { path = "crates/primitives/block", default-features = false }
 dp-convert = { path = "crates/primitives/convert", default-features = false }
-dp-felt = { path = "crates/primitives/felt", default-features = false }
 dp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
 dp-simulations = { path = "crates/primitives/simulations", default-features = false }
 dp-transactions = { path = "crates/primitives/transactions", default-features = false }

@@ -28,6 +28,8 @@ dc-db = { workspace = true }
 dc-metrics = { workspace = true }
 dc-rpc = { workspace = true }
 starknet-core = { workspace = true }
+starknet-providers = { workspace = true }
+starknet-types-core = { workspace = true }
 
 # Primitives
 dp-utils = { workspace = true }

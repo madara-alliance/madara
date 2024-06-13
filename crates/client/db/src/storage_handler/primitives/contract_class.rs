@@ -7,7 +7,7 @@ use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1, EntryPointV1,
 };
 use cairo_vm::types::program::Program;
-use dp_felt::Felt252Wrapper;
+use dp_convert::felt_wrapper::FeltWrapper;
 use dp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -167,12 +167,14 @@ pub fn to_contract_class_sierra(sierra_class: &ContractClassV1, abi: String) -> 
         .program
         .iter_data()
         .filter_map(|maybe_relocatable| {
-            maybe_relocatable.get_int_ref().map(|felt| Felt252Wrapper::from((*felt).clone()))
+            maybe_relocatable.get_int_ref().map(|felt| Felt::from_bytes_be(&((*felt).to_be_bytes())))
         })
-        .collect::<Vec<Felt252Wrapper>>();
+        .collect::<Vec<Felt>>();
+
+    let sierra_program_as_field = sierra_program.iter().map(|felt| felt.into_field_element()).collect();
 
     Ok(ContractClassCore::Sierra(FlattenedSierraClass {
-        sierra_program: sierra_program.into_iter().map(Into::into).collect(),
+        sierra_program: sierra_program_as_field,
         contract_class_version: "0.1.0".to_string(),
         entry_points_by_type,
         abi,
@@ -329,6 +331,7 @@ use starknet_core::types::{
     FunctionStateMutability, LegacyEventAbiEntry, LegacyEventAbiType, LegacyFunctionAbiEntry, LegacyFunctionAbiType,
     LegacyStructAbiEntry, LegacyStructAbiType, LegacyStructMember, LegacyTypedParameter,
 };
+use starknet_types_core::felt::Felt;
 
 // Wrapper Class conversion
 
