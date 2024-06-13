@@ -28,6 +28,25 @@ pub fn setup_logging() -> anyhow::Result<()> {
                         record.args()
                     )
                 }
+                Level::Warn => {
+                    writeln!(
+                        buf,
+                        "{brackets}[{brackets:#}{} {style}{}{style:#}{brackets}] ⚠️ {brackets:#} {}",
+                        ts,
+                        record.level(),
+                        record.args()
+                    )
+                }
+                Level::Error => {
+                    writeln!(
+                        buf,
+                        "{brackets}[{brackets:#}{} {style}{}{style:#} {}{brackets}] ❗ {brackets:#} {}",
+                        ts,
+                        record.level(),
+                        record.target(),
+                        record.args()
+                    )
+                }
                 _ => {
                     writeln!(
                         buf,

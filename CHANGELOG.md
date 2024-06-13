@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(logs): fixed logs and get_state_update
 - refactor: remove primitives/felt
 - refactor: move convert.rs to felt_wrapper.rs
 - fix(decode): fix mapping db decoding
