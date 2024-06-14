@@ -1,0 +1,15 @@
+#!/bin/bash
+
+while true
+do
+    bash run.sh &
+    PROCESS_PID=$!
+
+    sleep $((7 + RANDOM % 10)) # 7..=17
+
+    kill -9 $PROCESS_PID
+    wait $PROCESS_PID
+
+    killall -9 deoxys
+    sleep 2
+done

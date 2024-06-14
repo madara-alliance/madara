@@ -69,7 +69,7 @@ impl FromStr for Cors {
 #[derive(Clone, Debug, clap::Args)]
 pub struct RpcParams {
     /// Disable the RPC server.
-    #[arg(long)]
+    #[arg(long, alias = "no-rpc")]
     pub rpc_disabled: bool,
 
     /// Listen to all network interfaces. This usually means that the RPC server will be accessible externally.
@@ -142,7 +142,7 @@ pub struct RpcParams {
     #[arg(long, alias = "rpc_no_batch_requests", conflicts_with_all = &["rpc_max_batch_request_len"])]
     pub rpc_disable_batch_requests: bool,
 
-    /// Limit the max length per RPC batch requests.
+    /// Limit the max length for an RPC batch request.
     #[arg(long, conflicts_with_all = &["rpc_disable_batch_requests"], value_name = "LEN")]
     pub rpc_max_batch_request_len: Option<u32>,
 
@@ -151,7 +151,7 @@ pub struct RpcParams {
     /// For most purposes, an origin can be thought of as just `protocol://domain`.
     /// By default, only browser requests from localhost will work.
     ///
-    /// This argument is a comma separated list of origins, or the special `null` value.
+    /// This argument is a comma separated list of origins, or the special `all` value.
     ///
     /// Learn more about CORS and web security at <https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS>.
     #[arg(long, value_name = "ORIGINS")]

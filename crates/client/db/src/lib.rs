@@ -1,7 +1,8 @@
 //! Deoxys database
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use std::{fmt, fs};
 
 use anyhow::{Context, Result};
@@ -14,8 +15,8 @@ use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 mod error;
 pub mod mapping_db;
 use rocksdb::{
-    BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Env, MultiThreaded, OptimisticTransactionDB, Options,
-    SliceTransform,
+    BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Env, FlushOptions, MultiThreaded,
+    OptimisticTransactionDB, Options, SliceTransform,
 };
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 pub mod bonsai_db;
@@ -61,6 +62,9 @@ pub(crate) async fn open_rocksdb(
     opts.set_compression_type(DBCompressionType::Zstd);
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     opts.increase_parallelism(cores);
+
+    opts.set_atomic_flush(true);
+    opts.set_manual_wal_flush(true);
 
     let backup_hande = if let Some(backup_dir) = backup_dir {
         let (restored_cb_sender, restored_cb_recv) = oneshot::channel();
@@ -300,6 +304,7 @@ pub struct DeoxysBackend {
     mapping: Arc<MappingDb>,
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
+    last_flush_time: Mutex<Option<Instant>>,
 }
 
 pub struct DatabaseService {
@@ -349,9 +354,35 @@ impl DeoxysBackend {
         let (db, backup_handle) =
             open_rocksdb(&db_path, true, backup_dir, restore_from_latest_backup).await.context("opening database")?;
 
-        let backend = Arc::new(Self { mapping: Arc::new(MappingDb::new(Arc::clone(&db))), backup_handle, db });
+        let backend = Arc::new(Self {
+            mapping: Arc::new(MappingDb::new(Arc::clone(&db))),
+            backup_handle,
+            db,
+            last_flush_time: Default::default(),
+        });
 
         Ok(backend)
+    }
+
+    pub fn maybe_flush(&self) -> Result<()> {
+        let mut inst = self.last_flush_time.lock().expect("poisoned mutex");
+        let should_flush = match *inst {
+            Some(inst) => inst.elapsed() >= Duration::from_secs(5),
+            None => true,
+        };
+        if should_flush {
+            log::debug!("doing a db flush");
+            let mut opts = FlushOptions::default();
+            opts.set_wait(true);
+            // we have to collect twice here :/
+            let columns = Column::ALL.iter().map(|e| self.db.get_column(*e)).collect::<Vec<_>>();
+            let columns = columns.iter().collect::<Vec<_>>();
+            self.db.flush_cfs_opt(&columns, &opts).context("flushing database")?;
+
+            *inst = Some(Instant::now());
+        }
+
+        Ok(())
     }
 
     pub async fn backup(&self) -> Result<()> {

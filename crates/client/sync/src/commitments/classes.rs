@@ -44,6 +44,7 @@ pub fn class_trie_root(
     handler_class.init()?;
     handler_class.update(updates)?;
     handler_class.commit(block_number)?;
+    log::debug!("committed class trie root");
 
     handler_class.root()
 }

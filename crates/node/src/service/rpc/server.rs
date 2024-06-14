@@ -16,7 +16,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, StatusCode};
 use ip_network::IpNetwork;
 use jsonrpsee::core::id_providers::RandomStringIdProvider;
-use jsonrpsee::server::middleware::http::{HostFilterLayer, ProxyGetRequestLayer};
+use jsonrpsee::server::middleware::http::HostFilterLayer;
 use jsonrpsee::server::middleware::rpc::RpcServiceBuilder;
 use jsonrpsee::server::{stop_channel, ws, BatchRequestConfig, PingConfig, StopHandle, TowerServiceBuilder};
 use jsonrpsee::{Methods, RpcModule};
@@ -80,14 +80,17 @@ pub async fn start_server(
         rate_limit_trust_proxy_headers,
     } = config;
 
-    let std_listener = TcpListener::bind(addr).await?.into_std()?;
+    let std_listener = TcpListener::bind(addr)
+        .await
+        .and_then(|a| a.into_std())
+        .with_context(|| format!("binding to address: {addr}"))?;
     let local_addr = std_listener.local_addr().ok();
     let host_filter = host_filtering(cors.is_some(), local_addr);
 
     let http_middleware = tower::ServiceBuilder::new()
 		.option_layer(host_filter)
 		// Proxy `GET /health` requests to internal `system_health` method.
-		.layer(ProxyGetRequestLayer::new("/health", "system_health")?)
+		// .layer(ProxyGetRequestLayer::new("/health", "system_health")?)
 		.layer(try_into_cors(cors.as_ref())?);
 
     let builder = jsonrpsee::server::Server::builder()
@@ -145,15 +148,13 @@ pub async fn start_server(
                 let transport_label = if is_websocket { "ws" } else { "http" };
 
                 let middleware_layer = match rate_limit_cfg {
-                    None => Some(MiddlewareLayer::new().with_metrics(Metrics::new(metrics, transport_label))),
-                    Some(rate_limit) => Some(
-                        MiddlewareLayer::new()
-                            .with_metrics(Metrics::new(metrics, transport_label))
-                            .with_rate_limit_per_minute(rate_limit),
-                    ),
+                    None => MiddlewareLayer::new().with_metrics(Metrics::new(metrics, transport_label)),
+                    Some(rate_limit) => MiddlewareLayer::new()
+                        .with_metrics(Metrics::new(metrics, transport_label))
+                        .with_rate_limit_per_minute(rate_limit),
                 };
 
-                let rpc_middleware = RpcServiceBuilder::new().option_layer(middleware_layer.clone());
+                let rpc_middleware = RpcServiceBuilder::new().layer(middleware_layer.clone());
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
 
@@ -167,13 +168,9 @@ pub async fn start_server(
                             // Spawn a task to handle when the connection is closed.
                             tokio::spawn(async move {
                                 let now = std::time::Instant::now();
-                                if let Some(m) = middleware_layer.as_ref() {
-                                    m.ws_connect()
-                                }
+                                middleware_layer.ws_connect();
                                 on_disconnect.await;
-                                if let Some(m) = middleware_layer.as_ref() {
-                                    m.ws_disconnect(now)
-                                }
+                                middleware_layer.ws_disconnect(now);
                             });
                         }
 
@@ -184,7 +181,9 @@ pub async fn start_server(
         }
     });
 
-    let server = hyper::Server::from_tcp(std_listener)?.serve(make_service);
+    let server = hyper::Server::from_tcp(std_listener)
+        .with_context(|| format!("creating hyper server at: {addr}"))?
+        .serve(make_service);
 
     join_set.spawn(async move {
         server

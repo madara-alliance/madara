@@ -1,13 +1,12 @@
 [package]
 name = "dc-db"
-version.workspace = true
+description = "Deoxys client database service"
+authors.workspace = true
 edition.workspace = true
-description = "Starknet database backend"
-authors = ["Kasar <https://github.com/kasarlabs>"]
-homepage = "https://github.com/kasarlabs/deoxys"
-license = "MIT"
-publish = false
-repository = "https://github.com/kasarlabs/deoxys"
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

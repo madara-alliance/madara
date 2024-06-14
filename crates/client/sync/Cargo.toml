@@ -1,5 +1,5 @@
 [package]
-authors = ["Antiyro <https://github.com/antiyro>"]
+authors.workspace = true
 description = "This crate is responsible to sync data"
 edition = "2021"
 homepage = "https://github.com/KasarLabs/deoxys"

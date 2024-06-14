@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use anyhow::{bail, Context};
 use dc_db::mapping_db::MappingDbError;
-use dc_db::rocksdb::WriteBatchWithTransaction;
+use dc_db::rocksdb::{WriteBatchWithTransaction, WriteOptions};
 use dc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
 use dc_db::storage_handler::DeoxysStorageError;
 use dc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
@@ -67,7 +67,10 @@ fn store_new_block(
     mapping.write_new_block(&mut tx, block, reverted_txs)?;
 
     let db_access = backend.expose_db();
-    db_access.write(tx).map_err(MappingDbError::from)?;
+    let mut write_opt = WriteOptions::default(); // todo move that in db
+    write_opt.disable_wal(true);
+    db_access.write_opt(tx, &write_opt).map_err(MappingDbError::from)?;
+    log::debug!("committed store_new_block");
 
     stopwatch_end!(sw, "end store_new_block {}: {:?}", block.block_n());
     Ok(())
@@ -114,7 +117,7 @@ async fn l2_verify_and_apply_task(
                 // storage_handler::contract_class_trie_mut().revert_to(prev_block);
                 // TODO(charpa): make other stuff revertible, maybe history?
 
-                bail!("Verified state: {} doesn't match fetched state: {}", state_root, global_state_root);
+                bail!("Verified state root: {} doesn't match fetched state root: {}", state_root, global_state_root);
             }
 
             // UNWRAP: we need a 'static future as we are spawning tokio tasks further down the line
@@ -152,6 +155,10 @@ async fn l2_verify_and_apply_task(
             sync_timer.clone(),
         )
         .await?;
+
+        let sw = PerfStopwatch::new();
+        backend.maybe_flush()?;
+        stopwatch_end!(sw, "flush db: {:?}");
 
         log::info!(
             "✨ Imported #{} ({}) and updated state root ({})",
@@ -244,7 +251,9 @@ async fn l2_pending_block_task(
     {
         let mut tx = WriteBatchWithTransaction::default();
         backend.mapping().write_no_pending(&mut tx).context("clearing pending status")?;
-        backend.expose_db().write(tx).context("writing pending block to db")?;
+        let mut write_opt = WriteOptions::default(); // todo move that in db
+        write_opt.disable_wal(true);
+        backend.expose_db().write_opt(tx, &write_opt).context("clearing pending block to db")?;
         log::debug!("l2_pending_block_task: startup: wrote no pending");
     }
 
@@ -282,7 +291,10 @@ async fn l2_pending_block_task(
             storage.write_no_pending(&mut tx).context("writing no pending to rocksdb transaction")?;
         }
 
-        backend.expose_db().write(tx).context("writing pending block to db")?;
+        // todo move that in db somehow
+        let mut write_opt = WriteOptions::default();
+        write_opt.disable_wal(true);
+        backend.expose_db().write_opt(tx, &write_opt).context("writing pending block to db")?;
 
         log::debug!("l2_pending_block_task: wrote pending block");
     }

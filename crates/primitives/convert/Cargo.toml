@@ -1,9 +1,12 @@
 [package]
+description = "Deoxys primitive for type conversion"
+name = "dp-convert"
 authors.workspace = true
 edition.workspace = true
-name = "dp-convert"
+license.workspace = true
 repository.workspace = true
 version.workspace = true
+homepage.workspace = true
 
 [dependencies]
 starknet-core = { workspace = true }
