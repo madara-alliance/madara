@@ -250,7 +250,7 @@ pub async fn sync(
     {
         let mut tx = WriteBatchWithTransaction::default();
         backend.mapping().write_no_last_confirmed_block(&mut tx).context("clearing l1 last confirmed block number")?;
-        
+
         let mut write_opt = WriteOptions::default(); // todo move that in db
         write_opt.disable_wal(true);
         backend.expose_db().write_opt(tx, &write_opt).context("writing pending block to db")?;

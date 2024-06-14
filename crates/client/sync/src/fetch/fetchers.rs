@@ -96,7 +96,8 @@ where
                     _ => log::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay),
                 }
                 if wait_or_graceful_shutdown(tokio::time::sleep(delay)).await.is_none() {
-                    return Err(ProviderError::StarknetError(StarknetError::BlockNotFound)) // :/
+                    return Err(ProviderError::StarknetError(StarknetError::BlockNotFound));
+                    // :/
                 }
             }
         }

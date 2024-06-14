@@ -26,7 +26,7 @@ impl RpcService {
         metrics_handle: MetricsRegistry,
     ) -> anyhow::Result<Self> {
         if config.rpc_disabled {
-            return Ok(Self { server_config: None, server_handle: None })
+            return Ok(Self { server_config: None, server_handle: None });
         }
 
         let mut rpc_api = RpcModule::new(());
@@ -99,7 +99,7 @@ impl RpcService {
             // rpc enabled
             self.server_handle = Some(start_server(server_config.clone(), join_set).await?);
         }
-        
+
         Ok(())
     }
 }

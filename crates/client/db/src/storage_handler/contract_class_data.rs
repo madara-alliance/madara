@@ -75,6 +75,7 @@ impl StorageViewMut for ContractClassDataViewMut {
         }
         let mut write_opt = WriteOptions::default();
         write_opt.disable_wal(true);
-        db.write_opt(batch, &write_opt).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassData))
+        db.write_opt(batch, &write_opt)
+            .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassData))
     }
 }
