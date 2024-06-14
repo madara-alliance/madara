@@ -4,6 +4,8 @@
 
 - fix(cleanup): clean up around the Cargo.toml files, error handling and cli arguments
 - fix(db): fault tolerance (database is not corrupted when the node is unexpectedly shut down / killed)
+- fix(rpc): fixed state update deserialization
+- fix(hashes): fixed tx by hash retrieval
 - fix(logs): fixed logs and get_state_update
 - refactor: remove primitives/felt
 - refactor: move convert.rs to felt_wrapper.rs

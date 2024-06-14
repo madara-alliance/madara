@@ -19,9 +19,11 @@ impl BlockStateDiffView {
         let column = db.get_column(Column::BlockStateDiff);
         let block_number: u32 = block_number.try_into().map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
 
+        let json_state_diff = serde_json::to_string(&state_diff).map_err(|_| DeoxysStorageError::StorageSerdeError)?;
+
         let mut write_opt = WriteOptions::default(); // todo move that in db
         write_opt.disable_wal(true);
-        db.put_cf_opt(&column, bincode::serialize(&block_number)?, bincode::serialize(&state_diff)?, &write_opt)
+        db.put_cf(&column, bincode::serialize(&block_number)?, bincode::serialize(&json_state_diff)?, &write_opt)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockStateDiff))
     }
 
@@ -33,11 +35,16 @@ impl BlockStateDiffView {
         let state_diff = db
             .get_cf(&column, bincode::serialize(&block_number)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::BlockStateDiff))?
-            .map(|bytes| bincode::deserialize::<StateDiff>(&bytes[..]));
+            .map(|bytes| {
+                let bincode_decoded: String = bincode::deserialize(&bytes[..])?;
+                let state_diff: StateDiff =
+                    serde_json::from_str(&bincode_decoded).map_err(|_| DeoxysStorageError::StorageSerdeError)?;
+                Ok(state_diff)
+            });
 
         match state_diff {
             Some(Ok(state_diff)) => Ok(Some(state_diff)),
-            Some(Err(_)) => Err(DeoxysStorageError::StorageDecodeError(StorageType::BlockStateDiff)),
+            Some(Err(err)) => Err(err),
             None => Ok(None),
         }
     }

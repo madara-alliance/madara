@@ -41,5 +41,6 @@ log = { workspace = true, default-features = true }
 parity-scale-codec = { version = "3.6.5", features = ["derive"] }
 rayon = { workspace = true }
 rocksdb.workspace = true
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
