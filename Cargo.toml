@@ -48,7 +48,6 @@ edition = "2021"
 repository = "https://github.com/KasarLabs/deoxys/"
 version = "0.1.0"
 license = "Apache-2.0"
-name = "dp-block"
 
 [workspace.dependencies]
 rocksdb = { version = "0.22", features = [
