@@ -8,6 +8,6 @@ parallel to Madara and handles
 3. updating the state on Cairo core contracts
 
 The tentative flow of the orchestrator looks like this but this is subject to
-change as we learn more about external systems and the constratins involved.
+change as we learn more about external systems and the constraints involved.
 
 ![orchestrator_da_sequencer_diagram](./docs/orchestrator_da_sequencer_diagram.png)
