@@ -2009,6 +2009,7 @@ dependencies = [
  "starknet-core",
  "starknet-providers",
  "starknet-types-core",
+ "thiserror",
  "tokio",
  "tower",
  "tower-http",

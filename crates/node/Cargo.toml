@@ -1,13 +1,12 @@
 [package]
-authors = ["Kasar <https://github.com/kasarlabs>"]
-description = "Deoxys node"
-edition.workspace = true
-homepage = "https://github.com/kasarlabs/deoxys"
-license = "MIT"
 name = "deoxys"
-publish = false
-repository = "https://github.com/kasarlabs/deoxys"
+description = "Deoxys node"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 version.workspace = true
+homepage.workspace = true
 build = "build.rs"
 
 [package.metadata.docs.rs]
@@ -52,6 +51,7 @@ rayon.workspace = true
 serde_json.workspace = true
 tower-http.workspace = true
 tower.workspace = true
+thiserror.workspace = true
 
 [features]
 default = []

@@ -78,8 +78,8 @@ impl RpcChecker {
     }
 
     async fn l1_free_rpc_best(&mut self) -> Result<&'static str, RpcError> {
-        log::info!("🕐 Checking for the best available free L1 RPC urls since none has been provided");
-        log::info!("⚠️ This should be for testing purposes only. We recommend providing your own L1 RPC endpoint.");
+        log::warn!("Looking for the best available free Ethereum RPC endpoints online, as none has been provided.");
+        log::warn!("This should be for testing purposes only. We recommend providing your own L1 RPC endpoint using `--l1-endpoint <ETHEREUM RPC URL>`.");
         for &url in self.urls.iter() {
             match self.l1_free_rpc_check(url).await {
                 Ok(latency) if latency < self.best_latency => {

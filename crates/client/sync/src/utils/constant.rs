@@ -14,7 +14,7 @@ pub const LOG_STATE_UPDTATE_TOPIC: &str = "0xd342ddf7a308dec111745b00315c14b7efb
 
 // This a list of free RPC URLs for Ethereum mainnet.
 //
-// It is used whenever no --l1_endpoint is provided.
+// It is used whenever no --l1-endpoint is provided.
 // It should be used only for testing purposes.
 //
 // The list comes from DefiLlama's chainlist repository:

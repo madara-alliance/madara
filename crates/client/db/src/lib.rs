@@ -375,7 +375,7 @@ impl DeoxysBackend {
             let mut opts = FlushOptions::default();
             opts.set_wait(true);
             // we have to collect twice here :/
-            let columns = Column::ALL.into_iter().map(|e| self.db.get_column(*e)).collect::<Vec<_>>();
+            let columns = Column::ALL.iter().map(|e| self.db.get_column(*e)).collect::<Vec<_>>();
             let columns = columns.iter().collect::<Vec<_>>();
             self.db.flush_cfs_opt(&columns, &opts).context("flushing database")?;
 

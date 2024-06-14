@@ -1,11 +1,12 @@
 [package]
-authors = { workspace = true }
-description = "The starknet block"
-edition.workspace = true
-license = "MIT"
+description = "Deoxys primitives for starknet blocks"
 name = "dp-block"
-repository = { workspace = true }
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 version.workspace = true
+homepage.workspace = true
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

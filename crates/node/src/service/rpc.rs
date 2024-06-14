@@ -15,7 +15,7 @@ mod middleware;
 mod server;
 
 pub struct RpcService {
-    server_config: ServerConfig,
+    server_config: Option<ServerConfig>,
     server_handle: Option<ServerHandle>,
 }
 impl RpcService {
@@ -25,6 +25,10 @@ impl RpcService {
         network_type: NetworkType,
         metrics_handle: MetricsRegistry,
     ) -> anyhow::Result<Self> {
+        if config.rpc_disabled {
+            return Ok(Self { server_config: None, server_handle: None })
+        }
+
         let mut rpc_api = RpcModule::new(());
 
         let (read, write, trace) = match (config.rpc_methods, config.rpc_external) {
@@ -72,7 +76,7 @@ impl RpcService {
         let metrics = RpcMetrics::register(&metrics_handle)?;
 
         Ok(Self {
-            server_config: ServerConfig {
+            server_config: Some(ServerConfig {
                 addr: config.addr(),
                 batch_config: config.batch_config(),
                 max_connections: config.rpc_max_connections,
@@ -86,12 +90,16 @@ impl RpcService {
                 rate_limit: config.rpc_rate_limit,
                 rate_limit_whitelisted_ips: config.rpc_rate_limit_whitelisted_ips.clone(),
                 rate_limit_trust_proxy_headers: config.rpc_rate_limit_trust_proxy_headers,
-            },
+            }),
             server_handle: None,
         })
     }
     pub async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
-        self.server_handle = Some(start_server(self.server_config.clone(), join_set).await?);
+        if let Some(server_config) = &self.server_config {
+            // rpc enabled
+            self.server_handle = Some(start_server(server_config.clone(), join_set).await?);
+        }
+        
         Ok(())
     }
 }

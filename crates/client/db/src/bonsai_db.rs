@@ -255,7 +255,7 @@ where
     fn transaction(&self, _id: BasicId) -> Option<Self::Transaction> {
         log::trace!("Generating RocksDB transaction");
         // TODO: we lie about supporting transactions here
-        Some(BonsaiDb::new(&self.db, self.column_mapping.clone()))
+        Some(BonsaiDb::new(self.db, self.column_mapping.clone()))
         // if let Some(snapshot) = self.snapshots.get(&id) {
         //     let write_opts = WriteOptions::default();
         //     let mut txn_opts = OptimisticTransactionOptions::default();

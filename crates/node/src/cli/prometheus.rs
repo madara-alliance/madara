@@ -10,6 +10,6 @@ pub struct PrometheusParams {
     #[arg(long)]
     pub prometheus_external: bool,
     /// Disable the prometheus service.
-    #[arg(long)]
-    pub no_prometheus: bool,
+    #[arg(long, alias = "no-prometheus")]
+    pub prometheus_disabled: bool,
 }

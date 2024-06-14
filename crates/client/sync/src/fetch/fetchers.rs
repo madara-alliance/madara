@@ -176,7 +176,7 @@ async fn fetch_class_update(
     }))
     .await?;
 
-    Ok(classes.into_iter().flat_map(|a| a).collect())
+    Ok(classes.into_iter().flatten().collect())
 }
 
 /// Downloads a class definition from the Starknet sequencer. Note that because
