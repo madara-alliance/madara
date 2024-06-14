@@ -253,7 +253,7 @@ async fn l2_pending_block_task(
         backend.mapping().write_no_pending(&mut tx).context("clearing pending status")?;
         let mut write_opt = WriteOptions::default(); // todo move that in db
         write_opt.disable_wal(true);
-        backend.expose_db().write_opt(tx, &write_opt).context("writing pending block to db")?;
+        backend.expose_db().write_opt(tx, &write_opt).context("clearing pending block to db")?;
         log::debug!("l2_pending_block_task: startup: wrote no pending");
     }
 

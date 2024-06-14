@@ -198,7 +198,7 @@ pub fn update_l1(
             .context("setting l1 last confirmed block number")?;
         let mut write_opt = WriteOptions::default(); // todo move that in db
         write_opt.disable_wal(true);
-        backend.expose_db().write_opt(tx, &write_opt).context("writing pending block to db")?;
+        backend.expose_db().write_opt(tx, &write_opt).context("writing last confirmed block number")?;
         log::debug!("update_l1: wrote last confirmed block number");
     }
 
@@ -253,7 +253,7 @@ pub async fn sync(
 
         let mut write_opt = WriteOptions::default(); // todo move that in db
         write_opt.disable_wal(true);
-        backend.expose_db().write_opt(tx, &write_opt).context("writing pending block to db")?;
+        backend.expose_db().write_opt(tx, &write_opt).context("clearing confirmed block number")?;
         log::debug!("update_l1: cleared confirmed block number");
     }
 

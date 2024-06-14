@@ -23,7 +23,7 @@ impl BlockStateDiffView {
 
         let mut write_opt = WriteOptions::default(); // todo move that in db
         write_opt.disable_wal(true);
-        db.put_cf(&column, bincode::serialize(&block_number)?, bincode::serialize(&json_state_diff)?, &write_opt)
+        db.put_cf_opt(&column, bincode::serialize(&block_number)?, bincode::serialize(&json_state_diff)?, &write_opt)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockStateDiff))
     }
 

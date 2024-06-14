@@ -148,15 +148,13 @@ pub async fn start_server(
                 let transport_label = if is_websocket { "ws" } else { "http" };
 
                 let middleware_layer = match rate_limit_cfg {
-                    None => Some(MiddlewareLayer::new().with_metrics(Metrics::new(metrics, transport_label))),
-                    Some(rate_limit) => Some(
-                        MiddlewareLayer::new()
-                            .with_metrics(Metrics::new(metrics, transport_label))
-                            .with_rate_limit_per_minute(rate_limit),
-                    ),
+                    None => MiddlewareLayer::new().with_metrics(Metrics::new(metrics, transport_label)),
+                    Some(rate_limit) => MiddlewareLayer::new()
+                        .with_metrics(Metrics::new(metrics, transport_label))
+                        .with_rate_limit_per_minute(rate_limit),
                 };
 
-                let rpc_middleware = RpcServiceBuilder::new().option_layer(middleware_layer.clone());
+                let rpc_middleware = RpcServiceBuilder::new().layer(middleware_layer.clone());
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
 
@@ -170,13 +168,9 @@ pub async fn start_server(
                             // Spawn a task to handle when the connection is closed.
                             tokio::spawn(async move {
                                 let now = std::time::Instant::now();
-                                if let Some(m) = middleware_layer.as_ref() {
-                                    m.ws_connect()
-                                }
+                                middleware_layer.ws_connect();
                                 on_disconnect.await;
-                                if let Some(m) = middleware_layer.as_ref() {
-                                    m.ws_disconnect(now)
-                                }
+                                middleware_layer.ws_disconnect(now);
                             });
                         }
 
