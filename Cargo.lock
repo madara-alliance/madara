@@ -1898,6 +1898,7 @@ dependencies = [
  "parity-scale-codec",
  "rayon",
  "rocksdb",
+ "serde_json",
  "starknet-core",
  "starknet-ff",
  "starknet-types-core",
