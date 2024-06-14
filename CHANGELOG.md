@@ -3,6 +3,7 @@
 ## Next release
 
 - fix(rpc): fixed state update deserialization
+- fix(hashes): fixed tx by hash retrieval
 - fix(logs): fixed logs and get_state_update
 - refactor: remove primitives/felt
 - refactor: move convert.rs to felt_wrapper.rs
