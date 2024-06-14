@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
+use dc_db::rocksdb::WriteOptions;
 use dc_db::{DeoxysBackend, WriteBatchWithTransaction};
 use dp_convert::core_felt::CoreFelt;
 use dp_convert::felt_wrapper::FeltWrapper;
@@ -195,7 +196,9 @@ pub fn update_l1(
             .mapping()
             .write_last_confirmed_block(&mut tx, state_update.block_number)
             .context("setting l1 last confirmed block number")?;
-        backend.expose_db().write(tx).context("writing pending block to db")?;
+        let mut write_opt = WriteOptions::default(); // todo move that in db
+        write_opt.disable_wal(true);
+        backend.expose_db().write_opt(tx, &write_opt).context("writing pending block to db")?;
         log::debug!("update_l1: wrote last confirmed block number");
     }
 
@@ -247,7 +250,10 @@ pub async fn sync(
     {
         let mut tx = WriteBatchWithTransaction::default();
         backend.mapping().write_no_last_confirmed_block(&mut tx).context("clearing l1 last confirmed block number")?;
-        backend.expose_db().write(tx).context("writing pending block to db")?;
+        
+        let mut write_opt = WriteOptions::default(); // todo move that in db
+        write_opt.disable_wal(true);
+        backend.expose_db().write_opt(tx, &write_opt).context("writing pending block to db")?;
         log::debug!("update_l1: cleared confirmed block number");
     }
 

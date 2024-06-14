@@ -51,7 +51,8 @@ pub mod starknet_sync_worker {
                 .mapping()
                 .get_block_n(&dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
                 .context("getting sync tip")?
-                .unwrap_or_default() as _
+                .map(|block_id| block_id + 1) // next block after the tip
+                .unwrap_or_default() as _ // or genesis
         };
 
         log::info!("⛓️  Starting L2 sync from block {}", starting_block);

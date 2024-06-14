@@ -8,7 +8,7 @@ use dc_db::DeoxysBackend;
 use dp_block::DeoxysBlock;
 use dp_convert::felt_wrapper::FeltWrapper;
 use dp_convert::state_update::ToStateUpdateCore;
-use dp_utils::{stopwatch_end, PerfStopwatch};
+use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use itertools::Itertools;
 use starknet_api::core::ClassHash;
 use starknet_core::types::{
@@ -17,7 +17,6 @@ use starknet_core::types::{
 use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{self as p, BlockId};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
-use tokio::task::JoinSet;
 use url::Url;
 
 use starknet_types_core::felt::Felt;
@@ -94,9 +93,11 @@ where
                     ProviderError::RateLimited => {
                         log::info!("The fetching process has been rate limited, retrying in {:?}", delay)
                     }
-                    _ => log::info!("The provider has returned an error: {}, retrying in {:?}", err, delay),
+                    _ => log::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay),
                 }
-                tokio::time::sleep(delay).await;
+                if wait_or_graceful_shutdown(tokio::time::sleep(delay)).await.is_none() {
+                    return Err(ProviderError::StarknetError(StarknetError::BlockNotFound)) // :/
+                }
             }
         }
     }
@@ -160,28 +161,22 @@ async fn fetch_class_update(
 
     let arc_provider = Arc::new(provider.clone());
 
-    let mut task_set = missing_classes.into_iter().fold(JoinSet::new(), |mut set, class_hash| {
+    let classes = futures::future::try_join_all(missing_classes.into_iter().map(|class_hash| async {
         let provider = Arc::clone(&arc_provider);
         let class_hash = *class_hash;
-        // Skip what appears to be a broken Sierra class definition (quick fix)
+        // TODO(correctness): Skip what appears to be a broken Sierra class definition (quick fix)
         if class_hash
             != FieldElement::from_hex_be("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698").unwrap()
         {
             // Fetch the class definition in parallel, retrying up to 15 times for each class
-            set.spawn(async move {
-                retry(|| fetch_class(class_hash, block_number, &provider), 15, Duration::from_secs(1)).await
-            });
+            retry(|| fetch_class(class_hash, block_number, &provider), 15, Duration::from_secs(1)).await.map(Some)
+        } else {
+            Ok(None)
         }
-        set
-    });
+    }))
+    .await?;
 
-    // WARNING: all class downloads will abort if even a single class fails to download.
-    let mut classes = vec![];
-    while let Some(res) = task_set.join_next().await {
-        classes.push(res.expect("Join error")?);
-    }
-
-    Ok(classes)
+    Ok(classes.into_iter().flat_map(|a| a).collect())
 }
 
 /// Downloads a class definition from the Starknet sequencer. Note that because

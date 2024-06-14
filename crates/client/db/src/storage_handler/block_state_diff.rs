@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use rocksdb::WriteOptions;
 use starknet_core::types::StateDiff;
 
 use super::{DeoxysStorageError, StorageType};
@@ -18,7 +19,9 @@ impl BlockStateDiffView {
         let column = db.get_column(Column::BlockStateDiff);
         let block_number: u32 = block_number.try_into().map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
 
-        db.put_cf(&column, bincode::serialize(&block_number)?, bincode::serialize(&state_diff)?)
+        let mut write_opt = WriteOptions::default(); // todo move that in db
+        write_opt.disable_wal(true);
+        db.put_cf_opt(&column, bincode::serialize(&block_number)?, bincode::serialize(&state_diff)?, &write_opt)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::BlockStateDiff))
     }
 

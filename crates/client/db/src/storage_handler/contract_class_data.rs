@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crossbeam_skiplist::SkipMap;
 use parity_scale_codec::{Decode, Encode};
-use rocksdb::WriteBatchWithTransaction;
+use rocksdb::{WriteBatchWithTransaction, WriteOptions};
 use starknet_api::core::ClassHash;
 
 use super::primitives::contract_class::StorageContractClassData;
@@ -73,6 +73,8 @@ impl StorageViewMut for ContractClassDataViewMut {
         for (key, value) in self.1.into_iter() {
             batch.put_cf(&column, bincode::serialize(&key)?, value.encode());
         }
-        db.write(batch).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassData))
+        let mut write_opt = WriteOptions::default();
+        write_opt.disable_wal(true);
+        db.write_opt(batch, &write_opt).map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractClassData))
     }
 }

@@ -75,7 +75,9 @@ pub fn store_state_update(
         });
 
         handler_contract_data_class.commit(block_number)?;
+        log::debug!("committed contract_data_class");
         handler_contract_data_nonces.commit(block_number)?;
+        log::debug!("committed contract_data_nonces");
         Ok(())
     };
 
@@ -97,7 +99,9 @@ pub fn store_state_update(
                 handler_contract_class_hashes.insert(class_hash, compiled_class_hash).unwrap();
             });
 
-        handler_contract_class_hashes.commit(block_number)
+        handler_contract_class_hashes.commit(block_number)?;
+        log::debug!("committed contract_class_hashes");
+        Ok(())
     };
 
     // Block number to state diff update
@@ -129,7 +133,9 @@ pub fn store_class_update(
         },
     );
 
-    handler_contract_class_data_mut.commit(block_number)
+    handler_contract_class_data_mut.commit(block_number)?;
+    log::debug!("committed contract_class_data_mut");
+    Ok(())
 }
 
 pub fn store_key_update(
@@ -149,6 +155,7 @@ pub fn store_key_update(
     })?;
 
     handler_storage.commit(block_number)?;
+    log::debug!("committed key_update");
 
     Ok(())
 }

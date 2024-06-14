@@ -48,7 +48,7 @@ repository = "https://github.com/kasarlabs/deoxys/"
 version = "0.1.0"
 
 [workspace.dependencies]
-rocksdb = { version = "0.21", features = [
+rocksdb = { version = "0.22", features = [
   # "multi-threaded-cf",
 ] }
 
