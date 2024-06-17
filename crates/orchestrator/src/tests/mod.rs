@@ -7,3 +7,4 @@ pub mod server;
 pub mod queue;
 
 pub mod common;
+mod workers;

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 /// An external id.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum ExternalId {
     /// A string.
@@ -98,7 +98,7 @@ pub enum JobStatus {
     VerificationFailed,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct JobItem {
     /// an uuid to identify a job
     #[serde(with = "uuid_1_as_binary")]

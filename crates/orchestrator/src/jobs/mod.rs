@@ -61,7 +61,7 @@ pub async fn create_job(job_type: JobType, internal_id: String, metadata: HashMa
     }
 
     let job_handler = get_job_handler(&job_type);
-    let job_item = job_handler.create_job(config, internal_id, metadata).await?;
+    let job_item = job_handler.create_job(config.as_ref(), internal_id, metadata).await?;
     config.database().create_job(job_item.clone()).await?;
 
     add_job_to_process_queue(job_item.id).await?;
@@ -90,7 +90,7 @@ pub async fn process_job(id: Uuid) -> Result<()> {
     config.database().update_job_status(&job, JobStatus::LockedForProcessing).await?;
 
     let job_handler = get_job_handler(&job.job_type);
-    let external_id = job_handler.process_job(config, &job).await?;
+    let external_id = job_handler.process_job(config.as_ref(), &job).await?;
 
     let metadata = increment_key_in_metadata(&job.metadata, JOB_PROCESS_ATTEMPT_METADATA_KEY)?;
     config
@@ -122,7 +122,7 @@ pub async fn verify_job(id: Uuid) -> Result<()> {
     }
 
     let job_handler = get_job_handler(&job.job_type);
-    let verification_status = job_handler.verify_job(config, &job).await?;
+    let verification_status = job_handler.verify_job(config.as_ref(), &job).await?;
 
     match verification_status {
         JobVerificationStatus::Verified => {
@@ -170,6 +170,7 @@ pub async fn verify_job(id: Uuid) -> Result<()> {
 fn get_job_handler(job_type: &JobType) -> Box<dyn Job> {
     match job_type {
         JobType::DataSubmission => Box::new(da_job::DaJob),
+        JobType::SnosRun => Box::new(snos_job::SnosJob),
         _ => unimplemented!("Job type not implemented yet."),
     }
 }

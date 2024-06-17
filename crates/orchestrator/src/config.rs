@@ -4,6 +4,7 @@ use crate::database::{Database, DatabaseConfig};
 use crate::queue::sqs::SqsQueue;
 use crate::queue::QueueProvider;
 use crate::utils::env_utils::get_env_var_or_panic;
+use arc_swap::{ArcSwap, Guard};
 use da_client_interface::DaClient;
 use da_client_interface::DaConfig;
 use dotenvy::dotenv;
@@ -79,11 +80,29 @@ impl Config {
 
 /// The app config. It can be accessed from anywhere inside the service.
 /// It's initialized only once.
-pub static CONFIG: OnceCell<Config> = OnceCell::const_new();
+/// We are using `ArcSwap` as it allow us to replace the new `Config` with
+/// a new one which is required when running test cases. This approach was
+/// inspired from here - https://github.com/matklad/once_cell/issues/127
+pub static CONFIG: OnceCell<ArcSwap<Config>> = OnceCell::const_new();
 
 /// Returns the app config. Initializes if not already done.
-pub async fn config() -> &'static Config {
-    CONFIG.get_or_init(init_config).await
+pub async fn config() -> Guard<Arc<Config>> {
+    let cfg = CONFIG.get_or_init(|| async { ArcSwap::from_pointee(init_config().await) }).await;
+    cfg.load()
+}
+
+/// OnceCell only allows us to initialize the config once and that's how it should be on production.
+/// However, when running tests, we often want to reinitialize because we want to clear the DB and
+/// set it up again for reuse in new tests. By calling `config_force_init` we replace the already
+/// stored config inside `ArcSwap` with the new configuration and pool settings.
+#[cfg(test)]
+pub async fn config_force_init(config: Config) {
+    match CONFIG.get() {
+        Some(arc) => arc.store(Arc::new(config)),
+        None => {
+            CONFIG.get_or_init(|| async { ArcSwap::from_pointee(config) }).await;
+        }
+    }
 }
 
 /// Builds the DA client based on the environment variable DA_LAYER

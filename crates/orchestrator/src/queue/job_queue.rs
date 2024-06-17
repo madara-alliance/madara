@@ -14,8 +14,8 @@ const JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_job_processing_queue";
 const JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_job_verification_queue";
 
 #[derive(Debug, Serialize, Deserialize)]
-struct JobQueueMessage {
-    id: Uuid,
+pub struct JobQueueMessage {
+    pub(crate) id: Uuid,
 }
 
 pub async fn add_job_to_process_queue(id: Uuid) -> Result<()> {

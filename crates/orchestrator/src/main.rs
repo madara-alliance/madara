@@ -26,7 +26,7 @@ async fn main() {
     // init consumer
     init_consumers().await.expect("Failed to init consumers");
 
-    // spawn a thread for each worker
+    // spawn a thread for each workers
     // changes in rollup mode - sovereign, validity, validiums etc.
     // will likely involve changes in these workers as well
     tokio::spawn(start_cron(Box::new(SnosWorker), 60));
@@ -40,7 +40,7 @@ async fn main() {
 
 async fn start_cron(worker: Box<dyn Worker>, interval: u64) {
     loop {
-        worker.run_worker().await;
+        worker.run_worker().await.expect("Error in running the worker.");
         tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
     }
 }
