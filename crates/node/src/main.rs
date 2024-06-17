@@ -16,8 +16,8 @@ use service::{RpcService, SyncService};
 use tokio::task::JoinSet;
 
 const GREET_IMPL_NAME: &str = "Deoxys";
-const GREET_SUPPORT_URL: &str = "https://kasar.io";
-const GREET_AUTHORS: &[&str] = &["Kasar <https://github.com/kasarlabs>"];
+const GREET_SUPPORT_URL: &str = "https://github.com/KasarLabs/deoxys/issues";
+const GREET_AUTHORS: &[&str] = &["KasarLabs <https://kasar.io>"];
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -41,12 +41,12 @@ async fn main() -> anyhow::Result<()> {
     sys_info.show();
 
     let mut telemetry_service = TelemetryService::new(
-        run_cmd.telemetry_params.no_telemetry,
+        run_cmd.telemetry_params.telemetry_disabled,
         run_cmd.telemetry_params.telemetry_endpoints.clone(),
     )
     .context("initializing telemetry service")?;
     let mut prometheus_service = MetricsService::new(
-        run_cmd.prometheus_params.no_prometheus,
+        run_cmd.prometheus_params.prometheus_disabled,
         run_cmd.prometheus_params.prometheus_external,
         run_cmd.prometheus_params.prometheus_port,
     )

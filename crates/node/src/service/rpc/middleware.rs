@@ -126,6 +126,21 @@ where
             }
 
             let rp = service.call(req.clone()).await;
+
+            let method = req.method_name();
+            let status = rp.as_error_code().unwrap_or(200);
+            let res_len = rp.as_result().len();
+            let response_time = now.elapsed();
+
+            log::info!(
+                target: "rpc_calls",
+                method = method,
+                status = status,
+                res_len = res_len,
+                response_time = response_time.as_micros();
+                "{method} {status} {res_len} - {response_time:?}",
+            );
+
             if let Some(m) = metrics.as_ref() {
                 m.on_response(&req, &rp, is_rate_limited, now)
             }

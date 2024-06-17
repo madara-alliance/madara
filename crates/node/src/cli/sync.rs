@@ -12,7 +12,7 @@ fn parse_url(s: &str) -> Result<Url, url::ParseError> {
 #[derive(Clone, Debug, clap::Args)]
 pub struct SyncParams {
     /// Disable the sync service. The sync service is responsible for listening for new blocks on starknet and ethereum.
-    #[clap(long)]
+    #[clap(long, alias = "no-sync")]
     pub sync_disabled: bool,
 
     /// The L1 rpc endpoint url for state verification.

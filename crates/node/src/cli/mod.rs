@@ -13,7 +13,7 @@ pub use telemetry::*;
 #[derive(Clone, Debug, clap::Parser)]
 pub struct RunCmd {
     /// The human-readable name for this node.
-    /// It's used as network node name.
+    /// It is used as the network node name.
     #[arg(long, value_name = "NAME")]
     pub name: Option<String>,
 
