@@ -39,7 +39,7 @@ impl CoreFelt for &StarkFelt {
 
 impl CoreFelt for EthAddress {
     fn into_core_felt(self) -> Felt {
-        FieldElement::into_core_felt(self.into())
+        self.into()
     }
 }
 

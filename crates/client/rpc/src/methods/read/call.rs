@@ -1,8 +1,6 @@
 use dp_convert::felt_wrapper::FeltWrapper;
-use dp_convert::field_element::FromFieldElement;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
-use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{BlockId, FunctionCall};
 
@@ -34,12 +32,12 @@ pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> Rp
     let block_info = starknet.get_block_info(block_id)?;
     let block_context = block_context(starknet, &block_info)?;
 
-    let calldata_as_starkfelt = request.calldata.iter().map(|x| StarkFelt::from_field_element(*x)).collect();
+    let calldata_as_starkfelt = request.calldata.iter().map(FeltWrapper::into_stark_felt).collect();
     let calldata = Calldata(Arc::new(calldata_as_starkfelt));
 
     let result = utils::execution::call_contract(
         starknet,
-        ContractAddress::from_field_element(request.contract_address),
+        ContractAddress(request.contract_address.into_stark_felt().try_into().unwrap()),
         EntryPointSelector(request.entry_point_selector.into_stark_felt()),
         calldata,
         &block_context,

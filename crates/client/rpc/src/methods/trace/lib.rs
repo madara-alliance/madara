@@ -1,9 +1,8 @@
 use blockifier::transaction::errors::TransactionExecutionError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use starknet_core::types::{
-    BlockId, BroadcastedTransaction, SimulatedTransaction, SimulationFlag, TransactionTraceWithHash,
+    BlockId, BroadcastedTransaction, Felt, SimulatedTransaction, SimulationFlag, TransactionTraceWithHash,
 };
-use starknet_ff::FieldElement;
 
 use super::simulate_transactions::simulate_transactions;
 use super::trace_block_transactions::trace_block_transactions;
@@ -26,7 +25,7 @@ impl StarknetTraceRpcApiServer for Starknet {
         trace_block_transactions(self, block_id).await
     }
 
-    async fn trace_transaction(&self, transaction_hash: FieldElement) -> RpcResult<TransactionTraceWithHash> {
+    async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TransactionTraceWithHash> {
         trace_transaction(self, transaction_hash).await
     }
 }

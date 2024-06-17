@@ -1,7 +1,7 @@
+use dp_convert::core_felt::CoreFelt;
 use dp_convert::felt_wrapper::FeltWrapper;
 use jsonrpsee::core::RpcResult;
-use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage};
-use starknet_ff::FieldElement;
+use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage, Felt};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::StarknetRpcApiError;
@@ -70,7 +70,7 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Rpc
 
         let block_filtered_events: Vec<EmittedEvent> = get_block_events(starknet, &block, pending)
             .into_iter()
-            .filter(|event| event_match_filter(event, from_address, &keys))
+            .filter(|event| event_match_filter(event, from_address.map(CoreFelt::into_core_felt), &keys))
             .collect();
 
         if current_block == from_block && (block_filtered_events.len() as u64) < continuation_token.event_n {
@@ -100,7 +100,7 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Rpc
 }
 
 #[inline]
-fn event_match_filter(event: &EmittedEvent, address: Option<FieldElement>, keys: &[Vec<FieldElement>]) -> bool {
+fn event_match_filter(event: &EmittedEvent, address: Option<Felt>, keys: &[Vec<Felt>]) -> bool {
     let match_from_address = address.map_or(true, |addr| addr == event.from_address);
     let match_keys = keys
         .iter()

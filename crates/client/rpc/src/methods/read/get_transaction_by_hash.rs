@@ -2,7 +2,7 @@ use dp_convert::felt_wrapper::FeltWrapper;
 use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::{FieldElement, Transaction};
+use starknet_core::types::{Felt, Transaction};
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::{OptionExt, ResultExt};
@@ -35,7 +35,7 @@ use crate::Starknet;
 /// - `BLOCK_NOT_FOUND` if the specified block is not found.
 /// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
 ///   system's capacity.
-pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: FieldElement) -> RpcResult<Transaction> {
+pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> RpcResult<Transaction> {
     let tx_hash = TransactionHash(transaction_hash.into_stark_felt());
     let (block, tx_info) = starknet
         .block_storage()

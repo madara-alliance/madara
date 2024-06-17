@@ -35,7 +35,6 @@ use starknet_core::types::{
     BroadcastedInvokeTransactionV3, BroadcastedTransaction, CompressedLegacyContractClass, EntryPointsByType,
     FlattenedSierraClass, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
 };
-use starknet_crypto::FieldElement;
 use starknet_types_core::felt::Felt;
 
 use crate::compute_hash::ComputeTransactionHash;
@@ -81,8 +80,14 @@ impl ToAccountTransaction for BroadcastedTransaction {
 // fn u8x32_to_u128(let as_u8x32:[u8; 32]) -> u128 {}
 
 #[inline]
-fn fee_from_field(fee: FieldElement) -> stx::Fee {
-    let as_u128 = u128::try_from(fee).map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig).unwrap();
+pub fn fee_from_felt(fee: Felt) -> stx::Fee {
+    let digits = fee.to_le_digits();
+    if digits[0] != 0 || digits[1] != 0 {
+        // return Err(BroadcastedTransactionConversionError::MaxFeeTooBig);
+        panic!("Max fee should not be greater than u128::MAX")
+    }
+    let as_u128: u128 = (digits[2] as u128) << 64 | digits[3] as u128;
+    // let as_u128 = u128::try_from(fee).map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig).unwrap();
 
     stx::Fee(as_u128)
 }
@@ -126,7 +131,7 @@ fn declare_to_account_transaction(
             let blockifier_contract_class = instantiate_blockifier_contract_class(&contract_class, decompressed_bytes)?;
 
             let declare_tx = stx::DeclareTransaction::V1(stx::DeclareTransactionV0V1 {
-                max_fee: fee_from_field(max_fee),
+                max_fee: fee_from_felt(max_fee),
                 signature: stx::TransactionSignature(
                     signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
@@ -172,7 +177,7 @@ fn declare_to_account_transaction(
             );
 
             let declare_tx = stx::DeclareTransaction::V2(stx::DeclareTransactionV2 {
-                max_fee: fee_from_field(max_fee),
+                max_fee: fee_from_felt(max_fee),
                 signature: stx::TransactionSignature(
                     signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
@@ -279,7 +284,7 @@ fn invoke_to_account_transaction(
             ..
         }) => {
             let invoke_tx = stx::InvokeTransaction::V1(stx::InvokeTransactionV1 {
-                max_fee: fee_from_field(max_fee),
+                max_fee: fee_from_felt(max_fee),
                 signature: stx::TransactionSignature(
                     signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
@@ -356,7 +361,7 @@ fn deploy_account_to_account_transaction(
             is_query: _,
         }) => {
             let deploy_account_tx = stx::DeployAccountTransaction::V1(stx::DeployAccountTransactionV1 {
-                max_fee: fee_from_field(max_fee),
+                max_fee: fee_from_felt(max_fee),
                 signature: stx::TransactionSignature(
                     signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
@@ -449,7 +454,7 @@ fn instantiate_blockifier_contract_class(
             .iter()
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
-                    selector: EntryPointSelector(entry_point.selector.into()),
+                    selector: EntryPointSelector(entry_point.selector.into_stark_felt()),
                     offset: EntryPointOffset(entry_point.offset),
                 }
             })
@@ -463,7 +468,7 @@ fn instantiate_blockifier_contract_class(
             .iter()
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
-                    selector: EntryPointSelector(entry_point.selector.into()),
+                    selector: EntryPointSelector(entry_point.selector.into_stark_felt()),
                     offset: EntryPointOffset(entry_point.offset),
                 }
             })
@@ -477,7 +482,7 @@ fn instantiate_blockifier_contract_class(
             .iter()
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
-                    selector: EntryPointSelector(entry_point.selector.into()),
+                    selector: EntryPointSelector(entry_point.selector.into_stark_felt()),
                     offset: EntryPointOffset(entry_point.offset),
                 }
             })
@@ -507,7 +512,7 @@ pub fn flattened_sierra_to_casm_contract_class(
     flattened_sierra: &Arc<FlattenedSierraClass>,
 ) -> Result<CasmContractClass, StarknetSierraCompilationError> {
     let sierra_contract_class = SierraContractClass {
-        sierra_program: flattened_sierra.sierra_program.iter().map(field_element_to_big_uint_as_hex).collect(),
+        sierra_program: flattened_sierra.sierra_program.iter().map(felt_to_big_uint_as_hex).collect(),
         sierra_program_debug_info: None, // TODO: implement a correct sierra program debug info conversion
         contract_class_version: flattened_sierra.contract_class_version.clone(),
         entry_points_by_type: entry_points_by_type_to_contract_entry_points(
@@ -520,14 +525,14 @@ pub fn flattened_sierra_to_casm_contract_class(
     Ok(casm_contract_class)
 }
 
-/// Converts a [FieldElement] to a [BigUint]
-fn field_element_to_big_uint(value: &FieldElement) -> BigUint {
+/// Converts a [Felt] to a [BigUint]
+fn felt_to_big_uint(value: &Felt) -> BigUint {
     BigInt::from_bytes_be(Sign::Plus, &value.to_bytes_be()).to_biguint().unwrap()
 }
 
-/// Converts a [FieldElement] to a [BigUintAsHex]
-fn field_element_to_big_uint_as_hex(value: &FieldElement) -> BigUintAsHex {
-    BigUintAsHex { value: field_element_to_big_uint(value) }
+/// Converts a [Felt] to a [BigUintAsHex]
+fn felt_to_big_uint_as_hex(value: &Felt) -> BigUintAsHex {
+    BigUintAsHex { value: felt_to_big_uint(value) }
 }
 
 /// Converts a [EntryPointsByType] to a [ContractEntryPoints]
@@ -535,7 +540,7 @@ fn entry_points_by_type_to_contract_entry_points(value: EntryPointsByType) -> Co
     fn sierra_entry_point_to_contract_entry_point(value: SierraEntryPoint) -> ContractEntryPoint {
         ContractEntryPoint {
             function_idx: value.function_idx.try_into().unwrap(),
-            selector: field_element_to_big_uint(&value.selector),
+            selector: felt_to_big_uint(&value.selector),
         }
     }
     ContractEntryPoints {
@@ -546,7 +551,7 @@ fn entry_points_by_type_to_contract_entry_points(value: EntryPointsByType) -> Co
 }
 
 // Utils to convert Casm contract class to Compiled class
-pub fn get_casm_contract_class_hash(casm_contract_class: &CasmContractClass) -> FieldElement {
+pub fn get_casm_contract_class_hash(casm_contract_class: &CasmContractClass) -> Felt {
     let compiled_class = casm_contract_class_to_compiled_class(casm_contract_class);
     compiled_class.class_hash().unwrap()
 }
@@ -556,7 +561,7 @@ pub fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractC
     CompiledClass {
         prime: casm_contract_class.prime.to_string(),
         compiler_version: casm_contract_class.compiler_version.clone(),
-        bytecode: casm_contract_class.bytecode.iter().map(|x| biguint_to_field_element(&x.value)).collect(),
+        bytecode: casm_contract_class.bytecode.iter().map(|x| biguint_to_felt(&x.value)).collect(),
         entry_points_by_type: casm_entry_points_to_compiled_entry_points(&casm_contract_class.entry_points_by_type),
         hints: vec![],                    // not needed to get class hash so ignoring this
         pythonic_hints: None,             // not needed to get class hash so ignoring this
@@ -565,9 +570,9 @@ pub fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractC
 }
 
 /// Converts a [BigUint] to a [FieldElement]
-fn biguint_to_field_element(value: &BigUint) -> FieldElement {
+fn biguint_to_felt(value: &BigUint) -> Felt {
     let bytes = value.to_bytes_be();
-    FieldElement::from_byte_slice_be(bytes.as_slice()).unwrap()
+    Felt::from_bytes_be_slice(bytes.as_slice())
 }
 
 /// Converts a [CasmContractEntryPoints] to a [CompiledClassEntrypointList]
@@ -582,7 +587,7 @@ fn casm_entry_points_to_compiled_entry_points(value: &CasmContractEntryPoints) -
 /// Converts a [CasmContractEntryPoint] to a [CompiledClassEntrypoint]
 fn casm_entry_point_to_compiled_entry_point(value: &CasmContractEntryPoint) -> CompiledClassEntrypoint {
     CompiledClassEntrypoint {
-        selector: biguint_to_field_element(&value.selector),
+        selector: biguint_to_felt(&value.selector),
         offset: value.offset.try_into().unwrap(),
         builtins: value.builtins.clone(),
     }

@@ -1,5 +1,5 @@
 use dc_db::mapping_db::BlockStorageType;
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::core_felt::CoreFelt;
 use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::Transaction;
@@ -19,7 +19,7 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
     let block = starknet.get_block(block_id)?;
     let block_context = block_context(starknet, block.info())?;
 
-    let block_txs_hashes = block.tx_hashes().iter().map(FeltWrapper::into_field_element);
+    let block_txs_hashes = block.tx_hashes().iter().map(CoreFelt::into_core_felt);
 
     // create a vector of transactions with their corresponding hashes without deploy transactions,
     // blockifier does not support deploy transactions
@@ -70,9 +70,9 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
     if is_pending {
         let pending_block_with_receipts = PendingBlockWithReceipts {
             transactions: transactions_with_receipts,
-            parent_hash: block.header().parent_block_hash.into_field_element(),
+            parent_hash: block.header().parent_block_hash.into_core_felt(),
             timestamp: block.header().block_timestamp,
-            sequencer_address: block.header().sequencer_address.into_field_element(),
+            sequencer_address: block.header().sequencer_address.into_core_felt(),
             l1_gas_price: l1_gas_price(&block),
             l1_data_gas_price: l1_data_gas_price(&block),
             l1_da_mode: l1_da_mode(&block),
@@ -90,12 +90,12 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
 
         let block_with_receipts = BlockWithReceipts {
             status,
-            block_hash: block.block_hash().into_field_element(),
-            parent_hash: block.header().parent_block_hash.into_field_element(),
+            block_hash: block.block_hash().into_core_felt(),
+            parent_hash: block.header().parent_block_hash.into_core_felt(),
             block_number: block.header().block_number,
-            new_root: block.header().global_state_root.into_field_element(),
+            new_root: block.header().global_state_root.into_core_felt(),
             timestamp: block.header().block_timestamp,
-            sequencer_address: block.header().sequencer_address.into_field_element(),
+            sequencer_address: block.header().sequencer_address.into_core_felt(),
             l1_gas_price: l1_gas_price(&block),
             l1_data_gas_price: l1_data_gas_price(&block),
             l1_da_mode: l1_da_mode(&block),

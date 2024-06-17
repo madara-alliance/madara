@@ -22,7 +22,6 @@ pub mod starknet_sync_worker {
     use anyhow::Context;
     use dc_db::DeoxysBackend;
     use dc_telemetry::TelemetryHandle;
-    use dp_convert::felt_wrapper::FeltWrapper;
     use reqwest::Url;
     use starknet_providers::SequencerGatewayProvider;
 
@@ -60,7 +59,7 @@ pub mod starknet_sync_worker {
         let provider = SequencerGatewayProvider::new(
             fetch_config.gateway.clone(),
             fetch_config.feeder_gateway.clone(),
-            fetch_config.chain_id.into_field_element(),
+            fetch_config.chain_id,
         );
         let provider = match &fetch_config.api_key {
             Some(api_key) => provider.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),

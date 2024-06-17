@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::{core_felt::CoreFelt, felt_wrapper::FeltWrapper};
 use dp_transactions::TxType;
 use starknet_api::core::ContractAddress;
 use starknet_core::types::{
     ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
-    DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, InvokeTransactionTrace,
+    DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, Felt, InvokeTransactionTrace,
     L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace,
 };
 use starknet_ff::FieldElement;
@@ -24,10 +24,9 @@ pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_
         .enumerate()
         .map(|(index, message)| starknet_core::types::OrderedMessage {
             order: index as u64,
-            payload: message.message.payload.0.iter().map(|x| x.into_field_element()).collect(),
-            to_address: FieldElement::from_byte_slice_be(message.message.to_address.0.to_fixed_bytes().as_slice())
-                .unwrap(),
-            from_address: call_info.call.storage_address.into_field_element(),
+            payload: message.message.payload.0.iter().map(|x| x.into_core_felt()).collect(),
+            to_address: Felt::from_bytes_be_slice(message.message.to_address.0.to_fixed_bytes().as_slice()),
+            from_address: call_info.call.storage_address.into_core_felt(),
         })
         .collect()
 }
@@ -39,14 +38,8 @@ fn blockifier_to_starknet_rs_ordered_events(
         .iter()
         .map(|event| starknet_core::types::OrderedEvent {
             order: event.order as u64, // Convert usize to u64
-            keys: event.event.keys.iter().map(|key| FieldElement::from_byte_slice_be(key.0.bytes()).unwrap()).collect(),
-            data: event
-                .event
-                .data
-                .0
-                .iter()
-                .map(|data_item| FieldElement::from_byte_slice_be(data_item.bytes()).unwrap())
-                .collect(),
+            keys: event.event.keys.iter().map(CoreFelt::into_core_felt).collect(),
+            data: event.event.data.0.iter().map(CoreFelt::into_core_felt).collect(),
         })
         .collect()
 }
@@ -106,6 +99,8 @@ fn try_get_funtion_invocation_from_call_info(
         computed_hash
     };
 
+    let class_hash = class_hash.into_core_felt();
+
     // TODO: Replace this with non default exec resources
     let computation_resources = ComputationResources {
         steps: 0,
@@ -121,14 +116,14 @@ fn try_get_funtion_invocation_from_call_info(
     };
 
     Ok(starknet_core::types::FunctionInvocation {
-        contract_address: call_info.call.storage_address.0.into_field_element(),
-        entry_point_selector: call_info.call.entry_point_selector.0.into_field_element(),
-        calldata: call_info.call.calldata.0.iter().map(|x| x.into_field_element()).collect(),
-        caller_address: call_info.call.caller_address.0.into_field_element(),
+        contract_address: call_info.call.storage_address.0.into_core_felt(),
+        entry_point_selector: call_info.call.entry_point_selector.0.into_core_felt(),
+        calldata: call_info.call.calldata.0.iter().map(|x| x.into_core_felt()).collect(),
+        caller_address: call_info.call.caller_address.0.into_core_felt(),
         class_hash,
         entry_point_type,
         call_type,
-        result: call_info.execution.retdata.0.iter().map(|x| x.into_field_element()).collect(),
+        result: call_info.execution.retdata.0.iter().map(|x| x.into_core_felt()).collect(),
         calls: inner_calls,
         events,
         messages,

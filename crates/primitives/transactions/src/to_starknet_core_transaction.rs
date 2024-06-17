@@ -1,6 +1,4 @@
-use std::vec::Vec;
-
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::core_felt::CoreFelt;
 /// Here we transform starknet-api transactions into starknet-core trasnactions
 use starknet_api::transaction::{
     DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
@@ -8,9 +6,9 @@ use starknet_api::transaction::{
     InvokeTransactionV1, InvokeTransactionV3, Resource, ResourceBoundsMapping, Transaction,
 };
 use starknet_core::types::{ResourceBounds, ResourceBoundsMapping as CoreResourceBoundsMapping};
-use starknet_crypto::FieldElement;
+use starknet_crypto::Felt;
 
-pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> starknet_core::types::Transaction {
+pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: Felt) -> starknet_core::types::Transaction {
     match tx {
         Transaction::Declare(tx) => {
             let tx = match tx {
@@ -22,10 +20,10 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     sender_address,
                 }) => starknet_core::types::DeclareTransaction::V0(starknet_core::types::DeclareTransactionV0 {
                     transaction_hash,
-                    max_fee: FieldElement::from(max_fee.0),
-                    signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
-                    class_hash: class_hash.0.into_field_element(),
-                    sender_address: sender_address.0.into_field_element(),
+                    max_fee: Felt::from(max_fee.0),
+                    signature: signature.0.iter().map(|x| x.into_core_felt()).collect(),
+                    class_hash: class_hash.0.into_core_felt(),
+                    sender_address: sender_address.0.into_core_felt(),
                 }),
                 DeclareTransaction::V1(DeclareTransactionV0V1 {
                     max_fee,
@@ -36,11 +34,11 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     ..
                 }) => starknet_core::types::DeclareTransaction::V1(starknet_core::types::DeclareTransactionV1 {
                     transaction_hash,
-                    max_fee: FieldElement::from(max_fee.0),
-                    signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
-                    nonce: nonce.into_field_element(),
-                    class_hash: class_hash.into_field_element(),
-                    sender_address: sender_address.into_field_element(),
+                    max_fee: Felt::from(max_fee.0),
+                    signature: signature.0.iter().map(|x| x.into_core_felt()).collect(),
+                    nonce: nonce.into_core_felt(),
+                    class_hash: class_hash.into_core_felt(),
+                    sender_address: sender_address.into_core_felt(),
                 }),
                 DeclareTransaction::V2(DeclareTransactionV2 {
                     max_fee,
@@ -52,12 +50,12 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     ..
                 }) => starknet_core::types::DeclareTransaction::V2(starknet_core::types::DeclareTransactionV2 {
                     transaction_hash,
-                    max_fee: FieldElement::from(max_fee.0),
-                    signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
-                    nonce: nonce.into_field_element(),
-                    class_hash: class_hash.into_field_element(),
-                    sender_address: sender_address.into_field_element(),
-                    compiled_class_hash: compiled_class_hash.0.into_field_element(),
+                    max_fee: Felt::from(max_fee.0),
+                    signature: signature.0.iter().map(|x| x.into_core_felt()).collect(),
+                    nonce: nonce.into_core_felt(),
+                    class_hash: class_hash.into_core_felt(),
+                    sender_address: sender_address.into_core_felt(),
+                    compiled_class_hash: compiled_class_hash.0.into_core_felt(),
                 }),
                 DeclareTransaction::V3(DeclareTransactionV3 {
                     resource_bounds,
@@ -75,23 +73,15 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     transaction_hash,
                     resource_bounds: api_resources_to_core_ressources(resource_bounds),
                     tip: tip.0,
-                    signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
-                    nonce: nonce.into_field_element(),
-                    class_hash: class_hash.into_field_element(),
-                    compiled_class_hash: compiled_class_hash.0.into_field_element(),
-                    sender_address: sender_address.into_field_element(),
+                    signature: signature.0.iter().map(|x| x.into_core_felt()).collect(),
+                    nonce: nonce.into_core_felt(),
+                    class_hash: class_hash.into_core_felt(),
+                    compiled_class_hash: compiled_class_hash.0.into_core_felt(),
+                    sender_address: sender_address.into_core_felt(),
                     nonce_data_availability_mode: api_da_to_core_da(nonce_data_availability_mode).unwrap(),
                     fee_data_availability_mode: api_da_to_core_da(fee_data_availability_mode).unwrap(),
-                    paymaster_data: paymaster_data
-                        .0
-                        .iter()
-                        .map(|x| x.into_field_element())
-                        .collect::<Vec<FieldElement>>(),
-                    account_deployment_data: account_deployment_data
-                        .0
-                        .iter()
-                        .map(|x| x.into_field_element())
-                        .collect::<Vec<FieldElement>>(),
+                    paymaster_data: paymaster_data.0.iter().map(|x| x.into_core_felt()).collect(),
+                    account_deployment_data: account_deployment_data.0.iter().map(|x| x.into_core_felt()).collect(),
                 }),
             };
 
@@ -110,16 +100,12 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                 }) => starknet_core::types::DeployAccountTransaction::V1(
                     starknet_core::types::DeployAccountTransactionV1 {
                         transaction_hash,
-                        max_fee: FieldElement::from(max_fee.0),
-                        signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
-                        nonce: nonce.into_field_element(),
-                        contract_address_salt: contract_address_salt.0.into_field_element(),
-                        constructor_calldata: constructor_calldata
-                            .0
-                            .iter()
-                            .map(|x| x.into_field_element())
-                            .collect::<Vec<FieldElement>>(),
-                        class_hash: class_hash.into_field_element(),
+                        max_fee: Felt::from(max_fee.0),
+                        signature: signature.0.iter().map(|x| x.into_core_felt()).collect(),
+                        nonce: nonce.into_core_felt(),
+                        contract_address_salt: contract_address_salt.0.into_core_felt(),
+                        constructor_calldata: constructor_calldata.0.iter().map(|x| x.into_core_felt()).collect(),
+                        class_hash: class_hash.into_core_felt(),
                     },
                 ),
                 DeployAccountTransaction::V3(DeployAccountTransactionV3 {
@@ -138,22 +124,14 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                         transaction_hash,
                         resource_bounds: api_resources_to_core_ressources(resource_bounds),
                         tip: tip.0,
-                        signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
-                        nonce: nonce.into_field_element(),
-                        class_hash: class_hash.into_field_element(),
-                        contract_address_salt: contract_address_salt.0.into_field_element(),
-                        constructor_calldata: constructor_calldata
-                            .0
-                            .iter()
-                            .map(|x| x.into_field_element())
-                            .collect::<Vec<FieldElement>>(),
+                        signature: signature.0.iter().map(|x| x.into_core_felt()).collect(),
+                        nonce: nonce.into_core_felt(),
+                        class_hash: class_hash.into_core_felt(),
+                        contract_address_salt: contract_address_salt.0.into_core_felt(),
+                        constructor_calldata: constructor_calldata.0.iter().map(|x| x.into_core_felt()).collect(),
                         nonce_data_availability_mode: api_da_to_core_da(nonce_data_availability_mode).unwrap(),
                         fee_data_availability_mode: api_da_to_core_da(fee_data_availability_mode).unwrap(),
-                        paymaster_data: paymaster_data
-                            .0
-                            .iter()
-                            .map(|x| x.into_field_element())
-                            .collect::<Vec<FieldElement>>(),
+                        paymaster_data: paymaster_data.0.iter().map(|x| x.into_core_felt()).collect(),
                     },
                 ),
             };
@@ -163,15 +141,10 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
         Transaction::Deploy(tx) => {
             let tx = starknet_core::types::DeployTransaction {
                 transaction_hash,
-                contract_address_salt: tx.contract_address_salt.0.into_field_element(),
-                constructor_calldata: tx
-                    .constructor_calldata
-                    .0
-                    .iter()
-                    .map(|x| x.into_field_element())
-                    .collect::<Vec<FieldElement>>(),
-                class_hash: tx.class_hash.into_field_element(),
-                version: FieldElement::ZERO,
+                contract_address_salt: tx.contract_address_salt.0.into_core_felt(),
+                constructor_calldata: tx.constructor_calldata.0.iter().map(|x| x.into_core_felt()).collect(),
+                class_hash: tx.class_hash.into_core_felt(),
+                version: Felt::ZERO,
             };
 
             starknet_core::types::Transaction::Deploy(tx)
@@ -186,11 +159,11 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     calldata,
                 }) => starknet_core::types::InvokeTransaction::V0(starknet_core::types::InvokeTransactionV0 {
                     transaction_hash,
-                    max_fee: FieldElement::from(max_fee.0),
-                    signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
-                    contract_address: contract_address.into_field_element(),
-                    entry_point_selector: entry_point_selector.0.into_field_element(),
-                    calldata: calldata.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
+                    max_fee: Felt::from(max_fee.0),
+                    signature: signature.0.iter().map(|x| x.into_core_felt()).collect(),
+                    contract_address: contract_address.into_core_felt(),
+                    entry_point_selector: entry_point_selector.0.into_core_felt(),
+                    calldata: calldata.0.iter().map(|x| x.into_core_felt()).collect(),
                 }),
                 InvokeTransaction::V1(InvokeTransactionV1 {
                     max_fee,
@@ -201,11 +174,11 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     ..
                 }) => starknet_core::types::InvokeTransaction::V1(starknet_core::types::InvokeTransactionV1 {
                     transaction_hash,
-                    max_fee: FieldElement::from(max_fee.0),
-                    signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
-                    nonce: nonce.into_field_element(),
-                    sender_address: sender_address.into_field_element(),
-                    calldata: calldata.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
+                    max_fee: Felt::from(max_fee.0),
+                    signature: signature.0.iter().map(|x| x.into_core_felt()).collect(),
+                    nonce: nonce.into_core_felt(),
+                    sender_address: sender_address.into_core_felt(),
+                    calldata: calldata.0.iter().map(|x| x.into_core_felt()).collect(),
                 }),
                 InvokeTransaction::V3(InvokeTransactionV3 {
                     resource_bounds,
@@ -222,22 +195,14 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
                     transaction_hash,
                     resource_bounds: api_resources_to_core_ressources(resource_bounds),
                     tip: tip.0,
-                    signature: signature.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
-                    nonce: nonce.into_field_element(),
-                    sender_address: sender_address.into_field_element(),
-                    calldata: calldata.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
+                    signature: signature.0.iter().map(|x| x.into_core_felt()).collect(),
+                    nonce: nonce.into_core_felt(),
+                    sender_address: sender_address.into_core_felt(),
+                    calldata: calldata.0.iter().map(|x| x.into_core_felt()).collect(),
                     nonce_data_availability_mode: api_da_to_core_da(nonce_data_availability_mode).unwrap(),
                     fee_data_availability_mode: api_da_to_core_da(fee_data_availability_mode).unwrap(),
-                    paymaster_data: paymaster_data
-                        .0
-                        .iter()
-                        .map(|x| x.into_field_element())
-                        .collect::<Vec<FieldElement>>(),
-                    account_deployment_data: account_deployment_data
-                        .0
-                        .iter()
-                        .map(|x| x.into_field_element())
-                        .collect::<Vec<FieldElement>>(),
+                    paymaster_data: paymaster_data.0.iter().map(|x| x.into_core_felt()).collect(),
+                    account_deployment_data: account_deployment_data.0.iter().map(|x| x.into_core_felt()).collect(),
                 }),
             };
 
@@ -246,11 +211,11 @@ pub fn to_starknet_core_tx(tx: &Transaction, transaction_hash: FieldElement) -> 
         Transaction::L1Handler(tx) => {
             let tx = starknet_core::types::L1HandlerTransaction {
                 transaction_hash,
-                version: FieldElement::ZERO,
+                version: Felt::ZERO,
                 nonce: u64::try_from(tx.nonce.0).unwrap(),
-                contract_address: tx.contract_address.into_field_element(),
-                entry_point_selector: tx.entry_point_selector.0.into_field_element(),
-                calldata: tx.calldata.0.iter().map(|x| x.into_field_element()).collect::<Vec<FieldElement>>(),
+                contract_address: tx.contract_address.into_core_felt(),
+                entry_point_selector: tx.entry_point_selector.0.into_core_felt(),
+                calldata: tx.calldata.0.iter().map(|x| x.into_core_felt()).collect(),
             };
 
             starknet_core::types::Transaction::L1Handler(tx)

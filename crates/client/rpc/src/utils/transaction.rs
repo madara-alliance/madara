@@ -5,14 +5,14 @@ use dc_db::storage_handler::StorageView;
 use jsonrpsee::core::RpcResult;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{Transaction, TransactionHash};
-use starknet_ff::FieldElement;
+use starknet_core::types::Felt;
 
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
 
 pub(crate) fn blockifier_transactions(
     starknet: &Starknet,
-    transaction_with_hash: Vec<(Transaction, FieldElement)>,
+    transaction_with_hash: Vec<(Transaction, Felt)>,
 ) -> RpcResult<Vec<btx::Transaction>> {
     let transactions = transaction_with_hash
             .iter()

@@ -2,15 +2,15 @@ use blockifier::context::BlockContext;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution as btx;
 use dc_db::mapping_db::BlockStorageType;
+use dp_convert::core_felt::CoreFelt;
 use dp_convert::felt_wrapper::FeltWrapper;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::{calculate_contract_address, ContractAddress};
 use starknet_api::transaction::{Transaction, TransactionHash};
 use starknet_core::types::{
     ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionReceipt,
-    DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult, FieldElement, Hash256,
-    InvokeTransactionReceipt, L1HandlerTransactionReceipt, TransactionFinalityStatus, TransactionReceipt,
-    TransactionReceiptWithBlockInfo,
+    DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult, Felt, Hash256, InvokeTransactionReceipt,
+    L1HandlerTransactionReceipt, TransactionFinalityStatus, TransactionReceipt, TransactionReceiptWithBlockInfo,
 };
 
 use crate::errors::StarknetRpcApiError;
@@ -46,7 +46,7 @@ use crate::Starknet;
 /// not found.
 pub async fn get_transaction_receipt(
     starknet: &Starknet,
-    transaction_hash: FieldElement,
+    transaction_hash: Felt,
 ) -> RpcResult<TransactionReceiptWithBlockInfo> {
     let (block, tx_info) = starknet
         .block_storage()
@@ -72,7 +72,7 @@ pub async fn get_transaction_receipt(
         .transactions()
         .iter()
         .cloned()
-        .zip(block.tx_hashes().iter().map(FeltWrapper::into_field_element))
+        .zip(block.tx_hashes().iter().map(CoreFelt::into_core_felt))
         .take(tx_index + 1)
         .collect();
 
@@ -85,7 +85,7 @@ pub async fn get_transaction_receipt(
     let block = match tx_info.storage_type {
         BlockStorageType::Pending => starknet_core::types::ReceiptBlock::Pending,
         BlockStorageType::BlockN(block_number) => {
-            let block_hash = block.block_hash().into_field_element();
+            let block_hash = block.block_hash().into_core_felt();
             starknet_core::types::ReceiptBlock::Block { block_hash, block_number }
         }
     };
@@ -125,10 +125,10 @@ pub fn receipt(
     starknet: &Starknet,
     transaction: &Transaction,
     execution_infos: &TransactionExecutionInfo,
-    transaction_hash: FieldElement,
+    transaction_hash: Felt,
     is_pending: &BlockStorageType,
 ) -> RpcResult<TransactionReceipt> {
-    let message_hash: Hash256 = Hash256::from_felt(&FieldElement::default());
+    let message_hash: Hash256 = Hash256::from_felt(&Felt::ZERO);
 
     let actual_fee = starknet_core::types::FeePayment {
         amount: execution_infos.actual_fee.0.into(),
@@ -205,8 +205,7 @@ pub fn receipt(
                 events,
                 execution_resources,
                 execution_result,
-                // Safe to unwrap because StarkFelt is same as FieldElement
-                contract_address: (*contract_address.key()).into(),
+                contract_address: (*contract_address.key()).into_core_felt(),
             })
         }
         Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {
