@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(rpc): fixed block not found error on get_class method
 - fix(logs): fixed logs and get_state_update
 - refactor: remove primitives/felt
 - refactor: move convert.rs to felt_wrapper.rs
