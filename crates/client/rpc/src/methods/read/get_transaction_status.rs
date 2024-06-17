@@ -1,7 +1,10 @@
+use dp_convert::felt_wrapper::FeltWrapper;
 use jsonrpsee::core::RpcResult;
-use starknet_core::types::{FieldElement, TransactionStatus};
+use starknet_api::transaction::TransactionHash;
+use starknet_core::types::{FieldElement, TransactionExecutionStatus, TransactionStatus};
 
 use crate::errors::StarknetRpcApiError;
+use crate::utils::ResultExt;
 use crate::Starknet;
 
 /// Gets the Transaction Status, Including Mempool Status and Execution Details
@@ -22,43 +25,29 @@ use crate::Starknet;
 ///     confirmed, pending, or rejected.
 ///   - `execution_status`: The execution status of the transaction, providing details on the
 ///     execution outcome if the transaction has been processed.
-pub fn get_transaction_status(_starknet: &Starknet, _transaction_hash: FieldElement) -> RpcResult<TransactionStatus> {
+pub fn get_transaction_status(starknet: &Starknet, transaction_hash: FieldElement) -> RpcResult<TransactionStatus> {
     // let transaction_hash = TransactionHash(transaction_hash.into_stark_felt());
 
-    // let block = starknet
-    //     .block_storage()
-    //     .get_block_info_from_tx_hash(&transaction_hash)?
-    //     .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    let tx_hash = TransactionHash(transaction_hash.into_stark_felt());
 
-    // let _starknet_tx = starknet
-    //     .get_block_transaction_hashes(starknet_block_hash.into())?
-    //     .into_iter()
-    //     .zip(starknet_block.transactions())
-    //     .find(|(tx_hash, _)| *tx_hash == Felt252Wrapper(transaction_hash).into())
-    //     .map(|(_, tx)| to_starknet_core_tx(tx.clone(), transaction_hash));
+    let block = starknet
+        .block_storage()
+        .find_tx_hash_block_info(&tx_hash)
+        .or_internal_server_error("Error find tx hash block info from db")?
+        .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-    // TODO: Implement this method
-    Err(StarknetRpcApiError::UnimplementedMethod.into())
+    let tx_execution_status = match starknet
+        .block_storage()
+        .is_reverted_tx(&tx_hash)
+        .or_internal_server_error("Error getting tx status from db")?
+    {
+        true => TransactionExecutionStatus::Reverted,
+        false => TransactionExecutionStatus::Succeeded,
+    };
 
-    // let execution_status = {
-    //     let revert_error = starknet
-    //         .client
-    //         .runtime_api()
-    //         .get_tx_execution_outcome(substrate_block_hash,
-    // Felt252Wrapper(transaction_hash).into())         .map_err(|e| {
-    //             log::error!(
-    //                 "Failed to get transaction execution outcome. Substrate block hash:
-    // {substrate_block_hash}, \                  transaction hash: {transaction_hash}, error:
-    // {e}"             );
-    //             StarknetRpcApiError::InternalServerError
-    //         })?;
-
-    //     if revert_error.is_none() {
-    //         TransactionExecutionStatus::Succeeded
-    //     } else {
-    //         TransactionExecutionStatus::Reverted
-    //     }
-    // };
-
-    // Ok(TransactionStatus::AcceptedOnL2(execution_status))
+    if block.0.block_n() > starknet.get_l1_last_confirmed_block()? {
+        Ok(TransactionStatus::AcceptedOnL2(tx_execution_status))
+    } else {
+        Ok(TransactionStatus::AcceptedOnL1(tx_execution_status))
+    }
 }
