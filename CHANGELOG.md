@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(rpc): fixed block not found error on get_class method
 - fix (rpc): get_transaction_status
 - fix(cleanup): clean up around the Cargo.toml files, error handling and cli arguments
 - fix(db): fault tolerance (database is not corrupted when the node is unexpectedly shut down / killed)
