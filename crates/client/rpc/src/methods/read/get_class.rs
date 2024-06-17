@@ -24,8 +24,8 @@ use crate::Starknet;
 pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> RpcResult<ContractClass> {
     let class_hash = ClassHash(class_hash.into_stark_felt());
 
-    // TODO: get class for the given block when block_number will be stored in
-    // `StorageContractClassData`
+    // check if the given block exists
+    starknet.get_block(block_id)?;
 
     let class = starknet
         .backend
