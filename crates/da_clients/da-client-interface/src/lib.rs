@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use color_eyre::Result;
 use mockall::{automock, predicate::*};
-use starknet::core::types::FieldElement;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DaVerificationStatus {
@@ -19,9 +18,13 @@ pub enum DaVerificationStatus {
 pub trait DaClient: Send + Sync {
     /// Should publish the state diff to the DA layer and return an external id
     /// which can be used to track the status of the DA transaction.
-    async fn publish_state_diff(&self, state_diff: Vec<FieldElement>) -> Result<String>;
+    async fn publish_state_diff(&self, state_diff: Vec<Vec<u8>>, to: &[u8; 32]) -> Result<String>;
     /// Should verify the inclusion of the state diff in the DA layer and return the status
     async fn verify_inclusion(&self, external_id: &str) -> Result<DaVerificationStatus>;
+    /// Should return the max blobs per txn
+    async fn max_blob_per_txn(&self) -> u64;
+    /// Should return the max bytes per blob
+    async fn max_bytes_per_blob(&self) -> u64;
 }
 
 /// Trait for every new DaConfig to implement

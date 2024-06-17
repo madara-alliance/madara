@@ -6,7 +6,10 @@ use std::collections::HashMap;
 use httpmock::prelude::*;
 use serde_json::json;
 
-use super::super::common::{default_job_item, init_config};
+use super::super::common::{
+    constants::{ETHEREUM_MAX_BLOB_PER_TXN, ETHEREUM_MAX_BYTES_PER_BLOB},
+    default_job_item, init_config,
+};
 use starknet_core::types::{FieldElement, MaybePendingStateUpdate, StateDiff};
 use uuid::Uuid;
 
@@ -52,9 +55,12 @@ async fn test_process_job() {
 
     let mut da_client = MockDaClient::new();
     let internal_id = "1";
-    da_client.expect_publish_state_diff().times(1).returning(|_| Ok(internal_id.to_string()));
-    let config = init_config(Some(format!("http://localhost:{}", server.port())), None, None, Some(da_client)).await;
 
+    da_client.expect_publish_state_diff().times(1).returning(|_, _| Ok(internal_id.to_string()));
+    da_client.expect_max_bytes_per_blob().times(1).returning(move || ETHEREUM_MAX_BYTES_PER_BLOB);
+    da_client.expect_max_blob_per_txn().times(1).returning(move || ETHEREUM_MAX_BLOB_PER_TXN);
+
+    let config = init_config(Some(format!("http://localhost:{}", server.port())), None, None, Some(da_client)).await;
     let state_update = MaybePendingStateUpdate::Update(StateUpdate {
         block_hash: FieldElement::default(),
         new_root: FieldElement::default(),

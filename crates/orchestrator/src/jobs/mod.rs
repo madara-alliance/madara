@@ -10,7 +10,7 @@ use std::time::Duration;
 use tracing::log;
 use uuid::Uuid;
 
-mod constants;
+pub mod constants;
 pub mod da_job;
 mod register_proof_job;
 pub mod snos_job;

@@ -16,7 +16,12 @@ authors = ["Apoorv Sadana <@apoorvsadana>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace.dependencies]
+
+
+num = { version = "0.4.1" }
+ethereum-da-client = { path = "crates/da_clients/ethereum" }
 async-trait = { version = "0.1.77" }
+da-client-interface = { path = "crates/da_clients/da-client-interface" }
 axum = { version = "0.7.4" }
 axum-macros = { version = "0.4.1" }
 color-eyre = { version = "0.6.2" }
@@ -34,7 +39,8 @@ tracing = { version = "0.1.40" }
 tracing-subscriber = { version = "0.3.18" }
 url = { version = "2.5.0" }
 uuid = { version = "1.7.0" }
+num-bigint = { version = "0.4.4" }
 httpmock = { version = "0.7.0" }
-da-client-interface = { path = "crates/da_clients/da-client-interface" }
-ethereum-da-client = { path = "crates/da_clients/ethereum" }
 utils = { path = "crates/utils" }
+num-traits = "0.2"
+lazy_static = "1.4.0"
