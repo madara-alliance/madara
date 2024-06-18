@@ -12,10 +12,10 @@ use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use itertools::Itertools;
 use starknet_api::core::ClassHash;
 use starknet_core::types::{
-    BlockId as BlockIdCore, DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate,
+    DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate,
 };
 use starknet_providers::sequencer::models::{self as p, BlockId};
-use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
+use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use url::Url;
 
 use starknet_types_core::felt::Felt;
@@ -180,7 +180,7 @@ async fn fetch_class(
     block_number: u64,
     provider: &SequencerGatewayProvider,
 ) -> Result<ContractClassData, ProviderError> {
-    let core_class = provider.get_class(BlockIdCore::Number(block_number), class_hash).await?;
+    let core_class = provider.get_class_by_hash(class_hash, BlockId::Number(block_number)).await?;
     Ok(ContractClassData {
         hash: ClassHash(class_hash.to_stark_felt()),
         contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
