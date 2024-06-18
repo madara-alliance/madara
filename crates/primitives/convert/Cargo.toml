@@ -9,6 +9,8 @@ version.workspace = true
 homepage.workspace = true
 
 [dependencies]
+
+# Starknet
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }

@@ -12,9 +12,13 @@ homepage.workspace = true
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
+
+# Deoxys
+dp-utils = { workspace = true }
+
+# Other
 anyhow.workspace = true
 chrono = "0.4.35"
-dp-utils = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true, default-features = true }
 reqwest = { workspace = true }

@@ -1858,7 +1858,6 @@ dependencies = [
  "dp-block",
  "dp-convert",
  "dp-transactions",
- "dp-utils",
  "flate2",
  "indexmap 2.2.6",
  "log",
@@ -1898,14 +1897,11 @@ dependencies = [
  "dp-convert",
  "dp-simulations",
  "dp-transactions",
- "dp-utils",
  "indexmap 2.2.6",
  "itertools 0.12.1",
  "jsonrpsee",
  "log",
  "rstest 0.18.2",
- "serde",
- "serde_with",
  "starknet-core",
  "starknet-providers",
  "starknet-types-core",
@@ -1990,10 +1986,7 @@ dependencies = [
  "log",
  "primitive-types",
  "rayon",
- "reqwest 0.12.5",
  "serde_json",
- "starknet-core",
- "starknet-providers",
  "starknet-types-core",
  "thiserror",
  "tokio",
@@ -2178,13 +2171,8 @@ dependencies = [
 name = "dp-utils"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "async-trait",
  "futures",
- "itertools 0.12.1",
- "log",
  "rayon",
- "thiserror",
  "tokio",
 ]
 
