@@ -199,7 +199,8 @@ pub fn to_contract_class_cairo(
 /// Converts a [LegacyContractClass] to a [ContractClassBlockifier]
 pub fn from_contract_class_cairo(contract_class: &LegacyContractClass) -> anyhow::Result<ContractClassBlockifier> {
     let compressed_program = contract_class.compress().expect("Cairo program compression failed");
-    let program = Program::from_bytes(&compressed_program.program, None).unwrap(); // check if entrypoint is needed somewhere here
+    let bytes = decompress(&compressed_program.program)?;
+    let program = Program::from_bytes(&bytes, None).unwrap(); // check if entrypoint is needed somewhere here
     let entry_points_by_type = from_legacy_entry_points_by_type(&contract_class.entry_points_by_type);
     let blockifier_contract = ContractClassV0(Arc::new(ContractClassV0Inner { program, entry_points_by_type }));
     anyhow::Ok(ContractClassBlockifier::V0(blockifier_contract))
@@ -321,10 +322,8 @@ impl TryFrom<DeployedClass> for ContractClassWrapper {
     type Error = anyhow::Error;
 
     fn try_from(contract_class: DeployedClass) -> Result<Self, Self::Error> {
-        // Use a reference to contract_class to avoid moving it
         let contract = from_rpc_contract_class(&contract_class)?;
 
-        // Use a reference to contract_class to avoid moving it
         let abi = match &contract_class {
             DeployedClass::LegacyClass(class_cairo) => {
                 ContractAbi::Cairo(from_rpc_contract_abi(class_cairo.abi.clone()))
@@ -332,7 +331,6 @@ impl TryFrom<DeployedClass> for ContractClassWrapper {
             DeployedClass::SierraClass(class_sierra) => ContractAbi::Sierra(class_sierra.abi.clone()),
         };
 
-        // Use another reference to contract_class to avoid moving it
         let sierra_program_length = match &contract_class {
             DeployedClass::SierraClass(class_sierra) => class_sierra.sierra_program.len(),
             DeployedClass::LegacyClass(_) => 0,
