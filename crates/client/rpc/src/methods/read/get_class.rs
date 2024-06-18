@@ -1,9 +1,11 @@
+use anyhow::Ok;
 use dc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
 use dc_db::storage_handler::StorageView;
 use dp_convert::to_stark_felt::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::ClassHash;
 use starknet_core::types::{BlockId, ContractClass, Felt};
+use starknet_providers::sequencer::models::DeployedClass;
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::ResultExt;
@@ -24,7 +26,7 @@ use crate::Starknet;
 pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> RpcResult<ContractClass> {
     let class_hash = ClassHash(class_hash.to_stark_felt());
 
-    // check if the given block exists
+    // Check if the given block exists
     starknet.get_block(block_id)?;
 
     let class = starknet
@@ -45,9 +47,17 @@ pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> Rp
     if declared_at_block >= starknet.get_block_n(block_id)? {
         return Err(StarknetRpcApiError::ClassHashNotFound.into());
     }
-    Ok(ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
+
+    let deployed_class: DeployedClass = ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
         .try_into()
         .or_else_internal_server_error(|| {
             format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")
-        })?)
+        })?;
+
+    let contract_class = match deployed_class {
+        DeployedClass::SierraClass(class) => ContractClass::Sierra(class),
+        DeployedClass::LegacyClass(class) => ContractClass::Legacy(class.compress().expect("Failed to compress legacy contract class")),
+    };
+
+    Ok(contract_class)
 }
