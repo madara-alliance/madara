@@ -16,42 +16,38 @@ targets = ["x86_64-unknown-linux-gnu"]
 name = "deoxys"
 
 [dependencies]
-clap = { workspace = true, features = ["derive"] }
-dc-telemetry = { workspace = true }
-futures = { workspace = true, features = ["thread-pool"] }
-log = { workspace = true }
-tokio = { workspace = true }
 
-# Starknet
+# Deoxys
 dc-db = { workspace = true }
 dc-metrics = { workspace = true }
 dc-rpc = { workspace = true }
-starknet-core = { workspace = true }
-starknet-providers = { workspace = true }
+dc-sync = { workspace = true }
+dc-telemetry = { workspace = true }
+dp-utils = { workspace = true }
+
+# Starknet
 starknet-types-core = { workspace = true }
 
-# Primitives
-dp-utils = { workspace = true }
-primitive-types = { workspace = true }
-
-#Deoxys
-dc-sync = { workspace = true }
-reqwest = { workspace = true }
-url = { workspace = true }
-
+# Other
 anyhow.workspace = true
 chrono = "0.4.38"
+clap = { workspace = true, features = ["derive"] }
 env_logger = "0.11.3"
 forwarded-header-value = "0.1.1"
+futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true
 hyper.workspace = true
 ip_network.workspace = true
 jsonrpsee.workspace = true
+log = { workspace = true }
+primitive-types = { workspace = true }
 rayon.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true }
 tower-http.workspace = true
 tower.workspace = true
+url = { workspace = true }
 
 [features]
 default = []

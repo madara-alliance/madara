@@ -14,17 +14,14 @@ use std::sync::Arc;
 use dc_db::mapping_db::MappingDb;
 use dc_db::DeoxysBackend;
 use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use dp_convert::felt_wrapper::FeltWrapper;
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use starknet_core::serde::unsigned_field_element::UfeHex;
+use starknet_core::types::Felt;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
-    DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
+    DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FunctionCall,
     InvokeTransactionResult, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
     MaybePendingStateUpdate, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
     SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
@@ -37,10 +34,6 @@ use utils::ResultExt;
 // Starkware maintains [a description of the Starknet API](https://github.com/starkware-libs/starknet-specs/blob/master/api/starknet_api_openrpc.json)
 // using the openRPC specification.
 // This crate uses `jsonrpsee` to define such an API in Rust terms.
-
-#[serde_as]
-#[derive(Serialize, Deserialize, Clone, Copy)]
-pub struct Felt(#[serde_as(as = "UfeHex")] pub FieldElement);
 
 /// Starknet write rpc interface.
 #[rpc(server, namespace = "starknet")]
@@ -120,16 +113,16 @@ pub trait StarknetReadRpcApi {
 
     /// Get the contract class at a given contract address for a given block id
     #[method(name = "getClassAt")]
-    fn get_class_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<ContractClass>;
+    fn get_class_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<ContractClass>;
 
     /// Get the contract class hash in the given block for the contract deployed at the given
     /// address
     #[method(name = "getClassHashAt")]
-    fn get_class_hash_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt>;
+    fn get_class_hash_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<Felt>;
 
     /// Get the contract class definition in the given block associated with the given hash
     #[method(name = "getClass")]
-    fn get_class(&self, block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass>;
+    fn get_class(&self, block_id: BlockId, class_hash: Felt) -> RpcResult<ContractClass>;
 
     /// Returns all events matching the given filter
     #[method(name = "getEvents")]
@@ -137,11 +130,11 @@ pub trait StarknetReadRpcApi {
 
     /// Get the nonce associated with the given address at the given block
     #[method(name = "getNonce")]
-    fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt>;
+    fn get_nonce(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<Felt>;
 
     /// Get the value of the storage at the given address and key, at the given block id
     #[method(name = "getStorageAt")]
-    fn get_storage_at(&self, contract_address: FieldElement, key: FieldElement, block_id: BlockId) -> RpcResult<Felt>;
+    fn get_storage_at(&self, contract_address: Felt, key: Felt, block_id: BlockId) -> RpcResult<Felt>;
 
     /// Get the details of a transaction by a given block id and index
     #[method(name = "getTransactionByBlockIdAndIndex")]
@@ -149,18 +142,15 @@ pub trait StarknetReadRpcApi {
 
     /// Returns the information about a transaction by transaction hash.
     #[method(name = "getTransactionByHash")]
-    fn get_transaction_by_hash(&self, transaction_hash: FieldElement) -> RpcResult<Transaction>;
+    fn get_transaction_by_hash(&self, transaction_hash: Felt) -> RpcResult<Transaction>;
 
     /// Returns the receipt of a transaction by transaction hash.
     #[method(name = "getTransactionReceipt")]
-    async fn get_transaction_receipt(
-        &self,
-        transaction_hash: FieldElement,
-    ) -> RpcResult<TransactionReceiptWithBlockInfo>;
+    async fn get_transaction_receipt(&self, transaction_hash: Felt) -> RpcResult<TransactionReceiptWithBlockInfo>;
 
     /// Gets the Transaction Status, Including Mempool Status and Execution Details
     #[method(name = "getTransactionStatus")]
-    fn get_transaction_status(&self, transaction_hash: FieldElement) -> RpcResult<TransactionStatus>;
+    fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TransactionStatus>;
 
     /// Get an object about the sync status, or false if the node is not syncing
     #[method(name = "syncing")]
@@ -188,7 +178,7 @@ pub trait StarknetTraceRpcApi {
 
     #[method(name = "traceTransaction")]
     /// Returns the execution trace of a transaction
-    async fn trace_transaction(&self, transaction_hash: FieldElement) -> RpcResult<TransactionTraceWithHash>;
+    async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TransactionTraceWithHash>;
 }
 
 #[derive(Clone)]
@@ -214,7 +204,7 @@ impl Starknet {
         SequencerGatewayProvider::new(
             self.chain_config.feeder_gateway.clone(),
             self.chain_config.gateway.clone(),
-            self.chain_config.chain_id.into_field_element(),
+            self.chain_config.chain_id,
         )
     }
 
@@ -255,8 +245,7 @@ impl Starknet {
     }
 
     fn chain_id(&self) -> RpcResult<Felt> {
-        let chain_id_as_wrong_felt = Felt(self.chain_config.chain_id.into_field_element());
-        Ok(chain_id_as_wrong_felt)
+        Ok(self.chain_config.chain_id)
     }
 
     pub fn current_block_number(&self) -> RpcResult<u64> {

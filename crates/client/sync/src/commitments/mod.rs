@@ -7,18 +7,16 @@ use blockifier::state::cached_state::CommitmentStateDiff;
 use classes::class_trie_root;
 use contracts::contract_trie_root;
 use dc_db::DeoxysBackend;
-use dp_convert::field_element::FromFieldElement;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use events::memory_event_commitment;
 use indexmap::IndexMap;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
-use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Event, Transaction};
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate,
     StorageEntry,
 };
-use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
 use transactions::memory_transaction_commitment;
@@ -68,40 +66,40 @@ pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStat
     };
 
     for DeployedContractItem { address, class_hash } in state_update.state_diff.deployed_contracts.iter() {
-        let address = ContractAddress::from_field_element(address);
-        let class_hash = if address == ContractAddress::from_field_element(FieldElement::ZERO) {
+        let address: ContractAddress = address.to_stark_felt().try_into().unwrap();
+        let class_hash = if *address.0.key() == StarkFelt::ZERO {
             // System contracts doesnt have class hashes
-            ClassHash::from_field_element(FieldElement::ZERO)
+            ClassHash(StarkFelt::ZERO)
         } else {
-            ClassHash::from_field_element(class_hash)
+            ClassHash(class_hash.to_stark_felt())
         };
         commitment_state_diff.address_to_class_hash.insert(address, class_hash);
     }
 
     for ReplacedClassItem { contract_address, class_hash } in state_update.state_diff.replaced_classes.iter() {
-        let address = ContractAddress::from_field_element(contract_address);
-        let class_hash = ClassHash::from_field_element(class_hash);
+        let address = contract_address.to_stark_felt().try_into().unwrap();
+        let class_hash = ClassHash(class_hash.to_stark_felt());
         commitment_state_diff.address_to_class_hash.insert(address, class_hash);
     }
 
     for DeclaredClassItem { class_hash, compiled_class_hash } in state_update.state_diff.declared_classes.iter() {
-        let class_hash = ClassHash::from_field_element(class_hash);
-        let compiled_class_hash = CompiledClassHash::from_field_element(compiled_class_hash);
+        let class_hash = ClassHash(class_hash.to_stark_felt());
+        let compiled_class_hash = CompiledClassHash(compiled_class_hash.to_stark_felt());
         commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
     }
 
     for NonceUpdate { contract_address, nonce } in state_update.state_diff.nonces.iter() {
-        let contract_address = ContractAddress::from_field_element(contract_address);
-        let nonce_value = Nonce::from_field_element(nonce);
+        let contract_address = contract_address.to_stark_felt().try_into().unwrap();
+        let nonce_value = Nonce(nonce.to_stark_felt());
         commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
     }
 
     for ContractStorageDiffItem { address, storage_entries } in state_update.state_diff.storage_diffs.iter() {
-        let contract_address = ContractAddress::from_field_element(address);
+        let contract_address = address.to_stark_felt().try_into().unwrap();
         let mut storage_map = IndexMap::new();
         for StorageEntry { key, value } in storage_entries.iter() {
-            let key = StorageKey::from_field_element(key);
-            let value = StarkFelt::from_field_element(value);
+            let key = key.to_stark_felt().try_into().unwrap();
+            let value = value.to_stark_felt();
             storage_map.insert(key, value);
         }
         commitment_state_diff.storage_updates.insert(contract_address, storage_map);

@@ -1,8 +1,7 @@
 use starknet_core::types::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem,
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem,
     StateDiff as StateDiffCore, StateUpdate as StateUpdateCore, StorageEntry,
 };
-use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::StateUpdate as StateUpdateProvider;
 
 pub trait ToStateUpdateCore {
@@ -11,9 +10,9 @@ pub trait ToStateUpdateCore {
 
 impl ToStateUpdateCore for StateUpdateProvider {
     fn to_state_update_core(self) -> StateUpdateCore {
-        let block_hash = self.block_hash.unwrap_or(FieldElement::ZERO);
+        let block_hash = self.block_hash.unwrap_or(Felt::ZERO);
         let old_root = self.old_root;
-        let new_root = self.new_root.unwrap_or(FieldElement::ZERO);
+        let new_root = self.new_root.unwrap_or(Felt::ZERO);
 
         let storage_diffs = self
             .state_diff

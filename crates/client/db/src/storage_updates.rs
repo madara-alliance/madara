@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
-use dp_convert::field_element::FromFieldElement;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
-use starknet_api::state::StorageKey;
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate,
     StorageEntry,
@@ -27,10 +26,7 @@ pub fn store_state_update(
         .nonces
         .into_iter()
         .map(|NonceUpdate { contract_address, nonce }| {
-            (
-                ContractAddress(StarkFelt::from(contract_address).try_into().unwrap()),
-                Nonce(StarkFelt::new_unchecked(nonce.to_bytes_be())),
-            )
+            (contract_address.to_stark_felt().try_into().unwrap(), Nonce(nonce.to_stark_felt()))
         })
         .collect();
 
@@ -46,7 +42,7 @@ pub fn store_state_update(
             .deployed_contracts
             .into_iter()
             .map(|DeployedContractItem { address, class_hash }| {
-                (ContractAddress::from_field_element(address), ClassHash::from_field_element(class_hash))
+                (address.to_stark_felt().try_into().unwrap(), ClassHash(class_hash.to_stark_felt()))
             })
             .try_for_each(|(contract_address, class_hash)| -> Result<(), DeoxysStorageError> {
                 handler_contract_data_class.insert(contract_address, class_hash)?;
@@ -62,7 +58,7 @@ pub fn store_state_update(
             .replaced_classes
             .into_iter()
             .map(|ReplacedClassItem { contract_address, class_hash }| {
-                (ContractAddress::from_field_element(contract_address), ClassHash::from_field_element(class_hash))
+                (contract_address.to_stark_felt().try_into().unwrap(), ClassHash(class_hash.to_stark_felt()))
             })
             .try_for_each(|(contract_address, class_hash)| -> Result<(), DeoxysStorageError> {
                 handler_contract_data_class.insert(contract_address, class_hash)?;
@@ -146,10 +142,10 @@ pub fn store_key_update(
     let handler_storage = backend.contract_storage_mut();
 
     storage_diffs.into_par_iter().try_for_each(|ContractStorageDiffItem { address, storage_entries }| {
-        let contract_address = ContractAddress::from_field_element(*address);
+        let contract_address = address.to_stark_felt().try_into().unwrap();
         storage_entries.iter().try_for_each(|StorageEntry { key, value }| -> Result<(), DeoxysStorageError> {
-            let key = StorageKey::from_field_element(key);
-            let value = StarkFelt::from_field_element(value);
+            let key = key.to_stark_felt().try_into().unwrap();
+            let value = value.to_stark_felt();
             handler_storage.insert((contract_address, key), value)
         })
     })?;

@@ -119,13 +119,11 @@ impl NetworkType {
     }
 
     pub fn chain_id(&self) -> starknet_types_core::felt::Felt {
-        let tmp = match self {
-            NetworkType::Main => starknet_core::types::FieldElement::from_byte_slice_be(b"SN_MAIN").unwrap(),
-            NetworkType::Test => starknet_core::types::FieldElement::from_byte_slice_be(b"SN_SEPOLIA").unwrap(),
-            NetworkType::Integration => starknet_core::types::FieldElement::from_byte_slice_be(b"SN_INTE").unwrap(),
-        };
-
-        starknet_types_core::felt::Felt::from_bytes_be(&tmp.to_bytes_be())
+        match self {
+            NetworkType::Main => starknet_types_core::felt::Felt::from_bytes_be_slice(b"SN_MAIN"),
+            NetworkType::Test => starknet_types_core::felt::Felt::from_bytes_be_slice(b"SN_SEPOLIA"),
+            NetworkType::Integration => starknet_types_core::felt::Felt::from_bytes_be_slice(b"SN_INTE"),
+        }
     }
 
     pub fn l1_core_address(&self) -> H160 {

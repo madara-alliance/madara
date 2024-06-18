@@ -5,8 +5,8 @@ use std::sync::Arc;
 use anyhow::{bail, Context, Result};
 use dc_db::rocksdb::WriteOptions;
 use dc_db::{DeoxysBackend, WriteBatchWithTransaction};
-use dp_convert::core_felt::CoreFelt;
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_felt::ToFelt;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_utils::channel_wait_or_graceful_shutdown;
 use ethers::contract::{abigen, EthEvent};
 use ethers::providers::{Http, Middleware, Provider};
@@ -118,7 +118,7 @@ impl EthereumClient {
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last state root");
-        Ok(Felt::from_hex_unchecked(&result.to_string()).into_stark_felt())
+        Ok(Felt::from_hex_unchecked(&result.to_string()).to_stark_felt())
     }
 
     /// Get the last Starknet block hash verified on L1
@@ -128,7 +128,7 @@ impl EthereumClient {
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last block hash");
-        Ok(Felt::from_hex_unchecked(&result.to_string()).into_stark_felt())
+        Ok(Felt::from_hex_unchecked(&result.to_string()).to_stark_felt())
     }
 
     /// Get the last Starknet state update verified on the L1
@@ -185,8 +185,8 @@ pub fn update_l1(
         log::info!(
             "🔄 Updated L1 head #{} ({}) with state root ({})",
             state_update.block_number,
-            trim_hash(&state_update.block_hash.into_core_felt()),
-            trim_hash(&state_update.global_root.into_core_felt())
+            trim_hash(&state_update.block_hash.to_felt()),
+            trim_hash(&state_update.global_root.to_felt())
         );
 
         block_metrics.l1_block_number.set(state_update.block_number as f64);

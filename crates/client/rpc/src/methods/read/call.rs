@@ -1,11 +1,10 @@
-use dp_convert::felt_wrapper::FeltWrapper;
-use dp_convert::field_element::FromFieldElement;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
-use starknet_api::core::{ContractAddress, EntryPointSelector};
-use starknet_api::hash::StarkFelt;
+use starknet_api::core::EntryPointSelector;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{BlockId, FunctionCall};
 
+use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
 use crate::utils::{self, ResultExt};
 use crate::{Arc, Starknet};
@@ -34,13 +33,13 @@ pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> Rp
     let block_info = starknet.get_block_info(block_id)?;
     let block_context = block_context(starknet, &block_info)?;
 
-    let calldata_as_starkfelt = request.calldata.iter().map(|x| StarkFelt::from_field_element(*x)).collect();
+    let calldata_as_starkfelt = request.calldata.iter().map(ToStarkFelt::to_stark_felt).collect();
     let calldata = Calldata(Arc::new(calldata_as_starkfelt));
 
     let result = utils::execution::call_contract(
         starknet,
-        ContractAddress::from_field_element(request.contract_address),
-        EntryPointSelector(request.entry_point_selector.into_stark_felt()),
+        request.contract_address.to_stark_felt().try_into().map_err(StarknetRpcApiError::from)?,
+        EntryPointSelector(request.entry_point_selector.to_stark_felt()),
         calldata,
         &block_context,
     )

@@ -2,7 +2,6 @@
 
 mod header;
 mod ordered_events;
-use dp_convert::felt_wrapper::FeltWrapper;
 pub use header::Header;
 pub use ordered_events::*;
 use starknet_api::block::BlockHash;
@@ -59,7 +58,7 @@ impl From<starknet_core::types::BlockId> for BlockId {
 impl From<BlockId> for starknet_core::types::BlockId {
     fn from(value: BlockId) -> Self {
         match value {
-            BlockId::Hash(felt) => starknet_core::types::BlockId::Hash(felt.into_field_element()),
+            BlockId::Hash(felt) => starknet_core::types::BlockId::Hash(felt),
             BlockId::Number(number) => starknet_core::types::BlockId::Number(number),
             BlockId::Tag(tag) => starknet_core::types::BlockId::Tag(tag.into()),
         }

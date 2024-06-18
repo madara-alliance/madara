@@ -1,10 +1,11 @@
 use jsonrpsee::core::{async_trait, RpcResult};
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate,
-    FieldElement, FunctionCall, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+    FunctionCall, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
     MaybePendingStateUpdate, MsgFromL1, SimulationFlagForEstimateFee, SyncStatusType, Transaction,
     TransactionReceiptWithBlockInfo, TransactionStatus,
 };
+use starknet_types_core::felt::Felt;
 
 use super::block_hash_and_number::*;
 use super::call::*;
@@ -26,7 +27,7 @@ use super::get_transaction_by_hash::*;
 use super::get_transaction_receipt::*;
 use super::get_transaction_status::*;
 use super::syncing::*;
-use crate::{Felt, Starknet, StarknetReadRpcApiServer};
+use crate::{Starknet, StarknetReadRpcApiServer};
 
 #[async_trait]
 impl StarknetReadRpcApiServer for Starknet {
@@ -79,15 +80,15 @@ impl StarknetReadRpcApiServer for Starknet {
         get_block_with_txs(self, block_id)
     }
 
-    fn get_class_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<ContractClass> {
+    fn get_class_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<ContractClass> {
         get_class_at(self, block_id, contract_address)
     }
 
-    fn get_class_hash_at(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
+    fn get_class_hash_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<Felt> {
         get_class_hash_at(self, block_id, contract_address)
     }
 
-    fn get_class(&self, block_id: BlockId, class_hash: FieldElement) -> RpcResult<ContractClass> {
+    fn get_class(&self, block_id: BlockId, class_hash: Felt) -> RpcResult<ContractClass> {
         get_class(self, block_id, class_hash)
     }
 
@@ -95,11 +96,11 @@ impl StarknetReadRpcApiServer for Starknet {
         get_events(self, filter).await
     }
 
-    fn get_nonce(&self, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
+    fn get_nonce(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<Felt> {
         get_nonce(self, block_id, contract_address)
     }
 
-    fn get_storage_at(&self, contract_address: FieldElement, key: FieldElement, block_id: BlockId) -> RpcResult<Felt> {
+    fn get_storage_at(&self, contract_address: Felt, key: Felt, block_id: BlockId) -> RpcResult<Felt> {
         get_storage_at(self, contract_address, key, block_id)
     }
 
@@ -107,18 +108,15 @@ impl StarknetReadRpcApiServer for Starknet {
         get_transaction_by_block_id_and_index(self, block_id, index)
     }
 
-    fn get_transaction_by_hash(&self, transaction_hash: FieldElement) -> RpcResult<Transaction> {
+    fn get_transaction_by_hash(&self, transaction_hash: Felt) -> RpcResult<Transaction> {
         get_transaction_by_hash(self, transaction_hash)
     }
 
-    async fn get_transaction_receipt(
-        &self,
-        transaction_hash: FieldElement,
-    ) -> RpcResult<TransactionReceiptWithBlockInfo> {
+    async fn get_transaction_receipt(&self, transaction_hash: Felt) -> RpcResult<TransactionReceiptWithBlockInfo> {
         get_transaction_receipt(self, transaction_hash).await
     }
 
-    fn get_transaction_status(&self, transaction_hash: FieldElement) -> RpcResult<TransactionStatus> {
+    fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TransactionStatus> {
         get_transaction_status(self, transaction_hash)
     }
 

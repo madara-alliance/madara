@@ -1,7 +1,5 @@
-use dp_convert::felt_wrapper::FeltWrapper;
 use jsonrpsee::core::RpcResult;
-use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage};
-use starknet_ff::FieldElement;
+use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage, Felt};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::StarknetRpcApiError;
@@ -30,7 +28,7 @@ use crate::Starknet;
 /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
 /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
 pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> RpcResult<EventsPage> {
-    let from_address = filter.event_filter.address.map(FeltWrapper::into_field_element);
+    let from_address = filter.event_filter.address;
     let keys = filter.event_filter.keys.unwrap_or_default();
     let chunk_size = filter.result_page_request.chunk_size;
 
@@ -100,7 +98,7 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Rpc
 }
 
 #[inline]
-fn event_match_filter(event: &EmittedEvent, address: Option<FieldElement>, keys: &[Vec<FieldElement>]) -> bool {
+fn event_match_filter(event: &EmittedEvent, address: Option<Felt>, keys: &[Vec<Felt>]) -> bool {
     let match_from_address = address.map_or(true, |addr| addr == event.from_address);
     let match_keys = keys
         .iter()

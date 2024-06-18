@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use blockifier::block::GasPrices;
 use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_transactions::from_broadcasted_transactions::fee_from_felt;
 use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
@@ -17,7 +18,6 @@ use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, PendingStateUpdate,
     ReplacedClassItem, StateDiff as StateDiffCore, StorageEntry,
 };
-use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::state_update::{
     DeclaredContract, DeployedContract, StateDiff as StateDiffProvider, StorageDiff as StorageDiffProvider,
 };
@@ -38,12 +38,12 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
     let transactions = transactions(block.transactions);
     let reverted_transactions = reverted_transactions(&block.transaction_receipts);
     let events = events(&block.transaction_receipts);
-    let parent_block_hash = felt(block.parent_block_hash);
+    let parent_block_hash = block.parent_block_hash.to_stark_felt();
     let block_hash = block.block_hash.expect("no block hash provided");
     let block_number = block.block_number.expect("no block number provided");
     let block_timestamp = block.timestamp;
-    let global_state_root = felt(block.state_root.expect("no state root provided"));
-    let sequencer_address = block.sequencer_address.map_or(contract_address(FieldElement::ZERO), contract_address);
+    let global_state_root = block.state_root.expect("no state root provided").to_stark_felt();
+    let sequencer_address = block.sequencer_address.map_or(contract_address(Felt::ZERO), contract_address);
     let transaction_count = transactions.len() as u128;
     let event_count = events.len() as u128;
 
@@ -51,9 +51,9 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
         calculate_tx_and_event_commitments(&transactions, &events, chain_id, block_number);
 
     // Provisory conversion while Starknet-api doesn't support the universal `Felt` type
-    let transaction_commitment = transaction_commitment.into_stark_felt();
-    let event_commitment = event_commitment.into_stark_felt();
-    let txs_hashes: Vec<StarkFelt> = txs_hashes.iter().map(|felt| (*felt).into_stark_felt()).collect();
+    let transaction_commitment = transaction_commitment.to_stark_felt();
+    let event_commitment = event_commitment.to_stark_felt();
+    let txs_hashes: Vec<StarkFelt> = txs_hashes.iter().map(|felt| (*felt).to_stark_felt()).collect();
 
     let protocol_version = block.starknet_version.unwrap_or_default();
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
@@ -76,7 +76,7 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
         extra_data,
     };
 
-    let computed_block_hash: FieldElement = header.hash().into_field_element();
+    let computed_block_hash = header.hash();
     // mismatched block hash is allowed for blocks 1466..=2242
     if computed_block_hash != block_hash && !(1466..=2242).contains(&block_number) {
         return Err(L2SyncError::MismatchedBlockHash(block_number));
@@ -93,7 +93,7 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
         DeoxysBlockInfo::new(
             header,
             txs_hashes.into_iter().map(TransactionHash).collect(),
-            BlockHash(felt(block_hash)),
+            BlockHash(block_hash.to_stark_felt()),
         ),
         DeoxysBlockInner::new(transactions, ordered_events),
     );
@@ -116,7 +116,7 @@ fn transaction(transaction: p::TransactionType) -> Transaction {
 }
 
 fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
-    if tx.version == FieldElement::ZERO {
+    if tx.version == Felt::ZERO {
         DeclareTransaction::V0(starknet_api::transaction::DeclareTransactionV0V1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
@@ -124,7 +124,7 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
             class_hash: class_hash(tx.class_hash),
             sender_address: contract_address(tx.sender_address),
         })
-    } else if tx.version == FieldElement::ONE {
+    } else if tx.version == Felt::ONE {
         DeclareTransaction::V1(starknet_api::transaction::DeclareTransactionV0V1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
@@ -132,7 +132,7 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
             class_hash: class_hash(tx.class_hash),
             sender_address: contract_address(tx.sender_address),
         })
-    } else if tx.version == FieldElement::TWO {
+    } else if tx.version == Felt::TWO {
         DeclareTransaction::V2(starknet_api::transaction::DeclareTransactionV2 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
@@ -141,7 +141,7 @@ fn declare_transaction(tx: p::DeclareTransaction) -> DeclareTransaction {
             compiled_class_hash: compiled_class_hash(tx.compiled_class_hash.expect("no compiled class hash provided")),
             sender_address: contract_address(tx.sender_address),
         })
-    } else if tx.version == FieldElement::THREE {
+    } else if tx.version == Felt::THREE {
         DeclareTransaction::V3(starknet_api::transaction::DeclareTransactionV3 {
             resource_bounds: resource_bounds(tx.resource_bounds.expect("no resource bounds provided")),
             tip: tip(tx.tip.expect("no tip provided")),
@@ -217,7 +217,7 @@ fn deploy_account_transaction_version(tx: &p::DeployAccountTransaction) -> u8 {
 }
 
 fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
-    if tx.version == FieldElement::ZERO {
+    if tx.version == Felt::ZERO {
         InvokeTransaction::V0(starknet_api::transaction::InvokeTransactionV0 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
@@ -225,7 +225,7 @@ fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
             entry_point_selector: entry_point(tx.entry_point_selector.expect("no entry_point_selector provided")),
             calldata: call_data(tx.calldata),
         })
-    } else if tx.version == FieldElement::ONE {
+    } else if tx.version == Felt::ONE {
         InvokeTransaction::V1(starknet_api::transaction::InvokeTransactionV1 {
             max_fee: fee(tx.max_fee.expect("no max fee provided")),
             signature: signature(tx.signature),
@@ -233,7 +233,7 @@ fn invoke_transaction(tx: p::InvokeFunctionTransaction) -> InvokeTransaction {
             sender_address: contract_address(tx.sender_address),
             calldata: call_data(tx.calldata),
         })
-    } else if tx.version == FieldElement::THREE {
+    } else if tx.version == Felt::THREE {
         InvokeTransaction::V3(starknet_api::transaction::InvokeTransactionV3 {
             resource_bounds: resource_bounds(tx.resource_bounds.expect("no resource bounds provided")),
             tip: tip(tx.tip.expect("no tip provided")),
@@ -271,50 +271,48 @@ fn reverted_transactions(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<Tra
     receipts
         .iter()
         .filter(|r| r.execution_status == Some(p::TransactionExecutionStatus::Reverted))
-        .map(|r| TransactionHash(felt(r.transaction_hash)))
+        .map(|r| TransactionHash(r.transaction_hash.to_stark_felt()))
         .collect()
 }
 
-fn fee(felt: starknet_ff::FieldElement) -> starknet_api::transaction::Fee {
-    starknet_api::transaction::Fee(felt.try_into().expect("Value out of range for u128"))
+fn fee(fee: Felt) -> starknet_api::transaction::Fee {
+    fee_from_felt(fee)
 }
 
-fn signature(signature: Vec<starknet_ff::FieldElement>) -> starknet_api::transaction::TransactionSignature {
-    starknet_api::transaction::TransactionSignature(signature.into_iter().map(felt).collect())
+fn signature(signature: Vec<Felt>) -> starknet_api::transaction::TransactionSignature {
+    starknet_api::transaction::TransactionSignature(signature.into_iter().map(ToStarkFelt::to_stark_felt).collect())
 }
 
-fn contract_address(address: starknet_ff::FieldElement) -> starknet_api::core::ContractAddress {
-    starknet_api::core::ContractAddress(felt(address).try_into().unwrap())
+fn contract_address(address: Felt) -> starknet_api::core::ContractAddress {
+    address.to_stark_felt().try_into().unwrap()
 }
 
-fn entry_point(entry_point: starknet_ff::FieldElement) -> starknet_api::core::EntryPointSelector {
-    starknet_api::core::EntryPointSelector(felt(entry_point))
+fn entry_point(entry_point: Felt) -> starknet_api::core::EntryPointSelector {
+    starknet_api::core::EntryPointSelector(entry_point.to_stark_felt())
 }
 
-fn call_data(call_data: Vec<starknet_ff::FieldElement>) -> starknet_api::transaction::Calldata {
-    starknet_api::transaction::Calldata(Arc::new(call_data.into_iter().map(felt).collect()))
+fn call_data(call_data: Vec<Felt>) -> starknet_api::transaction::Calldata {
+    starknet_api::transaction::Calldata(Arc::new(call_data.into_iter().map(ToStarkFelt::to_stark_felt).collect()))
 }
 
-fn nonce(nonce: starknet_ff::FieldElement) -> starknet_api::core::Nonce {
-    starknet_api::core::Nonce(felt(nonce))
+fn nonce(nonce: Felt) -> starknet_api::core::Nonce {
+    starknet_api::core::Nonce(nonce.to_stark_felt())
 }
 
-fn class_hash(class_hash: starknet_ff::FieldElement) -> starknet_api::core::ClassHash {
-    starknet_api::core::ClassHash(felt(class_hash))
+fn class_hash(class_hash: Felt) -> starknet_api::core::ClassHash {
+    starknet_api::core::ClassHash(class_hash.to_stark_felt())
 }
 
-fn compiled_class_hash(compiled_class_hash: starknet_ff::FieldElement) -> starknet_api::core::CompiledClassHash {
-    starknet_api::core::CompiledClassHash(felt(compiled_class_hash))
+fn compiled_class_hash(compiled_class_hash: Felt) -> starknet_api::core::CompiledClassHash {
+    starknet_api::core::CompiledClassHash(compiled_class_hash.to_stark_felt())
 }
 
-fn contract_address_salt(
-    contract_address_salt: starknet_ff::FieldElement,
-) -> starknet_api::transaction::ContractAddressSalt {
-    starknet_api::transaction::ContractAddressSalt(felt(contract_address_salt))
+fn contract_address_salt(contract_address_salt: Felt) -> starknet_api::transaction::ContractAddressSalt {
+    starknet_api::transaction::ContractAddressSalt(contract_address_salt.to_stark_felt())
 }
 
-fn transaction_version(version: starknet_ff::FieldElement) -> starknet_api::transaction::TransactionVersion {
-    starknet_api::transaction::TransactionVersion(felt(version))
+fn transaction_version(version: Felt) -> starknet_api::transaction::TransactionVersion {
+    starknet_api::transaction::TransactionVersion(version.to_stark_felt())
 }
 
 fn resource_bounds(
@@ -356,14 +354,14 @@ fn data_availability_mode(
     }
 }
 
-fn paymaster_data(paymaster_data: Vec<FieldElement>) -> starknet_api::transaction::PaymasterData {
-    starknet_api::transaction::PaymasterData(paymaster_data.into_iter().map(felt).collect())
+fn paymaster_data(paymaster_data: Vec<Felt>) -> starknet_api::transaction::PaymasterData {
+    starknet_api::transaction::PaymasterData(paymaster_data.into_iter().map(ToStarkFelt::to_stark_felt).collect())
 }
 
-fn account_deployment_data(
-    account_deployment_data: Vec<FieldElement>,
-) -> starknet_api::transaction::AccountDeploymentData {
-    starknet_api::transaction::AccountDeploymentData(account_deployment_data.into_iter().map(felt).collect())
+fn account_deployment_data(account_deployment_data: Vec<Felt>) -> starknet_api::transaction::AccountDeploymentData {
+    starknet_api::transaction::AccountDeploymentData(
+        account_deployment_data.into_iter().map(ToStarkFelt::to_stark_felt).collect(),
+    )
 }
 
 /// Converts the l1 gas price and l1 data gas price to a GasPrices struct, if the l1 gas price is
@@ -373,24 +371,20 @@ fn resource_price(
     l1_gas_price: starknet_core::types::ResourcePrice,
     l1_data_gas_price: starknet_core::types::ResourcePrice,
 ) -> Option<GasPrices> {
-    /// Converts a FieldElement to a NonZeroU128, with 0 being converted to 1.
-    fn field_element_to_non_zero_u128(field_element: FieldElement) -> NonZeroU128 {
-        let value: u128 = if field_element == FieldElement::ZERO {
-            1
-        } else {
-            field_element.try_into().expect("FieldElement is more than u128")
-        };
+    /// Converts a Felt to a NonZeroU128, with 0 being converted to 1.
+    fn felt_to_non_zero_u128(felt: Felt) -> NonZeroU128 {
+        let value: u128 = if felt == Felt::ZERO { 1 } else { fee_from_felt(felt).0 };
         NonZeroU128::new(value).expect("Failed to convert field_element to NonZeroU128")
     }
 
-    if l1_gas_price.price_in_wei == FieldElement::ZERO {
+    if l1_gas_price.price_in_wei == Felt::ZERO {
         None
     } else {
         Some(GasPrices {
-            eth_l1_gas_price: field_element_to_non_zero_u128(l1_gas_price.price_in_wei),
-            strk_l1_gas_price: field_element_to_non_zero_u128(l1_gas_price.price_in_fri),
-            eth_l1_data_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_wei),
-            strk_l1_data_gas_price: field_element_to_non_zero_u128(l1_data_gas_price.price_in_fri),
+            eth_l1_gas_price: felt_to_non_zero_u128(l1_gas_price.price_in_wei),
+            strk_l1_gas_price: felt_to_non_zero_u128(l1_gas_price.price_in_fri),
+            eth_l1_data_gas_price: felt_to_non_zero_u128(l1_data_gas_price.price_in_wei),
+            strk_l1_data_gas_price: felt_to_non_zero_u128(l1_data_gas_price.price_in_fri),
         })
     }
 }
@@ -418,14 +412,10 @@ fn event(event: &p::Event) -> starknet_api::transaction::Event {
     Event {
         from_address: contract_address(event.from_address),
         content: EventContent {
-            keys: event.keys.iter().copied().map(felt).map(EventKey).collect(),
-            data: EventData(event.data.iter().copied().map(felt).collect()),
+            keys: event.keys.iter().copied().map(ToStarkFelt::to_stark_felt).map(EventKey).collect(),
+            data: EventData(event.data.iter().copied().map(ToStarkFelt::to_stark_felt).collect()),
         },
     }
-}
-
-fn felt(field_element: starknet_ff::FieldElement) -> starknet_api::hash::StarkFelt {
-    starknet_api::hash::StarkFelt::new(field_element.to_bytes_be()).unwrap()
 }
 
 pub fn state_update(state_update: StateUpdateProvider) -> PendingStateUpdate {
@@ -454,7 +444,7 @@ fn state_diff(state_diff: StateDiffProvider) -> StateDiffCore {
     }
 }
 
-fn storage_diffs(storage_diffs: HashMap<FieldElement, Vec<StorageDiffProvider>>) -> Vec<ContractStorageDiffItem> {
+fn storage_diffs(storage_diffs: HashMap<Felt, Vec<StorageDiffProvider>>) -> Vec<ContractStorageDiffItem> {
     storage_diffs
         .into_iter()
         .map(|(address, entries)| ContractStorageDiffItem { address, storage_entries: storage_entries(entries) })
@@ -489,7 +479,7 @@ fn replaced_classes(replaced_classes: Vec<DeployedContract>) -> Vec<ReplacedClas
         .collect()
 }
 
-fn nonces(nonces: HashMap<FieldElement, FieldElement>) -> Vec<NonceUpdate> {
+fn nonces(nonces: HashMap<Felt, Felt>) -> Vec<NonceUpdate> {
     // TODO: make sure the order is `contract_address` -> `nonce`
     // and not `nonce` -> `contract_address`
     nonces.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect()

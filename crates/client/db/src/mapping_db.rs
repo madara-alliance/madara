@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use starknet_api::block::BlockHash;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::PendingStateUpdate;
@@ -194,7 +194,7 @@ impl MappingDb {
     fn id_to_storage_type(&self, id: &BlockId) -> Result<Option<BlockStorageType>> {
         match id {
             BlockId::Hash(felt) => {
-                Ok(self.block_hash_to_block_n(&BlockHash(felt.into_stark_felt()))?.map(BlockStorageType::BlockN))
+                Ok(self.block_hash_to_block_n(&BlockHash(felt.to_stark_felt()))?.map(BlockStorageType::BlockN))
             }
             BlockId::Number(block_n) => Ok(Some(BlockStorageType::BlockN(*block_n))),
             BlockId::Tag(BlockTag::Latest) => Ok(self.get_latest_block_n()?.map(BlockStorageType::BlockN)),
@@ -228,7 +228,7 @@ impl MappingDb {
 
     pub fn get_block_hash(&self, id: &BlockId) -> Result<Option<BlockHash>> {
         match id {
-            BlockId::Hash(felt) => Ok(Some(BlockHash(felt.into_stark_felt()))),
+            BlockId::Hash(felt) => Ok(Some(BlockHash(felt.to_stark_felt()))),
             _ => Ok(self.get_block_info(id)?.map(|info| *info.block_hash())),
         }
     }

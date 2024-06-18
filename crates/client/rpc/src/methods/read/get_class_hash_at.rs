@@ -1,12 +1,12 @@
-use dp_convert::felt_wrapper::FeltWrapper;
-use dp_convert::field_element::FromFieldElement;
+use dp_convert::to_felt::ToFelt;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
-use starknet_api::core::ContractAddress;
-use starknet_core::types::{BlockId, FieldElement};
+use starknet_core::types::BlockId;
+use starknet_types_core::felt::Felt;
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::ResultExt;
-use crate::{Felt, Starknet};
+use crate::Starknet;
 
 /// Get the contract class hash in the given block for the contract deployed at the given
 /// address
@@ -20,9 +20,9 @@ use crate::{Felt, Starknet};
 /// ### Returns
 ///
 /// * `class_hash` - The class hash of the given contract
-pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_address: FieldElement) -> RpcResult<Felt> {
+pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> RpcResult<Felt> {
     let block_number = starknet.get_block_n(block_id)?;
-    let key = ContractAddress::from_field_element(contract_address);
+    let key = contract_address.to_stark_felt().try_into().map_err(StarknetRpcApiError::from)?;
 
     let class_hash = starknet
         .backend
@@ -31,5 +31,5 @@ pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_addres
         .or_internal_server_error("Failed to retrieve contract class hash")?
         .ok_or(StarknetRpcApiError::ContractNotFound)?;
 
-    Ok(Felt(class_hash.into_field_element()))
+    Ok(class_hash.to_felt())
 }

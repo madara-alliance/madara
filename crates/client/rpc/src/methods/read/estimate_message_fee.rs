@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use blockifier::transaction::transactions::L1HandlerTransaction;
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_transactions::compute_hash::ComputeTransactionHash;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::Nonce;
@@ -50,16 +50,16 @@ pub async fn estimate_message_fee(
 }
 
 pub fn convert_message_into_tx(message: MsgFromL1, chain_id: Felt, block_number: Option<u64>) -> L1HandlerTransaction {
-    let calldata = std::iter::once(message.from_address.into_stark_felt())
-        .chain(message.payload.into_iter().map(FeltWrapper::into_stark_felt))
+    let calldata = std::iter::once(message.from_address.to_stark_felt())
+        .chain(message.payload.into_iter().map(ToStarkFelt::to_stark_felt))
         .collect();
 
     let tx = starknet_api::transaction::L1HandlerTransaction {
         version: TransactionVersion::ZERO,
         nonce: Nonce(StarkFelt::ZERO),
-        contract_address: ContractAddress::try_from(message.to_address.into_stark_felt())
+        contract_address: ContractAddress::try_from(message.to_address.to_stark_felt())
             .expect("expected a contact address"),
-        entry_point_selector: EntryPointSelector(message.entry_point_selector.into_stark_felt()),
+        entry_point_selector: EntryPointSelector(message.entry_point_selector.to_stark_felt()),
         calldata: Calldata(Arc::new(calldata)),
     };
     // TODO(merge): recheck if this is correct

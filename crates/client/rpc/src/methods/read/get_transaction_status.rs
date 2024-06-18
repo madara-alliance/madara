@@ -1,7 +1,7 @@
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::{FieldElement, TransactionExecutionStatus, TransactionStatus};
+use starknet_core::types::{Felt, TransactionExecutionStatus, TransactionStatus};
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::ResultExt;
@@ -25,10 +25,8 @@ use crate::Starknet;
 ///     confirmed, pending, or rejected.
 ///   - `execution_status`: The execution status of the transaction, providing details on the
 ///     execution outcome if the transaction has been processed.
-pub fn get_transaction_status(starknet: &Starknet, transaction_hash: FieldElement) -> RpcResult<TransactionStatus> {
-    // let transaction_hash = TransactionHash(transaction_hash.into_stark_felt());
-
-    let tx_hash = TransactionHash(transaction_hash.into_stark_felt());
+pub fn get_transaction_status(starknet: &Starknet, transaction_hash: Felt) -> RpcResult<TransactionStatus> {
+    let tx_hash = TransactionHash(transaction_hash.to_stark_felt());
 
     let block = starknet
         .block_storage()

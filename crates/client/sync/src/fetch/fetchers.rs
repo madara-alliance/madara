@@ -6,15 +6,14 @@ use dc_db::storage_handler::primitives::contract_class::{ContractClassData, Cont
 use dc_db::storage_handler::{DeoxysStorageError, StorageView};
 use dc_db::DeoxysBackend;
 use dp_block::DeoxysBlock;
-use dp_convert::felt_wrapper::FeltWrapper;
 use dp_convert::state_update::ToStateUpdateCore;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use itertools::Itertools;
 use starknet_api::core::ClassHash;
 use starknet_core::types::{
     BlockId as BlockIdCore, DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate,
 };
-use starknet_ff::FieldElement;
 use starknet_providers::sequencer::models::{self as p, BlockId};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use url::Url;
@@ -105,11 +104,7 @@ where
 }
 
 pub async fn fetch_apply_genesis_block(config: FetchConfig, chain_id: Felt) -> Result<DeoxysBlock, String> {
-    let client = SequencerGatewayProvider::new(
-        config.gateway.clone(),
-        config.feeder_gateway.clone(),
-        config.chain_id.into_field_element(),
-    );
+    let client = SequencerGatewayProvider::new(config.gateway.clone(), config.feeder_gateway.clone(), config.chain_id);
     let client = match &config.api_key {
         Some(api_key) => client.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
         None => client,
@@ -136,7 +131,7 @@ async fn fetch_class_update(
     state_update: &StateUpdate,
     block_number: u64,
 ) -> Result<Vec<ContractClassData>, L2SyncError> {
-    let missing_classes: Vec<&FieldElement> = std::iter::empty()
+    let missing_classes: Vec<&Felt> = std::iter::empty()
         .chain(
             state_update
                 .state_diff
@@ -166,9 +161,7 @@ async fn fetch_class_update(
         let provider = Arc::clone(&arc_provider);
         let class_hash = *class_hash;
         // TODO(correctness): Skip what appears to be a broken Sierra class definition (quick fix)
-        if class_hash
-            != FieldElement::from_hex_be("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698").unwrap()
-        {
+        if class_hash != Felt::from_hex("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698").unwrap() {
             // Fetch the class definition in parallel, retrying up to 15 times for each class
             retry(|| fetch_class(class_hash, block_number, &provider), 15, Duration::from_secs(1)).await.map(Some)
         } else {
@@ -183,13 +176,13 @@ async fn fetch_class_update(
 /// Downloads a class definition from the Starknet sequencer. Note that because
 /// of the current type hell this needs to be converted into a blockifier equivalent
 async fn fetch_class(
-    class_hash: FieldElement,
+    class_hash: Felt,
     block_number: u64,
     provider: &SequencerGatewayProvider,
 ) -> Result<ContractClassData, ProviderError> {
     let core_class = provider.get_class(BlockIdCore::Number(block_number), class_hash).await?;
     Ok(ContractClassData {
-        hash: ClassHash(class_hash.into()),
+        hash: ClassHash(class_hash.to_stark_felt()),
         contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
     })
 }
@@ -198,7 +191,7 @@ async fn fetch_class(
 ///
 /// Since a change in class definition will result in a change in class hash,
 /// this means we only need to check for class hashes in the db.
-fn is_missing_class(backend: &DeoxysBackend, class_hash: &FieldElement) -> Result<bool, DeoxysStorageError> {
-    let class_hash = ClassHash((*class_hash).into());
+fn is_missing_class(backend: &DeoxysBackend, class_hash: &Felt) -> Result<bool, DeoxysStorageError> {
+    let class_hash = ClassHash(class_hash.to_stark_felt());
     backend.contract_class_data().contains(&class_hash).map(|x| !x)
 }

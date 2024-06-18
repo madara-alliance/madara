@@ -15,15 +15,14 @@ use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTran
 use blockifier::versioned_constants::VersionedConstants;
 use dc_db::storage_handler::StorageView;
 use dp_block::DeoxysBlockInfo;
-use dp_convert::core_felt::CoreFelt;
+use dp_convert::to_felt::ToFelt;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_simulations::SimulationFlags;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
-use starknet_api::hash::StarkHash;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{FeeEstimate, PriceUnit};
-use starknet_ff::FieldElement;
 use starknet_types_core::felt::Felt;
 
 use super::blockifier_state_adapter::BlockifierStateAdapter;
@@ -32,20 +31,20 @@ use crate::utils::ResultExt;
 use crate::Starknet;
 
 // 0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7
-pub const ETH_TOKEN_ADDR: FieldElement =
-    FieldElement::from_mont([4380532846569209554, 17839402928228694863, 17240401758547432026, 418961398025637529]);
+pub const ETH_TOKEN_ADDR: Felt =
+    Felt::from_raw([418961398025637529, 17240401758547432026, 17839402928228694863, 4380532846569209554]);
 
 // 0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
-pub const STRK_TOKEN_ADDR: FieldElement =
-    FieldElement::from_mont([16432072983745651214, 1325769094487018516, 5134018303144032807, 468300854463065062]);
+pub const STRK_TOKEN_ADDR: Felt =
+    Felt::from_raw([468300854463065062, 5134018303144032807, 1325769094487018516, 16432072983745651214]);
 
 pub fn block_context(_client: &Starknet, block_info: &DeoxysBlockInfo) -> Result<BlockContext, StarknetRpcApiError> {
     let block_header = block_info.header();
 
     // safe unwrap because address is always valid and static
     let fee_token_address = FeeTokenAddresses {
-        strk_fee_token_address: StarkHash::new_unchecked(STRK_TOKEN_ADDR.to_bytes_be()).try_into().unwrap(),
-        eth_fee_token_address: StarkHash::new_unchecked(ETH_TOKEN_ADDR.to_bytes_be()).try_into().unwrap(),
+        strk_fee_token_address: STRK_TOKEN_ADDR.to_stark_felt().try_into().unwrap(),
+        eth_fee_token_address: ETH_TOKEN_ADDR.to_stark_felt().try_into().unwrap(),
     };
     let chain_id = starknet_api::core::ChainId("SN_MAIN".to_string());
 
@@ -141,7 +140,7 @@ pub fn call_contract(
         })?;
 
     log::debug!("Successfully called a smart contract function: {:?}", res);
-    let result = res.execution.retdata.0.iter().map(|x| x.into_core_felt()).collect();
+    let result = res.execution.retdata.0.iter().map(|x| x.to_felt()).collect();
     Ok(result)
 }
 
@@ -179,12 +178,12 @@ pub fn estimate_message_fee(
     // if !tx_execution_infos.is_reverted() {}
 
     let fee = FeeEstimate {
-        gas_consumed: FieldElement::from(
+        gas_consumed: Felt::from(
             tx_execution_infos.actual_resources.0.get("l1_gas_usage").cloned().unwrap_or_default(),
         ),
-        gas_price: FieldElement::ZERO,
+        gas_price: Felt::ZERO,
         data_gas_consumed: tx_execution_infos.da_gas.l1_data_gas.into(),
-        data_gas_price: FieldElement::ZERO,
+        data_gas_price: Felt::ZERO,
         overall_fee: tx_execution_infos.actual_fee.0.into(),
         unit,
     };
@@ -268,4 +267,23 @@ fn init_cached_state(starknet: &Starknet, block_context: &BlockContext) -> Cache
         BlockifierStateAdapter::new(Arc::clone(&starknet.backend), block_number - 1), // TODO(panic): check if this -1 operation can overflow!!
         GlobalContractCache::new(16),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_eth_token_addr() {
+        let eth_token_addr =
+            Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap();
+        assert_eq!(ETH_TOKEN_ADDR, eth_token_addr);
+    }
+
+    #[test]
+    fn test_strk_token_addr() {
+        let strk_token_addr =
+            Felt::from_hex("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d").unwrap();
+        assert_eq!(STRK_TOKEN_ADDR, strk_token_addr);
+    }
 }

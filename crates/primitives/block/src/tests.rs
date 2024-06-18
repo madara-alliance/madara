@@ -2,7 +2,7 @@ use core::convert::TryFrom;
 
 use blockifier::context::FeeTokenAddresses;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
-use starknet_api::core::{ChainId, ContractAddress};
+use starknet_api::core::ChainId;
 use starknet_api::hash::StarkFelt;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, StarkHash};
@@ -74,13 +74,13 @@ fn test_real_header_hash() {
 
 #[test]
 fn test_to_block_context() {
-    let sequencer_address = ContractAddress(StarkFelt::try_from("0xFF").unwrap().try_into().unwrap());
+    let sequencer_address = StarkFelt::try_from("0xFF").unwrap().try_into().unwrap();
     // Create a block header.
     let block_header = Header { block_number: 1, block_timestamp: 1, sequencer_address, ..Default::default() };
     // Create a fee token address.
     let fee_token_addresses = FeeTokenAddresses {
-        eth_fee_token_address: ContractAddress(StarkFelt::try_from("0xAA").unwrap().try_into().unwrap()),
-        strk_fee_token_address: ContractAddress(StarkFelt::try_from("0xBB").unwrap().try_into().unwrap()),
+        eth_fee_token_address: StarkFelt::try_from("0xAA").unwrap().try_into().unwrap(),
+        strk_fee_token_address: StarkFelt::try_from("0xBB").unwrap().try_into().unwrap(),
     };
     // Create a chain id.
     let chain_id = ChainId("0x1".to_string());
