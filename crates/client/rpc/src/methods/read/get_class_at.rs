@@ -29,7 +29,7 @@ use crate::{bail_internal_server_error, Starknet};
 /// * `CONTRACT_NOT_FOUND` - If the specified contract address does not exist.
 pub fn get_class_at(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> RpcResult<ContractClass> {
     let block_number = starknet.get_block_n(block_id)?;
-    let key = contract_address.to_stark_felt().try_into().unwrap();
+    let key = contract_address.to_stark_felt().try_into().map_err(StarknetRpcApiError::from)?;
 
     let class_hash = starknet
         .backend

@@ -40,8 +40,8 @@ use crate::Starknet;
 pub fn get_storage_at(starknet: &Starknet, contract_address: Felt, key: Felt, block_id: BlockId) -> RpcResult<Felt> {
     let block_number = starknet.get_block_n(block_id)?;
 
-    let contract_address = contract_address.to_stark_felt().try_into().unwrap();
-    let key = key.to_stark_felt().try_into().unwrap();
+    let contract_address = contract_address.to_stark_felt().try_into().map_err(StarknetRpcApiError::from)?;
+    let key = key.to_stark_felt().try_into().map_err(StarknetRpcApiError::from)?;
 
     // Check if the contract exists at the given address in the specified block.
     match starknet

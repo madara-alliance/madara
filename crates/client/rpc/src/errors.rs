@@ -1,5 +1,6 @@
 use dc_db::storage_handler::DeoxysStorageError;
 use dc_db::DbError;
+use starknet_api::StarknetApiError;
 use starknet_core::types::StarknetError;
 
 pub enum StarknetTransactionExecutionError {
@@ -188,5 +189,11 @@ impl From<DeoxysStorageError> for StarknetRpcApiError {
 impl From<DbError> for StarknetRpcApiError {
     fn from(_: DbError) -> Self {
         StarknetRpcApiError::ErrUnexpectedError { data: "DB error".to_string() }
+    }
+}
+
+impl From<StarknetApiError> for StarknetRpcApiError {
+    fn from(err: StarknetApiError) -> Self {
+        StarknetRpcApiError::ErrUnexpectedError { data: err.to_string() }
     }
 }

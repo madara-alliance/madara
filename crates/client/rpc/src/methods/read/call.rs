@@ -4,6 +4,7 @@ use starknet_api::core::EntryPointSelector;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{BlockId, FunctionCall};
 
+use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::block_context;
 use crate::utils::{self, ResultExt};
 use crate::{Arc, Starknet};
@@ -37,7 +38,7 @@ pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> Rp
 
     let result = utils::execution::call_contract(
         starknet,
-        request.contract_address.to_stark_felt().try_into().unwrap(),
+        request.contract_address.to_stark_felt().try_into().map_err(StarknetRpcApiError::from)?,
         EntryPointSelector(request.entry_point_selector.to_stark_felt()),
         calldata,
         &block_context,

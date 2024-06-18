@@ -22,7 +22,7 @@ use crate::Starknet;
 /// * `class_hash` - The class hash of the given contract
 pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> RpcResult<Felt> {
     let block_number = starknet.get_block_n(block_id)?;
-    let key = contract_address.to_stark_felt().try_into().unwrap();
+    let key = contract_address.to_stark_felt().try_into().map_err(StarknetRpcApiError::from)?;
 
     let class_hash = starknet
         .backend
