@@ -311,8 +311,7 @@ fn from_legacy_entry_point(entry_point: &RawLegacyEntryPoint) -> EntryPoint {
 }
 
 use starknet_core::types::{
-    FunctionStateMutability, LegacyEventAbiType, LegacyFunctionAbiType, LegacyStructAbiEntry, LegacyStructAbiType,
-    LegacyStructMember, LegacyTypedParameter,
+    FunctionStateMutability, LegacyEventAbiType, LegacyFunctionAbiType, LegacyStructAbiType, LegacyTypedParameter,
 };
 use starknet_providers::sequencer::models::DeployedClass;
 use starknet_types_core::felt::Felt;
@@ -380,8 +379,22 @@ impl From<RawLegacyAbiEntry> for AbiEntryWrapper {
             }
             RawLegacyAbiEntry::Event(abi_event) => AbiEntryWrapper::Event(AbiEventEntryWrapper::from(abi_event)),
             RawLegacyAbiEntry::Struct(abi_struct) => AbiEntryWrapper::Struct(AbiStructEntryWrapper::from(abi_struct)),
-            RawLegacyAbiEntry::Constructor(_) => todo!(),
-            RawLegacyAbiEntry::L1Handler(_) => todo!(),
+            RawLegacyAbiEntry::Constructor(abi_constructor) => {
+                AbiEntryWrapper::Function(AbiFunctionEntryWrapper::from(RawLegacyFunction {
+                    name: "constructor".to_string(),
+                    inputs: abi_constructor.inputs,
+                    outputs: vec![],
+                    state_mutability: None,
+                }))
+            }
+            RawLegacyAbiEntry::L1Handler(abi_l1_handler) => {
+                AbiEntryWrapper::Function(AbiFunctionEntryWrapper::from(RawLegacyFunction {
+                    name: "l1_handler".to_string(),
+                    inputs: abi_l1_handler.inputs,
+                    outputs: vec![],
+                    state_mutability: None,
+                }))
+            }
         }
     }
 }
