@@ -17,7 +17,8 @@ use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
 use starknet_core::types::contract::legacy::{
-    LegacyContractClass, LegacyEntrypointOffset, RawLegacyAbiEntry, RawLegacyEntryPoint, RawLegacyEntryPoints, RawLegacyEvent, RawLegacyFunction, RawLegacyMember, RawLegacyStruct
+    LegacyContractClass, LegacyEntrypointOffset, RawLegacyAbiEntry, RawLegacyEntryPoint, RawLegacyEntryPoints,
+    RawLegacyEvent, RawLegacyFunction, RawLegacyMember, RawLegacyStruct,
 };
 use starknet_core::types::{EntryPointsByType, FlattenedSierraClass, SierraEntryPoint};
 
@@ -310,8 +311,8 @@ fn from_legacy_entry_point(entry_point: &RawLegacyEntryPoint) -> EntryPoint {
 }
 
 use starknet_core::types::{
-    FunctionStateMutability, LegacyEventAbiType, LegacyFunctionAbiType,
-    LegacyStructAbiEntry, LegacyStructAbiType, LegacyStructMember, LegacyTypedParameter,
+    FunctionStateMutability, LegacyEventAbiType, LegacyFunctionAbiType, LegacyStructAbiEntry, LegacyStructAbiType,
+    LegacyStructMember, LegacyTypedParameter,
 };
 use starknet_providers::sequencer::models::DeployedClass;
 use starknet_types_core::felt::Felt;
@@ -371,8 +372,6 @@ fn from_rpc_contract_abi(abi: Option<Vec<RawLegacyAbiEntry>>) -> Option<Vec<AbiE
     abi.map(|entries| entries.into_iter().map(AbiEntryWrapper::from).collect())
 }
 
-// TODO: this is in serious need of refactoring
-
 impl From<RawLegacyAbiEntry> for AbiEntryWrapper {
     fn from(abi_entry: RawLegacyAbiEntry) -> Self {
         match abi_entry {
@@ -380,9 +379,9 @@ impl From<RawLegacyAbiEntry> for AbiEntryWrapper {
                 AbiEntryWrapper::Function(AbiFunctionEntryWrapper::from(abi_function))
             }
             RawLegacyAbiEntry::Event(abi_event) => AbiEntryWrapper::Event(AbiEventEntryWrapper::from(abi_event)),
-            RawLegacyAbiEntry::Struct(abi_struct) => {
-                AbiEntryWrapper::Struct(AbiStructEntryWrapper::from(abi_struct))
-            }
+            RawLegacyAbiEntry::Struct(abi_struct) => AbiEntryWrapper::Struct(AbiStructEntryWrapper::from(abi_struct)),
+            RawLegacyAbiEntry::Constructor(_) => todo!(),
+            RawLegacyAbiEntry::L1Handler(_) => todo!(),
         }
     }
 }
