@@ -16,10 +16,10 @@ use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
-use starknet_core::types::contract::legacy::{LegacyContractClass, RawLegacyAbiEntry, RawLegacyEntryPoint, RawLegacyEntryPoints};
+use starknet_core::types::contract::legacy::{LegacyContractClass, LegacyEntrypointOffset, RawLegacyAbiEntry, RawLegacyEntryPoint, RawLegacyEntryPoints};
 use starknet_core::types::{
-    CompressedLegacyContractClass, ContractClass as ContractClassCore, EntryPointsByType, FlattenedSierraClass,
-    LegacyContractAbiEntry, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
+    ContractClass as ContractClassCore, EntryPointsByType, FlattenedSierraClass,
+    LegacyContractAbiEntry, SierraEntryPoint,
 };
 
 #[derive(Debug, Encode, Decode)]
@@ -156,10 +156,10 @@ pub fn from_rpc_contract_class(contract_class: DeployedClass) -> anyhow::Result<
     }
 }
 
-/// Converts a [ContractClassBlockifier] to a [ContractClassCore]
+/// Converts a [ContractClassBlockifier] to a [DeployedClass]
 ///
 /// This is after extracting the contract classes.
-pub fn to_contract_class_sierra(sierra_class: &ContractClassV1, abi: String) -> anyhow::Result<ContractClassCore> {
+pub fn to_contract_class_sierra(sierra_class: &ContractClassV1, abi: String) -> anyhow::Result<DeployedClass> {
     let entry_points_by_type: HashMap<_, _> =
         sierra_class.entry_points_by_type.iter().map(|(k, v)| (*k, v.clone())).collect();
     let entry_points_by_type = to_entry_points_by_type(&entry_points_by_type)?;
@@ -172,7 +172,7 @@ pub fn to_contract_class_sierra(sierra_class: &ContractClassV1, abi: String) -> 
         })
         .collect::<Vec<Felt>>();
 
-    Ok(ContractClassCore::Sierra(FlattenedSierraClass {
+    Ok(DeployedClass::SierraClass(FlattenedSierraClass {
         sierra_program,
         contract_class_version: "0.1.0".to_string(),
         entry_points_by_type,
@@ -193,13 +193,11 @@ pub fn to_contract_class_cairo(
     contract_class: &ContractClassV0,
     abi: Option<Vec<RawLegacyAbiEntry>>,
 ) -> anyhow::Result<DeployedClass> {
-    let entry_points_by_type: HashMap<_, _> =
-        contract_class.entry_points_by_type.iter().map(|(k, v)| (*k, v.clone())).collect();
-    let entry_points_by_type = to_legacy_entry_points_by_type(&entry_points_by_type)?;
-    let serialized_program = contract_class.program.serialize()?;
+    let deserialize_class = serde_json::to_string(&contract_class).unwrap();
+    let serialized_class: LegacyContractClass = serde_json::from_str(&deserialize_class).unwrap();
     Ok(DeployedClass::LegacyClass(LegacyContractClass {
-        program: encoded_program,
-        entry_points_by_type,
+        program: serialized_class.program,
+        entry_points_by_type: serialized_class.entry_points_by_type,
         abi,
     }))
 }
@@ -299,7 +297,7 @@ fn from_legacy_entry_points_by_type(entries: &RawLegacyEntryPoints) -> IndexMap<
 /// (starknet-api)
 fn to_legacy_entry_point(entry_point: EntryPoint) -> RawLegacyEntryPoint {
     let selector = entry_point.selector.0.to_felt();
-    let offset = entry_point.offset.0;
+    let offset = LegacyEntrypointOffset::U64AsInt(entry_point.offset.0);
     RawLegacyEntryPoint { selector, offset }
 }
 
@@ -373,7 +371,7 @@ impl TryInto<DeployedClass> for ContractClassWrapper {
     }
 }
 
-fn to_rpc_contract_abi(abi: Option<Vec<AbiEntryWrapper>>) -> Option<Vec<LegacyContractAbiEntry>> {
+fn to_rpc_contract_abi(abi: Option<Vec<AbiEntryWrapper>>) -> Option<Vec<RawLegacyAbiEntry>> {
     abi.map(|entries| entries.into_iter().map(|v| v.into()).collect())
 }
 
