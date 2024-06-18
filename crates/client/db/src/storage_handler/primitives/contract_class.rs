@@ -191,18 +191,14 @@ pub fn from_contract_class_sierra(contract_class: FlattenedSierraClass) -> anyho
 
 pub fn to_contract_class_cairo(
     contract_class: &ContractClassV0,
-    abi: Option<Vec<LegacyContractAbiEntry>>,
-) -> anyhow::Result<ContractClassCore> {
+    abi: Option<Vec<RawLegacyAbiEntry>>,
+) -> anyhow::Result<DeployedClass> {
     let entry_points_by_type: HashMap<_, _> =
         contract_class.entry_points_by_type.iter().map(|(k, v)| (*k, v.clone())).collect();
     let entry_points_by_type = to_legacy_entry_points_by_type(&entry_points_by_type)?;
-    // Here we order the program passing it to a wrapper of BTreeMaps in order to always obtain the same
-    // result due to HashMap disruptions
-    // let ordered_program = order_program(&contract_class.program);
-    let compressed_program = compress(&contract_class.program.serialize()?)?;
-    let encoded_program = base64::encode(compressed_program);
-    Ok(ContractClassCore::Legacy(CompressedLegacyContractClass {
-        program: encoded_program.into(),
+    let serialized_program = contract_class.program.serialize()?;
+    Ok(DeployedClass::LegacyClass(LegacyContractClass {
+        program: encoded_program,
         entry_points_by_type,
         abi,
     }))
@@ -239,15 +235,15 @@ pub(crate) fn decompress(data: &[u8]) -> anyhow::Result<Vec<u8>> {
     anyhow::Ok(buf)
 }
 
-/// Returns a [anyhow::Result<LegacyEntryPointsByType>] (starknet-rs type) from
+/// Returns a [anyhow::Result<RawLegacyEntryPoints>] (starknet-rs type) from
 /// a [HashMap<EntryPointType, Vec<EntryPoint>>]
 fn to_legacy_entry_points_by_type(
     entries: &HashMap<EntryPointType, Vec<EntryPoint>>,
-) -> anyhow::Result<LegacyEntryPointsByType> {
+) -> anyhow::Result<RawLegacyEntryPoints> {
     fn collect_entry_points(
         entries: &HashMap<EntryPointType, Vec<EntryPoint>>,
         entry_point_type: EntryPointType,
-    ) -> anyhow::Result<Vec<LegacyContractEntryPoint>> {
+    ) -> anyhow::Result<Vec<RawLegacyEntryPoint>> {
         Ok(entries
             .get(&entry_point_type)
             .ok_or(anyhow!("Missing {:?} entry point", entry_point_type))?
@@ -260,7 +256,7 @@ fn to_legacy_entry_points_by_type(
     let external = collect_entry_points(entries, EntryPointType::External)?;
     let l1_handler = collect_entry_points(entries, EntryPointType::L1Handler).unwrap_or_default();
 
-    Ok(LegacyEntryPointsByType { constructor, external, l1_handler })
+    Ok(RawLegacyEntryPoints { constructor, external, l1_handler })
 }
 
 /// Returns a [anyhow::Result<LegacyEntryPointsByType>] (starknet-rs type) from
@@ -299,12 +295,12 @@ fn from_legacy_entry_points_by_type(entries: &RawLegacyEntryPoints) -> IndexMap<
         })
 }
 
-/// Returns a [LegacyContractEntryPoint] (starknet-rs) from a [EntryPoint]
+/// Returns a [RawLegacyEntryPoint] (starknet-rs) from a [EntryPoint]
 /// (starknet-api)
-fn to_legacy_entry_point(entry_point: EntryPoint) -> LegacyContractEntryPoint {
+fn to_legacy_entry_point(entry_point: EntryPoint) -> RawLegacyEntryPoint {
     let selector = entry_point.selector.0.to_felt();
     let offset = entry_point.offset.0;
-    LegacyContractEntryPoint { selector, offset }
+    RawLegacyEntryPoint { selector, offset }
 }
 
 /// Returns a [SierraEntryPoint] (starknet-rs) from a [EntryPointV1]
