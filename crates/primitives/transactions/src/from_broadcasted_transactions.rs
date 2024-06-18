@@ -81,7 +81,7 @@ impl ToAccountTransaction for BroadcastedTransaction {
 
 #[inline]
 pub fn fee_from_felt(fee: Felt) -> stx::Fee {
-    let digits = fee.to_le_digits();
+    let digits = fee.to_be_digits();
     if digits[0] != 0 || digits[1] != 0 {
         // return Err(BroadcastedTransactionConversionError::MaxFeeTooBig);
         panic!("Max fee should not be greater than u128::MAX")
