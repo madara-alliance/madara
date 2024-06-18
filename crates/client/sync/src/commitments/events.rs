@@ -3,7 +3,7 @@ use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use dc_db::storage_handler::bonsai_identifier;
-use dp_convert::core_felt::CoreFelt;
+use dp_convert::to_felt::ToFelt;
 use rayon::prelude::*;
 use starknet_api::transaction::Event;
 use starknet_types_core::felt::Felt;
@@ -20,10 +20,10 @@ use starknet_types_core::hash::{Pedersen, StarkHash};
 /// The event hash as `Felt`.
 pub fn calculate_event_hash(event: &Event) -> Felt {
     let (keys_hash, data_hash) = rayon::join(
-        || Pedersen::hash_array(&event.content.keys.iter().map(CoreFelt::into_core_felt).collect::<Vec<Felt>>()),
-        || Pedersen::hash_array(&event.content.data.0.iter().map(CoreFelt::into_core_felt).collect::<Vec<Felt>>()),
+        || Pedersen::hash_array(&event.content.keys.iter().map(ToFelt::to_felt).collect::<Vec<Felt>>()),
+        || Pedersen::hash_array(&event.content.data.0.iter().map(ToFelt::to_felt).collect::<Vec<Felt>>()),
     );
-    let from_address = event.from_address.into_core_felt();
+    let from_address = event.from_address.to_felt();
     Pedersen::hash_array(&[from_address, keys_hash, data_hash])
 }
 

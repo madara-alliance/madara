@@ -15,8 +15,8 @@ use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTran
 use blockifier::versioned_constants::VersionedConstants;
 use dc_db::storage_handler::StorageView;
 use dp_block::DeoxysBlockInfo;
-use dp_convert::core_felt::CoreFelt;
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_felt::ToFelt;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_simulations::SimulationFlags;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
@@ -43,8 +43,8 @@ pub fn block_context(_client: &Starknet, block_info: &DeoxysBlockInfo) -> Result
 
     // safe unwrap because address is always valid and static
     let fee_token_address = FeeTokenAddresses {
-        strk_fee_token_address: STRK_TOKEN_ADDR.into_stark_felt().try_into().unwrap(),
-        eth_fee_token_address: ETH_TOKEN_ADDR.into_stark_felt().try_into().unwrap(),
+        strk_fee_token_address: STRK_TOKEN_ADDR.to_stark_felt().try_into().unwrap(),
+        eth_fee_token_address: ETH_TOKEN_ADDR.to_stark_felt().try_into().unwrap(),
     };
     let chain_id = starknet_api::core::ChainId("SN_MAIN".to_string());
 
@@ -140,7 +140,7 @@ pub fn call_contract(
         })?;
 
     log::debug!("Successfully called a smart contract function: {:?}", res);
-    let result = res.execution.retdata.0.iter().map(|x| x.into_core_felt()).collect();
+    let result = res.execution.retdata.0.iter().map(|x| x.to_felt()).collect();
     Ok(result)
 }
 

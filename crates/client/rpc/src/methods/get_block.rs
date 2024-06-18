@@ -1,5 +1,5 @@
 use dp_block::{BlockId, BlockTag};
-use dp_convert::core_felt::CoreFelt;
+use dp_convert::to_felt::ToFelt;
 use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{
@@ -23,13 +23,13 @@ pub(crate) fn get_block_with_txs(starknet: &Starknet, block_id: &BlockId) -> Rpc
         .transactions()
         .iter()
         .zip(block.tx_hashes())
-        .map(|(tx, tx_hash)| to_starknet_core_tx(tx, tx_hash.into_core_felt()))
+        .map(|(tx, tx_hash)| to_starknet_core_tx(tx, tx_hash.to_felt()))
         .collect();
 
-    let parent_hash = block.header().parent_block_hash.into_core_felt();
-    let new_root = block.header().global_state_root.into_core_felt();
+    let parent_hash = block.header().parent_block_hash.to_felt();
+    let new_root = block.header().global_state_root.to_felt();
     let timestamp = block.header().block_timestamp;
-    let sequencer_address = block.header().sequencer_address.into_core_felt();
+    let sequencer_address = block.header().sequencer_address.to_felt();
     let l1_gas_price = l1_gas_price(&block);
     let l1_data_gas_price = l1_data_gas_price(&block);
     let starknet_version = starknet_version(&block);
@@ -57,7 +57,7 @@ pub(crate) fn get_block_with_txs(starknet: &Starknet, block_id: &BlockId) -> Rpc
             } else {
                 BlockStatus::AcceptedOnL2
             };
-            let block_hash = block.block_hash().into_core_felt();
+            let block_hash = block.block_hash().to_felt();
             let block_with_tx_hashes = BlockWithTxs {
                 transactions,
                 status,
@@ -88,13 +88,13 @@ pub(crate) fn get_block_with_tx_hashes(
         .or_internal_server_error("Error getting block from db")?
         .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    let block_hash_as_field = block.block_hash().into_core_felt();
-    let block_txs_hashes = block.tx_hashes().iter().map(CoreFelt::into_core_felt).collect();
+    let block_hash_as_field = block.block_hash().to_felt();
+    let block_txs_hashes = block.tx_hashes().iter().map(ToFelt::to_felt).collect();
 
-    let parent_hash = block.header().parent_block_hash.into_core_felt();
-    let new_root = block.header().global_state_root.into_core_felt();
+    let parent_hash = block.header().parent_block_hash.to_felt();
+    let new_root = block.header().global_state_root.to_felt();
     let timestamp = block.header().block_timestamp;
-    let sequencer_address = block.header().sequencer_address.into_core_felt();
+    let sequencer_address = block.header().sequencer_address.to_felt();
     let l1_gas_price = l1_gas_price(&block);
     let l1_data_gas_price = l1_data_gas_price(&block);
     let starknet_version = starknet_version(&block);

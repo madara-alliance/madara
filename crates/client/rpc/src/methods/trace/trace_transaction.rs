@@ -1,6 +1,6 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
-use dp_convert::core_felt::CoreFelt;
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_felt::ToFelt;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_transactions::TxType;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::{Transaction, TransactionHash};
@@ -17,7 +17,7 @@ use crate::Starknet;
 pub async fn trace_transaction(starknet: &Starknet, transaction_hash: Felt) -> RpcResult<TransactionTraceWithHash> {
     let (block, tx_info) = starknet
         .block_storage()
-        .find_tx_hash_block(&TransactionHash(transaction_hash.into_stark_felt()))
+        .find_tx_hash_block(&TransactionHash(transaction_hash.to_stark_felt()))
         .or_internal_server_error("Error while getting block from tx hash")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
@@ -34,7 +34,7 @@ pub async fn trace_transaction(starknet: &Starknet, transaction_hash: Felt) -> R
         .zip(block.tx_hashes())
         .filter(|(tx, _)| !matches!(tx, Transaction::Deploy(_)))
         .take(tx_index + 1)
-        .map(|(tx, tx_hash)| (tx, tx_hash.into_core_felt()))
+        .map(|(tx, tx_hash)| (tx, tx_hash.to_felt()))
         .collect();
 
     let transactions_blockifier = blockifier_transactions(starknet, transaction_with_hash)?;

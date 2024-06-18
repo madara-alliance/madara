@@ -1,7 +1,7 @@
 use blockifier::state::cached_state::CommitmentStateDiff;
 use dc_db::storage_handler::DeoxysStorageError;
 use dc_db::DeoxysBackend;
-use dp_convert::core_felt::CoreFelt;
+use dp_convert::to_felt::ToFelt;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
@@ -33,7 +33,7 @@ pub fn class_trie_root(
         .iter()
         .par_bridge()
         .map(|(class_hash, compiled_class_hash)| {
-            let compiled_class_hash = compiled_class_hash.into_core_felt();
+            let compiled_class_hash = compiled_class_hash.to_felt();
 
             let hash = Poseidon::hash(&CONTRACT_CLASS_HASH_VERSION, &compiled_class_hash);
 

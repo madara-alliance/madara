@@ -8,57 +8,57 @@ use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{ContractAddressSalt, EventKey, TransactionHash};
 use starknet_core::types::EthAddress;
 
-pub trait CoreFelt {
-    fn into_core_felt(self) -> Felt;
+pub trait ToFelt {
+    fn to_felt(self) -> Felt;
 }
 
-impl CoreFelt for StarkFelt {
-    fn into_core_felt(self) -> Felt {
+impl ToFelt for StarkFelt {
+    fn to_felt(self) -> Felt {
         Felt::from_bytes_be_slice(self.bytes())
     }
 }
 
-impl CoreFelt for &StarkFelt {
-    fn into_core_felt(self) -> Felt {
+impl ToFelt for &StarkFelt {
+    fn to_felt(self) -> Felt {
         Felt::from_bytes_be_slice(self.bytes())
     }
 }
 
-impl CoreFelt for EthAddress {
-    fn into_core_felt(self) -> Felt {
+impl ToFelt for EthAddress {
+    fn to_felt(self) -> Felt {
         self.into()
     }
 }
 
-impl CoreFelt for &EthAddress {
-    fn into_core_felt(self) -> Felt {
-        self.clone().into_core_felt()
+impl ToFelt for &EthAddress {
+    fn to_felt(self) -> Felt {
+        self.clone().to_felt()
     }
 }
 
-impl CoreFelt for PatriciaKey {
-    fn into_core_felt(self) -> Felt {
-        self.key().into_core_felt()
+impl ToFelt for PatriciaKey {
+    fn to_felt(self) -> Felt {
+        self.key().to_felt()
     }
 }
 
-impl CoreFelt for &PatriciaKey {
-    fn into_core_felt(self) -> Felt {
-        self.deref().into_core_felt()
+impl ToFelt for &PatriciaKey {
+    fn to_felt(self) -> Felt {
+        self.deref().to_felt()
     }
 }
 
 macro_rules! impl_for_wrapper {
     ($arg:ty) => {
-        impl CoreFelt for $arg {
-            fn into_core_felt(self) -> Felt {
-                self.0.into_core_felt()
+        impl ToFelt for $arg {
+            fn to_felt(self) -> Felt {
+                self.0.to_felt()
             }
         }
 
-        impl CoreFelt for &$arg {
-            fn into_core_felt(self) -> Felt {
-                self.0.into_core_felt()
+        impl ToFelt for &$arg {
+            fn to_felt(self) -> Felt {
+                self.0.to_felt()
             }
         }
     };

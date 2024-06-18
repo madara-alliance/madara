@@ -1,8 +1,6 @@
-use dp_convert::core_felt::CoreFelt;
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_felt::ToFelt;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
-use starknet_api::core::ContractAddress;
-use starknet_api::state::StorageKey;
 use starknet_core::types::BlockId;
 use starknet_types_core::felt::Felt;
 
@@ -42,8 +40,8 @@ use crate::Starknet;
 pub fn get_storage_at(starknet: &Starknet, contract_address: Felt, key: Felt, block_id: BlockId) -> RpcResult<Felt> {
     let block_number = starknet.get_block_n(block_id)?;
 
-    let contract_address = ContractAddress(contract_address.into_stark_felt().try_into().unwrap());
-    let key = StorageKey(key.into_stark_felt().try_into().unwrap());
+    let contract_address = contract_address.to_stark_felt().try_into().unwrap();
+    let key = key.to_stark_felt().try_into().unwrap();
 
     // Check if the contract exists at the given address in the specified block.
     match starknet
@@ -63,5 +61,5 @@ pub fn get_storage_at(starknet: &Starknet, contract_address: Felt, key: Felt, bl
         .or_internal_server_error("Failed to retrieve contract storage")?
         .unwrap_or_default();
 
-    Ok(value.into_core_felt())
+    Ok(value.to_felt())
 }

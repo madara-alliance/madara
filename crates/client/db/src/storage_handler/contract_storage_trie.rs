@@ -47,7 +47,7 @@ impl ContractStorageTrieView<'_> {
             .get_key_value_pairs(conv_contract_identifier(identifier))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .into_iter()
-            .map(|(k, v)| (StorageKey(starkfelt(&k).try_into().unwrap()), starkfelt(&v)))
+            .map(|(k, v)| (starkfelt(&k).try_into().unwrap(), starkfelt(&v)))
             .collect())
     }
 
@@ -100,7 +100,7 @@ impl ContractStorageTrieViewMut<'_> {
             .get_key_value_pairs(conv_contract_identifier(identifier))
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?
             .into_iter()
-            .map(|(k, v)| (StorageKey(starkfelt(&k).try_into().unwrap()), starkfelt(&v)))
+            .map(|(k, v)| (starkfelt(&k).try_into().unwrap(), starkfelt(&v)))
             .collect())
     }
 

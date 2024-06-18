@@ -7,7 +7,7 @@ use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1, EntryPointV1,
 };
 use cairo_vm::types::program::Program;
-use dp_convert::core_felt::CoreFelt;
+use dp_convert::to_felt::ToFelt;
 use dp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -304,7 +304,7 @@ fn from_legacy_entry_points_by_type(entries: &LegacyEntryPointsByType) -> IndexM
 /// Returns a [LegacyContractEntryPoint] (starknet-rs) from a [EntryPoint]
 /// (starknet-api)
 fn to_legacy_entry_point(entry_point: EntryPoint) -> LegacyContractEntryPoint {
-    let selector = entry_point.selector.0.into_core_felt();
+    let selector = entry_point.selector.0.to_felt();
     let offset = entry_point.offset.0;
     LegacyContractEntryPoint { selector, offset }
 }
@@ -312,7 +312,7 @@ fn to_legacy_entry_point(entry_point: EntryPoint) -> LegacyContractEntryPoint {
 /// Returns a [SierraEntryPoint] (starknet-rs) from a [EntryPointV1]
 /// (starknet-api)
 fn to_entry_point(entry_point: EntryPointV1, index: u64) -> SierraEntryPoint {
-    let selector = entry_point.selector.0.into_core_felt();
+    let selector = entry_point.selector.0.to_felt();
     let function_idx = index;
     SierraEntryPoint { selector, function_idx }
 }

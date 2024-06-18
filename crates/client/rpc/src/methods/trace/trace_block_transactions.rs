@@ -1,4 +1,4 @@
-use dp_convert::core_felt::CoreFelt;
+use dp_convert::to_felt::ToFelt;
 use dp_transactions::TxType;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::Transaction;
@@ -19,7 +19,7 @@ pub async fn trace_block_transactions(
     let block_number = block.block_n();
     let block_context = block_context(starknet, block.info())?;
 
-    let block_txs_hashes = block.tx_hashes().iter().map(CoreFelt::into_core_felt);
+    let block_txs_hashes = block.tx_hashes().iter().map(ToFelt::to_felt);
 
     // create a vector of transactions with their corresponding hashes without deploy transactions,
     // blockifier does not support deploy transactions

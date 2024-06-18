@@ -1,5 +1,5 @@
 use dp_block::{BlockId, BlockTag};
-use dp_convert::core_felt::CoreFelt;
+use dp_convert::to_felt::ToFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{SyncStatus, SyncStatusType};
 
@@ -32,10 +32,9 @@ pub async fn syncing(starknet: &Starknet) -> RpcResult<SyncStatusType> {
         None => return Ok(SyncStatusType::NotSyncing),
     };
     let starting_block_num = starknet.starting_block;
-    let starting_block_hash =
-        starknet.get_block_info(BlockId::Number(starting_block_num))?.block_hash().into_core_felt();
+    let starting_block_hash = starknet.get_block_info(BlockId::Number(starting_block_num))?.block_hash().to_felt();
     let current_block_num = current_block_info.block_n();
-    let current_block_hash = current_block_info.block_hash().into_core_felt();
+    let current_block_hash = current_block_info.block_hash().to_felt();
 
     Ok(SyncStatusType::Syncing(SyncStatus {
         starting_block_num,

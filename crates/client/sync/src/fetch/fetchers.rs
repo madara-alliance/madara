@@ -6,8 +6,8 @@ use dc_db::storage_handler::primitives::contract_class::{ContractClassData, Cont
 use dc_db::storage_handler::{DeoxysStorageError, StorageView};
 use dc_db::DeoxysBackend;
 use dp_block::DeoxysBlock;
-use dp_convert::felt_wrapper::FeltWrapper;
 use dp_convert::state_update::ToStateUpdateCore;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use itertools::Itertools;
 use starknet_api::core::ClassHash;
@@ -182,7 +182,7 @@ async fn fetch_class(
 ) -> Result<ContractClassData, ProviderError> {
     let core_class = provider.get_class(BlockIdCore::Number(block_number), class_hash).await?;
     Ok(ContractClassData {
-        hash: ClassHash(class_hash.into_stark_felt()),
+        hash: ClassHash(class_hash.to_stark_felt()),
         contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
     })
 }
@@ -192,6 +192,6 @@ async fn fetch_class(
 /// Since a change in class definition will result in a change in class hash,
 /// this means we only need to check for class hashes in the db.
 fn is_missing_class(backend: &DeoxysBackend, class_hash: &Felt) -> Result<bool, DeoxysStorageError> {
-    let class_hash = ClassHash(class_hash.into_stark_felt());
+    let class_hash = ClassHash(class_hash.to_stark_felt());
     backend.contract_class_data().contains(&class_hash).map(|x| !x)
 }

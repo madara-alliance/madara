@@ -15,7 +15,7 @@ use cairo_lang_starknet_classes::contract_class::{
 };
 use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use flate2::read::GzDecoder;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_api::core::{
@@ -133,11 +133,11 @@ fn declare_to_account_transaction(
             let declare_tx = stx::DeclareTransaction::V1(stx::DeclareTransactionV0V1 {
                 max_fee: fee_from_felt(max_fee),
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Nonce(nonce.into_stark_felt()),
-                class_hash: ClassHash(class_hash.into_stark_felt()),
-                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                nonce: Nonce(nonce.to_stark_felt()),
+                class_hash: ClassHash(class_hash.to_stark_felt()),
+                sender_address: ContractAddress::try_from(sender_address.to_stark_felt())
                     .expect("expected contract address"),
             });
 
@@ -179,13 +179,13 @@ fn declare_to_account_transaction(
             let declare_tx = stx::DeclareTransaction::V2(stx::DeclareTransactionV2 {
                 max_fee: fee_from_felt(max_fee),
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Nonce(nonce.into_stark_felt()),
-                class_hash: ClassHash(contract_class.class_hash().into_stark_felt()),
-                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                nonce: Nonce(nonce.to_stark_felt()),
+                class_hash: ClassHash(contract_class.class_hash().to_stark_felt()),
+                sender_address: ContractAddress::try_from(sender_address.to_stark_felt())
                     .expect("expected contract address"),
-                compiled_class_hash: CompiledClassHash(compiled_class_hash.into_stark_felt()),
+                compiled_class_hash: CompiledClassHash(compiled_class_hash.to_stark_felt()),
             });
 
             // TODO: use real chain id
@@ -229,24 +229,24 @@ fn declare_to_account_transaction(
             );
 
             let class_hash = contract_class.clone().class_hash();
-            let class_hash = ClassHash(class_hash.into_stark_felt());
+            let class_hash = ClassHash(class_hash.to_stark_felt());
 
             let declare_tx = stx::DeclareTransaction::V3(stx::DeclareTransactionV3 {
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Nonce(nonce.into_stark_felt()),
-                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                nonce: Nonce(nonce.to_stark_felt()),
+                sender_address: ContractAddress::try_from(sender_address.to_stark_felt())
                     .expect(CONTRACT_ADDRESS_ERROR),
                 class_hash,
-                compiled_class_hash: CompiledClassHash(compiled_class_hash.into_stark_felt()),
+                compiled_class_hash: CompiledClassHash(compiled_class_hash.to_stark_felt()),
                 resource_bounds: core_resources_to_api_resources(resource_bounds),
                 tip: stx::Tip(tip),
                 paymaster_data: stx::PaymasterData(
-                    paymaster_data.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    paymaster_data.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 account_deployment_data: stx::AccountDeploymentData(
-                    account_deployment_data.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    account_deployment_data.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
                 fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
@@ -286,14 +286,12 @@ fn invoke_to_account_transaction(
             let invoke_tx = stx::InvokeTransaction::V1(stx::InvokeTransactionV1 {
                 max_fee: fee_from_felt(max_fee),
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Nonce(nonce.into_stark_felt()),
-                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                nonce: Nonce(nonce.to_stark_felt()),
+                sender_address: ContractAddress::try_from(sender_address.to_stark_felt())
                     .expect(CONTRACT_ADDRESS_ERROR),
-                calldata: stx::Calldata(
-                    calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
-                ),
+                calldata: stx::Calldata(calldata.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>().into()),
             });
 
             let tx_hash = invoke_tx.compute_hash(Felt::ZERO, false, None);
@@ -317,21 +315,19 @@ fn invoke_to_account_transaction(
         }) => {
             let invoke_tx = stx::InvokeTransaction::V3(stx::InvokeTransactionV3 {
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Nonce(nonce.into_stark_felt()),
-                sender_address: ContractAddress::try_from(sender_address.into_stark_felt())
+                nonce: Nonce(nonce.to_stark_felt()),
+                sender_address: ContractAddress::try_from(sender_address.to_stark_felt())
                     .expect(CONTRACT_ADDRESS_ERROR),
-                calldata: stx::Calldata(
-                    calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
-                ),
+                calldata: stx::Calldata(calldata.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>().into()),
                 resource_bounds: core_resources_to_api_resources(resource_bounds),
                 tip: stx::Tip(tip),
                 paymaster_data: stx::PaymasterData(
-                    paymaster_data.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    paymaster_data.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 account_deployment_data: stx::AccountDeploymentData(
-                    account_deployment_data.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    account_deployment_data.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
                 fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
@@ -363,21 +359,21 @@ fn deploy_account_to_account_transaction(
             let deploy_account_tx = stx::DeployAccountTransaction::V1(stx::DeployAccountTransactionV1 {
                 max_fee: fee_from_felt(max_fee),
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Nonce(nonce.into_stark_felt()),
-                contract_address_salt: ContractAddressSalt(contract_address_salt.into_stark_felt()),
+                nonce: Nonce(nonce.to_stark_felt()),
+                contract_address_salt: ContractAddressSalt(contract_address_salt.to_stark_felt()),
                 constructor_calldata: stx::Calldata(
-                    constructor_calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
+                    constructor_calldata.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>().into(),
                 ),
-                class_hash: ClassHash(class_hash.into_stark_felt()),
+                class_hash: ClassHash(class_hash.to_stark_felt()),
             });
 
             let tx_hash = deploy_account_tx.compute_hash(Felt::ZERO, false, None);
 
             let contract_address = calculate_contract_address(
-                ContractAddressSalt(contract_address_salt.into_stark_felt()),
-                ClassHash(class_hash.into_stark_felt()),
+                ContractAddressSalt(contract_address_salt.to_stark_felt()),
+                ClassHash(class_hash.to_stark_felt()),
                 &deploy_account_tx.constructor_calldata(),
                 Default::default(),
             )
@@ -402,18 +398,18 @@ fn deploy_account_to_account_transaction(
         }) => {
             let deploy_account_tx = stx::DeployAccountTransaction::V3(stx::DeployAccountTransactionV3 {
                 signature: stx::TransactionSignature(
-                    signature.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    signature.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
-                nonce: Nonce(nonce.into_stark_felt()),
-                contract_address_salt: ContractAddressSalt(contract_address_salt.into_stark_felt()),
+                nonce: Nonce(nonce.to_stark_felt()),
+                contract_address_salt: ContractAddressSalt(contract_address_salt.to_stark_felt()),
                 constructor_calldata: stx::Calldata(
-                    constructor_calldata.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>().into(),
+                    constructor_calldata.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>().into(),
                 ),
-                class_hash: ClassHash(class_hash.into_stark_felt()),
+                class_hash: ClassHash(class_hash.to_stark_felt()),
                 resource_bounds: core_resources_to_api_resources(resource_bounds),
                 tip: stx::Tip(tip),
                 paymaster_data: stx::PaymasterData(
-                    paymaster_data.iter().map(|x| x.into_stark_felt()).collect::<Vec<StarkFelt>>(),
+                    paymaster_data.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
                 nonce_data_availability_mode: core_da_to_api_da(nonce_data_availability_mode),
                 fee_data_availability_mode: core_da_to_api_da(fee_data_availability_mode),
@@ -422,8 +418,8 @@ fn deploy_account_to_account_transaction(
             let tx_hash = deploy_account_tx.compute_hash(Felt::ZERO, false, None);
 
             let contract_address = calculate_contract_address(
-                ContractAddressSalt(contract_address_salt.into_stark_felt()),
-                ClassHash(class_hash.into_stark_felt()),
+                ContractAddressSalt(contract_address_salt.to_stark_felt()),
+                ClassHash(class_hash.to_stark_felt()),
                 &deploy_account_tx.constructor_calldata(),
                 Default::default(),
             )
@@ -454,7 +450,7 @@ fn instantiate_blockifier_contract_class(
             .iter()
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
-                    selector: EntryPointSelector(entry_point.selector.into_stark_felt()),
+                    selector: EntryPointSelector(entry_point.selector.to_stark_felt()),
                     offset: EntryPointOffset(entry_point.offset),
                 }
             })
@@ -468,7 +464,7 @@ fn instantiate_blockifier_contract_class(
             .iter()
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
-                    selector: EntryPointSelector(entry_point.selector.into_stark_felt()),
+                    selector: EntryPointSelector(entry_point.selector.to_stark_felt()),
                     offset: EntryPointOffset(entry_point.offset),
                 }
             })
@@ -482,7 +478,7 @@ fn instantiate_blockifier_contract_class(
             .iter()
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
-                    selector: EntryPointSelector(entry_point.selector.into_stark_felt()),
+                    selector: EntryPointSelector(entry_point.selector.to_stark_felt()),
                     offset: EntryPointOffset(entry_point.offset),
                 }
             })

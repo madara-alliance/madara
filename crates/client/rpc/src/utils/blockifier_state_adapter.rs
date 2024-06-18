@@ -8,7 +8,7 @@ use blockifier::state::state_api::{State, StateReader, StateResult};
 use dc_db::storage_handler::StorageView;
 use dc_db::DeoxysBackend;
 use dp_block::BlockId;
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use indexmap::IndexMap;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
@@ -48,7 +48,7 @@ impl StateReader for BlockifierStateAdapter {
         if *contract_address.key() == StarkFelt::ONE {
             let block_number = (*key.0.key()).try_into().map_err(|_| StateError::OldBlockHashNotProvided)?;
             match self.backend.mapping().get_block_hash(&BlockId::Number(block_number)) {
-                Ok(Some(block_hash)) => return Ok(block_hash.into_stark_felt()),
+                Ok(Some(block_hash)) => return Ok(block_hash.to_stark_felt()),
                 Ok(None) => return Err(StateError::OldBlockHashNotProvided),
                 Err(_) => {
                     return Err(StateError::StateReadError(format!(

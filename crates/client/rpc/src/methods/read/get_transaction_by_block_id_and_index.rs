@@ -1,4 +1,4 @@
-use dp_convert::core_felt::CoreFelt;
+use dp_convert::to_felt::ToFelt;
 use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, Transaction};
@@ -35,5 +35,5 @@ pub fn get_transaction_by_block_id_and_index(
     let tx_hash = block.tx_hashes().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
     let tx = block.transactions().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
 
-    Ok(to_starknet_core_tx(tx, tx_hash.into_core_felt()))
+    Ok(to_starknet_core_tx(tx, tx_hash.to_felt()))
 }

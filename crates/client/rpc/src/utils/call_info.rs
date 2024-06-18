@@ -1,5 +1,5 @@
 use blockifier::execution::call_info::CallInfo;
-use dp_convert::core_felt::CoreFelt;
+use dp_convert::to_felt::ToFelt;
 use starknet_core::types::{
     ComputationResources, DataAvailabilityResources, DataResources, Event, ExecutionResources, Felt, MsgToL1,
 };
@@ -11,9 +11,9 @@ pub(crate) fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> 
         .events
         .iter()
         .map(|ordered_event| Event {
-            from_address: address.into_core_felt(),
-            keys: ordered_event.event.keys.iter().map(|key| key.0.into_core_felt()).collect(),
-            data: ordered_event.event.data.0.iter().map(CoreFelt::into_core_felt).collect(),
+            from_address: address.to_felt(),
+            keys: ordered_event.event.keys.iter().map(|key| key.0.to_felt()).collect(),
+            data: ordered_event.event.data.0.iter().map(ToFelt::to_felt).collect(),
         })
         .collect();
 
@@ -29,9 +29,9 @@ pub(crate) fn extract_messages_from_call_info(call_info: &CallInfo) -> Vec<MsgTo
         .l2_to_l1_messages
         .iter()
         .map(|msg| MsgToL1 {
-            from_address: address.into_core_felt(),
+            from_address: address.to_felt(),
             to_address: Felt::from_bytes_be_slice(msg.message.to_address.0.to_fixed_bytes().as_slice()),
-            payload: msg.message.payload.0.iter().map(CoreFelt::into_core_felt).collect(),
+            payload: msg.message.payload.0.iter().map(ToFelt::to_felt).collect(),
         })
         .collect();
 

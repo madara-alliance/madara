@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use blockifier::block::GasPrices;
 use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_transactions::from_broadcasted_transactions::fee_from_felt;
 use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkFelt;
@@ -38,11 +38,11 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
     let transactions = transactions(block.transactions);
     let reverted_transactions = reverted_transactions(&block.transaction_receipts);
     let events = events(&block.transaction_receipts);
-    let parent_block_hash = block.parent_block_hash.into_stark_felt();
+    let parent_block_hash = block.parent_block_hash.to_stark_felt();
     let block_hash = block.block_hash.expect("no block hash provided");
     let block_number = block.block_number.expect("no block number provided");
     let block_timestamp = block.timestamp;
-    let global_state_root = block.state_root.expect("no state root provided").into_stark_felt();
+    let global_state_root = block.state_root.expect("no state root provided").to_stark_felt();
     let sequencer_address = block.sequencer_address.map_or(contract_address(Felt::ZERO), contract_address);
     let transaction_count = transactions.len() as u128;
     let event_count = events.len() as u128;
@@ -51,9 +51,9 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
         calculate_tx_and_event_commitments(&transactions, &events, chain_id, block_number);
 
     // Provisory conversion while Starknet-api doesn't support the universal `Felt` type
-    let transaction_commitment = transaction_commitment.into_stark_felt();
-    let event_commitment = event_commitment.into_stark_felt();
-    let txs_hashes: Vec<StarkFelt> = txs_hashes.iter().map(|felt| (*felt).into_stark_felt()).collect();
+    let transaction_commitment = transaction_commitment.to_stark_felt();
+    let event_commitment = event_commitment.to_stark_felt();
+    let txs_hashes: Vec<StarkFelt> = txs_hashes.iter().map(|felt| (*felt).to_stark_felt()).collect();
 
     let protocol_version = block.starknet_version.unwrap_or_default();
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
@@ -93,7 +93,7 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
         DeoxysBlockInfo::new(
             header,
             txs_hashes.into_iter().map(TransactionHash).collect(),
-            BlockHash(block_hash.into_stark_felt()),
+            BlockHash(block_hash.to_stark_felt()),
         ),
         DeoxysBlockInner::new(transactions, ordered_events),
     );
@@ -271,7 +271,7 @@ fn reverted_transactions(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<Tra
     receipts
         .iter()
         .filter(|r| r.execution_status == Some(p::TransactionExecutionStatus::Reverted))
-        .map(|r| TransactionHash(r.transaction_hash.into_stark_felt()))
+        .map(|r| TransactionHash(r.transaction_hash.to_stark_felt()))
         .collect()
 }
 
@@ -280,39 +280,39 @@ fn fee(fee: Felt) -> starknet_api::transaction::Fee {
 }
 
 fn signature(signature: Vec<Felt>) -> starknet_api::transaction::TransactionSignature {
-    starknet_api::transaction::TransactionSignature(signature.into_iter().map(FeltWrapper::into_stark_felt).collect())
+    starknet_api::transaction::TransactionSignature(signature.into_iter().map(ToStarkFelt::to_stark_felt).collect())
 }
 
 fn contract_address(address: Felt) -> starknet_api::core::ContractAddress {
-    starknet_api::core::ContractAddress(address.into_stark_felt().try_into().unwrap())
+    address.to_stark_felt().try_into().unwrap()
 }
 
 fn entry_point(entry_point: Felt) -> starknet_api::core::EntryPointSelector {
-    starknet_api::core::EntryPointSelector(entry_point.into_stark_felt())
+    starknet_api::core::EntryPointSelector(entry_point.to_stark_felt())
 }
 
 fn call_data(call_data: Vec<Felt>) -> starknet_api::transaction::Calldata {
-    starknet_api::transaction::Calldata(Arc::new(call_data.into_iter().map(FeltWrapper::into_stark_felt).collect()))
+    starknet_api::transaction::Calldata(Arc::new(call_data.into_iter().map(ToStarkFelt::to_stark_felt).collect()))
 }
 
 fn nonce(nonce: Felt) -> starknet_api::core::Nonce {
-    starknet_api::core::Nonce(nonce.into_stark_felt())
+    starknet_api::core::Nonce(nonce.to_stark_felt())
 }
 
 fn class_hash(class_hash: Felt) -> starknet_api::core::ClassHash {
-    starknet_api::core::ClassHash(class_hash.into_stark_felt())
+    starknet_api::core::ClassHash(class_hash.to_stark_felt())
 }
 
 fn compiled_class_hash(compiled_class_hash: Felt) -> starknet_api::core::CompiledClassHash {
-    starknet_api::core::CompiledClassHash(compiled_class_hash.into_stark_felt())
+    starknet_api::core::CompiledClassHash(compiled_class_hash.to_stark_felt())
 }
 
 fn contract_address_salt(contract_address_salt: Felt) -> starknet_api::transaction::ContractAddressSalt {
-    starknet_api::transaction::ContractAddressSalt(contract_address_salt.into_stark_felt())
+    starknet_api::transaction::ContractAddressSalt(contract_address_salt.to_stark_felt())
 }
 
 fn transaction_version(version: Felt) -> starknet_api::transaction::TransactionVersion {
-    starknet_api::transaction::TransactionVersion(version.into_stark_felt())
+    starknet_api::transaction::TransactionVersion(version.to_stark_felt())
 }
 
 fn resource_bounds(
@@ -355,12 +355,12 @@ fn data_availability_mode(
 }
 
 fn paymaster_data(paymaster_data: Vec<Felt>) -> starknet_api::transaction::PaymasterData {
-    starknet_api::transaction::PaymasterData(paymaster_data.into_iter().map(FeltWrapper::into_stark_felt).collect())
+    starknet_api::transaction::PaymasterData(paymaster_data.into_iter().map(ToStarkFelt::to_stark_felt).collect())
 }
 
 fn account_deployment_data(account_deployment_data: Vec<Felt>) -> starknet_api::transaction::AccountDeploymentData {
     starknet_api::transaction::AccountDeploymentData(
-        account_deployment_data.into_iter().map(FeltWrapper::into_stark_felt).collect(),
+        account_deployment_data.into_iter().map(ToStarkFelt::to_stark_felt).collect(),
     )
 }
 
@@ -412,8 +412,8 @@ fn event(event: &p::Event) -> starknet_api::transaction::Event {
     Event {
         from_address: contract_address(event.from_address),
         content: EventContent {
-            keys: event.keys.iter().copied().map(FeltWrapper::into_stark_felt).map(EventKey).collect(),
-            data: EventData(event.data.iter().copied().map(FeltWrapper::into_stark_felt).collect()),
+            keys: event.keys.iter().copied().map(ToStarkFelt::to_stark_felt).map(EventKey).collect(),
+            data: EventData(event.data.iter().copied().map(ToStarkFelt::to_stark_felt).collect()),
         },
     }
 }

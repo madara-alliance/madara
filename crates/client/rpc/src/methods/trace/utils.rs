@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use dp_convert::core_felt::CoreFelt;
+use dp_convert::to_felt::ToFelt;
 use dp_transactions::TxType;
 use starknet_api::core::ContractAddress;
 use starknet_core::types::{
@@ -22,9 +22,9 @@ pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_
         .enumerate()
         .map(|(index, message)| starknet_core::types::OrderedMessage {
             order: index as u64,
-            payload: message.message.payload.0.iter().map(|x| x.into_core_felt()).collect(),
+            payload: message.message.payload.0.iter().map(|x| x.to_felt()).collect(),
             to_address: Felt::from_bytes_be_slice(message.message.to_address.0.to_fixed_bytes().as_slice()),
-            from_address: call_info.call.storage_address.into_core_felt(),
+            from_address: call_info.call.storage_address.to_felt(),
         })
         .collect()
 }
@@ -36,8 +36,8 @@ fn blockifier_to_starknet_rs_ordered_events(
         .iter()
         .map(|event| starknet_core::types::OrderedEvent {
             order: event.order as u64, // Convert usize to u64
-            keys: event.event.keys.iter().map(CoreFelt::into_core_felt).collect(),
-            data: event.event.data.0.iter().map(CoreFelt::into_core_felt).collect(),
+            keys: event.event.keys.iter().map(ToFelt::to_felt).collect(),
+            data: event.event.data.0.iter().map(ToFelt::to_felt).collect(),
         })
         .collect()
 }
@@ -80,7 +80,7 @@ fn try_get_funtion_invocation_from_call_info(
     // Blockifier call info does not give use the class_hash "if it can be deducted from the storage
     // address". We have to do this decution ourselves here
     let class_hash = if let Some(class_hash) = call_info.call.class_hash {
-        class_hash.into_core_felt()
+        class_hash.to_felt()
     } else if let Some(cached_hash) = class_hash_cache.get(&call_info.call.storage_address) {
         *cached_hash
     } else {
@@ -91,7 +91,7 @@ fn try_get_funtion_invocation_from_call_info(
             return Err(TryFuntionInvocationFromCallInfoError::ContractNotFound);
         };
 
-        let computed_hash = class_hash.into_core_felt();
+        let computed_hash = class_hash.to_felt();
         class_hash_cache.insert(call_info.call.storage_address, computed_hash);
 
         computed_hash
@@ -112,14 +112,14 @@ fn try_get_funtion_invocation_from_call_info(
     };
 
     Ok(starknet_core::types::FunctionInvocation {
-        contract_address: call_info.call.storage_address.0.into_core_felt(),
-        entry_point_selector: call_info.call.entry_point_selector.0.into_core_felt(),
-        calldata: call_info.call.calldata.0.iter().map(|x| x.into_core_felt()).collect(),
-        caller_address: call_info.call.caller_address.0.into_core_felt(),
+        contract_address: call_info.call.storage_address.0.to_felt(),
+        entry_point_selector: call_info.call.entry_point_selector.0.to_felt(),
+        calldata: call_info.call.calldata.0.iter().map(|x| x.to_felt()).collect(),
+        caller_address: call_info.call.caller_address.0.to_felt(),
         class_hash,
         entry_point_type,
         call_type,
-        result: call_info.execution.retdata.0.iter().map(|x| x.into_core_felt()).collect(),
+        result: call_info.execution.retdata.0.iter().map(|x| x.to_felt()).collect(),
         calls: inner_calls,
         events,
         messages,

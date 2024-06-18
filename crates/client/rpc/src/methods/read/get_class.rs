@@ -1,6 +1,6 @@
 use dc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
 use dc_db::storage_handler::StorageView;
-use dp_convert::felt_wrapper::FeltWrapper;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::ClassHash;
 use starknet_core::types::{BlockId, ContractClass, Felt};
@@ -22,7 +22,7 @@ use crate::Starknet;
 /// Returns the contract class definition if found. In case of an error, returns a
 /// `StarknetRpcApiError` indicating either `BlockNotFound` or `ClassHashNotFound`.
 pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> RpcResult<ContractClass> {
-    let class_hash = ClassHash(class_hash.into_stark_felt());
+    let class_hash = ClassHash(class_hash.to_stark_felt());
 
     // check if the given block exists
     starknet.get_block(block_id)?;

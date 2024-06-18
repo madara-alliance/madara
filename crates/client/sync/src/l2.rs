@@ -13,7 +13,7 @@ use dc_db::DeoxysBackend;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::Header;
 use dp_block::{BlockId, BlockTag, DeoxysBlock};
-use dp_convert::core_felt::CoreFelt;
+use dp_convert::to_felt::ToFelt;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
 use starknet_api::transaction::TransactionHash;
@@ -107,7 +107,7 @@ async fn l2_verify_and_apply_task(
             })
             .await?;
 
-            if global_state_root.into_core_felt() != state_root {
+            if global_state_root.to_felt() != state_root {
                 // TODO(fault tolerance): we should have a single rocksdb transaction for the whole l2 update.
                 // let prev_block = block_n.checked_sub(1).expect("no block to revert to");
 
@@ -162,8 +162,8 @@ async fn l2_verify_and_apply_task(
         log::info!(
             "✨ Imported #{} ({}) and updated state root ({})",
             block_n,
-            trim_hash(&block_hash.into_core_felt()),
-            trim_hash(&global_state_root.into_core_felt())
+            trim_hash(&block_hash.to_felt()),
+            trim_hash(&global_state_root.to_felt())
         );
         log::debug!("Imported #{} ({}) and updated state root ({})", block_n, block_hash.0, global_state_root);
 
