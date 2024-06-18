@@ -569,7 +569,7 @@ pub fn casm_contract_class_to_compiled_class(casm_contract_class: &CasmContractC
     }
 }
 
-/// Converts a [BigUint] to a [FieldElement]
+/// Converts a [BigUint] to a [Felt]
 fn biguint_to_felt(value: &BigUint) -> Felt {
     let bytes = value.to_bytes_be();
     Felt::from_bytes_be_slice(bytes.as_slice())

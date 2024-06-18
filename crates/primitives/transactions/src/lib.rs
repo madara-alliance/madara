@@ -11,8 +11,7 @@ use blockifier::transaction::transaction_types::TransactionType;
 use starknet_types_core::felt::Felt;
 
 const SIMULATE_TX_VERSION_OFFSET: Felt =
-    Felt::from_raw([18446744073700081665, 17407, 18446744073709551584, 576460752142434320]);
-// old implementation as a field : FieldElement::from_mont([18446744073700081665, 17407, 18446744073709551584, 576460752142434320]);
+    Felt::from_raw([576460752142434320, 18446744073709551584, 17407, 18446744073700081665]);
 
 /// Legacy check for deprecated txs
 /// See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/` for more details.

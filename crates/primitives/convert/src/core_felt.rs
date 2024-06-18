@@ -7,22 +7,9 @@ use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, EntryPoi
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{ContractAddressSalt, EventKey, TransactionHash};
 use starknet_core::types::EthAddress;
-use starknet_ff::FieldElement;
 
 pub trait CoreFelt {
     fn into_core_felt(self) -> Felt;
-}
-
-impl CoreFelt for FieldElement {
-    fn into_core_felt(self) -> Felt {
-        Felt::from_bytes_be(&self.to_bytes_be())
-    }
-}
-
-impl CoreFelt for &FieldElement {
-    fn into_core_felt(self) -> Felt {
-        Felt::from_bytes_be_slice(&self.to_bytes_be())
-    }
 }
 
 impl CoreFelt for StarkFelt {

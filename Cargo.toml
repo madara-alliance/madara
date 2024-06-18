@@ -90,7 +90,6 @@ cairo-vm = { git = "https://github.com/kasarlabs/cairo-vm", branch = "feature/sc
 
 starknet-core = "0.11"
 starknet-crypto = "0.7"
-starknet-ff = "0.3"
 starknet-providers = "0.11"
 
 starknet-types-core = { version = "0.1", default-features = false, features = [
@@ -157,4 +156,3 @@ prometheus = "0.13.4"
 [patch.crates-io]
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
 starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
-# starknet-ff = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }

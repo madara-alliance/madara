@@ -68,7 +68,7 @@ fn compute_account_deployment_hash(account_deployment_data: &AccountDeploymentDa
 }
 
 // Use a mapping from execution resources to get corresponding fee bounds
-// Encodes this information into 32-byte buffer then converts it into FieldElement
+// Encodes this information into 32-byte buffer then converts it into Felt
 fn prepare_resource_bound_value(resource_bounds_mapping: &ResourceBoundsMapping, resource: Resource) -> Felt {
     let mut buffer = [0u8; 32];
     buffer[2..8].copy_from_slice(match resource {

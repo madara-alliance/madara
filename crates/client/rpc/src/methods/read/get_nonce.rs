@@ -21,7 +21,7 @@ use crate::Starknet;
 /// ### Returns
 ///
 /// Returns the contract's nonce at the requested state. The nonce is returned as a
-/// `FieldElement`, representing the current state of the contract in terms of transactions
+/// `Felt`, representing the current state of the contract in terms of transactions
 /// count or other contract-specific operations. In case of errors, such as
 /// `BLOCK_NOT_FOUND` or `CONTRACT_NOT_FOUND`, returns a `StarknetRpcApiError` indicating the
 /// specific issue.

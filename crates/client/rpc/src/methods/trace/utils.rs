@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use dp_convert::{core_felt::CoreFelt, felt_wrapper::FeltWrapper};
+use dp_convert::core_felt::CoreFelt;
 use dp_transactions::TxType;
 use starknet_api::core::ContractAddress;
 use starknet_core::types::{
@@ -10,11 +10,9 @@ use starknet_core::types::{
     DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, Felt, InvokeTransactionTrace,
     L1HandlerTransactionTrace, RevertedInvocation, TransactionTrace,
 };
-use starknet_ff::FieldElement;
-
-use crate::Starknet;
 
 use super::lib::*;
+use crate::Starknet;
 
 pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core::types::OrderedMessage> {
     call_info
@@ -47,7 +45,7 @@ fn blockifier_to_starknet_rs_ordered_events(
 fn try_get_funtion_invocation_from_call_info(
     starknet: &Starknet,
     call_info: &CallInfo,
-    class_hash_cache: &mut HashMap<ContractAddress, FieldElement>,
+    class_hash_cache: &mut HashMap<ContractAddress, Felt>,
     block_number: u64,
 ) -> Result<starknet_core::types::FunctionInvocation, TryFuntionInvocationFromCallInfoError> {
     let messages = collect_call_info_ordered_messages(call_info);
@@ -82,7 +80,7 @@ fn try_get_funtion_invocation_from_call_info(
     // Blockifier call info does not give use the class_hash "if it can be deducted from the storage
     // address". We have to do this decution ourselves here
     let class_hash = if let Some(class_hash) = call_info.call.class_hash {
-        class_hash.into_field_element()
+        class_hash.into_core_felt()
     } else if let Some(cached_hash) = class_hash_cache.get(&call_info.call.storage_address) {
         *cached_hash
     } else {
@@ -93,13 +91,11 @@ fn try_get_funtion_invocation_from_call_info(
             return Err(TryFuntionInvocationFromCallInfoError::ContractNotFound);
         };
 
-        let computed_hash = FieldElement::from_byte_slice_be(class_hash.0.bytes()).unwrap();
+        let computed_hash = class_hash.into_core_felt();
         class_hash_cache.insert(call_info.call.storage_address, computed_hash);
 
         computed_hash
     };
-
-    let class_hash = class_hash.into_core_felt();
 
     // TODO: Replace this with non default exec resources
     let computation_resources = ComputationResources {
@@ -137,7 +133,7 @@ pub fn tx_execution_infos_to_tx_trace(
     tx_exec_info: &TransactionExecutionInfo,
     block_number: u64,
 ) -> Result<TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
-    let mut class_hash_cache: HashMap<ContractAddress, FieldElement> = HashMap::new();
+    let mut class_hash_cache: HashMap<ContractAddress, Felt> = HashMap::new();
 
     // TODO: Replace this with non default exec resources
     let execution_resources = ExecutionResources {

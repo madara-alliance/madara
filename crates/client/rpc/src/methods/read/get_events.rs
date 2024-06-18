@@ -1,5 +1,3 @@
-use dp_convert::core_felt::CoreFelt;
-use dp_convert::felt_wrapper::FeltWrapper;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage, Felt};
 
@@ -30,7 +28,7 @@ use crate::Starknet;
 /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
 /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
 pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> RpcResult<EventsPage> {
-    let from_address = filter.event_filter.address.map(FeltWrapper::into_field_element);
+    let from_address = filter.event_filter.address;
     let keys = filter.event_filter.keys.unwrap_or_default();
     let chunk_size = filter.result_page_request.chunk_size;
 
@@ -70,7 +68,7 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Rpc
 
         let block_filtered_events: Vec<EmittedEvent> = get_block_events(starknet, &block, pending)
             .into_iter()
-            .filter(|event| event_match_filter(event, from_address.map(CoreFelt::into_core_felt), &keys))
+            .filter(|event| event_match_filter(event, from_address, &keys))
             .collect();
 
         if current_block == from_block && (block_filtered_events.len() as u64) < continuation_token.event_n {

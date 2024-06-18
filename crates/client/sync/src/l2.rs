@@ -14,7 +14,6 @@ use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::Header;
 use dp_block::{BlockId, BlockTag, DeoxysBlock};
 use dp_convert::core_felt::CoreFelt;
-use dp_convert::felt_wrapper::FeltWrapper;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
 use starknet_api::transaction::TransactionHash;
@@ -166,17 +165,12 @@ async fn l2_verify_and_apply_task(
             trim_hash(&block_hash.into_core_felt()),
             trim_hash(&global_state_root.into_core_felt())
         );
-        log::debug!(
-            "Imported #{} ({:#x}) and updated state root ({:#x})",
-            block_n,
-            block_hash.into_field_element(),
-            global_state_root.into_field_element()
-        );
+        log::debug!("Imported #{} ({}) and updated state root ({})", block_n, block_hash.0, global_state_root);
 
         telemetry.send(
             VerbosityLevel::Info,
             serde_json::json!({
-                "best": format!("{:#x}", block_hash.into_field_element()),
+                "best": format!("{}", block_hash.0),
                 "height": block_n,
                 "origin": "Own",
                 "msg": "block.import",

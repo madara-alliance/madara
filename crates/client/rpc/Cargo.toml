@@ -18,7 +18,6 @@ dc-db = { workspace = true }
 # Starknet
 blockifier = { workspace = true, default-features = true }
 starknet-core = { workspace = true }
-starknet-ff = { workspace = true }
 starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true, default-features = true }

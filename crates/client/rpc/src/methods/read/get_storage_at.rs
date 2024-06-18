@@ -27,7 +27,7 @@ use crate::Starknet;
 ///
 /// ### Returns
 ///
-/// Returns the value at the given key for the given contract, represented as a `FieldElement`.
+/// Returns the value at the given key for the given contract, represented as a `Felt`.
 /// If no value is found at the specified storage key, returns 0.
 ///
 /// ### Errors
