@@ -16,11 +16,10 @@ use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
-use starknet_core::types::contract::legacy::{LegacyContractClass, LegacyEntrypointOffset, RawLegacyAbiEntry, RawLegacyEntryPoint, RawLegacyEntryPoints};
-use starknet_core::types::{
-    ContractClass as ContractClassCore, EntryPointsByType, FlattenedSierraClass,
-    LegacyContractAbiEntry, SierraEntryPoint,
+use starknet_core::types::contract::legacy::{
+    LegacyContractClass, LegacyEntrypointOffset, RawLegacyAbiEntry, RawLegacyEntryPoint, RawLegacyEntryPoints,
 };
+use starknet_core::types::{EntryPointsByType, FlattenedSierraClass, LegacyContractAbiEntry, SierraEntryPoint};
 
 #[derive(Debug, Encode, Decode)]
 pub struct StorageContractClassData {
@@ -203,9 +202,7 @@ pub fn to_contract_class_cairo(
 }
 
 /// Converts a [LegacyContractClass] to a [ContractClassBlockifier]
-pub fn from_contract_class_cairo(
-    contract_class: LegacyContractClass,
-) -> anyhow::Result<ContractClassBlockifier> {
+pub fn from_contract_class_cairo(contract_class: LegacyContractClass) -> anyhow::Result<ContractClassBlockifier> {
     let compressed_program = contract_class.compress().expect("Cairo program compression failed");
     let program = Program::from_bytes(&compressed_program.program, None).unwrap(); // check if entrypoint is needed somewhere here
     let entry_points_by_type = from_legacy_entry_points_by_type(&contract_class.entry_points_by_type);

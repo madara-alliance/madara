@@ -11,9 +11,7 @@ use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use itertools::Itertools;
 use starknet_api::core::ClassHash;
-use starknet_core::types::{
-    DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate,
-};
+use starknet_core::types::{DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate};
 use starknet_providers::sequencer::models::{self as p, BlockId};
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use url::Url;
