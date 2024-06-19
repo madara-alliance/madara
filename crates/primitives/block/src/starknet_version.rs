@@ -1,6 +1,15 @@
 use std::str::FromStr;
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct StarknetVersion([u8; 4]);
+
+#[derive(thiserror::Error, Debug, PartialEq)]
+pub enum StarknetVersionError {
+    #[error("Invalid number in version: {0}")]
+    InvalidNumber(#[from] std::num::ParseIntError),
+    #[error("Too many components in version: {0}")]
+    TooManyComponents(usize),
+}
 
 impl StarknetVersion {
     pub const fn new(major: u8, minor: u8, patch: u8, build: u8) -> Self {
@@ -14,31 +23,33 @@ impl StarknetVersion {
 
 impl std::fmt::Display for StarknetVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut parts: Vec<String> = self.0[..3].iter().map(|&num| num.to_string()).collect();
-
+        write!(f, "{}.{}.{}", self.0[0], self.0[1], self.0[2])?;
         if self.0[3] != 0 {
-            parts.push(self.0[3].to_string());
+            write!(f, ".{}", self.0[3])?;
         }
+        Ok(())
+    }
+}
 
-        write!(f, "{}", parts.join("."))
+// fallback to Display
+impl std::fmt::Debug for StarknetVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
     }
 }
 
 impl FromStr for StarknetVersion {
-    type Err = &'static str;
+    type Err = StarknetVersionError;
 
     fn from_str(version_str: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = version_str.split('.').collect();
         if parts.len() > 4 {
-            return Err("Too many components in version string");
+            return Err(StarknetVersionError::TooManyComponents(parts.len()));
         }
 
         let mut version = [0u8; 4];
         for (i, part) in parts.iter().enumerate() {
-            match part.parse::<u8>() {
-                Ok(num) => version[i] = num,
-                Err(_) => return Err("Invalid number in version string"),
-            }
+            version[i] = part.parse()?;
         }
 
         Ok(StarknetVersion(version))
@@ -65,9 +76,20 @@ mod tests {
 
     #[test]
     fn test_starknet_version_string_invalid() {
-        assert_eq!(StarknetVersion::from_str("definitely not a version"), Err("Invalid number in version string"));
-        assert_eq!(StarknetVersion::from_str("0.256.0"), Err("Invalid number in version string"));
-        assert_eq!(StarknetVersion::from_str("1.1.1.1.1"), Err("Too many components in version string"));
+        assert_eq!(StarknetVersion::from_str("1.1.1.1.1"), Err(StarknetVersionError::TooManyComponents(5)));
+
+        assert!(
+            matches!(
+                StarknetVersion::from_str("definitely.not.a.version"),
+                Err(StarknetVersionError::InvalidNumber(_))
+            ),
+            "Expected InvalidNumber error"
+        );
+
+        assert!(
+            matches!(StarknetVersion::from_str("0.256.0"), Err(StarknetVersionError::InvalidNumber(_))),
+            "Expected InvalidNumber error"
+        );
     }
 
     #[test]

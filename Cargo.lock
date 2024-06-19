@@ -2127,6 +2127,7 @@ dependencies = [
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
+ "thiserror",
 ]
 
 [[package]]
