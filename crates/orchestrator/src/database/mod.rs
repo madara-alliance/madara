@@ -1,9 +1,11 @@
-use crate::jobs::types::{JobItem, JobStatus, JobType};
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use color_eyre::Result;
 use mockall::automock;
-use std::collections::HashMap;
 use uuid::Uuid;
+
+use crate::jobs::types::{JobItem, JobStatus, JobType};
 
 /// MongoDB
 pub mod mongodb;

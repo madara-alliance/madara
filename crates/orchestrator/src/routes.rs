@@ -1,8 +1,9 @@
-use crate::controllers::jobs_controller;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::Router;
+
+use crate::controllers::jobs_controller;
 
 pub fn app_router() -> Router {
     Router::new()

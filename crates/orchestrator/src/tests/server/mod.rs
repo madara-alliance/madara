@@ -1,18 +1,19 @@
-use std::{io::Read, net::SocketAddr};
+use std::io::Read;
+use std::net::SocketAddr;
 
 use axum::http::StatusCode;
-
-use hyper::{body::Buf, Body, Request};
-
+use hyper::body::Buf;
+use hyper::{Body, Request};
 use rstest::*;
-
-use crate::{queue::init_consumers, routes::app_router, utils::env_utils::get_env_var_or_default};
+use utils::env_utils::get_env_var_or_default;
 
 use super::common::init_config;
+use crate::queue::init_consumers;
+use crate::routes::app_router;
 
 #[fixture]
 pub async fn setup_server() -> SocketAddr {
-    let _config = init_config(Some("http://localhost:9944".to_string()), None, None, None).await;
+    let _config = init_config(Some("http://localhost:9944".to_string()), None, None, None, None).await;
 
     let host = get_env_var_or_default("HOST", "127.0.0.1");
     let port = get_env_var_or_default("PORT", "3000").parse::<u16>().expect("PORT must be a u16");

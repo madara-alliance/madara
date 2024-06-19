@@ -1,23 +1,23 @@
-use crate::config::Config;
-use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
-use crate::jobs::Job;
+use std::collections::HashMap;
+use std::ops::{Add, Mul, Rem};
+use std::result::Result::{Err, Ok as OtherOk};
+use std::str::FromStr;
+
 use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Ok};
 use color_eyre::Result;
 use lazy_static::lazy_static;
 use num_bigint::{BigUint, ToBigUint};
-use num_traits::Num;
-use num_traits::Zero;
-use std::ops::{Add, Mul, Rem};
-use std::result::Result::{Err, Ok as OtherOk};
-use std::str::FromStr;
-
+use num_traits::{Num, Zero};
 //
 use starknet::core::types::{BlockId, FieldElement, MaybePendingStateUpdate, StateUpdate, StorageEntry};
 use starknet::providers::Provider;
-use std::collections::HashMap;
 use tracing::log;
 use uuid::Uuid;
+
+use super::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
+use super::Job;
+use crate::config::Config;
 
 lazy_static! {
     /// EIP-4844 BLS12-381 modulus.
@@ -229,7 +229,8 @@ async fn state_update_to_blob_data(
 
         let mut nonce = nonces.remove(&addr);
 
-        // @note: if nonce is null and there is some len of writes, make an api call to get the contract nonce for the block
+        // @note: if nonce is null and there is some len of writes, make an api call to get the contract
+        // nonce for the block
 
         if nonce.is_none() && !writes.is_empty() && addr != FieldElement::ONE {
             let get_current_nonce_result = config.starknet_client().get_nonce(BlockId::Number(block_no), addr).await;
@@ -314,19 +315,21 @@ fn da_word(class_flag: bool, nonce_change: Option<FieldElement>, num_changes: u6
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::tests::common::init_config;
-    use ::serde::{Deserialize, Serialize};
-    use httpmock::prelude::*;
-    use majin_blob_core::blob;
-    use majin_blob_types::{serde, state_diffs::UnorderedEq};
-    // use majin_blob_types::serde;
-    use rstest::rstest;
-
-    use serde_json::json;
     use std::fs;
     use std::fs::File;
     use std::io::Read;
+
+    use ::serde::{Deserialize, Serialize};
+    use httpmock::prelude::*;
+    use majin_blob_core::blob;
+    use majin_blob_types::serde;
+    use majin_blob_types::state_diffs::UnorderedEq;
+    // use majin_blob_types::serde;
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+    use crate::tests::common::init_config;
 
     #[rstest]
     #[case(false, 1, 1, "18446744073709551617")]
@@ -373,7 +376,7 @@ mod tests {
     ) {
         let server = MockServer::start();
 
-        let config = init_config(Some(format!("http://localhost:{}", server.port())), None, None, None).await;
+        let config = init_config(Some(format!("http://localhost:{}", server.port())), None, None, None, None).await;
 
         get_nonce_attached(&server, nonce_file_path);
 

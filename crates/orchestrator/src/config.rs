@@ -1,19 +1,24 @@
+use std::sync::Arc;
+
+use arc_swap::{ArcSwap, Guard};
+use da_client_interface::{DaClient, DaConfig};
+use dotenvy::dotenv;
+use ethereum_da_client::config::EthereumDaConfig;
+use ethereum_da_client::EthereumDaClient;
+use prover_client_interface::ProverClient;
+use sharp_service::SharpProverService;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::{JsonRpcClient, Url};
+use tokio::sync::OnceCell;
+use utils::env_utils::get_env_var_or_panic;
+use utils::settings::default::DefaultSettingsProvider;
+use utils::settings::SettingsProvider;
+
 use crate::database::mongodb::config::MongoDbConfig;
 use crate::database::mongodb::MongoDb;
 use crate::database::{Database, DatabaseConfig};
 use crate::queue::sqs::SqsQueue;
 use crate::queue::QueueProvider;
-use crate::utils::env_utils::get_env_var_or_panic;
-use arc_swap::{ArcSwap, Guard};
-use da_client_interface::DaClient;
-use da_client_interface::DaConfig;
-use dotenvy::dotenv;
-use ethereum_da_client::config::EthereumDaConfig;
-use ethereum_da_client::EthereumDaClient;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::{JsonRpcClient, Url};
-use std::sync::Arc;
-use tokio::sync::OnceCell;
 
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling `config` function.
@@ -22,6 +27,8 @@ pub struct Config {
     starknet_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
     da_client: Box<dyn DaClient>,
+    /// The service that produces proof and registers it onchain
+    prover_client: Box<dyn ProverClient>,
     /// The database client
     database: Box<dyn Database>,
     /// The queue provider
@@ -43,7 +50,10 @@ pub async fn init_config() -> Config {
     // init the queue
     let queue = Box::new(SqsQueue {});
 
-    Config { starknet_client: Arc::new(provider), da_client: build_da_client(), database, queue }
+    let settings_provider = DefaultSettingsProvider {};
+    let prover = create_prover_service(&settings_provider);
+
+    Config { starknet_client: Arc::new(provider), da_client: build_da_client(), prover_client: prover, database, queue }
 }
 
 impl Config {
@@ -51,10 +61,11 @@ impl Config {
     pub fn new(
         starknet_client: Arc<JsonRpcClient<HttpTransport>>,
         da_client: Box<dyn DaClient>,
+        prover_client: Box<dyn ProverClient>,
         database: Box<dyn Database>,
         queue: Box<dyn QueueProvider>,
     ) -> Self {
-        Self { starknet_client, da_client, database, queue }
+        Self { starknet_client, da_client, prover_client, database, queue }
     }
 
     /// Returns the starknet client
@@ -65,6 +76,11 @@ impl Config {
     /// Returns the DA client
     pub fn da_client(&self) -> &dyn DaClient {
         self.da_client.as_ref()
+    }
+
+    /// Returns the proving service
+    pub fn prover_client(&self) -> &dyn ProverClient {
+        self.prover_client.as_ref()
     }
 
     /// Returns the database client
@@ -113,5 +129,13 @@ fn build_da_client() -> Box<dyn DaClient + Send + Sync> {
             Box::new(EthereumDaClient::from(config))
         }
         _ => panic!("Unsupported DA layer"),
+    }
+}
+
+/// Creates prover service based on the environment variable PROVER_SERVICE
+fn create_prover_service(settings_provider: &impl SettingsProvider) -> Box<dyn ProverClient> {
+    match get_env_var_or_panic("PROVER_SERVICE").as_str() {
+        "sharp" => Box::new(SharpProverService::with_settings(settings_provider)),
+        _ => panic!("Unsupported prover service"),
     }
 }

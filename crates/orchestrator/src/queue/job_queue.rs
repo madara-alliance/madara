@@ -1,14 +1,16 @@
-use crate::config::config;
-use crate::jobs::{process_job, verify_job};
+use std::future::Future;
+use std::time::Duration;
+
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use omniqueue::QueueError;
 use serde::{Deserialize, Serialize};
-use std::future::Future;
-use std::time::Duration;
 use tokio::time::sleep;
 use tracing::log;
 use uuid::Uuid;
+
+use crate::config::config;
+use crate::jobs::{process_job, verify_job};
 
 const JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_job_processing_queue";
 const JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_job_verification_queue";

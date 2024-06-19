@@ -1,5 +1,6 @@
+use utils::env_utils::get_env_var_or_panic;
+
 use crate::database::DatabaseConfig;
-use crate::utils::env_utils::get_env_var_or_panic;
 
 pub struct MongoDbConfig {
     pub url: String,

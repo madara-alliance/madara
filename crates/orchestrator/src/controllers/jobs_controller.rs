@@ -1,8 +1,10 @@
-use crate::controllers::errors::AppError;
-use crate::jobs::types::JobType;
+use std::collections::HashMap;
+
 use axum::extract::Json;
 use serde::Deserialize;
-use std::collections::HashMap;
+
+use crate::controllers::errors::AppError;
+use crate::jobs::types::JobType;
 
 /// Client request to create a job
 #[derive(Debug, Deserialize)]

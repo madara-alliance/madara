@@ -9,5 +9,5 @@ edition.workspace = true
 async-trait = { workspace = true }
 axum = { workspace = true }
 color-eyre = { workspace = true }
-mockall = "0.12.1"
+mockall = { workspace = true }
 starknet = { workspace = true }

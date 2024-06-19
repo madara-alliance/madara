@@ -1,0 +1,13 @@
+[package]
+name = "prover-client-interface"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+cairo-vm.workspace = true
+gps-fact-checker.workspace = true
+mockall.workspace = true
+snos.workspace = true
+thiserror.workspace = true
+utils.workspace = true

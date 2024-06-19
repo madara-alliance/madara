@@ -3,6 +3,9 @@ use rstest::rstest;
 #[cfg(test)]
 pub mod da_job;
 
+#[cfg(test)]
+pub mod prover_job;
+
 #[rstest]
 #[tokio::test]
 async fn create_job_fails_job_already_exists() {

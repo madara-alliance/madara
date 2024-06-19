@@ -1,20 +1,23 @@
+use std::collections::HashMap;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use color_eyre::eyre::eyre;
+use color_eyre::Result;
+use tracing::log;
+use uuid::Uuid;
+
 use crate::config::{config, Config};
 use crate::jobs::constants::{JOB_PROCESS_ATTEMPT_METADATA_KEY, JOB_VERIFICATION_ATTEMPT_METADATA_KEY};
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use crate::queue::job_queue::{add_job_to_process_queue, add_job_to_verification_queue};
-use async_trait::async_trait;
-use color_eyre::eyre::eyre;
-use color_eyre::Result;
-use std::collections::HashMap;
-use std::time::Duration;
-use tracing::log;
-use uuid::Uuid;
 
 pub mod constants;
 pub mod da_job;
-mod register_proof_job;
+pub mod prover_job;
+pub mod register_proof_job;
 pub mod snos_job;
-mod state_update_job;
+pub mod state_update_job;
 pub mod types;
 
 /// The Job trait is used to define the methods that a job
@@ -68,8 +71,8 @@ pub async fn create_job(job_type: JobType, internal_id: String, metadata: HashMa
     Ok(())
 }
 
-/// Processes the job, increments the process attempt count and updates the status of the job in the DB.
-/// It then adds the job to the verification queue.
+/// Processes the job, increments the process attempt count and updates the status of the job in the
+/// DB. It then adds the job to the verification queue.
 pub async fn process_job(id: Uuid) -> Result<()> {
     let config = config().await;
     let job = get_job(id).await?;
@@ -86,7 +89,8 @@ pub async fn process_job(id: Uuid) -> Result<()> {
         }
     }
     // this updates the version of the job. this ensures that if another thread was about to process
-    // the same job, it would fail to update the job in the database because the version would be outdated
+    // the same job, it would fail to update the job in the database because the version would be
+    // outdated
     config.database().update_job_status(&job, JobStatus::LockedForProcessing).await?;
 
     let job_handler = get_job_handler(&job.job_type);
@@ -104,9 +108,10 @@ pub async fn process_job(id: Uuid) -> Result<()> {
     Ok(())
 }
 
-/// Verifies the job and updates the status of the job in the DB. If the verification fails, it retries
-/// processing the job if the max attempts have not been exceeded. If the max attempts have been exceeded,
-/// it marks the job as timedout. If the verification is still pending, it pushes the job back to the queue.
+/// Verifies the job and updates the status of the job in the DB. If the verification fails, it
+/// retries processing the job if the max attempts have not been exceeded. If the max attempts have
+/// been exceeded, it marks the job as timedout. If the verification is still pending, it pushes the
+/// job back to the queue.
 pub async fn verify_job(id: Uuid) -> Result<()> {
     let config = config().await;
     let job = get_job(id).await?;

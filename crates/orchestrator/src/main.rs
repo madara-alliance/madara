@@ -2,12 +2,12 @@ use dotenvy::dotenv;
 use orchestrator::config::config;
 use orchestrator::queue::init_consumers;
 use orchestrator::routes::app_router;
-use orchestrator::utils::env_utils::get_env_var_or_default;
 use orchestrator::workers::proof_registration::ProofRegistrationWorker;
 use orchestrator::workers::proving::ProvingWorker;
 use orchestrator::workers::snos::SnosWorker;
 use orchestrator::workers::update_state::UpdateStateWorker;
 use orchestrator::workers::*;
+use utils::env_utils::get_env_var_or_default;
 
 /// Start the server
 #[tokio::main]

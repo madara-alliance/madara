@@ -1,18 +1,16 @@
-use crate::database::mongodb::config::MongoDbConfig;
-use crate::database::Database;
-use crate::jobs::types::{JobItem, JobStatus, JobType};
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use mongodb::bson::Document;
-use mongodb::options::{FindOneOptions, UpdateOptions};
-use mongodb::{
-    bson::doc,
-    options::{ClientOptions, ServerApi, ServerApiVersion},
-    Client, Collection,
-};
-use std::collections::HashMap;
+use mongodb::bson::{doc, Document};
+use mongodb::options::{ClientOptions, FindOneOptions, ServerApi, ServerApiVersion, UpdateOptions};
+use mongodb::{Client, Collection};
 use uuid::Uuid;
+
+use crate::database::mongodb::config::MongoDbConfig;
+use crate::database::Database;
+use crate::jobs::types::{JobItem, JobStatus, JobType};
 
 pub mod config;
 
@@ -23,7 +21,8 @@ pub struct MongoDb {
 impl MongoDb {
     pub async fn new(config: MongoDbConfig) -> Self {
         let mut client_options = ClientOptions::parse(config.url).await.expect("Failed to parse MongoDB Url");
-        // Set the server_api field of the client_options object to set the version of the Stable API on the client
+        // Set the server_api field of the client_options object to set the version of the Stable API on the
+        // client
         let server_api = ServerApi::builder().version(ServerApiVersion::V1).build();
         client_options.server_api = Some(server_api);
         // Get a handle to the cluster
@@ -39,9 +38,9 @@ impl MongoDb {
         self.client.database("orchestrator").collection("jobs")
     }
 
-    /// Updates the job in the database optimistically. This means that the job is updated only if the
-    /// version of the job in the database is the same as the version of the job passed in. If the version
-    /// is different, the update fails.
+    /// Updates the job in the database optimistically. This means that the job is updated only if
+    /// the version of the job in the database is the same as the version of the job passed in.
+    /// If the version is different, the update fails.
     async fn update_job_optimistically(&self, current_job: &JobItem, update: Document) -> Result<()> {
         let filter = doc! {
             "id": current_job.id,

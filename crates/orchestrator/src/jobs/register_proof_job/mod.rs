@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
+use async_trait::async_trait;
+use color_eyre::Result;
+use uuid::Uuid;
+
 use crate::config::Config;
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use crate::jobs::Job;
-use async_trait::async_trait;
-use color_eyre::Result;
-use std::collections::HashMap;
-use uuid::Uuid;
 
 pub struct RegisterProofJob;
 

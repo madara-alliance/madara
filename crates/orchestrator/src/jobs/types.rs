@@ -1,9 +1,11 @@
-use color_eyre::{eyre::eyre, Result};
+use std::collections::HashMap;
+
+use color_eyre::eyre::eyre;
+use color_eyre::Result;
 use da_client_interface::DaVerificationStatus;
 // TODO: job types shouldn't depend on mongodb
 use mongodb::bson::serde_helpers::uuid_1_as_binary;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use uuid::Uuid;
 
 /// An external id.
@@ -77,7 +79,7 @@ pub enum JobType {
     /// Verifying the proof on the base layer
     ProofRegistration,
     /// Updaing the state root on the base layer
-    StateUpdation,
+    StateTransition,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]

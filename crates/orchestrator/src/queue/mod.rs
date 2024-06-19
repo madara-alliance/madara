@@ -1,12 +1,12 @@
 pub mod job_queue;
 pub mod sqs;
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use color_eyre::Result;
-use omniqueue::{Delivery, QueueError};
-
 use mockall::automock;
-use std::time::Duration;
+use omniqueue::{Delivery, QueueError};
 
 /// The QueueProvider trait is used to define the methods that a queue
 /// should implement to be used as a queue for the orchestrator. The

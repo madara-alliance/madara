@@ -1,0 +1,22 @@
+[package]
+name = "gps-fact-checker"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+alloy = { workspace = true, features = [
+  "sol-types",
+  "json",
+  "contract",
+  "providers",
+  "rpc-client",
+  "transport-http",
+  "reqwest",
+] }
+async-trait.workspace = true
+cairo-vm.workspace = true
+itertools.workspace = true
+starknet.workspace = true
+thiserror.workspace = true
+url.workspace = true
+utils.workspace = true

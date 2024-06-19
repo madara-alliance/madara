@@ -1,9 +1,11 @@
-use crate::queue::QueueProvider;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use color_eyre::Result;
 use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
 use omniqueue::{Delivery, QueueError};
-use std::time::Duration;
+
+use crate::queue::QueueProvider;
 pub struct SqsQueue;
 
 #[async_trait]

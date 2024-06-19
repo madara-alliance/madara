@@ -1,0 +1,18 @@
+[package]
+name = "e2e-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+orchestrator.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+serde_json.workspace = true
+testcontainers.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tokio-stream.workspace = true
+tokio-util.workspace = true
+url.workspace = true
+
+[[test]]
+name = "test_samples"
+path = "test_samples.rs"

@@ -1,5 +1,6 @@
-use async_trait::async_trait;
 use std::error::Error;
+
+use async_trait::async_trait;
 
 pub mod proof_registration;
 pub mod proving;

@@ -1,3 +1,13 @@
+use std::collections::HashMap;
+use std::error::Error;
+
+use da_client_interface::MockDaClient;
+use httpmock::MockServer;
+use mockall::predicate::eq;
+use rstest::rstest;
+use serde_json::json;
+use uuid::Uuid;
+
 use crate::config::config_force_init;
 use crate::database::MockDatabase;
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
@@ -5,14 +15,6 @@ use crate::queue::MockQueueProvider;
 use crate::tests::common::init_config;
 use crate::workers::snos::SnosWorker;
 use crate::workers::Worker;
-use da_client_interface::MockDaClient;
-use httpmock::MockServer;
-use mockall::predicate::eq;
-use rstest::rstest;
-use serde_json::json;
-use std::collections::HashMap;
-use std::error::Error;
-use uuid::Uuid;
 
 #[rstest]
 #[case(false)]
@@ -69,7 +71,8 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
     let rpc_response_block_number = block;
     let response = json!({ "id": 1,"jsonrpc":"2.0","result": rpc_response_block_number });
     let config =
-        init_config(Some(format!("http://localhost:{}", server.port())), Some(db), Some(queue), Some(da_client)).await;
+        init_config(Some(format!("http://localhost:{}", server.port())), Some(db), Some(queue), Some(da_client), None)
+            .await;
     config_force_init(config).await;
 
     // mocking block call

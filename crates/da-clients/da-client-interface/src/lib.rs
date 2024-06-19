@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use color_eyre::Result;
-use mockall::{automock, predicate::*};
+use mockall::automock;
+use mockall::predicate::*;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DaVerificationStatus {

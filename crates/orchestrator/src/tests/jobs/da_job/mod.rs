@@ -1,30 +1,22 @@
-use rstest::*;
-use starknet::core::types::StateUpdate;
-
 use std::collections::HashMap;
 
+use da_client_interface::{DaVerificationStatus, MockDaClient};
 use httpmock::prelude::*;
+use rstest::*;
 use serde_json::json;
-
-use super::super::common::{
-    constants::{ETHEREUM_MAX_BLOB_PER_TXN, ETHEREUM_MAX_BYTES_PER_BLOB},
-    default_job_item, init_config,
-};
-use starknet_core::types::{FieldElement, MaybePendingStateUpdate, StateDiff};
+use starknet_core::types::{FieldElement, MaybePendingStateUpdate, StateDiff, StateUpdate};
 use uuid::Uuid;
 
-use crate::jobs::types::ExternalId;
-use crate::jobs::{
-    da_job::DaJob,
-    types::{JobItem, JobStatus, JobType},
-    Job,
-};
-use da_client_interface::{DaVerificationStatus, MockDaClient};
+use super::super::common::constants::{ETHEREUM_MAX_BLOB_PER_TXN, ETHEREUM_MAX_BYTES_PER_BLOB};
+use super::super::common::{default_job_item, init_config};
+use crate::jobs::da_job::DaJob;
+use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
+use crate::jobs::Job;
 
 #[rstest]
 #[tokio::test]
 async fn test_create_job() {
-    let config = init_config(None, None, None, None).await;
+    let config = init_config(None, None, None, None, None).await;
     let job = DaJob.create_job(&config, String::from("0"), HashMap::new()).await;
     assert!(job.is_ok());
 
@@ -44,7 +36,7 @@ async fn test_verify_job(#[from(default_job_item)] job_item: JobItem) {
     let mut da_client = MockDaClient::new();
     da_client.expect_verify_inclusion().times(1).returning(|_| Ok(DaVerificationStatus::Verified));
 
-    let config = init_config(None, None, None, Some(da_client)).await;
+    let config = init_config(None, None, None, Some(da_client), None).await;
     assert!(DaJob.verify_job(&config, &job_item).await.is_ok());
 }
 
@@ -60,7 +52,8 @@ async fn test_process_job() {
     da_client.expect_max_bytes_per_blob().times(1).returning(move || ETHEREUM_MAX_BYTES_PER_BLOB);
     da_client.expect_max_blob_per_txn().times(1).returning(move || ETHEREUM_MAX_BLOB_PER_TXN);
 
-    let config = init_config(Some(format!("http://localhost:{}", server.port())), None, None, Some(da_client)).await;
+    let config =
+        init_config(Some(format!("http://localhost:{}", server.port())), None, None, Some(da_client), None).await;
     let state_update = MaybePendingStateUpdate::Update(StateUpdate {
         block_hash: FieldElement::default(),
         new_root: FieldElement::default(),

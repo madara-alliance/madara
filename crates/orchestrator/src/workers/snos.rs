@@ -1,11 +1,13 @@
+use std::collections::HashMap;
+use std::error::Error;
+
+use async_trait::async_trait;
+use starknet::providers::Provider;
+
 use crate::config::config;
 use crate::jobs::create_job;
 use crate::jobs::types::JobType;
 use crate::workers::Worker;
-use async_trait::async_trait;
-use starknet::providers::Provider;
-use std::collections::HashMap;
-use std::error::Error;
 
 pub struct SnosWorker;
 
