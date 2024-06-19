@@ -47,16 +47,17 @@ pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> Rp
         return Err(StarknetRpcApiError::ClassHashNotFound.into());
     }
 
-    let deployed_class: DeployedClass = ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
+    let contract_class_core: ContractClass = ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
         .try_into()
         .or_else_internal_server_error(|| {
             format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")
         })?;
 
-    let contract_class = match deployed_class {
-        DeployedClass::SierraClass(class) => ContractClass::Sierra(class),
-        DeployedClass::LegacyClass(class) => ContractClass::Legacy(class.compress().expect("Failed to compress legacy contract class")),
+    let contract_class = match contract_class_core {
+        ContractClass::Sierra(class) => ContractClass::Sierra(class),
+        ContractClass::Legacy(class) => ContractClass::Legacy(class),
     };
 
     Ok(contract_class)
 }
+
