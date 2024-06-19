@@ -2119,6 +2119,7 @@ version = "0.1.0"
 dependencies = [
  "blockifier",
  "dp-convert",
+ "dp-transactions",
  "lazy_static",
  "primitive-types",
  "serde",
@@ -2126,6 +2127,7 @@ dependencies = [
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
+ "thiserror",
 ]
 
 [[package]]

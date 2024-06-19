@@ -8,6 +8,7 @@ use blockifier::execution::contract_class::{
 };
 use cairo_vm::types::program::Program;
 use dp_convert::to_felt::ToFelt;
+use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -15,7 +16,6 @@ use indexmap::IndexMap;
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
-use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
     CompressedLegacyContractClass, ContractClass as ContractClassCore, EntryPointsByType, FlattenedSierraClass,
     LegacyContractAbiEntry, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
@@ -320,7 +320,7 @@ fn to_entry_point(entry_point: EntryPointV1, index: u64) -> SierraEntryPoint {
 /// Returns a [EntryPoint] (starknet-api) from a [LegacyContractEntryPoint]
 /// (starknet-rs)
 fn from_legacy_entry_point(entry_point: &LegacyContractEntryPoint) -> EntryPoint {
-    let selector = EntryPointSelector(StarkFelt::new_unchecked(entry_point.selector.to_bytes_be()));
+    let selector = EntryPointSelector(entry_point.selector.to_stark_felt());
     let offset = EntryPointOffset(entry_point.offset);
     EntryPoint { selector, offset }
 }
