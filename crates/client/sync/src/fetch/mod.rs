@@ -13,6 +13,8 @@ use crate::fetch::fetchers::fetch_block_and_updates;
 use crate::l2::L2SyncError;
 
 pub mod fetchers;
+mod rate_limiter;
+use rate_limiter::{RateLimitGuard, RateLimiter};
 
 pub async fn l2_fetch_task(
     backend: Arc<DeoxysBackend>,
@@ -28,11 +30,14 @@ pub async fn l2_fetch_task(
 
     let mut next_block = first_block;
 
+    let rate_limiter = RateLimiter::new();
+
     {
         // Fetch blocks and updates in parallel one time before looping
         let fetch_stream = (first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
             let provider = Arc::clone(&provider);
-            async move { (block_n, fetch_block_and_updates(backend, block_n, provider).await) }
+            let rate_limiter = rate_limiter.clone();
+            async move { (block_n, fetch_block_and_updates(backend, block_n, provider, rate_limiter).await) }
         });
 
         // Have 10 fetches in parallel at once, using futures Buffered
@@ -66,7 +71,7 @@ pub async fn l2_fetch_task(
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
             loop {
-                match fetch_block_and_updates(backend, next_block, Arc::clone(&provider)).await {
+                match fetch_block_and_updates(backend, next_block, Arc::clone(&provider), rate_limiter.clone()).await {
                     Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
                         break;
                     }

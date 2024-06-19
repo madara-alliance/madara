@@ -20,6 +20,7 @@ use url::Url;
 
 use starknet_types_core::felt::Felt;
 
+use super::{RateLimitGuard, RateLimiter};
 use crate::l2::L2SyncError;
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
@@ -57,26 +58,35 @@ pub async fn fetch_block_and_updates(
     backend: &DeoxysBackend,
     block_n: u64,
     provider: Arc<SequencerGatewayProvider>,
+    rate_limiter: RateLimiter,
 ) -> Result<L2BlockAndUpdates, L2SyncError> {
     const MAX_RETRY: u32 = 15;
     let base_delay = Duration::from_secs(1);
 
     let sw = PerfStopwatch::new();
     let (state_update, block) =
-        retry(|| fetch_state_update_with_block(&provider, block_n), MAX_RETRY, base_delay).await?;
-    let class_update = fetch_class_update(backend, &provider, &state_update, block_n).await?;
+        retry(|| fetch_state_update_with_block(&provider, block_n), MAX_RETRY, base_delay, rate_limiter.clone())
+            .await?;
+    let class_update = fetch_class_update(backend, &provider, &state_update, block_n, rate_limiter.clone()).await?;
 
     stopwatch_end!(sw, "fetching {}: {:?}", block_n);
     Ok(L2BlockAndUpdates { block_n, block, state_update, class_update })
 }
 
-async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, ProviderError>
+async fn retry<F, Fut, T>(
+    mut f: F,
+    max_retries: u32,
+    base_delay: Duration,
+    rate_limiter: RateLimiter,
+) -> Result<T, ProviderError>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T, ProviderError>>,
 {
     let mut attempt = 0;
+    let mut rate_limit_guard = RateLimitGuard::new(rate_limiter);
     loop {
+        rate_limit_guard.wait_if_rate_limited().await;
         match f().await {
             Ok(res) => return Ok(res),
             Err(ProviderError::StarknetError(StarknetError::BlockNotFound)) => {
@@ -90,13 +100,13 @@ where
                 }
                 match err {
                     ProviderError::RateLimited => {
-                        log::info!("The fetching process has been rate limited, retrying in {:?}", delay)
+                        log::info!("The fetching process has been rate limited, retrying in {:?}", delay);
+                        rate_limit_guard.activate_rate_limit(delay).await;
                     }
                     _ => log::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay),
                 }
                 if wait_or_graceful_shutdown(tokio::time::sleep(delay)).await.is_none() {
                     return Err(ProviderError::StarknetError(StarknetError::BlockNotFound));
-                    // :/
                 }
             }
         }
@@ -130,6 +140,7 @@ async fn fetch_class_update(
     provider: &SequencerGatewayProvider,
     state_update: &StateUpdate,
     block_number: u64,
+    rate_limiter: RateLimiter,
 ) -> Result<Vec<ContractClassData>, L2SyncError> {
     let missing_classes: Vec<&Felt> = std::iter::empty()
         .chain(
@@ -156,14 +167,18 @@ async fn fetch_class_update(
         .collect::<Result<Vec<_>, _>>()?;
 
     let arc_provider = Arc::new(provider.clone());
+    let rate_limiter = rate_limiter.clone();
 
     let classes = futures::future::try_join_all(missing_classes.into_iter().map(|class_hash| async {
         let provider = Arc::clone(&arc_provider);
+        let rate_limiter = rate_limiter.clone();
         let class_hash = *class_hash;
         // TODO(correctness): Skip what appears to be a broken Sierra class definition (quick fix)
         if class_hash != Felt::from_hex("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698").unwrap() {
             // Fetch the class definition in parallel, retrying up to 15 times for each class
-            retry(|| fetch_class(class_hash, block_number, &provider), 15, Duration::from_secs(1)).await.map(Some)
+            retry(|| fetch_class(class_hash, block_number, &provider), 15, Duration::from_secs(1), rate_limiter)
+                .await
+                .map(Some)
         } else {
             Ok(None)
         }
