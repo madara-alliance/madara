@@ -1,27 +1,25 @@
 use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::os::macos::raw;
+use std::io::Read;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context};
 use blockifier::execution::contract_class::{
-    self, ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1, EntryPointV1
+    ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1, EntryPointV1,
 };
 use cairo_vm::types::program::Program;
 use dp_convert::to_felt::ToFelt;
 use dp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
 use flate2::read::GzDecoder;
-use flate2::write::GzEncoder;
 use indexmap::IndexMap;
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_api::hash::StarkFelt;
-use starknet_core::types::contract::legacy::{
-    LegacyContractClass, LegacyEntrypointOffset, RawLegacyAbiEntry, RawLegacyEntryPoint, RawLegacyEntryPoints,
-    RawLegacyEvent, RawLegacyFunction, RawLegacyMember, RawLegacyStruct,
+use starknet_core::types::contract::legacy::{LegacyContractClass, RawLegacyEntryPoint, RawLegacyEntryPoints};
+use starknet_core::types::{
+    CompressedLegacyContractClass, ContractClass as ContractClassCore, EntryPointsByType, FlattenedSierraClass,
+    LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
 };
-use starknet_core::types::{ContractClass as ContractClassCore, CompressedLegacyContractClass, EntryPointsByType, FlattenedSierraClass, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint};
 
 #[derive(Debug, Encode, Decode)]
 pub struct StorageContractClassData {
@@ -68,25 +66,6 @@ impl ContractAbi {
             ContractAbi::Cairo(None) => 0,
         }
     }
-}
-
-#[derive(Debug, Clone, Encode, Decode)]
-pub enum AbiEntryWrapper {
-    Function(AbiFunctionEntryWrapper),
-    Event(AbiEventEntryWrapper),
-    Struct(AbiStructEntryWrapper),
-}
-
-#[derive(Debug, Clone, Encode, Decode)]
-pub struct AbiFunctionEntryWrapper {
-    /// The function name
-    pub name: String,
-    /// Typed parameter
-    pub inputs: Vec<AbiTypedParameterWrapper>,
-    /// Typed parameter
-    pub outputs: Vec<AbiTypedParameterWrapper>,
-    /// Function state mutability
-    pub state_mutability: Option<AbiFunctionStateMutabilityWrapper>,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -213,17 +192,6 @@ pub fn from_contract_class_cairo(contract_class: &LegacyContractClass) -> anyhow
     anyhow::Ok(ContractClassBlockifier::V0(blockifier_contract))
 }
 
-/// Returns a compressed vector of bytes
-pub(crate) fn compress(data: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let mut gzip_encoder = GzEncoder::new(Vec::new(), flate2::Compression::fast());
-    // 2023-08-22: JSON serialization is already done in Blockifier
-    // https://github.com/keep-starknet-strange/blockifier/blob/no_std-support-7578442/crates/blockifier/src/execution/contract_class.rs#L129
-    // https://github.com/keep-starknet-strange/blockifier/blob/no_std-support-7578442/crates/blockifier/src/execution/contract_class.rs#L389
-    // serde_json::to_writer(&mut gzip_encoder, data)?;
-    gzip_encoder.write_all(data)?;
-    Ok(gzip_encoder.finish()?)
-}
-
 /// Decompresses a compressed json string into it's byte representation.
 /// Example compression from [Starknet-rs](https://github.com/xJonathanLEI/starknet-rs/blob/49719f49a18f9621fc37342959e84900b600083e/starknet-core/src/types/contract/legacy.rs#L473)
 pub(crate) fn decompress(data: &[u8]) -> anyhow::Result<Vec<u8>> {
@@ -317,9 +285,6 @@ fn from_legacy_entry_point(entry_point: &RawLegacyEntryPoint) -> EntryPoint {
     EntryPoint { selector, offset }
 }
 
-use starknet_core::types::{
-    FunctionStateMutability, LegacyEventAbiType, LegacyFunctionAbiType, LegacyStructAbiType, LegacyTypedParameter,
-};
 use starknet_providers::sequencer::models::DeployedClass;
 use starknet_types_core::felt::Felt;
 
@@ -354,233 +319,14 @@ impl TryInto<ContractClassCore> for ContractClassWrapper {
 
     fn try_into(self) -> Result<ContractClassCore, Self::Error> {
         match self.contract {
-            ContractClassBlockifier::V0(contract_class) => {
-                match self.abi {
-                    ContractAbi::Cairo(opt_string) => {
-                        to_contract_class_cairo(&contract_class, opt_string)
-                    }
-                    _ => Err(anyhow::anyhow!("Invalid ABI type for Cairo")),
-                }
-            }
-            ContractClassBlockifier::V1(contract_class) => {
-                match self.abi {
-                    ContractAbi::Sierra(string) => {
-                        to_contract_class_sierra(&contract_class, string)
-                    }
-                    _ => Err(anyhow::anyhow!("Invalid ABI type for Sierra")),
-                }
-            }
+            ContractClassBlockifier::V0(contract_class) => match self.abi {
+                ContractAbi::Cairo(opt_string) => to_contract_class_cairo(&contract_class, opt_string),
+                _ => Err(anyhow::anyhow!("Invalid ABI type for Cairo")),
+            },
+            ContractClassBlockifier::V1(contract_class) => match self.abi {
+                ContractAbi::Sierra(string) => to_contract_class_sierra(&contract_class, string),
+                _ => Err(anyhow::anyhow!("Invalid ABI type for Sierra")),
+            },
         }
-    }
-}
-
-
-fn to_rpc_contract_abi(abi: Option<Vec<AbiEntryWrapper>>) -> Option<Vec<RawLegacyAbiEntry>> {
-    abi.map(|entries| entries.into_iter().map(|v| v.into()).collect())
-}
-
-fn from_rpc_contract_abi(abi: Option<Vec<RawLegacyAbiEntry>>) -> Option<Vec<AbiEntryWrapper>> {
-    abi.map(|entries| entries.into_iter().map(AbiEntryWrapper::from).collect())
-}
-
-impl From<RawLegacyAbiEntry> for AbiEntryWrapper {
-    fn from(abi_entry: RawLegacyAbiEntry) -> Self {
-        match abi_entry {
-            RawLegacyAbiEntry::Function(abi_function) => {
-                AbiEntryWrapper::Function(AbiFunctionEntryWrapper::from(abi_function))
-            }
-            RawLegacyAbiEntry::Event(abi_event) => AbiEntryWrapper::Event(AbiEventEntryWrapper::from(abi_event)),
-            RawLegacyAbiEntry::Struct(abi_struct) => AbiEntryWrapper::Struct(AbiStructEntryWrapper::from(abi_struct)),
-            RawLegacyAbiEntry::Constructor(abi_constructor) => {
-                AbiEntryWrapper::Function(AbiFunctionEntryWrapper::from(RawLegacyFunction {
-                    name: "constructor".to_string(),
-                    inputs: abi_constructor.inputs,
-                    outputs: vec![],
-                    state_mutability: None,
-                }))
-            }
-            RawLegacyAbiEntry::L1Handler(abi_l1_handler) => {
-                AbiEntryWrapper::Function(AbiFunctionEntryWrapper::from(RawLegacyFunction {
-                    name: "l1_handler".to_string(),
-                    inputs: abi_l1_handler.inputs,
-                    outputs: vec![],
-                    state_mutability: None,
-                }))
-            }
-        }
-    }
-}
-
-impl From<AbiEntryWrapper> for RawLegacyAbiEntry {
-    fn from(abi_entry: AbiEntryWrapper) -> Self {
-        match abi_entry {
-            AbiEntryWrapper::Function(abi_function) => RawLegacyAbiEntry::Function(abi_function.into()),
-            AbiEntryWrapper::Event(abi_event) => RawLegacyAbiEntry::Event(abi_event.into()),
-            AbiEntryWrapper::Struct(abi_struct) => RawLegacyAbiEntry::Struct(abi_struct.into()),
-        }
-    }
-}
-
-// Function ABI Entry conversion
-
-impl From<RawLegacyFunction> for AbiFunctionEntryWrapper {
-    fn from(abi_function_entry: RawLegacyFunction) -> Self {
-        Self {
-            name: abi_function_entry.name,
-            inputs: abi_function_entry.inputs.into_iter().map(AbiTypedParameterWrapper::from).collect(),
-            outputs: abi_function_entry.outputs.into_iter().map(AbiTypedParameterWrapper::from).collect(),
-            state_mutability: abi_function_entry.state_mutability.map(AbiFunctionStateMutabilityWrapper::from),
-        }
-    }
-}
-
-impl From<AbiFunctionEntryWrapper> for RawLegacyFunction {
-    fn from(abi_function_entry: AbiFunctionEntryWrapper) -> Self {
-        RawLegacyFunction {
-            name: abi_function_entry.name,
-            inputs: abi_function_entry.inputs.into_iter().map(|v| v.into()).collect(),
-            outputs: abi_function_entry.outputs.into_iter().map(|v| v.into()).collect(),
-            state_mutability: abi_function_entry.state_mutability.map(|v| v.into()),
-        }
-    }
-}
-
-impl From<LegacyFunctionAbiType> for AbiFunctionTypeWrapper {
-    fn from(abi_func_type: LegacyFunctionAbiType) -> Self {
-        match abi_func_type {
-            LegacyFunctionAbiType::Function => AbiFunctionTypeWrapper::Function,
-            LegacyFunctionAbiType::L1Handler => AbiFunctionTypeWrapper::L1handler,
-            LegacyFunctionAbiType::Constructor => AbiFunctionTypeWrapper::Constructor,
-        }
-    }
-}
-
-impl From<AbiFunctionTypeWrapper> for LegacyFunctionAbiType {
-    fn from(abi_function_type: AbiFunctionTypeWrapper) -> Self {
-        match abi_function_type {
-            AbiFunctionTypeWrapper::Function => LegacyFunctionAbiType::Function,
-            AbiFunctionTypeWrapper::L1handler => LegacyFunctionAbiType::L1Handler,
-            AbiFunctionTypeWrapper::Constructor => LegacyFunctionAbiType::Constructor,
-        }
-    }
-}
-
-impl From<FunctionStateMutability> for AbiFunctionStateMutabilityWrapper {
-    fn from(abi_func_state_mutability: FunctionStateMutability) -> Self {
-        match abi_func_state_mutability {
-            FunctionStateMutability::View => AbiFunctionStateMutabilityWrapper::View,
-        }
-    }
-}
-
-impl From<AbiFunctionStateMutabilityWrapper> for FunctionStateMutability {
-    fn from(abi_func_state_mutability: AbiFunctionStateMutabilityWrapper) -> Self {
-        match abi_func_state_mutability {
-            AbiFunctionStateMutabilityWrapper::View => FunctionStateMutability::View,
-        }
-    }
-}
-
-// Event ABI Entry conversion
-
-impl From<RawLegacyEvent> for AbiEventEntryWrapper {
-    fn from(abi_event_entry: RawLegacyEvent) -> Self {
-        Self {
-            name: abi_event_entry.name,
-            keys: abi_event_entry.keys.into_iter().map(AbiTypedParameterWrapper::from).collect(),
-            data: abi_event_entry.data.into_iter().map(AbiTypedParameterWrapper::from).collect(),
-        }
-    }
-}
-
-impl From<AbiEventEntryWrapper> for RawLegacyEvent {
-    fn from(abi_event_entry: AbiEventEntryWrapper) -> Self {
-        RawLegacyEvent {
-            name: abi_event_entry.name,
-            keys: abi_event_entry.keys.into_iter().map(|v| v.into()).collect(),
-            data: abi_event_entry.data.into_iter().map(|v| v.into()).collect(),
-        }
-    }
-}
-
-impl From<LegacyEventAbiType> for AbiEventTypeWrapper {
-    fn from(abi_entry_type: LegacyEventAbiType) -> Self {
-        match abi_entry_type {
-            LegacyEventAbiType::Event => AbiEventTypeWrapper::Event,
-        }
-    }
-}
-
-impl From<AbiEventTypeWrapper> for LegacyEventAbiType {
-    fn from(abi_event_type: AbiEventTypeWrapper) -> Self {
-        match abi_event_type {
-            AbiEventTypeWrapper::Event => LegacyEventAbiType::Event,
-        }
-    }
-}
-
-// Struct ABI Entry conversion
-
-impl From<RawLegacyStruct> for AbiStructEntryWrapper {
-    fn from(abi_struct_entry: RawLegacyStruct) -> Self {
-        Self {
-            name: abi_struct_entry.name,
-            size: abi_struct_entry.size,
-            members: abi_struct_entry.members.into_iter().map(AbiStructMemberWrapper::from).collect(),
-        }
-    }
-}
-
-impl From<AbiStructEntryWrapper> for RawLegacyStruct {
-    fn from(abi_struct_entry: AbiStructEntryWrapper) -> Self {
-        RawLegacyStruct {
-            name: abi_struct_entry.name,
-            size: abi_struct_entry.size,
-            members: abi_struct_entry.members.into_iter().map(RawLegacyMember::from).collect(),
-        }
-    }
-}
-
-impl From<LegacyStructAbiType> for AbiStructTypeWrapper {
-    fn from(abi_struct_type: LegacyStructAbiType) -> Self {
-        match abi_struct_type {
-            LegacyStructAbiType::Struct => AbiStructTypeWrapper::Struct,
-        }
-    }
-}
-
-impl From<AbiStructTypeWrapper> for LegacyStructAbiType {
-    fn from(abi_struct_type: AbiStructTypeWrapper) -> Self {
-        match abi_struct_type {
-            AbiStructTypeWrapper::Struct => LegacyStructAbiType::Struct,
-        }
-    }
-}
-
-impl From<RawLegacyMember> for AbiStructMemberWrapper {
-    fn from(abi_struct_member: RawLegacyMember) -> Self {
-        Self { name: abi_struct_member.name, r#type: abi_struct_member.r#type, offset: abi_struct_member.offset }
-    }
-}
-
-impl From<AbiStructMemberWrapper> for RawLegacyMember {
-    fn from(abi_struct_member: AbiStructMemberWrapper) -> Self {
-        RawLegacyMember {
-            name: abi_struct_member.name,
-            r#type: abi_struct_member.r#type,
-            offset: abi_struct_member.offset,
-        }
-    }
-}
-
-impl From<LegacyTypedParameter> for AbiTypedParameterWrapper {
-    fn from(abi_typed_parameter: LegacyTypedParameter) -> Self {
-        Self { name: abi_typed_parameter.name, r#type: abi_typed_parameter.r#type }
-    }
-}
-
-impl From<AbiTypedParameterWrapper> for LegacyTypedParameter {
-    fn from(abi_typed_parameter: AbiTypedParameterWrapper) -> Self {
-        LegacyTypedParameter { name: abi_typed_parameter.name, r#type: abi_typed_parameter.r#type }
     }
 }

@@ -10,8 +10,6 @@ use dp_convert::state_update::ToStateUpdateCore;
 use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use itertools::Itertools;
-use reqwest::Client;
-use serde_json::Value;
 use starknet_api::core::ClassHash;
 use starknet_core::types::{DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate};
 use starknet_providers::sequencer::models::{self as p, BlockId};

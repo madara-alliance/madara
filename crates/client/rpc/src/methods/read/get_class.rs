@@ -4,7 +4,6 @@ use dp_convert::to_stark_felt::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::ClassHash;
 use starknet_core::types::{BlockId, ContractClass, Felt};
-use starknet_providers::sequencer::models::DeployedClass;
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::ResultExt;
@@ -47,11 +46,12 @@ pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> Rp
         return Err(StarknetRpcApiError::ClassHashNotFound.into());
     }
 
-    let contract_class_core: ContractClass = ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
-        .try_into()
-        .or_else_internal_server_error(|| {
-            format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")
-        })?;
+    let contract_class_core: ContractClass =
+        ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
+            .try_into()
+            .or_else_internal_server_error(|| {
+                format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")
+            })?;
 
     let contract_class = match contract_class_core {
         ContractClass::Sierra(class) => ContractClass::Sierra(class),
@@ -60,4 +60,3 @@ pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> Rp
 
     Ok(contract_class)
 }
-
