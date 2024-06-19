@@ -13,6 +13,8 @@ use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 use starknet_types_core::hash::StarkHash as StarkHashTrait;
 
+use crate::starknet_version::StarknetVersion;
+
 /// Block status.
 ///
 /// The status of the block.
@@ -59,7 +61,7 @@ pub struct Header {
     /// A commitment to the events produced in this block
     pub event_commitment: StarkHash,
     /// The version of the Starknet protocol used when creating this block
-    pub protocol_version: String, // TODO: Verify if the type can be changed to u8 for the protocol version
+    pub protocol_version: StarknetVersion,
     /// Gas prices for this block
     pub l1_gas_price: Option<GasPrices>,
     /// The mode of data availability for this block
@@ -94,7 +96,7 @@ impl Header {
         transaction_commitment: StarkHash,
         event_count: u128,
         event_commitment: StarkHash,
-        protocol_version: String,
+        protocol_version: StarknetVersion,
         gas_prices: Option<GasPrices>,
         l1_da_mode: L1DataAvailabilityMode,
         extra_data: Option<U256>,
@@ -117,10 +119,17 @@ impl Header {
     }
 
     /// Converts to a blockifier BlockContext
-    pub fn into_block_context(&self, fee_token_addresses: FeeTokenAddresses, chain_id: ChainId) -> BlockContext {
-        let versioned_constants = if self.block_number <= 607_877 {
+    pub fn into_block_context(
+        &self,
+        fee_token_addresses: FeeTokenAddresses,
+        chain_id: ChainId,
+    ) -> Result<BlockContext, &'static str> {
+        let protocol_version = self.protocol_version;
+        let versioned_constants = if protocol_version < StarknetVersion::STARKNET_VERSION_0_13_0 {
+            return Err("Unsupported protocol version");
+        } else if protocol_version < StarknetVersion::STARKNET_VERSION_0_13_1 {
             &BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0
-        } else if self.block_number <= 632_914 {
+        } else if protocol_version < StarknetVersion::STARKNET_VERSION_0_13_1_1 {
             &BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1
         } else {
             VersionedConstants::latest_constants()
@@ -142,7 +151,7 @@ impl Header {
             use_kzg_da: self.l1_da_mode == L1DataAvailabilityMode::Blob,
         };
 
-        BlockContext::new_unchecked(&block_info, &chain_info, versioned_constants)
+        Ok(BlockContext::new_unchecked(&block_info, &chain_info, versioned_constants))
     }
 
     /// Compute the hash of the header.

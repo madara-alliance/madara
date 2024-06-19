@@ -2,10 +2,12 @@
 
 mod header;
 mod ordered_events;
+mod starknet_version;
 pub use header::Header;
 pub use ordered_events::*;
 use starknet_api::block::BlockHash;
 use starknet_api::transaction::{Transaction, TransactionHash};
+pub use starknet_version::StarknetVersion;
 
 pub use primitive_types::{H160, U256};
 use starknet_types_core::felt::Felt;

@@ -5,7 +5,7 @@ use std::num::NonZeroU128;
 use std::sync::Arc;
 
 use blockifier::block::GasPrices;
-use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
+use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, StarknetVersion};
 use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_transactions::from_broadcasted_transactions::fee_from_felt;
 use starknet_api::block::BlockHash;
@@ -55,7 +55,7 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
     let event_commitment = event_commitment.to_stark_felt();
     let txs_hashes: Vec<StarkFelt> = txs_hashes.iter().map(|felt| (*felt).to_stark_felt()).collect();
 
-    let protocol_version = block.starknet_version.unwrap_or_default();
+    let protocol_version = protocol_version(block.starknet_version);
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
     let extra_data = Some(dp_block::U256::from_big_endian(&block_hash.to_bytes_be()));
@@ -99,6 +99,10 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
     );
 
     Ok(ConvertedBlock { block, reverted_txs: reverted_transactions })
+}
+
+fn protocol_version(version: Option<String>) -> StarknetVersion {
+    version.map(|version| StarknetVersion::try_from_str(&version).unwrap_or_default()).unwrap_or_default()
 }
 
 fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {

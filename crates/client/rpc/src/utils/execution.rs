@@ -48,7 +48,9 @@ pub fn block_context(_client: &Starknet, block_info: &DeoxysBlockInfo) -> Result
     };
     let chain_id = starknet_api::core::ChainId("SN_MAIN".to_string());
 
-    Ok(block_header.into_block_context(fee_token_address, chain_id))
+    block_header
+        .into_block_context(fee_token_address, chain_id)
+        .map_err(|e| StarknetRpcApiError::ErrUnexpectedError { data: e.to_string() })
 }
 
 pub fn re_execute_transactions(
