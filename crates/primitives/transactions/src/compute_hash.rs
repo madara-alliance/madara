@@ -1,6 +1,6 @@
+use dp_convert::to_stark_felt::ToStarkFelt;
 use starknet_api::core::calculate_contract_address;
 use starknet_api::data_availability::DataAvailabilityMode;
-use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
     AccountDeploymentData, Calldata, DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2,
     DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3,
@@ -125,7 +125,7 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
 
         // Check for deprecated environment
         if block_number > Some(LEGACY_BLOCK_NUMBER) && chain_id == LEGACY_CHAIN_ID {
-            TransactionHash(StarkFelt::new_unchecked(
+            TransactionHash(
                 Pedersen::hash_array(&[
                     INVOKE_PREFIX,
                     version,
@@ -135,13 +135,13 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
                     max_fee,
                     chain_id,
                 ])
-                .to_bytes_be(),
-            ))
+                .to_stark_felt(),
+            )
         } else {
-            TransactionHash(StarkFelt::new_unchecked(
+            TransactionHash(
                 Pedersen::hash_array(&[INVOKE_PREFIX, sender_address, entrypoint_selector, calldata_hash, chain_id])
-                    .to_bytes_be(),
-            ))
+                    .to_stark_felt(),
+            )
         }
     }
 }
@@ -157,7 +157,7 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
         let max_fee = Felt::from(self.max_fee.0);
         let nonce = self.nonce.to_felt();
 
-        TransactionHash(StarkFelt::new_unchecked(
+        TransactionHash(
             Pedersen::hash_array(&[
                 INVOKE_PREFIX,
                 version,
@@ -168,8 +168,8 @@ impl ComputeTransactionHash for InvokeTransactionV1 {
                 chain_id,
                 nonce,
             ])
-            .to_bytes_be(),
-        ))
+            .to_stark_felt(),
+        )
     }
 }
 
@@ -188,7 +188,7 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
         let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);
         let calldata_hash = compute_calldata_hash_poseidon(self.calldata.clone());
 
-        TransactionHash(StarkFelt::new_unchecked(
+        TransactionHash(
             Poseidon::hash_array(&[
                 INVOKE_PREFIX,
                 version,
@@ -201,8 +201,8 @@ impl ComputeTransactionHash for InvokeTransactionV3 {
                 account_deployment_data_hash,
                 calldata_hash,
             ])
-            .to_bytes_be(),
-        ))
+            .to_stark_felt(),
+        )
     }
 }
 
@@ -238,7 +238,7 @@ impl ComputeTransactionHash for DeclareTransactionV0V1 {
         let class_or_nothing_hash =
             if version == Felt::ZERO { Pedersen::hash_array(&[]) } else { Pedersen::hash_array(&[class_hash_as_felt]) };
 
-        TransactionHash(StarkFelt::new_unchecked(
+        TransactionHash(
             Pedersen::hash_array(&[
                 DECLARE_PREFIX,
                 version,
@@ -249,8 +249,8 @@ impl ComputeTransactionHash for DeclareTransactionV0V1 {
                 chain_id,
                 nonce_or_class_hash,
             ])
-            .to_bytes_be(),
-        ))
+            .to_stark_felt(),
+        )
     }
 }
 
@@ -266,7 +266,7 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
         let nonce = self.nonce.to_felt();
         let compiled_class_hash = self.compiled_class_hash.to_felt();
 
-        TransactionHash(StarkFelt::new_unchecked(
+        TransactionHash(
             Pedersen::hash_array(&[
                 DECLARE_PREFIX,
                 version,
@@ -278,8 +278,8 @@ impl ComputeTransactionHash for DeclareTransactionV2 {
                 nonce,
                 compiled_class_hash,
             ])
-            .to_bytes_be(),
-        ))
+            .to_stark_felt(),
+        )
     }
 }
 
@@ -297,7 +297,7 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
 
         let account_deployment_data_hash = compute_account_deployment_hash(&self.account_deployment_data);
 
-        TransactionHash(StarkFelt::new_unchecked(
+        TransactionHash(
             Poseidon::hash_array(&[
                 DECLARE_PREFIX,
                 version,
@@ -311,8 +311,8 @@ impl ComputeTransactionHash for DeclareTransactionV3 {
                 self.class_hash.to_felt(),
                 self.compiled_class_hash.to_felt(),
             ])
-            .to_bytes_be(),
-        ))
+            .to_stark_felt(),
+        )
     }
 }
 
@@ -362,7 +362,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
         let max_fee = Felt::from(self.max_fee.0);
         let nonce = self.nonce.to_felt();
 
-        TransactionHash(StarkFelt::new_unchecked(
+        TransactionHash(
             Pedersen::hash_array(&[
                 DEPLOY_ACCOUNT_PREFIX,
                 version,
@@ -373,8 +373,8 @@ impl ComputeTransactionHash for DeployAccountTransactionV1 {
                 chain_id,
                 nonce,
             ])
-            .to_bytes_be(),
-        ))
+            .to_stark_felt(),
+        )
     }
 }
 
@@ -425,7 +425,7 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
 
         let constructor_calldata_hash = Poseidon::hash_array(constructor_calldata.as_slice());
 
-        TransactionHash(StarkFelt::new_unchecked(
+        TransactionHash(
             Poseidon::hash_array(&[
                 DEPLOY_ACCOUNT_PREFIX,
                 version,
@@ -439,8 +439,8 @@ impl ComputeTransactionHash for DeployAccountTransactionV3 {
                 self.class_hash.to_felt(),
                 self.contract_address_salt.to_felt(),
             ])
-            .to_bytes_be(),
-        ))
+            .to_stark_felt(),
+        )
     }
 }
 
@@ -457,12 +457,12 @@ impl ComputeTransactionHash for L1HandlerTransaction {
         let nonce = self.nonce.to_felt();
 
         if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && chain_id == LEGACY_CHAIN_ID {
-            TransactionHash(StarkFelt::new_unchecked(
+            TransactionHash(
                 Pedersen::hash_array(&[INVOKE_PREFIX, contract_address, entrypoint_selector, calldata_hash, chain_id])
-                    .to_bytes_be(),
-            ))
+                    .to_stark_felt(),
+            )
         } else if block_number < Some(LEGACY_BLOCK_NUMBER) && chain_id == LEGACY_CHAIN_ID {
-            TransactionHash(StarkFelt::new_unchecked(
+            TransactionHash(
                 Pedersen::hash_array(&[
                     L1_HANDLER_PREFIX,
                     contract_address,
@@ -471,10 +471,10 @@ impl ComputeTransactionHash for L1HandlerTransaction {
                     chain_id,
                     nonce,
                 ])
-                .to_bytes_be(),
-            ))
+                .to_stark_felt(),
+            )
         } else {
-            TransactionHash(StarkFelt::new_unchecked(
+            TransactionHash(
                 Pedersen::hash_array(&[
                     L1_HANDLER_PREFIX,
                     version,
@@ -485,8 +485,8 @@ impl ComputeTransactionHash for L1HandlerTransaction {
                     chain_id,
                     nonce,
                 ])
-                .to_bytes_be(),
-            ))
+                .to_stark_felt(),
+            )
         }
     }
 }
@@ -506,7 +506,7 @@ pub fn compute_hash_given_contract_address(
     let constructor = Felt::from_bytes_be(&starknet_keccak(b"constructor").to_bytes_be());
 
     if block_number > Some(LEGACY_BLOCK_NUMBER) && chain_id == LEGACY_CHAIN_ID {
-        TransactionHash(StarkFelt::new_unchecked(
+        TransactionHash(
             Pedersen::hash_array(&[
                 DEPLOY_PREFIX,
                 version,
@@ -516,13 +516,13 @@ pub fn compute_hash_given_contract_address(
                 Felt::ZERO,
                 chain_id,
             ])
-            .to_bytes_be(),
-        ))
+            .to_stark_felt(),
+        )
     } else {
-        TransactionHash(StarkFelt::new_unchecked(
+        TransactionHash(
             Pedersen::hash_array(&[DEPLOY_PREFIX, contract_address, constructor, constructor_calldata, chain_id])
-                .to_bytes_be(),
-        ))
+                .to_stark_felt(),
+        )
     }
 }
 
