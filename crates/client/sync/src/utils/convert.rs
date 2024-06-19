@@ -9,6 +9,7 @@ use blockifier::block::GasPrices;
 use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, StarknetVersion};
 use dp_convert::to_stark_felt::ToStarkFelt;
 use dp_transactions::from_broadcasted_transactions::fee_from_felt;
+use dp_transactions::MAIN_CHAIN_ID;
 use starknet_api::block::BlockHash;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{
@@ -78,8 +79,8 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
     };
 
     let computed_block_hash = header.hash(chain_id);
-    // mismatched block hash is allowed for blocks 1466..=2242
-    if computed_block_hash != block_hash && !(1466..=2242).contains(&block_number) {
+    // mismatched block hash is allowed for blocks 1466..=2242 on mainnet
+    if computed_block_hash != block_hash && !((1466..=2242).contains(&block_number) && chain_id == MAIN_CHAIN_ID) {
         return Err(L2SyncError::MismatchedBlockHash(block_number));
     }
     let ordered_events: Vec<dp_block::OrderedEvents> = block
