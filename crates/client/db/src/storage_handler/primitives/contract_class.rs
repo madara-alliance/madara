@@ -144,12 +144,10 @@ pub struct AbiTypedParameterWrapper {
     pub r#type: String,
 }
 
-/// Converts a [serde_json::Value] to a [ContractClassBlockifier]
-pub fn from_rpc_contract_class(contract_class: &serde_json::Value) -> anyhow::Result<ContractClassBlockifier> {
-    if contract_class.get("sierra_program").is_some() {
-        from_contract_class_sierra(contract_class)
-    } else {
-        from_contract_class_cairo(contract_class)
+pub fn from_rpc_contract_class(contract_class: &DeployedClass) -> anyhow::Result<ContractClassBlockifier> {
+    match contract_class {
+        DeployedClass::LegacyClass(contract_class) => from_contract_class_cairo(contract_class),
+        DeployedClass::SierraClass(contract_class) => from_contract_class_sierra(contract_class),
     }
 }
 
@@ -180,9 +178,9 @@ pub fn to_contract_class_sierra(sierra_class: &ContractClassV1, abi: String) -> 
 /// Converts a [FlattenedSierraClass] to a [ContractClassBlockifier]
 ///
 /// This is used before storing the contract classes.
-pub fn from_contract_class_sierra(contract_class: &serde_json::Value) -> anyhow::Result<ContractClassBlockifier> {
-    let raw_contract_class = serde_json::to_string(contract_class).context("serializing contract class")?;
-    let blockifier_contract = ContractClassV1::try_from_json_string(&raw_contract_class).context("converting contract class")?;
+pub fn from_contract_class_sierra(contract_class: &FlattenedSierraClass) -> anyhow::Result<ContractClassBlockifier> {
+    let raw_casm_contract = flattened_sierra_to_casm_contract_class(&Arc::new(contract_class.clone()))?;
+    let blockifier_contract = ContractClassV1::try_from(raw_casm_contract).unwrap();
     anyhow::Ok(ContractClassBlockifier::V1(blockifier_contract))
 }
 
@@ -205,10 +203,13 @@ pub fn to_contract_class_cairo(
     Ok(ContractClassCore::Legacy(compressed_legacy_contract_class))
 }
 
-/// Converts a [serde_json::Value] to a [ContractClassBlockifier]
-pub fn from_contract_class_cairo(contract_class: &serde_json::Value) -> anyhow::Result<ContractClassBlockifier> {
-    let raw_contract_class = serde_json::to_string(contract_class).context("serializing contract class")?;
-    let blockifier_contract = ContractClassV0::try_from_json_string(&raw_contract_class).context("converting contract class")?;
+/// Converts a [LegacyContractClass] to a [ContractClassBlockifier]
+pub fn from_contract_class_cairo(contract_class: &LegacyContractClass) -> anyhow::Result<ContractClassBlockifier> {
+    let compressed_program = contract_class.compress().expect("Cairo program compression failed");
+    let bytes = decompress(&compressed_program.program)?;
+    let program = Program::from_bytes(&bytes, None).unwrap(); // check if entrypoint is needed somewhere here
+    let entry_points_by_type = from_legacy_entry_points_by_type(&contract_class.entry_points_by_type);
+    let blockifier_contract = ContractClassV0(Arc::new(ContractClassV0Inner { program, entry_points_by_type }));
     anyhow::Ok(ContractClassBlockifier::V0(blockifier_contract))
 }
 
@@ -324,35 +325,29 @@ use starknet_types_core::felt::Felt;
 
 // Wrapper Class conversion
 
-impl TryFrom<serde_json::Value> for ContractClassWrapper {
+impl TryFrom<DeployedClass> for ContractClassWrapper {
     type Error = anyhow::Error;
 
-    fn try_from(contract_class: serde_json::Value) -> Result<Self, Self::Error> {
+    fn try_from(contract_class: DeployedClass) -> Result<Self, Self::Error> {
         let contract = from_rpc_contract_class(&contract_class)?;
 
-        let abi_value = contract_class
-            .get("abi")
-            .ok_or_else(|| anyhow::anyhow!("Missing `abi` field in contract class"))?;
-        let abi_string = serde_json::to_string(abi_value)?;
-
-        let sierra_program_exists = contract_class.get("sierra_program").is_some();
-        let abi = if sierra_program_exists {
-            ContractAbi::Sierra(abi_string.clone())
-        } else {
-            ContractAbi::Cairo(Some(abi_string.clone()))
+        let abi = match &contract_class {
+            DeployedClass::LegacyClass(class_cairo) => {
+                let abi_string = serde_json::to_string(&class_cairo.abi).context("serializing abi")?;
+                ContractAbi::Cairo(Some(abi_string))
+            }
+            DeployedClass::SierraClass(class_sierra) => ContractAbi::Sierra(class_sierra.abi.clone()),
         };
 
-        let sierra_program_length = contract_class
-            .get("sierra_program")
-            .and_then(|sierra_program| sierra_program.as_array().map(|arr| arr.len()))
-            .unwrap_or(0) as u64;
-
-        let abi_length = abi_string.len() as u64;
+        let sierra_program_length = match &contract_class {
+            DeployedClass::SierraClass(class_sierra) => class_sierra.sierra_program.len(),
+            DeployedClass::LegacyClass(_) => 0,
+        } as u64;
+        let abi_length = abi.length() as u64;
 
         Ok(Self { contract, abi, sierra_program_length, abi_length })
     }
 }
-
 
 impl TryInto<ContractClassCore> for ContractClassWrapper {
     type Error = anyhow::Error;
