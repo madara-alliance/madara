@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::num::NonZeroU128;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use blockifier::block::GasPrices;
@@ -102,7 +103,7 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
 }
 
 fn protocol_version(version: Option<String>) -> StarknetVersion {
-    version.map(|version| StarknetVersion::try_from_str(&version).unwrap_or_default()).unwrap_or_default()
+    version.map(|version| StarknetVersion::from_str(&version).unwrap_or_default()).unwrap_or_default()
 }
 
 fn transactions(txs: Vec<p::TransactionType>) -> Vec<Transaction> {
