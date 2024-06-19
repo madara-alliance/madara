@@ -14,7 +14,7 @@ use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash}; //, Poseidon};
 
 use super::SIMULATE_TX_VERSION_OFFSET;
-use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK};
+use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK, MAIN_CHAIN_ID};
 use dp_convert::to_felt::ToFelt;
 
 // b"declare" == 0x6465636c617265
@@ -30,9 +30,6 @@ const L1_HANDLER_PREFIX: Felt = Felt::from_hex_unchecked("0x6c315f68616e646c6572
 
 const L1_GAS: &[u8] = b"L1_GAS";
 const L2_GAS: &[u8] = b"L2_GAS";
-
-//  b"SN_MAIN" == 0x534e5f4d41494e
-const LEGACY_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x534e5f4d41494e");
 
 pub trait ComputeTransactionHash {
     fn compute_hash(&self, chain_id: Felt, offset_version: bool, block_number: Option<u64>) -> TransactionHash;
@@ -124,7 +121,7 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
         let max_fee = Felt::from(self.max_fee.0);
 
         // Check for deprecated environment
-        if block_number > Some(LEGACY_BLOCK_NUMBER) && chain_id == LEGACY_CHAIN_ID {
+        if block_number > Some(LEGACY_BLOCK_NUMBER) && chain_id == MAIN_CHAIN_ID {
             TransactionHash(
                 Pedersen::hash_array(&[
                     INVOKE_PREFIX,
@@ -456,12 +453,12 @@ impl ComputeTransactionHash for L1HandlerTransaction {
 
         let nonce = self.nonce.to_felt();
 
-        if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && chain_id == LEGACY_CHAIN_ID {
+        if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && chain_id == MAIN_CHAIN_ID {
             TransactionHash(
                 Pedersen::hash_array(&[INVOKE_PREFIX, contract_address, entrypoint_selector, calldata_hash, chain_id])
                     .to_stark_felt(),
             )
-        } else if block_number < Some(LEGACY_BLOCK_NUMBER) && chain_id == LEGACY_CHAIN_ID {
+        } else if block_number < Some(LEGACY_BLOCK_NUMBER) && chain_id == MAIN_CHAIN_ID {
             TransactionHash(
                 Pedersen::hash_array(&[
                     L1_HANDLER_PREFIX,
@@ -505,7 +502,7 @@ pub fn compute_hash_given_contract_address(
 
     let constructor = Felt::from_bytes_be(&starknet_keccak(b"constructor").to_bytes_be());
 
-    if block_number > Some(LEGACY_BLOCK_NUMBER) && chain_id == LEGACY_CHAIN_ID {
+    if block_number > Some(LEGACY_BLOCK_NUMBER) && chain_id == MAIN_CHAIN_ID {
         TransactionHash(
             Pedersen::hash_array(&[
                 DEPLOY_PREFIX,

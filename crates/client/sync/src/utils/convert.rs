@@ -77,7 +77,7 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
         extra_data,
     };
 
-    let computed_block_hash = header.hash();
+    let computed_block_hash = header.hash(chain_id);
     // mismatched block hash is allowed for blocks 1466..=2242
     if computed_block_hash != block_hash && !(1466..=2242).contains(&block_number) {
         return Err(L2SyncError::MismatchedBlockHash(block_number));

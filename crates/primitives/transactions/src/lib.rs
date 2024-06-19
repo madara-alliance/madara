@@ -19,6 +19,9 @@ const SIMULATE_TX_VERSION_OFFSET: Felt =
 pub const LEGACY_BLOCK_NUMBER: u64 = 1470;
 pub const LEGACY_L1_HANDLER_BLOCK: u64 = 854;
 
+//  b"SN_MAIN" == 0x534e5f4d41494e
+pub const MAIN_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x534e5f4d41494e");
+
 /// Wrapper type for transaction execution error.
 /// Different tx types.
 /// See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/` for more details.
