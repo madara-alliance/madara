@@ -9,6 +9,7 @@ members = [
   "crates/primitives/block",
   "crates/primitives/convert",
   "crates/primitives/transactions",
+  "crates/primitives/receipt",
   "crates/primitives/utils",
 ]
 resolver = "2"
@@ -23,6 +24,7 @@ default-members = [
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/transactions",
+  "crates/primitives/receipt",
   "crates/primitives/utils",
 ]
 

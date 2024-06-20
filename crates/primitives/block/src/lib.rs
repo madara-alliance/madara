@@ -97,7 +97,7 @@ impl DeoxysBlockInfo {
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInner {
     /// The block transactions.
-    transactions: Vec<Transaction>, // Vec<starknet_api::transaction::Transaction>,
+    transactions: Vec<Transaction>,
     /// The block events.
     events: Vec<OrderedEvents>,
 }

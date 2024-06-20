@@ -2141,6 +2141,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dp-receipt"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "starknet-core",
+ "starknet-types-core",
+]
+
+[[package]]
 name = "dp-simulations"
 version = "0.1.0"
 dependencies = [
