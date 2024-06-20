@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use starknet_api::block::BlockHash;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::PendingStateUpdate;
@@ -157,17 +157,11 @@ impl MappingDb {
         self.write_last_confirmed_block(tx, 0)
     }
 
-    pub fn write_new_block(
-        &self,
-        tx: &mut WriteBatchWithTransaction,
-        block: &DeoxysBlock,
-        reverted_txs: &[TransactionHash],
-    ) -> Result<()> {
+    pub fn write_new_block(&self, tx: &mut WriteBatchWithTransaction, block: &DeoxysBlock) -> Result<()> {
         let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
         let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
         let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
         let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
-        let reverted_txs_cl = self.db.get_column(Column::RevertedTxs);
         let meta = self.db.get_column(Column::BlockStorageMeta);
 
         let block_hash_encoded = codec::Encode::encode(block.block_hash())?;
@@ -175,10 +169,6 @@ impl MappingDb {
 
         for hash in block.tx_hashes() {
             tx.put_cf(&tx_hash_to_block_n, codec::Encode::encode(hash)?, &block_n_encoded);
-        }
-
-        for hash in reverted_txs {
-            tx.put_cf(&reverted_txs_cl, codec::Encode::encode(hash)?, []);
         }
 
         tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
@@ -293,11 +283,6 @@ impl MappingDb {
                 )))
             }
         }
-    }
-
-    pub fn is_reverted_tx(&self, tx_hash: &TransactionHash) -> Result<bool> {
-        let col = self.db.get_column(Column::RevertedTxs);
-        Ok(self.db.get_cf(&col, codec::Encode::encode(tx_hash)?)?.is_some())
     }
 
     // pub fn get_tx_status(&self, tx_info: &TxStorageInfo) {

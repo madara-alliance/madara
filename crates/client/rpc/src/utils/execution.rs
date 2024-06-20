@@ -15,8 +15,8 @@ use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTran
 use blockifier::versioned_constants::VersionedConstants;
 use dc_db::storage_handler::StorageView;
 use dp_block::DeoxysBlockInfo;
-use dp_convert::to_felt::ToFelt;
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToFelt;
+use dp_convert::ToStarkFelt;
 use dp_simulations::SimulationFlags;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::{ContractAddress, EntryPointSelector};

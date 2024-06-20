@@ -1,6 +1,6 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 

@@ -71,6 +71,7 @@ dp-convert = { path = "crates/primitives/convert", default-features = false }
 dp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
 dp-simulations = { path = "crates/primitives/simulations", default-features = false }
 dp-transactions = { path = "crates/primitives/transactions", default-features = false }
+dp-receipt = { path = "crates/primitives/receipt", default-features = false }
 dp-types = { path = "crates/primitives/types", default-features = false }
 dp-utils = { path = "crates/primitives/utils", default-features = false }
 

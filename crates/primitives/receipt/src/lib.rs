@@ -1,4 +1,5 @@
 mod from_starknet_core;
+mod from_starknet_provider;
 mod to_starknet_core;
 
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,48 @@ pub enum TransactionReceipt {
     Declare(DeclareTransactionReceipt),
     Deploy(DeployTransactionReceipt),
     DeployAccount(DeployAccountTransactionReceipt),
+}
+
+impl TransactionReceipt {
+    pub fn transaction_hash(&self) -> Felt {
+        match self {
+            TransactionReceipt::Invoke(receipt) => receipt.transaction_hash,
+            TransactionReceipt::L1Handler(receipt) => receipt.transaction_hash,
+            TransactionReceipt::Declare(receipt) => receipt.transaction_hash,
+            TransactionReceipt::Deploy(receipt) => receipt.transaction_hash,
+            TransactionReceipt::DeployAccount(receipt) => receipt.transaction_hash,
+        }
+    }
+
+    pub fn messages_sent(&self) -> &[MsgToL1] {
+        match self {
+            TransactionReceipt::Invoke(receipt) => &receipt.messages_sent,
+            TransactionReceipt::L1Handler(receipt) => &receipt.messages_sent,
+            TransactionReceipt::Declare(receipt) => &receipt.messages_sent,
+            TransactionReceipt::Deploy(receipt) => &receipt.messages_sent,
+            TransactionReceipt::DeployAccount(receipt) => &receipt.messages_sent,
+        }
+    }
+
+    pub fn events(&self) -> &[Event] {
+        match self {
+            TransactionReceipt::Invoke(receipt) => &receipt.events,
+            TransactionReceipt::L1Handler(receipt) => &receipt.events,
+            TransactionReceipt::Declare(receipt) => &receipt.events,
+            TransactionReceipt::Deploy(receipt) => &receipt.events,
+            TransactionReceipt::DeployAccount(receipt) => &receipt.events,
+        }
+    }
+
+    pub fn execution_result(&self) -> ExecutionResult {
+        match self {
+            TransactionReceipt::Invoke(receipt) => receipt.execution_result.clone(),
+            TransactionReceipt::L1Handler(receipt) => receipt.execution_result.clone(),
+            TransactionReceipt::Declare(receipt) => receipt.execution_result.clone(),
+            TransactionReceipt::Deploy(receipt) => receipt.execution_result.clone(),
+            TransactionReceipt::DeployAccount(receipt) => receipt.execution_result.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,7 +136,7 @@ pub struct Event {
     pub data: Vec<Felt>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ExecutionResources {
     pub steps: u64,
     pub memory_holes: Option<u64>,
@@ -108,7 +151,7 @@ pub struct ExecutionResources {
     pub data_availability: DataAvailabilityResources,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DataAvailabilityResources {
     pub l1_gas: u64,
     pub l1_data_gas: u64,

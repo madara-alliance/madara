@@ -1,5 +1,5 @@
 use dc_db::mapping_db::BlockStorageType;
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::Transaction;

@@ -1,3 +1,7 @@
 pub mod state_update;
-pub mod to_felt;
-pub mod to_stark_felt;
+mod to_felt;
+mod to_stark_felt;
+
+pub use state_update::ToStateUpdateCore;
+pub use to_felt::ToFelt;
+pub use to_stark_felt::ToStarkFelt;

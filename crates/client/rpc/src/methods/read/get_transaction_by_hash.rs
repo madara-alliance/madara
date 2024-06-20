@@ -1,4 +1,4 @@
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::TransactionHash;

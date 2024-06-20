@@ -1,5 +1,5 @@
 use blockifier::execution::call_info::CallInfo;
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 use starknet_core::types::{
     ComputationResources, DataAvailabilityResources, DataResources, Event, ExecutionResources, Felt, MsgToL1,
 };

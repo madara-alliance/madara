@@ -7,13 +7,14 @@ use std::sync::Arc;
 
 use blockifier::block::GasPrices;
 use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, StarknetVersion};
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
+use dp_receipt::{Event, TransactionReceipt};
 use dp_transactions::from_broadcasted_transactions::fee_from_felt;
 use dp_transactions::MAIN_CHAIN_ID;
 use starknet_api::block::BlockHash;
 use starknet_api::transaction::{
-    DeclareTransaction, DeployAccountTransaction, DeployAccountTransactionV1, DeployTransaction, Event,
-    InvokeTransaction, L1HandlerTransaction, Transaction, TransactionHash,
+    DeclareTransaction, DeployAccountTransaction, DeployAccountTransactionV1, DeployTransaction, InvokeTransaction,
+    L1HandlerTransaction, Transaction, TransactionHash,
 };
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, PendingStateUpdate,
@@ -28,17 +29,17 @@ use starknet_types_core::felt::Felt;
 use crate::commitments::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
 
-pub struct ConvertedBlock {
-    pub block: DeoxysBlock,
-    pub reverted_txs: Vec<TransactionHash>,
-}
-
 /// Compute heavy, this should only be called in a rayon ctx
-pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, L2SyncError> {
+pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2SyncError> {
     // converts starknet_provider transactions and events to dp_transactions and starknet_api events
     let transactions = transactions(&block.transactions);
-    let reverted_transactions = reverted_transactions(&block.transaction_receipts);
-    let events = events(&block.transaction_receipts);
+    let transactions_receipts = block
+        .transaction_receipts
+        .into_iter()
+        .zip(block.transactions.iter())
+        .map(|(tx_receipts, tx)| TransactionReceipt::from_provider(tx_receipts, tx))
+        .collect::<Vec<_>>();
+    let events = events(&transactions_receipts);
     let block_hash = block.block_hash.expect("no block hash provided");
     let block_number = block.block_number.expect("no block number provided");
     let block_timestamp = block.timestamp;
@@ -53,7 +54,6 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
     let protocol_version = protocol_version(block.starknet_version);
     let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
-    let extra_data = Some(dp_block::U256::from_big_endian(&block_hash.to_bytes_be()));
 
     let header = dp_block::Header {
         parent_block_hash: block.parent_block_hash.to_stark_felt(),
@@ -68,7 +68,6 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
         protocol_version,
         l1_gas_price,
         l1_da_mode,
-        extra_data,
     };
 
     let computed_block_hash = header.hash(chain_id);
@@ -92,24 +91,15 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<ConvertedBlock, 
         }
         return Err(L2SyncError::MismatchedBlockHash(block_number));
     }
-    let ordered_events: Vec<dp_block::OrderedEvents> = block
-        .transaction_receipts
-        .iter()
-        .enumerate()
-        .filter(|(_, r)| !r.events.is_empty())
-        .map(|(i, r)| dp_block::OrderedEvents::new(i as u128, r.events.iter().map(event).collect()))
-        .collect();
 
-    let block = DeoxysBlock::new(
+    Ok(DeoxysBlock::new(
         DeoxysBlockInfo::new(
             header,
             txs_hashes.into_iter().map(ToStarkFelt::to_stark_felt).map(TransactionHash).collect(),
             BlockHash(block_hash.to_stark_felt()),
         ),
-        DeoxysBlockInner::new(transactions, ordered_events),
-    );
-
-    Ok(ConvertedBlock { block, reverted_txs: reverted_transactions })
+        DeoxysBlockInner::new(transactions, transactions_receipts),
+    ))
 }
 
 fn protocol_version(version: Option<String>) -> StarknetVersion {
@@ -282,14 +272,6 @@ fn l1_handler_transaction(tx: &p::L1HandlerTransaction) -> L1HandlerTransaction 
     }
 }
 
-fn reverted_transactions(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<TransactionHash> {
-    receipts
-        .iter()
-        .filter(|r| r.execution_status == Some(p::TransactionExecutionStatus::Reverted))
-        .map(|r| TransactionHash(r.transaction_hash.to_stark_felt()))
-        .collect()
-}
-
 fn fee(fee: Felt) -> starknet_api::transaction::Fee {
     fee_from_felt(fee)
 }
@@ -417,20 +399,8 @@ fn l1_da_mode(
     }
 }
 
-fn events(receipts: &[p::ConfirmedTransactionReceipt]) -> Vec<starknet_api::transaction::Event> {
-    receipts.iter().flat_map(|r| &r.events).map(event).collect()
-}
-
-fn event(event: &p::Event) -> starknet_api::transaction::Event {
-    use starknet_api::transaction::{EventContent, EventData, EventKey};
-
-    Event {
-        from_address: contract_address(event.from_address),
-        content: EventContent {
-            keys: event.keys.iter().copied().map(ToStarkFelt::to_stark_felt).map(EventKey).collect(),
-            data: EventData(event.data.iter().copied().map(ToStarkFelt::to_stark_felt).collect()),
-        },
-    }
+fn events(receipts: &[TransactionReceipt]) -> Vec<Event> {
+    receipts.iter().flat_map(TransactionReceipt::events).cloned().collect()
 }
 
 pub fn state_update(state_update: StateUpdateProvider) -> PendingStateUpdate {

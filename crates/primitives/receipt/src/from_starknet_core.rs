@@ -25,8 +25,8 @@ impl From<starknet_core::types::InvokeTransactionReceipt> for InvokeTransactionR
         Self {
             transaction_hash: receipt.transaction_hash,
             actual_fee: receipt.actual_fee.into(),
-            messages_sent: receipt.messages_sent.into_iter().map(|msg| msg.into()).collect(),
-            events: receipt.events.into_iter().map(|event| event.into()).collect(),
+            messages_sent: receipt.messages_sent.into_iter().map(MsgToL1::from).collect(),
+            events: receipt.events.into_iter().map(Event::from).collect(),
             execution_resources: receipt.execution_resources.into(),
             execution_result: receipt.execution_result.into(),
         }
@@ -39,8 +39,8 @@ impl From<starknet_core::types::L1HandlerTransactionReceipt> for L1HandlerTransa
             message_hash: receipt.message_hash,
             transaction_hash: receipt.transaction_hash,
             actual_fee: receipt.actual_fee.into(),
-            messages_sent: receipt.messages_sent.into_iter().map(|msg| msg.into()).collect(),
-            events: receipt.events.into_iter().map(|event| event.into()).collect(),
+            messages_sent: receipt.messages_sent.into_iter().map(MsgToL1::from).collect(),
+            events: receipt.events.into_iter().map(Event::from).collect(),
             execution_resources: receipt.execution_resources.into(),
             execution_result: receipt.execution_result.into(),
         }
@@ -52,8 +52,8 @@ impl From<starknet_core::types::DeclareTransactionReceipt> for DeclareTransactio
         Self {
             transaction_hash: receipt.transaction_hash,
             actual_fee: receipt.actual_fee.into(),
-            messages_sent: receipt.messages_sent.into_iter().map(|msg| msg.into()).collect(),
-            events: receipt.events.into_iter().map(|event| event.into()).collect(),
+            messages_sent: receipt.messages_sent.into_iter().map(MsgToL1::from).collect(),
+            events: receipt.events.into_iter().map(Event::from).collect(),
             execution_resources: receipt.execution_resources.into(),
             execution_result: receipt.execution_result.into(),
         }
@@ -65,8 +65,8 @@ impl From<starknet_core::types::DeployTransactionReceipt> for DeployTransactionR
         Self {
             transaction_hash: receipt.transaction_hash,
             actual_fee: receipt.actual_fee.into(),
-            messages_sent: receipt.messages_sent.into_iter().map(|msg| msg.into()).collect(),
-            events: receipt.events.into_iter().map(|event| event.into()).collect(),
+            messages_sent: receipt.messages_sent.into_iter().map(MsgToL1::from).collect(),
+            events: receipt.events.into_iter().map(Event::from).collect(),
             execution_resources: receipt.execution_resources.into(),
             execution_result: receipt.execution_result.into(),
             contract_address: receipt.contract_address,
@@ -79,8 +79,8 @@ impl From<starknet_core::types::DeployAccountTransactionReceipt> for DeployAccou
         Self {
             transaction_hash: receipt.transaction_hash,
             actual_fee: receipt.actual_fee.into(),
-            messages_sent: receipt.messages_sent.into_iter().map(|msg| msg.into()).collect(),
-            events: receipt.events.into_iter().map(|event| event.into()).collect(),
+            messages_sent: receipt.messages_sent.into_iter().map(MsgToL1::from).collect(),
+            events: receipt.events.into_iter().map(Event::from).collect(),
             execution_resources: receipt.execution_resources.into(),
             execution_result: receipt.execution_result.into(),
             contract_address: receipt.contract_address,

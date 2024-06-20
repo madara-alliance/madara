@@ -7,8 +7,8 @@ use blockifier::execution::contract_class::{
     ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1, EntryPointV1,
 };
 use cairo_vm::types::program::Program;
-use dp_convert::to_felt::ToFelt;
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToFelt;
+use dp_convert::ToStarkFelt;
 use dp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;

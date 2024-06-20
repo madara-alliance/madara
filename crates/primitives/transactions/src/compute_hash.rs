@@ -1,4 +1,4 @@
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use starknet_api::core::calculate_contract_address;
 use starknet_api::data_availability::DataAvailabilityMode;
 use starknet_api::transaction::{
@@ -15,7 +15,7 @@ use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash}; //, Poseidon};
 
 use super::SIMULATE_TX_VERSION_OFFSET;
 use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK, MAIN_CHAIN_ID};
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 
 // b"declare" == 0x6465636c617265
 const DECLARE_PREFIX: Felt = Felt::from_hex_unchecked("0x6465636c617265");

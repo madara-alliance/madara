@@ -1895,6 +1895,7 @@ dependencies = [
  "dc-db",
  "dp-block",
  "dp-convert",
+ "dp-receipt",
  "dp-simulations",
  "dp-transactions",
  "indexmap 2.2.6",
@@ -1922,6 +1923,7 @@ dependencies = [
  "dc-telemetry",
  "dp-block",
  "dp-convert",
+ "dp-receipt",
  "dp-transactions",
  "dp-utils",
  "ethers",
@@ -2119,6 +2121,7 @@ version = "0.1.0"
 dependencies = [
  "blockifier",
  "dp-convert",
+ "dp-receipt",
  "dp-transactions",
  "lazy_static",
  "primitive-types",
@@ -2134,6 +2137,7 @@ dependencies = [
 name = "dp-convert"
 version = "0.1.0"
 dependencies = [
+ "primitive-types",
  "starknet-core",
  "starknet-providers",
  "starknet-types-core",
@@ -2144,8 +2148,10 @@ dependencies = [
 name = "dp-receipt"
 version = "0.1.0"
 dependencies = [
+ "dp-convert",
  "serde",
  "starknet-core",
+ "starknet-providers",
  "starknet-types-core",
 ]
 

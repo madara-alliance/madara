@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use blockifier::transaction::transactions::L1HandlerTransaction;
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use dp_transactions::compute_hash::ComputeTransactionHash;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::Nonce;

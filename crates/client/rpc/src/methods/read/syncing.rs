@@ -1,5 +1,5 @@
 use dp_block::{BlockId, BlockTag};
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{SyncStatus, SyncStatusType};
 

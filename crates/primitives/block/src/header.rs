@@ -3,9 +3,8 @@ use core::num::NonZeroU128;
 use blockifier::block::{BlockInfo, GasPrices};
 use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
 use blockifier::versioned_constants::VersionedConstants;
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 use dp_transactions::MAIN_CHAIN_ID;
-use primitive_types::U256;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_api::data_availability::L1DataAvailabilityMode;
@@ -67,8 +66,6 @@ pub struct Header {
     pub l1_gas_price: Option<GasPrices>,
     /// The mode of data availability for this block
     pub l1_da_mode: L1DataAvailabilityMode,
-    /// Extraneous data that might be useful for running transactions
-    pub extra_data: Option<U256>,
 }
 
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
@@ -100,7 +97,6 @@ impl Header {
         protocol_version: StarknetVersion,
         gas_prices: Option<GasPrices>,
         l1_da_mode: L1DataAvailabilityMode,
-        extra_data: Option<U256>,
     ) -> Self {
         Self {
             parent_block_hash,
@@ -115,7 +111,6 @@ impl Header {
             protocol_version,
             l1_gas_price: gas_prices,
             l1_da_mode,
-            extra_data,
         }
     }
 

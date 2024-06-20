@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_core::types::{

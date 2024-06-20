@@ -1,3 +1,4 @@
+use primitive_types::H160;
 use starknet_types_core::felt::Felt;
 
 use std::ops::Deref;
@@ -45,6 +46,12 @@ impl ToFelt for PatriciaKey {
 impl ToFelt for &PatriciaKey {
     fn to_felt(self) -> Felt {
         self.deref().to_felt()
+    }
+}
+
+impl ToFelt for H160 {
+    fn to_felt(self) -> Felt {
+        Felt::from_bytes_be_slice(&self.0)
     }
 }
 

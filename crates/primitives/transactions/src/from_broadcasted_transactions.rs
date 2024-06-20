@@ -15,7 +15,7 @@ use cairo_lang_starknet_classes::contract_class::{
 };
 use cairo_lang_utils::bigint::BigUintAsHex;
 use cairo_vm::types::program::Program;
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use flate2::read::GzDecoder;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_api::core::{
