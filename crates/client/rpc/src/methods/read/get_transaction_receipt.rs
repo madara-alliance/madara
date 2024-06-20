@@ -10,6 +10,7 @@ use starknet_core::types::{Felt, TransactionFinalityStatus, TransactionReceiptWi
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::re_execute_transactions;
+use crate::utils::OptionExt;
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -85,15 +86,9 @@ pub(crate) fn execution_infos(
     let prev = vec![];
 
     let execution_infos = re_execute_transactions(starknet, prev, last, block_context)
-        .map_err(|e| {
-            log::error!("Failed to re-execute transactions: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?
+        .or_internal_server_error("Failed to re-execute transactions")?
         .pop()
-        .ok_or_else(|| {
-            log::error!("No execution info returned for the last transaction");
-            StarknetRpcApiError::InternalServerError
-        })?;
+        .ok_or_internal_server_error("No execution info returned for the last transaction")?;
 
     Ok(execution_infos)
 }

@@ -18,10 +18,12 @@ use dp_block::DeoxysBlockInfo;
 use dp_convert::ToFelt;
 use dp_convert::ToStarkFelt;
 use dp_simulations::SimulationFlags;
+use dp_transactions::getters::Hash;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::transaction::Calldata;
+use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{FeeEstimate, PriceUnit};
 use starknet_types_core::felt::Felt;
 
@@ -53,22 +55,47 @@ pub fn block_context(_client: &Starknet, block_info: &DeoxysBlockInfo) -> Result
         .map_err(|e| StarknetRpcApiError::ErrUnexpectedError { data: e.to_string() })
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("Executing tx {hash:#} (index {index}): {err:#}")]
+pub struct TransactionsExecError {
+    hash: TransactionHash,
+    index: usize,
+    err: TransactionExecutionError,
+}
+
 pub fn re_execute_transactions(
     starknet: &Starknet,
-    transactions_before: Vec<Transaction>,
-    transactions_to_trace: Vec<Transaction>,
+    transactions_before: impl IntoIterator<Item = Transaction>,
+    transactions_to_trace: impl IntoIterator<Item = Transaction>,
     block_context: &BlockContext,
-) -> Result<Vec<TransactionExecutionInfo>, TransactionExecutionError> {
+) -> Result<Vec<TransactionExecutionInfo>, TransactionsExecError> {
     let charge_fee = block_context.block_info().gas_prices.eth_l1_gas_price.get() != 1;
     let mut cached_state = init_cached_state(starknet, block_context);
 
-    for tx in transactions_before {
-        tx.execute(&mut cached_state, block_context, charge_fee, true)?;
+    let mut executed_prev = 0;
+    for (index, tx) in transactions_before.into_iter().enumerate() {
+        let tx_hash = tx.tx_hash();
+        log::debug!("executing {tx_hash:?}");
+        tx.execute(&mut cached_state, block_context, charge_fee, true).map_err(|err| TransactionsExecError {
+            hash: tx_hash.unwrap_or_default(),
+            index,
+            err,
+        })?;
+        executed_prev += 1;
     }
 
     let transactions_exec_infos = transactions_to_trace
         .into_iter()
-        .map(|tx| tx.execute(&mut cached_state, block_context, charge_fee, true))
+        .enumerate()
+        .map(|(index, tx)| {
+            let tx_hash = tx.tx_hash();
+            log::debug!("executing {tx_hash:?} (2)");
+            tx.execute(&mut cached_state, block_context, charge_fee, true).map_err(|err| TransactionsExecError {
+                hash: tx_hash.unwrap_or_default(),
+                index: executed_prev + index,
+                err,
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(transactions_exec_infos)
@@ -132,7 +159,10 @@ pub fn call_contract(
 
     let res = entrypoint
         .execute(
-            &mut BlockifierStateAdapter::new(Arc::clone(&starknet.backend), block_context.block_info().block_number.0),
+            &mut BlockifierStateAdapter::new(
+                Arc::clone(&starknet.backend),
+                Some(block_context.block_info().block_number.0),
+            ),
             &mut resources,
             &mut entry_point_execution_context,
         )
@@ -265,8 +295,9 @@ pub fn from_tx_info_and_gas_price(
 
 fn init_cached_state(starknet: &Starknet, block_context: &BlockContext) -> CachedState<BlockifierStateAdapter> {
     let block_number = block_context.block_info().block_number.0;
+    let prev_block = block_number.checked_sub(1); // handle genesis correctly
     CachedState::new(
-        BlockifierStateAdapter::new(Arc::clone(&starknet.backend), block_number - 1), // TODO(panic): check if this -1 operation can overflow!!
+        BlockifierStateAdapter::new(Arc::clone(&starknet.backend), prev_block),
         GlobalContractCache::new(16),
     )
 }

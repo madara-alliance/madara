@@ -25,7 +25,7 @@ pub fn setup_logging() -> anyhow::Result<()> {
                     let method = record.key_values().get(Key::from("method")).unwrap();
                     let res_len = record.key_values().get(Key::from("res_len")).unwrap();
                     let rpc_style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Magenta)));
-                    let status_color = if (0..400).contains(&status) {
+                    let status_color = if status == 200 {
                         Style::new().fg_color(Some(Color::Ansi(AnsiColor::Green)))
                     } else {
                         Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red)))
@@ -60,7 +60,16 @@ pub fn setup_logging() -> anyhow::Result<()> {
                 Level::Warn => {
                     writeln!(
                         fmt,
-                        "{brackets}[{brackets:#}{} {style}{}{style:#}{brackets}] ⚠️ {brackets:#} {}",
+                        "{brackets}[{brackets:#}{} {style}{}{style:#}{brackets}]{brackets:#} ⚠️ {}",
+                        ts,
+                        record.level(),
+                        record.args()
+                    )
+                }
+                Level::Error if record.target() == "rpc_errors" => {
+                    writeln!(
+                        fmt,
+                        "{brackets}[{brackets:#}{} {style}{}{style:#}{brackets}]{brackets:#} ❗ {}",
                         ts,
                         record.level(),
                         record.args()
@@ -69,7 +78,7 @@ pub fn setup_logging() -> anyhow::Result<()> {
                 Level::Error => {
                     writeln!(
                         fmt,
-                        "{brackets}[{brackets:#}{} {style}{}{style:#} {}{brackets}] ❗ {brackets:#} {}",
+                        "{brackets}[{brackets:#}{} {style}{}{style:#} {}{brackets}]{brackets:#} ❗ {}",
                         ts,
                         record.level(),
                         record.target(),

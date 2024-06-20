@@ -15,10 +15,9 @@ pub(crate) fn blockifier_transactions(
     transaction_with_hash: Vec<(Transaction, Felt)>,
 ) -> RpcResult<Vec<btx::Transaction>> {
     let transactions = transaction_with_hash
-            .iter()
-            .filter(|(tx, _)| !matches!(tx, Transaction::Deploy(_))) // deploy transaction was not supported by blockifier
-            .map(|(tx, hash)| to_blockifier_transactions(starknet, tx, &TransactionHash(hash.to_stark_felt())))
-            .collect::<Result<Vec<_>, _>>()?;
+        .iter()
+        .map(|(tx, hash)| to_blockifier_transactions(starknet, tx, &TransactionHash(hash.to_stark_felt())))
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(transactions)
 }

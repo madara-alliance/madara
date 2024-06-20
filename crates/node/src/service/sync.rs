@@ -25,6 +25,7 @@ pub struct SyncService {
     block_metrics: BlockMetrics,
     chain_id: Felt,
     start_params: Option<TelemetryHandle>,
+    disabled: bool,
 }
 
 impl SyncService {
@@ -51,9 +52,13 @@ impl SyncService {
             block_metrics,
             chain_id: config.network.chain_id(),
             start_params: Some(telemetry),
+            disabled: config.sync_disabled,
         })
     }
     pub async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+        if self.disabled {
+            return Ok(());
+        }
         let SyncService {
             fetch_config,
             backup_every_n_blocks,

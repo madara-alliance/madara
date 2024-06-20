@@ -5,7 +5,7 @@ pub struct StarknetVersion([u8; 4]);
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum StarknetVersionError {
-    #[error("Invalid number in version: {0}")]
+    #[error("Invalid number in version")]
     InvalidNumber(#[from] std::num::ParseIntError),
     #[error("Too many components in version: {0}")]
     TooManyComponents(usize),
@@ -42,14 +42,15 @@ impl FromStr for StarknetVersion {
     type Err = StarknetVersionError;
 
     fn from_str(version_str: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = version_str.split('.').collect();
-        if parts.len() > 4 {
-            return Err(StarknetVersionError::TooManyComponents(parts.len()));
-        }
+        let mut parts = version_str.split('.');
 
         let mut version = [0u8; 4];
-        for (i, part) in parts.iter().enumerate() {
+        for (i, part) in parts.by_ref().enumerate() {
             version[i] = part.parse()?;
+        }
+        let extra = parts.count(); // remaining items in the iter
+        if extra > 0 {
+            return Err(StarknetVersionError::TooManyComponents(extra + 4));
         }
 
         Ok(StarknetVersion(version))
