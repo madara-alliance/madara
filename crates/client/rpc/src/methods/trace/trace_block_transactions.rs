@@ -20,7 +20,6 @@ pub async fn trace_block_transactions(
     let block = starknet.get_block(block_id)?;
 
     if block.header().protocol_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
-        // call the sequencer
         return Err(StarknetRpcApiError::UnsupportedTxnVersion.into());
     }
 

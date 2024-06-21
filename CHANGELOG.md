@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: transaction traces
 - feat: store tx receipts
 - refactor: new type StarknetVersion
 - refactor: update starknet-rs with Felt
