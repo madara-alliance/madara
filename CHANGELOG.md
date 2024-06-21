@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(class): change class definition storage
 - feat: store tx receipts
 - refactor: new type StarknetVersion
 - refactor: update starknet-rs with Felt
