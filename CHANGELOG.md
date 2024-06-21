@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor: use Felt in BlockHeader
 - fix: pending block sync
 - fix: transaction traces
 - feat: store tx receipts

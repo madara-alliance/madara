@@ -26,10 +26,10 @@ pub(crate) fn get_block_with_txs(starknet: &Starknet, block_id: &BlockId) -> Rpc
         .map(|(tx, tx_hash)| to_starknet_core_tx(tx, tx_hash.to_felt()))
         .collect();
 
-    let parent_hash = block.header().parent_block_hash.to_felt();
-    let new_root = block.header().global_state_root.to_felt();
+    let parent_hash = block.header().parent_block_hash;
+    let new_root = block.header().global_state_root;
     let timestamp = block.header().block_timestamp;
-    let sequencer_address = block.header().sequencer_address.to_felt();
+    let sequencer_address = block.header().sequencer_address;
     let l1_gas_price = l1_gas_price(&block);
     let l1_data_gas_price = l1_data_gas_price(&block);
     let starknet_version = starknet_version(&block);
@@ -91,10 +91,10 @@ pub(crate) fn get_block_with_tx_hashes(
     let block_hash_as_field = block.block_hash().to_felt();
     let block_txs_hashes = block.tx_hashes().iter().map(ToFelt::to_felt).collect();
 
-    let parent_hash = block.header().parent_block_hash.to_felt();
-    let new_root = block.header().global_state_root.to_felt();
+    let parent_hash = block.header().parent_block_hash;
+    let new_root = block.header().global_state_root;
     let timestamp = block.header().block_timestamp;
-    let sequencer_address = block.header().sequencer_address.to_felt();
+    let sequencer_address = block.header().sequencer_address;
     let l1_gas_price = l1_gas_price(&block);
     let l1_data_gas_price = l1_data_gas_price(&block);
     let starknet_version = starknet_version(&block);

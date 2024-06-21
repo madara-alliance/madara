@@ -43,9 +43,9 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
     if is_pending {
         let pending_block_with_receipts = PendingBlockWithReceipts {
             transactions: transactions_with_receipts,
-            parent_hash: block.header().parent_block_hash.to_felt(),
+            parent_hash: block.header().parent_block_hash,
             timestamp: block.header().block_timestamp,
-            sequencer_address: block.header().sequencer_address.to_felt(),
+            sequencer_address: block.header().sequencer_address,
             l1_gas_price: l1_gas_price(&block),
             l1_data_gas_price: l1_data_gas_price(&block),
             l1_da_mode: l1_da_mode(&block),
@@ -60,11 +60,11 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
         let block_with_receipts = BlockWithReceipts {
             status,
             block_hash: block.block_hash().to_felt(),
-            parent_hash: block.header().parent_block_hash.to_felt(),
+            parent_hash: block.header().parent_block_hash,
             block_number: block.header().block_number,
-            new_root: block.header().global_state_root.to_felt(),
+            new_root: block.header().global_state_root,
             timestamp: block.header().block_timestamp,
-            sequencer_address: block.header().sequencer_address.to_felt(),
+            sequencer_address: block.header().sequencer_address,
             l1_gas_price: l1_gas_price(&block),
             l1_data_gas_price: l1_data_gas_price(&block),
             l1_da_mode: l1_da_mode(&block),

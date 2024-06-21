@@ -1,12 +1,10 @@
 //! Converts types from [`starknet_providers`] to deoxys's expected types.
 
 use std::collections::HashMap;
-use std::num::NonZeroU128;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use blockifier::block::GasPrices;
-use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, StarknetVersion};
+use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, GasPrices, L1DataAvailabilityMode, StarknetVersion};
 use dp_convert::ToStarkFelt;
 use dp_receipt::{Event, TransactionReceipt};
 use dp_transactions::from_broadcasted_transactions::fee_from_felt;
@@ -43,8 +41,8 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2S
     let block_hash = block.block_hash.expect("no block hash provided");
     let block_number = block.block_number.expect("no block number provided");
     let block_timestamp = block.timestamp;
-    let global_state_root = block.state_root.expect("no state root provided").to_stark_felt();
-    let sequencer_address = block.sequencer_address.map_or(contract_address(Felt::ZERO), contract_address);
+    let global_state_root = block.state_root.expect("no state root provided");
+    let sequencer_address = block.sequencer_address.unwrap_or(Felt::ZERO);
     let transaction_count = transactions.len() as u128;
     let event_count = events.len() as u128;
 
@@ -56,15 +54,15 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2S
     let l1_da_mode = l1_da_mode(block.l1_da_mode);
 
     let header = dp_block::Header {
-        parent_block_hash: block.parent_block_hash.to_stark_felt(),
+        parent_block_hash: block.parent_block_hash,
         block_number,
         block_timestamp,
         global_state_root,
         sequencer_address,
         transaction_count,
-        transaction_commitment: transaction_commitment.to_stark_felt(),
+        transaction_commitment,
         event_count,
-        event_commitment: event_commitment.to_stark_felt(),
+        event_commitment,
         protocol_version,
         l1_gas_price,
         l1_da_mode,
@@ -88,13 +86,6 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2S
                 transaction_commitment,
                 block.transaction_commitment.unwrap()
             );
-            for (computed_hash, in_hash) in
-                txs_hashes.iter().zip(block.transactions.iter().map(|tx| tx.transaction_hash()))
-            {
-                if computed_hash != &in_hash {
-                    log::warn!("tx hash computed: 0x{:x}, tx hash in block: 0x{:x}", computed_hash, in_hash);
-                }
-            }
         }
         return Err(L2SyncError::MismatchedBlockHash(block_number));
     }
@@ -374,35 +365,24 @@ fn account_deployment_data(account_deployment_data: &[Felt]) -> starknet_api::tr
 fn resource_price(
     l1_gas_price: starknet_core::types::ResourcePrice,
     l1_data_gas_price: starknet_core::types::ResourcePrice,
-) -> Option<GasPrices> {
+) -> GasPrices {
     /// Converts a Felt to a NonZeroU128, with 0 being converted to 1.
-    fn felt_to_non_zero_u128(felt: Felt) -> NonZeroU128 {
-        let value: u128 = if felt == Felt::ZERO { 1 } else { fee_from_felt(felt).0 };
-        NonZeroU128::new(value).expect("Failed to convert field_element to NonZeroU128")
+    fn felt_to_u128(felt: Felt) -> u128 {
+        fee_from_felt(felt).0
     }
 
-    if l1_gas_price.price_in_wei == Felt::ZERO {
-        None
-    } else {
-        Some(GasPrices {
-            eth_l1_gas_price: felt_to_non_zero_u128(l1_gas_price.price_in_wei),
-            strk_l1_gas_price: felt_to_non_zero_u128(l1_gas_price.price_in_fri),
-            eth_l1_data_gas_price: felt_to_non_zero_u128(l1_data_gas_price.price_in_wei),
-            strk_l1_data_gas_price: felt_to_non_zero_u128(l1_data_gas_price.price_in_fri),
-        })
+    GasPrices {
+        eth_l1_gas_price: felt_to_u128(l1_gas_price.price_in_wei),
+        strk_l1_gas_price: felt_to_u128(l1_gas_price.price_in_fri),
+        eth_l1_data_gas_price: felt_to_u128(l1_data_gas_price.price_in_wei),
+        strk_l1_data_gas_price: felt_to_u128(l1_data_gas_price.price_in_fri),
     }
 }
 
-fn l1_da_mode(
-    mode: starknet_core::types::L1DataAvailabilityMode,
-) -> starknet_api::data_availability::L1DataAvailabilityMode {
+fn l1_da_mode(mode: starknet_core::types::L1DataAvailabilityMode) -> L1DataAvailabilityMode {
     match mode {
-        starknet_core::types::L1DataAvailabilityMode::Calldata => {
-            starknet_api::data_availability::L1DataAvailabilityMode::Calldata
-        }
-        starknet_core::types::L1DataAvailabilityMode::Blob => {
-            starknet_api::data_availability::L1DataAvailabilityMode::Blob
-        }
+        starknet_core::types::L1DataAvailabilityMode::Calldata => L1DataAvailabilityMode::Calldata,
+        starknet_core::types::L1DataAvailabilityMode::Blob => L1DataAvailabilityMode::Blob,
     }
 }
 

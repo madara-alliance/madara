@@ -26,13 +26,13 @@ use crate::Starknet;
 /// `StarknetRpcApiError` with `BlockNotFound`.
 pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate> {
     let block = starknet.get_block_info(block_id)?;
-    let new_root = block.header().global_state_root.to_felt();
+    let new_root = block.header().global_state_root;
     let block_hash = block.block_hash().to_felt();
 
     // Get the old root from the previous block if it exists, otherwise default to zero.
     let old_root = if let Some(block_n) = block.block_n().checked_sub(1) {
         let info = starknet.get_block_info(BlockId::Number(block_n))?;
-        info.header().global_state_root.to_felt()
+        info.header().global_state_root
     } else {
         Felt::default()
     };

@@ -4,7 +4,7 @@ mod header;
 mod ordered_events;
 mod starknet_version;
 use dp_receipt::TransactionReceipt;
-pub use header::Header;
+pub use header::{GasPrices, Header, L1DataAvailabilityMode};
 pub use ordered_events::*;
 use starknet_api::block::BlockHash;
 use starknet_api::transaction::{Transaction, TransactionHash};
