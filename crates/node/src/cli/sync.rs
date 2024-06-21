@@ -43,8 +43,12 @@ pub struct SyncParams {
     pub gateway_key: Option<String>,
 
     /// Polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
-    #[clap(long, default_value = "2", value_name = "SECONDS")]
+    #[clap(long, default_value = "4", value_name = "SECONDS")]
     pub sync_polling_interval: u64,
+
+    /// Pending block polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
+    #[clap(long, default_value = "2", value_name = "SECONDS")]
+    pub pending_block_poll_interval: u64,
 
     /// Disable sync polling. This currently means that the sync process will not import any more block once it has caught up with the
     /// blockchain tip.

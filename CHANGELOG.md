@@ -3,6 +3,8 @@
 ## Next release
 
 - feat(class): change class definition storage
+- fix: pending block sync
+- fix: transaction traces
 - feat: store tx receipts
 - refactor: new type StarknetVersion
 - refactor: update starknet-rs with Felt

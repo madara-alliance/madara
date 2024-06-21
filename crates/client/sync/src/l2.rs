@@ -14,6 +14,7 @@ use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::Header;
 use dp_block::{BlockId, BlockTag, DeoxysBlock};
 use dp_convert::ToFelt;
+use dp_convert::ToStarkFelt;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
 use starknet_core::types::StateUpdate;
@@ -202,8 +203,9 @@ async fn l2_block_conversion_task(
                 (
                     spawn_compute(move || {
                         let sw = PerfStopwatch::new();
+                        let block_n = block.block_number;
                         let converted_block = convert_block(block, chain_id).context("converting block")?;
-                        stopwatch_end!(sw, "convert_block: {:?}");
+                        stopwatch_end!(sw, "convert_block {:?}: {:?}", block_n);
                         anyhow::Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
                     }),
                     (updates_recv, chain_id),
@@ -227,6 +229,7 @@ async fn l2_pending_block_task(
     sync_finished_cb: oneshot::Receiver<()>,
     provider: Arc<SequencerGatewayProvider>,
     chain_id: Felt,
+    pending_block_poll_interval: Duration,
 ) -> anyhow::Result<()> {
     let backend = &backend;
 
@@ -246,31 +249,41 @@ async fn l2_pending_block_task(
         return Ok(());
     }
 
-    let mut interval = tokio::time::interval(Duration::from_secs(2)); // TODO(cli): make interval configurable
+    log::debug!("start pending block poll");
+
+    let mut interval = tokio::time::interval(pending_block_poll_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
         let storage = backend.mapping();
+
+        log::debug!("getting pending block...");
 
         let StateUpdateWithBlock { state_update, block } = provider
             .get_state_update_with_block(starknet_providers::sequencer::models::BlockId::Pending)
             .await
             .context("getting pending block from sequencer")?;
 
-        let block_n_best = storage.get_block_n(&BlockId::Tag(BlockTag::Latest))?.unwrap_or(0);
-        let Some(block_n_pending_min_1) = block.block_number.context("no block in db")?.checked_sub(1) else {
-            bail!("Pending block is genesis")
-        };
+        let block_hash_best = storage
+            .get_block_hash(&BlockId::Tag(BlockTag::Latest))
+            .context("getting latest block in db")?
+            .context("no block in db")?;
+
+        log::debug!("pending block hash parent hash: {:#}", block.parent_block_hash.to_stark_felt());
 
         let mut tx = WriteBatchWithTransaction::default();
-        if block_n_best == block_n_pending_min_1 {
+        if block.parent_block_hash == block_hash_best.to_felt() {
             let block = spawn_compute(move || crate::convert::convert_block(block, chain_id))
                 .await
                 .context("converting pending block")?;
+
+            log::debug!("pending block parent block hash matches chain tip, writing pending block");
+
             let storage_update = crate::convert::state_update(state_update);
             storage
                 .write_pending(&mut tx, &block, &storage_update)
                 .context("writing pending to rocksdb transaction")?;
         } else {
+            log::debug!("pending block parent hash does not match latest block, clearing pending block");
             storage.write_no_pending(&mut tx).context("writing no pending to rocksdb transaction")?;
         }
 
@@ -291,6 +304,7 @@ pub struct L2SyncConfig {
     pub verify: bool,
     pub sync_polling_interval: Option<Duration>,
     pub backup_every_n_blocks: Option<u64>,
+    pub pending_block_poll_interval: Duration,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
@@ -303,8 +317,8 @@ pub async fn sync(
     chain_id: Felt,
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
-    let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(30);
-    let (block_conv_sender, block_conv_receiver) = mpsc::channel(30);
+    let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(4);
+    let (block_conv_sender, block_conv_receiver) = mpsc::channel(4);
     let provider = Arc::new(provider);
     let sync_timer = Arc::new(Mutex::new(None));
     let (once_caught_up_cb_sender, once_caught_up_cb_receiver) = oneshot::channel();
@@ -341,7 +355,13 @@ pub async fn sync(
         Arc::clone(&sync_timer),
         telemetry,
     ));
-    join_set.spawn(l2_pending_block_task(Arc::clone(backend), once_caught_up_cb_receiver, provider, chain_id));
+    join_set.spawn(l2_pending_block_task(
+        Arc::clone(backend),
+        once_caught_up_cb_receiver,
+        provider,
+        chain_id,
+        config.pending_block_poll_interval,
+    ));
 
     while let Some(res) = join_set.join_next().await {
         res.context("task was dropped")??;

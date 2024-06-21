@@ -12,15 +12,15 @@ use crate::StarknetRpcApiError;
 #[macro_export]
 macro_rules! bail_internal_server_error {
     ($msg:literal $(,)?) => {{
-        log::error!("{:#}:", anyhow::anyhow!($msg));
+        log::error!(target: "rpc_errors", "{:#}", anyhow::anyhow!($msg));
         return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     }};
     ($err:expr $(,)?) => {
-        log::error!("{:#}:", anyhow::anyhow!($err));
+        log::error!(target: "rpc_errors", "{:#}", anyhow::anyhow!($err));
         return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     };
     ($fmt:expr, $($arg:tt)*) => {
-        log::error!("{:#}:", anyhow::anyhow!($fmt, $($arg)*));
+        log::error!(target: "rpc_errors", "{:#}", anyhow::anyhow!($fmt, $($arg)*));
         return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     };
 }
@@ -40,7 +40,7 @@ impl<T, E: Into<anyhow::Error>> ResultExt<T, E> for Result<T, E> {
         match self {
             Ok(val) => Ok(val),
             Err(err) => {
-                log::error!("{}: {:#}", context, E::into(err));
+                log::error!(target: "rpc_errors", "{}: {:#}", context, E::into(err));
                 Err(StarknetRpcApiError::InternalServerError)
             }
         }
@@ -54,7 +54,7 @@ impl<T, E: Into<anyhow::Error>> ResultExt<T, E> for Result<T, E> {
         match self {
             Ok(val) => Ok(val),
             Err(err) => {
-                log::error!("{}: {:#}", context_fn(), E::into(err));
+                log::error!(target: "rpc_errors", "{}: {:#}", context_fn(), E::into(err));
                 Err(StarknetRpcApiError::InternalServerError)
             }
         }
@@ -66,7 +66,7 @@ impl<T, E: Into<anyhow::Error>> ResultExt<T, E> for Result<T, E> {
         match self {
             Ok(val) => Ok(val),
             Err(err) => {
-                log::error!("Contract storage error: {context}: {:#}", E::into(err));
+                log::error!(target: "rpc_errors", "Contract storage error: {context}: {:#}", E::into(err));
                 Err(StarknetRpcApiError::ContractError)
             }
         }
@@ -94,8 +94,8 @@ impl<T> OptionExt<T> for Option<T> {
             Some(val) => Ok(val),
             None => {
                 let error = anyhow::Error::msg(context);
-                log::error!("{:#}", error);
-                Err(StarknetRpcApiError::ContractError)
+                log::error!(target: "rpc_errors", "{:#}", error);
+                Err(StarknetRpcApiError::InternalServerError)
             }
         }
     }
@@ -109,8 +109,8 @@ impl<T> OptionExt<T> for Option<T> {
             Some(val) => Ok(val),
             None => {
                 let error = anyhow::Error::msg(context_fn());
-                log::error!("{:#}", error);
-                Err(StarknetRpcApiError::ContractError)
+                log::error!(target: "rpc_errors", "{:#}", error);
+                Err(StarknetRpcApiError::InternalServerError)
             }
         }
     }
