@@ -80,7 +80,7 @@ impl ToAccountTransaction for BroadcastedTransaction {
 // fn u8x32_to_u128(let as_u8x32:[u8; 32]) -> u128 {}
 
 #[inline]
-pub fn fee_from_felt(fee: Felt) -> stx::Fee {
+pub fn fee_from_felt(fee: Felt) -> Result<stx::Fee, BroadcastedTransactionConversionError> {
     let digits = fee.to_be_digits();
     if digits[0] != 0 || digits[1] != 0 {
         // return Err(BroadcastedTransactionConversionError::MaxFeeTooBig);
@@ -89,7 +89,7 @@ pub fn fee_from_felt(fee: Felt) -> stx::Fee {
     let as_u128: u128 = (digits[2] as u128) << 64 | digits[3] as u128;
     // let as_u128 = u128::try_from(fee).map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig).unwrap();
 
-    stx::Fee(as_u128)
+    Ok(stx::Fee(as_u128))
 }
 
 fn declare_to_account_transaction(
@@ -131,7 +131,7 @@ fn declare_to_account_transaction(
             let blockifier_contract_class = instantiate_blockifier_contract_class(&contract_class, decompressed_bytes)?;
 
             let declare_tx = stx::DeclareTransaction::V1(stx::DeclareTransactionV0V1 {
-                max_fee: fee_from_felt(max_fee),
+                max_fee: fee_from_felt(max_fee)?,
                 signature: stx::TransactionSignature(
                     signature.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
@@ -177,7 +177,7 @@ fn declare_to_account_transaction(
             );
 
             let declare_tx = stx::DeclareTransaction::V2(stx::DeclareTransactionV2 {
-                max_fee: fee_from_felt(max_fee),
+                max_fee: fee_from_felt(max_fee)?,
                 signature: stx::TransactionSignature(
                     signature.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
@@ -284,7 +284,7 @@ fn invoke_to_account_transaction(
             ..
         }) => {
             let invoke_tx = stx::InvokeTransaction::V1(stx::InvokeTransactionV1 {
-                max_fee: fee_from_felt(max_fee),
+                max_fee: fee_from_felt(max_fee)?,
                 signature: stx::TransactionSignature(
                     signature.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),
@@ -357,7 +357,7 @@ fn deploy_account_to_account_transaction(
             is_query: _,
         }) => {
             let deploy_account_tx = stx::DeployAccountTransaction::V1(stx::DeployAccountTransactionV1 {
-                max_fee: fee_from_felt(max_fee),
+                max_fee: fee_from_felt(max_fee)?,
                 signature: stx::TransactionSignature(
                     signature.iter().map(|x| x.to_stark_felt()).collect::<Vec<StarkFelt>>(),
                 ),

@@ -7,7 +7,7 @@ use crate::{
     L1HandlerTransaction, ResourceBounds, ResourceBoundsMapping, Transaction,
 };
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum TransactionTypeError {
     #[error("Invalid version")]
     InvalidVersion,
@@ -333,9 +333,25 @@ impl From<starknet_providers::sequencer::models::DataAvailabilityMode> for DataA
 }
 
 fn felt_to_u64(felt: Felt) -> Result<u64, TransactionTypeError> {
-    let bytes = felt.to_bytes_le();
-    if bytes.iter().skip(8).any(|&x| x != 0) {
+    let digits = felt.to_be_digits();
+    if digits[0] != 0 || digits[1] != 0 || digits[2] != 0 {
         return Err(TransactionTypeError::InvalidNonce);
     }
-    Ok(u64::from_le_bytes(bytes[..8].try_into().unwrap()))
+    Ok(digits[3])
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_felt_to_u64() {
+        assert_eq!(felt_to_u64(Felt::ZERO).unwrap(), 0);
+        assert_eq!(felt_to_u64(Felt::ONE).unwrap(), 1);
+        assert_eq!(felt_to_u64(Felt::TWO).unwrap(), 2);
+        assert_eq!(felt_to_u64(Felt::THREE).unwrap(), 3);
+        assert_eq!(felt_to_u64(Felt::from(u64::MAX)).unwrap(), u64::MAX);
+        assert_eq!(felt_to_u64(Felt::from(u64::MAX) + Felt::ONE).err().unwrap(), TransactionTypeError::InvalidNonce);
+        assert_eq!(felt_to_u64(Felt::MAX).err().unwrap(), TransactionTypeError::InvalidNonce);
+    }
 }

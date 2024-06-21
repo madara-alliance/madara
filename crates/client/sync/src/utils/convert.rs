@@ -271,7 +271,7 @@ fn l1_handler_transaction(tx: &p::L1HandlerTransaction) -> L1HandlerTransaction 
 }
 
 fn fee(fee: Felt) -> starknet_api::transaction::Fee {
-    fee_from_felt(fee)
+    fee_from_felt(fee).unwrap()
 }
 
 fn signature(signature: &[Felt]) -> starknet_api::transaction::TransactionSignature {
@@ -368,7 +368,7 @@ fn resource_price(
 ) -> GasPrices {
     /// Converts a Felt to a NonZeroU128, with 0 being converted to 1.
     fn felt_to_u128(felt: Felt) -> u128 {
-        fee_from_felt(felt).0
+        fee_from_felt(felt).unwrap().0
     }
 
     GasPrices {
