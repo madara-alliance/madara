@@ -30,6 +30,8 @@ starknet_api = { workspace = true, default-features = true }
 
 # Others
 anyhow = { workspace = true }
+base64 = { workspace = true }
+flate2 = "1.0.30"
 indexmap = { workspace = true }
 itertools = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
@@ -38,8 +40,6 @@ jsonrpsee = { workspace = true, default-features = true, features = [
 ] }
 log = { workspace = true, default-features = true }
 thiserror = { workspace = true }
-flate2 = "1.0.30"
-base64 = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

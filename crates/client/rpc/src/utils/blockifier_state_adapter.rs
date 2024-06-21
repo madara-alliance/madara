@@ -107,17 +107,19 @@ impl StateReader for BlockifierStateAdapter {
                 Ok(Some(contract_class_data)) => {
                     let contract_class = if contract_class_data.sierra_program_length > 0 {
                         ContractClass::V1(
-                            ContractClassV1::try_from_json_string(&contract_class_data.contract_class)
-                                .map_err(|_| StateError::StateReadError("Failed to convert contract class V1".to_string()))?,
+                            ContractClassV1::try_from_json_string(&contract_class_data.contract_class).map_err(
+                                |_| StateError::StateReadError("Failed to convert contract class V1".to_string()),
+                            )?,
                         )
                     } else {
                         ContractClass::V0(
-                            ContractClassV0::try_from_json_string(&contract_class_data.contract_class)
-                                .map_err(|_| StateError::StateReadError("Failed to convert contract class V0".to_string()))?,
+                            ContractClassV0::try_from_json_string(&contract_class_data.contract_class).map_err(
+                                |_| StateError::StateReadError("Failed to convert contract class V0".to_string()),
+                            )?,
                         )
                     };
                     Ok(contract_class)
-                },
+                }
                 _ => Err(StateError::UndeclaredClassHash(class_hash)),
             },
         }

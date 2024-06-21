@@ -173,9 +173,16 @@ async fn fetch_class_update(
 }
 
 /// This method is used to fetch a class definition from the sequencer gateway in it's raw format for an easier conversion.
-pub async fn raw_get_class_by_hash(gateway_url: &str, class_hash: &str, block_number: u64) -> Result<serde_json::Value, ProviderError> {
+pub async fn raw_get_class_by_hash(
+    gateway_url: &str,
+    class_hash: &str,
+    block_number: u64,
+) -> Result<serde_json::Value, ProviderError> {
     let client = Client::new();
-    let url = format!("{}/feeder_gateway/get_class_by_hash?classHash={}&blockNumber={}", gateway_url, class_hash, block_number);
+    let url = format!(
+        "{}/feeder_gateway/get_class_by_hash?classHash={}&blockNumber={}",
+        gateway_url, class_hash, block_number
+    );
     let response = client.get(&url).send().await.map_err(|_| ProviderError::ArrayLengthMismatch)?;
     let json: serde_json::Value = response.json().await.map_err(|_| ProviderError::ArrayLengthMismatch)?;
     Ok(json)
@@ -188,7 +195,8 @@ async fn fetch_class(
     block_number: u64,
     provider: &SequencerGatewayProvider,
 ) -> Result<ContractClassData, ProviderError> {
-    let core_class = raw_get_class_by_hash("https://alpha-mainnet.starknet.io", &class_hash.to_hex_string(), block_number).await?;
+    let core_class =
+        raw_get_class_by_hash("https://alpha-mainnet.starknet.io", &class_hash.to_hex_string(), block_number).await?;
     Ok(ContractClassData {
         hash: ClassHash(class_hash.to_stark_felt()),
         contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),

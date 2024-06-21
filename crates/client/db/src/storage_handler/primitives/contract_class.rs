@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context};
 use blockifier::execution::contract_class::{
-    deserialize_program, ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1, EntryPointV1
+    deserialize_program, ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner,
+    ContractClassV1, EntryPointV1,
 };
 use cairo_vm::serde::deserialize_program::{parse_program_json, ProgramJson};
 use cairo_vm::types::program::Program;
@@ -190,12 +191,9 @@ pub fn from_contract_class_cairo(contract_class: &LegacyContractClass) -> anyhow
 pub fn decompress(data: &[u8]) -> anyhow::Result<Vec<u8>> {
     // Program is expected to be a gzip-compressed then base64 encoded
     // representation of the JSON.
-    let mut gzip_encoder =
-        flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    let mut gzip_encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     serde_json::to_writer(&mut gzip_encoder, &data).context("Compressing program")?;
-    let compressed_program = gzip_encoder
-        .finish()
-        .context("Finalizing program compression")?;
+    let compressed_program = gzip_encoder.finish().context("Finalizing program compression")?;
 
     anyhow::Ok(compressed_program)
 }
@@ -308,11 +306,10 @@ impl TryFrom<serde_json::Value> for ContractClassWrapper {
         let abi = if sierra_program_length > 0 {
             match abi_value {
                 Some(abi_value) => {
-                    let abi_string = abi_value.as_str()
-                        .ok_or_else(|| anyhow::anyhow!("Invalid `abi` field format"))?
-                        .to_string();
+                    let abi_string =
+                        abi_value.as_str().ok_or_else(|| anyhow::anyhow!("Invalid `abi` field format"))?.to_string();
                     ContractAbi::Sierra(abi_string)
-                },
+                }
                 None => return Err(anyhow::anyhow!("Missing `abi` field for Sierra program")), // Handle missing abi when sierra_program is present
             }
         } else {
@@ -320,7 +317,7 @@ impl TryFrom<serde_json::Value> for ContractClassWrapper {
                 Some(abi_value) => {
                     let abi_string = serde_json::to_string(abi_value).context("serializing abi")?;
                     ContractAbi::Cairo(Some(abi_string))
-                },
+                }
                 None => ContractAbi::Cairo(None),
             }
         };
