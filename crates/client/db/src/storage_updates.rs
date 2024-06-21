@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
-use starknet_api::hash::StarkFelt;
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate,
     StorageEntry,
@@ -86,10 +85,7 @@ pub fn store_state_update(
             .declared_classes
             .into_iter()
             .map(|DeclaredClassItem { class_hash, compiled_class_hash }| {
-                (
-                    ClassHash(StarkFelt::new_unchecked(class_hash.to_bytes_be())),
-                    CompiledClassHash(StarkFelt::new_unchecked(compiled_class_hash.to_bytes_be())),
-                )
+                (ClassHash(class_hash.to_stark_felt()), CompiledClassHash(compiled_class_hash.to_stark_felt()))
             })
             .for_each(|(class_hash, compiled_class_hash)| {
                 handler_contract_class_hashes.insert(class_hash, compiled_class_hash).unwrap();

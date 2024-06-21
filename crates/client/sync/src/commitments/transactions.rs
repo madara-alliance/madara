@@ -3,8 +3,9 @@ use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use dc_db::storage_handler::bonsai_identifier;
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 use dp_transactions::compute_hash::ComputeTransactionHash;
+use dp_transactions::MAIN_CHAIN_ID;
 use rayon::prelude::*;
 use starknet_api::transaction::Transaction;
 use starknet_types_core::felt::Felt;
@@ -28,7 +29,7 @@ pub fn calculate_transaction_hash_with_signature(
     chain_id: Felt,
     block_number: u64,
 ) -> (Felt, Felt) {
-    let include_signature = block_number >= 61394;
+    let include_signature = !(block_number < 61394 && chain_id == MAIN_CHAIN_ID);
 
     let (signature_hash, tx_hash) = rayon::join(
         || match transaction {

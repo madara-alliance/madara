@@ -1,4 +1,4 @@
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 /// Here we transform starknet-api transactions into starknet-core trasnactions
 use starknet_api::transaction::{
     DeclareTransaction, DeclareTransactionV0V1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,

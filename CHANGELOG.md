@@ -2,6 +2,8 @@
 
 ## Next release
 
+- feat: store tx receipts
+- refactor: new type StarknetVersion
 - refactor: update starknet-rs with Felt
 - fix(rpc): fixed block not found error on get_class method
 - fix (rpc): get_transaction_status

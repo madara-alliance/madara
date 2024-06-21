@@ -15,8 +15,8 @@ use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTran
 use blockifier::versioned_constants::VersionedConstants;
 use dc_db::storage_handler::StorageView;
 use dp_block::DeoxysBlockInfo;
-use dp_convert::to_felt::ToFelt;
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToFelt;
+use dp_convert::ToStarkFelt;
 use dp_simulations::SimulationFlags;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
@@ -48,7 +48,9 @@ pub fn block_context(_client: &Starknet, block_info: &DeoxysBlockInfo) -> Result
     };
     let chain_id = starknet_api::core::ChainId("SN_MAIN".to_string());
 
-    Ok(block_header.into_block_context(fee_token_address, chain_id))
+    block_header
+        .into_block_context(fee_token_address, chain_id)
+        .map_err(|e| StarknetRpcApiError::ErrUnexpectedError { data: e.to_string() })
 }
 
 pub fn re_execute_transactions(

@@ -7,7 +7,7 @@ use dc_db::storage_handler::{DeoxysStorageError, StorageView};
 use dc_db::DeoxysBackend;
 use dp_block::DeoxysBlock;
 use dp_convert::state_update::ToStateUpdateCore;
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use itertools::Itertools;
 use reqwest::Client;
@@ -111,7 +111,7 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig, chain_id: Felt) -> R
     };
     let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
-    Ok(crate::convert::convert_block(block, chain_id).expect("invalid genesis block").block)
+    Ok(crate::convert::convert_block(block, chain_id).expect("invalid genesis block"))
 }
 
 /// retrieves state update with block from Starknet sequencer in only one request
@@ -188,12 +188,7 @@ pub async fn raw_get_class_by_hash(
 
 /// Downloads a class definition from the Starknet sequencer. Note that because
 /// of the current type hell we decided to deal with raw JSON data instead of starknet-providers `DeployedContract`.
-async fn fetch_class(
-    class_hash: Felt,
-    block_number: u64,
-    chain_id: Felt,
-) -> Result<ContractClassData, ProviderError> {
-    
+async fn fetch_class(class_hash: Felt, block_number: u64, chain_id: Felt) -> Result<ContractClassData, ProviderError> {
     // Configuring custom provider to fetch raw json classe definitions
     let url = if chain_id == Felt::from_bytes_be_slice(b"SN_MAIN") {
         "https://alpha-mainnet.starknet.io"
@@ -202,7 +197,8 @@ async fn fetch_class(
     } else if chain_id == Felt::from_bytes_be_slice(b"SN_INTE") {
         "https://external.integration.starknet.io"
     } else {
-        return Err(ProviderError::StarknetError(StarknetError::ClassHashNotFound)); // Set a more appropriate error here
+        return Err(ProviderError::StarknetError(StarknetError::ClassHashNotFound));
+        // Set a more appropriate error here
     };
 
     let core_class = raw_get_class_by_hash(url, &class_hash.to_hex_string(), block_number).await?;

@@ -1,26 +1,21 @@
-use std::collections::HashMap;
 use std::io::Read;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use blockifier::execution::contract_class::{
-    deserialize_program, ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner,
-    ContractClassV1, EntryPointV1,
+    ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
 };
-use cairo_vm::serde::deserialize_program::{parse_program_json, ProgramJson};
 use cairo_vm::types::program::Program;
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToStarkFelt;
 use dp_transactions::from_broadcasted_transactions::flattened_sierra_to_casm_contract_class;
 use flate2::read::GzDecoder;
 use indexmap::IndexMap;
 use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
-use starknet_api::hash::StarkFelt;
 use starknet_core::types::contract::legacy::{LegacyContractClass, RawLegacyEntryPoint, RawLegacyEntryPoints};
 use starknet_core::types::{
-    CompressedLegacyContractClass, ContractClass as ContractClassCore, EntryPointsByType, FlattenedSierraClass,
-    LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
+    CompressedLegacyContractClass, ContractClass as ContractClassCore, FlattenedSierraClass, LegacyContractAbiEntry,
 };
 use starknet_providers::sequencer::models::DeployedClass;
 
@@ -161,13 +156,16 @@ pub fn from_contract_class_sierra(contract_class: &FlattenedSierraClass) -> anyh
 ///
 /// This is after extracting the contract classes.
 pub fn to_contract_class_cairo(json_str: &str, abi: Option<String>) -> anyhow::Result<ContractClassCore> {
-    log::info!("icci");
     let cairo_class: LegacyContractClass = serde_json::from_str(json_str)?;
     let compressed_cairo_class = cairo_class.compress().expect("Cairo program compression failed");
-
+    // if some abi serialize it to Option<Vec<LegacyContractAbiEntry, Global>>
+    let abi = abi.map(|abi| {
+        let abi_entries: Vec<LegacyContractAbiEntry> = serde_json::from_str(&abi).expect("Failed to deserialize abi");
+        abi_entries
+    });
     Ok(ContractClassCore::Legacy(CompressedLegacyContractClass {
         program: compressed_cairo_class.program,
-        abi: None,
+        abi,
         entry_points_by_type: compressed_cairo_class.entry_points_by_type,
     }))
 }
@@ -187,65 +185,6 @@ pub fn from_contract_class_cairo(contract_class: &LegacyContractClass) -> anyhow
     Ok(ContractClassBlockifier::V0(blockifier_contract))
 }
 
-/// Decompresses a compressed json string into it's byte representation.
-/// Example compression from [Starknet-rs](https://github.com/xJonathanLEI/starknet-rs/blob/49719f49a18f9621fc37342959e84900b600083e/starknet-core/src/types/contract/legacy.rs#L473)
-pub fn decompress(data: &[u8]) -> anyhow::Result<Vec<u8>> {
-    // Program is expected to be a gzip-compressed then base64 encoded
-    // representation of the JSON.
-    let mut gzip_encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
-    serde_json::to_writer(&mut gzip_encoder, &data).context("Compressing program")?;
-    let compressed_program = gzip_encoder.finish().context("Finalizing program compression")?;
-
-    anyhow::Ok(compressed_program)
-}
-
-/// Returns a [anyhow::Result<LegacyEntryPointsByType>] (starknet-rs type) from
-/// a [HashMap<EntryPointType, Vec<EntryPoint>>]
-fn to_legacy_entry_points_by_type(
-    entries: &HashMap<EntryPointType, Vec<EntryPoint>>,
-) -> anyhow::Result<LegacyEntryPointsByType> {
-    fn collect_entry_points(
-        entries: &HashMap<EntryPointType, Vec<EntryPoint>>,
-        entry_point_type: EntryPointType,
-    ) -> anyhow::Result<Vec<LegacyContractEntryPoint>> {
-        Ok(entries
-            .get(&entry_point_type)
-            .ok_or(anyhow!("Missing {:?} entry point", entry_point_type))?
-            .iter()
-            .map(|e| to_legacy_entry_point(e.clone()))
-            .collect())
-    }
-
-    let constructor = collect_entry_points(entries, EntryPointType::Constructor).unwrap_or_default();
-    let external = collect_entry_points(entries, EntryPointType::External)?;
-    let l1_handler = collect_entry_points(entries, EntryPointType::L1Handler).unwrap_or_default();
-
-    Ok(LegacyEntryPointsByType { constructor, external, l1_handler })
-}
-
-/// Returns a [anyhow::Result<LegacyEntryPointsByType>] (starknet-rs type) from
-/// a [HashMap<EntryPointType, Vec<EntryPoinV1>>]
-fn to_entry_points_by_type(entries: &HashMap<EntryPointType, Vec<EntryPointV1>>) -> anyhow::Result<EntryPointsByType> {
-    fn collect_entry_points(
-        entries: &HashMap<EntryPointType, Vec<EntryPointV1>>,
-        entry_point_type: EntryPointType,
-    ) -> anyhow::Result<Vec<SierraEntryPoint>> {
-        Ok(entries
-            .get(&entry_point_type)
-            .ok_or(anyhow!("Missing {:?} entry point", entry_point_type))?
-            .iter()
-            .enumerate()
-            .map(|(index, e)| to_entry_point(e.clone(), index as u64))
-            .collect())
-    }
-
-    let constructor = collect_entry_points(entries, EntryPointType::Constructor).unwrap_or_default();
-    let external = collect_entry_points(entries, EntryPointType::External)?;
-    let l1_handler = collect_entry_points(entries, EntryPointType::L1Handler).unwrap_or_default();
-
-    Ok(EntryPointsByType { constructor, external, l1_handler })
-}
-
 /// Returns a [IndexMap<EntryPointType, Vec<EntryPoint>>] from a
 /// [LegacyEntryPointsByType]
 fn from_legacy_entry_points_by_type(entries: &RawLegacyEntryPoints) -> IndexMap<EntryPointType, Vec<EntryPoint>> {
@@ -259,26 +198,10 @@ fn from_legacy_entry_points_by_type(entries: &RawLegacyEntryPoints) -> IndexMap<
         })
 }
 
-/// Returns a [LegacyContractEntryPoint] (starknet-rs) from a [EntryPoint]
-/// (starknet-api)
-fn to_legacy_entry_point(entry_point: EntryPoint) -> LegacyContractEntryPoint {
-    let selector = entry_point.selector.0.to_felt();
-    let offset = entry_point.offset.0;
-    LegacyContractEntryPoint { selector, offset }
-}
-
-/// Returns a [SierraEntryPoint] (starknet-rs) from a [EntryPointV1]
-/// (starknet-api)
-fn to_entry_point(entry_point: EntryPointV1, index: u64) -> SierraEntryPoint {
-    let selector = entry_point.selector.0.to_felt();
-    let function_idx = index;
-    SierraEntryPoint { selector, function_idx }
-}
-
-/// Returns a [EntryPoint] (starknet-api) from a [LegacyContractEntryPoint]
+/// Returns a [EntryPoint] (starknet-api) from a [RawLegacyEntryPoint]
 /// (starknet-rs)
 fn from_legacy_entry_point(entry_point: &RawLegacyEntryPoint) -> EntryPoint {
-    let selector = EntryPointSelector(StarkFelt::new_unchecked(entry_point.selector.to_bytes_be()));
+    let selector = EntryPointSelector(entry_point.selector.to_stark_felt());
     let offset = EntryPointOffset(entry_point.offset.into());
     EntryPoint { selector, offset }
 }
@@ -291,16 +214,13 @@ impl TryFrom<serde_json::Value> for ContractClassWrapper {
     fn try_from(contract_class: serde_json::Value) -> Result<Self, Self::Error> {
         let class = contract_class.to_string();
 
-        // Use Option for abi and sierra_program to handle missing cases
-        let abi_value = contract_class.get("abi");
-
         let sierra_program = contract_class.get("sierra_program");
-
         let sierra_program_length = match sierra_program {
             Some(serde_json::Value::Array(program)) => program.len() as u64,
             _ => 0, // Set length to 0 if sierra_program is missing or not an array
         };
 
+        let abi_value = contract_class.get("abi");
         let abi = if sierra_program_length > 0 {
             match abi_value {
                 Some(abi_value) => {
@@ -308,7 +228,7 @@ impl TryFrom<serde_json::Value> for ContractClassWrapper {
                         abi_value.as_str().ok_or_else(|| anyhow::anyhow!("Invalid `abi` field format"))?.to_string();
                     ContractAbi::Sierra(abi_string)
                 }
-                None => return Err(anyhow::anyhow!("Missing `abi` field for Sierra program")), // Handle missing abi when sierra_program is present
+                None => return Err(anyhow::anyhow!("Missing `abi` field for Sierra program")),
             }
         } else {
             match abi_value {
@@ -319,7 +239,6 @@ impl TryFrom<serde_json::Value> for ContractClassWrapper {
                 None => ContractAbi::Cairo(None),
             }
         };
-
         let abi_length = match &abi {
             ContractAbi::Cairo(Some(abi_string)) => abi_string.len() as u64,
             ContractAbi::Cairo(None) => 0,

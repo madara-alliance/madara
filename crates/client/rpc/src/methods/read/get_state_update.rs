@@ -1,4 +1,4 @@
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, BlockTag, Felt, MaybePendingStateUpdate, StateUpdate};
 

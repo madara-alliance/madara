@@ -8,7 +8,7 @@ use blockifier::state::state_api::{State, StateReader, StateResult};
 use dc_db::storage_handler::StorageView;
 use dc_db::DeoxysBackend;
 use dp_block::BlockId;
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use indexmap::IndexMap;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;

@@ -14,6 +14,7 @@ use crate::l2::L2SyncError;
 
 pub mod fetchers;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn l2_fetch_task(
     backend: Arc<DeoxysBackend>,
     first_block: u64,

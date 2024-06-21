@@ -1,6 +1,6 @@
 use dc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
 use dc_db::storage_handler::StorageView;
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, ContractClass, Felt};
 
@@ -59,10 +59,5 @@ pub fn get_class_at(starknet: &Starknet, block_id: BlockId, contract_address: Fe
                 format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")
             })?;
 
-    let contract_class = match contract_class_core {
-        ContractClass::Sierra(class) => ContractClass::Sierra(class),
-        ContractClass::Legacy(class) => ContractClass::Legacy(class),
-    };
-
-    Ok(contract_class)
+    Ok(contract_class_core)
 }

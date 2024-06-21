@@ -9,6 +9,7 @@ members = [
   "crates/primitives/block",
   "crates/primitives/convert",
   "crates/primitives/transactions",
+  "crates/primitives/receipt",
   "crates/primitives/utils",
 ]
 resolver = "2"
@@ -23,6 +24,7 @@ default-members = [
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/transactions",
+  "crates/primitives/receipt",
   "crates/primitives/utils",
 ]
 
@@ -69,6 +71,7 @@ dp-convert = { path = "crates/primitives/convert", default-features = false }
 dp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
 dp-simulations = { path = "crates/primitives/simulations", default-features = false }
 dp-transactions = { path = "crates/primitives/transactions", default-features = false }
+dp-receipt = { path = "crates/primitives/receipt", default-features = false }
 dp-types = { path = "crates/primitives/types", default-features = false }
 dp-utils = { path = "crates/primitives/utils", default-features = false }
 
@@ -156,3 +159,6 @@ prometheus = "0.13.4"
 [patch.crates-io]
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
 starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+
+# wait for PR https://github.com/starknet-io/types-rs/pull/76 to be merged
+starknet-types-core = { git = "https://github.com/jbcaron/types-rs.git", rev = "fd0e062" }

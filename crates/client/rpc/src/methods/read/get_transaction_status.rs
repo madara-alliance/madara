@@ -1,4 +1,5 @@
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
+use dp_receipt::ExecutionResult;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{Felt, TransactionExecutionStatus, TransactionStatus};
@@ -28,22 +29,20 @@ use crate::Starknet;
 pub fn get_transaction_status(starknet: &Starknet, transaction_hash: Felt) -> RpcResult<TransactionStatus> {
     let tx_hash = TransactionHash(transaction_hash.to_stark_felt());
 
-    let block = starknet
+    let (block, tx_torage_info) = starknet
         .block_storage()
-        .find_tx_hash_block_info(&tx_hash)
+        .find_tx_hash_block(&tx_hash)
         .or_internal_server_error("Error find tx hash block info from db")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-    let tx_execution_status = match starknet
-        .block_storage()
-        .is_reverted_tx(&tx_hash)
-        .or_internal_server_error("Error getting tx status from db")?
-    {
-        true => TransactionExecutionStatus::Reverted,
-        false => TransactionExecutionStatus::Succeeded,
+    let tx_receipt = block.receipts().get(tx_torage_info.tx_index).ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+
+    let tx_execution_status = match tx_receipt.execution_result() {
+        ExecutionResult::Reverted { .. } => TransactionExecutionStatus::Reverted,
+        ExecutionResult::Succeeded => TransactionExecutionStatus::Succeeded,
     };
 
-    if block.0.block_n() > starknet.get_l1_last_confirmed_block()? {
+    if block.block_n() > starknet.get_l1_last_confirmed_block()? {
         Ok(TransactionStatus::AcceptedOnL2(tx_execution_status))
     } else {
         Ok(TransactionStatus::AcceptedOnL1(tx_execution_status))
