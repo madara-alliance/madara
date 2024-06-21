@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: pending block sync
 - fix: transaction traces
 - feat: store tx receipts
 - refactor: new type StarknetVersion
