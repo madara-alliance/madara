@@ -117,7 +117,7 @@ pub fn store_class_update(
 
     class_update.0.into_iter().for_each(
         |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
-            let ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length } =
+            let ContractClassWrapper { contract_class, abi, sierra_program_length, abi_length } =
                 contract_class_wrapper;
 
             handler_contract_class_data_mut

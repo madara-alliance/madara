@@ -1,26 +1,20 @@
+use blockifier::execution::contract_class::ContractClass as ContractClassBlockifier;
+use cairo_vm::types::program::{self, Program};
 use dc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
 use dc_db::storage_handler::StorageView;
 use dp_convert::to_stark_felt::ToStarkFelt;
+use flate2::read::GzDecoder;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::ClassHash;
-use starknet_core::types::{BlockId, ContractClass, Felt};
+use starknet_core::types::{BlockId, CompressedLegacyContractClass, ContractClass, Felt};
+use flate2::{write::GzEncoder, Compression};
+use std::io::{Read, Write};
+use base64;
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::ResultExt;
 use crate::Starknet;
 
-/// Get the contract class definition in the given block associated with the given hash.
-///
-/// ### Arguments
-///
-/// * `block_id` - The hash of the requested block, or number (height) of the requested block, or a
-///   block tag.
-/// * `class_hash` - The hash of the requested contract class.
-///
-/// ### Returns
-///
-/// Returns the contract class definition if found. In case of an error, returns a
-/// `StarknetRpcApiError` indicating either `BlockNotFound` or `ClassHashNotFound`.
 pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> RpcResult<ContractClass> {
     let class_hash = ClassHash(class_hash.to_stark_felt());
 
@@ -47,7 +41,7 @@ pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> Rp
     }
 
     let contract_class_core: ContractClass =
-        ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
+        ContractClassWrapper { contract_class, abi, sierra_program_length, abi_length }
             .try_into()
             .or_else_internal_server_error(|| {
                 format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")
@@ -55,8 +49,35 @@ pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> Rp
 
     let contract_class = match contract_class_core {
         ContractClass::Sierra(class) => ContractClass::Sierra(class),
-        ContractClass::Legacy(class) => ContractClass::Legacy(class),
+        ContractClass::Legacy(class) => {
+            let program = from_compressed_legacy_contract_class(&class)
+                .or_else_internal_server_error(|| {
+                    format!("Failed to convert compressed legacy contract class to blockifier class")
+                })?;
+
+            // Log the blockifier program
+            log::info!("Blockifier Program: {:?}", program);
+
+            ContractClass::Legacy(class)
+        },
     };
 
     Ok(contract_class)
+}
+
+// Helper function to convert compressed legacy contract class to blockifier class
+pub fn from_compressed_legacy_contract_class(
+    compressed_class: &CompressedLegacyContractClass
+) -> anyhow::Result<Program> {
+    // Gzip decompress the program
+    let mut d = GzDecoder::new(&compressed_class.program[..]);
+    let mut decompressed_program = Vec::new();
+    d.read_to_end(&mut decompressed_program)
+        .expect("Decompressing program failed");
+
+    // Deserialize the program
+    let program = Program::from_bytes(&decompressed_program, None)
+        .expect("Deserializing program failed");
+
+    Ok(program)
 }

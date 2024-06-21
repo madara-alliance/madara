@@ -45,7 +45,7 @@ pub fn setup_logging() -> anyhow::Result<()> {
 
                     writeln!(
                         fmt,
-                        "{brackets}[{brackets:#}{ts} {rpc_style}HTTP{rpc_style:#}{brackets}]{brackets:#} {method} {status_color}{status}{status_color:#} {res_len} bytes - {time_color}{response_time:?}{time_color:#}",
+                        "{brackets}[{brackets:#}{ts} {rpc_style}HTTP{rpc_style:#}{brackets}] 🌐 {brackets:#} {method} {status_color}{status}{status_color:#} {res_len} bytes - {time_color}{response_time:?}{time_color:#}",
                     )
                 }
                 Level::Info => {

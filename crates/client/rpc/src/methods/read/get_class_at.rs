@@ -53,7 +53,7 @@ pub fn get_class_at(starknet: &Starknet, block_id: BlockId, contract_address: Fe
         contract_class_data;
 
     let contract_class_core: ContractClass =
-        ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
+        ContractClassWrapper { contract_class, abi, sierra_program_length, abi_length }
             .try_into()
             .or_else_internal_server_error(|| {
                 format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")

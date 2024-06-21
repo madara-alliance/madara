@@ -38,6 +38,8 @@ jsonrpsee = { workspace = true, default-features = true, features = [
 ] }
 log = { workspace = true, default-features = true }
 thiserror = { workspace = true }
+flate2 = "1.0.30"
+base64 = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

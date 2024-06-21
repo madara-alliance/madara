@@ -1,4 +1,5 @@
-use blockifier::execution::contract_class::ClassInfo;
+use blockifier::block;
+use blockifier::execution::contract_class::{ClassInfo, ContractClass, ContractClassV0, ContractClassV1};
 use blockifier::transaction::transaction_execution as btx;
 use dc_db::storage_handler::primitives::contract_class::StorageContractClassData;
 use dc_db::storage_handler::StorageView;
@@ -47,8 +48,20 @@ pub(crate) fn to_blockifier_transactions(
             };
 
             let StorageContractClassData { contract_class, sierra_program_length, abi_length, .. } = class_data;
+            
+            let blockifier_contract_class = if sierra_program_length > 0 {
+                ContractClass::V1(ContractClassV1::try_from_json_string(&contract_class).map_err(|_| {
+                    log::error!("Failed to convert contract class V1 from json string");
+                    StarknetRpcApiError::InternalServerError
+                })?)
+            } else {
+                ContractClass::V0(ContractClassV0::try_from_json_string(&contract_class).map_err(|_| {
+                    log::error!("Failed to convert contract class V0 from json string");
+                    StarknetRpcApiError::InternalServerError
+                })?)
+            };
 
-            Some(ClassInfo::new(&contract_class, sierra_program_length as usize, abi_length as usize).map_err(
+            Some(ClassInfo::new(&blockifier_contract_class, sierra_program_length as usize, abi_length as usize).map_err(
                 |_| {
                     log::error!("Mismatch between the length of the sierra program and the class version");
                     StarknetRpcApiError::InternalServerError
