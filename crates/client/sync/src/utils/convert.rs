@@ -88,6 +88,13 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2S
                 transaction_commitment,
                 block.transaction_commitment.unwrap()
             );
+            for (computed_hash, in_hash) in
+                txs_hashes.iter().zip(block.transactions.iter().map(|tx| tx.transaction_hash()))
+            {
+                if computed_hash != &in_hash {
+                    log::warn!("tx hash computed: 0x{:x}, tx hash in block: 0x{:x}", computed_hash, in_hash);
+                }
+            }
         }
         return Err(L2SyncError::MismatchedBlockHash(block_number));
     }
