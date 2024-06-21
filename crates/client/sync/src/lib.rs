@@ -17,7 +17,7 @@ use crate::l2::L2SyncConfig;
 use starknet_types_core::felt::Felt;
 
 pub mod starknet_sync_worker {
-    use std::sync::Arc;
+    use std::{sync::Arc, time::Duration};
 
     use anyhow::Context;
     use dc_db::DeoxysBackend;
@@ -40,6 +40,7 @@ pub mod starknet_sync_worker {
         block_metrics: BlockMetrics,
         chain_id: Felt,
         telemetry: TelemetryHandle,
+        pending_block_poll_interval: Duration,
     ) -> anyhow::Result<()> {
         // let starting_block = starting_block + 1;
 
@@ -77,6 +78,7 @@ pub mod starknet_sync_worker {
                     verify: fetch_config.verify,
                     sync_polling_interval: fetch_config.sync_polling_interval,
                     backup_every_n_blocks,
+                    pending_block_poll_interval,
                 },
                 block_metrics,
                 starting_block,

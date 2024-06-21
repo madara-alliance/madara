@@ -10,6 +10,7 @@ use crate::Column;
 // NB: Column::ContractStorage cf needs prefix extractor of this length during creation
 pub(crate) const CONTRACT_STORAGE_PREFIX_EXTRACTOR: usize = 64;
 
+#[derive(Debug)]
 pub struct ContractAddressStorageKey([u8; 64]);
 impl From<(ContractAddress, StorageKey)> for ContractAddressStorageKey {
     fn from(value: (ContractAddress, StorageKey)) -> Self {

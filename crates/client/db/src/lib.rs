@@ -65,6 +65,13 @@ pub(crate) async fn open_rocksdb(
 
     opts.set_atomic_flush(true);
     opts.set_manual_wal_flush(true);
+    opts.set_max_subcompactions(cores as _);
+
+    let mut env = Env::new().context("creating rocksdb env")?;
+    // env.set_high_priority_background_threads(cores); // flushes
+    env.set_low_priority_background_threads(cores); // compaction
+
+    opts.set_env(&env);
 
     let backup_hande = if let Some(backup_dir) = backup_dir {
         let (restored_cb_sender, restored_cb_recv) = oneshot::channel();

@@ -57,6 +57,7 @@ pub async fn l2_fetch_task(
         }
     };
 
+    log::debug!("caught up with tip");
     let _ = once_caught_up_callback.send(());
 
     if let Some(sync_polling_interval) = sync_polling_interval {

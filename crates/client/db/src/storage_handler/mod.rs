@@ -35,37 +35,37 @@ pub mod bonsai_identifier {
 
 #[derive(thiserror::Error, Debug)]
 pub enum DeoxysStorageError {
-    #[error("failed to initialize trie for {0}")]
+    #[error("Failed to initialize trie for {0}")]
     TrieInitError(TrieType),
-    #[error("failed to compute trie root for {0}")]
+    #[error("Failed to compute trie root for {0}")]
     TrieRootError(TrieType),
-    #[error("failed to merge transactional state back into {0}")]
+    #[error("Failed to merge transactional state back into {0}")]
     TrieMergeError(TrieType),
-    #[error("failed to retrieve latest id for {0}")]
+    #[error("Failed to retrieve latest id for {0}")]
     TrieIdError(TrieType),
-    #[error("failed to retrieve storage view for {0}")]
+    #[error("Failed to retrieve storage view for {0}")]
     StoraveViewError(StorageType),
-    #[error("failed to insert data into {0}")]
+    #[error("Failed to insert data into {0}")]
     StorageInsertionError(StorageType),
-    #[error("failed to retrive data from {0}")]
+    #[error("Failed to retrive data from {0}")]
     StorageRetrievalError(StorageType),
-    #[error("failed to commit to {0}")]
+    #[error("Failed to commit to {0}")]
     StorageCommitError(StorageType),
-    #[error("failed to encode {0}")]
+    #[error("Failed to encode {0}")]
     StorageEncodeError(StorageType),
-    #[error("failed to decode {0}")]
+    #[error("Failed to decode {0}")]
     StorageDecodeError(StorageType),
-    #[error("failed to serialize/deserialize")]
+    #[error("Failed to serialize/deserialize")]
     StorageSerdeError,
-    #[error("failed to revert {0} to block {1}")]
+    #[error("Failed to revert {0} to block {1}")]
     StorageRevertError(StorageType, u64),
-    #[error("failed to parse history")]
+    #[error("{0:#}")]
     StorageHistoryError(#[from] HistoryError),
-    #[error("mapping db error")]
+    #[error("{0:#}")]
     MappingDbError(#[from] MappingDbError),
-    #[error("invalid block number")]
+    #[error("Invalid block number")]
     InvalidBlockNumber,
-    #[error("invalid nonce")]
+    #[error("Invalid nonce")]
     InvalidNonce,
 }
 

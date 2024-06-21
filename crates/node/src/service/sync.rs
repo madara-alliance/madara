@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use dc_db::{DatabaseService, DeoxysBackend};
@@ -25,6 +26,8 @@ pub struct SyncService {
     block_metrics: BlockMetrics,
     chain_id: Felt,
     start_params: Option<TelemetryHandle>,
+    disabled: bool,
+    pending_block_poll_interval: Duration,
 }
 
 impl SyncService {
@@ -51,9 +54,14 @@ impl SyncService {
             block_metrics,
             chain_id: config.network.chain_id(),
             start_params: Some(telemetry),
+            disabled: config.sync_disabled,
+            pending_block_poll_interval: Duration::from_secs(config.pending_block_poll_interval),
         })
     }
     pub async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+        if self.disabled {
+            return Ok(());
+        }
         let SyncService {
             fetch_config,
             backup_every_n_blocks,
@@ -62,6 +70,7 @@ impl SyncService {
             starting_block,
             block_metrics,
             chain_id,
+            pending_block_poll_interval,
             ..
         } = self.clone();
         let telemetry = self.start_params.take().context("service already started")?;
@@ -78,6 +87,7 @@ impl SyncService {
                 block_metrics,
                 chain_id,
                 telemetry,
+                pending_block_poll_interval,
             )
             .await
         });

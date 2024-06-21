@@ -10,6 +10,7 @@ use crate::Column;
 pub(crate) const CONTRACT_CLASS_HASH_PREFIX_EXTRACTOR: usize = 32;
 pub(crate) const CONTRACT_NONCES_PREFIX_EXTRACTOR: usize = 32;
 
+#[derive(Debug)]
 pub struct ContractAddressK([u8; 32]);
 impl From<ContractAddress> for ContractAddressK {
     fn from(value: ContractAddress) -> Self {
