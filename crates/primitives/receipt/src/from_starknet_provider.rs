@@ -1,5 +1,5 @@
 use dp_convert::ToFelt;
-use starknet_core::types::{Felt, Hash256};
+use starknet_core::types::Felt;
 
 use crate::{
     DataAvailabilityResources, DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt,
@@ -28,12 +28,21 @@ impl TransactionReceipt {
             starknet_providers::sequencer::models::TransactionType::InvokeFunction(_) => {
                 TransactionReceipt::Invoke(InvokeTransactionReceipt::from(receipt))
             }
-            starknet_providers::sequencer::models::TransactionType::L1Handler(_tx) => {
-                // TODO compute message hash
-                TransactionReceipt::L1Handler(L1HandlerTransactionReceipt::from_provider(
-                    receipt,
-                    Hash256::from_hex("0x0").unwrap(),
-                ))
+            starknet_providers::sequencer::models::TransactionType::L1Handler(tx) => {
+                let (from_address, payload) = tx.calldata.split_first().unwrap_or((&Felt::ZERO, &[]));
+                let nonce_bytes = tx.nonce.unwrap_or_default().to_bytes_le();
+                let nonce = u64::from_le_bytes(nonce_bytes[..8].try_into().unwrap());
+                let msg_to_l2 = starknet_core::types::MsgToL2 {
+                    from_address: (*from_address)
+                        .try_into()
+                        .unwrap_or(starknet_core::types::EthAddress::from_hex("0x0").unwrap()),
+                    to_address: tx.contract_address,
+                    selector: tx.entry_point_selector,
+                    payload: payload.to_vec(),
+                    nonce,
+                };
+                let message_hash = msg_to_l2.hash();
+                TransactionReceipt::L1Handler(L1HandlerTransactionReceipt::from_provider(receipt, message_hash))
             }
         }
     }
@@ -102,7 +111,7 @@ impl From<starknet_providers::sequencer::models::ConfirmedTransactionReceipt> fo
 impl L1HandlerTransactionReceipt {
     fn from_provider(
         receipt: starknet_providers::sequencer::models::ConfirmedTransactionReceipt,
-        message_hash: Hash256,
+        message_hash: starknet_core::types::Hash256,
     ) -> Self {
         Self {
             message_hash,
