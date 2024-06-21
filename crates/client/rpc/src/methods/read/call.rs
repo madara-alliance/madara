@@ -1,4 +1,4 @@
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::EntryPointSelector;
 use starknet_api::transaction::Calldata;

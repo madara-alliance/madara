@@ -1,4 +1,4 @@
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToStarkFelt;
 use starknet_api::core::calculate_contract_address;
 use starknet_api::data_availability::DataAvailabilityMode;
 use starknet_api::transaction::{
@@ -15,7 +15,7 @@ use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash}; //, Poseidon};
 
 use super::SIMULATE_TX_VERSION_OFFSET;
 use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK, MAIN_CHAIN_ID};
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 
 // b"declare" == 0x6465636c617265
 const DECLARE_PREFIX: Felt = Felt::from_hex_unchecked("0x6465636c617265");
@@ -121,7 +121,12 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
         let max_fee = Felt::from(self.max_fee.0);
 
         // Check for deprecated environment
-        if block_number > Some(LEGACY_BLOCK_NUMBER) && chain_id == MAIN_CHAIN_ID {
+        if block_number < Some(LEGACY_BLOCK_NUMBER) && chain_id == MAIN_CHAIN_ID {
+            TransactionHash(
+                Pedersen::hash_array(&[INVOKE_PREFIX, sender_address, entrypoint_selector, calldata_hash, chain_id])
+                    .to_stark_felt(),
+            )
+        } else {
             TransactionHash(
                 Pedersen::hash_array(&[
                     INVOKE_PREFIX,
@@ -133,11 +138,6 @@ impl ComputeTransactionHash for InvokeTransactionV0 {
                     chain_id,
                 ])
                 .to_stark_felt(),
-            )
-        } else {
-            TransactionHash(
-                Pedersen::hash_array(&[INVOKE_PREFIX, sender_address, entrypoint_selector, calldata_hash, chain_id])
-                    .to_stark_felt(),
             )
         }
     }
@@ -502,7 +502,12 @@ pub fn compute_hash_given_contract_address(
 
     let constructor = Felt::from_bytes_be(&starknet_keccak(b"constructor").to_bytes_be());
 
-    if block_number > Some(LEGACY_BLOCK_NUMBER) && chain_id == MAIN_CHAIN_ID {
+    if block_number < Some(LEGACY_BLOCK_NUMBER) && chain_id == MAIN_CHAIN_ID {
+        TransactionHash(
+            Pedersen::hash_array(&[DEPLOY_PREFIX, contract_address, constructor, constructor_calldata, chain_id])
+                .to_stark_felt(),
+        )
+    } else {
         TransactionHash(
             Pedersen::hash_array(&[
                 DEPLOY_PREFIX,
@@ -514,11 +519,6 @@ pub fn compute_hash_given_contract_address(
                 chain_id,
             ])
             .to_stark_felt(),
-        )
-    } else {
-        TransactionHash(
-            Pedersen::hash_array(&[DEPLOY_PREFIX, contract_address, constructor, constructor_calldata, chain_id])
-                .to_stark_felt(),
         )
     }
 }

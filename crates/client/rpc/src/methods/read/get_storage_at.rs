@@ -1,5 +1,5 @@
-use dp_convert::to_felt::ToFelt;
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToFelt;
+use dp_convert::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::BlockId;
 use starknet_types_core::felt::Felt;

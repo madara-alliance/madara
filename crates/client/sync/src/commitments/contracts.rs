@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use dc_db::storage_handler::{DeoxysStorageError, StorageView};
 use dc_db::DeoxysBackend;
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 use rayon::prelude::*;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;

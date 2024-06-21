@@ -1895,6 +1895,7 @@ dependencies = [
  "dc-db",
  "dp-block",
  "dp-convert",
+ "dp-receipt",
  "dp-simulations",
  "dp-transactions",
  "indexmap 2.2.6",
@@ -1922,6 +1923,7 @@ dependencies = [
  "dc-telemetry",
  "dp-block",
  "dp-convert",
+ "dp-receipt",
  "dp-transactions",
  "dp-utils",
  "ethers",
@@ -2119,6 +2121,7 @@ version = "0.1.0"
 dependencies = [
  "blockifier",
  "dp-convert",
+ "dp-receipt",
  "dp-transactions",
  "lazy_static",
  "primitive-types",
@@ -2134,10 +2137,23 @@ dependencies = [
 name = "dp-convert"
 version = "0.1.0"
 dependencies = [
+ "primitive-types",
  "starknet-core",
  "starknet-providers",
  "starknet-types-core",
  "starknet_api",
+]
+
+[[package]]
+name = "dp-receipt"
+version = "0.1.0"
+dependencies = [
+ "bincode 1.3.3",
+ "dp-convert",
+ "serde",
+ "starknet-core",
+ "starknet-providers",
+ "starknet-types-core",
 ]
 
 [[package]]
@@ -6019,8 +6035,7 @@ dependencies = [
 [[package]]
 name = "starknet-types-core"
 version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe29a53d28ff630e4c7827788f14b28f9386d27cb9d05186a5f2e73218c34677"
+source = "git+https://github.com/jbcaron/types-rs.git?rev=fd0e062#fd0e06217846d445171bcaa34359ea51b1957ef7"
 dependencies = [
  "lambdaworks-crypto",
  "lambdaworks-math",

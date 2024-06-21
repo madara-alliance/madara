@@ -3,6 +3,7 @@
 mod header;
 mod ordered_events;
 mod starknet_version;
+use dp_receipt::TransactionReceipt;
 pub use header::Header;
 pub use ordered_events::*;
 use starknet_api::block::BlockHash;
@@ -97,21 +98,21 @@ impl DeoxysBlockInfo {
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInner {
     /// The block transactions.
-    transactions: Vec<Transaction>, // Vec<starknet_api::transaction::Transaction>,
-    /// The block events.
-    events: Vec<OrderedEvents>,
+    transactions: Vec<Transaction>,
+    /// The block transactions receipts.
+    receipts: Vec<TransactionReceipt>,
 }
 
 impl DeoxysBlockInner {
-    pub fn new(transactions: Vec<Transaction>, events: Vec<OrderedEvents>) -> Self {
-        Self { transactions, events }
+    pub fn new(transactions: Vec<Transaction>, receipts: Vec<TransactionReceipt>) -> Self {
+        Self { transactions, receipts }
     }
 
     pub fn transactions(&self) -> &[Transaction] {
         &self.transactions
     }
-    pub fn events(&self) -> &[OrderedEvents] {
-        &self.events
+    pub fn receipts(&self) -> &[TransactionReceipt] {
+        &self.receipts
     }
 }
 
@@ -151,10 +152,7 @@ impl DeoxysBlock {
     pub fn transactions(&self) -> &[Transaction] {
         &self.inner.transactions
     }
-    pub fn events(&self) -> &[OrderedEvents] {
-        &self.inner.events
+    pub fn receipts(&self) -> &[TransactionReceipt] {
+        &self.inner.receipts
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -3,7 +3,7 @@ use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use dc_db::storage_handler::bonsai_identifier;
-use dp_convert::to_felt::ToFelt;
+use dp_convert::ToFelt;
 use dp_transactions::compute_hash::ComputeTransactionHash;
 use dp_transactions::MAIN_CHAIN_ID;
 use rayon::prelude::*;

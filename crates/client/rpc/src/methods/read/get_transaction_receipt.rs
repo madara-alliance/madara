@@ -2,24 +2,15 @@ use blockifier::context::BlockContext;
 use blockifier::transaction::objects::TransactionExecutionInfo;
 use blockifier::transaction::transaction_execution as btx;
 use dc_db::mapping_db::BlockStorageType;
-use dp_convert::to_felt::ToFelt;
-use dp_convert::to_stark_felt::ToStarkFelt;
+use dp_convert::ToFelt;
+use dp_convert::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
-use starknet_api::core::{calculate_contract_address, ContractAddress};
-use starknet_api::transaction::{Transaction, TransactionHash};
-use starknet_core::types::{
-    ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionReceipt,
-    DeployAccountTransactionReceipt, ExecutionResources, ExecutionResult, Felt, Hash256, InvokeTransactionReceipt,
-    L1HandlerTransactionReceipt, TransactionFinalityStatus, TransactionReceipt, TransactionReceiptWithBlockInfo,
-};
+use starknet_api::transaction::TransactionHash;
+use starknet_core::types::{Felt, TransactionFinalityStatus, TransactionReceiptWithBlockInfo};
 
 use crate::errors::StarknetRpcApiError;
-use crate::utils::call_info::{
-    blockifier_call_info_to_starknet_resources, extract_events_from_call_info, extract_messages_from_call_info,
-};
-use crate::utils::execution::{block_context, re_execute_transactions};
-use crate::utils::transaction::blockifier_transactions;
-use crate::utils::{OptionExt, ResultExt};
+use crate::utils::execution::re_execute_transactions;
+use crate::utils::ResultExt;
 use crate::Starknet;
 
 /// Get the transaction receipt by the transaction hash.
@@ -56,31 +47,17 @@ pub async fn get_transaction_receipt(
 
     let tx_index = tx_info.tx_index;
 
-    let block_context = block_context(starknet, block.info())?;
-    let transaction = block.transactions().get(tx_index).ok_or_else_internal_server_error(|| {
-        format!("Failed to retrieve transaction at index {tx_index} index from block_n {}", block.block_n())
-    })?;
+    let is_on_l1 = block.block_n() <= starknet.get_l1_last_confirmed_block()?;
 
-    // deploy transaction was not supported by blockifier
-    if let Transaction::Deploy(_) = transaction {
-        log::error!("re-executing a deploy transaction is not supported");
-        return Err(StarknetRpcApiError::UnimplementedMethod.into());
-    }
+    let finality_status =
+        if is_on_l1 { TransactionFinalityStatus::AcceptedOnL1 } else { TransactionFinalityStatus::AcceptedOnL2 };
 
-    // create a vector of tuples with the transaction and its hash, up to the current transaction index
-    let transaction_with_hash = block
-        .transactions()
-        .iter()
-        .cloned()
-        .zip(block.tx_hashes().iter().map(ToFelt::to_felt))
-        .take(tx_index + 1)
-        .collect();
-
-    let transactions_blockifier = blockifier_transactions(starknet, transaction_with_hash)?;
-
-    let execution_infos = execution_infos(starknet, transactions_blockifier, &block_context)?;
-
-    let receipt = receipt(starknet, transaction, &execution_infos, transaction_hash, &tx_info.storage_type)?;
+    let receipt = block
+        .receipts()
+        .get(tx_index)
+        .ok_or(StarknetRpcApiError::TxnHashNotFound)?
+        .clone()
+        .to_starknet_core(finality_status);
 
     let block = match tx_info.storage_type {
         BlockStorageType::Pending => starknet_core::types::ReceiptBlock::Pending,
@@ -119,116 +96,4 @@ pub(crate) fn execution_infos(
         })?;
 
     Ok(execution_infos)
-}
-
-pub fn receipt(
-    starknet: &Starknet,
-    transaction: &Transaction,
-    execution_infos: &TransactionExecutionInfo,
-    transaction_hash: Felt,
-    is_pending: &BlockStorageType,
-) -> RpcResult<TransactionReceipt> {
-    let message_hash: Hash256 = Hash256::from_felt(&Felt::ZERO);
-
-    let actual_fee = starknet_core::types::FeePayment {
-        amount: execution_infos.actual_fee.0.into(),
-        unit: starknet_core::types::PriceUnit::Wei,
-    };
-
-    let finality_status = match is_pending {
-        BlockStorageType::Pending => TransactionFinalityStatus::AcceptedOnL2,
-        BlockStorageType::BlockN(block_n) if *block_n <= starknet.get_l1_last_confirmed_block()? => {
-            TransactionFinalityStatus::AcceptedOnL1
-        }
-        BlockStorageType::BlockN(_) => TransactionFinalityStatus::AcceptedOnL2,
-    };
-
-    let execution_result = match execution_infos.revert_error.clone() {
-        Some(err) => ExecutionResult::Reverted { reason: err },
-        None => ExecutionResult::Succeeded,
-    };
-
-    // no execution resources for declare transactions
-    let execution_resources = match execution_infos.execute_call_info {
-        Some(ref call_info) => blockifier_call_info_to_starknet_resources(call_info),
-        None => ExecutionResources {
-            computation_resources: ComputationResources {
-                steps: 0,
-                memory_holes: None,
-                range_check_builtin_applications: None,
-                pedersen_builtin_applications: None,
-                poseidon_builtin_applications: None,
-                ec_op_builtin_applications: None,
-                ecdsa_builtin_applications: None,
-                bitwise_builtin_applications: None,
-                keccak_builtin_applications: None,
-                segment_arena_builtin: None,
-            },
-            data_resources: DataResources {
-                data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 0 },
-            },
-        },
-    };
-
-    // no events or messages sent for declare transactions
-    let (events, messages_sent) = match execution_infos.execute_call_info.as_ref() {
-        None => (vec![], vec![]),
-        Some(call_info) => (extract_events_from_call_info(call_info), extract_messages_from_call_info(call_info)),
-    };
-
-    let receipt = match transaction {
-        Transaction::Declare(_) => TransactionReceipt::Declare(DeclareTransactionReceipt {
-            transaction_hash,
-            actual_fee,
-            finality_status,
-            messages_sent,
-            events,
-            execution_resources,
-            execution_result,
-        }),
-        Transaction::DeployAccount(deploy_account) => {
-            let contract_address = calculate_contract_address(
-                deploy_account.contract_address_salt(),
-                deploy_account.class_hash(),
-                &deploy_account.constructor_calldata(),
-                ContractAddress::default(),
-            )
-            .map_err(|e| {
-                log::error!("Failed to calculate contract address: {e}");
-                StarknetRpcApiError::InternalServerError
-            })?;
-            TransactionReceipt::DeployAccount(DeployAccountTransactionReceipt {
-                transaction_hash,
-                actual_fee,
-                finality_status,
-                messages_sent,
-                events,
-                execution_resources,
-                execution_result,
-                contract_address: (*contract_address.key()).to_felt(),
-            })
-        }
-        Transaction::Invoke(_) => TransactionReceipt::Invoke(InvokeTransactionReceipt {
-            transaction_hash,
-            actual_fee,
-            finality_status,
-            messages_sent,
-            events,
-            execution_resources,
-            execution_result,
-        }),
-        Transaction::L1Handler(_) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
-            message_hash,
-            transaction_hash,
-            actual_fee,
-            finality_status,
-            messages_sent,
-            events,
-            execution_resources,
-            execution_result,
-        }),
-        _ => unreachable!("Deploy transactions are not supported"),
-    };
-
-    Ok(receipt)
 }

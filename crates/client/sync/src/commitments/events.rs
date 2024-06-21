@@ -3,9 +3,8 @@ use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use dc_db::storage_handler::bonsai_identifier;
-use dp_convert::to_felt::ToFelt;
+use dp_receipt::Event;
 use rayon::prelude::*;
-use starknet_api::transaction::Event;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, StarkHash};
 
@@ -19,11 +18,9 @@ use starknet_types_core::hash::{Pedersen, StarkHash};
 ///
 /// The event hash as `Felt`.
 pub fn calculate_event_hash(event: &Event) -> Felt {
-    let (keys_hash, data_hash) = rayon::join(
-        || Pedersen::hash_array(&event.content.keys.iter().map(ToFelt::to_felt).collect::<Vec<Felt>>()),
-        || Pedersen::hash_array(&event.content.data.0.iter().map(ToFelt::to_felt).collect::<Vec<Felt>>()),
-    );
-    let from_address = event.from_address.to_felt();
+    let (keys_hash, data_hash) =
+        rayon::join(|| Pedersen::hash_array(&event.keys), || Pedersen::hash_array(&event.data));
+    let from_address = event.from_address;
     Pedersen::hash_array(&[from_address, keys_hash, data_hash])
 }
 
@@ -49,13 +46,13 @@ pub fn memory_event_commitment(events: &[Event]) -> Result<Felt, String> {
     let identifier = bonsai_identifier::EVENT;
 
     // event hashes are computed in parallel
-    let events = events.par_iter().map(calculate_event_hash).collect::<Vec<_>>();
+    let events = events.into_par_iter().map(calculate_event_hash).collect::<Vec<_>>();
 
     // once event hashes have finished computing, they are inserted into the local Bonsai db
-    for (i, event_hash) in events.into_iter().enumerate() {
+    for (i, event_hash) in events.iter().enumerate() {
         let key = BitVec::from_vec(i.to_be_bytes().to_vec());
         let value = event_hash;
-        bonsai_storage.insert(identifier, key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
+        bonsai_storage.insert(identifier, key.as_bitslice(), value).expect("Failed to insert into bonsai storage");
     }
 
     // Note that committing changes still has the greatest performance hit
