@@ -309,23 +309,23 @@ impl TryFrom<starknet_providers::sequencer::models::L1HandlerTransaction> for L1
 }
 
 impl From<starknet_providers::sequencer::models::ResourceBoundsMapping> for ResourceBoundsMapping {
-    fn from(value: starknet_providers::sequencer::models::ResourceBoundsMapping) -> Self {
+    fn from(resource: starknet_providers::sequencer::models::ResourceBoundsMapping) -> Self {
         Self {
             l1_gas: ResourceBounds {
-                max_amount: value.l1_gas.max_amount,
-                max_price_per_unit: value.l1_gas.max_price_per_unit,
+                max_amount: resource.l1_gas.max_amount,
+                max_price_per_unit: resource.l1_gas.max_price_per_unit,
             },
             l2_gas: ResourceBounds {
-                max_amount: value.l2_gas.max_amount,
-                max_price_per_unit: value.l2_gas.max_price_per_unit,
+                max_amount: resource.l2_gas.max_amount,
+                max_price_per_unit: resource.l2_gas.max_price_per_unit,
             },
         }
     }
 }
 
 impl From<starknet_providers::sequencer::models::DataAvailabilityMode> for DataAvailabilityMode {
-    fn from(value: starknet_providers::sequencer::models::DataAvailabilityMode) -> Self {
-        match value {
+    fn from(da_mode: starknet_providers::sequencer::models::DataAvailabilityMode) -> Self {
+        match da_mode {
             starknet_providers::sequencer::models::DataAvailabilityMode::L1 => Self::L1,
             starknet_providers::sequencer::models::DataAvailabilityMode::L2 => Self::L2,
         }
