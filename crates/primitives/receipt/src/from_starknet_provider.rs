@@ -33,9 +33,7 @@ impl TransactionReceipt {
                 let nonce_bytes = tx.nonce.unwrap_or_default().to_bytes_le();
                 let nonce = u64::from_le_bytes(nonce_bytes[..8].try_into().unwrap());
                 let msg_to_l2 = starknet_core::types::MsgToL2 {
-                    from_address: (*from_address)
-                        .try_into()
-                        .unwrap_or(starknet_core::types::EthAddress::from_hex("0x0").unwrap()),
+                    from_address: (*from_address).try_into().unwrap_or(Felt::ZERO.try_into().unwrap()),
                     to_address: tx.contract_address,
                     selector: tx.entry_point_selector,
                     payload: payload.to_vec(),
@@ -114,7 +112,7 @@ impl L1HandlerTransactionReceipt {
         message_hash: starknet_core::types::Hash256,
     ) -> Self {
         Self {
-            message_hash,
+            message_hash: message_hash.try_into().unwrap_or_default(),
             transaction_hash: receipt.transaction_hash,
             actual_fee: receipt.actual_fee.into(),
             messages_sent: receipt.l2_to_l1_messages.into_iter().map(MsgToL1::from).collect(),

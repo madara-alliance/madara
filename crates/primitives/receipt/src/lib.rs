@@ -3,7 +3,6 @@ mod from_starknet_provider;
 mod to_starknet_core;
 
 use serde::{Deserialize, Serialize};
-use starknet_core::types::Hash256;
 use starknet_types_core::felt::Felt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,7 +68,8 @@ pub struct InvokeTransactionReceipt {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct L1HandlerTransactionReceipt {
-    pub message_hash: Hash256,
+    // normally this would be a Hash256, but the serde implementation doesn't work with bincode.
+    pub message_hash: Felt,
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
     pub messages_sent: Vec<MsgToL1>,

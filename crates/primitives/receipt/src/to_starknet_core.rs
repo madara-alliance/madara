@@ -52,7 +52,7 @@ impl L1HandlerTransactionReceipt {
         finality_status: starknet_core::types::TransactionFinalityStatus,
     ) -> starknet_core::types::L1HandlerTransactionReceipt {
         starknet_core::types::L1HandlerTransactionReceipt {
-            message_hash: self.message_hash,
+            message_hash: self.message_hash.into(),
             transaction_hash: self.transaction_hash,
             actual_fee: self.actual_fee.into(),
             finality_status,

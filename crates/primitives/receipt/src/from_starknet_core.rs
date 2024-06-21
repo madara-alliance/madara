@@ -36,7 +36,7 @@ impl From<starknet_core::types::InvokeTransactionReceipt> for InvokeTransactionR
 impl From<starknet_core::types::L1HandlerTransactionReceipt> for L1HandlerTransactionReceipt {
     fn from(receipt: starknet_core::types::L1HandlerTransactionReceipt) -> Self {
         Self {
-            message_hash: receipt.message_hash,
+            message_hash: receipt.message_hash.try_into().unwrap_or_default(),
             transaction_hash: receipt.transaction_hash,
             actual_fee: receipt.actual_fee.into(),
             messages_sent: receipt.messages_sent.into_iter().map(MsgToL1::from).collect(),
