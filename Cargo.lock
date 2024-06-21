@@ -2180,6 +2180,7 @@ dependencies = [
  "serde_json",
  "starknet-core",
  "starknet-crypto 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-providers",
  "starknet-types-core",
  "starknet_api",
  "thiserror",

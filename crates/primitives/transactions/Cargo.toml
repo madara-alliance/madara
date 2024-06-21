@@ -24,6 +24,7 @@ cairo-lang-utils = { workspace = true }
 cairo-vm = { workspace = true }
 starknet-core = { workspace = true }
 starknet-crypto = { workspace = true }
+starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
