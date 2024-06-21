@@ -23,3 +23,6 @@ starknet-types-core = { workspace = true }
 
 # Other
 serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+bincode = { workspace = true }

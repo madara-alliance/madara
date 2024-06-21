@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use starknet_core::types::Hash256;
 use starknet_types_core::felt::Felt;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransactionReceipt {
     Invoke(InvokeTransactionReceipt),
     L1Handler(L1HandlerTransactionReceipt),
@@ -57,7 +57,7 @@ impl TransactionReceipt {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvokeTransactionReceipt {
     pub transaction_hash: Felt, // This can be retrieved from the transaction itself.
     pub actual_fee: FeePayment,
@@ -67,7 +67,7 @@ pub struct InvokeTransactionReceipt {
     pub execution_result: ExecutionResult,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct L1HandlerTransactionReceipt {
     pub message_hash: Hash256,
     pub transaction_hash: Felt,
@@ -78,7 +78,7 @@ pub struct L1HandlerTransactionReceipt {
     pub execution_result: ExecutionResult,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeclareTransactionReceipt {
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
@@ -88,7 +88,7 @@ pub struct DeclareTransactionReceipt {
     pub execution_result: ExecutionResult,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeployTransactionReceipt {
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
@@ -99,7 +99,7 @@ pub struct DeployTransactionReceipt {
     pub contract_address: Felt,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeployAccountTransactionReceipt {
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
@@ -110,7 +110,7 @@ pub struct DeployAccountTransactionReceipt {
     pub contract_address: Felt,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeePayment {
     pub amount: Felt,
     pub unit: PriceUnit,
@@ -122,21 +122,21 @@ pub enum PriceUnit {
     Fri,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MsgToL1 {
     pub from_address: Felt,
     pub to_address: Felt,
     pub payload: Vec<Felt>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
     pub from_address: Felt,
     pub keys: Vec<Felt>,
     pub data: Vec<Felt>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ExecutionResources {
     pub steps: u64,
     pub memory_holes: Option<u64>,
@@ -151,7 +151,7 @@ pub struct ExecutionResources {
     pub data_availability: DataAvailabilityResources,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct DataAvailabilityResources {
     pub l1_gas: u64,
     pub l1_data_gas: u64,
@@ -161,4 +161,41 @@ pub struct DataAvailabilityResources {
 pub enum ExecutionResult {
     Succeeded,
     Reverted { reason: String },
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_bincode_transaction_receipt() {
+        let receipt = TransactionReceipt::Invoke(InvokeTransactionReceipt {
+            transaction_hash: Felt::from(1),
+            actual_fee: FeePayment { amount: Felt::from(2), unit: PriceUnit::Wei },
+            messages_sent: vec![MsgToL1 {
+                from_address: Felt::from(3),
+                to_address: Felt::from(4),
+                payload: vec![Felt::from(5)],
+            }],
+            events: vec![Event { from_address: Felt::from(6), keys: vec![Felt::from(7)], data: vec![Felt::from(8)] }],
+            execution_resources: ExecutionResources {
+                steps: 9,
+                memory_holes: Some(10),
+                range_check_builtin_applications: Some(11),
+                pedersen_builtin_applications: Some(12),
+                poseidon_builtin_applications: Some(13),
+                ec_op_builtin_applications: Some(14),
+                ecdsa_builtin_applications: Some(15),
+                bitwise_builtin_applications: Some(16),
+                keccak_builtin_applications: Some(17),
+                segment_arena_builtin: Some(18),
+                data_availability: DataAvailabilityResources { l1_gas: 19, l1_data_gas: 20 },
+            },
+            execution_result: ExecutionResult::Succeeded,
+        });
+
+        let encoded_receipt = bincode::serialize(&receipt).unwrap();
+        let decoded_receipt: TransactionReceipt = bincode::deserialize(&encoded_receipt).unwrap();
+        assert_eq!(receipt, decoded_receipt);
+    }
 }
