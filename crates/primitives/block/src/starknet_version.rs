@@ -45,7 +45,7 @@ impl FromStr for StarknetVersion {
         let mut parts = version_str.split('.');
 
         let mut version = [0u8; 4];
-        for (i, part) in parts.by_ref().enumerate() {
+        for (i, part) in parts.by_ref().take(4).enumerate() {
             version[i] = part.parse()?;
         }
         let extra = parts.count(); // remaining items in the iter

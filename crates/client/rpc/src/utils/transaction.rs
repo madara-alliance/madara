@@ -2,25 +2,11 @@ use blockifier::execution::contract_class::ClassInfo;
 use blockifier::transaction::transaction_execution as btx;
 use dc_db::storage_handler::primitives::contract_class::StorageContractClassData;
 use dc_db::storage_handler::StorageView;
-use dp_convert::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::{Transaction, TransactionHash};
-use starknet_core::types::Felt;
 
 use crate::errors::StarknetRpcApiError;
 use crate::Starknet;
-
-pub(crate) fn blockifier_transactions(
-    starknet: &Starknet,
-    transaction_with_hash: Vec<(Transaction, Felt)>,
-) -> RpcResult<Vec<btx::Transaction>> {
-    let transactions = transaction_with_hash
-        .iter()
-        .map(|(tx, hash)| to_blockifier_transactions(starknet, tx, &TransactionHash(hash.to_stark_felt())))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(transactions)
-}
 
 /// Convert an starknet-api Transaction to a blockifier Transaction
 ///

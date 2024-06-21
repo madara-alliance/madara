@@ -1,6 +1,3 @@
-use blockifier::context::BlockContext;
-use blockifier::transaction::objects::TransactionExecutionInfo;
-use blockifier::transaction::transaction_execution as btx;
 use dc_db::mapping_db::BlockStorageType;
 use dp_convert::ToFelt;
 use dp_convert::ToStarkFelt;
@@ -9,8 +6,6 @@ use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{Felt, TransactionFinalityStatus, TransactionReceiptWithBlockInfo};
 
 use crate::errors::StarknetRpcApiError;
-use crate::utils::execution::re_execute_transactions;
-use crate::utils::OptionExt;
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -69,26 +64,4 @@ pub async fn get_transaction_receipt(
     };
 
     Ok(TransactionReceiptWithBlockInfo { receipt, block })
-}
-
-pub(crate) fn execution_infos(
-    starknet: &Starknet,
-    transactions: Vec<btx::Transaction>,
-    block_context: &BlockContext,
-) -> RpcResult<TransactionExecutionInfo> {
-    // TODO: fix this with vec
-    // let (last, prev) = match transactions.split_last() {
-    //     Some((last, prev)) => (vec![last.clone()], prev.to_vec()),
-    //     None => (transactions, vec![]),
-    // };
-
-    let last = transactions;
-    let prev = vec![];
-
-    let execution_infos = re_execute_transactions(starknet, prev, last, block_context)
-        .or_internal_server_error("Failed to re-execute transactions")?
-        .pop()
-        .ok_or_internal_server_error("No execution info returned for the last transaction")?;
-
-    Ok(execution_infos)
 }

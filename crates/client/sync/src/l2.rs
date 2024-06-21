@@ -206,11 +206,7 @@ async fn l2_block_conversion_task(
                         let block_n = block.block_number;
                         let converted_block = convert_block(block, chain_id).context("converting block")?;
                         stopwatch_end!(sw, "convert_block {:?}: {:?}", block_n);
-                        anyhow::Ok(L2ConvertedBlockAndUpdates {
-                            converted_block: converted_block,
-                            state_update,
-                            class_update,
-                        })
+                        anyhow::Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
                     }),
                     (updates_recv, chain_id),
                 )
