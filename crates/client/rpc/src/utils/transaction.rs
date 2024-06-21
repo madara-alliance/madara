@@ -1,4 +1,3 @@
-use blockifier::block;
 use blockifier::execution::contract_class::{ClassInfo, ContractClass, ContractClassV0, ContractClassV1};
 use blockifier::transaction::transaction_execution as btx;
 use dc_db::storage_handler::primitives::contract_class::StorageContractClassData;

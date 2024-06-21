@@ -1,15 +1,12 @@
-use base64;
-use blockifier::execution::contract_class::ContractClass as ContractClassBlockifier;
-use cairo_vm::types::program::{self, Program};
+use cairo_vm::types::program::Program;
 use dc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
 use dc_db::storage_handler::StorageView;
 use dp_convert::to_stark_felt::ToStarkFelt;
 use flate2::read::GzDecoder;
-use flate2::{write::GzEncoder, Compression};
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::ClassHash;
 use starknet_core::types::{BlockId, CompressedLegacyContractClass, ContractClass, Felt};
-use std::io::{Read, Write};
+use std::io::Read;
 
 use crate::errors::StarknetRpcApiError;
 use crate::utils::ResultExt;

@@ -22,6 +22,7 @@ use starknet_core::types::{
     CompressedLegacyContractClass, ContractClass as ContractClassCore, EntryPointsByType, FlattenedSierraClass,
     LegacyContractEntryPoint, LegacyEntryPointsByType, SierraEntryPoint,
 };
+use starknet_providers::sequencer::models::DeployedClass;
 
 #[derive(Debug, Encode, Decode)]
 pub struct StorageContractClassData {
@@ -281,9 +282,6 @@ fn from_legacy_entry_point(entry_point: &RawLegacyEntryPoint) -> EntryPoint {
     let offset = EntryPointOffset(entry_point.offset.into());
     EntryPoint { selector, offset }
 }
-
-use starknet_providers::sequencer::models::DeployedClass;
-use starknet_types_core::felt::Felt;
 
 // Wrapper Class conversion
 
