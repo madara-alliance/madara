@@ -4,10 +4,10 @@ use dp_transactions::TxType;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{BlockId, TransactionTraceWithHash};
-use starknet_providers::Provider;
 
 use super::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use super::utils::tx_execution_infos_to_tx_trace;
+use crate::errors::StarknetRpcApiError;
 use crate::utils::execution::{block_context, re_execute_transactions};
 use crate::utils::transaction::to_blockifier_transactions;
 use crate::utils::ResultExt;
@@ -21,14 +21,7 @@ pub async fn trace_block_transactions(
 
     if block.header().protocol_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
         // call the sequencer
-        let provider = starknet.make_sequencer_provider();
-
-        let res = provider
-            .trace_block_transactions(block_id)
-            .await
-            .or_internal_server_error("Error getting fallback trace response from sequencer")?;
-
-        return Ok(res);
+        return Err(StarknetRpcApiError::UnsupportedTxnVersion.into());
     }
 
     let block_context = block_context(starknet, block.info())?;
@@ -61,7 +54,7 @@ pub async fn trace_block_transactions(
         .zip(types)
         .zip(block.tx_hashes())
         .map(|((info, ty), tx_hash)| {
-            tx_execution_infos_to_tx_trace(starknet, ty, &info, block.block_n())
+            tx_execution_infos_to_tx_trace(starknet, ty, info, block.block_n())
                 .or_internal_server_error("Converting execution infos to tx trace")
                 .map(|trace| TransactionTraceWithHash { trace_root: trace, transaction_hash: tx_hash.to_felt() })
         })

@@ -1,13 +1,11 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use dp_block::StarknetVersion;
-use dp_convert::ToFelt;
 use dp_convert::ToStarkFelt;
 use dp_transactions::TxType;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::Felt;
 use starknet_core::types::TransactionTraceWithHash;
-use starknet_providers::Provider;
 
 use super::utils::tx_execution_infos_to_tx_trace;
 use crate::errors::StarknetRpcApiError;
@@ -29,18 +27,7 @@ pub async fn trace_transaction(starknet: &Starknet, transaction_hash: Felt) -> R
     let tx_index = tx_info.tx_index;
 
     if block.header().protocol_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
-        // call the sequencer
-        let provider = starknet.make_sequencer_provider();
-
-        let res = provider
-            .trace_transaction(transaction_hash)
-            .await
-            .or_internal_server_error("Error getting fallback trace response from sequencer")?;
-
-        return Ok(TransactionTraceWithHash {
-            transaction_hash: block.tx_hashes()[tx_index].to_felt(),
-            trace_root: res,
-        });
+        return Err(StarknetRpcApiError::UnsupportedTxnVersion.into());
     }
 
     let block_context = block_context(starknet, block.info())?;

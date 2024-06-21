@@ -253,17 +253,17 @@ impl MappingDb {
     ) -> Result<Option<(DeoxysBlockInfo, TxStorageInfo)>> {
         match self.tx_hash_to_block_n(tx_hash)? {
             Some(block_n) => {
-        log::debug!("??");
-        let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
-        log::debug!("?dd?");
-        let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                log::debug!("??");
+                let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
+                log::debug!("?dd?");
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
                 Ok(Some((info, TxStorageInfo { storage_type: BlockStorageType::BlockN(block_n), tx_index })))
             }
             None => {
-        log::debug!("?aaa?");
-        let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
-        log::debug!("?zczc?");
-        let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                log::debug!("?aaa?");
+                let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
+                log::debug!("?zczc?");
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
                 Ok(Some((info, TxStorageInfo { storage_type: BlockStorageType::Pending, tx_index })))
             }
         }
@@ -273,24 +273,24 @@ impl MappingDb {
     pub fn find_tx_hash_block(&self, tx_hash: &TransactionHash) -> Result<Option<(DeoxysBlock, TxStorageInfo)>> {
         match self.tx_hash_to_block_n(tx_hash)? {
             Some(block_n) => {
-        log::debug!("yzd");
-        let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
-        log::debug!("ddd");
-        let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
-        log::debug!("qddqdq");
-        let Some(inner) = self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
+                log::debug!("yzd");
+                let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
+                log::debug!("ddd");
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                log::debug!("qddqdq");
+                let Some(inner) = self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
                 Ok(Some((
                     DeoxysBlock::new(info, inner),
                     TxStorageInfo { storage_type: BlockStorageType::BlockN(block_n), tx_index },
                 )))
             }
             None => {
-        log::debug!("ccccc");
-        let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
-        log::debug!("asdasdasd");
-        let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
-        log::debug!("bd");
-        let Some(inner) = self.get_pending_block_inner()? else { return Ok(None) };
+                log::debug!("ccccc");
+                let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
+                log::debug!("asdasdasd");
+                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                log::debug!("bd");
+                let Some(inner) = self.get_pending_block_inner()? else { return Ok(None) };
                 Ok(Some((
                     DeoxysBlock::new(info, inner),
                     TxStorageInfo { storage_type: BlockStorageType::Pending, tx_index },
