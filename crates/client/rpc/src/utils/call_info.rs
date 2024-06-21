@@ -4,6 +4,7 @@ use starknet_core::types::{
     ComputationResources, DataAvailabilityResources, DataResources, Event, ExecutionResources, Felt, MsgToL1,
 };
 
+#[allow(unused)]
 pub(crate) fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> {
     let address = call_info.call.storage_address;
     let events: Vec<_> = call_info
@@ -21,6 +22,8 @@ pub(crate) fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> 
 
     events.into_iter().chain(inner_events).collect()
 }
+
+#[allow(unused)]
 
 pub(crate) fn extract_messages_from_call_info(call_info: &CallInfo) -> Vec<MsgToL1> {
     let address = call_info.call.storage_address;
@@ -40,6 +43,7 @@ pub(crate) fn extract_messages_from_call_info(call_info: &CallInfo) -> Vec<MsgTo
     events.into_iter().chain(inner_messages).collect()
 }
 
+#[allow(unused)]
 pub(crate) fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> ExecutionResources {
     let vm_resources = &callinfo.resources;
 
