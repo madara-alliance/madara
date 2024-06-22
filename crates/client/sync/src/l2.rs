@@ -13,7 +13,6 @@ use dc_db::DeoxysBackend;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::Header;
 use dp_block::{BlockId, BlockTag, DeoxysBlock};
-use dp_convert::ToFelt;
 use dp_convert::ToStarkFelt;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
@@ -158,15 +157,15 @@ async fn l2_verify_and_apply_task(
         log::info!(
             "✨ Imported #{} ({}) and updated state root ({})",
             block_n,
-            trim_hash(&block_hash.to_felt()),
+            trim_hash(&block_hash),
             trim_hash(&global_state_root)
         );
-        log::debug!("Imported #{} ({}) and updated state root ({})", block_n, block_hash.0, global_state_root);
+        log::debug!("Imported #{} ({}) and updated state root ({})", block_n, block_hash, global_state_root);
 
         telemetry.send(
             VerbosityLevel::Info,
             serde_json::json!({
-                "best": format!("{}", block_hash.0),
+                "best": format!("{}", block_hash),
                 "height": block_n,
                 "origin": "Own",
                 "msg": "block.import",
@@ -271,7 +270,7 @@ async fn l2_pending_block_task(
         log::debug!("pending block hash parent hash: {:#}", block.parent_block_hash.to_stark_felt());
 
         let mut tx = WriteBatchWithTransaction::default();
-        if block.parent_block_hash == block_hash_best.to_felt() {
+        if block.parent_block_hash == block_hash_best {
             let block = spawn_compute(move || crate::convert::convert_block(block, chain_id))
                 .await
                 .context("converting pending block")?;

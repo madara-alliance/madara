@@ -20,7 +20,7 @@ pub const FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW: StarknetVersion = StarknetVe
 pub async fn trace_transaction(starknet: &Starknet, transaction_hash: Felt) -> RpcResult<TransactionTraceWithHash> {
     let (block, tx_info) = starknet
         .block_storage()
-        .find_tx_hash_block(&TransactionHash(transaction_hash.to_stark_felt()))
+        .find_tx_hash_block(&transaction_hash)
         .or_internal_server_error("Error while getting block from tx hash")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 

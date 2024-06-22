@@ -1,4 +1,3 @@
-use dp_convert::ToFelt;
 use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{
@@ -12,7 +11,7 @@ use crate::Starknet;
 pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithReceipts> {
     let block = starknet.get_block(block_id)?;
 
-    let block_txs_hashes = block.tx_hashes().iter().map(ToFelt::to_felt);
+    let block_txs_hashes = block.tx_hashes().to_vec();
 
     // create a vector of transactions with their corresponding hashes without deploy transactions,
     // blockifier does not support deploy transactions
@@ -59,7 +58,7 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
 
         let block_with_receipts = BlockWithReceipts {
             status,
-            block_hash: block.block_hash().to_felt(),
+            block_hash: *block.block_hash(),
             parent_hash: block.header().parent_block_hash,
             block_number: block.header().block_number,
             new_root: block.header().global_state_root,

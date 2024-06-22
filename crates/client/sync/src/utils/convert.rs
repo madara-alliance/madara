@@ -9,10 +9,9 @@ use dp_convert::ToStarkFelt;
 use dp_receipt::{Event, TransactionReceipt};
 use dp_transactions::from_broadcasted_transactions::fee_from_felt;
 use dp_transactions::MAIN_CHAIN_ID;
-use starknet_api::block::BlockHash;
 use starknet_api::transaction::{
     DeclareTransaction, DeployAccountTransaction, DeployAccountTransactionV1, DeployTransaction, InvokeTransaction,
-    L1HandlerTransaction, Transaction, TransactionHash,
+    L1HandlerTransaction, Transaction,
 };
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, PendingStateUpdate,
@@ -91,11 +90,7 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2S
     }
 
     Ok(DeoxysBlock::new(
-        DeoxysBlockInfo::new(
-            header,
-            txs_hashes.into_iter().map(ToStarkFelt::to_stark_felt).map(TransactionHash).collect(),
-            BlockHash(block_hash.to_stark_felt()),
-        ),
+        DeoxysBlockInfo::new(header, txs_hashes, block_hash),
         DeoxysBlockInner::new(transactions, transactions_receipts),
     ))
 }

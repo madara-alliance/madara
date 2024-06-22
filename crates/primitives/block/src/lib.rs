@@ -4,8 +4,7 @@ mod header;
 mod starknet_version;
 use dp_receipt::TransactionReceipt;
 pub use header::{GasPrices, Header, L1DataAvailabilityMode};
-use starknet_api::block::BlockHash;
-use starknet_api::transaction::{Transaction, TransactionHash};
+use starknet_api::transaction::Transaction;
 pub use starknet_version::StarknetVersion;
 
 pub use primitive_types::{H160, U256};
@@ -73,22 +72,22 @@ impl From<BlockId> for starknet_core::types::BlockId {
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInfo {
     header: Header,
-    block_hash: BlockHash,
-    tx_hashes: Vec<TransactionHash>,
+    block_hash: Felt,
+    tx_hashes: Vec<Felt>,
 }
 
 impl DeoxysBlockInfo {
-    pub fn new(header: Header, tx_hashes: Vec<TransactionHash>, block_hash: BlockHash) -> Self {
+    pub fn new(header: Header, tx_hashes: Vec<Felt>, block_hash: Felt) -> Self {
         Self { header, block_hash, tx_hashes }
     }
 
     pub fn header(&self) -> &Header {
         &self.header
     }
-    pub fn tx_hashes(&self) -> &[TransactionHash] {
+    pub fn tx_hashes(&self) -> &[Felt] {
         &self.tx_hashes
     }
-    pub fn block_hash(&self) -> &BlockHash {
+    pub fn block_hash(&self) -> &Felt {
         &self.block_hash
     }
     pub fn block_n(&self) -> u64 {
@@ -130,10 +129,10 @@ impl DeoxysBlock {
         Self { info, inner }
     }
 
-    pub fn tx_hashes(&self) -> &[TransactionHash] {
+    pub fn tx_hashes(&self) -> &[Felt] {
         &self.info.tx_hashes
     }
-    pub fn block_hash(&self) -> &BlockHash {
+    pub fn block_hash(&self) -> &Felt {
         &self.info.block_hash
     }
     pub fn block_n(&self) -> u64 {

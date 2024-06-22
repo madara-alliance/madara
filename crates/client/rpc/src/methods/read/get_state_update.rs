@@ -1,4 +1,3 @@
-use dp_convert::ToFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, BlockTag, Felt, MaybePendingStateUpdate, StateUpdate};
 
@@ -27,7 +26,7 @@ use crate::Starknet;
 pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate> {
     let block = starknet.get_block_info(block_id)?;
     let new_root = block.header().global_state_root;
-    let block_hash = block.block_hash().to_felt();
+    let block_hash = *block.block_hash();
 
     // Get the old root from the previous block if it exists, otherwise default to zero.
     let old_root = if let Some(block_n) = block.block_n().checked_sub(1) {

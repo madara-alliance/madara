@@ -1,5 +1,4 @@
 use dp_block::{BlockId, BlockTag};
-use dp_convert::ToFelt;
 use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{
@@ -23,7 +22,7 @@ pub(crate) fn get_block_with_txs(starknet: &Starknet, block_id: &BlockId) -> Rpc
         .transactions()
         .iter()
         .zip(block.tx_hashes())
-        .map(|(tx, tx_hash)| to_starknet_core_tx(tx, tx_hash.to_felt()))
+        .map(|(tx, tx_hash)| to_starknet_core_tx(tx, *tx_hash))
         .collect();
 
     let parent_hash = block.header().parent_block_hash;
@@ -57,7 +56,7 @@ pub(crate) fn get_block_with_txs(starknet: &Starknet, block_id: &BlockId) -> Rpc
             } else {
                 BlockStatus::AcceptedOnL2
             };
-            let block_hash = block.block_hash().to_felt();
+            let block_hash = *block.block_hash();
             let block_with_tx_hashes = BlockWithTxs {
                 transactions,
                 status,
@@ -88,8 +87,8 @@ pub(crate) fn get_block_with_tx_hashes(
         .or_internal_server_error("Error getting block from db")?
         .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    let block_hash_as_field = block.block_hash().to_felt();
-    let block_txs_hashes = block.tx_hashes().iter().map(ToFelt::to_felt).collect();
+    let block_hash = *block.block_hash();
+    let block_txs_hashes = block.tx_hashes().to_vec();
 
     let parent_hash = block.header().parent_block_hash;
     let new_root = block.header().global_state_root;
@@ -125,7 +124,7 @@ pub(crate) fn get_block_with_tx_hashes(
             let block_with_tx_hashes = BlockWithTxHashes {
                 transactions: block_txs_hashes,
                 status,
-                block_hash: block_hash_as_field,
+                block_hash,
                 parent_hash,
                 block_number,
                 new_root,

@@ -1,5 +1,4 @@
 use dp_block::{BlockId, BlockTag};
-use dp_convert::ToFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::BlockHashAndNumber;
 
@@ -18,7 +17,7 @@ use crate::Starknet;
 pub fn block_hash_and_number(starknet: &Starknet) -> RpcResult<BlockHashAndNumber> {
     let block_info = starknet.get_block_info(BlockId::Tag(BlockTag::Latest))?;
 
-    let block_hash = block_info.block_hash().to_felt();
+    let block_hash = *block_info.block_hash();
 
     Ok(BlockHashAndNumber { block_hash, block_number: block_info.block_n() })
 }
