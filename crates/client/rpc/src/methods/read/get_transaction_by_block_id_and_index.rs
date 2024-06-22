@@ -1,4 +1,3 @@
-use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, Transaction};
 
@@ -31,8 +30,7 @@ pub fn get_transaction_by_block_id_and_index(
     index: u64,
 ) -> RpcResult<Transaction> {
     let block = starknet.get_block(block_id)?;
-    let tx_hash = block.tx_hashes().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
-    let tx = block.transactions().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
+    let transaction = block.transactions().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
 
-    Ok(to_starknet_core_tx(tx, *tx_hash))
+    Ok(transaction.clone().into())
 }

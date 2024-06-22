@@ -9,11 +9,11 @@ use contracts::contract_trie_root;
 use dc_db::DeoxysBackend;
 use dp_convert::ToStarkFelt;
 use dp_receipt::Event;
+use dp_transactions::Transaction;
 use events::memory_event_commitment;
 use indexmap::IndexMap;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
-use starknet_api::transaction::Transaction;
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate,
     StorageEntry,

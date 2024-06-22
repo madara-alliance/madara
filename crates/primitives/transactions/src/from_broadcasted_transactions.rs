@@ -37,7 +37,7 @@ use starknet_core::types::{
 };
 use starknet_types_core::felt::Felt;
 
-use crate::compute_hash::ComputeTransactionHash;
+use crate::compute_hash_blockifier::ComputeTransactionHash;
 
 const CONTRACT_ADDRESS_ERROR: &str = "expected contract address";
 

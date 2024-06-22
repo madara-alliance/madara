@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use blockifier::transaction::transactions::L1HandlerTransaction;
 use dp_convert::ToStarkFelt;
-use dp_transactions::compute_hash::ComputeTransactionHash;
+use dp_transactions::compute_hash_blockifier::ComputeTransactionHash;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::Nonce;
 use starknet_api::core::{ContractAddress, EntryPointSelector};

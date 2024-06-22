@@ -3,8 +3,8 @@
 mod header;
 mod starknet_version;
 use dp_receipt::TransactionReceipt;
+use dp_transactions::Transaction;
 pub use header::{GasPrices, Header, L1DataAvailabilityMode};
-use starknet_api::transaction::Transaction;
 pub use starknet_version::StarknetVersion;
 
 pub use primitive_types::{H160, U256};

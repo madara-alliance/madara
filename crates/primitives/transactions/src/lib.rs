@@ -1,10 +1,10 @@
 pub mod compute_hash;
+pub mod compute_hash_blockifier;
 pub mod from_broadcasted_transactions;
 mod from_starknet_provider;
 pub mod getters;
 mod to_starknet_api;
 mod to_starknet_core;
-pub mod to_starknet_core_transaction;
 pub mod utils;
 
 use blockifier::transaction::account_transaction::AccountTransaction;
@@ -86,6 +86,40 @@ pub enum InvokeTransaction {
     V3(InvokeTransactionV3),
 }
 
+impl InvokeTransaction {
+    pub fn sender_address(&self) -> Felt {
+        match self {
+            InvokeTransaction::V0(tx) => tx.contract_address,
+            InvokeTransaction::V1(tx) => tx.sender_address,
+            InvokeTransaction::V3(tx) => tx.sender_address,
+        }
+    }
+
+    pub fn signature(&self) -> Vec<Felt> {
+        match self {
+            InvokeTransaction::V0(tx) => tx.signature.clone(),
+            InvokeTransaction::V1(tx) => tx.signature.clone(),
+            InvokeTransaction::V3(tx) => tx.signature.clone(),
+        }
+    }
+
+    pub fn calldata(&self) -> Option<Vec<Felt>> {
+        match self {
+            InvokeTransaction::V0(tx) => Some(tx.calldata.clone()),
+            InvokeTransaction::V1(tx) => Some(tx.calldata.clone()),
+            InvokeTransaction::V3(tx) => Some(tx.calldata.clone()),
+        }
+    }
+
+    pub fn nonce(&self) -> Felt {
+        match self {
+            InvokeTransaction::V0(_) => Felt::ZERO,
+            InvokeTransaction::V1(tx) => tx.nonce,
+            InvokeTransaction::V3(tx) => tx.nonce,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV0 {
     pub transaction_hash: Felt,
@@ -137,6 +171,38 @@ pub enum DeclareTransaction {
     V1(DeclareTransactionV1),
     V2(DeclareTransactionV2),
     V3(DeclareTransactionV3),
+}
+
+impl DeclareTransaction {
+    pub fn sender_address(&self) -> Felt {
+        match self {
+            DeclareTransaction::V0(tx) => tx.sender_address,
+            DeclareTransaction::V1(tx) => tx.sender_address,
+            DeclareTransaction::V2(tx) => tx.sender_address,
+            DeclareTransaction::V3(tx) => tx.sender_address,
+        }
+    }
+    pub fn signature(&self) -> Vec<Felt> {
+        match self {
+            DeclareTransaction::V0(tx) => tx.signature.clone(),
+            DeclareTransaction::V1(tx) => tx.signature.clone(),
+            DeclareTransaction::V2(tx) => tx.signature.clone(),
+            DeclareTransaction::V3(tx) => tx.signature.clone(),
+        }
+    }
+
+    pub fn call_data(&self) -> Option<Vec<Felt>> {
+        None
+    }
+
+    pub fn nonce(&self) -> Felt {
+        match self {
+            DeclareTransaction::V0(_) => Felt::ZERO,
+            DeclareTransaction::V1(tx) => tx.nonce,
+            DeclareTransaction::V2(tx) => tx.nonce,
+            DeclareTransaction::V3(tx) => tx.nonce,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -198,6 +264,35 @@ pub struct DeployTransaction {
 pub enum DeployAccountTransaction {
     V1(DeployAccountTransactionV1),
     V3(DeployAccountTransactionV3),
+}
+
+impl DeployAccountTransaction {
+    pub fn sender_address(&self) -> Felt {
+        match self {
+            DeployAccountTransaction::V1(tx) => tx.contract_address_salt,
+            DeployAccountTransaction::V3(tx) => tx.contract_address_salt,
+        }
+    }
+    pub fn signature(&self) -> Vec<Felt> {
+        match self {
+            DeployAccountTransaction::V1(tx) => tx.signature.clone(),
+            DeployAccountTransaction::V3(tx) => tx.signature.clone(),
+        }
+    }
+
+    pub fn calldata(&self) -> Option<Vec<Felt>> {
+        match self {
+            DeployAccountTransaction::V1(tx) => Some(tx.constructor_calldata.clone()),
+            DeployAccountTransaction::V3(tx) => Some(tx.constructor_calldata.clone()),
+        }
+    }
+
+    pub fn nonce(&self) -> Felt {
+        match self {
+            DeployAccountTransaction::V1(tx) => tx.nonce,
+            DeployAccountTransaction::V3(tx) => tx.nonce,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

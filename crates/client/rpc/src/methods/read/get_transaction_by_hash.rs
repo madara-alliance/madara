@@ -1,4 +1,3 @@
-use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{Felt, Transaction};
 
@@ -39,7 +38,7 @@ pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> R
         .find_tx_hash_block(&transaction_hash)
         .or_internal_server_error("Error getting block from tx hash")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-    let tx =
+    let transaction =
         block.transactions().get(tx_info.tx_index).ok_or_internal_server_error("Storage block transaction mismatch")?;
-    Ok(to_starknet_core_tx(tx, transaction_hash))
+    Ok(transaction.clone().into())
 }

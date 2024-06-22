@@ -1,5 +1,4 @@
 use dp_block::{BlockId, BlockTag};
-use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{
     BlockStatus, BlockWithTxHashes, BlockWithTxs, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
@@ -18,12 +17,7 @@ pub(crate) fn get_block_with_txs(starknet: &Starknet, block_id: &BlockId) -> Rpc
         .or_internal_server_error("Error getting block from db")?
         .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    let transactions = block
-        .transactions()
-        .iter()
-        .zip(block.tx_hashes())
-        .map(|(tx, tx_hash)| to_starknet_core_tx(tx, *tx_hash))
-        .collect();
+    let transactions = block.transactions().iter().map(|tx| tx.clone().into()).collect();
 
     let parent_hash = block.header().parent_block_hash;
     let new_root = block.header().global_state_root;

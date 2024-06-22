@@ -1,4 +1,3 @@
-use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{
     BlockId, BlockStatus, BlockTag, BlockWithReceipts, MaybePendingBlockWithReceipts, PendingBlockWithReceipts,
@@ -11,17 +10,7 @@ use crate::Starknet;
 pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithReceipts> {
     let block = starknet.get_block(block_id)?;
 
-    let block_txs_hashes = block.tx_hashes().to_vec();
-
-    // create a vector of transactions with their corresponding hashes without deploy transactions,
-    // blockifier does not support deploy transactions
-    let transaction_with_hash: Vec<_> = block.transactions().iter().cloned().zip(block_txs_hashes).collect();
-
-    let transactions_core: Vec<_> = transaction_with_hash
-        .iter()
-        .cloned()
-        .map(|(transaction, hash)| to_starknet_core_tx(&transaction, hash))
-        .collect();
+    let transactions: Vec<_> = block.transactions().iter().map(|tx| tx.clone().into()).collect();
 
     let is_on_l1 = block.block_n() <= starknet.get_l1_last_confirmed_block()?;
 
@@ -31,7 +20,7 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
     let receipts: Vec<starknet_core::types::TransactionReceipt> =
         block.receipts().iter().map(|receipt| receipt.clone().to_starknet_core(finality_status)).collect();
 
-    let transactions_with_receipts = transactions_core
+    let transactions_with_receipts = transactions
         .into_iter()
         .zip(receipts)
         .map(|(transaction, receipt)| TransactionWithReceipt { transaction, receipt })

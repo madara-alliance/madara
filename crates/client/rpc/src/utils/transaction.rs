@@ -14,16 +14,21 @@ use crate::Starknet;
 /// because it is not supported by blockifier
 pub(crate) fn to_blockifier_transactions(
     starknet: &Starknet,
-    transaction: &Transaction,
+    transaction: &dp_transactions::Transaction,
     tx_hash: &TransactionHash,
 ) -> RpcResult<btx::Transaction> {
+    let transaction: Transaction = transaction.try_into().map_err(|e| {
+        log::warn!("Failed to convert transaction to blockifier transaction: {e}");
+        StarknetRpcApiError::InternalServerError
+    })?;
+
     let paid_fee_on_l1 = match transaction {
         Transaction::L1Handler(_) => Some(starknet_api::transaction::Fee(1_000_000_000_000)),
         _ => None,
     };
 
     let class_info = match transaction {
-        Transaction::Declare(declare_tx) => {
+        Transaction::Declare(ref declare_tx) => {
             let class_hash = declare_tx.class_hash();
 
             let Ok(Some(class_data)) = starknet.backend.contract_class_data().get(&class_hash) else {
