@@ -1,12 +1,7 @@
-use std::sync::Arc;
-
-use dp_convert::ToStarkFelt;
-use starknet_api::core::{calculate_contract_address, ClassHash};
-use starknet_api::transaction::{Calldata, ContractAddressSalt};
 use starknet_core::utils::starknet_keccak;
 
 use starknet_types_core::felt::Felt;
-use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash}; //, Poseidon};
+use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 
 use crate::{
     DataAvailabilityMode, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2,
@@ -17,7 +12,6 @@ use crate::{
 
 use super::SIMULATE_TX_VERSION_OFFSET;
 use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK, MAIN_CHAIN_ID};
-use dp_convert::ToFelt;
 
 // b"declare" == 0x6465636c617265
 const DECLARE_PREFIX: Felt = Felt::from_hex_unchecked("0x6465636c617265");
@@ -298,13 +292,11 @@ impl DeployAccountTransaction {
 impl DeployAccountTransactionV1 {
     fn compute_hash(&self, chain_id: Felt, offset_version: bool, _block_number: Option<u64>) -> Felt {
         let contract_address = calculate_contract_address(
-            ContractAddressSalt(self.contract_address_salt.to_stark_felt()),
-            ClassHash(self.class_hash.to_stark_felt()),
-            &Calldata(Arc::new(self.constructor_calldata.iter().map(|x| x.to_stark_felt()).collect::<Vec<_>>())),
+            self.contract_address_salt,
+            self.class_hash,
+            &self.constructor_calldata,
             Default::default(),
-        )
-        .unwrap()
-        .to_felt();
+        );
 
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::ONE } else { Felt::ONE };
         let entrypoint_selector = Felt::ZERO;
@@ -336,13 +328,11 @@ impl DeployAccountTransactionV3 {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
 
         let contract_address = calculate_contract_address(
-            ContractAddressSalt(self.contract_address_salt.to_stark_felt()),
-            ClassHash(self.class_hash.to_stark_felt()),
-            &Calldata(Arc::new(self.constructor_calldata.iter().map(|x| x.to_stark_felt()).collect::<Vec<_>>())),
+            self.contract_address_salt,
+            self.class_hash,
+            &self.constructor_calldata,
             Default::default(),
-        )
-        .unwrap()
-        .to_felt();
+        );
 
         let gas_hash = compute_gas_hash(self.tip, &self.resource_bounds);
         let paymaster_hash = Poseidon::hash_array(&self.paymaster_data);
@@ -371,13 +361,11 @@ impl DeployAccountTransactionV3 {
 impl DeployTransaction {
     fn compute_hash(&self, chain_id: Felt, is_query: bool, block_number: Option<u64>) -> Felt {
         let contract_address = calculate_contract_address(
-            ContractAddressSalt(self.contract_address_salt.to_stark_felt()),
-            ClassHash(self.class_hash.to_stark_felt()),
-            &Calldata(Arc::new(self.constructor_calldata.iter().map(|x| x.to_stark_felt()).collect::<Vec<_>>())),
+            self.contract_address_salt,
+            self.class_hash,
+            &self.constructor_calldata,
             Default::default(),
-        )
-        .unwrap()
-        .to_felt();
+        );
 
         compute_hash_given_contract_address(
             self,
@@ -460,4 +448,27 @@ fn prepare_data_availability_modes(
     buffer[12..16].copy_from_slice(&(fee_data_availability_mode as u32).to_be_bytes());
 
     Felt::from_bytes_be(&buffer)
+}
+
+//  b"STARKNET_CONTRACT_ADDRESS" == 0x535441524b4e45545f434f4e54524143545f41444452455353
+const CONTRACT_ADDRESS_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e45545f434f4e54524143545f41444452455353");
+const L2_ADDRESS_UPPER_BOUND: Felt =
+    Felt::from_raw([576459263475590224, 18446744073709255680, 160989183, 18446743986131443745]);
+
+pub fn calculate_contract_address(
+    salt: Felt,
+    class_hash: Felt,
+    constructor_calldata: &[Felt],
+    deployer_address: Felt,
+) -> Felt {
+    let constructor_calldata_hash = Pedersen::hash_array(constructor_calldata);
+    let mut address =
+        Pedersen::hash_array(&[CONTRACT_ADDRESS_PREFIX, deployer_address, salt, class_hash, constructor_calldata_hash]);
+
+    // Ensure the address is within the L2 address space
+    // modulus L2_ADDRESS_UPPER_BOUND
+    while address >= L2_ADDRESS_UPPER_BOUND {
+        address -= L2_ADDRESS_UPPER_BOUND;
+    }
+    address
 }
