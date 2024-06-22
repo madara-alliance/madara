@@ -13,16 +13,12 @@ use crate::{
 use super::SIMULATE_TX_VERSION_OFFSET;
 use crate::{LEGACY_BLOCK_NUMBER, LEGACY_L1_HANDLER_BLOCK, MAIN_CHAIN_ID};
 
-// b"declare" == 0x6465636c617265
-const DECLARE_PREFIX: Felt = Felt::from_hex_unchecked("0x6465636c617265");
-// b"deploy_account" == 0x6465706c6f795f6163636f756e74
-const DEPLOY_ACCOUNT_PREFIX: Felt = Felt::from_hex_unchecked("0x6465706c6f795f6163636f756e74");
-// b"deploy" == 0x6465706c6f79
-const DEPLOY_PREFIX: Felt = Felt::from_hex_unchecked("0x6465706c6f79");
-// b"invoke" == 0x696e766f6b65
-const INVOKE_PREFIX: Felt = Felt::from_hex_unchecked("0x696e766f6b65");
-// b"l1_handler" == 0x6c315f68616e646c6572
-const L1_HANDLER_PREFIX: Felt = Felt::from_hex_unchecked("0x6c315f68616e646c6572");
+// contants for transaction prefixes
+const DECLARE_PREFIX: Felt = Felt::from_hex_unchecked("0x6465636c617265"); // b"declare"
+const DEPLOY_ACCOUNT_PREFIX: Felt = Felt::from_hex_unchecked("0x6465706c6f795f6163636f756e74"); // b"deploy_account"
+const DEPLOY_PREFIX: Felt = Felt::from_hex_unchecked("0x6465706c6f79"); // b"deploy"
+const INVOKE_PREFIX: Felt = Felt::from_hex_unchecked("0x696e766f6b65"); // b"invoke"
+const L1_HANDLER_PREFIX: Felt = Felt::from_hex_unchecked("0x6c315f68616e646c6572"); // b"l1_handler"
 
 const L1_GAS: &[u8] = b"L1_GAS";
 const L2_GAS: &[u8] = b"L2_GAS";
@@ -52,22 +48,24 @@ impl InvokeTransaction {
 impl InvokeTransactionV0 {
     fn compute_hash(&self, chain_id: Felt, offset_version: bool, block_number: Option<u64>) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ZERO };
-        let sender_address = self.contract_address;
-        let entrypoint_selector = self.entry_point_selector;
         let calldata_hash = Pedersen::hash_array(&self.calldata);
-        let max_fee = self.max_fee;
 
-        // Check for deprecated environment
         if block_number < Some(LEGACY_BLOCK_NUMBER) && chain_id == MAIN_CHAIN_ID {
-            Pedersen::hash_array(&[INVOKE_PREFIX, sender_address, entrypoint_selector, calldata_hash, chain_id])
+            Pedersen::hash_array(&[
+                INVOKE_PREFIX,
+                self.contract_address,
+                self.entry_point_selector,
+                calldata_hash,
+                chain_id,
+            ])
         } else {
             Pedersen::hash_array(&[
                 INVOKE_PREFIX,
                 version,
-                sender_address,
-                entrypoint_selector,
+                self.contract_address,
+                self.entry_point_selector,
                 calldata_hash,
-                max_fee,
+                self.max_fee,
                 chain_id,
             ])
         }
@@ -77,21 +75,17 @@ impl InvokeTransactionV0 {
 impl InvokeTransactionV1 {
     fn compute_hash(&self, chain_id: Felt, offset_version: bool, _block_number: Option<u64>) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::ONE } else { Felt::ONE };
-        let sender_address = self.sender_address;
-        let entrypoint_selector = Felt::ZERO;
         let calldata_hash = Pedersen::hash_array(&self.calldata);
-        let max_fee = self.max_fee;
-        let nonce = self.nonce;
 
         Pedersen::hash_array(&[
             INVOKE_PREFIX,
             version,
-            sender_address,
-            entrypoint_selector,
+            self.sender_address,
+            Felt::ZERO,
             calldata_hash,
-            max_fee,
+            self.max_fee,
             chain_id,
-            nonce,
+            self.nonce,
         ])
     }
 }
@@ -99,10 +93,8 @@ impl InvokeTransactionV1 {
 impl InvokeTransactionV3 {
     fn compute_hash(&self, chain_id: Felt, offset_version: bool, _block_number: Option<u64>) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
-        let sender_address = self.sender_address;
         let gas_hash = compute_gas_hash(self.tip, &self.resource_bounds);
         let paymaster_hash = Poseidon::hash_array(&self.paymaster_data);
-        let nonce = self.nonce;
         let data_availability_modes =
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
         let account_deployment_data_hash = Poseidon::hash_array(&self.account_deployment_data);
@@ -111,11 +103,11 @@ impl InvokeTransactionV3 {
         Poseidon::hash_array(&[
             INVOKE_PREFIX,
             version,
-            sender_address,
+            self.sender_address,
             gas_hash,
             paymaster_hash,
             chain_id,
-            nonce,
+            self.nonce,
             data_availability_modes,
             account_deployment_data_hash,
             calldata_hash,
@@ -126,18 +118,22 @@ impl InvokeTransactionV3 {
 impl L1HandlerTransaction {
     fn compute_hash(&self, chain_id: Felt, offset_version: bool, block_number: Option<u64>) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ZERO };
-        let contract_address = self.contract_address;
-        let entrypoint_selector = self.entry_point_selector;
         let calldata_hash = Pedersen::hash_array(&self.calldata);
         let nonce = self.nonce.into();
 
         if block_number < Some(LEGACY_L1_HANDLER_BLOCK) && chain_id == MAIN_CHAIN_ID {
-            Pedersen::hash_array(&[INVOKE_PREFIX, contract_address, entrypoint_selector, calldata_hash, chain_id])
+            Pedersen::hash_array(&[
+                INVOKE_PREFIX,
+                self.contract_address,
+                self.entry_point_selector,
+                calldata_hash,
+                chain_id,
+            ])
         } else if block_number < Some(LEGACY_BLOCK_NUMBER) && chain_id == MAIN_CHAIN_ID {
             Pedersen::hash_array(&[
                 L1_HANDLER_PREFIX,
-                contract_address,
-                entrypoint_selector,
+                self.contract_address,
+                self.entry_point_selector,
                 calldata_hash,
                 chain_id,
                 nonce,
@@ -146,8 +142,8 @@ impl L1HandlerTransaction {
             Pedersen::hash_array(&[
                 L1_HANDLER_PREFIX,
                 version,
-                contract_address,
-                entrypoint_selector,
+                self.contract_address,
+                self.entry_point_selector,
                 calldata_hash,
                 Felt::ZERO, // Fees are set to zero on L1 Handler txs
                 chain_id,
@@ -171,27 +167,18 @@ impl DeclareTransaction {
 impl DeclareTransactionV0 {
     fn compute_hash(&self, chain_id: Felt, offset_version: bool, _block_number: Option<u64>) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ZERO };
-
-        let sender_address = self.sender_address;
-        let entrypoint_selector = Felt::ZERO;
-        let max_fee = self.max_fee;
-
-        let class_hash = self.class_hash;
-
-        let nonce_or_class_hash = class_hash;
-
         let class_or_nothing_hash =
-            if version == Felt::ZERO { Pedersen::hash_array(&[]) } else { Pedersen::hash_array(&[class_hash]) };
+            if version == Felt::ZERO { Pedersen::hash_array(&[]) } else { Pedersen::hash_array(&[self.class_hash]) };
 
         Pedersen::hash_array(&[
             DECLARE_PREFIX,
             version,
-            sender_address,
-            entrypoint_selector,
+            self.sender_address,
+            Felt::ZERO,
             class_or_nothing_hash,
-            max_fee,
+            self.max_fee,
             chain_id,
-            nonce_or_class_hash,
+            self.class_hash,
         ])
     }
 }
@@ -199,27 +186,18 @@ impl DeclareTransactionV0 {
 impl DeclareTransactionV1 {
     fn compute_hash(&self, chain_id: Felt, offset_version: bool, _block_number: Option<u64>) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ONE };
-
-        let sender_address = self.sender_address;
-        let entrypoint_selector = Felt::ZERO;
-        let max_fee = self.max_fee;
-
-        let class_hash = self.class_hash;
-
-        let nonce_or_class_hash = self.nonce;
-
         let class_or_nothing_hash =
-            if version == Felt::ZERO { Pedersen::hash_array(&[]) } else { Pedersen::hash_array(&[class_hash]) };
+            if version == Felt::ZERO { Pedersen::hash_array(&[]) } else { Pedersen::hash_array(&[self.class_hash]) };
 
         Pedersen::hash_array(&[
             DECLARE_PREFIX,
             version,
-            sender_address,
-            entrypoint_selector,
+            self.sender_address,
+            Felt::ZERO,
             class_or_nothing_hash,
-            max_fee,
+            self.max_fee,
             chain_id,
-            nonce_or_class_hash,
+            self.nonce,
         ])
     }
 }
@@ -227,25 +205,18 @@ impl DeclareTransactionV1 {
 impl DeclareTransactionV2 {
     fn compute_hash(&self, chain_id: Felt, offset_version: bool, _block_number: Option<u64>) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::TWO } else { Felt::TWO };
-        let sender_address = self.sender_address;
-        let entrypoint_selector = Felt::ZERO;
-
         let calldata = Pedersen::hash_array(&[self.class_hash]);
-
-        let max_fee = self.max_fee;
-        let nonce = self.nonce;
-        let compiled_class_hash = self.compiled_class_hash;
 
         Pedersen::hash_array(&[
             DECLARE_PREFIX,
             version,
-            sender_address,
-            entrypoint_selector,
+            self.sender_address,
+            Felt::ZERO,
             calldata,
-            max_fee,
+            self.max_fee,
             chain_id,
-            nonce,
-            compiled_class_hash,
+            self.nonce,
+            self.compiled_class_hash,
         ])
     }
 }
@@ -253,25 +224,20 @@ impl DeclareTransactionV2 {
 impl DeclareTransactionV3 {
     fn compute_hash(&self, chain_id: Felt, offset_version: bool, _block_number: Option<u64>) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
-        let sender_address = self.sender_address;
-
         let gas_hash = compute_gas_hash(self.tip, &self.resource_bounds);
         let paymaster_hash = Poseidon::hash_array(&self.paymaster_data);
-
-        let nonce = self.nonce;
         let data_availability_modes =
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
-
         let account_deployment_data_hash = Poseidon::hash_array(&self.account_deployment_data);
 
         Poseidon::hash_array(&[
             DECLARE_PREFIX,
             version,
-            sender_address,
+            self.sender_address,
             gas_hash,
             paymaster_hash,
             chain_id,
-            nonce,
+            self.nonce,
             data_availability_modes,
             account_deployment_data_hash,
             self.class_hash,
@@ -299,7 +265,6 @@ impl DeployAccountTransactionV1 {
         );
 
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::ONE } else { Felt::ONE };
-        let entrypoint_selector = Felt::ZERO;
 
         let mut calldata: Vec<Felt> = Vec::with_capacity(self.constructor_calldata.len() + 2);
         calldata.push(self.class_hash);
@@ -307,18 +272,15 @@ impl DeployAccountTransactionV1 {
         calldata.extend_from_slice(&self.constructor_calldata);
         let calldata_hash = Pedersen::hash_array(calldata.as_slice());
 
-        let max_fee = self.max_fee;
-        let nonce = self.nonce;
-
         Pedersen::hash_array(&[
             DEPLOY_ACCOUNT_PREFIX,
             version,
             contract_address,
-            entrypoint_selector,
+            Felt::ZERO,
             calldata_hash,
-            max_fee,
+            self.max_fee,
             chain_id,
-            nonce,
+            self.nonce,
         ])
     }
 }
@@ -337,7 +299,6 @@ impl DeployAccountTransactionV3 {
         let gas_hash = compute_gas_hash(self.tip, &self.resource_bounds);
         let paymaster_hash = Poseidon::hash_array(&self.paymaster_data);
 
-        let nonce = self.nonce;
         let data_availability_modes =
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
 
@@ -349,7 +310,7 @@ impl DeployAccountTransactionV3 {
             gas_hash,
             paymaster_hash,
             chain_id,
-            nonce,
+            self.nonce,
             data_availability_modes,
             constructor_calldata_hash,
             self.class_hash,
@@ -386,10 +347,7 @@ pub fn compute_hash_given_contract_address(
     block_number: Option<u64>,
     constructor_calldata: &[Felt],
 ) -> Felt {
-    let version = transaction.version;
-
     let constructor_calldata = Pedersen::hash_array(constructor_calldata);
-
     let constructor = Felt::from_bytes_be(&starknet_keccak(b"constructor").to_bytes_be());
 
     if block_number < Some(LEGACY_BLOCK_NUMBER) && chain_id == MAIN_CHAIN_ID {
@@ -397,7 +355,7 @@ pub fn compute_hash_given_contract_address(
     } else {
         Pedersen::hash_array(&[
             DEPLOY_PREFIX,
-            version,
+            transaction.version,
             contract_address,
             constructor,
             constructor_calldata,
@@ -450,8 +408,7 @@ fn prepare_data_availability_modes(
     Felt::from_bytes_be(&buffer)
 }
 
-//  b"STARKNET_CONTRACT_ADDRESS" == 0x535441524b4e45545f434f4e54524143545f41444452455353
-const CONTRACT_ADDRESS_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e45545f434f4e54524143545f41444452455353");
+const CONTRACT_ADDRESS_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e45545f434f4e54524143545f41444452455353"); // b"STARKNET_CONTRACT_ADDRESS"
 const L2_ADDRESS_UPPER_BOUND: Felt =
     Felt::from_raw([576459263475590224, 18446744073709255680, 160989183, 18446743986131443745]);
 
