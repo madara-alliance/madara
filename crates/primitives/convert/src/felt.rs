@@ -6,10 +6,10 @@ pub struct FeltToU64Error;
 
 pub fn felt_to_u64(felt: &Felt) -> Result<u64, FeltToU64Error> {
     let digits = felt.to_be_digits();
-    if digits[0] != 0 || digits[1] != 0 || digits[2] != 0 {
-        return Err(FeltToU64Error);
+    match (digits[0], digits[1], digits[2], digits[3]) {
+        (0, 0, 0, d) => Ok(d),
+        _ => Err(FeltToU64Error),
     }
-    Ok(digits[3])
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -18,10 +18,10 @@ pub struct FeltToU128Error;
 
 pub fn felt_to_u128(felt: &Felt) -> Result<u128, FeltToU128Error> {
     let digits = felt.to_be_digits();
-    if digits[0] != 0 || digits[1] != 0 {
-        return Err(FeltToU128Error);
+    match (digits[0], digits[1], digits[2], digits[3]) {
+        (0, 0, d1, d2) => Ok((d1 as u128) << 64 | d2 as u128),
+        _ => Err(FeltToU128Error),
     }
-    Ok((digits[2] as u128) << 64 | digits[3] as u128)
 }
 #[cfg(test)]
 mod tests {
