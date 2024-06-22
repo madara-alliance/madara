@@ -525,9 +525,41 @@ pub fn compute_hash_given_contract_address(
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
+    use starknet_api::transaction::ResourceBounds;
+    use std::collections::BTreeMap;
 
-    // #[test]
-    // fn test() {
-    // }
+    use super::*;
+
+    #[test]
+    fn test_compute_gas_hash() {
+        let tip = Tip(1);
+        let mut resource_mapping = BTreeMap::new();
+        resource_mapping.insert(Resource::L1Gas, ResourceBounds { max_amount: 2, max_price_per_unit: 3 });
+        resource_mapping.insert(Resource::L2Gas, ResourceBounds { max_amount: 4, max_price_per_unit: 5 });
+        let gas_hash = compute_gas_hash(&tip, &ResourceBoundsMapping(resource_mapping));
+        assert_eq!(
+            gas_hash,
+            Felt::from_hex_unchecked("0x625cb9be49367f17655e495d674e3c04b15b6c8bfe7f2dda279252f1c1a54cd")
+        );
+    }
+
+    #[test]
+    fn test_prepare_data_availability_modes() {
+        assert_eq!(
+            prepare_data_availability_modes(DataAvailabilityMode::L1, DataAvailabilityMode::L1),
+            Felt::from_hex_unchecked("0x0")
+        );
+        assert_eq!(
+            prepare_data_availability_modes(DataAvailabilityMode::L1, DataAvailabilityMode::L2),
+            Felt::from_hex_unchecked("0x100000000000000000000000000000000")
+        );
+        assert_eq!(
+            prepare_data_availability_modes(DataAvailabilityMode::L2, DataAvailabilityMode::L1),
+            Felt::from_hex_unchecked("0x10000000000000000000000000000000000000000")
+        );
+        assert_eq!(
+            prepare_data_availability_modes(DataAvailabilityMode::L2, DataAvailabilityMode::L2),
+            Felt::from_hex_unchecked("0x10000000100000000000000000000000000000000")
+        );
+    }
 }

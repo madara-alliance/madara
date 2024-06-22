@@ -79,6 +79,30 @@ pub enum Transaction {
     DeployAccount(DeployAccountTransaction),
 }
 
+impl Transaction {
+    pub fn hash(&self) -> Felt {
+        match self {
+            Transaction::Invoke(tx) => match tx {
+                InvokeTransaction::V0(tx) => tx.transaction_hash,
+                InvokeTransaction::V1(tx) => tx.transaction_hash,
+                InvokeTransaction::V3(tx) => tx.transaction_hash,
+            },
+            Transaction::L1Handler(tx) => tx.transaction_hash,
+            Transaction::Declare(tx) => match tx {
+                DeclareTransaction::V0(tx) => tx.transaction_hash,
+                DeclareTransaction::V1(tx) => tx.transaction_hash,
+                DeclareTransaction::V2(tx) => tx.transaction_hash,
+                DeclareTransaction::V3(tx) => tx.transaction_hash,
+            },
+            Transaction::Deploy(tx) => tx.transaction_hash,
+            Transaction::DeployAccount(tx) => match tx {
+                DeployAccountTransaction::V1(tx) => tx.transaction_hash,
+                DeployAccountTransaction::V3(tx) => tx.transaction_hash,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum InvokeTransaction {
     V0(InvokeTransactionV0),
@@ -323,8 +347,8 @@ pub struct DeployAccountTransactionV3 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DataAvailabilityMode {
-    L1,
-    L2,
+    L1 = 0,
+    L2 = 1,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
