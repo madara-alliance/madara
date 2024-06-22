@@ -1,3 +1,4 @@
+use dp_convert::felt_to_u64;
 use starknet_crypto::Felt;
 
 use crate::{
@@ -302,7 +303,7 @@ impl TryFrom<starknet_providers::sequencer::models::L1HandlerTransaction> for L1
         Ok(Self {
             transaction_hash: tx.transaction_hash,
             version: tx.version,
-            nonce: felt_to_u64(tx.nonce.unwrap_or_default())?,
+            nonce: felt_to_u64(&tx.nonce.unwrap_or_default()).map_err(|_| TransactionTypeError::InvalidNonce)?,
             contract_address: tx.contract_address,
             entry_point_selector: tx.entry_point_selector,
             calldata: tx.calldata,
@@ -331,29 +332,5 @@ impl From<starknet_providers::sequencer::models::DataAvailabilityMode> for DataA
             starknet_providers::sequencer::models::DataAvailabilityMode::L1 => Self::L1,
             starknet_providers::sequencer::models::DataAvailabilityMode::L2 => Self::L2,
         }
-    }
-}
-
-fn felt_to_u64(felt: Felt) -> Result<u64, TransactionTypeError> {
-    let digits = felt.to_be_digits();
-    if digits[0] != 0 || digits[1] != 0 || digits[2] != 0 {
-        return Err(TransactionTypeError::InvalidNonce);
-    }
-    Ok(digits[3])
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_felt_to_u64() {
-        assert_eq!(felt_to_u64(Felt::ZERO).unwrap(), 0);
-        assert_eq!(felt_to_u64(Felt::ONE).unwrap(), 1);
-        assert_eq!(felt_to_u64(Felt::TWO).unwrap(), 2);
-        assert_eq!(felt_to_u64(Felt::THREE).unwrap(), 3);
-        assert_eq!(felt_to_u64(Felt::from(u64::MAX)).unwrap(), u64::MAX);
-        assert_eq!(felt_to_u64(Felt::from(u64::MAX) + Felt::ONE).err().unwrap(), TransactionTypeError::InvalidNonce);
-        assert_eq!(felt_to_u64(Felt::MAX).err().unwrap(), TransactionTypeError::InvalidNonce);
     }
 }

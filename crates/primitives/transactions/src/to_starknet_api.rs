@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dp_convert::ToStarkFelt;
+use dp_convert::{felt_to_u128, ToStarkFelt};
 use starknet_api::hash::StarkFelt;
 use starknet_types_core::felt::Felt;
 
@@ -239,12 +239,7 @@ impl From<&DeployAccountTransactionV3> for starknet_api::transaction::DeployAcco
 }
 
 fn fee(fee: &Felt) -> Result<starknet_api::transaction::Fee, TransactionApiError> {
-    let digits = fee.to_be_digits();
-    if digits[0] != 0 || digits[1] != 0 {
-        return Err(TransactionApiError::MaxFee);
-    }
-    let fee: u128 = (digits[2] as u128) << 64 | digits[3] as u128;
-
+    let fee = felt_to_u128(fee).map_err(|_| TransactionApiError::MaxFee)?;
     Ok(starknet_api::transaction::Fee(fee))
 }
 

@@ -6,8 +6,8 @@ use dc_db::storage_handler::primitives::contract_class::{ContractClassData, Cont
 use dc_db::storage_handler::{DeoxysStorageError, StorageView};
 use dc_db::DeoxysBackend;
 use dp_block::DeoxysBlock;
-use dp_convert::state_update::ToStateUpdateCore;
 use dp_convert::ToStarkFelt;
+use dp_convert::ToStateUpdateCore;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use itertools::Itertools;
 use starknet_api::core::ClassHash;

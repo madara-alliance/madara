@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, GasPrices, L1DataAvailabilityMode, StarknetVersion};
+use dp_convert::felt_to_u128;
 use dp_receipt::{Event, TransactionReceipt};
-use dp_transactions::from_broadcasted_transactions::fee_from_felt;
 use dp_transactions::MAIN_CHAIN_ID;
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, PendingStateUpdate,
@@ -100,16 +100,11 @@ fn resource_price(
     l1_gas_price: starknet_core::types::ResourcePrice,
     l1_data_gas_price: starknet_core::types::ResourcePrice,
 ) -> GasPrices {
-    /// Converts a Felt to a NonZeroU128, with 0 being converted to 1.
-    fn felt_to_u128(felt: Felt) -> u128 {
-        fee_from_felt(felt).unwrap().0
-    }
-
     GasPrices {
-        eth_l1_gas_price: felt_to_u128(l1_gas_price.price_in_wei),
-        strk_l1_gas_price: felt_to_u128(l1_gas_price.price_in_fri),
-        eth_l1_data_gas_price: felt_to_u128(l1_data_gas_price.price_in_wei),
-        strk_l1_data_gas_price: felt_to_u128(l1_data_gas_price.price_in_fri),
+        eth_l1_gas_price: felt_to_u128(&l1_gas_price.price_in_wei).unwrap(),
+        strk_l1_gas_price: felt_to_u128(&l1_gas_price.price_in_fri).unwrap(),
+        eth_l1_data_gas_price: felt_to_u128(&l1_data_gas_price.price_in_wei).unwrap(),
+        strk_l1_data_gas_price: felt_to_u128(&l1_data_gas_price.price_in_fri).unwrap(),
     }
 }
 

@@ -1,3 +1,4 @@
+use dp_convert::felt_to_u128;
 use indexmap::IndexMap;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -81,13 +82,8 @@ impl ToAccountTransaction for BroadcastedTransaction {
 
 #[inline]
 pub fn fee_from_felt(fee: Felt) -> Result<stx::Fee, BroadcastedTransactionConversionError> {
-    let digits = fee.to_be_digits();
-    if digits[0] != 0 || digits[1] != 0 {
-        return Err(BroadcastedTransactionConversionError::MaxFeeTooBig);
-    }
-    let as_u128: u128 = (digits[2] as u128) << 64 | digits[3] as u128;
-
-    Ok(stx::Fee(as_u128))
+    let fee = felt_to_u128(&fee).map_err(|_| BroadcastedTransactionConversionError::MaxFeeTooBig)?;
+    Ok(stx::Fee(fee))
 }
 
 fn declare_to_account_transaction(
