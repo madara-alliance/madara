@@ -2,7 +2,6 @@ pub mod compute_hash;
 pub mod compute_hash_blockifier;
 pub mod from_broadcasted_transactions;
 mod from_starknet_provider;
-pub mod getters;
 mod to_starknet_api;
 mod to_starknet_core;
 pub mod utils;
