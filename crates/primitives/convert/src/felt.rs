@@ -1,21 +1,28 @@
 use starknet_core::types::Felt;
 
-pub fn felt_to_u64(felt: &Felt) -> Result<u64, ()> {
+#[derive(Debug, thiserror::Error)]
+#[error("Felt is too big to convert to u64.")]
+pub struct FeltToU64Error;
+
+pub fn felt_to_u64(felt: &Felt) -> Result<u64, FeltToU64Error> {
     let digits = felt.to_be_digits();
     if digits[0] != 0 || digits[1] != 0 || digits[2] != 0 {
-        return Err(());
+        return Err(FeltToU64Error);
     }
     Ok(digits[3])
 }
 
-pub fn felt_to_u128(felt: &Felt) -> Result<u128, ()> {
+#[derive(Debug, thiserror::Error)]
+#[error("Felt is too big to convert to u128.")]
+pub struct FeltToU128Error;
+
+pub fn felt_to_u128(felt: &Felt) -> Result<u128, FeltToU128Error> {
     let digits = felt.to_be_digits();
     if digits[0] != 0 || digits[1] != 0 {
-        return Err(());
+        return Err(FeltToU128Error);
     }
     Ok((digits[2] as u128) << 64 | digits[3] as u128)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -28,8 +35,8 @@ mod tests {
         assert_eq!(felt_to_u64(&Felt::THREE).unwrap(), 3);
         assert_eq!(felt_to_u64(&Felt::from(u32::MAX)).unwrap(), u32::MAX as u64);
         assert_eq!(felt_to_u64(&Felt::from(u64::MAX)).unwrap(), u64::MAX);
-        assert_eq!(felt_to_u64(&(Felt::from(u64::MAX) + Felt::ONE)).is_err(), true);
-        assert_eq!(felt_to_u64(&Felt::MAX).is_err(), true);
+        assert!(felt_to_u64(&(Felt::from(u64::MAX) + Felt::ONE)).is_err());
+        assert!(felt_to_u64(&Felt::MAX).is_err());
     }
 
     #[test]
@@ -40,7 +47,7 @@ mod tests {
         assert_eq!(felt_to_u128(&Felt::THREE).unwrap(), 3);
         assert_eq!(felt_to_u128(&Felt::from(u64::MAX)).unwrap(), u64::MAX as u128);
         assert_eq!(felt_to_u128(&Felt::from(u128::MAX)).unwrap(), u128::MAX);
-        assert_eq!(felt_to_u128(&(Felt::from(u128::MAX) + Felt::ONE)).is_err(), true);
-        assert_eq!(felt_to_u128(&Felt::MAX).is_err(), true);
+        assert!(felt_to_u128(&(Felt::from(u128::MAX) + Felt::ONE)).is_err());
+        assert!(felt_to_u128(&Felt::MAX).is_err());
     }
 }
