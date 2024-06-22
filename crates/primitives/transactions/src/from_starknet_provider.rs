@@ -65,6 +65,8 @@ impl TryFrom<starknet_providers::sequencer::models::DeclareTransaction> for Decl
             Ok(Self::V0(tx.try_into()?))
         } else if version == Felt::ONE {
             Ok(Self::V1(tx.try_into()?))
+        } else if version == Felt::TWO {
+            Ok(Self::V2(tx.try_into()?))
         } else if version == Felt::THREE {
             Ok(Self::V3(tx.try_into()?))
         } else {
