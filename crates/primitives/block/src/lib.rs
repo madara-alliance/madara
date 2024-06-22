@@ -11,6 +11,9 @@ pub use starknet_version::StarknetVersion;
 pub use primitive_types::{H160, U256};
 use starknet_types_core::felt::Felt;
 
+#[cfg(test)]
+mod tests;
+
 /// Block tag.
 ///
 /// A tag specifying a dynamic reference to a block.
