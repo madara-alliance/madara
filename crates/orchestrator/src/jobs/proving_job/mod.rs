@@ -16,10 +16,10 @@ use super::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use super::Job;
 use crate::config::Config;
 
-pub struct ProverJob;
+pub struct ProvingJob;
 
 #[async_trait]
-impl Job for ProverJob {
+impl Job for ProvingJob {
     async fn create_job(
         &self,
         _config: &Config,

@@ -24,6 +24,7 @@ dotenvy = { workspace = true }
 ethereum-da-client = { workspace = true, optional = true }
 futures = { workspace = true }
 lazy_static = { workspace = true }
+log = "0.4.21"
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 mockall = "0.12.1"

@@ -1,11 +1,17 @@
+use async_std::stream::StreamExt;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use mongodb::bson::{doc, Document};
-use mongodb::options::{ClientOptions, FindOneOptions, ServerApi, ServerApiVersion, UpdateOptions};
-use mongodb::{Client, Collection};
+use mongodb::bson::{Bson, Document};
+use mongodb::options::{FindOneOptions, UpdateOptions};
+use mongodb::{
+    bson,
+    bson::doc,
+    options::{ClientOptions, ServerApi, ServerApiVersion},
+    Client, Collection,
+};
 use uuid::Uuid;
 
 use crate::database::mongodb::config::MongoDbConfig;
@@ -125,5 +131,126 @@ impl Database for MongoDb {
             .find_one(filter, find_options)
             .await
             .expect("Failed to fetch latest job by given job type"))
+    }
+
+    /// function to get jobs that don't have a successor job.
+    ///
+    /// `job_a_type` : Type of job that we need to get that doesn't have any successor.
+    ///
+    /// `job_a_status` : Status of job A.
+    ///
+    /// `job_b_type` : Type of job that we need to have as a successor for Job A.
+    ///
+    /// `job_b_status` : Status of job B which we want to check with.
+    ///
+    /// Eg :
+    ///
+    /// Getting SNOS jobs that do not have a successive proving job initiated yet.
+    ///
+    /// job_a_type : SnosRun
+    ///
+    /// job_a_status : Completed
+    ///
+    /// job_b_type : ProofCreation
+    ///
+    /// TODO : For now Job B status implementation is pending so we can pass None
+    async fn get_jobs_without_successor(
+        &self,
+        job_a_type: JobType,
+        job_a_status: JobStatus,
+        job_b_type: JobType,
+    ) -> Result<Vec<JobItem>> {
+        // Convert enums to Bson strings
+        let job_a_type_bson = Bson::String(format!("{:?}", job_a_type));
+        let job_a_status_bson = Bson::String(format!("{:?}", job_a_status));
+        let job_b_type_bson = Bson::String(format!("{:?}", job_b_type));
+
+        // TODO :
+        // implement job_b_status here in the pipeline
+
+        // Construct the initial pipeline
+        let pipeline = vec![
+            // Stage 1: Match job_a_type with job_a_status
+            doc! {
+                "$match": {
+                    "job_type": job_a_type_bson,
+                    "status": job_a_status_bson,
+                }
+            },
+            // Stage 2: Lookup to find corresponding job_b_type jobs
+            doc! {
+                "$lookup": {
+                    "from": "jobs",
+                    "let": { "internal_id": "$internal_id" },
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {
+                                    "$and": [
+                                        { "$eq": ["$job_type", job_b_type_bson] },
+                                        // Conditionally match job_b_status if provided
+                                        { "$eq": ["$internal_id", "$$internal_id"] }
+                                    ]
+                                }
+                            }
+                        },
+                        // TODO : Job B status code :
+                        // // Add status matching if job_b_status is provided
+                        // if let Some(status) = job_b_status {
+                        //     doc! {
+                        //         "$match": {
+                        //             "$expr": { "$eq": ["$status", status] }
+                        //         }
+                        //     }
+                        // } else {
+                        //     doc! {}
+                        // }
+                    // ].into_iter().filter(|d| !d.is_empty()).collect::<Vec<_>>(),
+                    ],
+                    "as": "successor_jobs"
+                }
+            },
+            // Stage 3: Filter out job_a_type jobs that have corresponding job_b_type jobs
+            doc! {
+                "$match": {
+                    "successor_jobs": { "$eq": [] }
+                }
+            },
+        ];
+
+        // TODO : Job B status code :
+        // // Conditionally add status matching for job_b_status
+        // if let Some(status) = job_b_status {
+        //     let job_b_status_bson = Bson::String(format!("{:?}", status));
+        //
+        //     // Access the "$lookup" stage in the pipeline and modify the "pipeline" array inside it
+        //     if let Ok(lookup_stage) = pipeline[1].get_document_mut("pipeline") {
+        //         if let Ok(lookup_pipeline) = lookup_stage.get_array_mut(0) {
+        //             lookup_pipeline.push(Bson::Document(doc! {
+        //             "$match": {
+        //                 "$expr": { "$eq": ["$status", job_b_status_bson] }
+        //             }
+        //         }));
+        //         }
+        //     }
+        // }
+
+        let collection = self.get_job_collection();
+        let mut cursor = collection.aggregate(pipeline, None).await?;
+
+        let mut vec_jobs: Vec<JobItem> = Vec::new();
+
+        // Iterate over the cursor and process each document
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => match bson::from_bson(Bson::Document(document)) {
+                    Ok(job_item) => vec_jobs.push(job_item),
+                    Err(e) => eprintln!("Failed to deserialize JobItem: {:?}", e),
+                },
+                Err(e) => eprintln!("Error retrieving document: {:?}", e),
+            }
+        }
+
+        Ok(vec_jobs)
     }
 }

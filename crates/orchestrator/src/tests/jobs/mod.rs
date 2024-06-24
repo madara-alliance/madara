@@ -4,7 +4,7 @@ use rstest::rstest;
 pub mod da_job;
 
 #[cfg(test)]
-pub mod prover_job;
+pub mod proving_job;
 
 #[rstest]
 #[tokio::test]

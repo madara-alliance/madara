@@ -14,7 +14,7 @@ use crate::queue::job_queue::{add_job_to_process_queue, add_job_to_verification_
 
 pub mod constants;
 pub mod da_job;
-pub mod prover_job;
+pub mod proving_job;
 pub mod register_proof_job;
 pub mod snos_job;
 pub mod state_update_job;
@@ -176,6 +176,7 @@ fn get_job_handler(job_type: &JobType) -> Box<dyn Job> {
     match job_type {
         JobType::DataSubmission => Box::new(da_job::DaJob),
         JobType::SnosRun => Box::new(snos_job::SnosJob),
+        JobType::ProofCreation => Box::new(proving_job::ProvingJob),
         _ => unimplemented!("Job type not implemented yet."),
     }
 }

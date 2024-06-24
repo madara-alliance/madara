@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::super::common::{default_job_item, init_config};
 use crate::jobs::constants::JOB_METADATA_CAIRO_PIE_PATH_KEY;
-use crate::jobs::prover_job::ProverJob;
+use crate::jobs::proving_job::ProvingJob;
 use crate::jobs::types::{JobItem, JobStatus, JobType};
 use crate::jobs::Job;
 
@@ -15,7 +15,7 @@ use crate::jobs::Job;
 #[tokio::test]
 async fn test_create_job() {
     let config = init_config(None, None, None, None, None).await;
-    let job = ProverJob
+    let job = ProvingJob
         .create_job(
             &config,
             String::from("0"),
@@ -41,7 +41,7 @@ async fn test_verify_job(#[from(default_job_item)] job_item: JobItem) {
     prover_client.expect_get_task_status().times(1).returning(|_| Ok(TaskStatus::Succeeded));
 
     let config = init_config(None, None, None, None, Some(prover_client)).await;
-    assert!(ProverJob.verify_job(&config, &job_item).await.is_ok());
+    assert!(ProvingJob.verify_job(&config, &job_item).await.is_ok());
 }
 
 #[rstest]
@@ -58,7 +58,7 @@ async fn test_process_job() {
     let cairo_pie_path = format!("{}/src/tests/artifacts/fibonacci.zip", env!("CARGO_MANIFEST_DIR"));
 
     assert_eq!(
-        ProverJob
+        ProvingJob
             .process_job(
                 &config,
                 &JobItem {

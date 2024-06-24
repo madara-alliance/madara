@@ -5906,6 +5906,7 @@ dependencies = [
  "httpmock",
  "hyper 0.14.29",
  "lazy_static",
+ "log",
  "majin-blob-core",
  "majin-blob-types",
  "mockall",

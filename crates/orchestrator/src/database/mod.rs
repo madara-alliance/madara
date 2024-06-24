@@ -1,3 +1,4 @@
+use ::mongodb::bson::doc;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -33,9 +34,14 @@ pub trait Database: Send + Sync {
         new_status: JobStatus,
         metadata: HashMap<String, String>,
     ) -> Result<()>;
-
     async fn update_metadata(&self, job: &JobItem, metadata: HashMap<String, String>) -> Result<()>;
     async fn get_latest_job_by_type_and_internal_id(&self, job_type: JobType) -> Result<Option<JobItem>>;
+    async fn get_jobs_without_successor(
+        &self,
+        job_a_type: JobType,
+        job_a_status: JobStatus,
+        job_b_type: JobType,
+    ) -> Result<Vec<JobItem>>;
 }
 
 pub trait DatabaseConfig {
