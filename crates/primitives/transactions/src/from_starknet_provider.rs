@@ -81,7 +81,6 @@ impl TryFrom<starknet_providers::sequencer::models::DeclareTransaction> for Decl
 
     fn try_from(tx: starknet_providers::sequencer::models::DeclareTransaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            transaction_hash: tx.transaction_hash,
             sender_address: tx.sender_address,
             max_fee: tx.max_fee.ok_or(TransactionTypeError::MissingMaxFee)?,
             signature: tx.signature,
@@ -95,7 +94,6 @@ impl TryFrom<starknet_providers::sequencer::models::DeclareTransaction> for Decl
 
     fn try_from(tx: starknet_providers::sequencer::models::DeclareTransaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            transaction_hash: tx.transaction_hash,
             sender_address: tx.sender_address,
             max_fee: tx.max_fee.ok_or(TransactionTypeError::MissingMaxFee)?,
             signature: tx.signature,
@@ -110,7 +108,6 @@ impl TryFrom<starknet_providers::sequencer::models::DeclareTransaction> for Decl
 
     fn try_from(tx: starknet_providers::sequencer::models::DeclareTransaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            transaction_hash: tx.transaction_hash,
             sender_address: tx.sender_address,
             compiled_class_hash: tx.compiled_class_hash.ok_or(TransactionTypeError::MissingCompiledClassHash)?,
             max_fee: tx.max_fee.ok_or(TransactionTypeError::MissingMaxFee)?,
@@ -126,7 +123,6 @@ impl TryFrom<starknet_providers::sequencer::models::DeclareTransaction> for Decl
 
     fn try_from(tx: starknet_providers::sequencer::models::DeclareTransaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            transaction_hash: tx.transaction_hash,
             sender_address: tx.sender_address,
             compiled_class_hash: tx.compiled_class_hash.ok_or(TransactionTypeError::MissingCompiledClassHash)?,
             signature: tx.signature,
@@ -153,7 +149,6 @@ impl TryFrom<starknet_providers::sequencer::models::DeclareTransaction> for Decl
 impl From<starknet_providers::sequencer::models::DeployTransaction> for DeployTransaction {
     fn from(tx: starknet_providers::sequencer::models::DeployTransaction) -> Self {
         Self {
-            transaction_hash: tx.transaction_hash,
             version: tx.version,
             contract_address_salt: tx.contract_address_salt,
             constructor_calldata: tx.constructor_calldata,
@@ -183,7 +178,6 @@ impl TryFrom<starknet_providers::sequencer::models::DeployAccountTransaction> fo
 
     fn try_from(tx: starknet_providers::sequencer::models::DeployAccountTransaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            transaction_hash: tx.transaction_hash,
             max_fee: tx.max_fee.ok_or(TransactionTypeError::MissingMaxFee)?,
             signature: tx.signature,
             nonce: tx.nonce,
@@ -199,7 +193,6 @@ impl TryFrom<starknet_providers::sequencer::models::DeployAccountTransaction> fo
 
     fn try_from(tx: starknet_providers::sequencer::models::DeployAccountTransaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            transaction_hash: tx.transaction_hash,
             signature: tx.signature,
             nonce: tx.nonce,
             contract_address_salt: tx.contract_address_salt,
@@ -243,7 +236,6 @@ impl TryFrom<starknet_providers::sequencer::models::InvokeFunctionTransaction> f
 
     fn try_from(tx: starknet_providers::sequencer::models::InvokeFunctionTransaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            transaction_hash: tx.transaction_hash,
             max_fee: tx.max_fee.ok_or(TransactionTypeError::MissingMaxFee)?,
             signature: tx.signature,
             contract_address: tx.sender_address,
@@ -258,7 +250,6 @@ impl TryFrom<starknet_providers::sequencer::models::InvokeFunctionTransaction> f
 
     fn try_from(tx: starknet_providers::sequencer::models::InvokeFunctionTransaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            transaction_hash: tx.transaction_hash,
             sender_address: tx.sender_address,
             calldata: tx.calldata,
             max_fee: tx.max_fee.ok_or(TransactionTypeError::MissingMaxFee)?,
@@ -273,7 +264,6 @@ impl TryFrom<starknet_providers::sequencer::models::InvokeFunctionTransaction> f
 
     fn try_from(tx: starknet_providers::sequencer::models::InvokeFunctionTransaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            transaction_hash: tx.transaction_hash,
             sender_address: tx.sender_address,
             calldata: tx.calldata,
             signature: tx.signature,
@@ -301,7 +291,6 @@ impl TryFrom<starknet_providers::sequencer::models::L1HandlerTransaction> for L1
 
     fn try_from(tx: starknet_providers::sequencer::models::L1HandlerTransaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            transaction_hash: tx.transaction_hash,
             version: tx.version,
             nonce: felt_to_u64(&tx.nonce.unwrap_or_default()).map_err(|_| TransactionTypeError::InvalidNonce)?,
             contract_address: tx.contract_address,

@@ -17,7 +17,12 @@ pub(crate) fn get_block_with_txs(starknet: &Starknet, block_id: &BlockId) -> Rpc
         .or_internal_server_error("Error getting block from db")?
         .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    let transactions = block.transactions().iter().map(|tx| tx.clone().into()).collect();
+    let transactions = block
+        .transactions()
+        .iter()
+        .zip(block.tx_hashes())
+        .map(|(tx, hash)| tx.clone().to_core(*hash))
+        .collect::<Vec<_>>();
 
     let parent_hash = block.header().parent_block_hash;
     let new_root = block.header().global_state_root;

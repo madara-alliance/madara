@@ -1,231 +1,226 @@
+use starknet_types_core::felt::Felt;
+
 use crate::{
-    DataAvailabilityMode, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2,
-    DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3,
-    DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3,
-    L1HandlerTransaction, ResourceBoundsMapping, Transaction,
+    DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeclareTransactionV3,
+    DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction,
+    InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction,
+    Transaction, TransactionWithHash,
 };
 
-impl From<Transaction> for starknet_core::types::Transaction {
-    fn from(tx: Transaction) -> Self {
-        match tx {
-            Transaction::Invoke(tx) => Self::Invoke(tx.into()),
-            Transaction::L1Handler(tx) => Self::L1Handler(tx.into()),
-            Transaction::Declare(tx) => Self::Declare(tx.into()),
-            Transaction::Deploy(tx) => Self::Deploy(tx.into()),
-            Transaction::DeployAccount(tx) => Self::DeployAccount(tx.into()),
+impl From<TransactionWithHash> for starknet_core::types::Transaction {
+    fn from(tx: TransactionWithHash) -> Self {
+        let hash = tx.hash;
+        tx.transaction.to_core(hash)
+    }
+}
+
+impl Transaction {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::Transaction {
+        match self {
+            Transaction::Invoke(tx) => starknet_core::types::Transaction::Invoke(tx.to_core(hash)),
+            Transaction::L1Handler(tx) => starknet_core::types::Transaction::L1Handler(tx.to_core(hash)),
+            Transaction::Declare(tx) => starknet_core::types::Transaction::Declare(tx.to_core(hash)),
+            Transaction::Deploy(tx) => starknet_core::types::Transaction::Deploy(tx.to_core(hash)),
+            Transaction::DeployAccount(tx) => starknet_core::types::Transaction::DeployAccount(tx.to_core(hash)),
+        }
+    }
+
+    pub fn build_core_tx(
+        self,
+        chain_id: Felt,
+        offset_version: bool,
+        block_number: Option<u64>,
+    ) -> starknet_core::types::Transaction {
+        let hash = self.compute_hash(chain_id, offset_version, block_number);
+        self.to_core(hash)
+    }
+}
+
+impl InvokeTransaction {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::InvokeTransaction {
+        match self {
+            InvokeTransaction::V0(tx) => starknet_core::types::InvokeTransaction::V0(tx.to_core(hash)),
+            InvokeTransaction::V1(tx) => starknet_core::types::InvokeTransaction::V1(tx.to_core(hash)),
+            InvokeTransaction::V3(tx) => starknet_core::types::InvokeTransaction::V3(tx.to_core(hash)),
         }
     }
 }
 
-impl From<InvokeTransaction> for starknet_core::types::InvokeTransaction {
-    fn from(tx: InvokeTransaction) -> Self {
-        match tx {
-            InvokeTransaction::V0(tx) => Self::V0(tx.into()),
-            InvokeTransaction::V1(tx) => Self::V1(tx.into()),
-            InvokeTransaction::V3(tx) => Self::V3(tx.into()),
+impl InvokeTransactionV0 {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::InvokeTransactionV0 {
+        starknet_core::types::InvokeTransactionV0 {
+            transaction_hash: hash,
+            max_fee: self.max_fee,
+            signature: self.signature,
+            contract_address: self.contract_address,
+            entry_point_selector: self.entry_point_selector,
+            calldata: self.calldata,
         }
     }
 }
 
-impl From<InvokeTransactionV0> for starknet_core::types::InvokeTransactionV0 {
-    fn from(tx: InvokeTransactionV0) -> Self {
-        Self {
-            transaction_hash: tx.transaction_hash,
-            max_fee: tx.max_fee,
-            signature: tx.signature,
-            contract_address: tx.contract_address,
-            entry_point_selector: tx.entry_point_selector,
-            calldata: tx.calldata,
+impl InvokeTransactionV1 {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::InvokeTransactionV1 {
+        starknet_core::types::InvokeTransactionV1 {
+            transaction_hash: hash,
+            sender_address: self.sender_address,
+            calldata: self.calldata,
+            max_fee: self.max_fee,
+            signature: self.signature,
+            nonce: self.nonce,
         }
     }
 }
 
-impl From<InvokeTransactionV1> for starknet_core::types::InvokeTransactionV1 {
-    fn from(tx: InvokeTransactionV1) -> Self {
-        Self {
-            transaction_hash: tx.transaction_hash,
-            sender_address: tx.sender_address,
-            calldata: tx.calldata,
-            max_fee: tx.max_fee,
-            signature: tx.signature,
-            nonce: tx.nonce,
+impl InvokeTransactionV3 {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::InvokeTransactionV3 {
+        starknet_core::types::InvokeTransactionV3 {
+            transaction_hash: hash,
+            sender_address: self.sender_address,
+            calldata: self.calldata,
+            signature: self.signature,
+            nonce: self.nonce,
+            resource_bounds: self.resource_bounds.into(),
+            tip: self.tip,
+            paymaster_data: self.paymaster_data,
+            account_deployment_data: self.account_deployment_data,
+            nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: self.fee_data_availability_mode.into(),
         }
     }
 }
 
-impl From<InvokeTransactionV3> for starknet_core::types::InvokeTransactionV3 {
-    fn from(tx: InvokeTransactionV3) -> Self {
-        Self {
-            transaction_hash: tx.transaction_hash,
-            sender_address: tx.sender_address,
-            calldata: tx.calldata,
-            signature: tx.signature,
-            nonce: tx.nonce,
-            resource_bounds: tx.resource_bounds.into(),
-            tip: tx.tip,
-            paymaster_data: tx.paymaster_data,
-            account_deployment_data: tx.account_deployment_data,
-            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
-            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
+impl L1HandlerTransaction {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::L1HandlerTransaction {
+        starknet_core::types::L1HandlerTransaction {
+            transaction_hash: hash,
+            version: self.version,
+            nonce: self.nonce,
+            contract_address: self.contract_address,
+            entry_point_selector: self.entry_point_selector,
+            calldata: self.calldata,
         }
     }
 }
 
-impl From<L1HandlerTransaction> for starknet_core::types::L1HandlerTransaction {
-    fn from(tx: L1HandlerTransaction) -> Self {
-        Self {
-            transaction_hash: tx.transaction_hash,
-            version: tx.version,
-            nonce: tx.nonce,
-            contract_address: tx.contract_address,
-            entry_point_selector: tx.entry_point_selector,
-            calldata: tx.calldata,
+impl DeclareTransaction {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::DeclareTransaction {
+        match self {
+            DeclareTransaction::V0(tx) => starknet_core::types::DeclareTransaction::V0(tx.to_core(hash)),
+            DeclareTransaction::V1(tx) => starknet_core::types::DeclareTransaction::V1(tx.to_core(hash)),
+            DeclareTransaction::V2(tx) => starknet_core::types::DeclareTransaction::V2(tx.to_core(hash)),
+            DeclareTransaction::V3(tx) => starknet_core::types::DeclareTransaction::V3(tx.to_core(hash)),
         }
     }
 }
 
-impl From<DeclareTransaction> for starknet_core::types::DeclareTransaction {
-    fn from(tx: DeclareTransaction) -> Self {
-        match tx {
-            DeclareTransaction::V0(tx) => Self::V0(tx.into()),
-            DeclareTransaction::V1(tx) => Self::V1(tx.into()),
-            DeclareTransaction::V2(tx) => Self::V2(tx.into()),
-            DeclareTransaction::V3(tx) => Self::V3(tx.into()),
+impl DeclareTransactionV0 {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::DeclareTransactionV0 {
+        starknet_core::types::DeclareTransactionV0 {
+            transaction_hash: hash,
+            sender_address: self.sender_address,
+            max_fee: self.max_fee,
+            signature: self.signature,
+            class_hash: self.class_hash,
         }
     }
 }
 
-impl From<DeclareTransactionV0> for starknet_core::types::DeclareTransactionV0 {
-    fn from(tx: DeclareTransactionV0) -> Self {
-        Self {
-            transaction_hash: tx.transaction_hash,
-            sender_address: tx.sender_address,
-            max_fee: tx.max_fee,
-            signature: tx.signature,
-            class_hash: tx.class_hash,
+impl DeclareTransactionV1 {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::DeclareTransactionV1 {
+        starknet_core::types::DeclareTransactionV1 {
+            transaction_hash: hash,
+            sender_address: self.sender_address,
+            max_fee: self.max_fee,
+            signature: self.signature,
+            nonce: self.nonce,
+            class_hash: self.class_hash,
         }
     }
 }
 
-impl From<DeclareTransactionV1> for starknet_core::types::DeclareTransactionV1 {
-    fn from(tx: DeclareTransactionV1) -> Self {
-        Self {
-            transaction_hash: tx.transaction_hash,
-            sender_address: tx.sender_address,
-            max_fee: tx.max_fee,
-            signature: tx.signature,
-            nonce: tx.nonce,
-            class_hash: tx.class_hash,
+impl DeclareTransactionV2 {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::DeclareTransactionV2 {
+        starknet_core::types::DeclareTransactionV2 {
+            transaction_hash: hash,
+            sender_address: self.sender_address,
+            compiled_class_hash: self.compiled_class_hash,
+            max_fee: self.max_fee,
+            signature: self.signature,
+            nonce: self.nonce,
+            class_hash: self.class_hash,
         }
     }
 }
 
-impl From<DeclareTransactionV2> for starknet_core::types::DeclareTransactionV2 {
-    fn from(tx: DeclareTransactionV2) -> Self {
-        Self {
-            transaction_hash: tx.transaction_hash,
-            sender_address: tx.sender_address,
-            compiled_class_hash: tx.compiled_class_hash,
-            max_fee: tx.max_fee,
-            signature: tx.signature,
-            nonce: tx.nonce,
-            class_hash: tx.class_hash,
+impl DeclareTransactionV3 {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::DeclareTransactionV3 {
+        starknet_core::types::DeclareTransactionV3 {
+            transaction_hash: hash,
+            sender_address: self.sender_address,
+            compiled_class_hash: self.compiled_class_hash,
+            signature: self.signature,
+            nonce: self.nonce,
+            class_hash: self.class_hash,
+            resource_bounds: self.resource_bounds.into(),
+            tip: self.tip,
+            paymaster_data: self.paymaster_data,
+            account_deployment_data: self.account_deployment_data,
+            nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: self.fee_data_availability_mode.into(),
         }
     }
 }
 
-impl From<DeclareTransactionV3> for starknet_core::types::DeclareTransactionV3 {
-    fn from(tx: DeclareTransactionV3) -> Self {
-        Self {
-            transaction_hash: tx.transaction_hash,
-            sender_address: tx.sender_address,
-            compiled_class_hash: tx.compiled_class_hash,
-            signature: tx.signature,
-            nonce: tx.nonce,
-            class_hash: tx.class_hash,
-            resource_bounds: tx.resource_bounds.into(),
-            tip: tx.tip,
-            paymaster_data: tx.paymaster_data,
-            account_deployment_data: tx.account_deployment_data,
-            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
-            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
+impl DeployTransaction {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::DeployTransaction {
+        starknet_core::types::DeployTransaction {
+            transaction_hash: hash,
+            version: self.version,
+            contract_address_salt: self.contract_address_salt,
+            constructor_calldata: self.constructor_calldata,
+            class_hash: self.class_hash,
         }
     }
 }
 
-impl From<DeployTransaction> for starknet_core::types::DeployTransaction {
-    fn from(tx: DeployTransaction) -> Self {
-        Self {
-            transaction_hash: tx.transaction_hash,
-            version: tx.version,
-            contract_address_salt: tx.contract_address_salt,
-            constructor_calldata: tx.constructor_calldata,
-            class_hash: tx.class_hash,
+impl DeployAccountTransaction {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::DeployAccountTransaction {
+        match self {
+            DeployAccountTransaction::V1(tx) => starknet_core::types::DeployAccountTransaction::V1(tx.to_core(hash)),
+            DeployAccountTransaction::V3(tx) => starknet_core::types::DeployAccountTransaction::V3(tx.to_core(hash)),
         }
     }
 }
 
-impl From<DeployAccountTransaction> for starknet_core::types::DeployAccountTransaction {
-    fn from(tx: DeployAccountTransaction) -> Self {
-        match tx {
-            DeployAccountTransaction::V1(tx) => Self::V1(tx.into()),
-            DeployAccountTransaction::V3(tx) => Self::V3(tx.into()),
+impl DeployAccountTransactionV1 {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::DeployAccountTransactionV1 {
+        starknet_core::types::DeployAccountTransactionV1 {
+            transaction_hash: hash,
+            max_fee: self.max_fee,
+            signature: self.signature,
+            nonce: self.nonce,
+            contract_address_salt: self.contract_address_salt,
+            constructor_calldata: self.constructor_calldata,
+            class_hash: self.class_hash,
         }
     }
 }
 
-impl From<DeployAccountTransactionV1> for starknet_core::types::DeployAccountTransactionV1 {
-    fn from(tx: DeployAccountTransactionV1) -> Self {
-        Self {
-            transaction_hash: tx.transaction_hash,
-            max_fee: tx.max_fee,
-            signature: tx.signature,
-            nonce: tx.nonce,
-            contract_address_salt: tx.contract_address_salt,
-            constructor_calldata: tx.constructor_calldata,
-            class_hash: tx.class_hash,
-        }
-    }
-}
-
-impl From<DeployAccountTransactionV3> for starknet_core::types::DeployAccountTransactionV3 {
-    fn from(tx: DeployAccountTransactionV3) -> Self {
-        Self {
-            transaction_hash: tx.transaction_hash,
-            signature: tx.signature,
-            nonce: tx.nonce,
-            contract_address_salt: tx.contract_address_salt,
-            constructor_calldata: tx.constructor_calldata,
-            class_hash: tx.class_hash,
-            resource_bounds: tx.resource_bounds.into(),
-            tip: tx.tip,
-            paymaster_data: tx.paymaster_data,
-            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
-            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
-        }
-    }
-}
-
-impl From<ResourceBoundsMapping> for starknet_core::types::ResourceBoundsMapping {
-    fn from(resource: ResourceBoundsMapping) -> Self {
-        Self {
-            l1_gas: starknet_core::types::ResourceBounds {
-                max_amount: resource.l1_gas.max_amount,
-                max_price_per_unit: resource.l1_gas.max_price_per_unit,
-            },
-            l2_gas: starknet_core::types::ResourceBounds {
-                max_amount: resource.l2_gas.max_amount,
-                max_price_per_unit: resource.l2_gas.max_price_per_unit,
-            },
-        }
-    }
-}
-
-impl From<DataAvailabilityMode> for starknet_core::types::DataAvailabilityMode {
-    fn from(da_mode: DataAvailabilityMode) -> Self {
-        match da_mode {
-            DataAvailabilityMode::L1 => Self::L1,
-            DataAvailabilityMode::L2 => Self::L2,
+impl DeployAccountTransactionV3 {
+    pub fn to_core(self, hash: Felt) -> starknet_core::types::DeployAccountTransactionV3 {
+        starknet_core::types::DeployAccountTransactionV3 {
+            transaction_hash: hash,
+            signature: self.signature,
+            nonce: self.nonce,
+            contract_address_salt: self.contract_address_salt,
+            constructor_calldata: self.constructor_calldata,
+            class_hash: self.class_hash,
+            resource_bounds: self.resource_bounds.into(),
+            tip: self.tip,
+            paymaster_data: self.paymaster_data,
+            nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: self.fee_data_availability_mode.into(),
         }
     }
 }

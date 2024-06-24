@@ -10,7 +10,12 @@ use crate::Starknet;
 pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithReceipts> {
     let block = starknet.get_block(block_id)?;
 
-    let transactions: Vec<_> = block.transactions().iter().map(|tx| tx.clone().into()).collect();
+    let transactions = block
+        .transactions()
+        .iter()
+        .zip(block.tx_hashes())
+        .map(|(tx, hash)| tx.clone().to_core(*hash))
+        .collect::<Vec<_>>();
 
     let is_on_l1 = block.block_n() <= starknet.get_l1_last_confirmed_block()?;
 

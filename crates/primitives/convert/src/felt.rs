@@ -23,6 +23,7 @@ pub fn felt_to_u128(felt: &Felt) -> Result<u128, FeltToU128Error> {
         _ => Err(FeltToU128Error),
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

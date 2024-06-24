@@ -1,6 +1,7 @@
 pub mod compute_hash;
 pub mod compute_hash_blockifier;
 pub mod from_broadcasted_transactions;
+mod from_brocasted_transaction;
 mod from_starknet_provider;
 mod to_starknet_api;
 mod to_starknet_core;
@@ -70,36 +71,24 @@ impl From<&AccountTransaction> for TxType {
 /////////////////////////// New transaction types ///////////////////////////
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TransactionWithHash {
+    pub transaction: Transaction,
+    pub hash: Felt,
+}
+
+impl TransactionWithHash {
+    pub fn new(transaction: Transaction, hash: Felt) -> Self {
+        Self { transaction, hash }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Transaction {
     Invoke(InvokeTransaction),
     L1Handler(L1HandlerTransaction),
     Declare(DeclareTransaction),
     Deploy(DeployTransaction),
     DeployAccount(DeployAccountTransaction),
-}
-
-impl Transaction {
-    pub fn hash(&self) -> Felt {
-        match self {
-            Transaction::Invoke(tx) => match tx {
-                InvokeTransaction::V0(tx) => tx.transaction_hash,
-                InvokeTransaction::V1(tx) => tx.transaction_hash,
-                InvokeTransaction::V3(tx) => tx.transaction_hash,
-            },
-            Transaction::L1Handler(tx) => tx.transaction_hash,
-            Transaction::Declare(tx) => match tx {
-                DeclareTransaction::V0(tx) => tx.transaction_hash,
-                DeclareTransaction::V1(tx) => tx.transaction_hash,
-                DeclareTransaction::V2(tx) => tx.transaction_hash,
-                DeclareTransaction::V3(tx) => tx.transaction_hash,
-            },
-            Transaction::Deploy(tx) => tx.transaction_hash,
-            Transaction::DeployAccount(tx) => match tx {
-                DeployAccountTransaction::V1(tx) => tx.transaction_hash,
-                DeployAccountTransaction::V3(tx) => tx.transaction_hash,
-            },
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -145,7 +134,6 @@ impl InvokeTransaction {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV0 {
-    pub transaction_hash: Felt,
     pub max_fee: Felt,
     pub signature: Vec<Felt>,
     pub contract_address: Felt,
@@ -155,7 +143,6 @@ pub struct InvokeTransactionV0 {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV1 {
-    pub transaction_hash: Felt,
     pub sender_address: Felt,
     pub calldata: Vec<Felt>,
     pub max_fee: Felt,
@@ -165,7 +152,6 @@ pub struct InvokeTransactionV1 {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV3 {
-    pub transaction_hash: Felt,
     pub sender_address: Felt,
     pub calldata: Vec<Felt>,
     pub signature: Vec<Felt>,
@@ -180,7 +166,6 @@ pub struct InvokeTransactionV3 {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct L1HandlerTransaction {
-    pub transaction_hash: Felt,
     pub version: Felt,
     pub nonce: u64,
     pub contract_address: Felt,
@@ -230,7 +215,6 @@ impl DeclareTransaction {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV0 {
-    pub transaction_hash: Felt,
     pub sender_address: Felt,
     pub max_fee: Felt,
     pub signature: Vec<Felt>,
@@ -239,7 +223,6 @@ pub struct DeclareTransactionV0 {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV1 {
-    pub transaction_hash: Felt,
     pub sender_address: Felt,
     pub max_fee: Felt,
     pub signature: Vec<Felt>,
@@ -249,7 +232,6 @@ pub struct DeclareTransactionV1 {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV2 {
-    pub transaction_hash: Felt,
     pub sender_address: Felt,
     pub compiled_class_hash: Felt,
     pub max_fee: Felt,
@@ -260,7 +242,6 @@ pub struct DeclareTransactionV2 {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV3 {
-    pub transaction_hash: Felt,
     pub sender_address: Felt,
     pub compiled_class_hash: Felt,
     pub signature: Vec<Felt>,
@@ -276,7 +257,6 @@ pub struct DeclareTransactionV3 {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployTransaction {
-    pub transaction_hash: Felt,
     pub version: Felt,
     pub contract_address_salt: Felt,
     pub constructor_calldata: Vec<Felt>,
@@ -320,7 +300,6 @@ impl DeployAccountTransaction {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployAccountTransactionV1 {
-    pub transaction_hash: Felt,
     pub max_fee: Felt,
     pub signature: Vec<Felt>,
     pub nonce: Felt,
@@ -331,7 +310,6 @@ pub struct DeployAccountTransactionV1 {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployAccountTransactionV3 {
-    pub transaction_hash: Felt,
     pub signature: Vec<Felt>,
     pub nonce: Felt,
     pub contract_address_salt: Felt,
@@ -361,4 +339,52 @@ pub struct ResourceBoundsMapping {
 pub struct ResourceBounds {
     pub max_amount: u64,
     pub max_price_per_unit: u128,
+}
+
+impl From<ResourceBoundsMapping> for starknet_core::types::ResourceBoundsMapping {
+    fn from(resource: ResourceBoundsMapping) -> Self {
+        Self {
+            l1_gas: starknet_core::types::ResourceBounds {
+                max_amount: resource.l1_gas.max_amount,
+                max_price_per_unit: resource.l1_gas.max_price_per_unit,
+            },
+            l2_gas: starknet_core::types::ResourceBounds {
+                max_amount: resource.l2_gas.max_amount,
+                max_price_per_unit: resource.l2_gas.max_price_per_unit,
+            },
+        }
+    }
+}
+
+impl From<starknet_core::types::ResourceBoundsMapping> for ResourceBoundsMapping {
+    fn from(resource: starknet_core::types::ResourceBoundsMapping) -> Self {
+        Self {
+            l1_gas: ResourceBounds {
+                max_amount: resource.l1_gas.max_amount,
+                max_price_per_unit: resource.l1_gas.max_price_per_unit,
+            },
+            l2_gas: ResourceBounds {
+                max_amount: resource.l2_gas.max_amount,
+                max_price_per_unit: resource.l2_gas.max_price_per_unit,
+            },
+        }
+    }
+}
+
+impl From<DataAvailabilityMode> for starknet_core::types::DataAvailabilityMode {
+    fn from(da_mode: DataAvailabilityMode) -> Self {
+        match da_mode {
+            DataAvailabilityMode::L1 => Self::L1,
+            DataAvailabilityMode::L2 => Self::L2,
+        }
+    }
+}
+
+impl From<starknet_core::types::DataAvailabilityMode> for DataAvailabilityMode {
+    fn from(da_mode: starknet_core::types::DataAvailabilityMode) -> Self {
+        match da_mode {
+            starknet_core::types::DataAvailabilityMode::L1 => Self::L1,
+            starknet_core::types::DataAvailabilityMode::L2 => Self::L2,
+        }
+    }
 }
