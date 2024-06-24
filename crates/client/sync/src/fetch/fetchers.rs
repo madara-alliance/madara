@@ -8,6 +8,7 @@ use dc_db::DeoxysBackend;
 use dp_block::DeoxysBlock;
 use dp_convert::state_update::ToStateUpdateCore;
 use dp_convert::ToStarkFelt;
+use dp_transactions::{INTE_CHAIN_ID, MAIN_CHAIN_ID, TEST_CHAIN_ID};
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use itertools::Itertools;
 use reqwest::Client;
@@ -190,15 +191,11 @@ pub async fn raw_get_class_by_hash(
 /// of the current type hell we decided to deal with raw JSON data instead of starknet-providers `DeployedContract`.
 async fn fetch_class(class_hash: Felt, block_number: u64, chain_id: Felt) -> Result<ContractClassData, ProviderError> {
     // Configuring custom provider to fetch raw json classe definitions
-    let url = if chain_id == Felt::from_bytes_be_slice(b"SN_MAIN") {
-        "https://alpha-mainnet.starknet.io"
-    } else if chain_id == Felt::from_bytes_be_slice(b"SN_SEPOLIA") {
-        "https://alpha-sepolia.starknet.io"
-    } else if chain_id == Felt::from_bytes_be_slice(b"SN_INTE") {
-        "https://external.integration.starknet.io"
-    } else {
-        return Err(ProviderError::StarknetError(StarknetError::ClassHashNotFound));
-        // Set a more appropriate error here
+    let url = match chain_id {
+        id if id == MAIN_CHAIN_ID => "https://alpha-mainnet.starknet.io",
+        id if id == TEST_CHAIN_ID => "https://alpha-sepolia.starknet.io",
+        id if id == INTE_CHAIN_ID => "https://external.integration.starknet.io",
+        _ => return Err(ProviderError::StarknetError(StarknetError::ClassHashNotFound)), // Set a more appropriate error here
     };
 
     let core_class = raw_get_class_by_hash(url, &class_hash.to_hex_string(), block_number).await?;

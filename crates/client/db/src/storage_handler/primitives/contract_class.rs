@@ -207,7 +207,6 @@ fn from_legacy_entry_point(entry_point: &RawLegacyEntryPoint) -> EntryPoint {
 }
 
 // Wrapper Class conversion
-
 impl TryFrom<serde_json::Value> for ContractClassWrapper {
     type Error = anyhow::Error;
 

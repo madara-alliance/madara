@@ -13,7 +13,7 @@ pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> Rp
     let class_hash = ClassHash(class_hash.to_stark_felt());
 
     // Check if the given block exists
-    starknet.get_block(block_id)?;
+    starknet.get_block_info(block_id)?;
 
     let class = starknet
         .backend
@@ -27,12 +27,8 @@ pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> Rp
         abi,
         sierra_program_length,
         abi_length,
-        block_number: declared_at_block,
+        block_number: _declared_at_block,
     } = class;
-
-    if declared_at_block >= starknet.get_block_n(block_id)? {
-        return Err(StarknetRpcApiError::ClassHashNotFound.into());
-    }
 
     let contract_class_core: ContractClass =
         ContractClassWrapper { contract_class, abi, sierra_program_length, abi_length }
