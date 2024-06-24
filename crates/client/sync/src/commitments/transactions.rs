@@ -3,11 +3,9 @@ use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use dc_db::storage_handler::bonsai_identifier;
-use dp_convert::ToFelt;
-use dp_transactions::compute_hash::ComputeTransactionHash;
+use dp_transactions::Transaction;
 use dp_transactions::MAIN_CHAIN_ID;
 use rayon::prelude::*;
-use starknet_api::transaction::Transaction;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, StarkHash};
 
@@ -37,14 +35,14 @@ pub fn calculate_transaction_hash_with_signature(
                 // Include signatures for Invoke transactions or for all transactions
                 let signature = invoke_tx.signature();
 
-                Pedersen::hash_array(&signature.0.iter().map(ToFelt::to_felt).collect::<Vec<Felt>>())
+                Pedersen::hash_array(signature)
             }
             Transaction::Declare(declare_tx) => {
                 // Include signatures for Declare transactions if the block number is greater than 61394 (mainnet)
                 if include_signature {
                     let signature = declare_tx.signature();
 
-                    Pedersen::hash_array(&signature.0.iter().map(ToFelt::to_felt).collect::<Vec<Felt>>())
+                    Pedersen::hash_array(signature)
                 } else {
                     Pedersen::hash_array(&[])
                 }
@@ -55,7 +53,7 @@ pub fn calculate_transaction_hash_with_signature(
                 if include_signature {
                     let signature = deploy_account_tx.signature();
 
-                    Pedersen::hash_array(&signature.0.iter().map(ToFelt::to_felt).collect::<Vec<Felt>>())
+                    Pedersen::hash_array(signature)
                 } else {
                     Pedersen::hash_array(&[])
                 }
@@ -63,7 +61,7 @@ pub fn calculate_transaction_hash_with_signature(
             Transaction::L1Handler(_) => Pedersen::hash_array(&[]),
             _ => Pedersen::hash_array(&[]),
         },
-        || transaction.compute_hash(chain_id, false, Some(block_number)).to_felt(),
+        || transaction.compute_hash(chain_id, false, Some(block_number)),
     );
 
     (Pedersen::hash(&tx_hash, &signature_hash), tx_hash)

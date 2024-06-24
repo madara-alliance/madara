@@ -1,5 +1,3 @@
-use dp_convert::ToFelt;
-use dp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{
     BlockId, BlockStatus, BlockTag, BlockWithReceipts, MaybePendingBlockWithReceipts, PendingBlockWithReceipts,
@@ -12,17 +10,12 @@ use crate::Starknet;
 pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithReceipts> {
     let block = starknet.get_block(block_id)?;
 
-    let block_txs_hashes = block.tx_hashes().iter().map(ToFelt::to_felt);
-
-    // create a vector of transactions with their corresponding hashes without deploy transactions,
-    // blockifier does not support deploy transactions
-    let transaction_with_hash: Vec<_> = block.transactions().iter().cloned().zip(block_txs_hashes).collect();
-
-    let transactions_core: Vec<_> = transaction_with_hash
+    let transactions = block
+        .transactions()
         .iter()
-        .cloned()
-        .map(|(transaction, hash)| to_starknet_core_tx(&transaction, hash))
-        .collect();
+        .zip(block.tx_hashes())
+        .map(|(tx, hash)| tx.clone().to_core(*hash))
+        .collect::<Vec<_>>();
 
     let is_on_l1 = block.block_n() <= starknet.get_l1_last_confirmed_block()?;
 
@@ -32,7 +25,7 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
     let receipts: Vec<starknet_core::types::TransactionReceipt> =
         block.receipts().iter().map(|receipt| receipt.clone().to_starknet_core(finality_status)).collect();
 
-    let transactions_with_receipts = transactions_core
+    let transactions_with_receipts = transactions
         .into_iter()
         .zip(receipts)
         .map(|(transaction, receipt)| TransactionWithReceipt { transaction, receipt })
@@ -43,9 +36,9 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
     if is_pending {
         let pending_block_with_receipts = PendingBlockWithReceipts {
             transactions: transactions_with_receipts,
-            parent_hash: block.header().parent_block_hash.to_felt(),
+            parent_hash: block.header().parent_block_hash,
             timestamp: block.header().block_timestamp,
-            sequencer_address: block.header().sequencer_address.to_felt(),
+            sequencer_address: block.header().sequencer_address,
             l1_gas_price: l1_gas_price(&block),
             l1_data_gas_price: l1_data_gas_price(&block),
             l1_da_mode: l1_da_mode(&block),
@@ -59,12 +52,12 @@ pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcRes
 
         let block_with_receipts = BlockWithReceipts {
             status,
-            block_hash: block.block_hash().to_felt(),
-            parent_hash: block.header().parent_block_hash.to_felt(),
+            block_hash: *block.block_hash(),
+            parent_hash: block.header().parent_block_hash,
             block_number: block.header().block_number,
-            new_root: block.header().global_state_root.to_felt(),
+            new_root: block.header().global_state_root,
             timestamp: block.header().block_timestamp,
-            sequencer_address: block.header().sequencer_address.to_felt(),
+            sequencer_address: block.header().sequencer_address,
             l1_gas_price: l1_gas_price(&block),
             l1_data_gas_price: l1_data_gas_price(&block),
             l1_da_mode: l1_da_mode(&block),

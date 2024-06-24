@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use dp_convert::ToStarkFelt;
-use starknet_api::block::BlockHash;
-use starknet_api::transaction::TransactionHash;
-use starknet_core::types::PendingStateUpdate;
+use starknet_core::types::{Felt, PendingStateUpdate};
 
 use crate::storage_handler::codec;
 use crate::{Column, DatabaseExt, WriteBatchWithTransaction, DB};
@@ -57,17 +54,17 @@ impl MappingDb {
 
     // DB read operations
 
-    fn tx_hash_to_block_n(&self, tx_hash: &TransactionHash) -> Result<Option<u64>> {
+    fn tx_hash_to_block_n(&self, tx_hash: &Felt) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::TxHashToBlockN);
-        let res = self.db.get_cf(&col, codec::Encode::encode(tx_hash)?)?;
+        let res = self.db.get_cf(&col, bincode::serialize(tx_hash)?)?;
         let Some(res) = res else { return Ok(None) };
         let block_n = codec::Decode::decode(&res)?;
         Ok(Some(block_n))
     }
 
-    fn block_hash_to_block_n(&self, block_hash: &BlockHash) -> Result<Option<u64>> {
+    fn block_hash_to_block_n(&self, block_hash: &Felt) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockHashToBlockN);
-        let res = self.db.get_cf(&col, codec::Encode::encode(block_hash)?)?;
+        let res = self.db.get_cf(&col, bincode::serialize(block_hash)?)?;
         let Some(res) = res else { return Ok(None) };
         let block_n = codec::Decode::decode(&res)?;
         Ok(Some(block_n))
@@ -164,11 +161,11 @@ impl MappingDb {
         let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
         let meta = self.db.get_column(Column::BlockStorageMeta);
 
-        let block_hash_encoded = codec::Encode::encode(block.block_hash())?;
+        let block_hash_encoded = bincode::serialize(block.block_hash())?;
         let block_n_encoded = codec::Encode::encode(&block.block_n())?;
 
         for hash in block.tx_hashes() {
-            tx.put_cf(&tx_hash_to_block_n, codec::Encode::encode(hash)?, &block_n_encoded);
+            tx.put_cf(&tx_hash_to_block_n, bincode::serialize(hash)?, &block_n_encoded);
         }
 
         tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
@@ -183,9 +180,7 @@ impl MappingDb {
 
     fn id_to_storage_type(&self, id: &BlockId) -> Result<Option<BlockStorageType>> {
         match id {
-            BlockId::Hash(felt) => {
-                Ok(self.block_hash_to_block_n(&BlockHash(felt.to_stark_felt()))?.map(BlockStorageType::BlockN))
-            }
+            BlockId::Hash(hash) => Ok(self.block_hash_to_block_n(hash)?.map(BlockStorageType::BlockN)),
             BlockId::Number(block_n) => Ok(Some(BlockStorageType::BlockN(*block_n))),
             BlockId::Tag(BlockTag::Latest) => Ok(self.get_latest_block_n()?.map(BlockStorageType::BlockN)),
             BlockId::Tag(BlockTag::Pending) => Ok(Some(BlockStorageType::Pending)),
@@ -216,9 +211,9 @@ impl MappingDb {
         }
     }
 
-    pub fn get_block_hash(&self, id: &BlockId) -> Result<Option<BlockHash>> {
+    pub fn get_block_hash(&self, id: &BlockId) -> Result<Option<Felt>> {
         match id {
-            BlockId::Hash(felt) => Ok(Some(BlockHash(felt.to_stark_felt()))),
+            BlockId::Hash(hash) => Ok(Some(*hash)),
             _ => Ok(self.get_block_info(id)?.map(|info| *info.block_hash())),
         }
     }
@@ -243,10 +238,7 @@ impl MappingDb {
     // Tx hashes and tx status
 
     /// Returns the index of the tx.
-    pub fn find_tx_hash_block_info(
-        &self,
-        tx_hash: &TransactionHash,
-    ) -> Result<Option<(DeoxysBlockInfo, TxStorageInfo)>> {
+    pub fn find_tx_hash_block_info(&self, tx_hash: &Felt) -> Result<Option<(DeoxysBlockInfo, TxStorageInfo)>> {
         match self.tx_hash_to_block_n(tx_hash)? {
             Some(block_n) => {
                 let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
@@ -262,7 +254,7 @@ impl MappingDb {
     }
 
     /// Returns the index of the tx.
-    pub fn find_tx_hash_block(&self, tx_hash: &TransactionHash) -> Result<Option<(DeoxysBlock, TxStorageInfo)>> {
+    pub fn find_tx_hash_block(&self, tx_hash: &Felt) -> Result<Option<(DeoxysBlock, TxStorageInfo)>> {
         match self.tx_hash_to_block_n(tx_hash)? {
             Some(block_n) => {
                 let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };

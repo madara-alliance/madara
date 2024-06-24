@@ -1,13 +1,13 @@
 use core::convert::TryFrom;
 
 use blockifier::context::FeeTokenAddresses;
-use starknet_api::block::{BlockNumber, BlockTimestamp};
+use dp_convert::ToFelt;
 use starknet_api::core::ChainId;
 use starknet_api::hash::StarkFelt;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, StarkHash};
 
-use crate::{Header, StarknetVersion};
+use super::{Header, StarknetVersion};
 
 fn generate_dummy_header() -> Vec<Felt> {
     vec![
@@ -74,7 +74,7 @@ fn test_real_header_hash() {
 
 #[test]
 fn test_to_block_context() {
-    let sequencer_address = StarkFelt::try_from("0xFF").unwrap().try_into().unwrap();
+    let sequencer_address = Felt::from_hex_unchecked("0xFF");
     // Create a block header.
     let block_header = Header {
         block_number: 1,
@@ -93,9 +93,9 @@ fn test_to_block_context() {
     // Try to serialize the block header.
     let block_context = block_header.into_block_context(fee_token_addresses.clone(), chain_id).unwrap();
     // Check that the block context was serialized correctly.
-    assert_eq!(block_context.block_info().block_number, BlockNumber(1));
-    assert_eq!(block_context.block_info().block_timestamp, BlockTimestamp(1));
-    assert_eq!(block_context.block_info().sequencer_address, sequencer_address);
+    assert_eq!(block_context.block_info().block_number.0, 1);
+    assert_eq!(block_context.block_info().block_timestamp.0, 1);
+    assert_eq!(block_context.block_info().sequencer_address.to_felt(), sequencer_address);
     assert_eq!(
         &block_context.chain_info().fee_token_addresses.eth_fee_token_address,
         &fee_token_addresses.eth_fee_token_address

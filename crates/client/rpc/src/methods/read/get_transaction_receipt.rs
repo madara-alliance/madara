@@ -1,8 +1,5 @@
 use dc_db::mapping_db::BlockStorageType;
-use dp_convert::ToFelt;
-use dp_convert::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
-use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{Felt, TransactionFinalityStatus, TransactionReceiptWithBlockInfo};
 
 use crate::errors::StarknetRpcApiError;
@@ -37,7 +34,7 @@ pub async fn get_transaction_receipt(
 ) -> RpcResult<TransactionReceiptWithBlockInfo> {
     let (block, tx_info) = starknet
         .block_storage()
-        .find_tx_hash_block(&TransactionHash(transaction_hash.to_stark_felt()))
+        .find_tx_hash_block(&transaction_hash)
         .or_internal_server_error("Error getting block from tx_hash")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
@@ -58,7 +55,7 @@ pub async fn get_transaction_receipt(
     let block = match tx_info.storage_type {
         BlockStorageType::Pending => starknet_core::types::ReceiptBlock::Pending,
         BlockStorageType::BlockN(block_number) => {
-            let block_hash = block.block_hash().to_felt();
+            let block_hash = *block.block_hash();
             starknet_core::types::ReceiptBlock::Block { block_hash, block_number }
         }
     };

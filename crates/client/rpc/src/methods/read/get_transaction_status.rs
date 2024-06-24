@@ -1,7 +1,5 @@
-use dp_convert::ToStarkFelt;
 use dp_receipt::ExecutionResult;
 use jsonrpsee::core::RpcResult;
-use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{Felt, TransactionExecutionStatus, TransactionStatus};
 
 use crate::errors::StarknetRpcApiError;
@@ -27,11 +25,9 @@ use crate::Starknet;
 ///   - `execution_status`: The execution status of the transaction, providing details on the
 ///     execution outcome if the transaction has been processed.
 pub fn get_transaction_status(starknet: &Starknet, transaction_hash: Felt) -> RpcResult<TransactionStatus> {
-    let tx_hash = TransactionHash(transaction_hash.to_stark_felt());
-
     let (block, tx_torage_info) = starknet
         .block_storage()
-        .find_tx_hash_block(&tx_hash)
+        .find_tx_hash_block(&transaction_hash)
         .or_internal_server_error("Error find tx hash block info from db")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 

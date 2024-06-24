@@ -18,7 +18,6 @@ use dp_block::DeoxysBlockInfo;
 use dp_convert::ToFelt;
 use dp_convert::ToStarkFelt;
 use dp_simulations::SimulationFlags;
-use dp_transactions::getters::Hash;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::{ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
@@ -74,10 +73,10 @@ pub fn re_execute_transactions(
 
     let mut executed_prev = 0;
     for (index, tx) in transactions_before.into_iter().enumerate() {
-        let tx_hash = tx.tx_hash();
-        log::debug!("executing {tx_hash:?}");
+        let hash = tx_hash(&tx);
+        log::debug!("executing {hash:?}");
         tx.execute(&mut cached_state, block_context, charge_fee, true).map_err(|err| TransactionsExecError {
-            hash: tx_hash.unwrap_or_default(),
+            hash,
             index,
             err,
         })?;
@@ -88,10 +87,10 @@ pub fn re_execute_transactions(
         .into_iter()
         .enumerate()
         .map(|(index, tx)| {
-            let tx_hash = tx.tx_hash();
-            log::debug!("executing {tx_hash:?} (2)");
+            let hash = tx_hash(&tx);
+            log::debug!("executing {hash:?} (2)");
             tx.execute(&mut cached_state, block_context, charge_fee, true).map_err(|err| TransactionsExecError {
-                hash: tx_hash.unwrap_or_default(),
+                hash,
                 index: executed_prev + index,
                 err,
             })
@@ -99,6 +98,17 @@ pub fn re_execute_transactions(
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(transactions_exec_infos)
+}
+
+fn tx_hash(tx: &Transaction) -> TransactionHash {
+    match tx {
+        Transaction::AccountTransaction(tx) => match tx {
+            AccountTransaction::Declare(tx) => tx.tx_hash,
+            AccountTransaction::DeployAccount(tx) => tx.tx_hash,
+            AccountTransaction::Invoke(tx) => tx.tx_hash,
+        },
+        Transaction::L1HandlerTransaction(tx) => tx.tx_hash,
+    }
 }
 
 pub fn simulate_transactions(

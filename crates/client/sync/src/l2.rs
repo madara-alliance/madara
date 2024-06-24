@@ -13,7 +13,6 @@ use dc_db::DeoxysBackend;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::Header;
 use dp_block::{BlockId, BlockTag, DeoxysBlock};
-use dp_convert::ToFelt;
 use dp_convert::ToStarkFelt;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
@@ -103,7 +102,7 @@ async fn l2_verify_and_apply_task(
             })
             .await?;
 
-            if global_state_root.to_felt() != state_root {
+            if global_state_root != state_root {
                 // TODO(fault tolerance): we should have a single rocksdb transaction for the whole l2 update.
                 // let prev_block = block_n.checked_sub(1).expect("no block to revert to");
 
@@ -159,15 +158,15 @@ async fn l2_verify_and_apply_task(
         log::info!(
             "✨ Imported #{} ({}) and updated state root ({})",
             block_n,
-            trim_hash(&block_hash.to_felt()),
-            trim_hash(&global_state_root.to_felt())
+            trim_hash(&block_hash),
+            trim_hash(&global_state_root)
         );
-        log::debug!("Imported #{} ({}) and updated state root ({})", block_n, block_hash.0, global_state_root);
+        log::debug!("Imported #{} ({}) and updated state root ({})", block_n, block_hash, global_state_root);
 
         telemetry.send(
             VerbosityLevel::Info,
             serde_json::json!({
-                "best": format!("{}", block_hash.0),
+                "best": format!("{}", block_hash),
                 "height": block_n,
                 "origin": "Own",
                 "msg": "block.import",
@@ -272,7 +271,7 @@ async fn l2_pending_block_task(
         log::debug!("pending block hash parent hash: {:#}", block.parent_block_hash.to_stark_felt());
 
         let mut tx = WriteBatchWithTransaction::default();
-        if block.parent_block_hash == block_hash_best.to_felt() {
+        if block.parent_block_hash == block_hash_best {
             let block = spawn_compute(move || crate::convert::convert_block(block, chain_id))
                 .await
                 .context("converting pending block")?;
@@ -401,10 +400,10 @@ async fn update_sync_metrics(
     block_metrics.transaction_count.set(f64::from_u128(block_header.transaction_count).unwrap_or(f64::MIN));
     block_metrics.event_count.set(f64::from_u128(block_header.event_count).unwrap_or(f64::MIN));
 
-    if let Some(l1_gas_price) = &block_header.l1_gas_price {
-        block_metrics.l1_gas_price_wei.set(f64::from_u128(l1_gas_price.eth_l1_gas_price.into()).unwrap_or(f64::MIN));
-        block_metrics.l1_gas_price_strk.set(f64::from_u128(l1_gas_price.strk_l1_gas_price.into()).unwrap_or(f64::MIN));
-    }
+    block_metrics.l1_gas_price_wei.set(f64::from_u128(block_header.l1_gas_price.eth_l1_gas_price).unwrap_or(f64::MIN));
+    block_metrics
+        .l1_gas_price_strk
+        .set(f64::from_u128(block_header.l1_gas_price.strk_l1_gas_price).unwrap_or(f64::MIN));
 
     Ok(())
 }

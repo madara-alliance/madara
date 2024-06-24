@@ -1,5 +1,5 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
-use dp_convert::{ToFelt, ToStarkFelt};
+use dp_convert::ToStarkFelt;
 use dp_transactions::TxType;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::TransactionHash;
@@ -55,7 +55,7 @@ pub async fn trace_block_transactions(
         .map(|((info, ty), tx_hash)| {
             tx_execution_infos_to_tx_trace(starknet, ty, info, block.block_n())
                 .or_internal_server_error("Converting execution infos to tx trace")
-                .map(|trace| TransactionTraceWithHash { trace_root: trace, transaction_hash: tx_hash.to_felt() })
+                .map(|trace| TransactionTraceWithHash { trace_root: trace, transaction_hash: *tx_hash })
         })
         .collect::<Result<_, _>>()?;
 
