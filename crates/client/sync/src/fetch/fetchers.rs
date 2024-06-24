@@ -199,6 +199,7 @@ async fn fetch_class(class_hash: Felt, block_number: u64, chain_id: Felt) -> Res
     };
 
     let core_class = raw_get_class_by_hash(url, &class_hash.to_hex_string(), block_number).await?;
+
     Ok(ContractClassData {
         hash: ClassHash(class_hash.to_stark_felt()),
         contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),

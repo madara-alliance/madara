@@ -3,8 +3,22 @@ use dc_db::storage_handler::DeoxysStorageError;
 use dc_db::DeoxysBackend;
 use dp_convert::ToFelt;
 use rayon::prelude::*;
+use starknet_core::types::contract::legacy::LegacyContractClass;
+use starknet_core::types::contract::{
+    BytecodeSegmentLengthMismatchError, InvalidBytecodeSegmentError, JsonError, PcOutOfRangeError,
+};
+use starknet_core::utils::cairo_short_string_to_felt;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
+
+#[derive(Debug)]
+pub enum ComputeClassHashError {
+    InvalidBuiltinName,
+    BytecodeSegmentLengthMismatch(BytecodeSegmentLengthMismatchError),
+    InvalidBytecodeSegment(InvalidBytecodeSegmentError),
+    PcOutOfRange(PcOutOfRangeError),
+    Json(JsonError),
+}
 
 // "CONTRACT_CLASS_LEAF_V0"
 const CONTRACT_CLASS_HASH_VERSION: Felt =
