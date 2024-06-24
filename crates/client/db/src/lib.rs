@@ -26,6 +26,7 @@ pub mod storage_updates;
 pub use error::{BonsaiDbError, DbError};
 use storage_handler::block_state_diff::BlockStateDiffView;
 use storage_handler::class_trie::{ClassTrieView, ClassTrieViewMut};
+use storage_handler::compiled_contract_class::{CompiledContractClassView, CompiledContractClassViewMut};
 use storage_handler::contract_class_data::{ContractClassDataView, ContractClassDataViewMut};
 use storage_handler::contract_class_hashes::{ContractClassHashesView, ContractClassHashesViewMut};
 use storage_handler::contract_data::{
@@ -156,6 +157,8 @@ pub enum Column {
     /// Contract class hash to class data
     ContractClassData,
 
+    CompiledContractClass,
+
     // History of contract class hashes
     // contract_address history block_number => class_hash
     ContractToClassHashes,
@@ -216,6 +219,7 @@ impl Column {
             BlockHashToBlockN,
             BlockStorageMeta,
             ContractClassData,
+            CompiledContractClass,
             ContractToClassHashes,
             ContractToNonces,
             ContractClassHashes,
@@ -254,6 +258,7 @@ impl Column {
             BonsaiClassesLog => "bonsai_classes_log",
             BlockStateDiff => "block_state_diff",
             ContractClassData => "contract_class_data",
+            CompiledContractClass => "compiled_contract_class",
             ContractToClassHashes => "contract_to_class_hashes",
             ContractToNonces => "contract_to_nonces",
             ContractClassHashes => "contract_class_hashes",
@@ -422,6 +427,14 @@ impl DeoxysBackend {
 
     pub fn contract_class_data(&self) -> ContractClassDataView {
         ContractClassDataView::new(Arc::clone(&self.db))
+    }
+
+    pub fn compiled_contract_class_mut(&self) -> CompiledContractClassViewMut {
+        CompiledContractClassViewMut::new(Arc::clone(&self.db))
+    }
+
+    pub fn compiled_contract_class(&self) -> CompiledContractClassView {
+        CompiledContractClassView::new(Arc::clone(&self.db))
     }
 
     pub fn contract_class_hashes_mut(&self) -> ContractClassHashesViewMut {
