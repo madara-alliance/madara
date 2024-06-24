@@ -45,7 +45,7 @@ pub struct FetchConfig {
     /// Number of blocks to sync (for testing purposes)
     pub n_blocks_to_sync: Option<u64>,
     /// Disable l1 sync
-    pub sync_l1_disabled: bool
+    pub sync_l1_disabled: bool,
 }
 
 pub struct L2BlockAndUpdates {

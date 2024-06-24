@@ -204,7 +204,7 @@ impl Starknet {
             sequencer_provider: Arc::new(SequencerGatewayProvider::new(
                 chain_config.feeder_gateway.clone(),
                 chain_config.gateway.clone(),
-                chain_config.chain_id.clone(),
+                chain_config.chain_id,
             )),
             chain_config,
         }

@@ -561,7 +561,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/bonsai-trie.git?branch=oss#5b919ca8f2fd58f944e5206f56e62086b23628c9"
+source = "git+https://github.com/cchudant/bonsai-trie.git?branch=fix_inserts_remove_leaks#1a77166d1a3c9afa590b337d8d70670b8d43eadd"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -5739,6 +5739,9 @@ name = "smallvec"
 version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "smol_str"
