@@ -1,0 +1,43 @@
+[package]
+description = "Deoxys primitive for starknet Class"
+name = "dp-class"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+
+# Deoxys
+dp-convert = { workspace = true }
+
+# Starknet
+blockifier = { workspace = true }
+casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.6.4" }
+casm-compiler-v1_0_0-alpha6 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-alpha.6" }
+casm-compiler-v1_0_0-rc0 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-rc0" }
+casm-compiler-v1_1_1 = { package = "cairo-lang-starknet", version = "=1.1.1" }
+casm-compiler-v2 = { package = "cairo-lang-starknet", version = "=2.6.0" }
+casm-utils-v1_0_0-alpha6 = { package = "cairo-lang-utils", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-alpha.6" }
+casm-utils-v1_0_0-rc0 = { package = "cairo-lang-utils", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-rc0" }
+casm-utils-v1_1_1 = { package = "cairo-lang-utils", version = "=1.1.1" }
+casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.6.4" }
+starknet-core = { workspace = true }
+starknet-types-core = { workspace = true }
+
+# Other
+anyhow = { workspace = true }
+flate2 = { workspace = true }
+num-bigint = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+starknet-providers = { workspace = true }
+tokio = { workspace = true }
