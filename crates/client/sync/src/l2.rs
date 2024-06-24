@@ -342,7 +342,6 @@ pub async fn sync(
         Arc::clone(&provider),
         config.sync_polling_interval,
         once_caught_up_cb_sender,
-        chain_id,
     ));
     join_set.spawn(l2_block_conversion_task(fetch_stream_receiver, block_conv_sender, chain_id));
     join_set.spawn(l2_verify_and_apply_task(

@@ -207,19 +207,33 @@ fn from_legacy_entry_point(entry_point: &RawLegacyEntryPoint) -> EntryPoint {
 }
 
 // Wrapper Class conversion
-impl TryFrom<serde_json::Value> for ContractClassWrapper {
+impl TryFrom<DeployedClass> for ContractClassWrapper {
     type Error = anyhow::Error;
 
-    fn try_from(contract_class: serde_json::Value) -> Result<Self, Self::Error> {
-        let class = contract_class.to_string();
+    fn try_from(contract_class: DeployedClass) -> Result<Self, Self::Error> {
+        let class = serde_json::to_string(&contract_class)?;
 
-        let sierra_program = contract_class.get("sierra_program");
+        let sierra_program = match &contract_class {
+            DeployedClass::SierraClass(sierra_class) => {
+                serde_json::to_value(sierra_class).ok().and_then(|v| v.get("sierra_program").cloned())
+            }
+            _ => None,
+        };
+
         let sierra_program_length = match sierra_program {
             Some(serde_json::Value::Array(program)) => program.len() as u64,
             _ => 0, // Set length to 0 if sierra_program is missing or not an array
         };
 
-        let abi_value = contract_class.get("abi");
+        let abi_value = match &contract_class {
+            DeployedClass::SierraClass(sierra_class) => {
+                serde_json::to_value(sierra_class).ok().and_then(|v| v.get("abi").cloned())
+            }
+            DeployedClass::LegacyClass(legacy_class) => {
+                serde_json::to_value(legacy_class).ok().and_then(|v| v.get("abi").cloned())
+            }
+        };
+
         let abi = if sierra_program_length > 0 {
             match abi_value {
                 Some(abi_value) => {
@@ -232,12 +246,13 @@ impl TryFrom<serde_json::Value> for ContractClassWrapper {
         } else {
             match abi_value {
                 Some(abi_value) => {
-                    let abi_string = serde_json::to_string(abi_value).context("serializing abi")?;
+                    let abi_string = serde_json::to_string(&abi_value).context("serializing abi")?;
                     ContractAbi::Cairo(Some(abi_string))
                 }
                 None => ContractAbi::Cairo(None),
             }
         };
+
         let abi_length = match &abi {
             ContractAbi::Cairo(Some(abi_string)) => abi_string.len() as u64,
             ContractAbi::Cairo(None) => 0,
