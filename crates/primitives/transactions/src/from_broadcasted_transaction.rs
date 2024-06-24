@@ -7,7 +7,7 @@ use crate::{
 };
 
 impl TransactionWithHash {
-    fn from_brodcasted(tx: starknet_core::types::BroadcastedTransaction, chain_id: Felt) -> Self {
+    fn from_broadcasted(tx: starknet_core::types::BroadcastedTransaction, chain_id: Felt) -> Self {
         let is_query = is_query(&tx);
         let transaction: Transaction = tx.into();
         let hash = transaction.compute_hash(chain_id, is_query, None);
