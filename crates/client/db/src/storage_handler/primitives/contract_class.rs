@@ -265,3 +265,194 @@ impl TryInto<ContractClassCore> for ContractClassWrapper {
         }
     }
 }
+
+pub fn compute_cairo_class_hash(raw_class: serde_json::Value) -> Result<Felt, ComputeClassHashError> {
+    let mut elements = Vec::new();
+    let class: LegacyContractClass = serde_json::from_value(raw_class).map_err(|arg0: serde_json::Error| {
+        ComputeClassHashError::Json(errors::JsonError {
+            message: "Failed to serialize raw class definition to LegacyContractClass".to_string(),
+        })
+    })?;
+
+    // API Version
+    elements.push(Felt::ZERO);
+
+    // Hashes external entry points
+    elements.push({
+        let mut buffer = Vec::new();
+        for entrypoint in class.entry_points_by_type.external.iter() {
+            buffer.push(entrypoint.selector);
+            buffer.push(entrypoint.offset.into());
+        }
+        Poseidon::hash_array(&buffer)
+    });
+
+    // Hashes L1 handler entry points
+    elements.push({
+        let mut buffer = Vec::new();
+        for entrypoint in class.entry_points_by_type.l1_handler.iter() {
+            buffer.push(entrypoint.selector);
+            buffer.push(entrypoint.offset.into());
+        }
+        Poseidon::hash_array(&buffer)
+    });
+
+    // Hashes constructor entry points
+    elements.push({
+        let mut buffer = Vec::new();
+        for entrypoint in class.entry_points_by_type.constructor.iter() {
+            buffer.push(entrypoint.selector);
+            buffer.push(entrypoint.offset.into());
+        }
+        Poseidon::hash_array(&buffer)
+    });
+
+    // Hashes builtins
+    elements.push(Poseidon::hash_array(
+        &class
+            .program
+            .builtins
+            .iter()
+            .map(|item| cairo_short_string_to_felt(item))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ComputeClassHashError::InvalidBuiltinName)?,
+    ));
+
+    // Hashes hinted_class_hash
+    elements.push(class.hinted_class_hash()?);
+
+    // Hashes bytecode
+    elements.push(Poseidon::hash_array(&class.program.data));
+
+    Ok(Poseidon::hash_array(&elements))
+}
+
+// pub fn compute_sierra_class_hash(raw_class: serde_json::Value) -> Result<Felt, ComputeClassHashError> {
+//     let mut hasher = PoseidonHasher::new();
+//     hasher.update(PREFIX_CONTRACT_CLASS_V0_1_0);
+
+//     // Hashes entry points
+//     hasher.update(hash_sierra_entrypoints(&self.entry_points_by_type.external));
+//     hasher.update(hash_sierra_entrypoints(
+//         &self.entry_points_by_type.l1_handler,
+//     ));
+//     hasher.update(hash_sierra_entrypoints(
+//         &self.entry_points_by_type.constructor,
+//     ));
+
+//     // Hashes ABI
+//     hasher.update(starknet_keccak(self.abi.as_bytes()));
+
+//     // Hashes Sierra program
+//     hasher.update(poseidon_hash_many(&self.sierra_program));
+
+//     normalize_address(hasher.finalize())
+// }
+
+mod errors {
+    use core::fmt::{Display, Formatter, Result};
+
+    #[derive(Debug)]
+    pub enum ComputeClassHashError {
+        InvalidBuiltinName,
+        BytecodeSegmentLengthMismatch(BytecodeSegmentLengthMismatchError),
+        InvalidBytecodeSegment(InvalidBytecodeSegmentError),
+        PcOutOfRange(PcOutOfRangeError),
+        Json(JsonError),
+    }
+
+    #[derive(Debug)]
+    pub struct JsonError {
+        pub(crate) message: String,
+    }
+
+    #[derive(Debug)]
+    pub struct BytecodeSegmentLengthMismatchError {
+        pub segment_length: usize,
+        pub bytecode_length: usize,
+    }
+
+    #[derive(Debug)]
+    pub struct InvalidBytecodeSegmentError {
+        pub visited_pc: u64,
+        pub segment_start: u64,
+    }
+
+    #[derive(Debug)]
+    pub struct PcOutOfRangeError {
+        pub pc: u64,
+    }
+
+    #[cfg(feature = "std")]
+    impl std::error::Error for ComputeClassHashError {}
+
+    impl Display for ComputeClassHashError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            match self {
+                Self::InvalidBuiltinName => write!(f, "invalid builtin name"),
+                Self::BytecodeSegmentLengthMismatch(inner) => write!(f, "{}", inner),
+                Self::InvalidBytecodeSegment(inner) => write!(f, "{}", inner),
+                Self::PcOutOfRange(inner) => write!(f, "{}", inner),
+                Self::Json(inner) => write!(f, "json serialization error: {}", inner),
+            }
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl std::error::Error for CompressProgramError {}
+
+    #[cfg(feature = "std")]
+    impl Display for CompressProgramError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            match self {
+                Self::Json(inner) => write!(f, "json serialization error: {}", inner),
+                Self::Io(inner) => write!(f, "compression io error: {}", inner),
+            }
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl std::error::Error for JsonError {}
+
+    impl Display for JsonError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            write!(f, "{}", self.message)
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl std::error::Error for BytecodeSegmentLengthMismatchError {}
+
+    impl Display for BytecodeSegmentLengthMismatchError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            write!(
+                f,
+                "invalid bytecode segment structure length: {}, bytecode length: {}.",
+                self.segment_length, self.bytecode_length,
+            )
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl std::error::Error for InvalidBytecodeSegmentError {}
+
+    impl Display for InvalidBytecodeSegmentError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            write!(
+                f,
+                "invalid segment structure: PC {} was visited, \
+                but the beginning of the segment ({}) was not",
+                self.visited_pc, self.segment_start
+            )
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl std::error::Error for PcOutOfRangeError {}
+
+    impl Display for PcOutOfRangeError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            write!(f, "PC {} is out of range", self.pc)
+        }
+    }
+}
