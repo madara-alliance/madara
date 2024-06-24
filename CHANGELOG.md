@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: rate limit on classes
 - refactor: use Felt in DB
 - fix: fix sepolia by updating bonsai-trie
 - feat(class): change class definition storage
