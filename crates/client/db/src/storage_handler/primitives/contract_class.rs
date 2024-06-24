@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use blockifier::execution::contract_class::{
-    ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1,
+    self, ContractClass as ContractClassBlockifier, ContractClassV0, ContractClassV0Inner, ContractClassV1
 };
 use cairo_vm::types::program::Program;
 use dp_convert::ToStarkFelt;
@@ -14,14 +14,21 @@ use parity_scale_codec::{Decode, Encode};
 use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_core::types::contract::legacy::{LegacyContractClass, RawLegacyEntryPoint, RawLegacyEntryPoints};
+use starknet_core::types::contract::{ComputeClassHashError, JsonError};
 use starknet_core::types::{
-    CompressedLegacyContractClass, ContractClass as ContractClassCore, Felt, FlattenedSierraClass, LegacyContractAbiEntry
+    CompressedLegacyContractClass, ContractClass as ContractClassCore, Felt, FlattenedSierraClass, LegacyContractAbiEntry, SierraEntryPoint
 };
 use starknet_providers::sequencer::models::DeployedClass;
 use starknet_types_core::hash::{Poseidon, StarkHash};
-use starknet_core::utils::cairo_short_string_to_felt;
+use starknet_core::utils::{cairo_short_string_to_felt, normalize_address, starknet_keccak};
 
-use crate::storage_handler::primitives::contract_class::errors::ComputeClassHashError;
+/// Cairo string for "CONTRACT_CLASS_V0.1.0"
+const PREFIX_CONTRACT_CLASS_V0_1_0: Felt = Felt::from_raw([
+    37302452645455172,
+    18446734822722598327,
+    15539482671244488427,
+    5800711240972404213,
+]);
 
 #[derive(Debug, Encode, Decode)]
 pub struct StorageContractClassData {
@@ -210,25 +217,41 @@ fn from_legacy_entry_point(entry_point: &RawLegacyEntryPoint) -> EntryPoint {
     EntryPoint { selector, offset }
 }
 
+fn is_sierra(class: &serde_json::Value) -> bool {
+    class.get("sierra_program").is_some()
+}
+
 // Wrapper Class conversion
-impl TryFrom<serde_json::Value> for ContractClassWrapper {
+impl TryFrom<(serde_json::Value, Felt)> for ContractClassWrapper {
     type Error = anyhow::Error;
 
-    fn try_from(contract_class: serde_json::Value) -> Result<Self, Self::Error> {
-        let class = contract_class.to_string();
-
+    fn try_from(value: (serde_json::Value, Felt)) -> Result<Self, Self::Error> {
+        let contract_class = value.0;
+        let class_hash = value.1;
+        
+        // Computing hashes to verify the fetched class
+        let computed_class_hash = if is_sierra(&contract_class) {
+            compute_sierra_class_hash(contract_class.clone())?
+        } else {
+            compute_cairo_class_hash(contract_class.clone())?
+        };
+        
+        if computed_class_hash != class_hash {
+            return Err(anyhow::anyhow!("❗ Computed class hash does not match the provided class hash"));
+        }
+        
         let sierra_program = contract_class.get("sierra_program");
         let sierra_program_length = match sierra_program {
             Some(serde_json::Value::Array(program)) => program.len() as u64,
             _ => 0, // Set length to 0 if sierra_program is missing or not an array
         };
-
+        
         let abi_value = contract_class.get("abi");
-        let abi = if sierra_program_length > 0 {
+        let abi = if is_sierra(&contract_class) {
             match abi_value {
                 Some(abi_value) => {
                     let abi_string =
-                        abi_value.as_str().ok_or_else(|| anyhow::anyhow!("Invalid `abi` field format"))?.to_string();
+                    abi_value.as_str().ok_or_else(|| anyhow::anyhow!("Invalid `abi` field format"))?.to_string();
                     ContractAbi::Sierra(abi_string)
                 }
                 None => return Err(anyhow::anyhow!("Missing `abi` field for Sierra program")),
@@ -247,6 +270,8 @@ impl TryFrom<serde_json::Value> for ContractClassWrapper {
             ContractAbi::Cairo(None) => 0,
             ContractAbi::Sierra(abi_string) => abi_string.len() as u64,
         };
+        
+        let class = contract_class.to_string();
 
         Ok(Self { contract_class: class, abi, sierra_program_length, abi_length })
     }
@@ -272,11 +297,7 @@ impl TryInto<ContractClassCore> for ContractClassWrapper {
 
 pub fn compute_cairo_class_hash(raw_class: serde_json::Value) -> Result<Felt, ComputeClassHashError> {
     let mut elements = Vec::new();
-    let class: LegacyContractClass = serde_json::from_value(raw_class).map_err(|arg0: serde_json::Error| {
-        ComputeClassHashError::Json(errors::JsonError {
-            message: "Failed to serialize raw class definition to LegacyContractClass".to_string(),
-        })
-    })?;
+    let class: LegacyContractClass = serde_json::from_value(raw_class).expect("Failed to convert contract class");
 
     // API Version
     elements.push(Felt::ZERO);
@@ -331,132 +352,43 @@ pub fn compute_cairo_class_hash(raw_class: serde_json::Value) -> Result<Felt, Co
     Ok(Poseidon::hash_array(&elements))
 }
 
-// pub fn compute_sierra_class_hash(raw_class: serde_json::Value) -> Result<Felt, ComputeClassHashError> {
-//     let mut hasher = PoseidonHasher::new();
-//     hasher.update(PREFIX_CONTRACT_CLASS_V0_1_0);
+pub fn compute_sierra_class_hash(raw_class: serde_json::Value) -> Result<Felt, ComputeClassHashError> {
+    let mut elements = Vec::new();
+    let class: FlattenedSierraClass = serde_json::from_value(raw_class).expect("Failed to convert contract class");
+    elements.push(PREFIX_CONTRACT_CLASS_V0_1_0);
 
-//     // Hashes entry points
-//     hasher.update(hash_sierra_entrypoints(&self.entry_points_by_type.external));
-//     hasher.update(hash_sierra_entrypoints(
-//         &self.entry_points_by_type.l1_handler,
-//     ));
-//     hasher.update(hash_sierra_entrypoints(
-//         &self.entry_points_by_type.constructor,
-//     ));
-
-//     // Hashes ABI
-//     hasher.update(starknet_keccak(self.abi.as_bytes()));
-
-//     // Hashes Sierra program
-//     hasher.update(poseidon_hash_many(&self.sierra_program));
-
-//     normalize_address(hasher.finalize())
-// }
-
-mod errors {
-    use core::fmt::{Display, Formatter, Result};
-
-    #[derive(Debug)]
-    pub enum ComputeClassHashError {
-        InvalidBuiltinName,
-        BytecodeSegmentLengthMismatch(BytecodeSegmentLengthMismatchError),
-        InvalidBytecodeSegment(InvalidBytecodeSegmentError),
-        PcOutOfRange(PcOutOfRangeError),
-        Json(JsonError),
-    }
-
-    #[derive(Debug)]
-    pub struct JsonError {
-        pub(crate) message: String,
-    }
-
-    #[derive(Debug)]
-    pub struct BytecodeSegmentLengthMismatchError {
-        pub segment_length: usize,
-        pub bytecode_length: usize,
-    }
-
-    #[derive(Debug)]
-    pub struct InvalidBytecodeSegmentError {
-        pub visited_pc: u64,
-        pub segment_start: u64,
-    }
-
-    #[derive(Debug)]
-    pub struct PcOutOfRangeError {
-        pub pc: u64,
-    }
-
-    #[cfg(feature = "std")]
-    impl std::error::Error for ComputeClassHashError {}
-
-    impl Display for ComputeClassHashError {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-            match self {
-                Self::InvalidBuiltinName => write!(f, "invalid builtin name"),
-                Self::BytecodeSegmentLengthMismatch(inner) => write!(f, "{}", inner),
-                Self::InvalidBytecodeSegment(inner) => write!(f, "{}", inner),
-                Self::PcOutOfRange(inner) => write!(f, "{}", inner),
-                Self::Json(inner) => write!(f, "json serialization error: {}", inner),
-            }
+    // Hashes entry points
+    elements.push({
+        let mut buffer = Vec::new();
+        for entrypoint in class.entry_points_by_type.external.iter() {
+            buffer.push(entrypoint.selector);
+            buffer.push(entrypoint.function_idx.into());
         }
-    }
-
-    #[cfg(feature = "std")]
-    impl std::error::Error for CompressProgramError {}
-
-    #[cfg(feature = "std")]
-    impl Display for CompressProgramError {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-            match self {
-                Self::Json(inner) => write!(f, "json serialization error: {}", inner),
-                Self::Io(inner) => write!(f, "compression io error: {}", inner),
-            }
+        Poseidon::hash_array(&buffer)
+    });
+    elements.push({
+        let mut buffer = Vec::new();
+        for entrypoint in class.entry_points_by_type.constructor.iter() {
+            buffer.push(entrypoint.selector);
+            buffer.push(entrypoint.function_idx.into());
         }
-    }
-
-    #[cfg(feature = "std")]
-    impl std::error::Error for JsonError {}
-
-    impl Display for JsonError {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-            write!(f, "{}", self.message)
+        Poseidon::hash_array(&buffer)
+    });
+    elements.push({
+        let mut buffer = Vec::new();
+        for entrypoint in class.entry_points_by_type.l1_handler.iter() {
+            buffer.push(entrypoint.selector);
+            buffer.push(entrypoint.function_idx.into());
         }
-    }
+        Poseidon::hash_array(&buffer)
+    });
 
-    #[cfg(feature = "std")]
-    impl std::error::Error for BytecodeSegmentLengthMismatchError {}
+    // Hashes ABI
+    elements.push(starknet_keccak(class.abi.as_bytes()));
 
-    impl Display for BytecodeSegmentLengthMismatchError {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-            write!(
-                f,
-                "invalid bytecode segment structure length: {}, bytecode length: {}.",
-                self.segment_length, self.bytecode_length,
-            )
-        }
-    }
+    // Hashes Sierra program
+    elements.push(Poseidon::hash_array(&class.sierra_program));
 
-    #[cfg(feature = "std")]
-    impl std::error::Error for InvalidBytecodeSegmentError {}
-
-    impl Display for InvalidBytecodeSegmentError {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-            write!(
-                f,
-                "invalid segment structure: PC {} was visited, \
-                but the beginning of the segment ({}) was not",
-                self.visited_pc, self.segment_start
-            )
-        }
-    }
-
-    #[cfg(feature = "std")]
-    impl std::error::Error for PcOutOfRangeError {}
-
-    impl Display for PcOutOfRangeError {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-            write!(f, "PC {} is out of range", self.pc)
-        }
-    }
+    Ok(normalize_address(Poseidon::hash_array(&elements)))
 }
+
