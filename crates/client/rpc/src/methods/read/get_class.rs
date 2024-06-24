@@ -9,23 +9,11 @@ use crate::errors::StarknetRpcApiError;
 use crate::utils::ResultExt;
 use crate::Starknet;
 
-/// Get the contract class definition in the given block associated with the given hash.
-///
-/// ### Arguments
-///
-/// * `block_id` - The hash of the requested block, or number (height) of the requested block, or a
-///   block tag.
-/// * `class_hash` - The hash of the requested contract class.
-///
-/// ### Returns
-///
-/// Returns the contract class definition if found. In case of an error, returns a
-/// `StarknetRpcApiError` indicating either `BlockNotFound` or `ClassHashNotFound`.
 pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> RpcResult<ContractClass> {
     let class_hash = ClassHash(class_hash.to_stark_felt());
 
-    // check if the given block exists
-    starknet.get_block(block_id)?;
+    // Check if the given block exists
+    starknet.get_block_info(block_id)?;
 
     let class = starknet
         .backend
@@ -39,15 +27,15 @@ pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> Rp
         abi,
         sierra_program_length,
         abi_length,
-        block_number: declared_at_block,
+        block_number: _declared_at_block,
     } = class;
 
-    if declared_at_block >= starknet.get_block_n(block_id)? {
-        return Err(StarknetRpcApiError::ClassHashNotFound.into());
-    }
-    Ok(ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
-        .try_into()
-        .or_else_internal_server_error(|| {
-            format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")
-        })?)
+    let contract_class_core: ContractClass =
+        ContractClassWrapper { contract_class, abi, sierra_program_length, abi_length }
+            .try_into()
+            .or_else_internal_server_error(|| {
+                format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")
+            })?;
+
+    Ok(contract_class_core)
 }

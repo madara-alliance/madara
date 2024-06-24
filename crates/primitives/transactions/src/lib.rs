@@ -21,6 +21,8 @@ pub const LEGACY_L1_HANDLER_BLOCK: u64 = 854;
 
 //  b"SN_MAIN" == 0x534e5f4d41494e
 pub const MAIN_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x534e5f4d41494e");
+pub const TEST_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x534e5f5345504f4c4941");
+pub const INTE_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x0");
 
 /// Wrapper type for transaction execution error.
 /// Different tx types.

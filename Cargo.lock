@@ -1866,6 +1866,7 @@ dependencies = [
  "rocksdb",
  "serde_json",
  "starknet-core",
+ "starknet-providers",
  "starknet-types-core",
  "starknet_api",
  "thiserror",
