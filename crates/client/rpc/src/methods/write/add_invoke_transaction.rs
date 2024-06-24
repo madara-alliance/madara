@@ -18,7 +18,7 @@ pub async fn add_invoke_transaction(
     starknet: &Starknet,
     invoke_transaction: BroadcastedInvokeTransaction,
 ) -> RpcResult<InvokeTransactionResult> {
-    let sequencer = starknet.make_sequencer_provider();
+    let sequencer = starknet.sequencer_provider();
 
     let sequencer_response = match sequencer.add_invoke_transaction(invoke_transaction).await {
         Ok(response) => response,
