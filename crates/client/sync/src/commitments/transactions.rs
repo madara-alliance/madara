@@ -35,14 +35,14 @@ pub fn calculate_transaction_hash_with_signature(
                 // Include signatures for Invoke transactions or for all transactions
                 let signature = invoke_tx.signature();
 
-                Pedersen::hash_array(&signature)
+                Pedersen::hash_array(signature)
             }
             Transaction::Declare(declare_tx) => {
                 // Include signatures for Declare transactions if the block number is greater than 61394 (mainnet)
                 if include_signature {
                     let signature = declare_tx.signature();
 
-                    Pedersen::hash_array(&signature)
+                    Pedersen::hash_array(signature)
                 } else {
                     Pedersen::hash_array(&[])
                 }
@@ -53,7 +53,7 @@ pub fn calculate_transaction_hash_with_signature(
                 if include_signature {
                     let signature = deploy_account_tx.signature();
 
-                    Pedersen::hash_array(&signature)
+                    Pedersen::hash_array(signature)
                 } else {
                     Pedersen::hash_array(&[])
                 }

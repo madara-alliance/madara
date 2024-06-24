@@ -99,35 +99,35 @@ pub enum InvokeTransaction {
 }
 
 impl InvokeTransaction {
-    pub fn sender_address(&self) -> Felt {
+    pub fn sender_address(&self) -> &Felt {
         match self {
-            InvokeTransaction::V0(tx) => tx.contract_address,
-            InvokeTransaction::V1(tx) => tx.sender_address,
-            InvokeTransaction::V3(tx) => tx.sender_address,
+            InvokeTransaction::V0(tx) => &tx.contract_address,
+            InvokeTransaction::V1(tx) => &tx.sender_address,
+            InvokeTransaction::V3(tx) => &tx.sender_address,
         }
     }
 
-    pub fn signature(&self) -> Vec<Felt> {
+    pub fn signature(&self) -> &[Felt] {
         match self {
-            InvokeTransaction::V0(tx) => tx.signature.clone(),
-            InvokeTransaction::V1(tx) => tx.signature.clone(),
-            InvokeTransaction::V3(tx) => tx.signature.clone(),
+            InvokeTransaction::V0(tx) => &tx.signature,
+            InvokeTransaction::V1(tx) => &tx.signature,
+            InvokeTransaction::V3(tx) => &tx.signature,
         }
     }
 
-    pub fn calldata(&self) -> Option<Vec<Felt>> {
+    pub fn calldata(&self) -> Option<&[Felt]> {
         match self {
-            InvokeTransaction::V0(tx) => Some(tx.calldata.clone()),
-            InvokeTransaction::V1(tx) => Some(tx.calldata.clone()),
-            InvokeTransaction::V3(tx) => Some(tx.calldata.clone()),
+            InvokeTransaction::V0(tx) => Some(&tx.calldata),
+            InvokeTransaction::V1(tx) => Some(&tx.calldata),
+            InvokeTransaction::V3(tx) => Some(&tx.calldata),
         }
     }
 
-    pub fn nonce(&self) -> Felt {
+    pub fn nonce(&self) -> &Felt {
         match self {
-            InvokeTransaction::V0(_) => Felt::ZERO,
-            InvokeTransaction::V1(tx) => tx.nonce,
-            InvokeTransaction::V3(tx) => tx.nonce,
+            InvokeTransaction::V0(_) => &Felt::ZERO,
+            InvokeTransaction::V1(tx) => &tx.nonce,
+            InvokeTransaction::V3(tx) => &tx.nonce,
         }
     }
 }
@@ -182,33 +182,33 @@ pub enum DeclareTransaction {
 }
 
 impl DeclareTransaction {
-    pub fn sender_address(&self) -> Felt {
+    pub fn sender_address(&self) -> &Felt {
         match self {
-            DeclareTransaction::V0(tx) => tx.sender_address,
-            DeclareTransaction::V1(tx) => tx.sender_address,
-            DeclareTransaction::V2(tx) => tx.sender_address,
-            DeclareTransaction::V3(tx) => tx.sender_address,
+            DeclareTransaction::V0(tx) => &tx.sender_address,
+            DeclareTransaction::V1(tx) => &tx.sender_address,
+            DeclareTransaction::V2(tx) => &tx.sender_address,
+            DeclareTransaction::V3(tx) => &tx.sender_address,
         }
     }
-    pub fn signature(&self) -> Vec<Felt> {
+    pub fn signature(&self) -> &[Felt] {
         match self {
-            DeclareTransaction::V0(tx) => tx.signature.clone(),
-            DeclareTransaction::V1(tx) => tx.signature.clone(),
-            DeclareTransaction::V2(tx) => tx.signature.clone(),
-            DeclareTransaction::V3(tx) => tx.signature.clone(),
+            DeclareTransaction::V0(tx) => &tx.signature,
+            DeclareTransaction::V1(tx) => &tx.signature,
+            DeclareTransaction::V2(tx) => &tx.signature,
+            DeclareTransaction::V3(tx) => &tx.signature,
         }
     }
 
-    pub fn call_data(&self) -> Option<Vec<Felt>> {
+    pub fn call_data(&self) -> Option<&[Felt]> {
         None
     }
 
-    pub fn nonce(&self) -> Felt {
+    pub fn nonce(&self) -> &Felt {
         match self {
-            DeclareTransaction::V0(_) => Felt::ZERO,
-            DeclareTransaction::V1(tx) => tx.nonce,
-            DeclareTransaction::V2(tx) => tx.nonce,
-            DeclareTransaction::V3(tx) => tx.nonce,
+            DeclareTransaction::V0(_) => &Felt::ZERO,
+            DeclareTransaction::V1(tx) => &tx.nonce,
+            DeclareTransaction::V2(tx) => &tx.nonce,
+            DeclareTransaction::V3(tx) => &tx.nonce,
         }
     }
 }
@@ -270,30 +270,30 @@ pub enum DeployAccountTransaction {
 }
 
 impl DeployAccountTransaction {
-    pub fn sender_address(&self) -> Felt {
+    pub fn sender_address(&self) -> &Felt {
         match self {
-            DeployAccountTransaction::V1(tx) => tx.contract_address_salt,
-            DeployAccountTransaction::V3(tx) => tx.contract_address_salt,
+            DeployAccountTransaction::V1(tx) => &tx.contract_address_salt,
+            DeployAccountTransaction::V3(tx) => &tx.contract_address_salt,
         }
     }
-    pub fn signature(&self) -> Vec<Felt> {
+    pub fn signature(&self) -> &[Felt] {
         match self {
-            DeployAccountTransaction::V1(tx) => tx.signature.clone(),
-            DeployAccountTransaction::V3(tx) => tx.signature.clone(),
-        }
-    }
-
-    pub fn calldata(&self) -> Option<Vec<Felt>> {
-        match self {
-            DeployAccountTransaction::V1(tx) => Some(tx.constructor_calldata.clone()),
-            DeployAccountTransaction::V3(tx) => Some(tx.constructor_calldata.clone()),
+            DeployAccountTransaction::V1(tx) => &tx.signature,
+            DeployAccountTransaction::V3(tx) => &tx.signature,
         }
     }
 
-    pub fn nonce(&self) -> Felt {
+    pub fn calldata(&self) -> Option<&[Felt]> {
         match self {
-            DeployAccountTransaction::V1(tx) => tx.nonce,
-            DeployAccountTransaction::V3(tx) => tx.nonce,
+            DeployAccountTransaction::V1(tx) => Some(&tx.constructor_calldata),
+            DeployAccountTransaction::V3(tx) => Some(&tx.constructor_calldata),
+        }
+    }
+
+    pub fn nonce(&self) -> &Felt {
+        match self {
+            DeployAccountTransaction::V1(tx) => &tx.nonce,
+            DeployAccountTransaction::V3(tx) => &tx.nonce,
         }
     }
 }
