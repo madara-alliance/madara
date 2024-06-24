@@ -2,7 +2,9 @@
 
 ## Next release
 
-- refactor: use Felt in BlockHeader
+- refactor: use Felt in DB
+- fix: fix sepolia by updating bonsai-trie
+- feat(class): change class definition storage
 - fix: pending block sync
 - fix: transaction traces
 - feat: store tx receipts

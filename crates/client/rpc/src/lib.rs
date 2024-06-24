@@ -191,21 +191,27 @@ pub struct ChainConfig {
 /// A Starknet RPC server for Deoxys
 pub struct Starknet {
     backend: Arc<DeoxysBackend>,
+    sequencer_provider: Arc<SequencerGatewayProvider>,
     starting_block: u64,
     chain_config: ChainConfig,
 }
 
 impl Starknet {
     pub fn new(backend: Arc<DeoxysBackend>, starting_block: u64, chain_config: ChainConfig) -> Self {
-        Self { backend, starting_block, chain_config }
+        Self {
+            backend,
+            starting_block,
+            sequencer_provider: Arc::new(SequencerGatewayProvider::new(
+                chain_config.feeder_gateway.clone(),
+                chain_config.gateway.clone(),
+                chain_config.chain_id,
+            )),
+            chain_config,
+        }
     }
 
-    pub fn make_sequencer_provider(&self) -> SequencerGatewayProvider {
-        SequencerGatewayProvider::new(
-            self.chain_config.feeder_gateway.clone(),
-            self.chain_config.gateway.clone(),
-            self.chain_config.chain_id,
-        )
+    pub fn sequencer_provider(&self) -> &SequencerGatewayProvider {
+        &self.sequencer_provider
     }
 
     pub fn block_storage(&self) -> &MappingDb {

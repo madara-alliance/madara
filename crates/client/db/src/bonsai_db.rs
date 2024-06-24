@@ -1,5 +1,5 @@
 use bonsai_trie::id::BasicId;
-use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, DatabaseKey};
+use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, ByteVec, DatabaseKey};
 use rocksdb::{Direction, IteratorMode, WriteBatchWithTransaction, WriteOptions};
 
 use crate::{BonsaiDbError, Column, DatabaseExt, DB};
@@ -45,13 +45,13 @@ impl BonsaiDatabase for BonsaiDb<'_> {
         Self::Batch::default()
     }
 
-    fn get(&self, key: &DatabaseKey) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
+    fn get(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, Self::DatabaseError> {
         log::trace!("Getting from RocksDB: {:?}", key);
         let handle = self.db.get_column(self.column_mapping.map(key));
-        Ok(self.db.get_cf(&handle, key.as_slice())?)
+        Ok(self.db.get_cf(&handle, key.as_slice())?.map(Into::into))
     }
 
-    fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Self::DatabaseError> {
+    fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
         log::trace!("Getting from RocksDB: {:?}", prefix);
         let handle = self.db.get_column(self.column_mapping.map(prefix));
         let iter = self.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
@@ -59,7 +59,8 @@ impl BonsaiDatabase for BonsaiDb<'_> {
             .map_while(|kv| {
                 if let Ok((key, value)) = kv {
                     if key.starts_with(prefix.as_slice()) {
-                        Some((key.to_vec(), value.to_vec()))
+                        // nb: to_vec on a Box<[u8]> is a noop conversion
+                        Some((key.to_vec().into(), value.to_vec().into()))
                     } else {
                         None
                     }
@@ -81,32 +82,36 @@ impl BonsaiDatabase for BonsaiDb<'_> {
         key: &DatabaseKey,
         value: &[u8],
         batch: Option<&mut Self::Batch>,
-    ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
+    ) -> Result<Option<ByteVec>, Self::DatabaseError> {
         log::trace!("Inserting into RocksDB: {:?} {:?}", key, value);
         let handle = self.db.get_column(self.column_mapping.map(key));
-        let old_value = self.db.get_cf(&handle, key.as_slice())?;
+
+        // NB: we don't need old value as the trie log is not used :)
+        // this actually speeds up things quite a lot
+
+        // let old_value = self.db.get_cf(&handle, key.as_slice())?;
         if let Some(batch) = batch {
             batch.put_cf(&handle, key.as_slice(), value);
         } else {
             self.db.put_cf_opt(&handle, key.as_slice(), value, &self.write_opt)?;
         }
-        Ok(old_value)
+        Ok(None)
     }
 
     fn remove(
         &mut self,
         key: &DatabaseKey,
         batch: Option<&mut Self::Batch>,
-    ) -> Result<Option<Vec<u8>>, Self::DatabaseError> {
+    ) -> Result<Option<ByteVec>, Self::DatabaseError> {
         log::trace!("Removing from RocksDB: {:?}", key);
         let handle = self.db.get_column(self.column_mapping.map(key));
-        let old_value = self.db.get_cf(&handle, key.as_slice())?;
+        // let old_value = self.db.get_cf(&handle, key.as_slice())?;
         if let Some(batch) = batch {
             batch.delete_cf(&handle, key.as_slice());
         } else {
             self.db.delete_cf_opt(&handle, key.as_slice(), &self.write_opt)?;
         }
-        Ok(old_value)
+        Ok(None)
     }
 
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {

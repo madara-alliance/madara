@@ -61,7 +61,7 @@ parity-scale-codec = { version = "3.2", default-features = false, features = [
 ] }
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/keep-starknet-strange/bonsai-trie.git", branch = "oss", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "fix_inserts_remove_leaks", features = [
   "std",
 ] }
 

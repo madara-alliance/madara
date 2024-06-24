@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use blockifier::execution::contract_class::ContractClass;
+use blockifier::execution::contract_class::{ContractClass, ContractClassV0, ContractClassV1};
 use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
@@ -97,7 +97,6 @@ impl StateReader for BlockifierStateAdapter {
     fn get_class_hash_at(&mut self, contract_address: ContractAddress) -> StateResult<ClassHash> {
         log::debug!("class hash for {:?}", contract_address);
         if let Some(class_hash) = self.class_hash_update.get(&contract_address).cloned() {
-            log::debug!("dd {:?}", contract_address);
             return Ok(class_hash);
         }
         let Some(block_number) = self.block_number else { return Ok(ClassHash::default()) };
@@ -122,7 +121,22 @@ impl StateReader for BlockifierStateAdapter {
         match self.contract_class_update.get(&class_hash) {
             Some(contract_class) => Ok(contract_class.clone()),
             None => match self.backend.contract_class_data().get(&class_hash) {
-                Ok(Some(contract_class_data)) => Ok(contract_class_data.contract_class),
+                Ok(Some(contract_class_data)) => {
+                    let contract_class = if contract_class_data.sierra_program_length > 0 {
+                        ContractClass::V1(
+                            ContractClassV1::try_from_json_string(&contract_class_data.contract_class).map_err(
+                                |_| StateError::StateReadError("Failed to convert contract class V1".to_string()),
+                            )?,
+                        )
+                    } else {
+                        ContractClass::V0(
+                            ContractClassV0::try_from_json_string(&contract_class_data.contract_class).map_err(
+                                |_| StateError::StateReadError("Failed to convert contract class V0".to_string()),
+                            )?,
+                        )
+                    };
+                    Ok(contract_class)
+                }
                 _ => Err(StateError::UndeclaredClassHash(class_hash)),
             },
         }

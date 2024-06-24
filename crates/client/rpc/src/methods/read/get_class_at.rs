@@ -51,9 +51,13 @@ pub fn get_class_at(starknet: &Starknet, block_id: BlockId, contract_address: Fe
     // converting from stored Blockifier class to rpc class
     let StorageContractClassData { contract_class, abi, sierra_program_length, abi_length, block_number: _ } =
         contract_class_data;
-    Ok(ContractClassWrapper { contract: contract_class, abi, sierra_program_length, abi_length }
-        .try_into()
-        .or_else_internal_server_error(|| {
-            format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")
-        })?)
+
+    let contract_class_core: ContractClass =
+        ContractClassWrapper { contract_class, abi, sierra_program_length, abi_length }
+            .try_into()
+            .or_else_internal_server_error(|| {
+                format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")
+            })?;
+
+    Ok(contract_class_core)
 }
