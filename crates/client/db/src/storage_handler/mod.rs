@@ -17,6 +17,8 @@ pub mod block_state_diff;
 pub mod class_trie;
 pub mod codec;
 pub mod contract_class_data;
+
+pub mod compiled_contract_class;
 pub mod contract_class_hashes;
 pub(crate) mod contract_data;
 pub(crate) mod contract_storage;
@@ -87,6 +89,7 @@ pub enum StorageType {
     Contract,
     ContractStorage,
     ContractClassData,
+    CompiledContractClass,
     ContractData,
     ContractAbi,
     ContractClassHashes,
@@ -115,6 +118,7 @@ impl Display for StorageType {
             StorageType::ContractStorage => "contract storage",
             StorageType::Class => "class storage",
             StorageType::ContractClassData => "class definition storage",
+            StorageType::CompiledContractClass => "compiled class storage",
             StorageType::ContractAbi => "class abi storage",
             StorageType::BlockNumber => "block number storage",
             StorageType::BlockHash => "block hash storage",

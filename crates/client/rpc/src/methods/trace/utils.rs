@@ -86,15 +86,14 @@ fn try_get_funtion_invocation_from_call_info(
     } else {
         // Compute and cache the class hash
         let Ok(Some(class_hash)) =
-            starknet.backend.contract_class_hash().get_at(&call_info.call.storage_address, block_number)
+            starknet.backend.contract_class_hash().get_at(&call_info.call.storage_address.to_felt(), block_number)
         else {
             return Err(TryFuntionInvocationFromCallInfoError::ContractNotFound);
         };
 
-        let computed_hash = class_hash.to_felt();
-        class_hash_cache.insert(call_info.call.storage_address, computed_hash);
+        class_hash_cache.insert(call_info.call.storage_address, class_hash);
 
-        computed_hash
+        class_hash
     };
 
     // TODO: Replace this with non default exec resources

@@ -1,6 +1,5 @@
 use dc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
 use dc_db::storage_handler::StorageView;
-use dp_convert::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, ContractClass, Felt};
 
@@ -29,12 +28,11 @@ use crate::{bail_internal_server_error, Starknet};
 /// * `CONTRACT_NOT_FOUND` - If the specified contract address does not exist.
 pub fn get_class_at(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> RpcResult<ContractClass> {
     let block_number = starknet.get_block_n(block_id)?;
-    let key = contract_address.to_stark_felt().try_into().map_err(StarknetRpcApiError::from)?;
 
     let class_hash = starknet
         .backend
         .contract_class_hash()
-        .get_at(&key, block_number)
+        .get_at(&contract_address, block_number)
         .or_internal_server_error("Failed to retrieve contract class")?
         .ok_or(StarknetRpcApiError::ContractNotFound)?;
 

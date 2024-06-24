@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crossbeam_skiplist::SkipMap;
 use parity_scale_codec::{Decode, Encode};
 use rocksdb::{WriteBatchWithTransaction, WriteOptions};
-use starknet_api::core::ClassHash;
+use starknet_types_core::felt::Felt;
 
 use super::primitives::contract_class::StorageContractClassData;
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
@@ -11,7 +11,7 @@ use crate::{Column, DatabaseExt, DB};
 
 pub struct ContractClassDataView(Arc<DB>);
 #[derive(Debug)]
-pub struct ContractClassDataViewMut(Arc<DB>, SkipMap<ClassHash, StorageContractClassData>);
+pub struct ContractClassDataViewMut(Arc<DB>, SkipMap<Felt, StorageContractClassData>);
 
 impl ContractClassDataView {
     pub(crate) fn new(backend: Arc<DB>) -> Self {
@@ -25,7 +25,7 @@ impl ContractClassDataViewMut {
 }
 
 impl StorageView for ContractClassDataView {
-    type KEY = ClassHash;
+    type KEY = Felt;
     type VALUE = StorageContractClassData;
 
     fn get(&self, class_hash: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
@@ -56,7 +56,7 @@ impl StorageView for ContractClassDataView {
 }
 
 impl StorageViewMut for ContractClassDataViewMut {
-    type KEY = ClassHash;
+    type KEY = Felt;
     type VALUE = StorageContractClassData;
 
     fn insert(&self, class_hash: Self::KEY, contract_class_data: Self::VALUE) -> Result<(), DeoxysStorageError> {

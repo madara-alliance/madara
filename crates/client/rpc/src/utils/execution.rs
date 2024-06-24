@@ -19,7 +19,7 @@ use dp_convert::ToFelt;
 use dp_convert::ToStarkFelt;
 use dp_simulations::SimulationFlags;
 use jsonrpsee::core::RpcResult;
-use starknet_api::core::{ContractAddress, EntryPointSelector};
+use starknet_api::core::{ClassHash, ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::transaction::Calldata;
 use starknet_api::transaction::TransactionHash;
@@ -139,8 +139,9 @@ pub fn call_contract(
     let class_hash = starknet
         .backend
         .contract_class_hash()
-        .get(&address)
-        .or_internal_server_error("Error getting contract class hash")?;
+        .get(&address.to_felt())
+        .or_internal_server_error("Error getting contract class hash")?
+        .map(|felt| ClassHash(felt.to_stark_felt()));
 
     let entrypoint = CallEntryPoint {
         class_hash,

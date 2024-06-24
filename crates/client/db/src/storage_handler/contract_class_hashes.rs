@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use crossbeam_skiplist::SkipMap;
 use rocksdb::{WriteBatchWithTransaction, WriteOptions};
-use starknet_api::core::{ClassHash, CompiledClassHash};
+use starknet_types_core::felt::Felt;
 
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
 use crate::{Column, DatabaseExt, DB};
 
 pub struct ContractClassHashesView(Arc<DB>);
 #[derive(Debug)]
-pub struct ContractClassHashesViewMut(Arc<DB>, SkipMap<ClassHash, CompiledClassHash>);
+pub struct ContractClassHashesViewMut(Arc<DB>, SkipMap<Felt, Felt>);
 
 impl ContractClassHashesView {
     pub(crate) fn new(backend: Arc<DB>) -> Self {
@@ -23,8 +23,8 @@ impl ContractClassHashesViewMut {
 }
 
 impl StorageView for ContractClassHashesView {
-    type KEY = ClassHash;
-    type VALUE = CompiledClassHash;
+    type KEY = Felt;
+    type VALUE = Felt;
 
     fn get(&self, class_hash: &Self::KEY) -> Result<Option<Self::VALUE>, super::DeoxysStorageError> {
         let db = &self.0;
@@ -33,7 +33,7 @@ impl StorageView for ContractClassHashesView {
         let compiled_class_hash = db
             .get_cf(&column, bincode::serialize(&class_hash)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassHashes))?
-            .map(|bytes| bincode::deserialize::<CompiledClassHash>(&bytes[..]));
+            .map(|bytes| bincode::deserialize::<Felt>(&bytes[..]));
 
         match compiled_class_hash {
             Some(Ok(compiled_class_hash)) => Ok(Some(compiled_class_hash)),
@@ -54,8 +54,8 @@ impl StorageView for ContractClassHashesView {
 }
 
 impl StorageViewMut for ContractClassHashesViewMut {
-    type KEY = ClassHash;
-    type VALUE = CompiledClassHash;
+    type KEY = Felt;
+    type VALUE = Felt;
 
     fn insert(&self, class_hash: Self::KEY, compiled_class_hash: Self::VALUE) -> Result<(), DeoxysStorageError> {
         self.1.insert(class_hash, compiled_class_hash);

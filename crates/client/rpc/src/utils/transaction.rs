@@ -2,6 +2,7 @@ use blockifier::execution::contract_class::{ClassInfo, ContractClass, ContractCl
 use blockifier::transaction::transaction_execution as btx;
 use dc_db::storage_handler::primitives::contract_class::StorageContractClassData;
 use dc_db::storage_handler::StorageView;
+use dp_convert::ToFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::{Transaction, TransactionHash};
 
@@ -31,7 +32,7 @@ pub(crate) fn to_blockifier_transactions(
         Transaction::Declare(ref declare_tx) => {
             let class_hash = declare_tx.class_hash();
 
-            let Ok(Some(class_data)) = starknet.backend.contract_class_data().get(&class_hash) else {
+            let Ok(Some(class_data)) = starknet.backend.contract_class_data().get(&class_hash.to_felt()) else {
                 log::error!("Failed to retrieve class from class_hash '{class_hash}'");
                 return Err(StarknetRpcApiError::ContractNotFound.into());
             };

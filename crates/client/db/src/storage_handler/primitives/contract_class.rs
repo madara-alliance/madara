@@ -18,6 +18,7 @@ use starknet_core::types::{
     CompressedLegacyContractClass, ContractClass as ContractClassCore, FlattenedSierraClass, LegacyContractAbiEntry,
 };
 use starknet_providers::sequencer::models::DeployedClass;
+use starknet_types_core::felt::Felt;
 
 #[derive(Debug, Encode, Decode)]
 pub struct StorageContractClassData {
@@ -37,7 +38,7 @@ pub struct StorageContractData {
 pub struct ClassUpdateWrapper(pub Vec<ContractClassData>);
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct ContractClassData {
-    pub hash: ClassHash,
+    pub hash: Felt,
     pub contract_class: ContractClassWrapper,
 }
 
