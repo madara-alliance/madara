@@ -1,6 +1,5 @@
 use dp_convert::felt_to_u128;
-use indexmap::IndexMap;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use blockifier::execution::contract_class::{
@@ -435,7 +434,7 @@ fn instantiate_blockifier_contract_class(
     let program: Program = Program::from_bytes(&program_decompressed_bytes, None)
         .map_err(|_| BroadcastedTransactionConversionError::ProgramDeserializationFailed)?;
 
-    let mut entry_points_by_type = <IndexMap<EntryPointType, Vec<EntryPoint>>>::new();
+    let mut entry_points_by_type = <HashMap<EntryPointType, Vec<EntryPoint>>>::new();
     entry_points_by_type.insert(
         EntryPointType::Constructor,
         contract_class
@@ -445,7 +444,7 @@ fn instantiate_blockifier_contract_class(
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
                     selector: EntryPointSelector(entry_point.selector.to_stark_felt()),
-                    offset: EntryPointOffset(entry_point.offset),
+                    offset: EntryPointOffset(entry_point.offset as usize),
                 }
             })
             .collect::<Vec<EntryPoint>>(),
@@ -459,7 +458,7 @@ fn instantiate_blockifier_contract_class(
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
                     selector: EntryPointSelector(entry_point.selector.to_stark_felt()),
-                    offset: EntryPointOffset(entry_point.offset),
+                    offset: EntryPointOffset(entry_point.offset as usize),
                 }
             })
             .collect::<Vec<EntryPoint>>(),
@@ -473,7 +472,7 @@ fn instantiate_blockifier_contract_class(
             .map(|entry_point| -> EntryPoint {
                 EntryPoint {
                     selector: EntryPointSelector(entry_point.selector.to_stark_felt()),
-                    offset: EntryPointOffset(entry_point.offset),
+                    offset: EntryPointOffset(entry_point.offset as usize),
                 }
             })
             .collect::<Vec<EntryPoint>>(),

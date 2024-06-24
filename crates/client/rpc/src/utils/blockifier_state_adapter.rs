@@ -1,13 +1,14 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use blockifier::execution::contract_class::{ContractClass, ContractClassV0, ContractClassV1};
+use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
 use dc_db::storage_handler::StorageView;
 use dc_db::DeoxysBackend;
 use dp_block::BlockId;
+use dp_class::to_blockifier_class;
 use dp_convert::{ToFelt, ToStarkFelt};
 use indexmap::IndexMap;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
@@ -123,23 +124,8 @@ impl StateReader for BlockifierStateAdapter {
     fn get_compiled_contract_class(&mut self, class_hash: ClassHash) -> StateResult<ContractClass> {
         match self.contract_class_update.get(&class_hash) {
             Some(contract_class) => Ok(contract_class.clone()),
-            None => match self.backend.contract_class_data().get(&class_hash.to_felt()) {
-                Ok(Some(contract_class_data)) => {
-                    let contract_class = if contract_class_data.sierra_program_length > 0 {
-                        ContractClass::V1(
-                            ContractClassV1::try_from_json_string(&contract_class_data.contract_class).map_err(
-                                |_| StateError::StateReadError("Failed to convert contract class V1".to_string()),
-                            )?,
-                        )
-                    } else {
-                        ContractClass::V0(
-                            ContractClassV0::try_from_json_string(&contract_class_data.contract_class).map_err(
-                                |_| StateError::StateReadError("Failed to convert contract class V0".to_string()),
-                            )?,
-                        )
-                    };
-                    Ok(contract_class)
-                }
+            None => match self.backend.compiled_contract_class().get(&class_hash.to_felt()) {
+                Ok(Some(compiled_class)) => to_blockifier_class(compiled_class).map_err(StateError::ProgramError),
                 _ => Err(StateError::UndeclaredClassHash(class_hash)),
             },
         }

@@ -1,17 +1,15 @@
 use std::collections::HashMap;
 
+use dp_class::{ContractClassData, ToCompiledClass};
 use dp_convert::ToStarkFelt;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use starknet_api::core::Nonce;
 use starknet_core::types::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate,
-    StorageEntry,
+    ContractClass, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem,
+    StateUpdate, StorageEntry,
 };
 use starknet_types_core::felt::Felt;
 
-use crate::storage_handler::primitives::contract_class::{
-    ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData,
-};
 use crate::storage_handler::{DeoxysStorageError, StorageViewMut};
 use crate::DeoxysBackend;
 
@@ -100,25 +98,22 @@ pub fn store_state_update(
 pub fn store_class_update(
     backend: &DeoxysBackend,
     block_number: u64,
-    class_update: ClassUpdateWrapper,
+    class_update: Vec<(Felt, ContractClass)>,
 ) -> Result<(), DeoxysStorageError> {
     let handler_contract_class_data_mut = backend.contract_class_data_mut();
+    let handler_compiled_contract_class_mut = backend.compiled_contract_class_mut();
 
-    class_update.0.into_iter().for_each(
-        |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
-            let ContractClassWrapper { contract_class, abi, sierra_program_length, abi_length } =
-                contract_class_wrapper;
-
-            handler_contract_class_data_mut
-                .insert(
-                    class_hash,
-                    StorageContractClassData { contract_class, abi, sierra_program_length, abi_length, block_number },
-                )
-                .unwrap();
-        },
-    );
+    class_update.into_iter().try_for_each(|(class_hash, contract_class)| {
+        let compiled_class: dp_class::CompiledClass =
+            contract_class.compile().map_err(|e| DeoxysStorageError::CompilationClassError(e.to_string()))?;
+        handler_contract_class_data_mut
+            .insert(class_hash, ContractClassData { contract_class: contract_class.into(), block_number })?;
+        handler_compiled_contract_class_mut.insert(class_hash, compiled_class)?;
+        Ok::<_, DeoxysStorageError>(())
+    })?;
 
     handler_contract_class_data_mut.commit(block_number)?;
+    handler_compiled_contract_class_mut.commit(block_number)?;
     log::debug!("committed contract_class_data_mut");
     Ok(())
 }

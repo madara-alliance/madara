@@ -2,19 +2,17 @@
 use core::time::Duration;
 use std::sync::Arc;
 
-use dc_db::storage_handler::primitives::contract_class::{ContractClassData, ContractClassWrapper};
 use dc_db::storage_handler::{DeoxysStorageError, StorageView};
 use dc_db::DeoxysBackend;
 use dp_block::DeoxysBlock;
 use dp_convert::ToStateUpdateCore;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use itertools::Itertools;
-use starknet_core::types::{DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate};
-use starknet_providers::sequencer::models::{self as p, BlockId};
-use starknet_providers::{ProviderError, SequencerGatewayProvider};
-use url::Url;
-
+use starknet_core::types::{ContractClass, DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate};
+use starknet_providers::sequencer::models::{self as p};
+use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
+use url::Url;
 
 use crate::l2::L2SyncError;
 
@@ -48,7 +46,7 @@ pub struct L2BlockAndUpdates {
     pub block_n: u64,
     pub block: p::Block,
     pub state_update: StateUpdate,
-    pub class_update: Vec<ContractClassData>,
+    pub class_update: Vec<(Felt, ContractClass)>,
 }
 
 pub async fn fetch_block_and_updates(
@@ -107,7 +105,7 @@ pub async fn fetch_apply_genesis_block(config: FetchConfig, chain_id: Felt) -> R
         Some(api_key) => client.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
         None => client,
     };
-    let block = client.get_block(BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
+    let block = client.get_block(p::BlockId::Number(0)).await.map_err(|e| format!("failed to get block: {e}"))?;
 
     Ok(crate::convert::convert_block(block, chain_id).expect("invalid genesis block"))
 }
@@ -117,7 +115,7 @@ async fn fetch_state_update_with_block(
     provider: &SequencerGatewayProvider,
     block_number: u64,
 ) -> Result<(StateUpdate, p::Block), ProviderError> {
-    let state_update_with_block = provider.get_state_update_with_block(BlockId::Number(block_number)).await?;
+    let state_update_with_block = provider.get_state_update_with_block(p::BlockId::Number(block_number)).await?;
 
     Ok((state_update_with_block.state_update.to_state_update_core(), state_update_with_block.block))
 }
@@ -128,7 +126,7 @@ async fn fetch_class_update(
     state_update: &StateUpdate,
     block_number: u64,
     provider: &SequencerGatewayProvider,
-) -> Result<Vec<ContractClassData>, L2SyncError> {
+) -> Result<Vec<(Felt, ContractClass)>, L2SyncError> {
     let missing_classes: Vec<&Felt> = std::iter::empty()
         .chain(
             state_update
@@ -174,12 +172,9 @@ async fn fetch_class(
     class_hash: Felt,
     block_number: u64,
     provider: &SequencerGatewayProvider,
-) -> Result<ContractClassData, ProviderError> {
-    let contract_class = provider.get_class_by_hash(class_hash, BlockId::Number(block_number)).await?;
-    Ok(ContractClassData {
-        hash: class_hash,
-        contract_class: ContractClassWrapper::try_from(contract_class).expect("converting contract class"),
-    })
+) -> Result<(Felt, ContractClass), ProviderError> {
+    let contract_class = provider.get_class(starknet_core::types::BlockId::Number(block_number), class_hash).await?;
+    Ok((class_hash, contract_class))
 }
 
 /// Check if a class is stored in the db.

@@ -1,17 +1,16 @@
 use std::sync::Arc;
 
 use crossbeam_skiplist::SkipMap;
-use parity_scale_codec::{Decode, Encode};
+use dp_class::ContractClassData;
 use rocksdb::{WriteBatchWithTransaction, WriteOptions};
 use starknet_types_core::felt::Felt;
 
-use super::primitives::contract_class::StorageContractClassData;
 use super::{DeoxysStorageError, StorageType, StorageView, StorageViewMut};
 use crate::{Column, DatabaseExt, DB};
 
 pub struct ContractClassDataView(Arc<DB>);
 #[derive(Debug)]
-pub struct ContractClassDataViewMut(Arc<DB>, SkipMap<Felt, StorageContractClassData>);
+pub struct ContractClassDataViewMut(Arc<DB>, SkipMap<Felt, ContractClassData>);
 
 impl ContractClassDataView {
     pub(crate) fn new(backend: Arc<DB>) -> Self {
@@ -26,7 +25,7 @@ impl ContractClassDataViewMut {
 
 impl StorageView for ContractClassDataView {
     type KEY = Felt;
-    type VALUE = StorageContractClassData;
+    type VALUE = ContractClassData;
 
     fn get(&self, class_hash: &Self::KEY) -> Result<Option<Self::VALUE>, DeoxysStorageError> {
         let db = &self.0;
@@ -35,7 +34,7 @@ impl StorageView for ContractClassDataView {
         let contract_class_data = db
             .get_cf(&column, bincode::serialize(&class_hash)?)
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassData))?
-            .map(|bytes| StorageContractClassData::decode(&mut &bytes[..]));
+            .map(|bytes| bincode::deserialize::<ContractClassData>(&bytes));
 
         match contract_class_data {
             Some(Ok(contract_class_data)) => Ok(Some(contract_class_data)),
@@ -57,7 +56,7 @@ impl StorageView for ContractClassDataView {
 
 impl StorageViewMut for ContractClassDataViewMut {
     type KEY = Felt;
-    type VALUE = StorageContractClassData;
+    type VALUE = ContractClassData;
 
     fn insert(&self, class_hash: Self::KEY, contract_class_data: Self::VALUE) -> Result<(), DeoxysStorageError> {
         self.1.insert(class_hash, contract_class_data);
@@ -71,7 +70,7 @@ impl StorageViewMut for ContractClassDataViewMut {
 
         let mut batch = WriteBatchWithTransaction::<true>::default();
         for (key, value) in self.1.into_iter() {
-            batch.put_cf(&column, bincode::serialize(&key)?, value.encode());
+            batch.put_cf(&column, bincode::serialize(&key)?, bincode::serialize(&value)?);
         }
         let mut write_opt = WriteOptions::default();
         write_opt.disable_wal(true);

@@ -18,6 +18,7 @@ dp-convert = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
+cairo-vm = { workspace = true }
 casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.6.4" }
 casm-compiler-v1_0_0-alpha6 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-alpha.6" }
 casm-compiler-v1_0_0-rc0 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-rc0" }
@@ -36,7 +37,6 @@ flate2 = { workspace = true }
 num-bigint = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 
 [dev-dependencies]
 starknet-providers = { workspace = true }

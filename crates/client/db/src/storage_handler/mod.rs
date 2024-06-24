@@ -25,7 +25,6 @@ pub(crate) mod contract_storage;
 pub mod contract_storage_trie;
 pub mod contract_trie;
 pub mod history;
-pub mod primitives;
 pub mod query;
 
 pub mod bonsai_identifier {
@@ -69,6 +68,8 @@ pub enum DeoxysStorageError {
     InvalidBlockNumber,
     #[error("Invalid nonce")]
     InvalidNonce,
+    #[error("Failed to compile class: {0}")]
+    CompilationClassError(String),
 }
 
 impl From<bincode::Error> for DeoxysStorageError {

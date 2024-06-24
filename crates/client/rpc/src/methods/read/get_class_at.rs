@@ -1,4 +1,3 @@
-use dc_db::storage_handler::primitives::contract_class::{ContractClassWrapper, StorageContractClassData};
 use dc_db::storage_handler::StorageView;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, ContractClass, Felt};
@@ -46,16 +45,5 @@ pub fn get_class_at(starknet: &Starknet, block_id: BlockId, contract_address: Fe
         bail_internal_server_error!("Failed to retrieve contract class from hash")
     };
 
-    // converting from stored Blockifier class to rpc class
-    let StorageContractClassData { contract_class, abi, sierra_program_length, abi_length, block_number: _ } =
-        contract_class_data;
-
-    let contract_class_core: ContractClass =
-        ContractClassWrapper { contract_class, abi, sierra_program_length, abi_length }
-            .try_into()
-            .or_else_internal_server_error(|| {
-                format!("Failed to convert contract class from hash '{class_hash}' to RPC contract class")
-            })?;
-
-    Ok(contract_class_core)
+    Ok(contract_class_data.contract_class.into())
 }

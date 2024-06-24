@@ -195,7 +195,7 @@ pub fn estimate_fee(
 ) -> Result<Vec<FeeEstimate>, TransactionExecutionError> {
     let fees = transactions
         .into_iter()
-        .map(|tx| execute_fee_transaction(starknet, tx.clone(), validate, block_context))
+        .map(|tx| execute_fee_transaction(starknet, tx, validate, block_context))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(fees)
 }
@@ -207,15 +207,12 @@ pub fn estimate_message_fee(
 ) -> Result<FeeEstimate, TransactionExecutionError> {
     let mut cached_state = init_cached_state(starknet, block_context);
 
-    let tx_execution_infos = message.clone().execute(&mut cached_state, block_context, true, true)?;
-
-    // TODO: implement this
-    // if !tx_execution_infos.is_reverted() {}
-
     let unit = match message.fee_type() {
         blockifier::transaction::objects::FeeType::Strk => PriceUnit::Fri,
         blockifier::transaction::objects::FeeType::Eth => PriceUnit::Wei,
     };
+
+    let tx_execution_infos = message.execute(&mut cached_state, block_context, true, true)?;
 
     // TODO: implement this
     // if !tx_execution_infos.is_reverted() {}

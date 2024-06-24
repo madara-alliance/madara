@@ -3,11 +3,34 @@ use starknet_types_core::felt::Felt;
 mod compile;
 mod into_starknet_core;
 
+pub use compile::ToCompiledClass;
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(untagged)]
+pub struct ContractClassData {
+    pub contract_class: ContractClass,
+    pub block_number: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ContractClass {
     Sierra(FlattenedSierraClass),
     Legacy(CompressedLegacyContractClass),
+}
+
+impl ContractClass {
+    pub fn sierra_program_length(&self) -> usize {
+        match self {
+            ContractClass::Sierra(FlattenedSierraClass { sierra_program, .. }) => sierra_program.len(),
+            ContractClass::Legacy(_) => 0,
+        }
+    }
+
+    pub fn abi_length(&self) -> usize {
+        match self {
+            ContractClass::Sierra(FlattenedSierraClass { abi, .. }) => abi.len(),
+            ContractClass::Legacy(CompressedLegacyContractClass { abi, .. }) => abi.as_ref().map_or(0, |abi| abi.len()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -132,17 +155,28 @@ pub struct CompiledLegacy(Vec<u8>);
 
 pub fn to_blockifier_class(
     compiled_class: CompiledClass,
-) -> anyhow::Result<blockifier::execution::contract_class::ContractClass> {
+) -> Result<blockifier::execution::contract_class::ContractClass, cairo_vm::types::errors::program_errors::ProgramError>
+{
     match compiled_class {
         CompiledClass::Sierra(compiled_class) => Ok(blockifier::execution::contract_class::ContractClass::V1(
-            blockifier::execution::contract_class::ContractClassV1::try_from_json_string(&String::from_utf8(
-                compiled_class.0,
-            )?)?,
+            blockifier::execution::contract_class::ContractClassV1::try_from_json_string(
+                &String::from_utf8(compiled_class.0).map_err(|err| {
+                    cairo_vm::types::errors::program_errors::ProgramError::IO(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        err,
+                    ))
+                })?,
+            )?,
         )),
         CompiledClass::Legacy(compiled_class) => Ok(blockifier::execution::contract_class::ContractClass::V0(
-            blockifier::execution::contract_class::ContractClassV0::try_from_json_string(&String::from_utf8(
-                compiled_class.0,
-            )?)?,
+            blockifier::execution::contract_class::ContractClassV0::try_from_json_string(
+                &String::from_utf8(compiled_class.0).map_err(|err| {
+                    cairo_vm::types::errors::program_errors::ProgramError::IO(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        err,
+                    ))
+                })?,
+            )?,
         )),
     }
 }

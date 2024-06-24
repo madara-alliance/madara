@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor: store compiled contract class
 - fix: rate limit on classes
 - refactor: use Felt in DB
 - fix: fix sepolia by updating bonsai-trie
