@@ -15,9 +15,13 @@ use starknet_api::core::{ClassHash, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::{EntryPoint, EntryPointOffset, EntryPointType};
 use starknet_core::types::contract::legacy::{LegacyContractClass, RawLegacyEntryPoint, RawLegacyEntryPoints};
 use starknet_core::types::{
-    CompressedLegacyContractClass, ContractClass as ContractClassCore, FlattenedSierraClass, LegacyContractAbiEntry,
+    CompressedLegacyContractClass, ContractClass as ContractClassCore, Felt, FlattenedSierraClass, LegacyContractAbiEntry
 };
 use starknet_providers::sequencer::models::DeployedClass;
+use starknet_types_core::hash::{Poseidon, StarkHash};
+use starknet_core::utils::cairo_short_string_to_felt;
+
+use crate::storage_handler::primitives::contract_class::errors::ComputeClassHashError;
 
 #[derive(Debug, Encode, Decode)]
 pub struct StorageContractClassData {
