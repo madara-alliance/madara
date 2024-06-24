@@ -8,10 +8,8 @@ use dc_db::DeoxysBackend;
 use dp_block::DeoxysBlock;
 use dp_convert::ToStarkFelt;
 use dp_convert::ToStateUpdateCore;
-use dp_transactions::{INTE_CHAIN_ID, MAIN_CHAIN_ID, TEST_CHAIN_ID};
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use itertools::Itertools;
-use reqwest::Client;
 use starknet_api::core::ClassHash;
 use starknet_core::types::{DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate};
 use starknet_providers::sequencer::models::{self as p, BlockId};
@@ -59,7 +57,6 @@ pub async fn fetch_block_and_updates(
     backend: &DeoxysBackend,
     block_n: u64,
     provider: Arc<SequencerGatewayProvider>,
-    chain_id: Felt,
 ) -> Result<L2BlockAndUpdates, L2SyncError> {
     const MAX_RETRY: u32 = 15;
     let base_delay = Duration::from_secs(1);
@@ -67,7 +64,7 @@ pub async fn fetch_block_and_updates(
     let sw = PerfStopwatch::new();
     let (state_update, block) =
         retry(|| fetch_state_update_with_block(&provider, block_n), MAX_RETRY, base_delay).await?;
-    let class_update = fetch_class_update(backend, &state_update, block_n, chain_id).await?;
+    let class_update = fetch_class_update(backend, &state_update, block_n, &provider).await?;
 
     stopwatch_end!(sw, "fetching {}: {:?}", block_n);
     Ok(L2BlockAndUpdates { block_n, block, state_update, class_update })
@@ -132,7 +129,7 @@ async fn fetch_class_update(
     backend: &DeoxysBackend,
     state_update: &StateUpdate,
     block_number: u64,
-    chain_id: Felt,
+    provider: &SequencerGatewayProvider,
 ) -> Result<Vec<ContractClassData>, L2SyncError> {
     let missing_classes: Vec<&Felt> = std::iter::empty()
         .chain(
@@ -163,7 +160,7 @@ async fn fetch_class_update(
         // TODO(correctness): Skip what appears to be a broken Sierra class definition (quick fix)
         if class_hash != Felt::from_hex("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698").unwrap() {
             // Fetch the class definition in parallel, retrying up to 15 times for each class
-            retry(|| fetch_class(class_hash, block_number, chain_id), 15, Duration::from_secs(1)).await.map(Some)
+            retry(|| fetch_class(class_hash, block_number, provider), 15, Duration::from_secs(1)).await.map(Some)
         } else {
             Ok(None)
         }
@@ -173,37 +170,17 @@ async fn fetch_class_update(
     Ok(classes.into_iter().flatten().collect())
 }
 
-/// This method is used to fetch a class definition from the sequencer gateway in it's raw format for an easier conversion.
-pub async fn raw_get_class_by_hash(
-    gateway_url: &str,
-    class_hash: &str,
-    block_number: u64,
-) -> Result<serde_json::Value, ProviderError> {
-    let client = Client::new();
-    let url = format!(
-        "{}/feeder_gateway/get_class_by_hash?classHash={}&blockNumber={}",
-        gateway_url, class_hash, block_number
-    );
-    let response = client.get(&url).send().await.map_err(|_| ProviderError::ArrayLengthMismatch)?;
-    let json: serde_json::Value = response.json().await.map_err(|_| ProviderError::ArrayLengthMismatch)?;
-    Ok(json)
-}
-
 /// Downloads a class definition from the Starknet sequencer. Note that because
 /// of the current type hell we decided to deal with raw JSON data instead of starknet-providers `DeployedContract`.
-async fn fetch_class(class_hash: Felt, block_number: u64, chain_id: Felt) -> Result<ContractClassData, ProviderError> {
-    // Configuring custom provider to fetch raw json classe definitions
-    let url = match chain_id {
-        id if id == MAIN_CHAIN_ID => "https://alpha-mainnet.starknet.io",
-        id if id == TEST_CHAIN_ID => "https://alpha-sepolia.starknet.io",
-        id if id == INTE_CHAIN_ID => "https://external.integration.starknet.io",
-        _ => return Err(ProviderError::StarknetError(StarknetError::ClassHashNotFound)), // Set a more appropriate error here
-    };
-
-    let core_class = raw_get_class_by_hash(url, &class_hash.to_hex_string(), block_number).await?;
+async fn fetch_class(
+    class_hash: Felt,
+    block_number: u64,
+    provider: &SequencerGatewayProvider,
+) -> Result<ContractClassData, ProviderError> {
+    let contract_class = provider.get_class_by_hash(class_hash, BlockId::Number(block_number)).await?;
     Ok(ContractClassData {
         hash: ClassHash(class_hash.to_stark_felt()),
-        contract_class: ContractClassWrapper::try_from(core_class).expect("converting contract class"),
+        contract_class: ContractClassWrapper::try_from(contract_class).expect("converting contract class"),
     })
 }
 
