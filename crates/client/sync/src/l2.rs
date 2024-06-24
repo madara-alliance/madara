@@ -152,8 +152,9 @@ async fn l2_verify_and_apply_task(
         .await?;
 
         let sw = PerfStopwatch::new();
-        backend.maybe_flush()?;
-        stopwatch_end!(sw, "flush db: {:?}");
+        if backend.maybe_flush()? {
+            stopwatch_end!(sw, "flush db: {:?}");
+        }
 
         log::info!(
             "✨ Imported #{} ({}) and updated state root ({})",

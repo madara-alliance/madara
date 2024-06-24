@@ -367,7 +367,7 @@ impl DeoxysBackend {
         Ok(backend)
     }
 
-    pub fn maybe_flush(&self) -> Result<()> {
+    pub fn maybe_flush(&self) -> Result<bool> {
         let mut inst = self.last_flush_time.lock().expect("poisoned mutex");
         let should_flush = match *inst {
             Some(inst) => inst.elapsed() >= Duration::from_secs(5),
@@ -385,7 +385,7 @@ impl DeoxysBackend {
             *inst = Some(Instant::now());
         }
 
-        Ok(())
+        Ok(should_flush)
     }
 
     pub async fn backup(&self) -> Result<()> {

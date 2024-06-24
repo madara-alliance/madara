@@ -20,7 +20,7 @@ pub struct SyncService {
     db_backend: Arc<DeoxysBackend>,
     fetch_config: FetchConfig,
     backup_every_n_blocks: Option<u64>,
-    l1_endpoint: Url,
+    l1_endpoint: Option<Url>,
     l1_core_address: H160,
     starting_block: Option<u64>,
     block_metrics: BlockMetrics,
@@ -38,15 +38,22 @@ impl SyncService {
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
-        let l1_endpoint = if let Some(l1_rpc_url) = &config.l1_endpoint {
-            l1_rpc_url.clone()
+        let fetch_config = config.block_fetch_config();
+
+        let l1_endpoint = if !config.sync_l1_disabled {
+            if let Some(l1_rpc_url) = &config.l1_endpoint {
+                Some(l1_rpc_url.clone())
+            } else {
+                let l1_rpc_url = l1_free_rpc_get().await.expect("finding the best RPC URL");
+                Some(Url::parse(l1_rpc_url).expect("parsing the RPC URL"))
+            }
         } else {
-            let l1_rpc_url = l1_free_rpc_get().await.expect("finding the best RPC URL");
-            Url::parse(l1_rpc_url).expect("parsing the RPC URL")
+            None
         };
+
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
-            fetch_config: config.block_fetch_config(),
+            fetch_config,
             l1_endpoint,
             l1_core_address: config.network.l1_core_address(),
             starting_block: config.starting_block,

@@ -139,10 +139,11 @@ impl ContractStorageTrieViewMut<'_> {
             .map_err(|_| DeoxysStorageError::StorageCommitError(StorageType::ContractStorage))
     }
 
-    pub fn init(&mut self, identifier: &ContractAddress) -> Result<(), DeoxysStorageError> {
-        self.0
-            .init_tree(conv_contract_identifier(identifier))
-            .map_err(|_| DeoxysStorageError::TrieInitError(TrieType::ContractStorage))
+    pub fn init(&mut self, _identifier: &ContractAddress) -> Result<(), DeoxysStorageError> {
+        // self.0
+        //     .init_tree(conv_contract_identifier(identifier))
+        //     .map_err(|_| DeoxysStorageError::TrieInitError(TrieType::ContractStorage))
+        Ok(())
     }
 
     pub fn revert_to(&mut self, block_number: u64) -> Result<(), DeoxysStorageError> {

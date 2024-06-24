@@ -33,7 +33,7 @@ pub mod starknet_sync_worker {
     pub async fn sync(
         backend: &Arc<DeoxysBackend>,
         fetch_config: FetchConfig,
-        l1_url: Url,
+        l1_url: Option<Url>,
         l1_core_address: ethers::abi::Address,
         starting_block: Option<u64>,
         backup_every_n_blocks: Option<u64>,
@@ -67,8 +67,17 @@ pub mod starknet_sync_worker {
             None => provider,
         };
 
+        let l1_block_metric = block_metrics.clone();
+        let l1_fut = async {
+            if let Some(l1_url) = l1_url {
+                l1::sync(backend, l1_url.clone(), l1_block_metric, l1_core_address).await
+            } else {
+                Ok(())
+            }
+        };
+
         tokio::try_join!(
-            l1::sync(backend, l1_url.clone(), block_metrics.clone(), l1_core_address),
+            l1_fut,
             l2::sync(
                 backend,
                 provider,

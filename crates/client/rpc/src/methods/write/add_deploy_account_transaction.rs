@@ -19,7 +19,7 @@ pub async fn add_deploy_account_transaction(
     starknet: &Starknet,
     deploy_account_transaction: BroadcastedDeployAccountTransaction,
 ) -> RpcResult<DeployAccountTransactionResult> {
-    let sequencer = starknet.make_sequencer_provider();
+    let sequencer = starknet.sequencer_provider();
 
     let sequencer_response = match sequencer.add_deploy_account_transaction(deploy_account_transaction).await {
         Ok(response) => response,

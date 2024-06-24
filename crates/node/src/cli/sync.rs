@@ -15,6 +15,10 @@ pub struct SyncParams {
     #[clap(long, alias = "no-sync")]
     pub sync_disabled: bool,
 
+    /// Disable L1 sync.
+    #[clap(long, alias = "no-l1-sync")]
+    pub sync_l1_disabled: bool,
+
     /// The L1 rpc endpoint url for state verification.
     #[clap(long, value_parser = parse_url, value_name = "ETHEREUM RPC URL")]
     pub l1_endpoint: Option<Url>,
@@ -89,6 +93,7 @@ impl SyncParams {
             api_key: self.gateway_key.clone(),
             sync_polling_interval: polling,
             n_blocks_to_sync: self.n_blocks_to_sync,
+            sync_l1_disabled: self.sync_l1_disabled,
         }
     }
 }
@@ -96,9 +101,11 @@ impl SyncParams {
 /// Starknet network types.
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum NetworkType {
-    /// The main network (mainnet).
+    /// The main network (mainnet). Alias: mainnet
+    #[value(alias("mainnet"))]
     Main,
-    /// The test network (testnet).
+    /// The test network (testnet). Alias: sepolia
+    #[value(alias("sepolia"))]
     Test,
     /// The integration network.
     Integration,

@@ -81,6 +81,7 @@ impl ClassTrieViewMut<'_> {
     }
 
     pub fn init(&mut self) -> Result<(), DeoxysStorageError> {
-        self.0.init_tree(bonsai_identifier::CLASS).map_err(|_| DeoxysStorageError::TrieInitError(TrieType::Class))
+        // self.0.init_tree(bonsai_identifier::CLASS).map_err(|_| DeoxysStorageError::TrieInitError(TrieType::Class))
+        Ok(())
     }
 }
