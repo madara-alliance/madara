@@ -1,7 +1,6 @@
-use blockifier::transaction::objects::{FeeType, HasRelatedFeeType, TransactionExecutionInfo};
+use blockifier::transaction::objects::{FeeType, HasRelatedFeeType};
 use dp_simulations::SimulationFlags;
 use dp_transactions::from_broadcasted_transactions::ToAccountTransaction;
-use dp_transactions::TxType;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulatedTransaction, SimulationFlag,
@@ -10,7 +9,7 @@ use starknet_core::types::{
 use super::lib::ConvertCallInfoToExecuteInvocationError;
 use super::utils::tx_execution_infos_to_tx_trace;
 use crate::errors::StarknetRpcApiError;
-use crate::utils::execution::block_context;
+use crate::utils::execution::{block_context, ExecutionResult};
 use crate::utils::ResultExt;
 use crate::{utils, Starknet};
 
@@ -30,22 +29,20 @@ pub async fn simulate_transactions(
         charge_fee: !simulation_flags.contains(&SimulationFlag::SkipFeeCharge),
     };
 
-    let tx_type_and_tx_iterator = transactions.into_iter().map(|tx| match tx {
-        BroadcastedTransaction::Invoke(_) => tx.to_account_transaction().map(|tx| (TxType::Invoke, tx)),
-        BroadcastedTransaction::Declare(_) => tx.to_account_transaction().map(|tx| (TxType::Declare, tx)),
-        BroadcastedTransaction::DeployAccount(_) => tx.to_account_transaction().map(|tx| (TxType::DeployAccount, tx)),
-    });
-    let (tx_types, user_transactions) =
-        itertools::process_results(tx_type_and_tx_iterator, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>())
-            .or_internal_server_error("Failed to convert BroadcastedTransaction to UserTransaction")?;
+    let user_transactions = transactions
+        .iter()
+        .map(ToAccountTransaction::to_account_transaction)
+        .collect::<Result<Vec<_>, _>>()
+        .or_internal_server_error("Failed to convert BroadcastedTransaction to UserTransaction")?;
 
     let fee_types = user_transactions.iter().map(|tx| tx.fee_type()).collect::<Vec<_>>();
 
-    let res = utils::execution::simulate_transactions(starknet, user_transactions, &simulation_flags, &block_context)
-        .map_err(|_| StarknetRpcApiError::ContractError)?;
+    let execution_result =
+        utils::execution::simulate_transactions(starknet, user_transactions, &simulation_flags, &block_context)
+            .map_err(|_| StarknetRpcApiError::ContractError)?;
 
     let simulated_transactions =
-        tx_execution_infos_to_simulated_transactions(starknet, tx_types, res, block_number, fee_types)
+        tx_execution_infos_to_simulated_transactions(starknet, &execution_result, block_number, fee_types)
             .map_err(StarknetRpcApiError::from)?;
 
     Ok(simulated_transactions)
@@ -53,19 +50,16 @@ pub async fn simulate_transactions(
 
 fn tx_execution_infos_to_simulated_transactions(
     starknet: &Starknet,
-    tx_types: Vec<TxType>,
-    transaction_execution_results: Vec<TransactionExecutionInfo>,
+    transactions_executions_results: &[ExecutionResult],
     block_number: u64,
     fee_types: Vec<FeeType>,
 ) -> Result<Vec<SimulatedTransaction>, ConvertCallInfoToExecuteInvocationError> {
     let mut results = vec![];
 
-    for ((tx_type, res), fee_type) in
-        tx_types.into_iter().zip(transaction_execution_results.into_iter()).zip(fee_types.into_iter())
-    {
-        let transaction_trace = tx_execution_infos_to_tx_trace(starknet, tx_type, &res, block_number)?;
-        let gas = res.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
-        let fee = res.actual_fee.0;
+    for (tx_result, fee_type) in transactions_executions_results.into_iter().zip(fee_types.into_iter()) {
+        let gas =
+            tx_result.execution_info.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
+        let fee = tx_result.execution_info.actual_fee.0;
         let price = if gas > 0 { fee / gas as u128 } else { 0 };
 
         let gas_consumed = gas.into();
@@ -77,8 +71,10 @@ fn tx_execution_infos_to_simulated_transactions(
             FeeType::Strk => PriceUnit::Fri,
         };
 
-        let data_gas_consumed = res.da_gas.l1_data_gas.into();
-        let data_gas_price = res.da_gas.l1_gas.into();
+        let data_gas_consumed = tx_result.execution_info.da_gas.l1_data_gas.into();
+        let data_gas_price = tx_result.execution_info.da_gas.l1_gas.into();
+
+        let transaction_trace = tx_execution_infos_to_tx_trace(starknet, &tx_result, block_number)?;
 
         results.push(SimulatedTransaction {
             transaction_trace,

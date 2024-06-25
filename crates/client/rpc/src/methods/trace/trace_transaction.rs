@@ -1,7 +1,5 @@
-use blockifier::transaction::account_transaction::AccountTransaction;
 use dp_block::StarknetVersion;
 use dp_convert::ToStarkFelt;
-use dp_transactions::TxType;
 use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::Felt;
@@ -9,7 +7,7 @@ use starknet_core::types::TransactionTraceWithHash;
 
 use super::utils::tx_execution_infos_to_tx_trace;
 use crate::errors::StarknetRpcApiError;
-use crate::utils::execution::{block_context, re_execute_transactions};
+use crate::utils::execution::{block_context, execute_transactions};
 use crate::utils::transaction::to_blockifier_transactions;
 use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
@@ -45,22 +43,12 @@ pub async fn trace_transaction(starknet: &Starknet, transaction_hash: Felt) -> R
         .pop()
         .ok_or_internal_server_error("Error: there should be at least one transaction in the block")?;
 
-    use blockifier::transaction::transaction_execution::Transaction as BTx;
-    let tx_type = match &to_trace {
-        BTx::AccountTransaction(account_tx) => match account_tx {
-            AccountTransaction::Declare(_) => TxType::Declare,
-            AccountTransaction::DeployAccount(_) => TxType::DeployAccount,
-            AccountTransaction::Invoke(_) => TxType::Invoke,
-        },
-        BTx::L1HandlerTransaction(_) => TxType::L1Handler,
-    };
+    let mut executions_results = execute_transactions(starknet, transactions_before, [to_trace], &block_context)
+        .or_internal_server_error("Failed to re-execute transactions")?;
+    let execution_result =
+        executions_results.pop().ok_or_internal_server_error("No execution info returned for the last transaction")?;
 
-    let execution_infos = re_execute_transactions(starknet, transactions_before, [to_trace], &block_context)
-        .or_internal_server_error("Failed to re-execute transactions")?
-        .pop()
-        .ok_or_internal_server_error("No execution info returned for the last transaction")?;
-
-    let trace = tx_execution_infos_to_tx_trace(starknet, tx_type, &execution_infos, block.block_n())
+    let trace = tx_execution_infos_to_tx_trace(starknet, &execution_result, block.block_n())
         .or_internal_server_error("Converting execution infos to tx trace")?;
 
     let tx_trace = TransactionTraceWithHash { transaction_hash, trace_root: trace };

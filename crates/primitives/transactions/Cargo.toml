@@ -30,7 +30,6 @@ starknet_api = { workspace = true }
 
 # Other
 flate2 = { workspace = true }
-indexmap = { workspace = true }
 num-bigint = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
