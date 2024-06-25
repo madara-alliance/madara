@@ -1,8 +1,6 @@
 use std::ops::Deref;
 
-use starknet_api::core::ContractAddress;
-use starknet_api::hash::StarkFelt;
-use starknet_api::state::StorageKey;
+use starknet_types_core::felt::Felt;
 
 use super::history::{AsHistoryView, HistoryView, HistoryViewMut};
 use crate::Column;
@@ -12,11 +10,11 @@ pub(crate) const CONTRACT_STORAGE_PREFIX_EXTRACTOR: usize = 64;
 
 #[derive(Debug)]
 pub struct ContractAddressStorageKey([u8; 64]);
-impl From<(ContractAddress, StorageKey)> for ContractAddressStorageKey {
-    fn from(value: (ContractAddress, StorageKey)) -> Self {
+impl From<(Felt, Felt)> for ContractAddressStorageKey {
+    fn from(value: (Felt, Felt)) -> Self {
         let mut key = [0u8; 64];
-        key[..32].copy_from_slice(value.0 .0.key().bytes());
-        key[32..].copy_from_slice(value.1 .0.key().bytes());
+        key[..32].copy_from_slice(value.0.to_bytes_be().as_ref());
+        key[32..].copy_from_slice(value.1.to_bytes_be().as_ref());
         Self(key)
     }
 }
@@ -29,9 +27,10 @@ impl Deref for ContractAddressStorageKey {
 
 pub struct ContractStorageAsHistory;
 impl AsHistoryView for ContractStorageAsHistory {
-    type Key = (ContractAddress, StorageKey);
+    /// The key is a tuple of the contract address and the storage key.
+    type Key = (Felt, Felt);
     type KeyBin = ContractAddressStorageKey;
-    type T = StarkFelt;
+    type T = Felt;
     fn column() -> Column {
         Column::ContractStorage
     }

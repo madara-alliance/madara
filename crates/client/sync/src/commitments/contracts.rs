@@ -122,12 +122,12 @@ fn class_hash_and_nonce(
     contract_address: &ContractAddress,
 ) -> Result<(Felt, Felt), DeoxysStorageError> {
     let class_hash = match csd.address_to_class_hash.get(contract_address) {
-        Some(class_hash) => *class_hash,
-        None => backend.contract_class_hash().get(contract_address)?.unwrap_or_default(),
+        Some(class_hash) => class_hash.to_felt(),
+        None => backend.contract_class_hash().get(&contract_address.to_felt())?.unwrap_or_default(),
     };
     let nonce = match csd.address_to_nonce.get(contract_address) {
-        Some(nonce) => *nonce,
-        None => backend.contract_nonces().get(contract_address)?.unwrap_or_default(),
+        Some(nonce) => nonce.to_felt(),
+        None => backend.contract_nonces().get(&contract_address.to_felt())?.unwrap_or_default().to_felt(),
     };
-    Ok((class_hash.to_felt(), nonce.to_felt()))
+    Ok((class_hash, nonce))
 }

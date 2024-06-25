@@ -19,7 +19,7 @@ use dp_convert::ToFelt;
 use dp_convert::ToStarkFelt;
 use dp_simulations::SimulationFlags;
 use jsonrpsee::core::RpcResult;
-use starknet_api::core::{ContractAddress, EntryPointSelector};
+use starknet_api::core::{ClassHash, ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::transaction::Calldata;
 use starknet_api::transaction::TransactionHash;
@@ -139,8 +139,9 @@ pub fn call_contract(
     let class_hash = starknet
         .backend
         .contract_class_hash()
-        .get(&address)
-        .or_internal_server_error("Error getting contract class hash")?;
+        .get(&address.to_felt())
+        .or_internal_server_error("Error getting contract class hash")?
+        .map(|felt| ClassHash(felt.to_stark_felt()));
 
     let entrypoint = CallEntryPoint {
         class_hash,
@@ -194,7 +195,7 @@ pub fn estimate_fee(
 ) -> Result<Vec<FeeEstimate>, TransactionExecutionError> {
     let fees = transactions
         .into_iter()
-        .map(|tx| execute_fee_transaction(starknet, tx.clone(), validate, block_context))
+        .map(|tx| execute_fee_transaction(starknet, tx, validate, block_context))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(fees)
 }
@@ -206,15 +207,12 @@ pub fn estimate_message_fee(
 ) -> Result<FeeEstimate, TransactionExecutionError> {
     let mut cached_state = init_cached_state(starknet, block_context);
 
-    let tx_execution_infos = message.clone().execute(&mut cached_state, block_context, true, true)?;
-
-    // TODO: implement this
-    // if !tx_execution_infos.is_reverted() {}
-
     let unit = match message.fee_type() {
         blockifier::transaction::objects::FeeType::Strk => PriceUnit::Fri,
         blockifier::transaction::objects::FeeType::Eth => PriceUnit::Wei,
     };
+
+    let tx_execution_infos = message.execute(&mut cached_state, block_context, true, true)?;
 
     // TODO: implement this
     // if !tx_execution_infos.is_reverted() {}

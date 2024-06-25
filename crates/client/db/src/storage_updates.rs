@@ -1,16 +1,15 @@
 use std::collections::HashMap;
 
+use dp_class::{ContractClassData, ToCompiledClass};
 use dp_convert::ToStarkFelt;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
+use starknet_api::core::Nonce;
 use starknet_core::types::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate,
-    StorageEntry,
+    ContractClass, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem,
+    StateUpdate, StorageEntry,
 };
+use starknet_types_core::felt::Felt;
 
-use crate::storage_handler::primitives::contract_class::{
-    ClassUpdateWrapper, ContractClassData, ContractClassWrapper, StorageContractClassData,
-};
 use crate::storage_handler::{DeoxysStorageError, StorageViewMut};
 use crate::DeoxysBackend;
 
@@ -20,13 +19,11 @@ pub fn store_state_update(
     state_update: StateUpdate,
 ) -> Result<(), DeoxysStorageError> {
     let state_diff = state_update.state_diff.clone();
-    let nonce_map: HashMap<ContractAddress, Nonce> = state_update
+    let nonce_map: HashMap<Felt, Nonce> = state_update
         .state_diff
         .nonces
         .into_iter()
-        .map(|NonceUpdate { contract_address, nonce }| {
-            (contract_address.to_stark_felt().try_into().unwrap(), Nonce(nonce.to_stark_felt()))
-        })
+        .map(|NonceUpdate { contract_address, nonce }| (contract_address, Nonce(nonce.to_stark_felt())))
         .collect();
 
     log::debug!("💾 update state: block_number: {}", block_number);
@@ -40,9 +37,7 @@ pub fn store_state_update(
             .state_diff
             .deployed_contracts
             .into_iter()
-            .map(|DeployedContractItem { address, class_hash }| {
-                (address.to_stark_felt().try_into().unwrap(), ClassHash(class_hash.to_stark_felt()))
-            })
+            .map(|DeployedContractItem { address, class_hash }| (address, class_hash))
             .try_for_each(|(contract_address, class_hash)| -> Result<(), DeoxysStorageError> {
                 handler_contract_data_class.insert(contract_address, class_hash)?;
                 // insert nonces for contracts that were deployed in this block and do not have a nonce
@@ -56,9 +51,7 @@ pub fn store_state_update(
             .state_diff
             .replaced_classes
             .into_iter()
-            .map(|ReplacedClassItem { contract_address, class_hash }| {
-                (contract_address.to_stark_felt().try_into().unwrap(), ClassHash(class_hash.to_stark_felt()))
-            })
+            .map(|ReplacedClassItem { contract_address, class_hash }| (contract_address, class_hash))
             .try_for_each(|(contract_address, class_hash)| -> Result<(), DeoxysStorageError> {
                 handler_contract_data_class.insert(contract_address, class_hash)?;
                 Ok(())
@@ -84,9 +77,7 @@ pub fn store_state_update(
             .state_diff
             .declared_classes
             .into_iter()
-            .map(|DeclaredClassItem { class_hash, compiled_class_hash }| {
-                (ClassHash(class_hash.to_stark_felt()), CompiledClassHash(compiled_class_hash.to_stark_felt()))
-            })
+            .map(|DeclaredClassItem { class_hash, compiled_class_hash }| (class_hash, compiled_class_hash))
             .for_each(|(class_hash, compiled_class_hash)| {
                 handler_contract_class_hashes.insert(class_hash, compiled_class_hash).unwrap();
             });
@@ -107,25 +98,22 @@ pub fn store_state_update(
 pub fn store_class_update(
     backend: &DeoxysBackend,
     block_number: u64,
-    class_update: ClassUpdateWrapper,
+    class_update: Vec<(Felt, ContractClass)>,
 ) -> Result<(), DeoxysStorageError> {
     let handler_contract_class_data_mut = backend.contract_class_data_mut();
+    let handler_compiled_contract_class_mut = backend.compiled_contract_class_mut();
 
-    class_update.0.into_iter().for_each(
-        |ContractClassData { hash: class_hash, contract_class: contract_class_wrapper }| {
-            let ContractClassWrapper { contract_class, abi, sierra_program_length, abi_length } =
-                contract_class_wrapper;
-
-            handler_contract_class_data_mut
-                .insert(
-                    class_hash,
-                    StorageContractClassData { contract_class, abi, sierra_program_length, abi_length, block_number },
-                )
-                .unwrap();
-        },
-    );
+    class_update.into_iter().try_for_each(|(class_hash, contract_class)| {
+        let compiled_class: dp_class::CompiledClass =
+            contract_class.compile().map_err(|e| DeoxysStorageError::CompilationClassError(e.to_string()))?;
+        handler_contract_class_data_mut
+            .insert(class_hash, ContractClassData { contract_class: contract_class.into(), block_number })?;
+        handler_compiled_contract_class_mut.insert(class_hash, compiled_class)?;
+        Ok::<_, DeoxysStorageError>(())
+    })?;
 
     handler_contract_class_data_mut.commit(block_number)?;
+    handler_compiled_contract_class_mut.commit(block_number)?;
     log::debug!("committed contract_class_data_mut");
     Ok(())
 }
@@ -138,11 +126,8 @@ pub fn store_key_update(
     let handler_storage = backend.contract_storage_mut();
 
     storage_diffs.into_par_iter().try_for_each(|ContractStorageDiffItem { address, storage_entries }| {
-        let contract_address = address.to_stark_felt().try_into().unwrap();
         storage_entries.iter().try_for_each(|StorageEntry { key, value }| -> Result<(), DeoxysStorageError> {
-            let key = key.to_stark_felt().try_into().unwrap();
-            let value = value.to_stark_felt();
-            handler_storage.insert((contract_address, key), value)
+            handler_storage.insert((*address, *key), *value)
         })
     })?;
 

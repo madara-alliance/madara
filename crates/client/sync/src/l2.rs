@@ -6,7 +6,6 @@ use std::time::Instant;
 use anyhow::{bail, Context};
 use dc_db::mapping_db::MappingDbError;
 use dc_db::rocksdb::{WriteBatchWithTransaction, WriteOptions};
-use dc_db::storage_handler::primitives::contract_class::{ClassUpdateWrapper, ContractClassData};
 use dc_db::storage_handler::DeoxysStorageError;
 use dc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
 use dc_db::DeoxysBackend;
@@ -16,7 +15,7 @@ use dp_block::{BlockId, BlockTag, DeoxysBlock};
 use dp_convert::ToStarkFelt;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
-use starknet_core::types::StateUpdate;
+use starknet_core::types::{ContractClass, StateUpdate};
 use starknet_providers::sequencer::models::StateUpdateWithBlock;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
@@ -131,7 +130,7 @@ async fn l2_verify_and_apply_task(
                     || store_state_update(&backend, block_n, state_update),
                     || {
                         rayon::join(
-                            || store_class_update(&backend, block_n, ClassUpdateWrapper(class_update)),
+                            || store_class_update(&backend, block_n, class_update),
                             || store_key_update(&backend, block_n, &storage_diffs),
                         )
                     },
@@ -187,7 +186,7 @@ async fn l2_verify_and_apply_task(
 pub struct L2ConvertedBlockAndUpdates {
     pub converted_block: DeoxysBlock,
     pub state_update: StateUpdate,
-    pub class_update: Vec<ContractClassData>,
+    pub class_update: Vec<(Felt, ContractClass)>,
 }
 
 async fn l2_block_conversion_task(

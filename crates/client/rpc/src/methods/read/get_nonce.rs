@@ -1,5 +1,4 @@
 use dp_convert::ToFelt;
-use dp_convert::ToStarkFelt;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::BlockId;
 use starknet_types_core::felt::Felt;
@@ -26,11 +25,11 @@ use crate::Starknet;
 /// specific issue.
 pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> RpcResult<Felt> {
     let block_number = starknet.get_block_n(block_id)?;
-    let key = contract_address.to_stark_felt().try_into().map_err(StarknetRpcApiError::from)?;
+
     let nonce = starknet
         .backend
         .contract_nonces()
-        .get_at(&key, block_number)
+        .get_at(&contract_address, block_number)
         .or_internal_server_error("Failed to retrieve contract class")?
         .ok_or(StarknetRpcApiError::ContractNotFound)?;
 

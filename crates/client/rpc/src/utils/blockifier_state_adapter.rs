@@ -1,14 +1,15 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use blockifier::execution::contract_class::{ContractClass, ContractClassV0, ContractClassV1};
+use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
 use dc_db::storage_handler::StorageView;
 use dc_db::DeoxysBackend;
 use dp_block::BlockId;
-use dp_convert::ToStarkFelt;
+use dp_class::to_blockifier_class;
+use dp_convert::{ToFelt, ToStarkFelt};
 use indexmap::IndexMap;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
@@ -67,13 +68,14 @@ impl StateReader for BlockifierStateAdapter {
         Ok(self
             .backend
             .contract_storage()
-            .get_at(&(contract_address, key), block_number)
+            .get_at(&(contract_address.to_felt(), key.to_felt()), block_number)
             .map_err(|err| {
                 StateError::StateReadError(format!(
                     "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}: {err:#}",
                 ))
             })?
-            .unwrap_or_default())
+            .unwrap_or_default()
+            .to_stark_felt())
     }
 
     fn get_nonce_at(&mut self, contract_address: ContractAddress) -> StateResult<Nonce> {
@@ -85,7 +87,7 @@ impl StateReader for BlockifierStateAdapter {
         Ok(self
             .backend
             .contract_nonces()
-            .get_at(&contract_address, block_number)
+            .get_at(&contract_address.to_felt(), block_number)
             .map_err(|err| {
                 StateError::StateReadError(format!(
                     "Failed to retrieve nonce for contract {contract_address:#?}: {err:#}",
@@ -103,40 +105,27 @@ impl StateReader for BlockifierStateAdapter {
 
         // Note that blockifier is fine with us returning ZERO as a class_hash if it is not found, they do the check on their end after
 
-        Ok(self
-            .backend
-            .contract_class_hash()
-            .get_at(&contract_address, block_number)
-            .map_err(|err| {
-                StateError::StateReadError(format!(
-                    "Failed to retrieve class hash for contract {:#}: {:#}",
-                    contract_address.0.key(),
-                    err
-                ))
-            })?
-            .unwrap_or_default())
+        Ok(ClassHash(
+            self.backend
+                .contract_class_hash()
+                .get_at(&contract_address.to_felt(), block_number)
+                .map_err(|err| {
+                    StateError::StateReadError(format!(
+                        "Failed to retrieve class hash for contract {:#}: {:#}",
+                        contract_address.0.key(),
+                        err
+                    ))
+                })?
+                .unwrap_or_default()
+                .to_stark_felt(),
+        ))
     }
 
     fn get_compiled_contract_class(&mut self, class_hash: ClassHash) -> StateResult<ContractClass> {
         match self.contract_class_update.get(&class_hash) {
             Some(contract_class) => Ok(contract_class.clone()),
-            None => match self.backend.contract_class_data().get(&class_hash) {
-                Ok(Some(contract_class_data)) => {
-                    let contract_class = if contract_class_data.sierra_program_length > 0 {
-                        ContractClass::V1(
-                            ContractClassV1::try_from_json_string(&contract_class_data.contract_class).map_err(
-                                |_| StateError::StateReadError("Failed to convert contract class V1".to_string()),
-                            )?,
-                        )
-                    } else {
-                        ContractClass::V0(
-                            ContractClassV0::try_from_json_string(&contract_class_data.contract_class).map_err(
-                                |_| StateError::StateReadError("Failed to convert contract class V0".to_string()),
-                            )?,
-                        )
-                    };
-                    Ok(contract_class)
-                }
+            None => match self.backend.compiled_contract_class().get(&class_hash.to_felt()) {
+                Ok(Some(compiled_class)) => to_blockifier_class(compiled_class).map_err(StateError::ProgramError),
                 _ => Err(StateError::UndeclaredClassHash(class_hash)),
             },
         }
@@ -148,13 +137,14 @@ impl StateReader for BlockifierStateAdapter {
             None => self
                 .backend
                 .contract_class_hashes()
-                .get(&class_hash)
+                .get(&class_hash.to_felt())
                 .map_err(|_| {
                     StateError::StateReadError(format!(
                         "failed to retrive compiled class hash at class hash {:#}",
                         class_hash.0
                     ))
                 })?
+                .map(|felt| CompiledClassHash(felt.to_stark_felt()))
                 .ok_or(StateError::UndeclaredClassHash(class_hash)),
         }
     }

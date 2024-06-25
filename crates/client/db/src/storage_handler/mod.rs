@@ -17,13 +17,14 @@ pub mod block_state_diff;
 pub mod class_trie;
 pub mod codec;
 pub mod contract_class_data;
+
+pub mod compiled_contract_class;
 pub mod contract_class_hashes;
 pub(crate) mod contract_data;
 pub(crate) mod contract_storage;
 pub mod contract_storage_trie;
 pub mod contract_trie;
 pub mod history;
-pub mod primitives;
 pub mod query;
 
 pub mod bonsai_identifier {
@@ -67,6 +68,8 @@ pub enum DeoxysStorageError {
     InvalidBlockNumber,
     #[error("Invalid nonce")]
     InvalidNonce,
+    #[error("Failed to compile class: {0}")]
+    CompilationClassError(String),
 }
 
 impl From<bincode::Error> for DeoxysStorageError {
@@ -87,6 +90,7 @@ pub enum StorageType {
     Contract,
     ContractStorage,
     ContractClassData,
+    CompiledContractClass,
     ContractData,
     ContractAbi,
     ContractClassHashes,
@@ -115,6 +119,7 @@ impl Display for StorageType {
             StorageType::ContractStorage => "contract storage",
             StorageType::Class => "class storage",
             StorageType::ContractClassData => "class definition storage",
+            StorageType::CompiledContractClass => "compiled class storage",
             StorageType::ContractAbi => "class abi storage",
             StorageType::BlockNumber => "block number storage",
             StorageType::BlockHash => "block hash storage",

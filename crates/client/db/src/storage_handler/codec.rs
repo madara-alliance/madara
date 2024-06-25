@@ -4,6 +4,7 @@ use starknet_api::block::BlockHash;
 use starknet_api::core::{ClassHash, ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::TransactionHash;
+use starknet_types_core::felt::Felt;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -21,6 +22,18 @@ pub trait Decode {
     fn decode(bytes: &[u8]) -> Result<Self, Error>
     where
         Self: Sized;
+}
+
+impl Encode for Felt {
+    fn encode(&self) -> Result<Vec<u8>, Error> {
+        bincode::serialize(self).map_err(|_| Error::EncodeError)
+    }
+}
+
+impl Decode for Felt {
+    fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        bincode::deserialize(bytes).map_err(|_| Error::DecodeError)
+    }
 }
 
 impl Encode for StarkFelt {
