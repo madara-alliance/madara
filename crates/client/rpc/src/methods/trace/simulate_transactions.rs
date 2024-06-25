@@ -22,7 +22,6 @@ pub async fn simulate_transactions(
     let block_info = starknet.get_block_info(block_id)?;
 
     let block_context = block_context(starknet, &block_info)?;
-    let block_number = block_info.block_n();
 
     let simulation_flags = SimulationFlags {
         validate: !simulation_flags.contains(&SimulationFlag::SkipValidate),
@@ -41,22 +40,19 @@ pub async fn simulate_transactions(
         utils::execution::simulate_transactions(starknet, user_transactions, &simulation_flags, &block_context)
             .map_err(|_| StarknetRpcApiError::ContractError)?;
 
-    let simulated_transactions =
-        tx_execution_infos_to_simulated_transactions(starknet, &execution_result, block_number, fee_types)
-            .map_err(StarknetRpcApiError::from)?;
+    let simulated_transactions = tx_execution_infos_to_simulated_transactions(&execution_result, fee_types)
+        .map_err(StarknetRpcApiError::from)?;
 
     Ok(simulated_transactions)
 }
 
 fn tx_execution_infos_to_simulated_transactions(
-    starknet: &Starknet,
     transactions_executions_results: &[ExecutionResult],
-    block_number: u64,
     fee_types: Vec<FeeType>,
 ) -> Result<Vec<SimulatedTransaction>, ConvertCallInfoToExecuteInvocationError> {
     let mut results = vec![];
 
-    for (tx_result, fee_type) in transactions_executions_results.into_iter().zip(fee_types.into_iter()) {
+    for (tx_result, fee_type) in transactions_executions_results.iter().zip(fee_types.into_iter()) {
         let gas =
             tx_result.execution_info.execute_call_info.as_ref().map(|x| x.execution.gas_consumed).unwrap_or_default();
         let fee = tx_result.execution_info.actual_fee.0;
@@ -74,7 +70,7 @@ fn tx_execution_infos_to_simulated_transactions(
         let data_gas_consumed = tx_result.execution_info.da_gas.l1_data_gas.into();
         let data_gas_price = tx_result.execution_info.da_gas.l1_gas.into();
 
-        let transaction_trace = tx_execution_infos_to_tx_trace(starknet, &tx_result, block_number)?;
+        let transaction_trace = tx_execution_infos_to_tx_trace(tx_result)?;
 
         results.push(SimulatedTransaction {
             transaction_trace,

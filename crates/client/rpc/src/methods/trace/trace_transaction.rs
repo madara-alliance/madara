@@ -48,7 +48,7 @@ pub async fn trace_transaction(starknet: &Starknet, transaction_hash: Felt) -> R
     let execution_result =
         executions_results.pop().ok_or_internal_server_error("No execution info returned for the last transaction")?;
 
-    let trace = tx_execution_infos_to_tx_trace(starknet, &execution_result, block.block_n())
+    let trace = tx_execution_infos_to_tx_trace(&execution_result)
         .or_internal_server_error("Converting execution infos to tx trace")?;
 
     let tx_trace = TransactionTraceWithHash { transaction_hash, trace_root: trace };

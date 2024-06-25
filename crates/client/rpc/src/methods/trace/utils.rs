@@ -4,15 +4,14 @@ use blockifier::execution::call_info::CallInfo;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use dp_convert::ToFelt;
 use dp_transactions::TxType;
-use starknet_api::core::ContractAddress;
 use starknet_core::types::{
     ComputationResources, DataAvailabilityResources, DataResources, DeclareTransactionTrace,
-    DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, Felt, InvokeTransactionTrace,
+    DeployAccountTransactionTrace, ExecuteInvocation, ExecutionResources, InvokeTransactionTrace,
     L1HandlerTransactionTrace, NonceUpdate, RevertedInvocation, StateDiff, TransactionTrace,
 };
 
 use super::lib::*;
-use crate::{utils::execution::ExecutionResult, Starknet};
+use crate::utils::execution::ExecutionResult;
 
 pub fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core::types::OrderedMessage> {
     call_info
@@ -43,22 +42,13 @@ fn blockifier_to_starknet_rs_ordered_events(
 }
 
 fn try_get_funtion_invocation_from_call_info(
-    starknet: &Starknet,
     call_info: &CallInfo,
-    class_hash_cache: &mut HashMap<ContractAddress, Felt>,
-    block_number: u64,
 ) -> Result<starknet_core::types::FunctionInvocation, TryFuntionInvocationFromCallInfoError> {
     let messages = collect_call_info_ordered_messages(call_info);
     let events = blockifier_to_starknet_rs_ordered_events(&call_info.execution.events);
 
-    let inner_calls = call_info
-        .inner_calls
-        .iter()
-        .map(|call| try_get_funtion_invocation_from_call_info(starknet, call, class_hash_cache, block_number))
-        .collect::<Result<_, _>>()?;
-
-    // TODO: check why this is here
-    // call_info.get_sorted_l2_to_l1_payloads_length()?;
+    let inner_calls =
+        call_info.inner_calls.iter().map(try_get_funtion_invocation_from_call_info).collect::<Result<_, _>>()?;
 
     let entry_point_type = match call_info.call.entry_point_type {
         starknet_api::deprecated_contract_class::EntryPointType::Constructor => {
@@ -77,25 +67,8 @@ fn try_get_funtion_invocation_from_call_info(
         blockifier::execution::entry_point::CallType::Delegate => starknet_core::types::CallType::Delegate,
     };
 
-    // Blockifier call info does not give use the class_hash "if it can be deducted from the storage
-    // address". We have to do this decution ourselves here
-    let class_hash = if let Some(class_hash) = call_info.call.class_hash {
-        class_hash.to_felt()
-    } else if let Some(cached_hash) = class_hash_cache.get(&call_info.call.storage_address) {
-        *cached_hash
-    } else {
-        // Compute and cache the class hash
-        let Ok(Some(class_hash)) =
-            starknet.backend.contract_class_hash().get_at(&call_info.call.storage_address.to_felt(), block_number)
-        else {
-            return Err(TryFuntionInvocationFromCallInfoError::ContractNotFound);
-        };
-
-        class_hash_cache.insert(call_info.call.storage_address, class_hash);
-
-        class_hash
-    };
-
+    // Field `class_hash` into `FunctionInvocation` should be an Option
+    let class_hash = call_info.call.class_hash.map(ToFelt::to_felt).unwrap_or_default();
     let computation_resources = computation_resources(&call_info.resources);
 
     Ok(starknet_core::types::FunctionInvocation {
@@ -115,15 +88,33 @@ fn try_get_funtion_invocation_from_call_info(
 }
 
 pub fn tx_execution_infos_to_tx_trace(
-    starknet: &Starknet,
     executions_result: &ExecutionResult,
-    block_number: u64,
 ) -> Result<TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
-    let mut class_hash_cache: HashMap<ContractAddress, Felt> = HashMap::new();
-
     let ExecutionResult { tx_type, execution_info, state_diff, .. } = executions_result;
 
-    let computation_resources = resources_mapping(&execution_info.actual_resources.0, 0, 0);
+    let state_diff = match state_diff_is_empty(state_diff) {
+        true => None,
+        false => Some(to_state_diff(state_diff)),
+    };
+
+    // If simulated with `SimulationFlag::SkipValidate` this will be `None`
+    // therefore we cannot unwrap it
+    let validate_invocation =
+        execution_info.validate_call_info.as_ref().map(try_get_funtion_invocation_from_call_info).transpose()?;
+
+    let execute_function_invocation =
+        execution_info.execute_call_info.as_ref().map(try_get_funtion_invocation_from_call_info).transpose()?;
+
+    // If simulated with `SimulationFlag::SkipFeeCharge` this will be `None`
+    // therefore we cannot unwrap it
+    let fee_transfer_invocation =
+        execution_info.fee_transfer_call_info.as_ref().map(try_get_funtion_invocation_from_call_info).transpose()?;
+
+    let computation_resources = agregate_execution_ressources(
+        validate_invocation.as_ref().map(|value| value.execution_resources.clone()).as_ref(),
+        execute_function_invocation.as_ref().map(|value| value.execution_resources.clone()).as_ref(),
+        fee_transfer_invocation.as_ref().map(|value| value.execution_resources.clone()).as_ref(),
+    );
 
     let execution_resources = ExecutionResources {
         computation_resources,
@@ -134,39 +125,6 @@ pub fn tx_execution_infos_to_tx_trace(
             },
         },
     };
-
-    let state_diff = match state_diff_is_empty(&state_diff) {
-        true => None,
-        false => Some(to_state_diff(state_diff)),
-    };
-
-    // If simulated with `SimulationFlag::SkipValidate` this will be `None`
-    // therefore we cannot unwrap it
-    let validate_invocation = execution_info
-        .validate_call_info
-        .as_ref()
-        .map(|call_info| {
-            try_get_funtion_invocation_from_call_info(starknet, call_info, &mut class_hash_cache, block_number)
-        })
-        .transpose()?;
-
-    let execute_function_invocation = execution_info
-        .execute_call_info
-        .as_ref()
-        .map(|call_info| {
-            try_get_funtion_invocation_from_call_info(starknet, call_info, &mut class_hash_cache, block_number)
-        })
-        .transpose()?;
-
-    // If simulated with `SimulationFlag::SkipFeeCharge` this will be `None`
-    // therefore we cannot unwrap it
-    let fee_transfer_invocation = execution_info
-        .fee_transfer_call_info
-        .as_ref()
-        .map(|call_info| {
-            try_get_funtion_invocation_from_call_info(starknet, call_info, &mut class_hash_cache, block_number)
-        })
-        .transpose()?;
 
     let tx_trace = match tx_type {
         TxType::Invoke => TransactionTrace::Invoke(InvokeTransactionTrace {
@@ -285,4 +243,95 @@ pub(crate) fn state_diff_is_empty(commitment_state_diff: &CommitmentStateDiff) -
         && commitment_state_diff.address_to_nonce.is_empty()
         && commitment_state_diff.storage_updates.is_empty()
         && commitment_state_diff.class_hash_to_compiled_class_hash.is_empty()
+}
+
+fn agregate_execution_ressources(
+    a: Option<&ComputationResources>,
+    b: Option<&ComputationResources>,
+    c: Option<&ComputationResources>,
+) -> ComputationResources {
+    ComputationResources {
+        steps: a.map_or(0, |x| x.steps) + b.map_or(0, |x| x.steps) + c.map_or(0, |x| x.steps),
+        memory_holes: {
+            let sum = a.and_then(|x| x.memory_holes).unwrap_or_default()
+                + b.and_then(|x| x.memory_holes).unwrap_or_default()
+                + c.and_then(|x| x.memory_holes).unwrap_or_default();
+            match sum {
+                0 => None,
+                n => Some(n),
+            }
+        },
+        range_check_builtin_applications: {
+            let sum = a.and_then(|x| x.range_check_builtin_applications).unwrap_or_default()
+                + b.and_then(|x| x.range_check_builtin_applications).unwrap_or_default()
+                + c.and_then(|x| x.range_check_builtin_applications).unwrap_or_default();
+            match sum {
+                0 => None,
+                n => Some(n),
+            }
+        },
+        pedersen_builtin_applications: {
+            let sum = a.and_then(|x| x.pedersen_builtin_applications).unwrap_or_default()
+                + b.and_then(|x| x.pedersen_builtin_applications).unwrap_or_default()
+                + c.and_then(|x| x.pedersen_builtin_applications).unwrap_or_default();
+            match sum {
+                0 => None,
+                n => Some(n),
+            }
+        },
+        poseidon_builtin_applications: {
+            let sum = a.and_then(|x| x.poseidon_builtin_applications).unwrap_or_default()
+                + b.and_then(|x| x.poseidon_builtin_applications).unwrap_or_default()
+                + c.and_then(|x| x.poseidon_builtin_applications).unwrap_or_default();
+            match sum {
+                0 => None,
+                n => Some(n),
+            }
+        },
+        ec_op_builtin_applications: {
+            let sum = a.and_then(|x| x.ec_op_builtin_applications).unwrap_or_default()
+                + b.and_then(|x| x.ec_op_builtin_applications).unwrap_or_default()
+                + c.and_then(|x| x.ec_op_builtin_applications).unwrap_or_default();
+            match sum {
+                0 => None,
+                n => Some(n),
+            }
+        },
+        ecdsa_builtin_applications: {
+            let sum = a.and_then(|x| x.ecdsa_builtin_applications).unwrap_or_default()
+                + b.and_then(|x| x.ecdsa_builtin_applications).unwrap_or_default()
+                + c.and_then(|x| x.ecdsa_builtin_applications).unwrap_or_default();
+            match sum {
+                0 => None,
+                n => Some(n),
+            }
+        },
+        bitwise_builtin_applications: {
+            let sum = a.and_then(|x| x.bitwise_builtin_applications).unwrap_or_default()
+                + b.and_then(|x| x.bitwise_builtin_applications).unwrap_or_default()
+                + c.and_then(|x| x.bitwise_builtin_applications).unwrap_or_default();
+            match sum {
+                0 => None,
+                n => Some(n),
+            }
+        },
+        keccak_builtin_applications: {
+            let sum = a.and_then(|x| x.keccak_builtin_applications).unwrap_or_default()
+                + b.and_then(|x| x.keccak_builtin_applications).unwrap_or_default()
+                + c.and_then(|x| x.keccak_builtin_applications).unwrap_or_default();
+            match sum {
+                0 => None,
+                n => Some(n),
+            }
+        },
+        segment_arena_builtin: {
+            let sum = a.and_then(|x| x.segment_arena_builtin).unwrap_or_default()
+                + b.and_then(|x| x.segment_arena_builtin).unwrap_or_default()
+                + c.and_then(|x| x.segment_arena_builtin).unwrap_or_default();
+            match sum {
+                0 => None,
+                n => Some(n),
+            }
+        },
+    }
 }

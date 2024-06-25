@@ -37,7 +37,7 @@ pub async fn trace_block_transactions(
         .into_iter()
         .map(|result| {
             let transaction_hash = result.hash.to_felt();
-            tx_execution_infos_to_tx_trace(starknet, &result, block.block_n())
+            tx_execution_infos_to_tx_trace(&result)
                 .or_internal_server_error("Converting execution infos to tx trace")
                 .map(|trace_root| TransactionTraceWithHash { trace_root, transaction_hash })
         })
