@@ -236,7 +236,9 @@ pub fn estimate_message_fee(
 ) -> Result<FeeEstimate, TransactionExecutionError> {
     let mut cached_state = init_cached_state(starknet, block_context);
 
-    let unit = match message.fee_type() {
+    let fee_type = message.fee_type();
+
+    let unit = match fee_type {
         blockifier::transaction::objects::FeeType::Strk => PriceUnit::Fri,
         blockifier::transaction::objects::FeeType::Eth => PriceUnit::Wei,
     };
@@ -250,9 +252,9 @@ pub fn estimate_message_fee(
         gas_consumed: Felt::from(
             tx_execution_infos.actual_resources.0.get("l1_gas_usage").cloned().unwrap_or_default(),
         ),
-        gas_price: tx_execution_infos.da_gas.l1_gas.into(),
+        gas_price: block_context.block_info().gas_prices.get_gas_price_by_fee_type(&fee_type).get().into(),
         data_gas_consumed: tx_execution_infos.da_gas.l1_data_gas.into(),
-        data_gas_price: tx_execution_infos.da_gas.l1_data_gas.into(),
+        data_gas_price: block_context.block_info().gas_prices.get_data_gas_price_by_fee_type(&fee_type).get().into(),
         overall_fee: tx_execution_infos.actual_fee.0.into(),
         unit,
     };
