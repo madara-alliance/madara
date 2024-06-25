@@ -1,8 +1,12 @@
+use std::ops::Deref;
+
 use starknet_types_core::felt::Felt;
 
+mod class_hash;
 mod compile;
 mod into_starknet_core;
 
+pub use class_hash::ClassHash;
 pub use compile::ToCompiledClass;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -147,6 +151,18 @@ pub enum CompiledClass {
     Sierra(CompiledSierra),
     Legacy(CompiledLegacy),
 }
+
+impl Deref for CompiledClass {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            CompiledClass::Sierra(CompiledSierra(bytes)) => bytes,
+            CompiledClass::Legacy(CompiledLegacy(bytes)) => bytes,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompiledSierra(Vec<u8>);
 

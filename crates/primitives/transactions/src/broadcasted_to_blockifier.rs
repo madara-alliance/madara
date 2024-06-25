@@ -1,5 +1,5 @@
 use crate::{Transaction, TransactionWithHash};
-use dp_class::{to_blockifier_class, ToCompiledClass};
+use dp_class::{to_blockifier_class, ClassHash, ToCompiledClass};
 use dp_convert::ToStarkFelt;
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
@@ -16,7 +16,7 @@ pub fn broadcasted_to_blockifier(
                     0,
                     0,
                 )?),
-                Some(Felt::default()), // starknet-rs doesn't implement class_hash() on CompressedLegacyContractClass
+                Some(tx.contract_class.class_hash()),
             ),
             starknet_core::types::BroadcastedDeclareTransaction::V2(tx) => (
                 Some(blockifier::execution::contract_class::ClassInfo::new(
