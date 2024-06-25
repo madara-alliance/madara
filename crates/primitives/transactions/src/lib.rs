@@ -1,7 +1,6 @@
+mod broadcasted_to_blockifier;
 pub mod compute_hash;
-pub mod compute_hash_blockifier;
-// mod from_broadcasted_transaction;
-pub mod from_broadcasted_transactions;
+mod from_broadcasted_transaction;
 mod from_starknet_provider;
 mod to_starknet_api;
 mod to_starknet_core;
@@ -9,7 +8,10 @@ pub mod utils;
 
 use blockifier::transaction::account_transaction::AccountTransaction;
 
+use dp_convert::ToFelt;
 use starknet_types_core::felt::Felt;
+
+pub use broadcasted_to_blockifier::broadcasted_to_blockifier;
 
 const SIMULATE_TX_VERSION_OFFSET: Felt =
     Felt::from_raw([576460752142434320, 18446744073709551584, 17407, 18446744073700081665]);
@@ -173,6 +175,18 @@ pub struct L1HandlerTransaction {
     pub contract_address: Felt,
     pub entry_point_selector: Felt,
     pub calldata: Vec<Felt>,
+}
+
+impl From<starknet_core::types::MsgFromL1> for L1HandlerTransaction {
+    fn from(msg: starknet_core::types::MsgFromL1) -> Self {
+        Self {
+            version: Felt::ZERO,
+            nonce: 0,
+            contract_address: msg.to_address,
+            entry_point_selector: msg.entry_point_selector,
+            calldata: std::iter::once(msg.from_address.to_felt()).chain(msg.payload).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

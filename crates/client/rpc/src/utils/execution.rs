@@ -250,9 +250,9 @@ pub fn estimate_message_fee(
         gas_consumed: Felt::from(
             tx_execution_infos.actual_resources.0.get("l1_gas_usage").cloned().unwrap_or_default(),
         ),
-        gas_price: Felt::ZERO,
+        gas_price: tx_execution_infos.da_gas.l1_gas.into(),
         data_gas_consumed: tx_execution_infos.da_gas.l1_data_gas.into(),
-        data_gas_price: Felt::ZERO,
+        data_gas_price: tx_execution_infos.da_gas.l1_data_gas.into(),
         overall_fee: tx_execution_infos.actual_fee.0.into(),
         unit,
     };

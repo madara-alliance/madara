@@ -28,7 +28,7 @@ impl ContractClass {
     pub fn abi_length(&self) -> usize {
         match self {
             ContractClass::Sierra(FlattenedSierraClass { abi, .. }) => abi.len(),
-            ContractClass::Legacy(CompressedLegacyContractClass { abi, .. }) => abi.as_ref().map_or(0, |abi| abi.len()),
+            ContractClass::Legacy(_) => 0,
         }
     }
 }

@@ -1,13 +1,7 @@
-use std::sync::Arc;
-
-use blockifier::transaction::transactions::L1HandlerTransaction;
 use dp_convert::ToStarkFelt;
-use dp_transactions::compute_hash_blockifier::ComputeTransactionHash;
+use dp_transactions::L1HandlerTransaction;
 use jsonrpsee::core::RpcResult;
-use starknet_api::core::Nonce;
-use starknet_api::core::{ContractAddress, EntryPointSelector};
-use starknet_api::hash::StarkFelt;
-use starknet_api::transaction::{Calldata, Fee, TransactionVersion};
+use starknet_api::transaction::{Fee, TransactionHash};
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 use starknet_types_core::felt::Felt;
 
@@ -41,7 +35,7 @@ pub async fn estimate_message_fee(
     let block_number = block_info.block_n();
 
     let chain_id = starknet.chain_config.chain_id;
-    let transaction = convert_message_into_tx(message, chain_id, Some(block_number));
+    let transaction = convert_message_into_l1_handler(message, chain_id, Some(block_number));
 
     let message_fee = utils::execution::estimate_message_fee(starknet, transaction, &block_context)
         .or_contract_error("Function execution failed")?;
@@ -49,21 +43,18 @@ pub async fn estimate_message_fee(
     Ok(message_fee)
 }
 
-pub fn convert_message_into_tx(message: MsgFromL1, chain_id: Felt, block_number: Option<u64>) -> L1HandlerTransaction {
-    let calldata = std::iter::once(message.from_address.to_stark_felt())
-        .chain(message.payload.into_iter().map(ToStarkFelt::to_stark_felt))
-        .collect();
+pub fn convert_message_into_l1_handler(
+    message: MsgFromL1,
+    chain_id: Felt,
+    block_number: Option<u64>,
+) -> blockifier::transaction::transactions::L1HandlerTransaction {
+    let l1_handler: L1HandlerTransaction = message.into();
+    let tx_hash = l1_handler.compute_hash(chain_id, false, block_number);
+    let tx: starknet_api::transaction::L1HandlerTransaction = (&l1_handler).try_into().unwrap();
 
-    let tx = starknet_api::transaction::L1HandlerTransaction {
-        version: TransactionVersion::ZERO,
-        nonce: Nonce(StarkFelt::ZERO),
-        contract_address: ContractAddress::try_from(message.to_address.to_stark_felt())
-            .expect("expected a contact address"),
-        entry_point_selector: EntryPointSelector(message.entry_point_selector.to_stark_felt()),
-        calldata: Calldata(Arc::new(calldata)),
-    };
-    // TODO(merge): recheck if this is correct
-    let tx_hash = tx.compute_hash(chain_id, true, block_number);
-
-    L1HandlerTransaction { tx, tx_hash, paid_fee_on_l1: Fee(10) } //TODO: fix with real fee
+    blockifier::transaction::transactions::L1HandlerTransaction {
+        tx,
+        tx_hash: TransactionHash(tx_hash.to_stark_felt()),
+        paid_fee_on_l1: Fee(1),
+    }
 }

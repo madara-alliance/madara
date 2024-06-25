@@ -3240,16 +3240,15 @@ dependencies = [
 name = "dp-transactions"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "assert_matches",
  "blockifier",
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.6.4",
- "cairo-vm",
+ "dp-class",
  "dp-convert",
- "flate2",
  "num-bigint",
  "serde",
- "serde_json",
  "starknet-core",
  "starknet-crypto 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "starknet-providers",

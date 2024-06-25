@@ -1,6 +1,6 @@
 use blockifier::transaction::objects::{FeeType, HasRelatedFeeType};
 use dp_simulations::SimulationFlags;
-use dp_transactions::from_broadcasted_transactions::ToAccountTransaction;
+use dp_transactions::broadcasted_to_blockifier;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, FeeEstimate, PriceUnit, SimulatedTransaction, SimulationFlag,
@@ -20,8 +20,8 @@ pub async fn simulate_transactions(
     simulation_flags: Vec<SimulationFlag>,
 ) -> RpcResult<Vec<SimulatedTransaction>> {
     let block_info = starknet.get_block_info(block_id)?;
-
     let block_context = block_context(starknet, &block_info)?;
+    let chain_id = starknet.chain_id()?;
 
     let simulation_flags = SimulationFlags {
         validate: !simulation_flags.contains(&SimulationFlag::SkipValidate),
@@ -29,8 +29,8 @@ pub async fn simulate_transactions(
     };
 
     let user_transactions = transactions
-        .iter()
-        .map(ToAccountTransaction::to_account_transaction)
+        .into_iter()
+        .map(|tx| broadcasted_to_blockifier(tx, chain_id))
         .collect::<Result<Vec<_>, _>>()
         .or_internal_server_error("Failed to convert BroadcastedTransaction to UserTransaction")?;
 
