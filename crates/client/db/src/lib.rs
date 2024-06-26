@@ -262,7 +262,7 @@ impl Column {
             ContractToClassHashes => "contract_to_class_hashes",
             ContractToNonces => "contract_to_nonces",
             ContractClassHashes => "contract_class_hashes",
-            ContractStorage => "contrac_storage",
+            ContractStorage => "contract_storage",
         }
     }
 
