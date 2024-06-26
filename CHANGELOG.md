@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: trace, execution state_diff
 - refactor: store compiled contract class
 - fix: rate limit on classes
 - refactor: use Felt in DB

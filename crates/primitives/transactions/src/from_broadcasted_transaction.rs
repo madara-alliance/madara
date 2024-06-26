@@ -6,22 +6,23 @@ use crate::{
     InvokeTransactionV3, Transaction, TransactionWithHash,
 };
 
+// class_hash is required for DeclareTransaction
 impl TransactionWithHash {
-    fn from_broadcasted(tx: starknet_core::types::BroadcastedTransaction, chain_id: Felt) -> Self {
+    pub fn from_broadcasted(
+        tx: starknet_core::types::BroadcastedTransaction,
+        chain_id: Felt,
+        class_hash: Option<Felt>,
+    ) -> Self {
         let is_query = is_query(&tx);
-        let transaction: Transaction = tx.into();
+        let transaction: Transaction = match tx {
+            starknet_core::types::BroadcastedTransaction::Invoke(tx) => Transaction::Invoke(tx.into()),
+            starknet_core::types::BroadcastedTransaction::Declare(tx) => {
+                Transaction::Declare(DeclareTransaction::from_broadcasted(tx, class_hash.unwrap()))
+            }
+            starknet_core::types::BroadcastedTransaction::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
+        };
         let hash = transaction.compute_hash(chain_id, is_query, None);
         Self { hash, transaction }
-    }
-}
-
-impl From<starknet_core::types::BroadcastedTransaction> for Transaction {
-    fn from(tx: starknet_core::types::BroadcastedTransaction) -> Self {
-        match tx {
-            starknet_core::types::BroadcastedTransaction::Invoke(tx) => Transaction::Invoke(tx.into()),
-            starknet_core::types::BroadcastedTransaction::Declare(tx) => Transaction::Declare(tx.into()),
-            starknet_core::types::BroadcastedTransaction::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
-        }
     }
 }
 
@@ -63,49 +64,55 @@ impl From<starknet_core::types::BroadcastedInvokeTransactionV3> for InvokeTransa
     }
 }
 
-impl From<starknet_core::types::BroadcastedDeclareTransaction> for DeclareTransaction {
-    fn from(tx: starknet_core::types::BroadcastedDeclareTransaction) -> Self {
+impl DeclareTransaction {
+    fn from_broadcasted(tx: starknet_core::types::BroadcastedDeclareTransaction, class_hash: Felt) -> Self {
         match tx {
-            starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => DeclareTransaction::V1(tx.into()),
-            starknet_core::types::BroadcastedDeclareTransaction::V2(tx) => DeclareTransaction::V2(tx.into()),
-            starknet_core::types::BroadcastedDeclareTransaction::V3(tx) => DeclareTransaction::V3(tx.into()),
+            starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => {
+                DeclareTransaction::V1(DeclareTransactionV1::from_broadcasted(tx, class_hash))
+            }
+            starknet_core::types::BroadcastedDeclareTransaction::V2(tx) => {
+                DeclareTransaction::V2(DeclareTransactionV2::from_broadcasted(tx, class_hash))
+            }
+            starknet_core::types::BroadcastedDeclareTransaction::V3(tx) => {
+                DeclareTransaction::V3(DeclareTransactionV3::from_broadcasted(tx, class_hash))
+            }
         }
     }
 }
 
-impl From<starknet_core::types::BroadcastedDeclareTransactionV1> for DeclareTransactionV1 {
-    fn from(tx: starknet_core::types::BroadcastedDeclareTransactionV1) -> Self {
+impl DeclareTransactionV1 {
+    fn from_broadcasted(tx: starknet_core::types::BroadcastedDeclareTransactionV1, class_hash: Felt) -> Self {
         Self {
             sender_address: tx.sender_address,
             max_fee: tx.max_fee,
             signature: tx.signature,
             nonce: tx.nonce,
-            class_hash: todo!("implement compute_class_hash from contract_class"),
+            class_hash,
         }
     }
 }
 
-impl From<starknet_core::types::BroadcastedDeclareTransactionV2> for DeclareTransactionV2 {
-    fn from(tx: starknet_core::types::BroadcastedDeclareTransactionV2) -> Self {
+impl DeclareTransactionV2 {
+    fn from_broadcasted(tx: starknet_core::types::BroadcastedDeclareTransactionV2, class_hash: Felt) -> Self {
         Self {
             sender_address: tx.sender_address,
             compiled_class_hash: tx.compiled_class_hash,
             max_fee: tx.max_fee,
             signature: tx.signature,
             nonce: tx.nonce,
-            class_hash: todo!("implement compute_class_hash from contract_class"),
+            class_hash,
         }
     }
 }
 
-impl From<starknet_core::types::BroadcastedDeclareTransactionV3> for DeclareTransactionV3 {
-    fn from(tx: starknet_core::types::BroadcastedDeclareTransactionV3) -> Self {
+impl DeclareTransactionV3 {
+    fn from_broadcasted(tx: starknet_core::types::BroadcastedDeclareTransactionV3, class_hash: Felt) -> Self {
         Self {
             sender_address: tx.sender_address,
             compiled_class_hash: tx.compiled_class_hash,
             signature: tx.signature,
             nonce: tx.nonce,
-            class_hash: todo!("implement compute_class_hash from contract_class"),
+            class_hash,
             resource_bounds: tx.resource_bounds.into(),
             tip: tx.tip,
             paymaster_data: tx.paymaster_data,

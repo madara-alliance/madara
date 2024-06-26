@@ -1,5 +1,5 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
-use dp_transactions::from_broadcasted_transactions::ToAccountTransaction;
+use dp_transactions::broadcasted_to_blockifier;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
 
@@ -25,15 +25,15 @@ pub async fn estimate_fee(
 ) -> RpcResult<Vec<FeeEstimate>> {
     let block_info = starknet.get_block_info(block_id)?;
     let block_context = block_context(starknet, &block_info)?;
+    let chain_id = starknet.chain_id()?;
 
-    let transactions = request
-        .into_iter()
-        .map(|tx| tx.to_account_transaction())
-        .collect::<Result<Vec<AccountTransaction>, _>>()
-        .map_err(|e| {
-            log::error!("Failed to convert BroadcastedTransaction to AccountTransaction: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
+    let transactions =
+        request.into_iter().map(|tx| broadcasted_to_blockifier(tx, chain_id)).collect::<Result<Vec<_>, _>>().map_err(
+            |e| {
+                log::error!("Failed to convert BroadcastedTransaction to AccountTransaction: {e}");
+                StarknetRpcApiError::InternalServerError
+            },
+        )?;
 
     let account_transactions: Vec<AccountTransaction> =
         transactions.into_iter().map(AccountTransaction::from).collect();

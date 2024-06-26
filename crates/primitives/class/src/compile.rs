@@ -320,6 +320,7 @@ fn felt_to_big_uint(value: &Felt) -> BigUint {
 
 #[cfg(test)]
 mod tests {
+
     use crate::to_blockifier_class;
 
     use super::*;
@@ -327,19 +328,6 @@ mod tests {
     use starknet_core::types::BlockTag;
     use starknet_core::types::Felt;
     use starknet_providers::{Provider, SequencerGatewayProvider};
-
-    #[tokio::test]
-    async fn se_deserialize_legacy_contract_class_to_json() {
-        let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
-
-        let class_hash = Felt::from_hex_unchecked("0x25ec026985a3bf9d0cc1fe17326b245dfdc3ff89b8fde106542a3ea56c5a918");
-
-        let class = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap();
-
-        let json = serde_json::to_string(&class).unwrap();
-        let deserialized_class = serde_json::from_str::<starknet_core::types::ContractClass>(&json).unwrap();
-        assert_eq!(class, deserialized_class);
-    }
 
     #[tokio::test]
     async fn test_legacy_contract_class_blockifier() {

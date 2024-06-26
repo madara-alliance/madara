@@ -36,6 +36,8 @@ pub enum ConvertCallInfoToExecuteInvocationError {
     TransactionExecutionFailed,
     #[error(transparent)]
     GetFunctionInvocation(#[from] TryFuntionInvocationFromCallInfoError),
+    #[error("Missing FunctionInvocation")]
+    MissingFunctionInvocation,
 }
 
 impl From<ConvertCallInfoToExecuteInvocationError> for StarknetRpcApiError {
@@ -45,6 +47,7 @@ impl From<ConvertCallInfoToExecuteInvocationError> for StarknetRpcApiError {
             ConvertCallInfoToExecuteInvocationError::GetFunctionInvocation(_) => {
                 StarknetRpcApiError::InternalServerError
             }
+            ConvertCallInfoToExecuteInvocationError::MissingFunctionInvocation => StarknetRpcApiError::ContractError,
         }
     }
 }

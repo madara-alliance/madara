@@ -1,8 +1,6 @@
 use blockifier::execution::call_info::CallInfo;
 use dp_convert::ToFelt;
-use starknet_core::types::{
-    ComputationResources, DataAvailabilityResources, DataResources, Event, ExecutionResources, Felt, MsgToL1,
-};
+use starknet_core::types::{Event, Felt, MsgToL1};
 
 #[allow(unused)]
 pub(crate) fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> {
@@ -24,7 +22,6 @@ pub(crate) fn extract_events_from_call_info(call_info: &CallInfo) -> Vec<Event> 
 }
 
 #[allow(unused)]
-
 pub(crate) fn extract_messages_from_call_info(call_info: &CallInfo) -> Vec<MsgToL1> {
     let address = call_info.call.storage_address;
     let events: Vec<_> = call_info
@@ -41,43 +38,4 @@ pub(crate) fn extract_messages_from_call_info(call_info: &CallInfo) -> Vec<MsgTo
     let inner_messages: Vec<_> = call_info.inner_calls.iter().flat_map(extract_messages_from_call_info).collect();
 
     events.into_iter().chain(inner_messages).collect()
-}
-
-#[allow(unused)]
-pub(crate) fn blockifier_call_info_to_starknet_resources(callinfo: &CallInfo) -> ExecutionResources {
-    let vm_resources = &callinfo.resources;
-
-    let steps = vm_resources.n_steps as u64;
-    let memory_holes = match vm_resources.n_memory_holes as u64 {
-        0 => None,
-        n => Some(n),
-    };
-
-    let builtin_instance = &vm_resources.builtin_instance_counter;
-
-    let range_check_builtin_applications = builtin_instance.get("range_check_builtin").map(|&value| value as u64);
-    let pedersen_builtin_applications = builtin_instance.get("pedersen_builtin").map(|&value| value as u64);
-    let poseidon_builtin_applications = builtin_instance.get("poseidon_builtin").map(|&value| value as u64);
-    let ec_op_builtin_applications = builtin_instance.get("ec_op_builtin").map(|&value| value as u64);
-    let ecdsa_builtin_applications = builtin_instance.get("ecdsa_builtin").map(|&value| value as u64);
-    let bitwise_builtin_applications = builtin_instance.get("bitwise_builtin").map(|&value| value as u64);
-    let keccak_builtin_applications = builtin_instance.get("keccak_builtin").map(|&value| value as u64);
-    let segment_arena_builtin = builtin_instance.get("segment_arena_builtin").map(|&value| value as u64);
-
-    ExecutionResources {
-        computation_resources: ComputationResources {
-            steps,
-            memory_holes,
-            range_check_builtin_applications,
-            pedersen_builtin_applications,
-            poseidon_builtin_applications,
-            ec_op_builtin_applications,
-            ecdsa_builtin_applications,
-            bitwise_builtin_applications,
-            keccak_builtin_applications,
-            segment_arena_builtin,
-        },
-        // TODO: add data resources when blockifier supports it
-        data_resources: DataResources { data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 0 } },
-    }
 }

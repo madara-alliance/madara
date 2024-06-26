@@ -253,16 +253,18 @@ impl DeployAccountTransaction {
             DeployAccountTransaction::V3(tx) => tx.compute_hash(chain_id, offset_version, block_number),
         }
     }
+
+    pub fn calculate_contract_address(&self) -> Felt {
+        match self {
+            DeployAccountTransaction::V1(tx) => tx.calculate_contract_address(),
+            DeployAccountTransaction::V3(tx) => tx.calculate_contract_address(),
+        }
+    }
 }
 
 impl DeployAccountTransactionV1 {
     pub fn compute_hash(&self, chain_id: Felt, offset_version: bool, _block_number: Option<u64>) -> Felt {
-        let contract_address = calculate_contract_address(
-            self.contract_address_salt,
-            self.class_hash,
-            &self.constructor_calldata,
-            Default::default(),
-        );
+        let contract_address = self.calculate_contract_address();
 
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::ONE } else { Felt::ONE };
 
@@ -283,18 +285,22 @@ impl DeployAccountTransactionV1 {
             self.nonce,
         ])
     }
+
+    pub fn calculate_contract_address(&self) -> Felt {
+        calculate_contract_address(
+            self.contract_address_salt,
+            self.class_hash,
+            &self.constructor_calldata,
+            Default::default(),
+        )
+    }
 }
 
 impl DeployAccountTransactionV3 {
     pub fn compute_hash(&self, chain_id: Felt, offset_version: bool, _block_number: Option<u64>) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::THREE } else { Felt::THREE };
 
-        let contract_address = calculate_contract_address(
-            self.contract_address_salt,
-            self.class_hash,
-            &self.constructor_calldata,
-            Default::default(),
-        );
+        let contract_address = self.calculate_contract_address();
 
         let gas_hash = compute_gas_hash(self.tip, &self.resource_bounds);
         let paymaster_hash = Poseidon::hash_array(&self.paymaster_data);
@@ -316,6 +322,15 @@ impl DeployAccountTransactionV3 {
             self.class_hash,
             self.contract_address_salt,
         ])
+    }
+
+    pub fn calculate_contract_address(&self) -> Felt {
+        calculate_contract_address(
+            self.contract_address_salt,
+            self.class_hash,
+            &self.constructor_calldata,
+            Default::default(),
+        )
     }
 }
 

@@ -4,7 +4,8 @@ use anyhow::Result;
 use blockifier::context::{BlockContext, FeeTokenAddresses, TransactionContext};
 use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
-use blockifier::state::cached_state::{CachedState, GlobalContractCache};
+use blockifier::state::cached_state::{CachedState, CommitmentStateDiff, GlobalContractCache};
+use blockifier::state::state_api::State;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::{
@@ -18,6 +19,7 @@ use dp_block::DeoxysBlockInfo;
 use dp_convert::ToFelt;
 use dp_convert::ToStarkFelt;
 use dp_simulations::SimulationFlags;
+use dp_transactions::TxType;
 use jsonrpsee::core::RpcResult;
 use starknet_api::core::{ClassHash, ContractAddress, EntryPointSelector};
 use starknet_api::deprecated_contract_class::EntryPointType;
@@ -62,18 +64,25 @@ pub struct TransactionsExecError {
     err: TransactionExecutionError,
 }
 
-pub fn re_execute_transactions(
+pub struct ExecutionResult {
+    pub hash: TransactionHash,
+    pub tx_type: TxType,
+    pub execution_info: TransactionExecutionInfo,
+    pub state_diff: CommitmentStateDiff,
+}
+
+pub fn execute_transactions(
     starknet: &Starknet,
     transactions_before: impl IntoIterator<Item = Transaction>,
     transactions_to_trace: impl IntoIterator<Item = Transaction>,
     block_context: &BlockContext,
-) -> Result<Vec<TransactionExecutionInfo>, TransactionsExecError> {
-    let charge_fee = block_context.block_info().gas_prices.eth_l1_gas_price.get() != 1;
+) -> Result<Vec<ExecutionResult>, TransactionsExecError> {
+    let charge_fee = block_context.block_info().gas_prices.eth_l1_gas_price.get() != 0;
     let mut cached_state = init_cached_state(starknet, block_context);
 
     let mut executed_prev = 0;
     for (index, tx) in transactions_before.into_iter().enumerate() {
-        let hash = tx_hash(&tx);
+        let hash = tx.hash();
         log::debug!("executing {hash:?}");
         tx.execute(&mut cached_state, block_context, charge_fee, true).map_err(|err| TransactionsExecError {
             hash,
@@ -83,31 +92,44 @@ pub fn re_execute_transactions(
         executed_prev += 1;
     }
 
-    let transactions_exec_infos = transactions_to_trace
+    transactions_to_trace
         .into_iter()
         .enumerate()
         .map(|(index, tx)| {
-            let hash = tx_hash(&tx);
+            let hash = tx.hash();
             log::debug!("executing {hash:?} (2)");
-            tx.execute(&mut cached_state, block_context, charge_fee, true).map_err(|err| TransactionsExecError {
-                hash,
-                index: executed_prev + index,
-                err,
-            })
+            let tx_type = (&tx).into();
+            let mut state = CachedState::<_>::create_transactional(&mut cached_state);
+            let execution_info = tx
+                .execute(&mut state, block_context, charge_fee, true)
+                .map_err(|err| TransactionsExecError { hash, index: executed_prev + index, err })?;
+            let state_diff = state.to_state_diff();
+            state.commit();
+            Ok(ExecutionResult { hash, tx_type, execution_info, state_diff })
         })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(transactions_exec_infos)
+        .collect::<Result<Vec<_>, _>>()
 }
 
-fn tx_hash(tx: &Transaction) -> TransactionHash {
-    match tx {
-        Transaction::AccountTransaction(tx) => match tx {
-            AccountTransaction::Declare(tx) => tx.tx_hash,
-            AccountTransaction::DeployAccount(tx) => tx.tx_hash,
-            AccountTransaction::Invoke(tx) => tx.tx_hash,
-        },
-        Transaction::L1HandlerTransaction(tx) => tx.tx_hash,
+trait Hash {
+    fn hash(&self) -> TransactionHash;
+}
+
+impl Hash for Transaction {
+    fn hash(&self) -> TransactionHash {
+        match self {
+            Self::AccountTransaction(tx) => tx.hash(),
+            Self::L1HandlerTransaction(tx) => tx.tx_hash,
+        }
+    }
+}
+
+impl Hash for AccountTransaction {
+    fn hash(&self) -> TransactionHash {
+        match self {
+            Self::Declare(tx) => tx.tx_hash,
+            Self::DeployAccount(tx) => tx.tx_hash,
+            Self::Invoke(tx) => tx.tx_hash,
+        }
     }
 }
 
@@ -116,15 +138,22 @@ pub fn simulate_transactions(
     transactions: Vec<AccountTransaction>,
     simulation_flags: &SimulationFlags,
     block_context: &BlockContext,
-) -> Result<Vec<TransactionExecutionInfo>, TransactionExecutionError> {
+) -> Result<Vec<ExecutionResult>, TransactionExecutionError> {
     let mut cached_state = init_cached_state(starknet, block_context);
 
-    let tx_execution_results = transactions
+    transactions
         .into_iter()
-        .map(|tx| tx.execute(&mut cached_state, block_context, simulation_flags.charge_fee, simulation_flags.validate))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(tx_execution_results)
+        .map(|tx| {
+            let hash = tx.hash();
+            let tx_type = (&tx).into();
+            let mut state = CachedState::<_>::create_transactional(&mut cached_state);
+            let execution_info =
+                tx.execute(&mut state, block_context, simulation_flags.charge_fee, simulation_flags.validate)?;
+            let state_diff = state.to_state_diff();
+            state.commit();
+            Ok(ExecutionResult { hash, tx_type, execution_info, state_diff })
+        })
+        .collect::<Result<Vec<_>, _>>()
 }
 
 /// Call a smart contract function.
@@ -207,7 +236,9 @@ pub fn estimate_message_fee(
 ) -> Result<FeeEstimate, TransactionExecutionError> {
     let mut cached_state = init_cached_state(starknet, block_context);
 
-    let unit = match message.fee_type() {
+    let fee_type = message.fee_type();
+
+    let unit = match fee_type {
         blockifier::transaction::objects::FeeType::Strk => PriceUnit::Fri,
         blockifier::transaction::objects::FeeType::Eth => PriceUnit::Wei,
     };
@@ -221,9 +252,9 @@ pub fn estimate_message_fee(
         gas_consumed: Felt::from(
             tx_execution_infos.actual_resources.0.get("l1_gas_usage").cloned().unwrap_or_default(),
         ),
-        gas_price: Felt::ZERO,
+        gas_price: block_context.block_info().gas_prices.get_gas_price_by_fee_type(&fee_type).get().into(),
         data_gas_consumed: tx_execution_infos.da_gas.l1_data_gas.into(),
-        data_gas_price: Felt::ZERO,
+        data_gas_price: block_context.block_info().gas_prices.get_data_gas_price_by_fee_type(&fee_type).get().into(),
         overall_fee: tx_execution_infos.actual_fee.0.into(),
         unit,
     };
