@@ -1,4 +1,5 @@
 use crate::{Transaction, TransactionWithHash};
+use anyhow::Context;
 use dp_class::{to_blockifier_class, ClassHash, ToCompiledClass};
 use dp_convert::ToStarkFelt;
 use starknet_api::transaction::TransactionHash;
@@ -16,7 +17,7 @@ pub fn broadcasted_to_blockifier(
                     0,
                     0,
                 )?),
-                Some(tx.contract_class.class_hash()),
+                Some(tx.contract_class.class_hash().context("Failed to compute class hash on Legacy")?),
             ),
             starknet_core::types::BroadcastedDeclareTransaction::V2(tx) => (
                 Some(blockifier::execution::contract_class::ClassInfo::new(

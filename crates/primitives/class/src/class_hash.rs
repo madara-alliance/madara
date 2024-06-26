@@ -1,35 +1,27 @@
-use starknet_core::types::{
-    contract::legacy::LegacyContractClass, CompressedLegacyContractClass, ContractClass, FlattenedSierraClass,
-};
+use starknet_core::types::{contract::legacy::LegacyContractClass, CompressedLegacyContractClass, ContractClass};
 use starknet_types_core::felt::Felt;
 use std::ops::Deref;
 
 use crate::ToCompiledClass;
 
 pub trait ClassHash {
-    fn class_hash(&self) -> Felt;
+    fn class_hash(&self) -> anyhow::Result<Felt>;
 }
 
 impl ClassHash for ContractClass {
-    fn class_hash(&self) -> Felt {
+    fn class_hash(&self) -> anyhow::Result<Felt> {
         match self {
-            ContractClass::Sierra(sierra) => sierra.class_hash(),
+            ContractClass::Sierra(sierra) => Ok(sierra.class_hash()),
             ContractClass::Legacy(legacy) => legacy.class_hash(),
         }
     }
 }
 
 impl ClassHash for CompressedLegacyContractClass {
-    fn class_hash(&self) -> Felt {
-        let compiled = self.compile().unwrap();
-        let legacy_contract: LegacyContractClass = serde_json::from_slice(compiled.deref()).unwrap();
-        legacy_contract.class_hash().unwrap()
-    }
-}
-
-impl ClassHash for FlattenedSierraClass {
-    fn class_hash(&self) -> Felt {
-        self.class_hash()
+    fn class_hash(&self) -> anyhow::Result<Felt> {
+        let compiled = self.compile()?;
+        let legacy_contract: LegacyContractClass = serde_json::from_slice(compiled.deref())?;
+        Ok(legacy_contract.class_hash()?)
     }
 }
 
@@ -66,7 +58,7 @@ mod tests {
         let class = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap();
 
         if let ContractClass::Legacy(legacy) = class {
-            assert_eq!(legacy.class_hash(), class_hash);
+            assert_eq!(legacy.class_hash().unwrap(), class_hash);
         } else {
             panic!("Not a Lecacy contract");
         }
