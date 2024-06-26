@@ -5,6 +5,3 @@ name = "rust"
 
   [analyzers.meta]
   msrv = "stable"
-
-[[transformers]]
-name = "rustfmt"
