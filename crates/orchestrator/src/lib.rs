@@ -2,6 +2,9 @@
 pub mod config;
 /// Controllers for the routes
 pub mod controllers;
+/// Contains the trait that implements the fetching functions
+/// for blob and SNOS data from cloud for a particular block.
+pub mod data_storage;
 /// Contains the trait that all database clients must implement
 pub mod database;
 /// Contains the trait that all jobs must implement. Also
@@ -12,8 +15,7 @@ pub mod jobs;
 pub mod queue;
 /// Contains the routes for the service
 pub mod routes;
-/// Contains workers which act like cron jobs
-pub mod workers;
-
 #[cfg(test)]
 mod tests;
+/// Contains workers which act like cron jobs
+pub mod workers;
