@@ -17,13 +17,289 @@
 
 </div>
 
-# 👽 Deoxys: Starknet full node client on Substrate
+# 👽 Deoxys: Starknet full node client
 
-## ⚙️ Installation
+Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
+
+## Table of Contents
+
+- ⬇️ Installation
+  - [Run from Source](#run-from-source)
+  - [Run with Docker](#run-with-docker)
+  - [Run with Docker Compose](#run-with-docker-compose)
+- ⚙️ Configuration
+  - [Basic Command-Line Options](#basic-command-line-options)
+  - [Advanced Command-Line Options](#advanced-command-line-options)
+- 📸 Snapshots
+- 🌐 Interactions
+  - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
+  - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
+- Supported Features
+- 👍 Contribute
+
+## ⬇️ Installation
+
+### Run from Source
+
+1. **Install dependencies**
+
+   Ensure you have the necessary dependencies:
+
+   ```sh
+   sudo apt-get update && sudo apt-get install -y \
+     clang \
+     protobuf-compiler \
+     build-essential
+   ```
+
+   Install Rust:
+
+   ```sh
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s
+   ```
+
+   Clone the Deoxys repository:
+
+   ```sh
+   cd <your-destination-path>
+   git clone https://github.com/KasarLabs/deoxys .
+   ```
+
+2. **Run Deoxys**
+
+   Start the Deoxys client with synchronization to Starknet mainnet:
+
+   ```sh
+   cargo run --release \
+     --name deoxys \
+     --base-path ../deoxys-db \
+     --network main \
+     --l1-endpoint ${ETHEREUM_API_URL} \
+   ```
+
+### Run with Docker
+
+1 **Run docker image**
+
+To run Deoxys with Docker, use the following command:
+
+```sh
+docker run -d \
+    --name deoxys \
+    -p 9944:9944 \
+    -v /var/lib/deoxys:/var/lib/deoxys \
+    deoxys:latest \
+    --base-path ../deoxys-db \
+    --network main \
+    --l1-endpoint <rpc key> \
+```
+
+Check the logs of the running Deoxys service:
+
+```sh
+docker logs -f deoxys
+```
+
+### Run with Docker Compose
+
+1. **Ensure environment variable**
+
+   Set the necessary environment variable:
+
+   ```sh
+   export ETHEREUM_API_URL="your-ethereum-api-url"
+   ```
+
+   Or create a `.env` file in the same directory as your `docker-compose.yml` file:
+
+   ```sh
+   ETHEREUM_API_URL=your-ethereum-api-url
+   ```
+
+2. **Build and Run the Container**
+
+   Navigate to the directory with your `docker-compose.yml` file and run:
+
+   ```sh
+   docker-compose up -d
+   ```
+
+   Check the logs of the running Deoxys service:
+
+   ```sh
+   docker-compose logs -f deoxys
+   ```
+
+## ⚙️ Configuration
+
+Configuring your Deoxys node properly ensures it meets your specific needs
+
+### Basic Command-Line Options
+
+Here are the recommended options for a quick and simple configuration of your Deoxys full node:
+
+- **`--name <NAME>`**: The human-readable name for this node. It's used as the network node name.
+- **`--base-path <PATH>`**: Set the directory for Starknet data (default is `/tmp/deoxys`).
+- **`--network <NETWORK>`**: The network type to connect to (`main`, `test`, or `integration`).
+- **`--l1-endpoint <URL>`**: Specify the Layer 1 endpoint the node will verify its state from.
+- **`--rpc-port <PORT>`**: Specify the JSON-RPC server TCP port.
+- **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the HTTP & WS RPC servers.
+- **`--rpc-external`**: Listen to all RPC interfaces. Default is local.
+- **`--snap <BLOCK_NUMBER>`**: Start syncing from the closest snapshot available for the desired block (default is highest).
+
+### Advanced Command-Line Options
+
+Here are more advanced command-line options, organized by namespace, for running and development purposes:
+
+<details>
+<summary>Network</summary>
+
+- **`-n, --network <NETWORK>`**: The network type to connect to (default: `integration`).
+- **`--port <PORT>`**: Set the network listening port.
+- **`--l1-endpoint <URL>`**: Specify the Layer 1 endpoint the node will verify its state from.
+- **`--gateway-key <GATEWAY_KEY>`**: Gateway API key to avoid rate limiting (optional).
+- **`--sync-polling-interval <SECONDS>`**: Polling interval in seconds (default: 2).
+- **`--no-sync-polling`**: Stop sync polling.
+- **`--n-blocks-to-sync <NUMBER>`**: Number of blocks to sync.
+- **`--starting-block <BLOCK>`**: The block to start syncing from (make sure to set `--disable-root`).
+
+</details>
+
+<details>
+<summary>RPC</summary>
+
+- **`--rpc-external`**: Listen to all RPC interfaces. Note: not all RPC methods are safe to be exposed publicly.
+  Use an RPC proxy server to filter out dangerous methods.
+- **`--rpc-methods <METHOD_SET>`**: RPC methods to expose (`auto`, `safe`, `unsafe`).
+- **`--rpc-max-request-size <SIZE>`**: Set the maximum RPC request payload size in megabytes (default: 15).
+- **`--rpc-max-response-size <SIZE>`**: Set the maximum RPC response payload size in megabytes (default: 15).
+- **`--rpc-max-subscriptions-per-connection <NUMBER>`**: Set the maximum concurrent subscriptions per connection (default: 1024).
+- **`--rpc-port <PORT>`**: Specify JSON-RPC server TCP port.
+- **`--rpc-max-connections <NUMBER>`**: Maximum number of RPC server connections (default: 100).
+- **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the HTTP & WS RPC servers.
+
+</details>
+
+<details>
+<summary>Database</summary>
+
+- **`--base-path <PATH>`**: Specify custom base path (default: `/tmp/deoxys`).
+- **`--snap <BLOCK_NUMBER>`**: Start syncing from the closest snapshot available for the desired block.
+- **`--tmp`**: Run a temporary node. A temporary directory will be created and deleted at the end of the process.
+- **`--cache`**: Enable caching of blocks and transactions to improve response times.
+- **`--db-cache <MiB>`**: Limit the memory the database cache can use.
+- **`--trie-cache-size <Bytes>`**: Specify the state cache size (default: 67108864).
+- **`--backup-every-n-blocks <NUMBER>`**: Specify the number of blocks after which a backup should be created.
+- **`--backup-dir <DIR>`**: Specify the directory where backups should be stored.
+- **`--restore-from-latest-backup`**: Restore the database from the latest backup available.
+
+</details>
+
+> ℹ️ **Info:** Note that not all parameters may be referenced here.
+> Please refer to the `cargo run -- --help` command for the full list of parameters.
 
 ## 📸 Snapshots
 
+Snapshots are under developpement and will be available trought the `--snap <block_number>` parameter.
+
+## 🌐 Interactions
+
+Deoxys fully supports all the JSON-RPC methods as specified in the Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+These methods can be categorized into three main types: Read-Only Access Methods, Trace Generation Methods, and Write Methods.
+
+### Supported JSON-RPC Methods
+
+Here is a list of all the supported methods with their current status:
+
+<details>
+  <summary>Read Methods</summary>
+
+| Status | Method                                     |
+| ------ | ------------------------------------------ |
+| ✅     | `starknet_specVersion`                     |
+| ✅     | `starknet_getBlockWithTxHashes`            |
+| ✅     | `starknet_getBlockWithReceipts`            |
+| ✅     | `starknet_getBlockWithTxs`                 |
+| ✅     | `starknet_getStateUpdate`                  |
+| ✅     | `starknet_getStorageAt`                    |
+| ✅     | `starknet_getTransactionStatus`            |
+| ✅     | `starknet_getTransactionByHash`            |
+| ✅     | `starknet_getTransactionByBlockIdAndIndex` |
+| ✅     | `starknet_getTransactionReceipt`           |
+| ✅     | `starknet_getClass`                        |
+| ✅     | `starknet_getClassHashAt`                  |
+| ✅     | `starknet_getClassAt`                      |
+| ✅     | `starknet_getBlockTransactionCount`        |
+| ✅     | `starknet_call`                            |
+| ✅     | `starknet_estimateFee`                     |
+| ✅     | `starknet_estimateMessageFee`              |
+| ✅     | `starknet_blockNumber`                     |
+| ✅     | `starknet_blockHashAndNumber`              |
+| ✅     | `starknet_chainId`                         |
+| ✅     | `starknet_syncing`                         |
+| ✅     | `starknet_getEvents`                       |
+| ✅     | `starknet_getNonce`                        |
+
+</details>
+
+<details>
+  <summary>Trace Methods</summary>
+
+| Status | Method                            |
+| ------ | --------------------------------- |
+| ✅     | `starknet_traceTransaction`       |
+| ✅     | `starknet_simulateTransactions`   |
+| ✅     | `starknet_traceBlockTransactions` |
+
+</details>
+
+<details>
+  <summary>Write Methods</summary>
+
+| Status | Method                                 |
+| ------ | -------------------------------------- |
+| ✅     | `starknet_addInvokeTransaction`        |
+| ✅     | `starknet_addDeclareTransaction`       |
+| ✅     | `starknet_addDeployAccountTransaction` |
+
+</details>
+
+> ℹ️ **Info:** Deoxys currently supports latest [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs) specs up to version v0.7.1
+
+### Example of Calling a JSON-RPC Method
+
+Here is an example of how to call a JSON-RPC method using Deoxys:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "starknet_getBlockWithTxHashes",
+  "params": {
+    "block_id": "latest"
+  },
+  "id": 1
+}
+```
+
+You can use any JSON-RPC client to interact with the Deoxys node, such as `curl`, `httpie`,
+or a custom client in your preferred programming language.
+For more detailed information and examples on each method, please refer to the [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+
+> ⚠️ **Warning:** Write methods are forwarded to the Sequencer for execution.
+> Ensure you handle errors appropriately as per the JSON-RPC schema.
+
 ## ✔ Supported Features
+
+Deoxys offers numerous features and is constantly improving to stay at the cutting edge of Starknet technology.
+
+- **Starknet Version**: `v0.13.1`
+- **JSON-RPC Version**: `v0.7.1`
+- **Feeder-Gateway State Synchronization**
+- **State Commitment Computation**
+- **L1 State Verification**
+- **Handling L1 and L2 Reorgs**
+
+Each feature is designed to ensure optimal performance and seamless integration with the Starknet ecosystem.
 
 ## 👍 Contribute
 
