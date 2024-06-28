@@ -195,49 +195,58 @@ Deoxys fully supports all the JSON-RPC methods as specified in the Starknet main
 
 ### Supported JSON-RPC Methods
 
-#### Read Methods
+<details>
+  <summary>Read Methods</summary>
 
-| Status | Method |
-| ------ | ------ |
-| ✅ | `starknet_specVersion` |
-| ✅ | `starknet_getBlockWithTxHashes` |
-| ✅ | `starknet_getBlockWithReceipts` |
-| ✅ | `starknet_getBlockWithTxs` |
-| ✅ | `starknet_getStateUpdate` |
-| ✅ | `starknet_getStorageAt` |
-| ✅ | `starknet_getTransactionStatus` |
-| ✅ | `starknet_getTransactionByHash` |
-| ✅ | `starknet_getTransactionByBlockIdAndIndex` |
-| ✅ | `starknet_getTransactionReceipt` |
-| ✅ | `starknet_getClass` |
-| ✅ | `starknet_getClassHashAt` |
-| ✅ | `starknet_getClassAt` |
-| ✅ | `starknet_getBlockTransactionCount` |
-| ✅ | `starknet_call` |
-| ✅ | `starknet_estimateFee` |
-| ✅ | `starknet_estimateMessageFee` |
-| ✅ | `starknet_blockNumber` |
-| ✅ | `starknet_blockHashAndNumber` |
-| ✅ | `starknet_chainId` |
-| ✅ | `starknet_syncing` |
-| ✅ | `starknet_getEvents` |
-| ✅ | `starknet_getNonce` |
+  | Status | Method |
+  | ------ | ------ |
+  | ✅ | `starknet_specVersion` |
+  | ✅ | `starknet_getBlockWithTxHashes` |
+  | ✅ | `starknet_getBlockWithReceipts` |
+  | ✅ | `starknet_getBlockWithTxs` |
+  | ✅ | `starknet_getStateUpdate` |
+  | ✅ | `starknet_getStorageAt` |
+  | ✅ | `starknet_getTransactionStatus` |
+  | ✅ | `starknet_getTransactionByHash` |
+  | ✅ | `starknet_getTransactionByBlockIdAndIndex` |
+  | ✅ | `starknet_getTransactionReceipt` |
+  | ✅ | `starknet_getClass` |
+  | ✅ | `starknet_getClassHashAt` |
+  | ✅ | `starknet_getClassAt` |
+  | ✅ | `starknet_getBlockTransactionCount` |
+  | ✅ | `starknet_call` |
+  | ✅ | `starknet_estimateFee` |
+  | ✅ | `starknet_estimateMessageFee` |
+  | ✅ | `starknet_blockNumber` |
+  | ✅ | `starknet_blockHashAndNumber` |
+  | ✅ | `starknet_chainId` |
+  | ✅ | `starknet_syncing` |
+  | ✅ | `starknet_getEvents` |
+  | ✅ | `starknet_getNonce` |
 
-#### Traces Methods
+</details>
 
-| Status | Method |
-| ------ | ------ |
-| ✅ | `starknet_traceTransaction` |
-| ✅ | `starknet_simulateTransactions` |
-| ✅ | `starknet_traceBlockTransactions` |
+<details>
+  <summary>Trace Methods</summary>
 
-#### Write Methods
+  | Status | Method |
+  | ------ | ------ |
+  | ✅ | `starknet_traceTransaction` |
+  | ✅ | `starknet_simulateTransactions` |
+  | ✅ | `starknet_traceBlockTransactions` |
 
-| Status | Method |
-| ------ | ------ |
-| ✅ | `starknet_addInvokeTransaction` |
-| ✅ | `starknet_addDeclareTransaction` |
-| ✅ | `starknet_addDeployAccountTransaction` |
+</details>
+
+<details>
+  <summary>Write Methods</summary>
+
+  | Status | Method |
+  | ------ | ------ |
+  | ✅ | `starknet_addInvokeTransaction` |
+  | ✅ | `starknet_addDeclareTransaction` |
+  | ✅ | `starknet_addDeployAccountTransaction` |
+
+</details>
 
 ### Example of Calling a JSON-RPC Method
 
