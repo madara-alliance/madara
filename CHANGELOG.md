@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor: new crate exec
 - fix: trace, execution state_diff
 - refactor: store compiled contract class
 - fix: rate limit on classes
