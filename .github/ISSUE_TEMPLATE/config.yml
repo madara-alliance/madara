@@ -5,13 +5,3 @@ contact_links:
     about: |
       For general problems with Madara or related technologies, please ask
       and questions in our community! We highly encourage everyone also share their understanding by answering questions for others.
-
-issue_template:
-  - name: Bug Report
-    description: Let us know about an issue you experienced with this software
-    labels: [bug, unconfirmed]
-    template: bug_report.yml
-  - name: Feature Request
-    description: Submit your requests and suggestions to improve
-    labels: [enhancement]
-    template: feature.yml
