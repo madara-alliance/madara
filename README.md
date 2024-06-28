@@ -43,43 +43,43 @@ Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
 
 1. **Install dependencies**
 
-    Ensure you have the necessary dependencies:
+   Ensure you have the necessary dependencies:
 
-    ```bash
-    sudo apt-get update && sudo apt-get install -y \
-      clang \
-      protobuf-compiler \
-      build-essential
-    ```
+   ```bash
+   sudo apt-get update && sudo apt-get install -y \
+     clang \
+     protobuf-compiler \
+     build-essential
+   ```
 
-    Install Rust:
+   Install Rust:
 
-    ```bash
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s
-    ```
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s
+   ```
 
-    Clone the Deoxys repository:
+   Clone the Deoxys repository:
 
-    ```bash
-    cd <your-destination-path>
-    git clone https://github.com/KasarLabs/deoxys .
-    ```
+   ```bash
+   cd <your-destination-path>
+   git clone https://github.com/KasarLabs/deoxys .
+   ```
 
 2. **Run Deoxys**
 
-    Start the Deoxys client with synchronization to Starknet mainnet:
+   Start the Deoxys client with synchronization to Starknet mainnet:
 
-    ```bash
-    cargo run --release \
-      --name deoxys \
-      --base-path ../deoxys-db \
-      --network main \
-      --l1-endpoint ${ETHEREUM_API_URL} \
-      --chain starknet \
-      --rpc-port 9944 \
-      --rpc-cors "*" \
-      --rpc-external
-    ```
+   ```bash
+   cargo run --release \
+     --name deoxys \
+     --base-path ../deoxys-db \
+     --network main \
+     --l1-endpoint ${ETHEREUM_API_URL} \
+     --chain starknet \
+     --rpc-port 9944 \
+     --rpc-cors "*" \
+     --rpc-external
+   ```
 
 ### Run with Docker
 
@@ -111,31 +111,31 @@ Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
 
 1. **Ensure environment variable**
 
-    Set the necessary environment variable:
+   Set the necessary environment variable:
 
-    ```bash
-    export ETHEREUM_API_URL="your-ethereum-api-url"
-    ```
+   ```bash
+   export ETHEREUM_API_URL="your-ethereum-api-url"
+   ```
 
-    Or create a `.env` file in the same directory as your `docker-compose.yml` file:
+   Or create a `.env` file in the same directory as your `docker-compose.yml` file:
 
-    ```
-    ETHEREUM_API_URL=your-ethereum-api-url
-    ```
+   ```
+   ETHEREUM_API_URL=your-ethereum-api-url
+   ```
 
 2. **Build and Run the Container**
 
-    Navigate to the directory with your `docker-compose.yml` file and run:
+   Navigate to the directory with your `docker-compose.yml` file and run:
 
-    ```bash
-    docker-compose up -d
-    ```
+   ```bash
+   docker-compose up -d
+   ```
 
-    Check the logs of the running Deoxys service:
+   Check the logs of the running Deoxys service:
 
-    ```bash
-    docker-compose logs -f deoxys
-    ```
+   ```bash
+   docker-compose logs -f deoxys
+   ```
 
 ## ⚙️ Configuration
 
@@ -218,53 +218,53 @@ Here is a list of all the supported methods with their current status:
 <details>
   <summary>Read Methods</summary>
 
-  | Status | Method |
-  | ------ | ------ |
-  | ✅ | `starknet_specVersion` |
-  | ✅ | `starknet_getBlockWithTxHashes` |
-  | ✅ | `starknet_getBlockWithReceipts` |
-  | ✅ | `starknet_getBlockWithTxs` |
-  | ✅ | `starknet_getStateUpdate` |
-  | ✅ | `starknet_getStorageAt` |
-  | ✅ | `starknet_getTransactionStatus` |
-  | ✅ | `starknet_getTransactionByHash` |
-  | ✅ | `starknet_getTransactionByBlockIdAndIndex` |
-  | ✅ | `starknet_getTransactionReceipt` |
-  | ✅ | `starknet_getClass` |
-  | ✅ | `starknet_getClassHashAt` |
-  | ✅ | `starknet_getClassAt` |
-  | ✅ | `starknet_getBlockTransactionCount` |
-  | ✅ | `starknet_call` |
-  | ✅ | `starknet_estimateFee` |
-  | ✅ | `starknet_estimateMessageFee` |
-  | ✅ | `starknet_blockNumber` |
-  | ✅ | `starknet_blockHashAndNumber` |
-  | ✅ | `starknet_chainId` |
-  | ✅ | `starknet_syncing` |
-  | ✅ | `starknet_getEvents` |
-  | ✅ | `starknet_getNonce` |
+| Status | Method                                     |
+| ------ | ------------------------------------------ |
+| ✅     | `starknet_specVersion`                     |
+| ✅     | `starknet_getBlockWithTxHashes`            |
+| ✅     | `starknet_getBlockWithReceipts`            |
+| ✅     | `starknet_getBlockWithTxs`                 |
+| ✅     | `starknet_getStateUpdate`                  |
+| ✅     | `starknet_getStorageAt`                    |
+| ✅     | `starknet_getTransactionStatus`            |
+| ✅     | `starknet_getTransactionByHash`            |
+| ✅     | `starknet_getTransactionByBlockIdAndIndex` |
+| ✅     | `starknet_getTransactionReceipt`           |
+| ✅     | `starknet_getClass`                        |
+| ✅     | `starknet_getClassHashAt`                  |
+| ✅     | `starknet_getClassAt`                      |
+| ✅     | `starknet_getBlockTransactionCount`        |
+| ✅     | `starknet_call`                            |
+| ✅     | `starknet_estimateFee`                     |
+| ✅     | `starknet_estimateMessageFee`              |
+| ✅     | `starknet_blockNumber`                     |
+| ✅     | `starknet_blockHashAndNumber`              |
+| ✅     | `starknet_chainId`                         |
+| ✅     | `starknet_syncing`                         |
+| ✅     | `starknet_getEvents`                       |
+| ✅     | `starknet_getNonce`                        |
 
 </details>
 
 <details>
   <summary>Trace Methods</summary>
 
-  | Status | Method |
-  | ------ | ------ |
-  | ✅ | `starknet_traceTransaction` |
-  | ✅ | `starknet_simulateTransactions` |
-  | ✅ | `starknet_traceBlockTransactions` |
+| Status | Method                            |
+| ------ | --------------------------------- |
+| ✅     | `starknet_traceTransaction`       |
+| ✅     | `starknet_simulateTransactions`   |
+| ✅     | `starknet_traceBlockTransactions` |
 
 </details>
 
 <details>
   <summary>Write Methods</summary>
 
-  | Status | Method |
-  | ------ | ------ |
-  | ✅ | `starknet_addInvokeTransaction` |
-  | ✅ | `starknet_addDeclareTransaction` |
-  | ✅ | `starknet_addDeployAccountTransaction` |
+| Status | Method                                 |
+| ------ | -------------------------------------- |
+| ✅     | `starknet_addInvokeTransaction`        |
+| ✅     | `starknet_addDeclareTransaction`       |
+| ✅     | `starknet_addDeployAccountTransaction` |
 
 </details>
 
@@ -276,12 +276,12 @@ Here is an example of how to call a JSON-RPC method using Deoxys:
 
 ```json
 {
-    "jsonrpc": "2.0",
-    "method": "starknet_getBlockWithTxHashes",
-    "params": {
-        "block_id": "latest"
-    },
-    "id": 1
+  "jsonrpc": "2.0",
+  "method": "starknet_getBlockWithTxHashes",
+  "params": {
+    "block_id": "latest"
+  },
+  "id": 1
 }
 ```
 
@@ -303,7 +303,6 @@ Deoxys offers numerous features and is constantly improving to stay at the cutti
 Each feature is designed to ensure optimal performance and seamless integration with the Starknet ecosystem.
 
 ## 👍 Contribute
-
 
 ## 🤝 Partnerships
 
