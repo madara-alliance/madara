@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(issue): Removed unrelated link from issue template
 - feat: adding new readme and github issue templates for codebase reorg
 - fix: trace, execution state_diff
 - refactor: store compiled contract class
