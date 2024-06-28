@@ -85,27 +85,27 @@ Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
 
 1 **Run docker image**
 
-    To run Deoxys with Docker, use the following command:
+  To run Deoxys with Docker, use the following command:
 
-    ```bash
-    docker run -d \
-        --name deoxys \
-        -p 9944:9944 \
-        -v /var/lib/deoxys:/var/lib/deoxys \
-        deoxys:latest \
-        --base-path ../deoxys-db \
-        --network main \
-        --l1-endpoint <rpc key> \
-        --rpc-port 9944 \
-        --rpc-cors "*" \
-        --rpc-external
-    ```
+  ```bash
+  docker run -d \
+      --name deoxys \
+      -p 9944:9944 \
+      -v /var/lib/deoxys:/var/lib/deoxys \
+      deoxys:latest \
+      --base-path ../deoxys-db \
+      --network main \
+      --l1-endpoint <rpc key> \
+      --rpc-port 9944 \
+      --rpc-cors "*" \
+      --rpc-external
+  ```
 
-    Check the logs of the running Deoxys service:
+  Check the logs of the running Deoxys service:
 
-    ```bash
-    docker logs -f deoxys
-    ```
+  ```bash
+  docker logs -f deoxys
+  ```
 
 ### Run with Docker Compose
 
