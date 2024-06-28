@@ -17,7 +17,9 @@
 
 </div>
 
-# 👽 Deoxys: Starknet full node client on Substrate
+# 👽 Deoxys: Starknet full node client
+
+Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
 
 ## Table of Contents
 
