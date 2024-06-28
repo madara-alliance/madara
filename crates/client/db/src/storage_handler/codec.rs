@@ -216,4 +216,14 @@ mod tests {
         let decoded = u64::decode(&bytes).unwrap();
         assert_eq!(value, decoded);
     }
+
+    #[test]
+    fn test_encode_felt() {
+        let felt = Felt::MAX;
+        let encoded = bincode::serialize(&felt).unwrap();
+        println!("{:?}", encoded);
+        println!("encoded length: {:?}", encoded.len());
+        let decoded: Felt = bincode::deserialize(&encoded).unwrap();
+        assert_eq!(felt, decoded);
+    }
 }

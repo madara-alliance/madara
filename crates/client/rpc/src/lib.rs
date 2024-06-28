@@ -210,6 +210,10 @@ impl Starknet {
         }
     }
 
+    pub fn clone_backend(&self) -> Arc<DeoxysBackend> {
+        Arc::clone(&self.backend)
+    }
+
     pub fn sequencer_provider(&self) -> &SequencerGatewayProvider {
         &self.sequencer_provider
     }
@@ -250,16 +254,16 @@ impl Starknet {
             .ok_or(StarknetRpcApiError::BlockNotFound)?)
     }
 
-    fn chain_id(&self) -> RpcResult<Felt> {
-        Ok(self.chain_config.chain_id)
+    pub fn chain_id(&self) -> Felt {
+        self.chain_config.chain_id
     }
 
     pub fn current_block_number(&self) -> RpcResult<u64> {
         self.get_block_n(dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
     }
 
-    pub fn current_spec_version(&self) -> RpcResult<String> {
-        Ok("0.7.1".to_string())
+    pub fn current_spec_version(&self) -> String {
+        "0.7.1".to_string()
     }
 
     pub fn get_l1_last_confirmed_block(&self) -> RpcResult<u64> {

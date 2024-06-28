@@ -43,8 +43,8 @@ pub enum StarknetRpcApiError {
     FailedToFetchPendingTransactions,
     #[error("Contract error")]
     ContractError,
-    #[error("Transaction execution error")]
-    TxnExecutionError,
+    #[error("Transaction execution error: {error}")]
+    TxnExecutionError { error: String },
     #[error("Invalid contract class")]
     InvalidContractClass,
     #[error("Class already declared")]
@@ -98,7 +98,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::TooManyKeysInFilter => 34,
             StarknetRpcApiError::FailedToFetchPendingTransactions => 38,
             StarknetRpcApiError::ContractError => 40,
-            StarknetRpcApiError::TxnExecutionError => 41,
+            StarknetRpcApiError::TxnExecutionError { .. } => 41,
             StarknetRpcApiError::InvalidContractClass => 50,
             StarknetRpcApiError::ClassAlreadyDeclared => 51,
             StarknetRpcApiError::InvalidTxnNonce => 52,
@@ -112,7 +112,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::CompiledClassHashMismatch => 60,
             StarknetRpcApiError::UnsupportedTxnVersion => 61,
             StarknetRpcApiError::UnsupportedContractClassVersion => 62,
-            StarknetRpcApiError::ErrUnexpectedError { data: _ } => 63,
+            StarknetRpcApiError::ErrUnexpectedError { .. } => 63,
             StarknetRpcApiError::InternalServerError => 500,
             StarknetRpcApiError::UnimplementedMethod => 501,
             StarknetRpcApiError::ProofLimitExceeded => 10000,
@@ -126,6 +126,13 @@ impl StarknetRpcApiError {
             StarknetRpcApiError::ErrUnexpectedError { data } => Some(data.clone()),
             _ => None,
         }
+    }
+}
+
+// TODO: Implement the conversion for the rest of the errors
+impl From<blockifier::transaction::errors::TransactionExecutionError> for StarknetRpcApiError {
+    fn from(err: blockifier::transaction::errors::TransactionExecutionError) -> Self {
+        StarknetRpcApiError::TxnExecutionError { error: err.to_string() }
     }
 }
 
@@ -175,7 +182,9 @@ impl From<StarknetError> for StarknetRpcApiError {
             StarknetError::UnsupportedContractClassVersion => StarknetRpcApiError::UnsupportedContractClassVersion,
             StarknetError::UnexpectedError(data) => StarknetRpcApiError::ErrUnexpectedError { data },
             StarknetError::NoTraceAvailable(_) => StarknetRpcApiError::InternalServerError,
-            StarknetError::TransactionExecutionError(_) => StarknetRpcApiError::TxnExecutionError,
+            StarknetError::TransactionExecutionError(error) => {
+                StarknetRpcApiError::TxnExecutionError { error: error.execution_error.to_string() }
+            }
         }
     }
 }

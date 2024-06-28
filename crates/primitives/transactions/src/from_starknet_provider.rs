@@ -1,5 +1,5 @@
 use dp_convert::felt_to_u64;
-use starknet_crypto::Felt;
+use starknet_types_core::felt::Felt;
 
 use crate::{
     DataAvailabilityMode, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2,

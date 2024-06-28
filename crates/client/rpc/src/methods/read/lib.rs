@@ -36,7 +36,7 @@ impl StarknetReadRpcApiServer for Starknet {
     }
 
     fn spec_version(&self) -> RpcResult<String> {
-        self.current_spec_version()
+        Ok(self.current_spec_version())
     }
 
     fn block_hash_and_number(&self) -> RpcResult<BlockHashAndNumber> {
@@ -48,7 +48,7 @@ impl StarknetReadRpcApiServer for Starknet {
     }
 
     fn chain_id(&self) -> RpcResult<Felt> {
-        self.chain_id()
+        Ok(self.chain_id())
     }
 
     fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128> {

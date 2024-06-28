@@ -8,7 +8,7 @@ use starknet_types_core::felt::Felt;
 pub fn broadcasted_to_blockifier(
     transaction: starknet_core::types::BroadcastedTransaction,
     chain_id: Felt,
-) -> Result<blockifier::transaction::account_transaction::AccountTransaction, anyhow::Error> {
+) -> Result<blockifier::transaction::transaction_execution::Transaction, anyhow::Error> {
     let (class_info, class_hash) = match &transaction {
         starknet_core::types::BroadcastedTransaction::Declare(tx) => match tx {
             starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => (
@@ -48,20 +48,14 @@ pub fn broadcasted_to_blockifier(
     };
     let transaction: starknet_api::transaction::Transaction = (&transaction).try_into()?;
 
-    if let blockifier::transaction::transaction_execution::Transaction::AccountTransaction(account_transaction) =
-        blockifier::transaction::transaction_execution::Transaction::from_api(
-            transaction,
-            TransactionHash(hash.to_stark_felt()),
-            class_info,
-            None,
-            deployed_address.map(|address| address.to_stark_felt().try_into().unwrap()),
-            is_query,
-        )?
-    {
-        Ok(account_transaction)
-    } else {
-        unreachable!()
-    }
+    Ok(blockifier::transaction::transaction_execution::Transaction::from_api(
+        transaction,
+        TransactionHash(hash.to_stark_felt()),
+        class_info,
+        None,
+        deployed_address.map(|address| address.to_stark_felt().try_into().unwrap()),
+        is_query,
+    )?)
 }
 
 fn is_query(transaction: &starknet_core::types::BroadcastedTransaction) -> bool {

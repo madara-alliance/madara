@@ -97,7 +97,6 @@ impl StateReader for BlockifierStateAdapter {
     }
 
     fn get_class_hash_at(&mut self, contract_address: ContractAddress) -> StateResult<ClassHash> {
-        log::debug!("class hash for {:?}", contract_address);
         if let Some(class_hash) = self.class_hash_update.get(&contract_address).cloned() {
             return Ok(class_hash);
         }
@@ -171,7 +170,6 @@ impl State for BlockifierStateAdapter {
     }
 
     fn set_class_hash_at(&mut self, contract_address: ContractAddress, class_hash: ClassHash) -> StateResult<()> {
-        log::debug!("set class hash at {:?} {:?}", contract_address, class_hash);
         self.class_hash_update.insert(contract_address, class_hash);
 
         Ok(())
