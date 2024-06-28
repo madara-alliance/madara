@@ -21,7 +21,7 @@
 
 ## ⬇️ Installation
 
-### From Source
+### Run from Source
 
 1. **Install dependencies**
 
@@ -63,34 +63,30 @@
       --rpc-external
     ```
 
-### Using Docker
+### Run with Docker
 
-1. **Install Docker**
+1 **Run docker image**
 
-    Follow the installation instructions specific to your OS:
-
-    - **MacOS**: [Docker Hub](https://hub.docker.com/editions/community/docker-ce-desktop-mac/)
-    - **Linux**: [Docker Documentation](https://docs.docker.com/engine/install/ubuntu/)
-    - **Windows**: [Docker Hub](https://hub.docker.com/editions/community/docker-ce-desktop-windows/)
-
-2. **Run docker image**
-
-    Use Docker to run the Deoxys image:
+    To run Deoxys with Docker, use the following command:
 
     ```bash
     docker run -d \
-      --name deoxys \
-      -p 9944:9944 \
-      -v /var/lib/deoxys:/var/lib/deoxys \
-      deoxys:latest \
-      --name deoxys \
-      --base-path /var/lib/deoxys \
-      --network main \
-      --l1-endpoint ${ETHEREUM_API_URL} \
-      --chain starknet \
-      --rpc-port 9944 \
-      --rpc-cors "*" \
-      --rpc-external
+        --name deoxys \
+        -p 9944:9944 \
+        -v /var/lib/deoxys:/var/lib/deoxys \
+        deoxys:latest \
+        --base-path ../deoxys-db \
+        --network main \
+        --l1-endpoint <rpc key> \
+        --rpc-port 9944 \
+        --rpc-cors "*" \
+        --rpc-external
+    ```
+
+    Check the logs of the running Deoxys service:
+
+    ```bash
+    docker logs -f deoxys
     ```
 
 ### Using Docker Compose
@@ -117,9 +113,7 @@
     docker-compose up -d
     ```
 
-3. **Check Logs**
-
-    View the logs of the running Deoxys service:
+    Check the logs of the running Deoxys service:
 
     ```bash
     docker-compose logs -f deoxys
@@ -134,10 +128,9 @@ Configuring your Deoxys node properly ensures it meets your specific needs
 Here are the recommended options for a quick and simple configuration of your Deoxys full node:
 
 - **`--name <NAME>`**: The human-readable name for this node. It's used as the network node name.
-- **`-d, --base-path <PATH>`**: Set the directory for Starknet data (default is `/tmp/deoxys`).
-- **`-n, --network <NETWORK>`**: The network type to connect to (`main`, `test`, or `integration`).
+- **`--base-path <PATH>`**: Set the directory for Starknet data (default is `/tmp/deoxys`).
+- **`--network <NETWORK>`**: The network type to connect to (`main`, `test`, or `integration`).
 - **`--l1-endpoint <URL>`**: Specify the Layer 1 endpoint the node will verify its state from.
-- **`--chain <CHAIN>`**: Select the blockchain configuration you want to sync from (currently only `starknet` is supported by default).
 - **`--rpc-port <PORT>`**: Specify the JSON-RPC server TCP port.
 - **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the HTTP & WS RPC servers.
 - **`--rpc-external`**: Listen to all RPC interfaces. Default is local.
@@ -148,14 +141,13 @@ Here are the recommended options for a quick and simple configuration of your De
 #### Network
 
 - **`-n, --network <NETWORK>`**: The network type to connect to (default: `integration`).
-- **`--chain <chain>`**: Select the blockchain configuration you want to sync from (default: `starknet`).
 - **`--port <PORT>`**: Set the network listening port.
 - **`--l1-endpoint <URL>`**: Specify the Layer 1 endpoint the node will verify its state from.
 - **`--gateway-key <GATEWAY_KEY>`**: Gateway API key to avoid rate limiting (optional).
 - **`--sync-polling-interval <SECONDS>`**: Polling interval in seconds (default: 2).
 - **`--no-sync-polling`**: Stop sync polling.
 - **`--n-blocks-to-sync <NUMBER>`**: Number of blocks to sync.
-- **`--starting-block <BLOCK>`**: The block to start syncing from.
+- **`--starting-block <BLOCK>`**: The block to start syncing from (make sure to set `--disable-root`).
 
 #### RPC
 
@@ -170,7 +162,7 @@ Here are the recommended options for a quick and simple configuration of your De
 
 #### Database
 
-- **`-d, --base-path <PATH>`**: Specify custom base path (default: `/tmp/deoxys`).
+- **`--base-path <PATH>`**: Specify custom base path (default: `/tmp/deoxys`).
 - **`--snap <BLOCK_NUMBER>`**: Start syncing from the closest snapshot available for the desired block.
 - **`--tmp`**: Run a temporary node. A temporary directory will be created and deleted at the end of the process.
 - **`--cache`**: Enable caching of blocks and transactions to improve response times.
@@ -190,40 +182,49 @@ Deoxys fully supports all the JSON-RPC methods as specified in the Starknet main
 
 ### Supported JSON-RPC Methods
 
-**Read methods**
-- ✅ `starknet_specVersion`
-- ✅ `starknet_getBlockWithTxHashes`
-- ✅ `starknet_getBlockWithReceipts`
-- ✅ `starknet_getBlockWithTxs`
-- ✅ `starknet_getStateUpdate`
-- ✅ `starknet_getStorageAt`
-- ✅ `starknet_getTransactionStatus`
-- ✅ `starknet_getTransactionByHash`
-- ✅ `starknet_getTransactionByBlockIdAndIndex`
-- ✅ `starknet_getTransactionReceipt`
-- ✅ `starknet_getClass`
-- ✅ `starknet_getClassHashAt`
-- ✅ `starknet_getClassAt`
-- ✅ `starknet_getBlockTransactionCount`
-- ✅ `starknet_call`
-- ✅ `starknet_estimateFee`
-- ✅ `starknet_estimateMessageFee`
-- ✅ `starknet_blockNumber`
-- ✅ `starknet_blockHashAndNumber`
-- ✅ `starknet_chainId`
-- ✅ `starknet_syncing`
-- ✅ `starknet_getEvents`
-- ✅ `starknet_getNonce`
+#### Read Methods
 
-**Traces methods**
-- ✅ `starknet_traceTransaction`
-- ✅ `starknet_simulateTransactions`
-- ✅ `starknet_traceBlockTransactions`
+| Status | Method |
+| ------ | ------ |
+| ✅ | `starknet_specVersion` |
+| ✅ | `starknet_getBlockWithTxHashes` |
+| ✅ | `starknet_getBlockWithReceipts` |
+| ✅ | `starknet_getBlockWithTxs` |
+| ✅ | `starknet_getStateUpdate` |
+| ✅ | `starknet_getStorageAt` |
+| ✅ | `starknet_getTransactionStatus` |
+| ✅ | `starknet_getTransactionByHash` |
+| ✅ | `starknet_getTransactionByBlockIdAndIndex` |
+| ✅ | `starknet_getTransactionReceipt` |
+| ✅ | `starknet_getClass` |
+| ✅ | `starknet_getClassHashAt` |
+| ✅ | `starknet_getClassAt` |
+| ✅ | `starknet_getBlockTransactionCount` |
+| ✅ | `starknet_call` |
+| ✅ | `starknet_estimateFee` |
+| ✅ | `starknet_estimateMessageFee` |
+| ✅ | `starknet_blockNumber` |
+| ✅ | `starknet_blockHashAndNumber` |
+| ✅ | `starknet_chainId` |
+| ✅ | `starknet_syncing` |
+| ✅ | `starknet_getEvents` |
+| ✅ | `starknet_getNonce` |
 
-**Write methods**
-- ✅ `starknet_addInvokeTransaction`
-- ✅ `starknet_addDeclareTransaction`
-- ✅ `starknet_addDeployAccountTransaction`
+#### Traces Methods
+
+| Status | Method |
+| ------ | ------ |
+| ✅ | `starknet_traceTransaction` |
+| ✅ | `starknet_simulateTransactions` |
+| ✅ | `starknet_traceBlockTransactions` |
+
+#### Write Methods
+
+| Status | Method |
+| ------ | ------ |
+| ✅ | `starknet_addInvokeTransaction` |
+| ✅ | `starknet_addDeclareTransaction` |
+| ✅ | `starknet_addDeployAccountTransaction` |
 
 ### Example of Calling a JSON-RPC Method
 
