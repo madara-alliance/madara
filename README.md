@@ -75,10 +75,6 @@ Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
      --base-path ../deoxys-db \
      --network main \
      --l1-endpoint ${ETHEREUM_API_URL} \
-     --chain starknet \
-     --rpc-port 9944 \
-     --rpc-cors "*" \
-     --rpc-external
    ```
 
 ### Run with Docker
@@ -96,9 +92,6 @@ docker run -d \
     --base-path ../deoxys-db \
     --network main \
     --l1-endpoint <rpc key> \
-    --rpc-port 9944 \
-    --rpc-cors "*" \
-    --rpc-external
 ```
 
 Check the logs of the running Deoxys service:
