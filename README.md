@@ -138,7 +138,8 @@ Here are the recommended options for a quick and simple configuration of your De
 
 ### Advanced Command-Line Options by Namespace
 
-#### Network
+<details>
+<summary>Network</summary>
 
 - **`-n, --network <NETWORK>`**: The network type to connect to (default: `integration`).
 - **`--port <PORT>`**: Set the network listening port.
@@ -149,7 +150,10 @@ Here are the recommended options for a quick and simple configuration of your De
 - **`--n-blocks-to-sync <NUMBER>`**: Number of blocks to sync.
 - **`--starting-block <BLOCK>`**: The block to start syncing from (make sure to set `--disable-root`).
 
-#### RPC
+</details>
+
+<details>
+<summary>RPC</summary>
 
 - **`--rpc-external`**: Listen to all RPC interfaces. Note: not all RPC methods are safe to be exposed publicly. Use an RPC proxy server to filter out dangerous methods.
 - **`--rpc-methods <METHOD_SET>`**: RPC methods to expose (`auto`, `safe`, `unsafe`).
@@ -160,7 +164,10 @@ Here are the recommended options for a quick and simple configuration of your De
 - **`--rpc-max-connections <NUMBER>`**: Maximum number of RPC server connections (default: 100).
 - **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the HTTP & WS RPC servers.
 
-#### Database
+</details>
+
+<details>
+<summary>Database</summary>
 
 - **`--base-path <PATH>`**: Specify custom base path (default: `/tmp/deoxys`).
 - **`--snap <BLOCK_NUMBER>`**: Start syncing from the closest snapshot available for the desired block.
@@ -171,6 +178,8 @@ Here are the recommended options for a quick and simple configuration of your De
 - **`--backup-every-n-blocks <NUMBER>`**: Specify the number of blocks after which a backup should be created.
 - **`--backup-dir <DIR>`**: Specify the directory where backups should be stored.
 - **`--restore-from-latest-backup`**: Restore the database from the latest backup available.
+
+</details>
 
 ## 📸 Snapshots
 
