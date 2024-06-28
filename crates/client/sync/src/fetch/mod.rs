@@ -43,7 +43,7 @@ pub async fn l2_fetch_task(
 
             match val {
                 Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
-                    log::info!("🥳 The sync process caught up with the tip of the chain.");
+                    log::info!("🥳 The sync process has caught up with the tip of the chain");
                     break;
                 }
                 val => {

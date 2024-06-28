@@ -1,4 +1,3 @@
-use dp_convert::ToFelt;
 use starknet_core::types::BlockId;
 use starknet_types_core::felt::Felt;
 
@@ -22,15 +21,13 @@ use crate::Starknet;
 /// count or other contract-specific operations. In case of errors, such as
 /// `BLOCK_NOT_FOUND` or `CONTRACT_NOT_FOUND`, returns a `StarknetRpcApiError` indicating the
 /// specific issue.
-pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
-    let block_number = starknet.get_block_n(block_id)?;
 
+pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
     let nonce = starknet
         .backend
-        .contract_nonces()
-        .get_at(&contract_address, block_number)
-        .or_internal_server_error("Failed to retrieve contract class")?
+        .get_contract_nonce_at(&block_id, &contract_address)
+        .or_internal_server_error("Error getting nonce")?
         .ok_or(StarknetRpcApiError::ContractNotFound)?;
 
-    Ok(nonce.to_felt())
+    Ok(nonce)
 }

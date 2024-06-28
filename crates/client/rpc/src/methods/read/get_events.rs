@@ -1,8 +1,8 @@
+use dp_block::{DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo};
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage, Felt};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::events::get_block_events;
 use crate::types::ContinuationToken;
 use crate::Starknet;
 
@@ -56,13 +56,13 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Sta
     let mut filtered_events: Vec<EmittedEvent> = Vec::new();
 
     for current_block in from_block..=to_block {
-        let (pending, block) = if current_block <= latest_block {
-            (false, starknet.get_block(BlockId::Number(current_block))?)
+        let (_pending, block) = if current_block <= latest_block {
+            (false, starknet.get_block(&BlockId::Number(current_block))?)
         } else {
-            (true, starknet.get_block(BlockId::Tag(BlockTag::Pending))?)
+            (true, starknet.get_block(&BlockId::Tag(BlockTag::Pending))?)
         };
 
-        let block_filtered_events: Vec<EmittedEvent> = get_block_events(starknet, &block, pending)
+        let block_filtered_events: Vec<EmittedEvent> = get_block_events(starknet, &block)
             .into_iter()
             .filter(|event| event_match_filter(event, from_address, &keys))
             .collect();
@@ -108,16 +108,39 @@ fn block_range(
     from_block: Option<BlockId>,
     to_block: Option<BlockId>,
 ) -> StarknetRpcResult<(u64, u64, u64)> {
-    let latest_block_n = starknet.get_block_n(BlockId::Tag(BlockTag::Latest))?;
+    let latest_block_n = starknet.get_block_n(&BlockId::Tag(BlockTag::Latest))?;
     let from_block_n = match from_block {
         Some(BlockId::Tag(BlockTag::Pending)) => latest_block_n + 1,
-        Some(block_id) => starknet.get_block_n(block_id)?,
+        Some(block_id) => starknet.get_block_n(&block_id)?,
         None => 0,
     };
     let to_block_n = match to_block {
         Some(BlockId::Tag(BlockTag::Pending)) => latest_block_n + 1,
-        Some(block_id) => starknet.get_block_n(block_id)?,
+        Some(block_id) => starknet.get_block_n(&block_id)?,
         None => latest_block_n,
     };
     Ok((from_block_n, to_block_n, latest_block_n))
+}
+
+fn get_block_events(_starknet: &Starknet, block: &DeoxysMaybePendingBlock) -> Vec<EmittedEvent> {
+    let (block_hash, block_number) = match &block.info {
+        DeoxysMaybePendingBlockInfo::Pending(_) => (None, None),
+        DeoxysMaybePendingBlockInfo::NotPending(block) => (Some(block.block_hash), Some(block.header.block_number)),
+    };
+
+    let tx_hash_and_events = block.inner.receipts.iter().flat_map(|receipt| {
+        let tx_hash = receipt.transaction_hash();
+        receipt.events().iter().map(move |events| (tx_hash, events))
+    });
+
+    tx_hash_and_events
+        .map(|(transaction_hash, event)| EmittedEvent {
+            from_address: event.from_address,
+            keys: event.keys.clone(),
+            data: event.data.clone(),
+            block_hash,
+            block_number,
+            transaction_hash,
+        })
+        .collect()
 }

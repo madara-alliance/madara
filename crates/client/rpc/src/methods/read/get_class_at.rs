@@ -1,9 +1,8 @@
-use dc_db::storage_handler::StorageView;
 use starknet_core::types::{BlockId, ContractClass, Felt};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::ResultExt;
-use crate::{bail_internal_server_error, Starknet};
+use crate::utils::{OptionExt, ResultExt};
+use crate::Starknet;
 
 /// Get the Contract Class Definition at a Given Address in a Specific Block
 ///
@@ -29,24 +28,23 @@ pub fn get_class_at(
     block_id: BlockId,
     contract_address: Felt,
 ) -> StarknetRpcResult<ContractClass> {
-    let block_number = starknet.get_block_n(block_id)?;
+    let resolved_block_id = starknet
+        .backend
+        .resolve_block_id(&block_id)
+        .or_internal_server_error("Error resolving block id")?
+        .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
     let class_hash = starknet
         .backend
-        .contract_class_hash()
-        .get_at(&contract_address, block_number)
-        .or_internal_server_error("Failed to retrieve contract class")?
+        .get_contract_class_hash_at(&resolved_block_id, &contract_address)
+        .or_internal_server_error("Error getting contract class hash at")?
         .ok_or(StarknetRpcApiError::ContractNotFound)?;
 
-    // The class need to be stored
-    let Some(contract_class_data) = starknet
+    let class_data = starknet
         .backend
-        .contract_class_data()
-        .get(&class_hash)
-        .or_internal_server_error("Failed to retrieve contract class from hash")?
-    else {
-        bail_internal_server_error!("Failed to retrieve contract class from hash")
-    };
+        .get_class_info(&resolved_block_id, &class_hash)
+        .or_internal_server_error("Error getting contract class info")?
+        .ok_or_internal_server_error("Class has no info")?;
 
-    Ok(contract_class_data.contract_class.into())
+    Ok(class_data.contract_class.into())
 }

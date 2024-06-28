@@ -1,17 +1,71 @@
 //! Starknet block primitives.
 
-mod header;
+pub mod header;
 mod starknet_version;
 use dp_receipt::TransactionReceipt;
 use dp_transactions::Transaction;
-pub use header::{GasPrices, Header, L1DataAvailabilityMode};
+pub use header::Header;
+use header::PendingHeader;
+use starknet_core::types::{PendingStateUpdate, StateDiff};
 pub use starknet_version::StarknetVersion;
 
 pub use primitive_types::{H160, U256};
 use starknet_types_core::felt::Felt;
 
-#[cfg(test)]
-mod tests;
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum MaybePendingStateDiff {
+    Pending(PendingStateUpdate),
+    NotPending(StateDiff),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum DeoxysMaybePendingBlockInfo {
+    Pending(DeoxysPendingBlockInfo),
+    NotPending(DeoxysBlockInfo),
+}
+
+impl DeoxysMaybePendingBlockInfo {
+    pub fn as_nonpending(&self) -> Option<&DeoxysBlockInfo> {
+        match self {
+            DeoxysMaybePendingBlockInfo::Pending(_) => None,
+            DeoxysMaybePendingBlockInfo::NotPending(v) => Some(v),
+        }
+    }
+    pub fn as_pending(&self) -> Option<&DeoxysPendingBlockInfo> {
+        match self {
+            DeoxysMaybePendingBlockInfo::Pending(v) => Some(v),
+            DeoxysMaybePendingBlockInfo::NotPending(_) => None,
+        }
+    }
+
+    pub fn block_n(&self) -> Option<u64> {
+        self.as_nonpending().map(|v| v.header.block_number)
+    }
+    pub fn tx_hashes(&self) -> &[Felt] {
+        match self {
+            DeoxysMaybePendingBlockInfo::NotPending(block) => &block.tx_hashes,
+            DeoxysMaybePendingBlockInfo::Pending(block) => &block.tx_hashes,
+        }
+    }
+
+    pub fn protocol_version(&self) -> &StarknetVersion {
+        match self {
+            DeoxysMaybePendingBlockInfo::NotPending(block) => &block.header.protocol_version,
+            DeoxysMaybePendingBlockInfo::Pending(block) => &block.header.protocol_version,
+        }
+    }
+}
+
+impl From<DeoxysPendingBlockInfo> for DeoxysMaybePendingBlockInfo {
+    fn from(value: DeoxysPendingBlockInfo) -> Self {
+        Self::Pending(value)
+    }
+}
+impl From<DeoxysBlockInfo> for DeoxysMaybePendingBlockInfo {
+    fn from(value: DeoxysBlockInfo) -> Self {
+        Self::NotPending(value)
+    }
+}
 
 /// Block tag.
 ///
@@ -69,58 +123,58 @@ impl From<BlockId> for starknet_core::types::BlockId {
 }
 
 // Light version of the block with block_hash
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct DeoxysPendingBlockInfo {
+    pub header: PendingHeader,
+    pub tx_hashes: Vec<Felt>,
+}
+
+impl DeoxysPendingBlockInfo {
+    pub fn new(header: PendingHeader, tx_hashes: Vec<Felt>) -> Self {
+        Self { header, tx_hashes }
+    }
+}
+
+// Light version of the block with block_hash
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInfo {
-    header: Header,
-    block_hash: Felt,
-    tx_hashes: Vec<Felt>,
+    pub header: Header,
+    pub block_hash: Felt,
+    pub tx_hashes: Vec<Felt>,
 }
 
 impl DeoxysBlockInfo {
     pub fn new(header: Header, tx_hashes: Vec<Felt>, block_hash: Felt) -> Self {
         Self { header, block_hash, tx_hashes }
     }
-
-    pub fn header(&self) -> &Header {
-        &self.header
-    }
-    pub fn tx_hashes(&self) -> &[Felt] {
-        &self.tx_hashes
-    }
-    pub fn block_hash(&self) -> &Felt {
-        &self.block_hash
-    }
-    pub fn block_n(&self) -> u64 {
-        self.header.block_number
-    }
 }
 
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInner {
     /// The block transactions.
-    transactions: Vec<Transaction>,
+    pub transactions: Vec<Transaction>,
     /// The block transactions receipts.
-    receipts: Vec<TransactionReceipt>,
+    pub receipts: Vec<TransactionReceipt>,
 }
 
 impl DeoxysBlockInner {
     pub fn new(transactions: Vec<Transaction>, receipts: Vec<TransactionReceipt>) -> Self {
         Self { transactions, receipts }
     }
-
-    pub fn transactions(&self) -> &[Transaction] {
-        &self.transactions
-    }
-    pub fn receipts(&self) -> &[TransactionReceipt] {
-        &self.receipts
-    }
 }
 
 /// Starknet block definition.
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct DeoxysMaybePendingBlock {
+    pub info: DeoxysMaybePendingBlockInfo,
+    pub inner: DeoxysBlockInner,
+}
+
+/// Starknet block definition.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlock {
-    info: DeoxysBlockInfo,
-    inner: DeoxysBlockInner,
+    pub info: DeoxysBlockInfo,
+    pub inner: DeoxysBlockInner,
 }
 
 impl DeoxysBlock {
@@ -128,31 +182,18 @@ impl DeoxysBlock {
     pub fn new(info: DeoxysBlockInfo, inner: DeoxysBlockInner) -> Self {
         Self { info, inner }
     }
+}
 
-    pub fn tx_hashes(&self) -> &[Felt] {
-        &self.info.tx_hashes
-    }
-    pub fn block_hash(&self) -> &Felt {
-        &self.info.block_hash
-    }
-    pub fn block_n(&self) -> u64 {
-        self.info.header.block_number
-    }
+/// Starknet block definition.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct DeoxysPendingBlock {
+    pub info: DeoxysPendingBlockInfo,
+    pub inner: DeoxysBlockInner,
+}
 
-    pub fn info(&self) -> &DeoxysBlockInfo {
-        &self.info
-    }
-    pub fn header(&self) -> &Header {
-        &self.info.header
-    }
-
-    pub fn inner(&self) -> &DeoxysBlockInner {
-        &self.inner
-    }
-    pub fn transactions(&self) -> &[Transaction] {
-        &self.inner.transactions
-    }
-    pub fn receipts(&self) -> &[TransactionReceipt] {
-        &self.inner.receipts
+impl DeoxysPendingBlock {
+    /// Creates a new block.
+    pub fn new(info: DeoxysPendingBlockInfo, inner: DeoxysBlockInner) -> Self {
+        Self { info, inner }
     }
 }

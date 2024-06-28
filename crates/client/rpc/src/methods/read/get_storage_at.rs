@@ -40,25 +40,18 @@ pub fn get_storage_at(
     key: Felt,
     block_id: BlockId,
 ) -> StarknetRpcResult<Felt> {
-    let block_number = starknet.get_block_n(block_id)?;
-
-    // Check if the contract exists at the given address in the specified block.
-    match starknet
+    // Check if contract exists
+    starknet
         .backend
-        .contract_class_hash()
-        .is_contract_deployed_at(&contract_address, block_number)
+        .get_contract_class_hash_at(&block_id, &contract_address) // TODO: contains api without deser
         .or_internal_server_error("Failed to check if contract is deployed")?
-    {
-        true => {}
-        false => return Err(StarknetRpcApiError::ContractNotFound),
-    }
+        .ok_or(StarknetRpcApiError::ContractNotFound)?;
 
-    let value = starknet
+    let storage = starknet
         .backend
-        .contract_storage()
-        .get_at(&(contract_address, key), block_number)
-        .or_internal_server_error("Failed to retrieve contract storage")?
-        .unwrap_or_default();
+        .get_contract_storage_at(&block_id, &contract_address, &key)
+        .or_internal_server_error("Error getting contract class hash at")?
+        .unwrap_or(Felt::ZERO);
 
-    Ok(value)
+    Ok(storage)
 }

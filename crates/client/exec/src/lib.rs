@@ -5,7 +5,7 @@ mod execution;
 mod fee;
 mod trace;
 
-pub use block_context::block_context;
+pub use block_context::ExecutionContext;
 use blockifier::{
     state::cached_state::CommitmentStateDiff,
     transaction::{
@@ -14,19 +14,66 @@ use blockifier::{
         transaction_types::TransactionType,
     },
 };
-pub use call::call_contract;
-pub use execution::execute_transactions;
-pub use fee::execution_result_to_fee_estimate;
+use dc_db::{db_block_id::DbBlockId, storage_handler::DeoxysStorageError};
 use starknet_api::transaction::TransactionHash;
+use starknet_core::types::Felt;
 pub use trace::execution_result_to_tx_trace;
 
 #[derive(thiserror::Error, Debug)]
-#[error("Executing tx {hash:#} (index {index}): {err:#}")]
-pub struct TransactionsExecError {
-    pub hash: TransactionHash,
-    pub index: usize,
-    pub err: TransactionExecutionError,
+pub enum Error {
+    #[error("Unsupported protocol version")]
+    UnsupportedProtocolVersion,
+    #[error("{0:#}")]
+    Reexecution(#[from] TxReexecError),
+    #[error("{0:#}")]
+    FeeEstimation(#[from] TxFeeEstimationError),
+    #[error("{0:#}")]
+    MessageFeeEstimation(#[from] MessageFeeEstimationError),
+    #[error("{0:#}")]
+    CallContract(#[from] CallContractError),
+    #[error("Storage error: {0:#}")]
+    Storage(#[from] DeoxysStorageError),
 }
+
+#[derive(thiserror::Error, Debug)]
+#[error("Reexecuting tx {hash:#} (index {index}) on top of {block_n}: {err:#}")]
+pub struct TxReexecError {
+    block_n: DbBlockId,
+    hash: TransactionHash,
+    index: usize,
+    err: TransactionExecutionError,
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("Estimating fee for tx index {index} on top of {block_n}: {err:#}")]
+pub struct TxFeeEstimationError {
+    block_n: DbBlockId,
+    index: usize,
+    err: TransactionExecutionError,
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("Estimating message fee on top of {block_n}: {err:#}")]
+pub struct MessageFeeEstimationError {
+    block_n: DbBlockId,
+    err: TransactionExecutionError,
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("Calling contract {contract:#} on top of {block_n:#}: {err:#}")]
+pub struct CallContractError {
+    block_n: DbBlockId,
+    contract: Felt,
+    err: TransactionExecutionError,
+}
+
+// #[derive(thiserror::Error, Debug)]
+// #[error("Executing tx {hash:#} (index {index}): {err:#}")]
+// pub struct TransactionsExecError {
+//     pub hash: TransactionHash,
+//     pub index: usize,
+//     pub err: TransactionExecutionError,
+// }
 
 pub struct ExecutionResult {
     pub hash: TransactionHash,

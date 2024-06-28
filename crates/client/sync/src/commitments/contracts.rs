@@ -127,7 +127,7 @@ fn class_hash_and_nonce(
     };
     let nonce = match csd.address_to_nonce.get(contract_address) {
         Some(nonce) => nonce.to_felt(),
-        None => backend.contract_nonces().get(&contract_address.to_felt())?.unwrap_or_default().to_felt(),
+        None => backend.contract_nonces().get(&contract_address.to_felt())?.unwrap_or_default(),
     };
     Ok((class_hash, nonce))
 }

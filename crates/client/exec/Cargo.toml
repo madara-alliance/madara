@@ -29,3 +29,4 @@ starknet_api = { workspace = true }
 # Other
 indexmap = { workspace = true }
 thiserror = { workspace = true }
+log = { workspace = true }

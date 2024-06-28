@@ -121,6 +121,16 @@ impl NetworkType {
         }
     }
 
+    pub fn db_chain_info(&self) -> dc_db::mapping_db::ChainInfo {
+        let chain_name = match self {
+            NetworkType::Main => "main",
+            NetworkType::Test => "test",
+            NetworkType::Integration => "integration",
+        };
+
+        dc_db::mapping_db::ChainInfo { chain_id: self.chain_id(), chain_name: chain_name.into() }
+    }
+
     pub fn gateway(&self) -> Url {
         format!("{}/gateway", self.uri()).parse().unwrap()
     }

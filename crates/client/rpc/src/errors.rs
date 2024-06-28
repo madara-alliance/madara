@@ -136,9 +136,18 @@ impl StarknetRpcApiError {
     }
 }
 
-impl From<dc_exec::TransactionsExecError> for StarknetRpcApiError {
-    fn from(err: dc_exec::TransactionsExecError) -> Self {
-        Self::TxnExecutionError { tx_index: err.index, error: err.err.to_string() }
+impl From<dc_exec::Error> for StarknetRpcApiError {
+    fn from(err: dc_exec::Error) -> Self {
+        // match err {
+        //     dc_exec::Error::UnsupportedProtocolVersion => StarknetRpcApiError::UnsupportedTxnVersion,
+        //     dc_exec::Error::Reexecution(_) => todo!(),
+        //     dc_exec::Error::FeeEstimation(_) => todo!(),
+        //     dc_exec::Error::MessageFeeEstimation(_) => todo!(),
+        //     dc_exec::Error::CallContract(_) => StarknetRpcApiError::,
+        //     dc_exec::Error::Storage(_) => todo!(),
+        // }
+        // todo
+        Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err) }
     }
 }
 

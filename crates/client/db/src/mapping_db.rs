@@ -1,57 +1,67 @@
-use std::sync::Arc;
+use anyhow::Context;
+use dp_block::{
+    BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
+    DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo, MaybePendingStateDiff,
+};
+use starknet_core::types::{Felt, PendingStateUpdate, StateDiff};
 
-use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use starknet_core::types::{Felt, PendingStateUpdate};
+use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
+use crate::storage_handler::{codec, DeoxysStorageError};
+use crate::{Column, DatabaseExt, DeoxysBackend, WriteBatchWithTransaction};
 
-use crate::storage_handler::codec;
-use crate::{Column, DatabaseExt, WriteBatchWithTransaction, DB};
-
-#[derive(Debug, thiserror::Error)]
-pub enum MappingDbError {
-    #[error("rocksdb error: {0}")]
-    RocksDBError(#[from] rocksdb::Error),
-    #[error("db number format error")]
-    NumberFormat,
-    #[error("value codec error: {0}")]
-    Codec(#[from] codec::Error),
-    #[error("value codec error: {0}")]
-    Bincode(#[from] bincode::Error),
-}
-
-type Result<T, E = MappingDbError> = std::result::Result<T, E>;
+type Result<T, E = DeoxysStorageError> = std::result::Result<T, E>;
 
 /// Allow interaction with the mapping db
-#[derive(Debug)]
-pub struct MappingDb {
-    db: Arc<DB>,
+// #[derive(Debug)]
+// pub struct MappingDb {
+//     db: Arc<DB>,
+// }
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct ChainInfo {
+    pub chain_id: starknet_types_core::felt::Felt,
+    pub chain_name: String,
 }
 
-#[derive(Debug, Clone)]
-pub enum BlockStorageType {
-    Pending,
-    BlockN(u64),
-}
-
+const ROW_CHAIN_INFO: &[u8] = b"chain_info";
 const ROW_PENDING_INFO: &[u8] = b"pending_info";
 const ROW_PENDING_STATE_UPDATE: &[u8] = b"pending_state_update";
 const ROW_PENDING_INNER: &[u8] = b"pending";
 const ROW_SYNC_TIP: &[u8] = b"sync_tip";
 const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
 
-#[derive(Debug, Clone)]
-pub struct TxStorageInfo {
-    pub storage_type: BlockStorageType,
-    pub tx_index: usize,
-}
+pub struct TxIndex(pub u64);
 
-// TODO(error-handling): replace all of the else { return Ok(None) } with hard errors for
+// TODO(error-handling): some of the else { return Ok(None) } should be replaced with hard errors for
 // inconsistent state.
-impl MappingDb {
-    /// Creates a new instance of the mapping database.
-    pub(crate) fn new(db: Arc<DB>) -> Self {
-        Self { db }
+impl DeoxysBackend {
+    pub fn chain_info(&self) -> Result<ChainInfo> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        let res = self.db.get_pinned_cf(&col, ROW_CHAIN_INFO)?.ok_or(DeoxysStorageError::MissingChainInfo)?;
+        Ok(bincode::deserialize(res.as_ref())?)
     }
 
+    pub(crate) fn assert_chain_info(&self, expected: &ChainInfo) -> anyhow::Result<()> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        if let Some(res) = self.db.get_pinned_cf(&col, ROW_CHAIN_INFO)? {
+            let res: ChainInfo = bincode::deserialize(res.as_ref())?;
+
+            if res.chain_id != expected.chain_id {
+                anyhow::bail!(
+                    "The database has been created on the network `{}` (chain id {:#x}), \
+                            but the node is configured for network `{}` (chain id {:#x}).",
+                    res.chain_name,
+                    res.chain_id,
+                    expected.chain_name,
+                    expected.chain_id
+                )
+            }
+        } else {
+            self.db.put_cf(&col, ROW_CHAIN_INFO, bincode::serialize(expected)?).context("writing chain info to db")?;
+        }
+
+        Ok(())
+    }
     // DB read operations
 
     fn tx_hash_to_block_n(&self, tx_hash: &Felt) -> Result<Option<u64>> {
@@ -70,6 +80,14 @@ impl MappingDb {
         Ok(Some(block_n))
     }
 
+    fn get_state_update(&self, block_n: u64) -> Result<Option<StateDiff>> {
+        let col = self.db.get_column(Column::BlockNToStateDiff);
+        let res = self.db.get_cf(&col, codec::Encode::encode(&block_n)?)?;
+        let Some(res) = res else { return Ok(None) };
+        let block = bincode::deserialize(&res)?;
+        Ok(Some(block))
+    }
+
     fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<DeoxysBlockInfo>> {
         let col = self.db.get_column(Column::BlockNToBlockInfo);
         let res = self.db.get_cf(&col, codec::Encode::encode(&block_n)?)?;
@@ -86,14 +104,14 @@ impl MappingDb {
         Ok(Some(block))
     }
 
-    fn get_latest_block_n(&self) -> Result<Option<u64>> {
+    pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_SYNC_TIP)? else { return Ok(None) };
         let res = codec::Decode::decode(&res)?;
         Ok(Some(res))
     }
 
-    fn get_pending_block_info(&self) -> Result<Option<DeoxysBlockInfo>> {
+    fn get_pending_block_info(&self) -> Result<Option<DeoxysPendingBlockInfo>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INFO)? else { return Ok(None) };
         let res = bincode::deserialize(&res)?;
@@ -130,13 +148,13 @@ impl MappingDb {
         state_update: &PendingStateUpdate,
     ) -> Result<()> {
         let col = self.db.get_column(Column::BlockStorageMeta);
-        tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(block.info())?);
-        tx.put_cf(&col, ROW_PENDING_INNER, bincode::serialize(block.inner())?);
+        tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(&block.info)?);
+        tx.put_cf(&col, ROW_PENDING_INNER, bincode::serialize(&block.inner)?);
         tx.put_cf(&col, ROW_PENDING_STATE_UPDATE, bincode::serialize(&state_update)?);
         Ok(())
     }
 
-    pub fn write_no_pending(&self, tx: &mut WriteBatchWithTransaction) -> Result<()> {
+    pub fn clear_pending(&self, tx: &mut WriteBatchWithTransaction) -> Result<()> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         tx.delete_cf(&col, ROW_PENDING_INFO);
         tx.delete_cf(&col, ROW_PENDING_INNER);
@@ -150,159 +168,144 @@ impl MappingDb {
         Ok(())
     }
 
-    pub fn write_no_last_confirmed_block(&self, tx: &mut WriteBatchWithTransaction) -> Result<()> {
+    pub fn clear_last_confirmed_block(&self, tx: &mut WriteBatchWithTransaction) -> Result<()> {
         self.write_last_confirmed_block(tx, 0)
     }
 
-    pub fn write_new_block(&self, tx: &mut WriteBatchWithTransaction, block: &DeoxysBlock) -> Result<()> {
+    /// Also clears pending block
+    pub fn write_new_block(
+        &self,
+        tx: &mut WriteBatchWithTransaction,
+        block: &DeoxysBlock,
+        state_diff: &StateDiff,
+    ) -> Result<()> {
         let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
         let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
         let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
         let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
+        let block_n_to_state_diff = self.db.get_column(Column::BlockNToStateDiff);
         let meta = self.db.get_column(Column::BlockStorageMeta);
 
-        let block_hash_encoded = bincode::serialize(block.block_hash())?;
-        let block_n_encoded = codec::Encode::encode(&block.block_n())?;
+        let block_hash_encoded = bincode::serialize(&block.info.block_hash)?;
+        let block_n_encoded = codec::Encode::encode(&block.info.header.block_number)?;
 
-        for hash in block.tx_hashes() {
+        for hash in &block.info.tx_hashes {
             tx.put_cf(&tx_hash_to_block_n, bincode::serialize(hash)?, &block_n_encoded);
         }
 
         tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
-        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(block.info())?);
-        tx.put_cf(&block_n_to_block_inner, &block_n_encoded, bincode::serialize(block.inner())?);
+        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(&block.info)?);
+        tx.put_cf(&block_n_to_block_inner, &block_n_encoded, bincode::serialize(&block.inner)?);
+        tx.put_cf(&block_n_to_state_diff, &block_n_encoded, bincode::serialize(state_diff)?);
         tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
 
-        self.write_no_pending(tx)
+        self.clear_pending(tx)
     }
 
     // Convenience functions
 
-    fn id_to_storage_type(&self, id: &BlockId) -> Result<Option<BlockStorageType>> {
+    pub(crate) fn id_to_storage_type(&self, id: &BlockId) -> Result<Option<DbBlockId>> {
         match id {
-            BlockId::Hash(hash) => Ok(self.block_hash_to_block_n(hash)?.map(BlockStorageType::BlockN)),
-            BlockId::Number(block_n) => Ok(Some(BlockStorageType::BlockN(*block_n))),
-            BlockId::Tag(BlockTag::Latest) => Ok(self.get_latest_block_n()?.map(BlockStorageType::BlockN)),
-            BlockId::Tag(BlockTag::Pending) => Ok(Some(BlockStorageType::Pending)),
+            BlockId::Hash(hash) => Ok(self.block_hash_to_block_n(hash)?.map(DbBlockId::BlockN)),
+            BlockId::Number(block_n) => Ok(Some(DbBlockId::BlockN(*block_n))),
+            BlockId::Tag(BlockTag::Latest) => Ok(self.get_latest_block_n()?.map(DbBlockId::BlockN)),
+            BlockId::Tag(BlockTag::Pending) => Ok(Some(DbBlockId::Pending)),
         }
     }
 
-    fn storage_to_info(&self, id: &BlockStorageType) -> Result<Option<DeoxysBlockInfo>> {
+    fn storage_to_info(&self, id: &DbBlockId) -> Result<Option<DeoxysMaybePendingBlockInfo>> {
         match id {
-            BlockStorageType::Pending => self.get_pending_block_info(),
-            BlockStorageType::BlockN(block_n) => self.get_block_info_from_block_n(*block_n),
+            DbBlockId::Pending => Ok(self.get_pending_block_info()?.map(DeoxysMaybePendingBlockInfo::Pending)),
+            DbBlockId::BlockN(block_n) => {
+                Ok(self.get_block_info_from_block_n(*block_n)?.map(DeoxysMaybePendingBlockInfo::NotPending))
+            }
         }
     }
 
-    fn storage_to_inner(&self, id: &BlockStorageType) -> Result<Option<DeoxysBlockInner>> {
+    fn storage_to_inner(&self, id: &DbBlockId) -> Result<Option<DeoxysBlockInner>> {
         match id {
-            BlockStorageType::Pending => self.get_pending_block_inner(),
-            BlockStorageType::BlockN(block_n) => self.get_block_inner_from_block_n(*block_n),
+            DbBlockId::Pending => self.get_pending_block_inner(),
+            DbBlockId::BlockN(block_n) => self.get_block_inner_from_block_n(*block_n),
         }
     }
 
     // BlockId
 
-    pub fn get_block_n(&self, id: &BlockId) -> Result<Option<u64>> {
-        let Some(ty) = self.id_to_storage_type(id)? else { return Ok(None) };
+    pub fn get_block_n(&self, id: &impl DbBlockIdResolvable) -> Result<Option<u64>> {
+        let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match &ty {
-            BlockStorageType::BlockN(block_id) => Ok(Some(*block_id)),
-            BlockStorageType::Pending => Ok(self.storage_to_info(&ty)?.map(|e| e.block_n())),
+            DbBlockId::BlockN(block_id) => Ok(Some(*block_id)),
+            DbBlockId::Pending => Ok(None),
         }
     }
 
-    pub fn get_block_hash(&self, id: &BlockId) -> Result<Option<Felt>> {
-        match id {
-            BlockId::Hash(hash) => Ok(Some(*hash)),
-            _ => Ok(self.get_block_info(id)?.map(|info| *info.block_hash())),
+    pub fn get_block_hash(&self, id: &impl DbBlockIdResolvable) -> Result<Option<Felt>> {
+        let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
+        match &ty {
+            // TODO: fast path if id is already a block hash..
+            DbBlockId::BlockN(block_n) => Ok(self.get_block_info_from_block_n(*block_n)?.map(|b| b.block_hash)),
+            DbBlockId::Pending => Ok(None),
         }
     }
 
-    pub fn get_block_info(&self, id: &BlockId) -> Result<Option<DeoxysBlockInfo>> {
-        let Some(ty) = self.id_to_storage_type(id)? else { return Ok(None) };
+    pub fn get_block_state_diff(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MaybePendingStateDiff>> {
+        let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
+        match ty {
+            DbBlockId::Pending => Ok(self.get_pending_block_state_update()?.map(MaybePendingStateDiff::Pending)),
+            DbBlockId::BlockN(block_n) => Ok(self.get_state_update(block_n)?.map(MaybePendingStateDiff::NotPending)),
+        }
+    }
+
+    pub fn get_block_info(&self, id: &impl DbBlockIdResolvable) -> Result<Option<DeoxysMaybePendingBlockInfo>> {
+        let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         self.storage_to_info(&ty)
     }
 
-    pub fn get_block_inner(&self, id: &BlockId) -> Result<Option<DeoxysBlockInner>> {
-        let Some(ty) = self.id_to_storage_type(id)? else { return Ok(None) };
+    pub fn get_block_inner(&self, id: &impl DbBlockIdResolvable) -> Result<Option<DeoxysBlockInner>> {
+        let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         self.storage_to_inner(&ty)
     }
 
-    pub fn get_block(&self, id: &BlockId) -> Result<Option<DeoxysBlock>> {
-        let Some(ty) = self.id_to_storage_type(id)? else { return Ok(None) };
+    pub fn get_block(&self, id: &impl DbBlockIdResolvable) -> Result<Option<DeoxysMaybePendingBlock>> {
+        let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         let Some(info) = self.storage_to_info(&ty)? else { return Ok(None) };
         let Some(inner) = self.storage_to_inner(&ty)? else { return Ok(None) };
-        Ok(Some(DeoxysBlock::new(info, inner)))
+        Ok(Some(DeoxysMaybePendingBlock { info, inner }))
     }
 
     // Tx hashes and tx status
 
     /// Returns the index of the tx.
-    pub fn find_tx_hash_block_info(&self, tx_hash: &Felt) -> Result<Option<(DeoxysBlockInfo, TxStorageInfo)>> {
+    pub fn find_tx_hash_block_info(&self, tx_hash: &Felt) -> Result<Option<(DeoxysMaybePendingBlockInfo, TxIndex)>> {
         match self.tx_hash_to_block_n(tx_hash)? {
             Some(block_n) => {
                 let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
-                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
-                Ok(Some((info, TxStorageInfo { storage_type: BlockStorageType::BlockN(block_n), tx_index })))
+                let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
+                Ok(Some((info.into(), TxIndex(tx_index as _))))
             }
             None => {
                 let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
-                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
-                Ok(Some((info, TxStorageInfo { storage_type: BlockStorageType::Pending, tx_index })))
+                let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
+                Ok(Some((info.into(), TxIndex(tx_index as _))))
             }
         }
     }
 
     /// Returns the index of the tx.
-    pub fn find_tx_hash_block(&self, tx_hash: &Felt) -> Result<Option<(DeoxysBlock, TxStorageInfo)>> {
+    pub fn find_tx_hash_block(&self, tx_hash: &Felt) -> Result<Option<(DeoxysMaybePendingBlock, TxIndex)>> {
         match self.tx_hash_to_block_n(tx_hash)? {
             Some(block_n) => {
                 let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
-                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
                 let Some(inner) = self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
-                Ok(Some((
-                    DeoxysBlock::new(info, inner),
-                    TxStorageInfo { storage_type: BlockStorageType::BlockN(block_n), tx_index },
-                )))
+                Ok(Some((DeoxysMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
             None => {
                 let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
-                let Some(tx_index) = info.tx_hashes().iter().position(|a| a == tx_hash) else { return Ok(None) };
+                let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
                 let Some(inner) = self.get_pending_block_inner()? else { return Ok(None) };
-                Ok(Some((
-                    DeoxysBlock::new(info, inner),
-                    TxStorageInfo { storage_type: BlockStorageType::Pending, tx_index },
-                )))
+                Ok(Some((DeoxysMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
         }
     }
-
-    // pub fn get_tx_status(&self, tx_info: &TxStorageInfo) {
-
-    // }
-
-    // pub fn get_block_n_from_tx_hash(&self, tx_hash: &TransactionHash) -> Result<Option<u64>> {
-    //     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)? else { return Ok(None) };
-    //     Ok(Some(block_n))
-    // }
-
-    // pub fn get_block_info_from_tx_hash(&self, tx_hash: &TransactionHash) ->
-    // Result<Option<DeoxysBlockInfo>> {     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)?
-    // else { return Ok(None) };     let Some(block_info) =
-    // self.get_block_info_from_block_n(block_n)? else { return Ok(None) };     Ok(Some(block_info))
-    // }
-
-    // pub fn get_block_inner_from_tx_hash(&self, tx_hash: &TransactionHash) ->
-    // Result<Option<DeoxysBlockInner>> {     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)?
-    // else { return Ok(None) };     let Some(block_inner) =
-    // self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
-    //     Ok(Some(block_inner))
-    // }
-
-    // pub fn get_block_from_tx_hash(&self, tx_hash: &TransactionHash) -> Result<Option<DeoxysBlock>> {
-    //     let Some(block_n) = self.tx_hash_to_block_n(tx_hash)? else { return Ok(None) };
-    //     let Some(block_info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
-    //     let Some(block_inner) = self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
-    //     Ok(Some(DeoxysBlock::new(block_info, block_inner)))
-    // }
 }

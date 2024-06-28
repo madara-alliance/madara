@@ -10,7 +10,6 @@ use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
 
 use self::history::HistoryError;
-use crate::mapping_db::MappingDbError;
 
 pub mod benchmark;
 pub mod block_state_diff;
@@ -56,27 +55,33 @@ pub enum DeoxysStorageError {
     StorageEncodeError(StorageType),
     #[error("Failed to decode {0}")]
     StorageDecodeError(StorageType),
-    #[error("Failed to serialize/deserialize")]
-    StorageSerdeError,
     #[error("Failed to revert {0} to block {1}")]
     StorageRevertError(StorageType, u64),
     #[error("{0:#}")]
     StorageHistoryError(#[from] HistoryError),
-    #[error("{0:#}")]
-    MappingDbError(#[from] MappingDbError),
     #[error("Invalid block number")]
     InvalidBlockNumber,
     #[error("Invalid nonce")]
     InvalidNonce,
     #[error("Failed to compile class: {0}")]
     CompilationClassError(String),
+    #[error("value codec error: {0:#}")]
+    Codec(#[from] codec::Error),
+    #[error("bincode codec error: {0:#}")]
+    Bincode(#[from] bincode::Error),
+    #[error("json codec error: {0:#}")]
+    Json(#[from] serde_json::Error),
+    #[error("rocksdb error: {0:#}")]
+    RocksDBError(#[from] rocksdb::Error),
+    #[error("chain info is missing from the database")]
+    MissingChainInfo,
 }
 
-impl From<bincode::Error> for DeoxysStorageError {
-    fn from(_: bincode::Error) -> Self {
-        DeoxysStorageError::StorageSerdeError
-    }
-}
+// impl From<bincode::Error> for DeoxysStorageError {
+//     fn from(_: bincode::Error) -> Self {
+//         DeoxysStorageError::StorageSerdeError
+//     }
+// }
 
 #[derive(Debug)]
 pub enum TrieType {

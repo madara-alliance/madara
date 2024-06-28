@@ -1,8 +1,11 @@
-use starknet_core::types::{BlockId, BlockTag, Felt, MaybePendingStateUpdate, StateUpdate};
+use starknet_core::types::{BlockId, Felt, MaybePendingStateUpdate, StateUpdate};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
+use crate::utils::OptionExt;
 use crate::utils::ResultExt;
 use crate::Starknet;
+use dc_db::db_block_id::DbBlockId;
+use dp_block::MaybePendingStateDiff;
 
 /// Get the information about the result of executing the requested block.
 ///
@@ -23,36 +26,42 @@ use crate::Starknet;
 /// state update or a pending state update. If the block is not found, returns a
 /// `StarknetRpcApiError` with `BlockNotFound`.
 pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePendingStateUpdate> {
-    let block = starknet.get_block_info(block_id)?;
-    let new_root = block.header().global_state_root;
-    let block_hash = *block.block_hash();
+    let resolved_block_id = starknet
+        .backend
+        .resolve_block_id(&block_id)
+        .or_internal_server_error("Error resolving block id")?
+        .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    // Get the old root from the previous block if it exists, otherwise default to zero.
-    let old_root = if let Some(block_n) = block.block_n().checked_sub(1) {
-        let info = starknet.get_block_info(BlockId::Number(block_n))?;
-        info.header().global_state_root
-    } else {
-        Felt::default()
-    };
+    let block_state_diff = starknet
+        .backend
+        .get_block_state_diff(&resolved_block_id)
+        .or_internal_server_error("Error getting contract class hash at")?
+        .ok_or_internal_server_error("Block has no state diff")?;
 
-    match block_id {
-        BlockId::Tag(BlockTag::Pending) => {
-            let state_update = starknet
-                .block_storage()
-                .get_pending_block_state_update()
-                .or_internal_server_error("Failed to get pending state update")?
-                .ok_or(StarknetRpcApiError::BlockNotFound)?;
-            Ok(MaybePendingStateUpdate::PendingUpdate(state_update))
-        }
-        _ => {
-            let state_diff = starknet
-                .backend
-                .block_state_diff()
-                .get(block.block_n())
-                .or_internal_server_error("Failed to get state diff")?
-                .ok_or(StarknetRpcApiError::BlockNotFound)?;
+    match block_state_diff {
+        MaybePendingStateDiff::Pending(update) => Ok(MaybePendingStateUpdate::PendingUpdate(update)),
+        MaybePendingStateDiff::NotPending(state_diff) => {
+            let block_info = &starknet.get_block_info(&resolved_block_id)?;
+            let block_info = block_info.as_nonpending().ok_or_internal_server_error("Block should not be pending")?;
 
-            Ok(MaybePendingStateUpdate::Update(StateUpdate { block_hash, old_root, new_root, state_diff }))
+            // Get the old root from the previous block if it exists, otherwise default to zero.
+            let old_root = if let Some(val) = block_info.header.block_number.checked_sub(1) {
+                let prev_block_info = &starknet.get_block_info(&DbBlockId::BlockN(val))?;
+                let prev_block_info =
+                    prev_block_info.as_nonpending().ok_or_internal_server_error("Block should not be pending")?;
+
+                prev_block_info.header.global_state_root
+            } else {
+                // for the genesis block, the previous root is zero
+                Felt::ZERO
+            };
+
+            Ok(MaybePendingStateUpdate::Update(StateUpdate {
+                block_hash: block_info.block_hash,
+                old_root,
+                new_root: block_info.header.global_state_root,
+                state_diff,
+            }))
         }
     }
 }

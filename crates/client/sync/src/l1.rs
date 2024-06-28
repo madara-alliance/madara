@@ -193,7 +193,6 @@ pub fn update_l1(
 
         let mut tx = WriteBatchWithTransaction::default();
         backend
-            .mapping()
             .write_last_confirmed_block(&mut tx, state_update.block_number)
             .context("setting l1 last confirmed block number")?;
         let mut write_opt = WriteOptions::default(); // todo move that in db
@@ -249,7 +248,7 @@ pub async fn sync(
     // Clear L1 confirmed block at startup
     {
         let mut tx = WriteBatchWithTransaction::default();
-        backend.mapping().write_no_last_confirmed_block(&mut tx).context("clearing l1 last confirmed block number")?;
+        backend.clear_last_confirmed_block(&mut tx).context("clearing l1 last confirmed block number")?;
 
         let mut write_opt = WriteOptions::default(); // todo move that in db
         write_opt.disable_wal(true);

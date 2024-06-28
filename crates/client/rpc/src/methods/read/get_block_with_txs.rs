@@ -1,7 +1,9 @@
 use starknet_core::types::{BlockId, MaybePendingBlockWithTxs};
 
-use crate::errors::StarknetRpcResult;
-use crate::methods::get_block;
+use dp_block::DeoxysMaybePendingBlockInfo;
+use jsonrpsee::core::RpcResult;
+use starknet_core::types::{BlockStatus, BlockWithTxs, PendingBlockWithTxs};
+
 use crate::Starknet;
 
 /// Get block information with full transactions given the block id.
@@ -22,6 +24,46 @@ use crate::Starknet;
 /// the block, this can include either a confirmed block or a pending block with its
 /// transactions. In case the specified block is not found, returns a `StarknetRpcApiError` with
 /// `BlockNotFound`.
-pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePendingBlockWithTxs> {
-    get_block::get_block_with_txs(starknet, &block_id.into())
+pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
+    let block = starknet.get_block(&block_id)?;
+
+    let transactions_core = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes())
+        .map(|(transaction, hash)| transaction.clone().to_core(*hash))
+        .collect();
+
+    match block.info {
+        DeoxysMaybePendingBlockInfo::Pending(block) => {
+            Ok(MaybePendingBlockWithTxs::PendingBlock(PendingBlockWithTxs {
+                transactions: transactions_core,
+                parent_hash: block.header.parent_block_hash,
+                timestamp: block.header.block_timestamp,
+                sequencer_address: block.header.sequencer_address,
+                l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
+                l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
+                l1_da_mode: block.header.l1_da_mode.into(),
+                starknet_version: block.header.protocol_version.to_string(),
+            }))
+        }
+        DeoxysMaybePendingBlockInfo::NotPending(block) => {
+            let status = if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
+                BlockStatus::AcceptedOnL1
+            } else {
+                BlockStatus::AcceptedOnL2
+            };
+            Ok(MaybePendingBlockWithTxs::Block(BlockWithTxs {
+                status,
+                block_hash: block.block_hash,
+                parent_hash: block.header.parent_block_hash,
+                block_number: block.header.block_number,
+                new_root: block.header.global_state_root,
+                timestamp: block.header.block_timestamp,
+                sequencer_address: block.header.sequencer_address,
+                l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
+                l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
+                l1_da_mode: block.header.l1_da_mode.into(),
+                starknet_version: block.header.protocol_version.to_string(),
+                transactions: transactions_core,
+            }))
+        }
+    }
 }

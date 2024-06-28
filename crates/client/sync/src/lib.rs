@@ -48,7 +48,6 @@ pub mod starknet_sync_worker {
             starting_block
         } else {
             backend
-                .mapping()
                 .get_block_n(&dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
                 .context("getting sync tip")?
                 .map(|block_id| block_id + 1) // next block after the tip

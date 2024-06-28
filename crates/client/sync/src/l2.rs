@@ -1,10 +1,10 @@
 //! Contains the code required to sync data from the feeder efficiently.
+use std::borrow::Cow;
 use std::pin::pin;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use anyhow::{bail, Context};
-use dc_db::mapping_db::MappingDbError;
 use dc_db::rocksdb::{WriteBatchWithTransaction, WriteOptions};
 use dc_db::storage_handler::DeoxysStorageError;
 use dc_db::storage_updates::{store_class_update, store_key_update, store_state_update};
@@ -15,7 +15,7 @@ use dp_block::{BlockId, BlockTag, DeoxysBlock};
 use dp_convert::ToStarkFelt;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
-use starknet_core::types::{ContractClass, StateUpdate};
+use starknet_core::types::{ContractClass, StateDiff, StateUpdate};
 use starknet_providers::sequencer::models::StateUpdateWithBlock;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
@@ -24,7 +24,7 @@ use tokio::task::JoinSet;
 use tokio::time::Duration;
 
 use crate::commitments::{build_commitment_state_diff, csd_calculate_state_root};
-use crate::convert::convert_block;
+use crate::convert::convert_and_verify_block;
 use crate::fetch::fetchers::L2BlockAndUpdates;
 use crate::fetch::l2_fetch_task;
 use crate::metrics::block_metrics::BlockMetrics;
@@ -40,6 +40,8 @@ pub enum L2SyncError {
     Provider(#[from] ProviderError),
     #[error("db error")]
     Db(#[from] DeoxysStorageError),
+    #[error("malformated block: {0}")]
+    BlockFormat(Cow<'static, str>),
     #[error("mismatched block hash for block {0}")]
     MismatchedBlockHash(u64),
 }
@@ -52,20 +54,24 @@ pub struct L2StateUpdate {
     pub block_hash: Felt,
 }
 
-fn store_new_block(backend: &DeoxysBackend, block: &DeoxysBlock) -> Result<(), DeoxysStorageError> {
+fn store_new_block(
+    backend: &DeoxysBackend,
+    block: &DeoxysBlock,
+    state_diff: &StateDiff,
+) -> Result<(), DeoxysStorageError> {
     let sw = PerfStopwatch::new();
     let mut tx = WriteBatchWithTransaction::default();
 
-    let mapping = backend.mapping();
-    mapping.write_new_block(&mut tx, block)?;
+    backend.write_new_block(&mut tx, block, &state_diff)?;
 
     let db_access = backend.expose_db();
     let mut write_opt = WriteOptions::default(); // todo move that in db
     write_opt.disable_wal(true);
-    db_access.write_opt(tx, &write_opt).map_err(MappingDbError::from)?;
+    db_access.write_opt(tx, &write_opt).map_err(DeoxysStorageError::from)?;
     log::debug!("committed store_new_block");
 
-    stopwatch_end!(sw, "end store_new_block {}: {:?}", block.block_n());
+    // UNWRAP: write_new_block already errors when the block is pending
+    stopwatch_end!(sw, "end store_new_block {}: {:?}", block.info.header.block_number);
     Ok(())
 }
 
@@ -83,9 +89,9 @@ async fn l2_verify_and_apply_task(
     while let Some(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update }) =
         channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await
     {
-        let block_n = converted_block.block_n();
-        let block_hash = *converted_block.block_hash();
-        let global_state_root = converted_block.header().global_state_root;
+        let block_n = converted_block.info.header.block_number;
+        let block_hash = converted_block.info.block_hash;
+        let global_state_root = converted_block.info.header.global_state_root;
 
         let state_update = if verify {
             let state_update = Arc::new(state_update);
@@ -102,14 +108,6 @@ async fn l2_verify_and_apply_task(
             .await?;
 
             if global_state_root != state_root {
-                // TODO(fault tolerance): we should have a single rocksdb transaction for the whole l2 update.
-                // let prev_block = block_n.checked_sub(1).expect("no block to revert to");
-
-                // storage_handler::contract_trie_mut().revert_to(prev_block);
-                // storage_handler::contract_storage_trie_mut().revert_to(prev_block);
-                // storage_handler::contract_class_trie_mut().revert_to(prev_block);
-                // TODO(charpa): make other stuff revertible, maybe history?
-
                 bail!("Verified state root: {} doesn't match fetched state root: {}", state_root, global_state_root);
             }
 
@@ -123,8 +121,10 @@ async fn l2_verify_and_apply_task(
 
         let storage_diffs = state_update.state_diff.storage_diffs.clone();
 
+        let state_diff_cpy = state_update.state_diff.clone();
+
         let (r1, (r2, (r3, r4))) = rayon::join(
-            || store_new_block(&backend, &converted_block),
+            || store_new_block(&backend, &converted_block, &state_diff_cpy),
             || {
                 rayon::join(
                     || store_state_update(&backend, block_n, state_update),
@@ -142,7 +142,7 @@ async fn l2_verify_and_apply_task(
         update_sync_metrics(
             // &mut command_sink,
             block_n,
-            converted_block.header(),
+            &converted_block.info.header,
             starting_block,
             &block_metrics,
             sync_timer.clone(),
@@ -203,7 +203,7 @@ async fn l2_block_conversion_task(
                     spawn_compute(move || {
                         let sw = PerfStopwatch::new();
                         let block_n = block.block_number;
-                        let converted_block = convert_block(block, chain_id).context("converting block")?;
+                        let converted_block = convert_and_verify_block(block, chain_id).context("converting block")?;
                         stopwatch_end!(sw, "convert_block {:?}: {:?}", block_n);
                         anyhow::Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
                     }),
@@ -235,7 +235,7 @@ async fn l2_pending_block_task(
     // clear pending status
     {
         let mut tx = WriteBatchWithTransaction::default();
-        backend.mapping().write_no_pending(&mut tx).context("clearing pending status")?;
+        backend.clear_pending(&mut tx).context("clearing pending status")?;
         let mut write_opt = WriteOptions::default(); // todo move that in db
         write_opt.disable_wal(true);
         backend.expose_db().write_opt(tx, &write_opt).context("clearing pending block to db")?;
@@ -253,8 +253,6 @@ async fn l2_pending_block_task(
     let mut interval = tokio::time::interval(pending_block_poll_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
-        let storage = backend.mapping();
-
         log::debug!("getting pending block...");
 
         let StateUpdateWithBlock { state_update, block } = provider
@@ -262,7 +260,7 @@ async fn l2_pending_block_task(
             .await
             .context("getting pending block from sequencer")?;
 
-        let block_hash_best = storage
+        let block_hash_best = backend
             .get_block_hash(&BlockId::Tag(BlockTag::Latest))
             .context("getting latest block in db")?
             .context("no block in db")?;
@@ -271,19 +269,19 @@ async fn l2_pending_block_task(
 
         let mut tx = WriteBatchWithTransaction::default();
         if block.parent_block_hash == block_hash_best {
-            let block = spawn_compute(move || crate::convert::convert_block(block, chain_id))
+            let block = spawn_compute(move || crate::convert::convert_and_verify_block(block, chain_id))
                 .await
                 .context("converting pending block")?;
 
             log::debug!("pending block parent block hash matches chain tip, writing pending block");
 
             let storage_update = crate::convert::state_update(state_update);
-            storage
+            backend
                 .write_pending(&mut tx, &block, &storage_update)
                 .context("writing pending to rocksdb transaction")?;
         } else {
             log::debug!("pending block parent hash does not match latest block, clearing pending block");
-            storage.write_no_pending(&mut tx).context("writing no pending to rocksdb transaction")?;
+            backend.clear_pending(&mut tx).context("writing no pending to rocksdb transaction")?;
         }
 
         // todo move that in db somehow
@@ -395,13 +393,11 @@ async fn update_sync_metrics(
     block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / (block_number - starting_block) as f64);
 
     block_metrics.l2_block_number.set(block_header.block_number as f64);
-    block_metrics.transaction_count.set(f64::from_u128(block_header.transaction_count).unwrap_or(f64::MIN));
-    block_metrics.event_count.set(f64::from_u128(block_header.event_count).unwrap_or(f64::MIN));
+    block_metrics.transaction_count.set(f64::from_u128(block_header.transaction_count).unwrap_or(0f64));
+    block_metrics.event_count.set(f64::from_u128(block_header.event_count).unwrap_or(0f64));
 
-    block_metrics.l1_gas_price_wei.set(f64::from_u128(block_header.l1_gas_price.eth_l1_gas_price).unwrap_or(f64::MIN));
-    block_metrics
-        .l1_gas_price_strk
-        .set(f64::from_u128(block_header.l1_gas_price.strk_l1_gas_price).unwrap_or(f64::MIN));
+    block_metrics.l1_gas_price_wei.set(f64::from_u128(block_header.l1_gas_price.eth_l1_gas_price).unwrap_or(0f64));
+    block_metrics.l1_gas_price_strk.set(f64::from_u128(block_header.l1_gas_price.strk_l1_gas_price).unwrap_or(0f64));
 
     Ok(())
 }

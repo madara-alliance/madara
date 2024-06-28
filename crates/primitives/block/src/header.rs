@@ -1,11 +1,7 @@
 use core::num::NonZeroU128;
 
-use blockifier::context::{BlockContext, ChainInfo, FeeTokenAddresses};
 use blockifier::versioned_constants::VersionedConstants;
-use dp_convert::ToStarkFelt;
 use dp_transactions::MAIN_CHAIN_ID;
-use starknet_api::block::{BlockNumber, BlockTimestamp};
-use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 use starknet_types_core::hash::StarkHash as StarkHashTrait;
@@ -34,6 +30,22 @@ impl From<BlockStatus> for starknet_core::types::BlockStatus {
             BlockStatus::Rejected => starknet_core::types::BlockStatus::Rejected,
         }
     }
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct PendingHeader {
+    /// The hash of this block’s parent.
+    pub parent_block_hash: Felt,
+    /// The Starknet address of the sequencer who created this block.
+    pub sequencer_address: Felt,
+    /// The time the sequencer created this block before executing transactions
+    pub block_timestamp: u64,
+    /// The version of the Starknet protocol used when creating this block
+    pub protocol_version: StarknetVersion,
+    /// Gas prices for this block
+    pub l1_gas_price: GasPrices,
+    /// The mode of data availability for this block
+    pub l1_da_mode: L1DataAvailabilityMode,
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -86,15 +98,38 @@ impl From<&GasPrices> for blockifier::block::GasPrices {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+impl GasPrices {
+    pub fn l1_gas_price(&self) -> starknet_core::types::ResourcePrice {
+        starknet_core::types::ResourcePrice {
+            price_in_fri: self.strk_l1_gas_price.into(),
+            price_in_wei: self.eth_l1_gas_price.into(),
+        }
+    }
+    pub fn l1_data_gas_price(&self) -> starknet_core::types::ResourcePrice {
+        starknet_core::types::ResourcePrice {
+            price_in_fri: self.strk_l1_data_gas_price.into(),
+            price_in_wei: self.eth_l1_data_gas_price.into(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum L1DataAvailabilityMode {
     #[default]
     Calldata,
     Blob,
 }
 
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
+impl From<L1DataAvailabilityMode> for starknet_core::types::L1DataAvailabilityMode {
+    fn from(value: L1DataAvailabilityMode) -> Self {
+        match value {
+            L1DataAvailabilityMode::Calldata => Self::Calldata,
+            L1DataAvailabilityMode::Blob => Self::Blob,
+        }
+    }
+}
 
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
 
 lazy_static::lazy_static! {
@@ -103,6 +138,14 @@ pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0: VersionedConstants =
 
 pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1: VersionedConstants =
     serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1).unwrap();
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum BlockFormatError {
+    #[error("The block is a pending block")]
+    BlockIsPending,
+    #[error("Unsupported protocol version")]
+    UnsupportedBlockVersion,
 }
 
 impl Header {
@@ -137,37 +180,6 @@ impl Header {
             l1_gas_price: gas_prices,
             l1_da_mode,
         }
-    }
-
-    /// Converts to a blockifier BlockContext
-    pub fn into_block_context(
-        &self,
-        fee_token_addresses: FeeTokenAddresses,
-        chain_id: ChainId,
-    ) -> Result<BlockContext, &'static str> {
-        let protocol_version = self.protocol_version;
-        let versioned_constants = if protocol_version < StarknetVersion::STARKNET_VERSION_0_13_0 {
-            return Err("Unsupported protocol version");
-        } else if protocol_version < StarknetVersion::STARKNET_VERSION_0_13_1 {
-            &BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0
-        } else if protocol_version < StarknetVersion::STARKNET_VERSION_0_13_1_1 {
-            &BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1
-        } else {
-            VersionedConstants::latest_constants()
-        };
-
-        let chain_info = ChainInfo { chain_id, fee_token_addresses };
-
-        let block_info = blockifier::block::BlockInfo {
-            block_number: BlockNumber(self.block_number),
-            block_timestamp: BlockTimestamp(self.block_timestamp),
-            sequencer_address: self.sequencer_address.to_stark_felt().try_into().unwrap(),
-            gas_prices: (&self.l1_gas_price).into(),
-            // TODO: Verify if this is correct
-            use_kzg_da: self.l1_da_mode == L1DataAvailabilityMode::Blob,
-        };
-
-        Ok(BlockContext::new_unchecked(&block_info, &chain_info, versioned_constants))
     }
 
     /// Compute the hash of the header.

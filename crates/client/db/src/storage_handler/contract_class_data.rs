@@ -36,11 +36,7 @@ impl StorageView for ContractClassDataView {
             .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractClassData))?
             .map(|bytes| bincode::deserialize::<ContractClassData>(&bytes));
 
-        match contract_class_data {
-            Some(Ok(contract_class_data)) => Ok(Some(contract_class_data)),
-            Some(Err(_)) => Err(DeoxysStorageError::StorageSerdeError),
-            None => Ok(None),
-        }
+        Ok(contract_class_data.transpose()?)
     }
 
     fn contains(&self, class_hash: &Self::KEY) -> Result<bool, DeoxysStorageError> {

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use dp_class::{ContractClassData, ToCompiledClass};
-use dp_convert::ToStarkFelt;
+use dp_convert::{ToFelt, ToStarkFelt};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use starknet_api::core::Nonce;
 use starknet_core::types::{
@@ -18,7 +18,6 @@ pub fn store_state_update(
     block_number: u64,
     state_update: StateUpdate,
 ) -> Result<(), DeoxysStorageError> {
-    let state_diff = state_update.state_diff.clone();
     let nonce_map: HashMap<Felt, Nonce> = state_update
         .state_diff
         .nonces
@@ -26,7 +25,7 @@ pub fn store_state_update(
         .map(|NonceUpdate { contract_address, nonce }| (contract_address, Nonce(nonce.to_stark_felt())))
         .collect();
 
-    log::debug!("💾 update state: block_number: {}", block_number);
+    log::debug!(" update state: block_number: {}", block_number);
 
     // Contract address to class hash and nonce update
     let task_1 = || {
@@ -42,7 +41,7 @@ pub fn store_state_update(
                 handler_contract_data_class.insert(contract_address, class_hash)?;
                 // insert nonces for contracts that were deployed in this block and do not have a nonce
                 if !nonce_map.contains_key(&contract_address) {
-                    handler_contract_data_nonces.insert(contract_address, Nonce::default())?;
+                    handler_contract_data_nonces.insert(contract_address, Felt::ZERO)?;
                 }
                 Ok(())
             })?;
@@ -59,7 +58,7 @@ pub fn store_state_update(
 
         // insert nonces for contracts that were not deployed or replaced in this block
         nonce_map.into_iter().for_each(|(contract_address, nonce)| {
-            handler_contract_data_nonces.insert(contract_address, nonce).unwrap();
+            handler_contract_data_nonces.insert(contract_address, nonce.to_felt()).unwrap();
         });
 
         handler_contract_data_class.commit(block_number)?;
@@ -87,12 +86,9 @@ pub fn store_state_update(
         Ok(())
     };
 
-    // Block number to state diff update
-    let task_3 = || backend.block_state_diff().insert(block_number, state_diff);
+    let (result1, result2) = rayon::join(task_1, task_2);
 
-    let (result1, (result2, result3)) = rayon::join(task_1, || rayon::join(task_2, task_3));
-
-    result1.and(result2).and(result3)
+    result1.and(result2)
 }
 
 pub fn store_class_update(
@@ -106,8 +102,10 @@ pub fn store_class_update(
     class_update.into_iter().try_for_each(|(class_hash, contract_class)| {
         let compiled_class: dp_class::CompiledClass =
             contract_class.compile().map_err(|e| DeoxysStorageError::CompilationClassError(e.to_string()))?;
-        handler_contract_class_data_mut
-            .insert(class_hash, ContractClassData { contract_class: contract_class.into(), block_number })?;
+        handler_contract_class_data_mut.insert(
+            class_hash,
+            ContractClassData { contract_class: contract_class.into(), block_number: Some(block_number) },
+        )?;
         handler_compiled_contract_class_mut.insert(class_hash, compiled_class)?;
         Ok::<_, DeoxysStorageError>(())
     })?;

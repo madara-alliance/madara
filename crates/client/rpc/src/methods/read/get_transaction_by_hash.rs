@@ -32,12 +32,15 @@ use crate::Starknet;
 /// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
 ///   system's capacity.
 pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> StarknetRpcResult<Transaction> {
-    let (block, tx_info) = starknet
-        .block_storage()
+    let (block, tx_index) = starknet
+        .backend
         .find_tx_hash_block(&transaction_hash)
         .or_internal_server_error("Error getting block from tx hash")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-    let transaction =
-        block.transactions().get(tx_info.tx_index).ok_or_internal_server_error("Storage block transaction mismatch")?;
+    let transaction = block
+        .inner
+        .transactions
+        .get(tx_index.0 as usize)
+        .ok_or_internal_server_error("Storage block transaction mismatch")?;
     Ok(transaction.clone().to_core(transaction_hash))
 }

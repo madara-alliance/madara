@@ -1,6 +1,5 @@
 use std::ops::Deref;
 
-use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
 
 use super::history::{AsHistoryView, HistoryView, HistoryViewMut};
@@ -46,7 +45,7 @@ pub struct ContractNoncesAsHistory;
 impl AsHistoryView for ContractNoncesAsHistory {
     type Key = Felt;
     type KeyBin = ContractAddressK;
-    type T = Nonce;
+    type T = Felt;
     fn column() -> Column {
         Column::ContractToNonces
     }

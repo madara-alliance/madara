@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use mapping_db::MappingDb;
+use mapping_db::ChainInfo;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
 mod error;
@@ -20,6 +20,9 @@ use rocksdb::{
 };
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 pub mod bonsai_db;
+pub mod class_db;
+pub mod contract_db;
+pub mod db_block_id;
 pub mod storage_handler;
 pub mod storage_updates;
 
@@ -36,10 +39,6 @@ use storage_handler::contract_storage::{ContractStorageView, ContractStorageView
 use storage_handler::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
 use storage_handler::contract_trie::{ContractTrieView, ContractTrieViewMut};
 use tokio::sync::{mpsc, oneshot};
-
-const DB_HASH_LEN: usize = 32;
-/// Hash type that this backend uses for the database.
-pub type DbHash = [u8; DB_HASH_LEN];
 
 pub type DB = OptimisticTransactionDB<MultiThreaded>;
 
@@ -151,6 +150,8 @@ pub enum Column {
     TxHashToBlockN,
     /// One To One
     BlockHashToBlockN,
+    /// One To One
+    BlockNToStateDiff,
     /// Meta column for block storage (sync tip, pending block)
     BlockStorageMeta,
 
@@ -188,6 +189,10 @@ pub enum Column {
     BonsaiClassesTrie,
     BonsaiClassesFlat,
     BonsaiClassesLog,
+
+    PendingContractToClassHashes,
+    PendingContractToNonces,
+    PendingContractStorage,
 }
 
 impl Column {
@@ -218,6 +223,7 @@ impl Column {
             TxHashToBlockN,
             BlockHashToBlockN,
             BlockStorageMeta,
+            BlockNToStateDiff,
             ContractClassData,
             CompiledContractClass,
             ContractToClassHashes,
@@ -234,6 +240,9 @@ impl Column {
             BonsaiClassesTrie,
             BonsaiClassesFlat,
             BonsaiClassesLog,
+            PendingContractToClassHashes,
+            PendingContractToNonces,
+            PendingContractStorage,
         ]
     };
     pub const NUM_COLUMNS: usize = Self::ALL.len();
@@ -247,6 +256,7 @@ impl Column {
             TxHashToBlockN => "tx_hash_to_block_n",
             BlockHashToBlockN => "block_hash_to_block_n",
             BlockStorageMeta => "block_storage_meta",
+            BlockNToStateDiff => "block_n_to_state_diff",
             BonsaiContractsTrie => "bonsai_contracts_trie",
             BonsaiContractsFlat => "bonsai_contracts_flat",
             BonsaiContractsLog => "bonsai_contracts_log",
@@ -262,7 +272,10 @@ impl Column {
             ContractToClassHashes => "contract_to_class_hashes",
             ContractToNonces => "contract_to_nonces",
             ContractClassHashes => "contract_class_hashes",
-            ContractStorage => "contrac_storage",
+            ContractStorage => "contract_storage",
+            PendingContractToClassHashes => "pending_contract_to_class_hashes",
+            PendingContractToNonces => "pending_contract_to_nonces",
+            PendingContractStorage => "pending_contract_storage",
         }
     }
 
@@ -309,7 +322,7 @@ impl DatabaseExt for DB {
 /// Deoxys client database backend singleton.
 #[derive(Debug)]
 pub struct DeoxysBackend {
-    mapping: Arc<MappingDb>,
+    // mapping: Arc<MappingDb>,
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
     last_flush_time: Mutex<Option<Instant>>,
@@ -324,12 +337,14 @@ impl DatabaseService {
         base_path: &Path,
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
+        chain_info: &ChainInfo,
     ) -> anyhow::Result<Self> {
         log::info!("💾 Opening database at: {}", base_path.display());
 
-        let handle = DeoxysBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup)
-            .await
-            .context("opening database")?;
+        let handle =
+            DeoxysBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_info)
+                .await
+                .context("opening database")?;
 
         Ok(Self { handle })
     }
@@ -356,19 +371,15 @@ impl DeoxysBackend {
         db_config_dir: PathBuf,
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
+        chain_info: &ChainInfo,
     ) -> Result<Arc<DeoxysBackend>> {
         let db_path = db_config_dir.join("db");
 
         let (db, backup_handle) =
             open_rocksdb(&db_path, true, backup_dir, restore_from_latest_backup).await.context("opening database")?;
 
-        let backend = Arc::new(Self {
-            mapping: Arc::new(MappingDb::new(Arc::clone(&db))),
-            backup_handle,
-            db,
-            last_flush_time: Default::default(),
-        });
-
+        let backend = Arc::new(Self { backup_handle, db, last_flush_time: Default::default() });
+        backend.assert_chain_info(chain_info)?;
         Ok(backend)
     }
 
@@ -405,9 +416,9 @@ impl DeoxysBackend {
     }
 
     /// Return the mapping database manager
-    pub fn mapping(&self) -> &Arc<MappingDb> {
-        &self.mapping
-    }
+    // pub fn mapping(&self) -> &Arc<MappingDb> {
+    //     &self.mapping
+    // }
 
     pub fn expose_db(&self) -> &Arc<DB> {
         &self.db

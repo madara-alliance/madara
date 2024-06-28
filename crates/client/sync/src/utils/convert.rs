@@ -3,7 +3,10 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, GasPrices, L1DataAvailabilityMode, StarknetVersion};
+use dp_block::header::{GasPrices, L1DataAvailabilityMode, PendingHeader};
+use dp_block::{
+    DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, DeoxysPendingBlock, DeoxysPendingBlockInfo, Header, StarknetVersion,
+};
 use dp_convert::felt_to_u128;
 use dp_receipt::{Event, TransactionReceipt};
 use dp_transactions::MAIN_CHAIN_ID;
@@ -20,45 +23,70 @@ use starknet_types_core::felt::Felt;
 use crate::commitments::calculate_tx_and_event_commitments;
 use crate::l2::L2SyncError;
 
-/// Compute heavy, this should only be called in a rayon ctx
-pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2SyncError> {
+pub fn convert_inner(
+    txs: Vec<p::TransactionType>,
+    receipts: Vec<p::ConfirmedTransactionReceipt>,
+) -> Result<DeoxysBlockInner, L2SyncError> {
     // converts starknet_provider transactions and events to dp_transactions and starknet_api events
-    let transactions_receipts = block
-        .transaction_receipts
-        .into_iter()
-        .zip(block.transactions.iter())
+    let transactions_receipts = Iterator::zip(receipts.into_iter(), txs.iter())
         .map(|(tx_receipts, tx)| TransactionReceipt::from_provider(tx_receipts, tx))
         .collect::<Vec<_>>();
-    let transactions: Vec<_> = block.transactions.into_iter().map(|tx| tx.try_into().unwrap()).collect();
-    let events = events(&transactions_receipts);
-    let block_hash = block.block_hash.expect("no block hash provided");
-    let block_number = block.block_number.expect("no block number provided");
-    let block_timestamp = block.timestamp;
-    let global_state_root = block.state_root.expect("no state root provided");
-    let sequencer_address = block.sequencer_address.unwrap_or(Felt::ZERO);
-    let transaction_count = transactions.len() as u128;
+    let transactions = txs.into_iter().map(|tx| tx.try_into()).collect::<Result<_, _>>().unwrap();
+
+    Ok(DeoxysBlockInner::new(transactions, transactions_receipts))
+}
+
+/// This function does not check block hashes and such
+pub fn convert_pending(block: p::Block, _chain_id: Felt) -> Result<DeoxysPendingBlock, L2SyncError> {
+    let block_inner = convert_inner(block.transactions, block.transaction_receipts)?;
+
+    let header = PendingHeader {
+        parent_block_hash: block.parent_block_hash,
+        block_timestamp: block.timestamp,
+        sequencer_address: block.sequencer_address.unwrap_or(Felt::ZERO),
+        protocol_version: protocol_version(block.starknet_version),
+        l1_gas_price: resource_price(block.l1_gas_price, block.l1_data_gas_price),
+        l1_da_mode: l1_da_mode(block.l1_da_mode),
+    };
+
+    // TODO tx_hash
+
+    // let ((_transaction_commitment, txs_hashes), event_commitment) = 
+    //     memory_transaction_commitment(&block_inner.transactions, &events, chain_id, block_number);
+
+    Ok(DeoxysPendingBlock::new(DeoxysPendingBlockInfo::new(header, vec![]), block_inner))
+}
+
+/// Compute heavy, this should only be called in a rayon ctx
+pub fn convert_and_verify_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2SyncError> {
+    let block_inner = convert_inner(block.transactions, block.transaction_receipts)?;
+
+    // converts starknet_provider transactions and events to dp_transactions and starknet_api events
+    let events = events(&block_inner.receipts);
+
+    let block_hash = block.block_hash.ok_or(L2SyncError::BlockFormat("No block hash provided".into()))?;
+    let block_number = block.block_number.ok_or(L2SyncError::BlockFormat("No block number provided".into()))?;
+
+    let global_state_root = block.state_root.ok_or(L2SyncError::BlockFormat("No state root provided".into()))?;
+    let transaction_count = block_inner.transactions.len() as u128;
     let event_count = events.len() as u128;
 
     let ((transaction_commitment, txs_hashes), event_commitment) =
-        calculate_tx_and_event_commitments(&transactions, &events, chain_id, block_number);
+        calculate_tx_and_event_commitments(&block_inner.transactions, &events, chain_id, block_number);
 
-    let protocol_version = protocol_version(block.starknet_version);
-    let l1_gas_price = resource_price(block.l1_gas_price, block.l1_data_gas_price);
-    let l1_da_mode = l1_da_mode(block.l1_da_mode);
-
-    let header = dp_block::Header {
+    let header = Header {
         parent_block_hash: block.parent_block_hash,
+        block_timestamp: block.timestamp,
+        sequencer_address: block.sequencer_address.unwrap_or(Felt::ZERO),
+        protocol_version: protocol_version(block.starknet_version),
+        l1_gas_price: resource_price(block.l1_gas_price, block.l1_data_gas_price),
+        l1_da_mode: l1_da_mode(block.l1_da_mode),
         block_number,
-        block_timestamp,
         global_state_root,
-        sequencer_address,
         transaction_count,
         transaction_commitment,
         event_count,
         event_commitment,
-        protocol_version,
-        l1_gas_price,
-        l1_da_mode,
     };
 
     let computed_block_hash = header.hash(chain_id);
@@ -83,10 +111,7 @@ pub fn convert_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2S
         return Err(L2SyncError::MismatchedBlockHash(block_number));
     }
 
-    Ok(DeoxysBlock::new(
-        DeoxysBlockInfo::new(header, txs_hashes, block_hash),
-        DeoxysBlockInner::new(transactions, transactions_receipts),
-    ))
+    Ok(DeoxysBlock::new(DeoxysBlockInfo::new(header, txs_hashes, block_hash), block_inner))
 }
 
 fn protocol_version(version: Option<String>) -> StarknetVersion {

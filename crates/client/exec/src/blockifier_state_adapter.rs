@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::cached_state::CommitmentStateDiff;
@@ -18,8 +17,8 @@ use starknet_api::state::StorageKey;
 /// `BlockifierStateAdapter` is only use to re-executing or simulate transactions.
 /// None of the setters should therefore change the storage persistently,
 /// all changes are temporary stored in the struct and are discarded after the execution
-pub struct BlockifierStateAdapter {
-    backend: Arc<DeoxysBackend>,
+pub struct BlockifierStateAdapter<'a> {
+    backend: &'a DeoxysBackend,
     /// When this value is None, we are executing the genesis block.
     block_number: Option<u64>,
     storage_update: IndexMap<ContractAddress, IndexMap<StorageKey, StarkFelt>>,
@@ -30,8 +29,8 @@ pub struct BlockifierStateAdapter {
     visited_pcs: IndexMap<ClassHash, HashSet<usize>>,
 }
 
-impl BlockifierStateAdapter {
-    pub fn new(backend: Arc<DeoxysBackend>, block_number: Option<u64>) -> Self {
+impl<'a> BlockifierStateAdapter<'a> {
+    pub fn new(backend: &'a DeoxysBackend, block_number: Option<u64>) -> Self {
         Self {
             backend,
             block_number,
@@ -45,14 +44,13 @@ impl BlockifierStateAdapter {
     }
 }
 
-impl StateReader for BlockifierStateAdapter {
+impl<'a> StateReader for BlockifierStateAdapter<'a> {
     fn get_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
         if *contract_address.key() == StarkFelt::ONE {
             let block_number = (*key.0.key()).try_into().map_err(|_| StateError::OldBlockHashNotProvided)?;
 
             return Ok(self
                 .backend
-                .mapping()
                 .get_block_hash(&BlockId::Number(block_number))
                 .map_err(|err| {
                     StateError::StateReadError(format!(
@@ -79,31 +77,34 @@ impl StateReader for BlockifierStateAdapter {
     }
 
     fn get_nonce_at(&mut self, contract_address: ContractAddress) -> StateResult<Nonce> {
+        log::debug!("get_nonce_at for {:#?}", contract_address);
         if let Some(nonce) = self.nonce_update.get(&contract_address) {
             return Ok(*nonce);
         }
         let Some(block_number) = self.block_number else { return Ok(Nonce::default()) };
 
-        Ok(self
-            .backend
-            .contract_nonces()
-            .get_at(&contract_address.to_felt(), block_number)
-            .map_err(|err| {
-                StateError::StateReadError(format!(
-                    "Failed to retrieve nonce for contract {contract_address:#?}: {err:#}",
-                ))
-            })?
-            .unwrap_or_default())
+        Ok(Nonce(
+            self.backend
+                .contract_nonces()
+                .get_at(&contract_address.to_felt(), block_number)
+                .map_err(|err| {
+                    StateError::StateReadError(format!(
+                        "Failed to retrieve nonce for contract {contract_address:#?}: {err:#}",
+                    ))
+                })?
+                .unwrap_or_default()
+                .to_stark_felt(),
+        ))
     }
 
     fn get_class_hash_at(&mut self, contract_address: ContractAddress) -> StateResult<ClassHash> {
+        log::debug!("get_class_hash_at for {:#?}", contract_address);
         if let Some(class_hash) = self.class_hash_update.get(&contract_address).cloned() {
             return Ok(class_hash);
         }
         let Some(block_number) = self.block_number else { return Ok(ClassHash::default()) };
 
         // Note that blockifier is fine with us returning ZERO as a class_hash if it is not found, they do the check on their end after
-
         Ok(ClassHash(
             self.backend
                 .contract_class_hash()
@@ -121,6 +122,7 @@ impl StateReader for BlockifierStateAdapter {
     }
 
     fn get_compiled_contract_class(&mut self, class_hash: ClassHash) -> StateResult<ContractClass> {
+        log::debug!("get_compiled_contract_class for {:#?}", class_hash);
         match self.contract_class_update.get(&class_hash) {
             Some(contract_class) => Ok(contract_class.clone()),
             None => match self.backend.compiled_contract_class().get(&class_hash.to_felt()) {
@@ -131,6 +133,7 @@ impl StateReader for BlockifierStateAdapter {
     }
 
     fn get_compiled_class_hash(&mut self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
+        log::debug!("get_compiled_contract_class for {:#?}", class_hash);
         match self.compiled_class_hash_update.get(&class_hash) {
             Some(compiled_class_hash) => Ok(*compiled_class_hash),
             None => self
@@ -149,7 +152,7 @@ impl StateReader for BlockifierStateAdapter {
     }
 }
 
-impl State for BlockifierStateAdapter {
+impl<'a> State for BlockifierStateAdapter<'a> {
     fn set_storage_at(
         &mut self,
         contract_address: ContractAddress,
