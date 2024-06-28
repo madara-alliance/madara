@@ -136,7 +136,9 @@ Here are the recommended options for a quick and simple configuration of your De
 - **`--rpc-external`**: Listen to all RPC interfaces. Default is local.
 - **`--snap <BLOCK_NUMBER>`**: Start syncing from the closest snapshot available for the desired block (default is highest).
 
-### Advanced Command-Line Options by Namespace
+### Advanced Command-Line Options
+
+Here are more advanced command-line options, organized by namespace, for running and development purposes:
 
 <details>
 <summary>Network</summary>
@@ -180,6 +182,8 @@ Here are the recommended options for a quick and simple configuration of your De
 - **`--restore-from-latest-backup`**: Restore the database from the latest backup available.
 
 </details>
+
+> ℹ️ **Info:** Note that not all parameters may be referenced here. Please refer to the `cargo run -- --help` command for the full list of parameters.
 
 ## 📸 Snapshots
 
