@@ -65,7 +65,7 @@ pub fn execute_transactions(
         .collect::<Result<Vec<_>, _>>()
 }
 
-fn init_cached_state(
+pub(crate) fn init_cached_state(
     deoxys_backend: Arc<DeoxysBackend>,
     block_context: &BlockContext,
 ) -> CachedState<BlockifierStateAdapter> {
@@ -73,65 +73,6 @@ fn init_cached_state(
     let prev_block = block_number.checked_sub(1); // handle genesis correctly
     CachedState::new(BlockifierStateAdapter::new(deoxys_backend, prev_block), GlobalContractCache::new(16))
 }
-
-/// Call a smart contract function.
-// pub fn call_contract(
-//     starknet: &Starknet,
-//     address: ContractAddress,
-//     function_selector: EntryPointSelector,
-//     calldata: Calldata,
-//     block_context: &BlockContext,
-// ) -> RpcResult<Vec<Felt>> {
-//     // Get class hash
-//     let class_hash = starknet
-//         .clone_backend()
-//         .contract_class_hash()
-//         .get(&address.to_felt())
-//         .or_internal_server_error("Error getting contract class hash")?
-//         .map(|felt| ClassHash(felt.to_stark_felt()));
-
-//     let entrypoint = CallEntryPoint {
-//         class_hash,
-//         code_address: None,
-//         entry_point_type: EntryPointType::External,
-//         entry_point_selector: function_selector,
-//         calldata,
-//         storage_address: address,
-//         caller_address: ContractAddress::default(),
-//         call_type: CallType::Call,
-//         initial_gas: VersionedConstants::latest_constants().tx_initial_gas(),
-//     };
-
-//     let mut resources = cairo_vm::vm::runners::cairo_runner::ExecutionResources::default();
-//     let mut entry_point_execution_context = EntryPointExecutionContext::new_invoke(
-//         Arc::new(TransactionContext {
-//             block_context: block_context.clone(),
-//             tx_info: TransactionInfo::Deprecated(DeprecatedTransactionInfo::default()),
-//         }),
-//         false,
-//     )
-//     .map_err(|err| {
-//         log::error!("Transaction execution error: {err}");
-//         StarknetRpcApiError::TxnExecutionError
-//     })?;
-
-//     let res = entrypoint
-//         .execute(
-//             &mut BlockifierStateAdapter::new(
-//                 Arc::clone(&starknet.backend),
-//                 Some(block_context.block_info().block_number.0),
-//             ),
-//             &mut resources,
-//             &mut entry_point_execution_context,
-//         )
-//         .map_err(|err| {
-//             log::error!("Entry point execution error: {err}");
-//             StarknetRpcApiError::TxnExecutionError
-//         })?;
-
-//     let result = res.execution.retdata.0.iter().map(|x| x.to_felt()).collect();
-//     Ok(result)
-// }
 
 trait TxInfo {
     fn tx_hash(&self) -> TransactionHash;

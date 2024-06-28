@@ -1,7 +1,10 @@
 use dc_db::storage_handler::DeoxysStorageError;
 use dc_db::DbError;
+use serde_json::json;
 use starknet_api::StarknetApiError;
 use starknet_core::types::StarknetError;
+
+pub type StarknetRpcResult<T> = Result<T, StarknetRpcApiError>;
 
 pub enum StarknetTransactionExecutionError {
     ContractNotFound,
@@ -43,8 +46,8 @@ pub enum StarknetRpcApiError {
     FailedToFetchPendingTransactions,
     #[error("Contract error")]
     ContractError,
-    #[error("Transaction execution error: {error}")]
-    TxnExecutionError { error: String },
+    #[error("Transaction execution error")]
+    TxnExecutionError { tx_index: usize, error: String },
     #[error("Invalid contract class")]
     InvalidContractClass,
     #[error("Class already declared")]
@@ -121,18 +124,21 @@ impl From<&StarknetRpcApiError> for i32 {
 }
 
 impl StarknetRpcApiError {
-    pub fn data(&self) -> Option<String> {
+    pub fn data(&self) -> Option<serde_json::Value> {
         match self {
-            StarknetRpcApiError::ErrUnexpectedError { data } => Some(data.clone()),
+            StarknetRpcApiError::ErrUnexpectedError { data } => Some(json!(data)),
+            StarknetRpcApiError::TxnExecutionError { tx_index, error } => Some(json!({
+                "transaction_index": tx_index,
+                "execution_error": error,
+            })),
             _ => None,
         }
     }
 }
 
-// TODO: Implement the conversion for the rest of the errors
-impl From<blockifier::transaction::errors::TransactionExecutionError> for StarknetRpcApiError {
-    fn from(err: blockifier::transaction::errors::TransactionExecutionError) -> Self {
-        StarknetRpcApiError::TxnExecutionError { error: err.to_string() }
+impl From<dc_exec::TransactionsExecError> for StarknetRpcApiError {
+    fn from(err: dc_exec::TransactionsExecError) -> Self {
+        Self::TxnExecutionError { tx_index: err.index, error: err.err.to_string() }
     }
 }
 
@@ -182,9 +188,10 @@ impl From<StarknetError> for StarknetRpcApiError {
             StarknetError::UnsupportedContractClassVersion => StarknetRpcApiError::UnsupportedContractClassVersion,
             StarknetError::UnexpectedError(data) => StarknetRpcApiError::ErrUnexpectedError { data },
             StarknetError::NoTraceAvailable(_) => StarknetRpcApiError::InternalServerError,
-            StarknetError::TransactionExecutionError(error) => {
-                StarknetRpcApiError::TxnExecutionError { error: error.execution_error.to_string() }
-            }
+            StarknetError::TransactionExecutionError(error) => StarknetRpcApiError::TxnExecutionError {
+                tx_index: error.transaction_index as usize,
+                error: error.execution_error.to_string(),
+            },
         }
     }
 }

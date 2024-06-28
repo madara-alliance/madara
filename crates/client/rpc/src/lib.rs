@@ -14,7 +14,7 @@ use std::sync::Arc;
 use dc_db::mapping_db::MappingDb;
 use dc_db::DeoxysBackend;
 use dp_block::{DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner};
-use errors::StarknetRpcApiError;
+use errors::{StarknetRpcApiError, StarknetRpcResult};
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use starknet_core::types::Felt;
@@ -76,7 +76,7 @@ pub trait StarknetReadRpcApi {
 
     /// Call a contract function at a given block id
     #[method(name = "call")]
-    fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<String>>;
+    fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<Felt>>;
 
     /// Get the chain id
     #[method(name = "chainId")]
@@ -222,43 +222,39 @@ impl Starknet {
         self.backend.mapping()
     }
 
-    pub fn get_block_info(&self, block_id: impl Into<dp_block::BlockId>) -> RpcResult<DeoxysBlockInfo> {
-        Ok(self
-            .block_storage()
+    pub fn get_block_info(&self, block_id: impl Into<dp_block::BlockId>) -> StarknetRpcResult<DeoxysBlockInfo> {
+        self.block_storage()
             .get_block_info(&block_id.into())
             .or_internal_server_error("Error getting block from storage")?
-            .ok_or(StarknetRpcApiError::BlockNotFound)?)
+            .ok_or(StarknetRpcApiError::BlockNotFound)
     }
 
-    pub fn get_block_n(&self, block_id: impl Into<dp_block::BlockId>) -> RpcResult<u64> {
-        Ok(self
-            .block_storage()
+    pub fn get_block_n(&self, block_id: impl Into<dp_block::BlockId>) -> StarknetRpcResult<u64> {
+        self.block_storage()
             .get_block_n(&block_id.into())
             .or_internal_server_error("Error getting block from storage")?
-            .ok_or(StarknetRpcApiError::BlockNotFound)?)
+            .ok_or(StarknetRpcApiError::BlockNotFound)
     }
 
-    pub fn get_block(&self, block_id: impl Into<dp_block::BlockId>) -> RpcResult<DeoxysBlock> {
-        Ok(self
-            .block_storage()
+    pub fn get_block(&self, block_id: impl Into<dp_block::BlockId>) -> StarknetRpcResult<DeoxysBlock> {
+        self.block_storage()
             .get_block(&block_id.into())
             .or_internal_server_error("Error getting block from storage")?
-            .ok_or(StarknetRpcApiError::BlockNotFound)?)
+            .ok_or(StarknetRpcApiError::BlockNotFound)
     }
 
-    pub fn get_block_inner(&self, block_id: impl Into<dp_block::BlockId>) -> RpcResult<DeoxysBlockInner> {
-        Ok(self
-            .block_storage()
+    pub fn get_block_inner(&self, block_id: impl Into<dp_block::BlockId>) -> StarknetRpcResult<DeoxysBlockInner> {
+        self.block_storage()
             .get_block_inner(&block_id.into())
             .or_internal_server_error("Error getting block from storage")?
-            .ok_or(StarknetRpcApiError::BlockNotFound)?)
+            .ok_or(StarknetRpcApiError::BlockNotFound)
     }
 
     pub fn chain_id(&self) -> Felt {
         self.chain_config.chain_id
     }
 
-    pub fn current_block_number(&self) -> RpcResult<u64> {
+    pub fn current_block_number(&self) -> StarknetRpcResult<u64> {
         self.get_block_n(dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
     }
 
@@ -266,7 +262,7 @@ impl Starknet {
         "0.7.1".to_string()
     }
 
-    pub fn get_l1_last_confirmed_block(&self) -> RpcResult<u64> {
+    pub fn get_l1_last_confirmed_block(&self) -> StarknetRpcResult<u64> {
         Ok(self
             .block_storage()
             .get_l1_last_confirmed_block()

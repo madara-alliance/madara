@@ -1,16 +1,18 @@
 use dp_block::{BlockId, BlockTag};
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{
     BlockStatus, BlockWithTxHashes, BlockWithTxs, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
     PendingBlockWithTxHashes, PendingBlockWithTxs,
 };
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::block::{l1_da_mode, l1_data_gas_price, l1_gas_price, starknet_version};
 use crate::utils::ResultExt;
 use crate::Starknet;
 
-pub(crate) fn get_block_with_txs(starknet: &Starknet, block_id: &BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
+pub(crate) fn get_block_with_txs(
+    starknet: &Starknet,
+    block_id: &BlockId,
+) -> StarknetRpcResult<MaybePendingBlockWithTxs> {
     let block = starknet
         .block_storage()
         .get_block(block_id)
@@ -79,7 +81,7 @@ pub(crate) fn get_block_with_txs(starknet: &Starknet, block_id: &BlockId) -> Rpc
 pub(crate) fn get_block_with_tx_hashes(
     starknet: &Starknet,
     block_id: &BlockId,
-) -> RpcResult<MaybePendingBlockWithTxHashes> {
+) -> StarknetRpcResult<MaybePendingBlockWithTxHashes> {
     let block = starknet
         .block_storage()
         .get_block(block_id)

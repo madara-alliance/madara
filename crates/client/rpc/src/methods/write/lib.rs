@@ -15,20 +15,20 @@ impl StarknetWriteRpcApiServer for Starknet {
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
     ) -> RpcResult<DeclareTransactionResult> {
-        add_declare_transaction(self, declare_transaction).await
+        Ok(add_declare_transaction(self, declare_transaction).await?)
     }
 
     async fn add_deploy_account_transaction(
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTransaction,
     ) -> RpcResult<DeployAccountTransactionResult> {
-        add_deploy_account_transaction(self, deploy_account_transaction).await
+        Ok(add_deploy_account_transaction(self, deploy_account_transaction).await?)
     }
 
     async fn add_invoke_transaction(
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
     ) -> RpcResult<InvokeTransactionResult> {
-        add_invoke_transaction(self, invoke_transaction).await
+        Ok(add_invoke_transaction(self, invoke_transaction).await?)
     }
 }

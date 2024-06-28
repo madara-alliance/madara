@@ -1,8 +1,10 @@
 mod block_context;
 mod blockifier_state_adapter;
+mod call;
 mod execution;
 mod fee;
 mod trace;
+
 pub use block_context::block_context;
 use blockifier::{
     state::cached_state::CommitmentStateDiff,
@@ -12,6 +14,7 @@ use blockifier::{
         transaction_types::TransactionType,
     },
 };
+pub use call::call_contract;
 pub use execution::execute_transactions;
 pub use fee::execution_result_to_fee_estimate;
 use starknet_api::transaction::TransactionHash;

@@ -16,14 +16,14 @@ impl StarknetTraceRpcApiServer for Starknet {
         transactions: Vec<BroadcastedTransaction>,
         simulation_flags: Vec<SimulationFlag>,
     ) -> RpcResult<Vec<SimulatedTransaction>> {
-        simulate_transactions(self, block_id, transactions, simulation_flags).await
+        Ok(simulate_transactions(self, block_id, transactions, simulation_flags).await?)
     }
 
     async fn trace_block_transactions(&self, block_id: BlockId) -> RpcResult<Vec<TransactionTraceWithHash>> {
-        trace_block_transactions(self, block_id).await
+        Ok(trace_block_transactions(self, block_id).await?)
     }
 
     async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TransactionTraceWithHash> {
-        trace_transaction(self, transaction_hash).await
+        Ok(trace_transaction(self, transaction_hash).await?)
     }
 }

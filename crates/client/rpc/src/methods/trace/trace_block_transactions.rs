@@ -1,11 +1,10 @@
 use dc_exec::{block_context, execute_transactions, execution_result_to_tx_trace};
 use dp_convert::{ToFelt, ToStarkFelt};
-use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{BlockId, TransactionTraceWithHash};
 
 use super::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::transaction::to_blockifier_transactions;
 use crate::utils::ResultExt;
 use crate::Starknet;
@@ -13,17 +12,14 @@ use crate::Starknet;
 pub async fn trace_block_transactions(
     starknet: &Starknet,
     block_id: BlockId,
-) -> RpcResult<Vec<TransactionTraceWithHash>> {
+) -> StarknetRpcResult<Vec<TransactionTraceWithHash>> {
     let block = starknet.get_block(block_id)?;
 
     if block.header().protocol_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
-        return Err(StarknetRpcApiError::UnsupportedTxnVersion.into());
+        return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let block_context = block_context(block.header(), &starknet.chain_id()).map_err(|e| {
-        log::error!("Failed to create block context: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?;
+    let block_context = block_context(block.header(), &starknet.chain_id());
 
     let transactions: Vec<_> = block
         .transactions()
@@ -40,11 +36,12 @@ pub async fn trace_block_transactions(
         .into_iter()
         .map(|result| {
             let transaction_hash = result.hash.to_felt();
-            execution_result_to_tx_trace(&result)
-                .or_internal_server_error("Converting execution infos to tx trace")
-                .map(|trace_root| TransactionTraceWithHash { trace_root, transaction_hash })
+            let trace_root = execution_result_to_tx_trace(&result).map_err(|e| {
+                StarknetRpcApiError::ErrUnexpectedError { data: format!("Converting execution infos to tx trace: {e}") }
+            })?;
+            Ok(TransactionTraceWithHash { trace_root, transaction_hash })
         })
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;
 
     Ok(traces)
 }

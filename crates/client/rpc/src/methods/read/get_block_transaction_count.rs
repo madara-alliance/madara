@@ -1,7 +1,6 @@
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::BlockId;
 
-use crate::Starknet;
+use crate::{errors::StarknetRpcResult, Starknet};
 
 /// Get the Number of Transactions in a Given Block
 ///
@@ -18,7 +17,7 @@ use crate::Starknet;
 ///
 /// This function may return a `BLOCK_NOT_FOUND` error if the specified block does not exist in
 /// the blockchain.
-pub fn get_block_transaction_count(starknet: &Starknet, block_id: BlockId) -> RpcResult<u128> {
+pub fn get_block_transaction_count(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<u128> {
     let block = starknet.get_block_info(block_id)?;
 
     Ok(block.header().transaction_count)

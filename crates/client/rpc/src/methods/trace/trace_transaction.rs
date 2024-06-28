@@ -3,20 +3,23 @@ use dc_exec::execute_transactions;
 use dc_exec::execution_result_to_tx_trace;
 use dp_block::StarknetVersion;
 use dp_convert::ToStarkFelt;
-use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::Felt;
 use starknet_core::types::TransactionTraceWithHash;
 
 use crate::errors::StarknetRpcApiError;
+use crate::errors::StarknetRpcResult;
 use crate::utils::transaction::to_blockifier_transactions;
 use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
 
 // For now, we fallback to the sequencer - that is what pathfinder and juno do too, but this is temporary
-pub const FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW: StarknetVersion = StarknetVersion::STARKNET_VERSION_0_13_1_1;
+pub const FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW: StarknetVersion = StarknetVersion::STARKNET_VERSION_0_13_0;
 
-pub async fn trace_transaction(starknet: &Starknet, transaction_hash: Felt) -> RpcResult<TransactionTraceWithHash> {
+pub async fn trace_transaction(
+    starknet: &Starknet,
+    transaction_hash: Felt,
+) -> StarknetRpcResult<TransactionTraceWithHash> {
     let (block, tx_info) = starknet
         .block_storage()
         .find_tx_hash_block(&transaction_hash)
@@ -26,13 +29,10 @@ pub async fn trace_transaction(starknet: &Starknet, transaction_hash: Felt) -> R
     let tx_index = tx_info.tx_index;
 
     if block.header().protocol_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
-        return Err(StarknetRpcApiError::UnsupportedTxnVersion.into());
+        return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let block_context = block_context(block.header(), &starknet.chain_id()).map_err(|e| {
-        log::error!("Failed to create block context: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?;
+    let block_context = block_context(block.header(), &starknet.chain_id());
 
     // create a vector of tuples with the transaction and its hash, up to the current transaction index
     let mut transactions_before: Vec<_> = block

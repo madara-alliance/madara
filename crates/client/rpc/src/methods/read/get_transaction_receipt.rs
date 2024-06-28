@@ -1,8 +1,7 @@
 use dc_db::mapping_db::BlockStorageType;
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{Felt, TransactionFinalityStatus, TransactionReceiptWithBlockInfo};
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -31,7 +30,7 @@ use crate::Starknet;
 pub async fn get_transaction_receipt(
     starknet: &Starknet,
     transaction_hash: Felt,
-) -> RpcResult<TransactionReceiptWithBlockInfo> {
+) -> StarknetRpcResult<TransactionReceiptWithBlockInfo> {
     let (block, tx_info) = starknet
         .block_storage()
         .find_tx_hash_block(&transaction_hash)
@@ -40,10 +39,11 @@ pub async fn get_transaction_receipt(
 
     let tx_index = tx_info.tx_index;
 
-    let is_on_l1 = block.block_n() <= starknet.get_l1_last_confirmed_block()?;
-
-    let finality_status =
-        if is_on_l1 { TransactionFinalityStatus::AcceptedOnL1 } else { TransactionFinalityStatus::AcceptedOnL2 };
+    let finality_status = if block.block_n() <= starknet.get_l1_last_confirmed_block()? {
+        TransactionFinalityStatus::AcceptedOnL1
+    } else {
+        TransactionFinalityStatus::AcceptedOnL2
+    };
 
     let receipt = block
         .receipts()

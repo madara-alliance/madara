@@ -1,13 +1,16 @@
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{
     BlockId, BlockStatus, BlockTag, BlockWithReceipts, MaybePendingBlockWithReceipts, PendingBlockWithReceipts,
     TransactionFinalityStatus, TransactionWithReceipt,
 };
 
+use crate::errors::StarknetRpcResult;
 use crate::utils::block::{l1_da_mode, l1_data_gas_price, l1_gas_price, starknet_version};
 use crate::Starknet;
 
-pub fn get_block_with_receipts(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithReceipts> {
+pub fn get_block_with_receipts(
+    starknet: &Starknet,
+    block_id: BlockId,
+) -> StarknetRpcResult<MaybePendingBlockWithReceipts> {
     let block = starknet.get_block(block_id)?;
 
     let transactions = block

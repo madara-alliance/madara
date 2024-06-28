@@ -1,14 +1,12 @@
 use dc_exec::{block_context, execute_transactions, execution_result_to_fee_estimate};
 use dp_convert::ToStarkFelt;
 use dp_transactions::L1HandlerTransaction;
-use jsonrpsee::core::RpcResult;
 use starknet_api::transaction::{Fee, TransactionHash};
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 use starknet_types_core::felt::Felt;
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
-use crate::utils::ResultExt;
 use crate::Starknet;
 
 /// Estimate the L2 fee of a message sent on L1
@@ -31,25 +29,21 @@ pub async fn estimate_message_fee(
     starknet: &Starknet,
     message: MsgFromL1,
     block_id: BlockId,
-) -> RpcResult<FeeEstimate> {
+) -> StarknetRpcResult<FeeEstimate> {
     let block_info = starknet.get_block_info(block_id)?;
     if block_info.header().protocol_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
-        return Err(StarknetRpcApiError::UnsupportedTxnVersion.into());
+        return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let block_context = block_context(block_info.header(), &starknet.chain_id()).map_err(|e| {
-        log::error!("Failed to create block context: {e}");
-        StarknetRpcApiError::InternalServerError
-    })?;
+    let block_context = block_context(block_info.header(), &starknet.chain_id());
     let block_number = block_info.block_n();
 
     let chain_id = starknet.chain_id();
     let transaction = convert_message_into_transaction(message, chain_id, Some(block_number));
     let execution_result =
-        execute_transactions(starknet.clone_backend(), vec![], vec![transaction], &block_context, false, true)
-            .or_internal_server_error("Failed to re-execute transactions")?
+        execute_transactions(starknet.clone_backend(), vec![], vec![transaction], &block_context, false, true)?
             .pop()
-            .unwrap();
+            .ok_or_else(|| StarknetRpcApiError::ErrUnexpectedError { data: "No execution result found".to_string() })?;
 
     let fee_estimate = execution_result_to_fee_estimate(&execution_result, &block_context);
 

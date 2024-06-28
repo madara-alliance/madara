@@ -1,27 +1,51 @@
-use crate::{Transaction, TransactionWithHash};
-use anyhow::Context;
+use crate::{to_starknet_api::TransactionApiError, Transaction, TransactionWithHash};
+use blockifier::{execution::errors::ContractClassError, transaction::errors::TransactionExecutionError};
 use dp_class::{to_blockifier_class, ClassHash, ToCompiledClass};
 use dp_convert::ToStarkFelt;
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 
+#[derive(thiserror::Error, Debug)]
+pub enum BroadcastedToBlockifierError {
+    #[error("Failed to compile contract class: {0}")]
+    CompilationFailed(anyhow::Error),
+    #[error("Failed to convert program: {0}")]
+    ProgramError(#[from] cairo_vm::types::errors::program_errors::ProgramError),
+    #[error("Failed to compute legacy class hash: {0}")]
+    ComputeLegacyClassHashFailed(anyhow::Error),
+    #[error("Failed to convert transaction to starkneti-api: {0}")]
+    ConvertToTxApiError(#[from] TransactionApiError),
+    #[error("Failed to convert transaction to blockifier: {0}")]
+    ConvertTxBlockifierError(#[from] TransactionExecutionError),
+    #[error("Failed to convert contract class: {0}")]
+    ConvertContractClassError(#[from] ContractClassError),
+}
+
 pub fn broadcasted_to_blockifier(
     transaction: starknet_core::types::BroadcastedTransaction,
     chain_id: Felt,
-) -> Result<blockifier::transaction::transaction_execution::Transaction, anyhow::Error> {
+) -> Result<blockifier::transaction::transaction_execution::Transaction, BroadcastedToBlockifierError> {
     let (class_info, class_hash) = match &transaction {
         starknet_core::types::BroadcastedTransaction::Declare(tx) => match tx {
             starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => (
                 Some(blockifier::execution::contract_class::ClassInfo::new(
-                    &to_blockifier_class(tx.contract_class.compile()?)?,
+                    &to_blockifier_class(
+                        tx.contract_class.compile().map_err(BroadcastedToBlockifierError::CompilationFailed)?,
+                    )?,
                     0,
                     0,
                 )?),
-                Some(tx.contract_class.class_hash().context("Failed to compute class hash on Legacy")?),
+                Some(
+                    tx.contract_class
+                        .class_hash()
+                        .map_err(BroadcastedToBlockifierError::ComputeLegacyClassHashFailed)?,
+                ),
             ),
             starknet_core::types::BroadcastedDeclareTransaction::V2(tx) => (
                 Some(blockifier::execution::contract_class::ClassInfo::new(
-                    &to_blockifier_class(tx.contract_class.compile()?)?,
+                    &to_blockifier_class(
+                        tx.contract_class.compile().map_err(BroadcastedToBlockifierError::CompilationFailed)?,
+                    )?,
                     tx.contract_class.sierra_program.len(),
                     tx.contract_class.abi.len(),
                 )?),
@@ -29,7 +53,9 @@ pub fn broadcasted_to_blockifier(
             ),
             starknet_core::types::BroadcastedDeclareTransaction::V3(tx) => (
                 Some(blockifier::execution::contract_class::ClassInfo::new(
-                    &to_blockifier_class(tx.contract_class.compile()?)?,
+                    &to_blockifier_class(
+                        tx.contract_class.compile().map_err(BroadcastedToBlockifierError::CompilationFailed)?,
+                    )?,
                     tx.contract_class.sierra_program.len(),
                     tx.contract_class.abi.len(),
                 )?),

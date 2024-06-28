@@ -1,6 +1,6 @@
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, MaybePendingBlockWithTxs};
 
+use crate::errors::StarknetRpcResult;
 use crate::methods::get_block;
 use crate::Starknet;
 
@@ -22,6 +22,6 @@ use crate::Starknet;
 /// the block, this can include either a confirmed block or a pending block with its
 /// transactions. In case the specified block is not found, returns a `StarknetRpcApiError` with
 /// `BlockNotFound`.
-pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
+pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePendingBlockWithTxs> {
     get_block::get_block_with_txs(starknet, &block_id.into())
 }
