@@ -191,7 +191,7 @@ Snapshots are under developpement and will be available trought the `--snap <blo
 
 ## 🌐 Interactions
 
-Deoxys fully supports all the JSON-RPC methods as specified in the Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs). These methods can be categorized into three main types: Read-Only Access Methods, Trace Generation Methods, and Write Methods. Below is an overview of how you can interact with your full node using these methods.
+Deoxys fully supports all the JSON-RPC methods as specified in the Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs). These methods can be categorized into three main types: Read-Only Access Methods, Trace Generation Methods, and Write Methods.
 
 ### Supported JSON-RPC Methods
 
@@ -272,6 +272,17 @@ You can use any JSON-RPC client to interact with the Deoxys node, such as `curl`
 > ⚠️ **Warning:** Write methods are forwarded to the Sequencer for execution. Ensure you handle errors appropriately as per the JSON-RPC schema.
 
 ## ✔ Supported Features
+
+Deoxys offers numerous features and is constantly improving to stay at the cutting edge of Starknet technology.
+
+- **Starknet Version**: `v0.13.1`
+- **JSON-RPC Version**: `v0.7.1`
+- **Feeder-Gateway State Synchronization**
+- **State Commitment Computation**
+- **L1 State Verification**
+- **Handling L1 and L2 Reorgs**
+
+Each feature is designed to ensure optimal performance and seamless integration with the Starknet ecosystem.
 
 ## 👍 Contribute
 
