@@ -19,6 +19,24 @@
 
 # 👽 Deoxys: Starknet full node client on Substrate
 
+## Table of Contents
+
+- [⬇️ Installation](#installation)
+  - [Run from Source](#run-from-source)
+  - [Run with Docker](#run-with-docker)
+  - [Using Docker Compose](#using-docker-compose)
+- [⚙️ Configuration](#configuration)
+  - [Basic Command-Line Options](#basic-command-line-options)
+  - [Advanced Command-Line Options](#advanced-command-line-options)
+- [📸 Snapshots](#snapshots)
+- [🌐 Interactions](#interactions)
+  - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
+  - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
+- [✔ Supported Features](#supported-features)
+- [👍 Contribute](#contribute)
+- [🤝 Partnerships](#partnerships)
+- [⚠️ License](#license)
+
 ## ⬇️ Installation
 
 ### Run from Source
@@ -286,6 +304,16 @@ Each feature is designed to ensure optimal performance and seamless integration 
 
 ## 👍 Contribute
 
+
 ## 🤝 Partnerships
 
-To establish
+To establish a partnership with the Kasar team, or if you have any suggestion or
+special request, feel free to reach us on [telegram](https://t.me/kasarlabs).
+
+## ⚠️ License
+
+Copyright (c) 2022-present, with the following
+[contributors](https://github.com/KasarLabs/deoxys/graphs/contributors).
+
+Deoxys is open-source software licensed under the
+[Apache-2.0 License](https://github.com/KasarLabs/deoxys/blob/main/LICENSE).
