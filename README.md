@@ -195,6 +195,8 @@ Deoxys fully supports all the JSON-RPC methods as specified in the Starknet main
 
 ### Supported JSON-RPC Methods
 
+Here is a list of all the supported methods with their current status:
+
 <details>
   <summary>Read Methods</summary>
 
@@ -248,6 +250,8 @@ Deoxys fully supports all the JSON-RPC methods as specified in the Starknet main
 
 </details>
 
+> ℹ️ **Info:** Deoxys currently supports latest [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs) specs up to version v0.7.1
+
 ### Example of Calling a JSON-RPC Method
 
 Here is an example of how to call a JSON-RPC method using Deoxys:
@@ -265,9 +269,7 @@ Here is an example of how to call a JSON-RPC method using Deoxys:
 
 You can use any JSON-RPC client to interact with the Deoxys node, such as `curl`, `httpie`, or a custom client in your preferred programming language. For more detailed information and examples on each method, please refer to the [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 
-**Note**: Write methods are forwarded to the Sequencer for execution. Ensure you handle errors appropriately as per the JSON-RPC schema.
-
-For a comprehensive list of all supported JSON-RPC methods, please refer to the [documentation](https://github.com/starkware-libs/starknet-specs).
+> ⚠️ **Warning:** Write methods are forwarded to the Sequencer for execution. Ensure you handle errors appropriately as per the JSON-RPC schema.
 
 ## ✔ Supported Features
 
