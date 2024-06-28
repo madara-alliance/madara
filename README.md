@@ -23,19 +23,19 @@ Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
 
 ## Table of Contents
 
-- [⬇️ Installation](#installation)
+- ⬇️ Installation
   - [Run from Source](#run-from-source)
   - [Run with Docker](#run-with-docker)
   - [Run with Docker Compose](#run-with-docker-compose)
-- [⚙️ Configuration](#configuration)
+- ⚙️ Configuration
   - [Basic Command-Line Options](#basic-command-line-options)
   - [Advanced Command-Line Options](#advanced-command-line-options)
-- [📸 Snapshots](#snapshots)
-- [🌐 Interactions](#interactions)
+- 📸 Snapshots
+- 🌐 Interactions
   - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
-- [✔ Supported Features](#supported-features)
-- [👍 Contribute](#contribute)
+- Supported Features
+- 👍 Contribute
 
 ## ⬇️ Installation
 
@@ -45,7 +45,7 @@ Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
 
    Ensure you have the necessary dependencies:
 
-   ```bash
+   ```sh
    sudo apt-get update && sudo apt-get install -y \
      clang \
      protobuf-compiler \
@@ -54,13 +54,13 @@ Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
 
    Install Rust:
 
-   ```bash
+   ```sh
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s
    ```
 
    Clone the Deoxys repository:
 
-   ```bash
+   ```sh
    cd <your-destination-path>
    git clone https://github.com/KasarLabs/deoxys .
    ```
@@ -69,7 +69,7 @@ Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
 
    Start the Deoxys client with synchronization to Starknet mainnet:
 
-   ```bash
+   ```sh
    cargo run --release \
      --name deoxys \
      --base-path ../deoxys-db \
@@ -87,7 +87,7 @@ Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
 
 To run Deoxys with Docker, use the following command:
 
-```bash
+```sh
 docker run -d \
     --name deoxys \
     -p 9944:9944 \
@@ -103,7 +103,7 @@ docker run -d \
 
 Check the logs of the running Deoxys service:
 
-```bash
+```sh
 docker logs -f deoxys
 ```
 
@@ -113,13 +113,13 @@ docker logs -f deoxys
 
    Set the necessary environment variable:
 
-   ```bash
+   ```sh
    export ETHEREUM_API_URL="your-ethereum-api-url"
    ```
 
    Or create a `.env` file in the same directory as your `docker-compose.yml` file:
 
-   ```
+   ```sh
    ETHEREUM_API_URL=your-ethereum-api-url
    ```
 
@@ -127,13 +127,13 @@ docker logs -f deoxys
 
    Navigate to the directory with your `docker-compose.yml` file and run:
 
-   ```bash
+   ```sh
    docker-compose up -d
    ```
 
    Check the logs of the running Deoxys service:
 
-   ```bash
+   ```sh
    docker-compose logs -f deoxys
    ```
 
@@ -175,7 +175,8 @@ Here are more advanced command-line options, organized by namespace, for running
 <details>
 <summary>RPC</summary>
 
-- **`--rpc-external`**: Listen to all RPC interfaces. Note: not all RPC methods are safe to be exposed publicly. Use an RPC proxy server to filter out dangerous methods.
+- **`--rpc-external`**: Listen to all RPC interfaces. Note: not all RPC methods are safe to be exposed publicly.
+  Use an RPC proxy server to filter out dangerous methods.
 - **`--rpc-methods <METHOD_SET>`**: RPC methods to expose (`auto`, `safe`, `unsafe`).
 - **`--rpc-max-request-size <SIZE>`**: Set the maximum RPC request payload size in megabytes (default: 15).
 - **`--rpc-max-response-size <SIZE>`**: Set the maximum RPC response payload size in megabytes (default: 15).
@@ -201,7 +202,8 @@ Here are more advanced command-line options, organized by namespace, for running
 
 </details>
 
-> ℹ️ **Info:** Note that not all parameters may be referenced here. Please refer to the `cargo run -- --help` command for the full list of parameters.
+> ℹ️ **Info:** Note that not all parameters may be referenced here.
+> Please refer to the `cargo run -- --help` command for the full list of parameters.
 
 ## 📸 Snapshots
 
@@ -209,7 +211,8 @@ Snapshots are under developpement and will be available trought the `--snap <blo
 
 ## 🌐 Interactions
 
-Deoxys fully supports all the JSON-RPC methods as specified in the Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs). These methods can be categorized into three main types: Read-Only Access Methods, Trace Generation Methods, and Write Methods.
+Deoxys fully supports all the JSON-RPC methods as specified in the Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+These methods can be categorized into three main types: Read-Only Access Methods, Trace Generation Methods, and Write Methods.
 
 ### Supported JSON-RPC Methods
 
@@ -285,9 +288,12 @@ Here is an example of how to call a JSON-RPC method using Deoxys:
 }
 ```
 
-You can use any JSON-RPC client to interact with the Deoxys node, such as `curl`, `httpie`, or a custom client in your preferred programming language. For more detailed information and examples on each method, please refer to the [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+You can use any JSON-RPC client to interact with the Deoxys node, such as `curl`, `httpie`,
+or a custom client in your preferred programming language.
+For more detailed information and examples on each method, please refer to the [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 
-> ⚠️ **Warning:** Write methods are forwarded to the Sequencer for execution. Ensure you handle errors appropriately as per the JSON-RPC schema.
+> ⚠️ **Warning:** Write methods are forwarded to the Sequencer for execution.
+> Ensure you handle errors appropriately as per the JSON-RPC schema.
 
 ## ✔ Supported Features
 
