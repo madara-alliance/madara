@@ -24,7 +24,7 @@
 - [⬇️ Installation](#installation)
   - [Run from Source](#run-from-source)
   - [Run with Docker](#run-with-docker)
-  - [Using Docker Compose](#using-docker-compose)
+  - [Run with Docker Compose](#run-with-docker-compose)
 - [⚙️ Configuration](#configuration)
   - [Basic Command-Line Options](#basic-command-line-options)
   - [Advanced Command-Line Options](#advanced-command-line-options)
@@ -34,8 +34,6 @@
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
 - [✔ Supported Features](#supported-features)
 - [👍 Contribute](#contribute)
-- [🤝 Partnerships](#partnerships)
-- [⚠️ License](#license)
 
 ## ⬇️ Installation
 
@@ -107,7 +105,7 @@
     docker logs -f deoxys
     ```
 
-### Using Docker Compose
+### Run with Docker Compose
 
 1. **Ensure environment variable**
 
