@@ -40,8 +40,6 @@
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s
     ```
 
-2. **Get code**
-
     Clone the Deoxys repository:
 
     ```bash
@@ -49,25 +47,9 @@
     git clone https://github.com/KasarLabs/deoxys .
     ```
 
-3. **Build program**
+2. **Run Deoxys**
 
-    Choose a build mode:
-
-    - Debug mode (for testing):
-
-        ```bash
-        cargo build
-        ```
-
-    - Release mode (recommended for production):
-
-        ```bash
-        cargo build --release
-        ```
-
-4. **Run Deoxys**
-
-    Start the Deoxys client with synchronization to the Starknet mainnet:
+    Start the Deoxys client with synchronization to Starknet mainnet:
 
     ```bash
     cargo run --release \
