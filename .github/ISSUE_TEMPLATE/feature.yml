@@ -10,14 +10,6 @@ body:
       options:
         - label: I have searched the existing issues
           required: true
-  - type: checkboxes
-    id: stackexchange
-    attributes:
-      label: Experiencing problems? Have you tried our Stack Exchange first?
-      description: Please search <https://substrate.stackexchange.com> to see if an post already exists, and ask if not. Please do not file support issues here.
-      options:
-        - label: This is not a support question.
-          required: true
   - type: textarea
     id: motivation
     attributes:
