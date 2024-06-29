@@ -1,8 +1,7 @@
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BroadcastedDeclareTransaction, DeclareTransactionResult};
 use starknet_providers::{Provider, ProviderError};
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::{bail_internal_server_error, Starknet};
 
 /// Submit a new declare transaction to be added to the chain
@@ -17,13 +16,13 @@ use crate::{bail_internal_server_error, Starknet};
 pub async fn add_declare_transaction(
     starknet: &Starknet,
     declare_transaction: BroadcastedDeclareTransaction,
-) -> RpcResult<DeclareTransactionResult> {
+) -> StarknetRpcResult<DeclareTransactionResult> {
     let sequencer = starknet.sequencer_provider();
 
     let sequencer_response = match sequencer.add_declare_transaction(declare_transaction).await {
         Ok(response) => response,
         Err(ProviderError::StarknetError(e)) => {
-            return Err(StarknetRpcApiError::from(e).into());
+            return Err(StarknetRpcApiError::from(e));
         }
         Err(e) => bail_internal_server_error!("Failed to add invoke transaction to sequencer: {e}"),
     };

@@ -6,12 +6,9 @@ mod to_starknet_api;
 mod to_starknet_core;
 pub mod utils;
 
-use blockifier::transaction::account_transaction::AccountTransaction;
-
+pub use broadcasted_to_blockifier::broadcasted_to_blockifier;
 use dp_convert::ToFelt;
 use starknet_types_core::felt::Felt;
-
-pub use broadcasted_to_blockifier::broadcasted_to_blockifier;
 
 const SIMULATE_TX_VERSION_OFFSET: Felt =
     Felt::from_raw([576460752142434320, 18446744073709551584, 17407, 18446744073700081665]);
@@ -26,53 +23,6 @@ pub const LEGACY_L1_HANDLER_BLOCK: u64 = 854;
 pub const MAIN_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x534e5f4d41494e");
 pub const TEST_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x534e5f5345504f4c4941");
 pub const INTE_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x0");
-
-/// Wrapper type for transaction execution error.
-/// Different tx types.
-/// See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/` for more details.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum TxType {
-    /// Regular invoke transaction.
-    Invoke,
-    /// Declare transaction.
-    Declare,
-    /// Deploy account transaction.
-    DeployAccount,
-    /// Message sent from ethereum.
-    L1Handler,
-}
-
-impl From<TxType> for blockifier::transaction::transaction_types::TransactionType {
-    fn from(value: TxType) -> Self {
-        match value {
-            TxType::Invoke => Self::InvokeFunction,
-            TxType::Declare => Self::Declare,
-            TxType::DeployAccount => Self::DeployAccount,
-            TxType::L1Handler => Self::L1Handler,
-        }
-    }
-}
-
-impl From<&blockifier::transaction::transaction_execution::Transaction> for TxType {
-    fn from(value: &blockifier::transaction::transaction_execution::Transaction) -> Self {
-        match value {
-            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(tx) => tx.into(),
-            blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(_) => TxType::L1Handler,
-        }
-    }
-}
-
-impl From<&AccountTransaction> for TxType {
-    fn from(value: &AccountTransaction) -> Self {
-        match value {
-            AccountTransaction::Declare(_) => TxType::Declare,
-            AccountTransaction::DeployAccount(_) => TxType::DeployAccount,
-            AccountTransaction::Invoke(_) => TxType::Invoke,
-        }
-    }
-}
-
-/////////////////////////// New transaction types ///////////////////////////
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TransactionWithHash {

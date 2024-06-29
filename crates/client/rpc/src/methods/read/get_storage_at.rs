@@ -1,8 +1,7 @@
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::BlockId;
 use starknet_types_core::felt::Felt;
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -35,7 +34,12 @@ use crate::Starknet;
 ///   given `contract_address` in the specified block.
 /// * `STORAGE_KEY_NOT_FOUND` - If the specified storage key does not exist within the given
 ///   contract.
-pub fn get_storage_at(starknet: &Starknet, contract_address: Felt, key: Felt, block_id: BlockId) -> RpcResult<Felt> {
+pub fn get_storage_at(
+    starknet: &Starknet,
+    contract_address: Felt,
+    key: Felt,
+    block_id: BlockId,
+) -> StarknetRpcResult<Felt> {
     let block_number = starknet.get_block_n(block_id)?;
 
     // Check if the contract exists at the given address in the specified block.
@@ -46,7 +50,7 @@ pub fn get_storage_at(starknet: &Starknet, contract_address: Felt, key: Felt, bl
         .or_internal_server_error("Failed to check if contract is deployed")?
     {
         true => {}
-        false => return Err(StarknetRpcApiError::ContractNotFound.into()),
+        false => return Err(StarknetRpcApiError::ContractNotFound),
     }
 
     let value = starknet

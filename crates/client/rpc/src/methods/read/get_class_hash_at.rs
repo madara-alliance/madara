@@ -1,8 +1,7 @@
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::BlockId;
 use starknet_types_core::felt::Felt;
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -18,7 +17,7 @@ use crate::Starknet;
 /// ### Returns
 ///
 /// * `class_hash` - The class hash of the given contract
-pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> RpcResult<Felt> {
+pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
     let block_number = starknet.get_block_n(block_id)?;
 
     let class_hash = starknet

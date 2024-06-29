@@ -1,7 +1,6 @@
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, BlockTag, Felt, MaybePendingStateUpdate, StateUpdate};
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -23,7 +22,7 @@ use crate::Starknet;
 /// the state of the network as a result of the block's execution. This can include a confirmed
 /// state update or a pending state update. If the block is not found, returns a
 /// `StarknetRpcApiError` with `BlockNotFound`.
-pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate> {
+pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePendingStateUpdate> {
     let block = starknet.get_block_info(block_id)?;
     let new_root = block.header().global_state_root;
     let block_hash = *block.block_hash();

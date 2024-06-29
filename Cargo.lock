@@ -2912,6 +2912,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "dc-exec"
+version = "0.1.0"
+dependencies = [
+ "blockifier",
+ "cairo-vm",
+ "dc-db",
+ "dp-block",
+ "dp-class",
+ "dp-convert",
+ "indexmap 2.2.6",
+ "starknet-core",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+]
+
+[[package]]
 name = "dc-metrics"
 version = "0.1.0"
 dependencies = [
@@ -2930,18 +2947,17 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "blockifier",
- "cairo-vm",
  "dc-db",
+ "dc-exec",
  "dp-block",
  "dp-class",
  "dp-convert",
  "dp-receipt",
- "dp-simulations",
  "dp-transactions",
- "indexmap 2.2.6",
  "jsonrpsee",
  "log",
  "rstest 0.18.2",
+ "serde_json",
  "starknet-core",
  "starknet-providers",
  "starknet-types-core",
@@ -3230,13 +3246,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dp-simulations"
-version = "0.1.0"
-dependencies = [
- "starknet-core",
-]
-
-[[package]]
 name = "dp-transactions"
 version = "0.1.0"
 dependencies = [
@@ -3245,12 +3254,12 @@ dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.6.4",
+ "cairo-vm",
  "dp-class",
  "dp-convert",
  "num-bigint",
  "serde",
  "starknet-core",
- "starknet-crypto 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "starknet-providers",
  "starknet-types-core",
  "starknet_api",
@@ -7034,7 +7043,7 @@ dependencies = [
  "serde_json_pythonic",
  "serde_with",
  "sha3",
- "starknet-crypto 0.7.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-crypto 0.7.0",
  "starknet-types-core",
 ]
 
@@ -7081,26 +7090,6 @@ dependencies = [
 [[package]]
 name = "starknet-crypto"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cc4ac48f3df819dbd02bbc912f8005edc6aebe03df3158370e486bc94c1caae"
-dependencies = [
- "crypto-bigint",
- "hex",
- "hmac",
- "num-bigint",
- "num-integer",
- "num-traits 0.2.19",
- "rfc6979",
- "sha2",
- "starknet-crypto-codegen 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "starknet-curve 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "starknet-types-core",
- "zeroize",
-]
-
-[[package]]
-name = "starknet-crypto"
-version = "0.7.0"
 source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#226952b599d8f5cc63dd398e63170955e127ceb5"
 dependencies = [
  "crypto-bigint",
@@ -7111,8 +7100,8 @@ dependencies = [
  "num-traits 0.2.19",
  "rfc6979",
  "sha2",
- "starknet-crypto-codegen 0.4.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
- "starknet-curve 0.5.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-crypto-codegen 0.4.0",
+ "starknet-curve 0.5.0",
  "starknet-types-core",
  "zeroize",
 ]
@@ -7131,20 +7120,9 @@ dependencies = [
 [[package]]
 name = "starknet-crypto-codegen"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e179dedc3fa6da064e56811d3e05d446aa2f7459e4eb0e3e49378a337235437"
-dependencies = [
- "starknet-curve 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "starknet-types-core",
- "syn 2.0.66",
-]
-
-[[package]]
-name = "starknet-crypto-codegen"
-version = "0.4.0"
 source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#226952b599d8f5cc63dd398e63170955e127ceb5"
 dependencies = [
- "starknet-curve 0.5.0 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-curve 0.5.0",
  "starknet-types-core",
  "syn 2.0.66",
 ]
@@ -7165,15 +7143,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1c383518bb312751e4be80f53e8644034aa99a0afb29d7ac41b89a997db875b"
 dependencies = [
  "starknet-ff",
-]
-
-[[package]]
-name = "starknet-curve"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56935b306dcf0b8f14bb2a1257164b8478bb8be4801dfae0923f5b266d1b457c"
-dependencies = [
- "starknet-types-core",
 ]
 
 [[package]]

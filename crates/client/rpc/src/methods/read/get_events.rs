@@ -1,8 +1,7 @@
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage, Felt};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::events::get_block_events;
 use crate::types::ContinuationToken;
 use crate::Starknet;
@@ -27,16 +26,16 @@ use crate::Starknet;
 /// block in which they occurred, and the transaction that triggered them. In case of
 /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
 /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
-pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> RpcResult<EventsPage> {
+pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> StarknetRpcResult<EventsPage> {
     let from_address = filter.event_filter.address;
     let keys = filter.event_filter.keys.unwrap_or_default();
     let chunk_size = filter.result_page_request.chunk_size;
 
     if keys.len() > MAX_EVENTS_KEYS {
-        return Err(StarknetRpcApiError::TooManyKeysInFilter.into());
+        return Err(StarknetRpcApiError::TooManyKeysInFilter);
     }
     if chunk_size > MAX_EVENTS_CHUNK_SIZE as u64 {
-        return Err(StarknetRpcApiError::PageSizeTooBig.into());
+        return Err(StarknetRpcApiError::PageSizeTooBig);
     }
 
     // Get the block numbers for the requested range
@@ -44,10 +43,7 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Rpc
         block_range(starknet, filter.event_filter.from_block, filter.event_filter.to_block)?;
 
     let continuation_token = match filter.result_page_request.continuation_token {
-        Some(token) => ContinuationToken::parse(token).map_err(|e| {
-            log::error!("Failed to parse continuation token: {:?}", e);
-            StarknetRpcApiError::InvalidContinuationToken
-        })?,
+        Some(token) => ContinuationToken::parse(token).map_err(|_| StarknetRpcApiError::InvalidContinuationToken)?,
         None => ContinuationToken { block_n: from_block, event_n: 0 },
     };
 
@@ -72,7 +68,7 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Rpc
             .collect();
 
         if current_block == from_block && (block_filtered_events.len() as u64) < continuation_token.event_n {
-            return Err(StarknetRpcApiError::InvalidContinuationToken.into());
+            return Err(StarknetRpcApiError::InvalidContinuationToken);
         }
 
         #[allow(clippy::iter_skip_zero)]
@@ -111,7 +107,7 @@ fn block_range(
     starknet: &Starknet,
     from_block: Option<BlockId>,
     to_block: Option<BlockId>,
-) -> RpcResult<(u64, u64, u64)> {
+) -> StarknetRpcResult<(u64, u64, u64)> {
     let latest_block_n = starknet.get_block_n(BlockId::Tag(BlockTag::Latest))?;
     let from_block_n = match from_block {
         Some(BlockId::Tag(BlockTag::Pending)) => latest_block_n + 1,

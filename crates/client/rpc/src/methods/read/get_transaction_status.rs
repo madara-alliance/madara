@@ -1,8 +1,7 @@
 use dp_receipt::ExecutionResult;
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{Felt, TransactionExecutionStatus, TransactionStatus};
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -24,7 +23,7 @@ use crate::Starknet;
 ///     confirmed, pending, or rejected.
 ///   - `execution_status`: The execution status of the transaction, providing details on the
 ///     execution outcome if the transaction has been processed.
-pub fn get_transaction_status(starknet: &Starknet, transaction_hash: Felt) -> RpcResult<TransactionStatus> {
+pub fn get_transaction_status(starknet: &Starknet, transaction_hash: Felt) -> StarknetRpcResult<TransactionStatus> {
     let (block, tx_torage_info) = starknet
         .block_storage()
         .find_tx_hash_block(&transaction_hash)
@@ -38,9 +37,9 @@ pub fn get_transaction_status(starknet: &Starknet, transaction_hash: Felt) -> Rp
         ExecutionResult::Succeeded => TransactionExecutionStatus::Succeeded,
     };
 
-    if block.block_n() > starknet.get_l1_last_confirmed_block()? {
-        Ok(TransactionStatus::AcceptedOnL2(tx_execution_status))
-    } else {
+    if block.block_n() <= starknet.get_l1_last_confirmed_block()? {
         Ok(TransactionStatus::AcceptedOnL1(tx_execution_status))
+    } else {
+        Ok(TransactionStatus::AcceptedOnL2(tx_execution_status))
     }
 }

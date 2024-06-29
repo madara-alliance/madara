@@ -1,7 +1,6 @@
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{Felt, Transaction};
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
 
@@ -32,7 +31,7 @@ use crate::Starknet;
 /// - `BLOCK_NOT_FOUND` if the specified block is not found.
 /// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
 ///   system's capacity.
-pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> RpcResult<Transaction> {
+pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> StarknetRpcResult<Transaction> {
     let (block, tx_info) = starknet
         .block_storage()
         .find_tx_hash_block(&transaction_hash)

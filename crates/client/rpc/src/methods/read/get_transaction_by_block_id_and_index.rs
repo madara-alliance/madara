@@ -1,7 +1,6 @@
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, Transaction};
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
 
 /// Get the details of a transaction by a given block id and index.
@@ -28,7 +27,7 @@ pub fn get_transaction_by_block_id_and_index(
     starknet: &Starknet,
     block_id: BlockId,
     index: u64,
-) -> RpcResult<Transaction> {
+) -> StarknetRpcResult<Transaction> {
     let block = starknet.get_block(block_id)?;
     let transaction_hash = block.tx_hashes().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
     let transaction = block.transactions().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;

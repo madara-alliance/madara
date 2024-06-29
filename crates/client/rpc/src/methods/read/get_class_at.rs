@@ -1,8 +1,7 @@
 use dc_db::storage_handler::StorageView;
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, ContractClass, Felt};
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::{bail_internal_server_error, Starknet};
 
@@ -25,7 +24,11 @@ use crate::{bail_internal_server_error, Starknet};
 /// This method may return the following errors:
 /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
 /// * `CONTRACT_NOT_FOUND` - If the specified contract address does not exist.
-pub fn get_class_at(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> RpcResult<ContractClass> {
+pub fn get_class_at(
+    starknet: &Starknet,
+    block_id: BlockId,
+    contract_address: Felt,
+) -> StarknetRpcResult<ContractClass> {
     let block_number = starknet.get_block_n(block_id)?;
 
     let class_hash = starknet

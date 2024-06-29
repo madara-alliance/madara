@@ -1,7 +1,7 @@
 use dp_block::{BlockId, BlockTag};
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{SyncStatus, SyncStatusType};
 
+use crate::errors::StarknetRpcResult;
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -19,7 +19,7 @@ use crate::Starknet;
 /// This is an asynchronous function due to its reliance on `sync_service.best_seen_block()`,
 /// which potentially involves network communication and processing to determine the best block
 /// seen by the sync service.
-pub async fn syncing(starknet: &Starknet) -> RpcResult<SyncStatusType> {
+pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncStatusType> {
     // obtain best seen (highest) block number
 
     let current_block_info = match starknet

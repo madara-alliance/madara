@@ -1,4 +1,4 @@
-use starknet_crypto::Felt;
+use starknet_types_core::felt::Felt;
 
 use crate::{
     DeclareTransaction, DeclareTransactionV1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,

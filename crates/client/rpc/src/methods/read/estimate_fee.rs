@@ -1,11 +1,10 @@
-use blockifier::transaction::account_transaction::AccountTransaction;
 use dp_transactions::broadcasted_to_blockifier;
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
 
-use crate::errors::StarknetRpcApiError;
-use crate::utils::execution::block_context;
-use crate::{utils, Starknet};
+use crate::errors::StarknetRpcResult;
+use crate::Starknet;
+use crate::{errors::StarknetRpcApiError, methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW};
+use dc_exec::{block_context, execute_transactions, execution_result_to_fee_estimate};
 
 /// Estimate the fee associated with transaction
 ///
@@ -22,29 +21,36 @@ pub async fn estimate_fee(
     request: Vec<BroadcastedTransaction>,
     simulation_flags: Vec<SimulationFlagForEstimateFee>,
     block_id: BlockId,
-) -> RpcResult<Vec<FeeEstimate>> {
+) -> StarknetRpcResult<Vec<FeeEstimate>> {
     let block_info = starknet.get_block_info(block_id)?;
-    let block_context = block_context(starknet, &block_info)?;
-    let chain_id = starknet.chain_id()?;
+    let chain_id = starknet.chain_id();
+
+    if block_info.header().protocol_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
+        return Err(StarknetRpcApiError::UnsupportedTxnVersion);
+    }
+
+    let block_context = block_context(block_info.header(), &chain_id);
 
     let transactions =
         request.into_iter().map(|tx| broadcasted_to_blockifier(tx, chain_id)).collect::<Result<Vec<_>, _>>().map_err(
-            |e| {
-                log::error!("Failed to convert BroadcastedTransaction to AccountTransaction: {e}");
-                StarknetRpcApiError::InternalServerError
+            |e| StarknetRpcApiError::ErrUnexpectedError {
+                data: format!("Failed to convert broadcasted transaction to blockifier: {e}"),
             },
         )?;
 
-    let account_transactions: Vec<AccountTransaction> =
-        transactions.into_iter().map(AccountTransaction::from).collect();
-
     let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
 
-    let fee_estimates = utils::execution::estimate_fee(starknet, account_transactions, validate, &block_context)
-        .map_err(|e| {
-            log::error!("Failed to call function: {:#?}", e);
-            StarknetRpcApiError::ContractError
-        })?;
+    let execution_results = execute_transactions(
+        starknet.clone_backend(),
+        vec![],
+        transactions.into_iter(),
+        &block_context,
+        validate,
+        true,
+    )?;
+
+    let fee_estimates =
+        execution_results.iter().map(|result| execution_result_to_fee_estimate(result, &block_context)).collect();
 
     Ok(fee_estimates)
 }

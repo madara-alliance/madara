@@ -1,9 +1,8 @@
 use dp_convert::ToFelt;
-use jsonrpsee::core::RpcResult;
 use starknet_core::types::BlockId;
 use starknet_types_core::felt::Felt;
 
-use crate::errors::StarknetRpcApiError;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -23,7 +22,7 @@ use crate::Starknet;
 /// count or other contract-specific operations. In case of errors, such as
 /// `BLOCK_NOT_FOUND` or `CONTRACT_NOT_FOUND`, returns a `StarknetRpcApiError` indicating the
 /// specific issue.
-pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> RpcResult<Felt> {
+pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
     let block_number = starknet.get_block_n(block_id)?;
 
     let nonce = starknet
