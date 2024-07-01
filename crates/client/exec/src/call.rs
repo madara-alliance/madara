@@ -10,7 +10,7 @@ use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::transaction::Calldata;
 use starknet_types_core::felt::Felt;
 
-use crate::{Error, CallContractError, ExecutionContext};
+use crate::{CallContractError, Error, ExecutionContext};
 
 impl<'a> ExecutionContext<'a> {
     pub fn call_contract(

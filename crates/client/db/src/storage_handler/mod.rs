@@ -181,26 +181,3 @@ pub trait StorageViewRevetible: StorageViewMut {
     /// * `block_number`: point in the chain to revert to.
     async fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
-
-// fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {
-//     identifier.0.key().bytes()
-// }
-
-// fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
-//     let bytes = key.0.key().bytes();
-//     bytes.as_bits()[5..].to_owned()
-// }
-
-// fn conv_contract_storage_key(key: &StorageKey) -> BitVec<u8, Msb0> {
-//     let bytes = key.0.key().bytes();
-//     bytes.as_bits()[5..].to_owned()
-// }
-
-// fn conv_contract_value(value: StarkFelt) -> Felt {
-//     Felt::from_bytes_be_slice(value.bytes())
-// }
-
-// fn conv_class_key(key: &ClassHash) -> BitVec<u8, Msb0> {
-//     let bytes = key.0.bytes();
-//     bytes.as_bits()[5..].to_owned()
-// }

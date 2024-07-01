@@ -30,11 +30,11 @@ async-trait = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
 crossbeam-skiplist = { workspace = true }
+hashbrown = "0.14.5"
 log = { workspace = true, default-features = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-serde = { workspace = true }
-hashbrown = "0.14.5"

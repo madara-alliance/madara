@@ -13,8 +13,8 @@ pub fn get_block_with_receipts(
 ) -> StarknetRpcResult<MaybePendingBlockWithReceipts> {
     let block = starknet.get_block(&block_id)?;
 
-    let transactions_core =
-        Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes()).map(|(tx, hash)| tx.clone().to_core(*hash));
+    let transactions_core = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes())
+        .map(|(tx, hash)| tx.clone().to_core(*hash));
 
     let is_on_l1 = if let Some(block_n) = block.info.block_n() {
         block_n <= starknet.get_l1_last_confirmed_block()?

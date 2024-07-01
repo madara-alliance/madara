@@ -145,7 +145,7 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
         log::debug!("get_compiled_contract_class for {:#?}", class_hash);
 
         if let Some(compiled_class_hash) = self.compiled_class_hash_update.get(&class_hash) {
-            return Ok(compiled_class_hash.clone());
+            return Ok(*compiled_class_hash);
         };
         let Some(on_top_of_block_id) = self.on_top_of_block_id else {
             return Err(StateError::UndeclaredClassHash(class_hash));

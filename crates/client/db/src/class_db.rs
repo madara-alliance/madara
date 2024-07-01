@@ -50,7 +50,7 @@ impl DeoxysBackend {
         let Some(id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
         let Some((info, block_n)) =
-            self.class_db_get_encoded_kv::<ClassInfo>(&id, &class_hash, Column::PendingClassInfo, Column::ClassInfo)?
+            self.class_db_get_encoded_kv::<ClassInfo>(&id, class_hash, Column::PendingClassInfo, Column::ClassInfo)?
         else {
             return Ok(None);
         };

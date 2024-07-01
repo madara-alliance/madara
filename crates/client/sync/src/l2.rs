@@ -85,7 +85,11 @@ async fn l2_verify_and_apply_task(
             .await?;
 
             if global_state_root != state_root {
-                bail!("Verified state root: {} doesn't match fetched state root: {}", state_root, global_state_root);
+                bail!(
+                    "Verified state root: {:#x} doesn't match fetched state root: {:#x}",
+                    state_root,
+                    global_state_root
+                );
             }
 
             // UNWRAP: we need a 'static future as we are spawning tokio tasks further down the line
@@ -117,7 +121,7 @@ async fn l2_verify_and_apply_task(
         update_sync_metrics(block_n, &block_header, starting_block, &block_metrics, sync_timer.clone()).await?;
 
         let sw = PerfStopwatch::new();
-        if backend.maybe_flush()? {
+        if backend.maybe_flush(false)? {
             stopwatch_end!(sw, "flush db: {:?}");
         }
 
@@ -145,6 +149,11 @@ async fn l2_verify_and_apply_task(
             backend.backup().await.context("backing up database")?;
             log::info!("✅ Database backup is done ({:?})", sw.elapsed());
         }
+    }
+
+    let sw = PerfStopwatch::new();
+    if backend.maybe_flush(true)? {
+        stopwatch_end!(sw, "flush db: {:?}");
     }
 
     Ok(())
@@ -241,7 +250,7 @@ async fn l2_pending_block_task(
                             info: DeoxysMaybePendingBlockInfo::Pending(block.info),
                             inner: block.inner,
                         },
-                        state_update.state_diff.into(),
+                        state_update.state_diff,
                         class_update,
                     )
                     .context("Storing new block")?;

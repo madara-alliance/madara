@@ -36,7 +36,7 @@ impl<'a> ExecutionContext<'a> {
             }
         };
 
-        CachedState::new(BlockifierStateAdapter::new(&self.backend, on_top_of), GlobalContractCache::new(16))
+        CachedState::new(BlockifierStateAdapter::new(self.backend, on_top_of), GlobalContractCache::new(16))
     }
 
     pub fn new(backend: &'a DeoxysBackend, block_info: &DeoxysMaybePendingBlockInfo) -> Result<Self, Error> {

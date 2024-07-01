@@ -153,8 +153,14 @@ pub fn csd_calculate_state_root(backend: &DeoxysBackend, csd: CommitmentStateDif
     } = csd;
     // Update contract and its storage tries
     let (contract_trie_root, class_trie_root) = rayon::join(
-        || contract_trie_root(backend, address_to_class_hash, address_to_nonce, storage_updates, block_number).expect("Failed to compute contract root"),
-        || class_trie_root(backend, class_hash_to_compiled_class_hash, block_number).expect("Failed to compute class root"),
+        || {
+            contract_trie_root(backend, address_to_class_hash, address_to_nonce, storage_updates, block_number)
+                .expect("Failed to compute contract root")
+        },
+        || {
+            class_trie_root(backend, class_hash_to_compiled_class_hash, block_number)
+                .expect("Failed to compute class root")
+        },
     );
     calculate_state_root(contract_trie_root, class_trie_root)
 }

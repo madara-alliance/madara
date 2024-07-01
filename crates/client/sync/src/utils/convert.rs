@@ -51,7 +51,7 @@ pub fn convert_pending(block: p::Block, _chain_id: Felt) -> Result<DeoxysPending
 
     // TODO tx_hash
 
-    // let ((_transaction_commitment, txs_hashes), event_commitment) = 
+    // let ((_transaction_commitment, txs_hashes), event_commitment) =
     //     memory_transaction_commitment(&block_inner.transactions, &events, chain_id, block_number);
 
     Ok(DeoxysPendingBlock::new(DeoxysPendingBlockInfo::new(header, vec![]), block_inner))

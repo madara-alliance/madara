@@ -38,14 +38,18 @@ pub fn contract_trie_root(
 
     let mut contract_storage_trie = backend.contract_storage_trie();
 
+    log::debug!("contract_storage_trie inserting");
+
     // First we insert the contract storage changes
     for (contract_address, updates) in storage_updates {
         for (key, value) in updates {
             contract_storage_trie
-                .insert(contract_address.0.key().bytes(), &key.0.key().bytes().as_bits()[5..], &value.to_felt())
+                .insert(contract_address.0.key().bytes(), &key.0.key().bytes().as_bits()[5..].to_owned(), &value.to_felt())
                 .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?;
         }
     }
+
+    log::debug!("contract_storage_trie commit");
 
     // Then we commit them
     contract_storage_trie
@@ -73,17 +77,24 @@ pub fn contract_trie_root(
         })
         .collect::<Result<_, DeoxysStorageError>>()?;
 
+    log::debug!("contract_trie inserting");
+
     for (key, value) in updates {
         contract_trie
-            .insert(&[], &key.0.key().bytes().as_bits()[5..], &value)
+            .insert(&[], &key.0.key().bytes().as_bits()[5..].to_owned(), &value)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?
     }
+
+    log::debug!("contract_trie committing");
 
     contract_trie
         .commit(BasicId::new(block_number))
         .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
     let root_hash =
         contract_trie.root_hash(&[]).map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
+
+    log::debug!("contract_trie committed");
+
     Ok(root_hash)
 }
 

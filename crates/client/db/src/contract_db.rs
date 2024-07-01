@@ -74,6 +74,7 @@ impl DeoxysBackend {
 
         match iter.next() {
             Some(res) => {
+                #[allow(unused_variables)]
                 let (k, v) = res?;
                 #[cfg(debug_assertions)]
                 assert!(k.starts_with(bin_prefix.as_ref())); // This should fail if we forgot to set up a prefix iterator for the column.
@@ -149,7 +150,7 @@ impl DeoxysBackend {
                 let key = [key.as_ref(), &block_number.to_be_bytes() as &[u8]].concat();
                 batch.put_cf(col, key, codec::Encode::encode(&value)?);
             }
-            db.write_opt(batch, &writeopts)?;
+            db.write_opt(batch, writeopts)?;
             Ok(())
         }
 
@@ -207,7 +208,7 @@ impl DeoxysBackend {
                 // TODO: find a way to avoid this allocation
                 batch.put_cf(col, key.as_ref(), codec::Encode::encode(&value)?);
             }
-            db.write_opt(batch, &writeopts)?;
+            db.write_opt(batch, writeopts)?;
             Ok(())
         }
 

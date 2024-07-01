@@ -42,20 +42,22 @@ pub fn class_trie_root(
         })
         .collect();
 
+    log::debug!("class_trie inserting");
     for (key, value) in updates {
         class_trie
             .insert(&[], &key.0.bytes().as_bits()[5..], &value)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?
     }
 
+    log::debug!("class_trie committing");
     class_trie
         .commit(BasicId::new(block_number))
         .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?;
 
-    log::debug!("committed class trie root");
-
     let root_hash =
         class_trie.root_hash(&[]).map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?;
+
+    log::debug!("class_trie committed");
 
     Ok(root_hash)
 }
