@@ -62,7 +62,7 @@ fn store_new_block(
     let sw = PerfStopwatch::new();
     let mut tx = WriteBatchWithTransaction::default();
 
-    backend.write_new_block(&mut tx, block, &state_diff)?;
+    backend.block_db_store_block(&mut tx, block, &state_diff)?;
 
     let db_access = backend.expose_db();
     let mut write_opt = WriteOptions::default(); // todo move that in db
@@ -235,7 +235,7 @@ async fn l2_pending_block_task(
     // clear pending status
     {
         let mut tx = WriteBatchWithTransaction::default();
-        backend.clear_pending(&mut tx).context("clearing pending status")?;
+        backend.block_db_clear_pending(&mut tx).context("clearing pending status")?;
         let mut write_opt = WriteOptions::default(); // todo move that in db
         write_opt.disable_wal(true);
         backend.expose_db().write_opt(tx, &write_opt).context("clearing pending block to db")?;
@@ -277,11 +277,11 @@ async fn l2_pending_block_task(
 
             let storage_update = crate::convert::state_update(state_update);
             backend
-                .write_pending(&mut tx, &block, &storage_update)
+                .block_db_store_pending(&mut tx, &block, &storage_update)
                 .context("writing pending to rocksdb transaction")?;
         } else {
             log::debug!("pending block parent hash does not match latest block, clearing pending block");
-            backend.clear_pending(&mut tx).context("writing no pending to rocksdb transaction")?;
+            backend.block_db_clear_pending(&mut tx).context("writing no pending to rocksdb transaction")?;
         }
 
         // todo move that in db somehow

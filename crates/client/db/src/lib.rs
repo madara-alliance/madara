@@ -6,19 +6,15 @@ use std::time::{Duration, Instant};
 use std::{fmt, fs};
 
 use anyhow::{Context, Result};
-use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
-use bonsai_trie::id::BasicId;
-use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use mapping_db::ChainInfo;
+use block_db::ChainInfo;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
+pub mod block_db;
 mod error;
-pub mod mapping_db;
 use rocksdb::{
-    BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Env, FlushOptions, MultiThreaded,
-    OptimisticTransactionDB, Options, SliceTransform,
+    BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, DBWithThreadMode, Env, FlushOptions, MultiThreaded,
+    Options, SliceTransform,
 };
-use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 pub mod bonsai_db;
 pub mod class_db;
 pub mod contract_db;
@@ -27,30 +23,21 @@ pub mod storage_handler;
 pub mod storage_updates;
 
 pub use error::{BonsaiDbError, DbError};
-use storage_handler::block_state_diff::BlockStateDiffView;
-use storage_handler::class_trie::{ClassTrieView, ClassTrieViewMut};
-use storage_handler::compiled_contract_class::{CompiledContractClassView, CompiledContractClassViewMut};
-use storage_handler::contract_class_data::{ContractClassDataView, ContractClassDataViewMut};
-use storage_handler::contract_class_hashes::{ContractClassHashesView, ContractClassHashesViewMut};
-use storage_handler::contract_data::{
-    ContractClassView, ContractClassViewMut, ContractNoncesView, ContractNoncesViewMut,
-};
-use storage_handler::contract_storage::{ContractStorageView, ContractStorageViewMut};
-use storage_handler::contract_storage_trie::{ContractStorageTrieView, ContractStorageTrieViewMut};
-use storage_handler::contract_trie::{ContractTrieView, ContractTrieViewMut};
 use tokio::sync::{mpsc, oneshot};
 
-pub type DB = OptimisticTransactionDB<MultiThreaded>;
+pub type DB = DBWithThreadMode<MultiThreaded>;
 
 pub use rocksdb;
-pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<true>;
+pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
+
+const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
 pub(crate) async fn open_rocksdb(
     path: &Path,
     create: bool,
     backup_dir: Option<PathBuf>,
     restore_from_latest_backup: bool,
-) -> Result<(Arc<OptimisticTransactionDB<MultiThreaded>>, Option<mpsc::Sender<BackupRequest>>)> {
+) -> Result<(Arc<DB>, Option<mpsc::Sender<BackupRequest>>)> {
     let mut opts = Options::default();
     opts.set_report_bg_io_stats(true);
     opts.set_use_fsync(false);
@@ -67,7 +54,7 @@ pub(crate) async fn open_rocksdb(
     opts.set_manual_wal_flush(true);
     opts.set_max_subcompactions(cores as _);
 
-    let mut env = Env::new().context("creating rocksdb env")?;
+    let mut env = Env::new().context("Creating rocksdb env")?;
     // env.set_high_priority_background_threads(cores); // flushes
     env.set_low_priority_background_threads(cores); // compaction
 
@@ -80,11 +67,11 @@ pub(crate) async fn open_rocksdb(
         let db_path = path.to_owned();
         std::thread::spawn(move || {
             spawn_backup_db_task(&backup_dir, restore_from_latest_backup, &db_path, restored_cb_sender, receiver)
-                .expect("database backup thread")
+                .expect("Database backup thread")
         });
 
         log::debug!("blocking on db restoration");
-        restored_cb_recv.await.context("restoring database")?;
+        restored_cb_recv.await.context("Restoring database")?;
         log::debug!("done blocking on db restoration");
 
         Some(sender)
@@ -93,7 +80,7 @@ pub(crate) async fn open_rocksdb(
     };
 
     log::debug!("opening db at {:?}", path.display());
-    let db = OptimisticTransactionDB::<MultiThreaded>::open_cf_descriptors(
+    let db = DB::open_cf_descriptors(
         &opts,
         path,
         Column::ALL.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name(), col.rocksdb_options())),
@@ -110,12 +97,12 @@ fn spawn_backup_db_task(
     db_restored_cb: oneshot::Sender<()>,
     mut recv: mpsc::Receiver<BackupRequest>,
 ) -> Result<()> {
-    let mut backup_opts = BackupEngineOptions::new(backup_dir).context("creating backup options")?;
+    let mut backup_opts = BackupEngineOptions::new(backup_dir).context("Creating backup options")?;
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     backup_opts.set_max_background_operations(cores);
 
-    let mut engine = BackupEngine::open(&backup_opts, &Env::new().context("creating rocksdb env")?)
-        .context("opening backup engine")?;
+    let mut engine = BackupEngine::open(&backup_opts, &Env::new().context("Creating rocksdb env")?)
+        .context("Opening backup engine")?;
 
     if restore_from_latest_backup {
         log::info!("⏳ Restoring latest backup...");
@@ -123,14 +110,14 @@ fn spawn_backup_db_task(
         fs::create_dir_all(db_path).with_context(|| format!("creating directories {:?}", db_path))?;
 
         let opts = rocksdb::backup::RestoreOptions::default();
-        engine.restore_from_latest_backup(db_path, db_path, &opts).context("restoring database")?;
+        engine.restore_from_latest_backup(db_path, db_path, &opts).context("Restoring database")?;
         log::debug!("restoring latest backup done");
     }
 
-    db_restored_cb.send(()).ok().context("receiver dropped")?;
+    db_restored_cb.send(()).ok().context("Receiver dropped")?;
 
     while let Some(BackupRequest { callback, db }) = recv.blocking_recv() {
-        engine.create_new_backup_flush(&db, true).context("creating rocksdb backup")?;
+        engine.create_new_backup_flush(&db, true).context("Creating rocksdb backup")?;
         let _ = callback.send(());
     }
 
@@ -156,9 +143,10 @@ pub enum Column {
     BlockStorageMeta,
 
     /// Contract class hash to class data
-    ContractClassData,
-
-    CompiledContractClass,
+    ClassInfo,
+    ClassCompiled,
+    PendingClassInfo,
+    PendingClassCompiled,
 
     // History of contract class hashes
     // contract_address history block_number => class_hash
@@ -170,6 +158,11 @@ pub enum Column {
 
     // Class hash => compiled class hash
     ContractClassHashes,
+
+    // Pending columns for contract db
+    PendingContractToClassHashes,
+    PendingContractToNonces,
+    PendingContractStorage,
 
     // History of contract key => values
     // (contract_address, storage_key) history block_number => felt
@@ -189,17 +182,13 @@ pub enum Column {
     BonsaiClassesTrie,
     BonsaiClassesFlat,
     BonsaiClassesLog,
-
-    PendingContractToClassHashes,
-    PendingContractToNonces,
-    PendingContractStorage,
 }
 
-impl Column {
-    fn iter() -> impl Iterator<Item = Self> {
-        Self::ALL.iter().copied()
-    }
-}
+// impl Column {
+//     fn iter() -> impl Iterator<Item = Self> {
+//         Self::ALL.iter().copied()
+//     }
+// }
 
 impl fmt::Debug for Column {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -224,8 +213,10 @@ impl Column {
             BlockHashToBlockN,
             BlockStorageMeta,
             BlockNToStateDiff,
-            ContractClassData,
-            CompiledContractClass,
+            ClassInfo,
+            ClassCompiled,
+            PendingClassInfo,
+            PendingClassCompiled,
             ContractToClassHashes,
             ContractToNonces,
             ContractClassHashes,
@@ -267,8 +258,10 @@ impl Column {
             BonsaiClassesFlat => "bonsai_classes_flat",
             BonsaiClassesLog => "bonsai_classes_log",
             BlockStateDiff => "block_state_diff",
-            ContractClassData => "contract_class_data",
-            CompiledContractClass => "compiled_contract_class",
+            ClassInfo => "class_info",
+            ClassCompiled => "class_compiled",
+            PendingClassInfo => "pending_class_info",
+            PendingClassCompiled => "pending_class_compiled",
             ContractToClassHashes => "contract_to_class_hashes",
             ContractToNonces => "contract_to_nonces",
             ContractClassHashes => "contract_class_hashes",
@@ -286,17 +279,17 @@ impl Column {
         match self {
             Column::ContractStorage => {
                 opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(
-                    storage_handler::contract_storage::CONTRACT_STORAGE_PREFIX_EXTRACTOR,
+                    contract_db::CONTRACT_STORAGE_PREFIX_EXTRACTOR,
                 ));
             }
             Column::ContractToClassHashes => {
                 opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(
-                    storage_handler::contract_data::CONTRACT_CLASS_HASH_PREFIX_EXTRACTOR,
+                    contract_db::CONTRACT_CLASS_HASH_PREFIX_EXTRACTOR,
                 ));
             }
             Column::ContractToNonces => {
                 opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(
-                    storage_handler::contract_data::CONTRACT_NONCES_PREFIX_EXTRACTOR,
+                    contract_db::CONTRACT_NONCES_PREFIX_EXTRACTOR,
                 ));
             }
             _ => {}
@@ -343,8 +336,7 @@ impl DatabaseService {
 
         let handle =
             DeoxysBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_info)
-                .await
-                .context("opening database")?;
+                .await?;
 
         Ok(Self { handle })
     }
@@ -375,8 +367,7 @@ impl DeoxysBackend {
     ) -> Result<Arc<DeoxysBackend>> {
         let db_path = db_config_dir.join("db");
 
-        let (db, backup_handle) =
-            open_rocksdb(&db_path, true, backup_dir, restore_from_latest_backup).await.context("opening database")?;
+        let (db, backup_handle) = open_rocksdb(&db_path, true, backup_dir, restore_from_latest_backup).await?;
 
         let backend = Arc::new(Self { backup_handle, db, last_flush_time: Default::default() });
         backend.assert_chain_info(chain_info)?;
@@ -396,7 +387,7 @@ impl DeoxysBackend {
             // we have to collect twice here :/
             let columns = Column::ALL.iter().map(|e| self.db.get_column(*e)).collect::<Vec<_>>();
             let columns = columns.iter().collect::<Vec<_>>();
-            self.db.flush_cfs_opt(&columns, &opts).context("flushing database")?;
+            self.db.flush_cfs_opt(&columns, &opts).context("Flushing database")?;
 
             *inst = Some(Instant::now());
         }
@@ -411,136 +402,132 @@ impl DeoxysBackend {
             .as_ref()
             .context("backups are not enabled")?
             .try_send(BackupRequest { callback: callback_sender, db: Arc::clone(&self.db) });
-        callback_recv.await.context("backups task died :(")?;
+        callback_recv.await.context("Backups task died :(")?;
         Ok(())
     }
 
-    /// Return the mapping database manager
+    // / Return the mapping database manager
     // pub fn mapping(&self) -> &Arc<MappingDb> {
     //     &self.mapping
     // }
 
-    pub fn expose_db(&self) -> &Arc<DB> {
-        &self.db
-    }
+    // pub fn expose_db(&self) -> &Arc<DB> {
+    //     &self.db
+    // }
 
-    pub fn contract_storage_mut(&self) -> ContractStorageViewMut {
-        ContractStorageViewMut::new(Arc::clone(&self.db))
-    }
+    // pub fn contract_storage_mut(&self) -> ContractStorageViewMut {
+    //     ContractStorageViewMut::new(Arc::clone(&self.db))
+    // }
 
-    pub fn contract_storage(&self) -> ContractStorageView {
-        ContractStorageView::new(Arc::clone(&self.db))
-    }
+    // pub fn contract_storage(&self) -> ContractStorageView {
+    //     ContractStorageView::new(Arc::clone(&self.db))
+    // }
 
-    pub fn contract_class_data_mut(&self) -> ContractClassDataViewMut {
-        ContractClassDataViewMut::new(Arc::clone(&self.db))
-    }
+    // pub fn contract_class_data_mut(&self) -> ContractClassDataViewMut {
+    //     ContractClassDataViewMut::new(Arc::clone(&self.db))
+    // }
 
-    pub fn contract_class_data(&self) -> ContractClassDataView {
-        ContractClassDataView::new(Arc::clone(&self.db))
-    }
+    // pub fn contract_class_data(&self) -> ContractClassDataView {
+    //     ContractClassDataView::new(Arc::clone(&self.db))
+    // }
 
-    pub fn compiled_contract_class_mut(&self) -> CompiledContractClassViewMut {
-        CompiledContractClassViewMut::new(Arc::clone(&self.db))
-    }
+    // pub fn compiled_contract_class_mut(&self) -> CompiledContractClassViewMut {
+    //     CompiledContractClassViewMut::new(Arc::clone(&self.db))
+    // }
 
-    pub fn compiled_contract_class(&self) -> CompiledContractClassView {
-        CompiledContractClassView::new(Arc::clone(&self.db))
-    }
+    // pub fn compiled_contract_class(&self) -> CompiledContractClassView {
+    //     CompiledContractClassView::new(Arc::clone(&self.db))
+    // }
 
-    pub fn contract_class_hashes_mut(&self) -> ContractClassHashesViewMut {
-        ContractClassHashesViewMut::new(Arc::clone(&self.db))
-    }
+    // pub fn contract_class_hashes_mut(&self) -> ContractClassHashesViewMut {
+    //     ContractClassHashesViewMut::new(Arc::clone(&self.db))
+    // }
 
-    pub fn contract_class_hashes(&self) -> ContractClassHashesView {
-        ContractClassHashesView::new(Arc::clone(&self.db))
-    }
+    // pub fn contract_class_hashes(&self) -> ContractClassHashesView {
+    //     ContractClassHashesView::new(Arc::clone(&self.db))
+    // }
 
-    pub fn contract_class_hash(&self) -> ContractClassView {
-        ContractClassView::new(Arc::clone(&self.db))
-    }
+    // pub fn contract_class_hash(&self) -> ContractClassView {
+    //     ContractClassView::new(Arc::clone(&self.db))
+    // }
 
-    pub fn contract_class_hash_mut(&self) -> ContractClassViewMut {
-        ContractClassViewMut::new(Arc::clone(&self.db))
-    }
+    // pub fn contract_class_hash_mut(&self) -> ContractClassViewMut {
+    //     ContractClassViewMut::new(Arc::clone(&self.db))
+    // }
 
-    pub fn contract_nonces(&self) -> ContractNoncesView {
-        ContractNoncesView::new(Arc::clone(&self.db))
-    }
+    // pub fn contract_nonces(&self) -> ContractNoncesView {
+    //     ContractNoncesView::new(Arc::clone(&self.db))
+    // }
 
-    pub fn contract_nonces_mut(&self) -> ContractNoncesViewMut {
-        ContractNoncesViewMut::new(Arc::clone(&self.db))
-    }
-
-    pub fn block_state_diff(&self) -> BlockStateDiffView {
-        BlockStateDiffView::new(Arc::clone(&self.db))
-    }
+    // pub fn contract_nonces_mut(&self) -> ContractNoncesViewMut {
+    //     ContractNoncesViewMut::new(Arc::clone(&self.db))
+    // }
 
     // tries
 
-    pub(crate) fn get_bonsai<H: StarkHash + Send + Sync>(
-        &self,
-        map: DatabaseKeyMapping,
-    ) -> BonsaiStorage<BasicId, BonsaiDb<'_>, H> {
-        // UNWRAP: function actually cannot panic
-        let bonsai = BonsaiStorage::new(
-            BonsaiDb::new(&self.db, map),
-            BonsaiStorageConfig {
-                max_saved_trie_logs: Some(0),
-                max_saved_snapshots: Some(0),
-                snapshot_interval: u64::MAX,
-            },
-        )
-        .unwrap();
+    // pub(crate) fn get_bonsai<H: StarkHash + Send + Sync>(
+    //     &self,
+    //     map: DatabaseKeyMapping,
+    // ) -> BonsaiStorage<BasicId, BonsaiDb<'_>, H> {
+    //     // UNWRAP: function actually cannot panic
+    //     let bonsai = BonsaiStorage::new(
+    //         BonsaiDb::new(&self.db, map),
+    //         BonsaiStorageConfig {
+    //             max_saved_trie_logs: Some(0),
+    //             max_saved_snapshots: Some(0),
+    //             snapshot_interval: u64::MAX,
+    //         },
+    //     )
+    //     .unwrap();
 
-        bonsai
-    }
+    //     bonsai
+    // }
 
-    pub(crate) fn bonsai_contract(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
-        self.get_bonsai(DatabaseKeyMapping {
-            flat: Column::BonsaiContractsFlat,
-            trie: Column::BonsaiContractsTrie,
-            log: Column::BonsaiContractsLog,
-        })
-    }
+    // pub(crate) fn bonsai_contract(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
+    //     self.get_bonsai(DatabaseKeyMapping {
+    //         flat: Column::BonsaiContractsFlat,
+    //         trie: Column::BonsaiContractsTrie,
+    //         log: Column::BonsaiContractsLog,
+    //     })
+    // }
 
-    pub(crate) fn bonsai_storage(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
-        self.get_bonsai(DatabaseKeyMapping {
-            flat: Column::BonsaiContractsStorageFlat,
-            trie: Column::BonsaiContractsStorageTrie,
-            log: Column::BonsaiContractsStorageLog,
-        })
-    }
+    // pub(crate) fn bonsai_storage(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
+    //     self.get_bonsai(DatabaseKeyMapping {
+    //         flat: Column::BonsaiContractsStorageFlat,
+    //         trie: Column::BonsaiContractsStorageTrie,
+    //         log: Column::BonsaiContractsStorageLog,
+    //     })
+    // }
 
-    pub(crate) fn bonsai_class(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Poseidon> {
-        self.get_bonsai(DatabaseKeyMapping {
-            flat: Column::BonsaiClassesFlat,
-            trie: Column::BonsaiClassesTrie,
-            log: Column::BonsaiClassesLog,
-        })
-    }
+    // pub(crate) fn bonsai_class(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Poseidon> {
+    //     self.get_bonsai(DatabaseKeyMapping {
+    //         flat: Column::BonsaiClassesFlat,
+    //         trie: Column::BonsaiClassesTrie,
+    //         log: Column::BonsaiClassesLog,
+    //     })
+    // }
 
-    pub fn contract_trie_mut(&self) -> ContractTrieViewMut<'_> {
-        ContractTrieViewMut(self.bonsai_contract())
-    }
+    // pub fn contract_trie_mut(&self) -> ContractTrieViewMut<'_> {
+    //     ContractTrieViewMut(self.bonsai_contract())
+    // }
 
-    pub fn contract_trie(&self) -> ContractTrieView<'_> {
-        ContractTrieView(self.bonsai_contract())
-    }
+    // pub fn contract_trie(&self) -> ContractTrieView<'_> {
+    //     ContractTrieView(self.bonsai_contract())
+    // }
 
-    pub fn contract_storage_trie_mut(&self) -> ContractStorageTrieViewMut<'_> {
-        ContractStorageTrieViewMut(self.bonsai_storage())
-    }
+    // pub fn contract_storage_trie_mut(&self) -> ContractStorageTrieViewMut<'_> {
+    //     ContractStorageTrieViewMut(self.bonsai_storage())
+    // }
 
-    pub fn contract_storage_trie(&self) -> ContractStorageTrieView<'_> {
-        ContractStorageTrieView(self.bonsai_storage())
-    }
+    // pub fn contract_storage_trie(&self) -> ContractStorageTrieView<'_> {
+    //     ContractStorageTrieView(self.bonsai_storage())
+    // }
 
-    pub fn class_trie_mut(&self) -> ClassTrieViewMut<'_> {
-        ClassTrieViewMut(self.bonsai_class())
-    }
+    // pub fn class_trie_mut(&self) -> ClassTrieViewMut<'_> {
+    //     ClassTrieViewMut(self.bonsai_class())
+    // }
 
-    pub fn class_trie(&self) -> ClassTrieView<'_> {
-        ClassTrieView(self.bonsai_class())
-    }
+    // pub fn class_trie(&self) -> ClassTrieView<'_> {
+    //     ClassTrieView(self.bonsai_class())
+    // }
 }

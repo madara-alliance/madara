@@ -1,30 +1,21 @@
 use std::fmt::Display;
 
 use async_trait::async_trait;
-use bitvec::prelude::Msb0;
-use bitvec::vec::BitVec;
-use bitvec::view::AsBits;
-use starknet_api::core::{ClassHash, ContractAddress};
-use starknet_api::hash::StarkFelt;
-use starknet_api::state::StorageKey;
-use starknet_types_core::felt::Felt;
 
-use self::history::HistoryError;
-
-pub mod benchmark;
-pub mod block_state_diff;
-pub mod class_trie;
+// pub mod benchmark;
+// pub mod block_state_diff;
+// pub mod class_trie;
 pub mod codec;
-pub mod contract_class_data;
+// pub mod contract_class_data;
 
-pub mod compiled_contract_class;
-pub mod contract_class_hashes;
-pub(crate) mod contract_data;
-pub(crate) mod contract_storage;
-pub mod contract_storage_trie;
-pub mod contract_trie;
-pub mod history;
-pub mod query;
+// pub mod compiled_contract_class;
+// pub mod contract_class_hashes;
+// pub(crate) mod contract_data;
+// pub(crate) mod contract_storage;
+// pub mod contract_storage_trie;
+// pub mod contract_trie;
+// pub mod history;
+// pub mod query;
 
 pub mod bonsai_identifier {
     pub const CONTRACT: &[u8] = "0xcontract".as_bytes();
@@ -57,8 +48,8 @@ pub enum DeoxysStorageError {
     StorageDecodeError(StorageType),
     #[error("Failed to revert {0} to block {1}")]
     StorageRevertError(StorageType, u64),
-    #[error("{0:#}")]
-    StorageHistoryError(#[from] HistoryError),
+    // #[error("{0:#}")]
+    // StorageHistoryError(#[from] HistoryError),
     #[error("Invalid block number")]
     InvalidBlockNumber,
     #[error("Invalid nonce")]
@@ -191,25 +182,25 @@ pub trait StorageViewRevetible: StorageViewMut {
     async fn revert_to(&self, block_number: u64) -> Result<(), DeoxysStorageError>;
 }
 
-fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {
-    identifier.0.key().bytes()
-}
+// fn conv_contract_identifier(identifier: &ContractAddress) -> &[u8] {
+//     identifier.0.key().bytes()
+// }
 
-fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
-    let bytes = key.0.key().bytes();
-    bytes.as_bits()[5..].to_owned()
-}
+// fn conv_contract_key(key: &ContractAddress) -> BitVec<u8, Msb0> {
+//     let bytes = key.0.key().bytes();
+//     bytes.as_bits()[5..].to_owned()
+// }
 
-fn conv_contract_storage_key(key: &StorageKey) -> BitVec<u8, Msb0> {
-    let bytes = key.0.key().bytes();
-    bytes.as_bits()[5..].to_owned()
-}
+// fn conv_contract_storage_key(key: &StorageKey) -> BitVec<u8, Msb0> {
+//     let bytes = key.0.key().bytes();
+//     bytes.as_bits()[5..].to_owned()
+// }
 
-fn conv_contract_value(value: StarkFelt) -> Felt {
-    Felt::from_bytes_be_slice(value.bytes())
-}
+// fn conv_contract_value(value: StarkFelt) -> Felt {
+//     Felt::from_bytes_be_slice(value.bytes())
+// }
 
-fn conv_class_key(key: &ClassHash) -> BitVec<u8, Msb0> {
-    let bytes = key.0.bytes();
-    bytes.as_bits()[5..].to_owned()
-}
+// fn conv_class_key(key: &ClassHash) -> BitVec<u8, Msb0> {
+//     let bytes = key.0.bytes();
+//     bytes.as_bits()[5..].to_owned()
+// }

@@ -1,136 +1,112 @@
 use std::collections::HashMap;
 
-use dp_class::{ContractClassData, ToCompiledClass};
-use dp_convert::{ToFelt, ToStarkFelt};
+use dp_block::{DeoxysBlock, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlock};
+use dp_class::{ClassInfo, ToCompiledClass};
+use rayon::iter::IntoParallelRefIterator;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use starknet_api::core::Nonce;
 use starknet_core::types::{
-    ContractClass, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem,
-    StateUpdate, StorageEntry,
+    ContractClass, ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
+    StorageEntry,
 };
 use starknet_types_core::felt::Felt;
 
-use crate::storage_handler::{DeoxysStorageError, StorageViewMut};
+use crate::storage_handler::DeoxysStorageError;
 use crate::DeoxysBackend;
 
-pub fn store_state_update(
-    backend: &DeoxysBackend,
-    block_number: u64,
-    state_update: StateUpdate,
-) -> Result<(), DeoxysStorageError> {
-    let nonce_map: HashMap<Felt, Nonce> = state_update
-        .state_diff
-        .nonces
-        .into_iter()
-        .map(|NonceUpdate { contract_address, nonce }| (contract_address, Nonce(nonce.to_stark_felt())))
-        .collect();
+impl DeoxysBackend {
+    /// NB: This functions runs on the rayon thread pool
+    pub fn store_block(
+        &self,
+        block: DeoxysMaybePendingBlock,
+        state_diff: StateDiff,
+        class_updates: Vec<(Felt, ContractClass)>,
+    ) -> Result<(), DeoxysStorageError> {
+        let block_n = block.info.block_n();
+        let state_diff_cpy = state_diff.clone();
 
-    log::debug!(" update state: block_number: {}", block_number);
+        let task_block_db = || match block.info {
+            DeoxysMaybePendingBlockInfo::Pending(info) => {
+                self.block_db_store_pending(&DeoxysPendingBlock { info, inner: block.inner }, &state_diff_cpy)
+            }
+            DeoxysMaybePendingBlockInfo::NotPending(info) => {
+                self.block_db_store_block(&DeoxysBlock { info, inner: block.inner }, &state_diff_cpy)
+            }
+        };
 
-    // Contract address to class hash and nonce update
-    let task_1 = || {
-        let handler_contract_data_class = backend.contract_class_hash_mut();
-        let handler_contract_data_nonces = backend.contract_nonces_mut();
+        let task_contract_db = || {
+            let nonces_from_deployed =
+                state_diff.deployed_contracts.iter().map(|&DeployedContractItem { address, .. }| (address, Felt::ZERO));
 
-        state_update
-            .state_diff
-            .deployed_contracts
-            .into_iter()
-            .map(|DeployedContractItem { address, class_hash }| (address, class_hash))
-            .try_for_each(|(contract_address, class_hash)| -> Result<(), DeoxysStorageError> {
-                handler_contract_data_class.insert(contract_address, class_hash)?;
-                // insert nonces for contracts that were deployed in this block and do not have a nonce
-                if !nonce_map.contains_key(&contract_address) {
-                    handler_contract_data_nonces.insert(contract_address, Felt::ZERO)?;
+            let nonces_from_updates =
+                state_diff.nonces.into_iter().map(|NonceUpdate { contract_address, nonce }| (contract_address, nonce));
+
+            let nonce_map: HashMap<Felt, Felt> = nonces_from_deployed.chain(nonces_from_updates).collect();
+
+            let contract_class_updates_replaced = state_diff
+                .replaced_classes
+                .into_iter()
+                .map(|ReplacedClassItem { contract_address, class_hash }| (contract_address, class_hash));
+
+            let contract_class_updates_deployed = state_diff
+                .deployed_contracts
+                .into_iter()
+                .map(|DeployedContractItem { address, class_hash }| (address, class_hash));
+
+            let contract_class_updates =
+                contract_class_updates_replaced.chain(contract_class_updates_deployed).collect::<Vec<_>>();
+            let nonces_updates = nonce_map.into_iter().collect::<Vec<_>>();
+
+            let storage_kv_updates = state_diff
+                .storage_diffs
+                .into_iter()
+                .flat_map(|ContractStorageDiffItem { address, storage_entries }| {
+                    storage_entries.into_iter().map(move |StorageEntry { key, value }| ((address, key), value))
+                })
+                .collect::<Vec<_>>();
+
+            match block_n {
+                None => self.contract_db_store_pending(&contract_class_updates, &nonces_updates, &storage_kv_updates),
+                Some(block_n) => {
+                    self.contract_db_store_block(block_n, &contract_class_updates, &nonces_updates, &storage_kv_updates)
                 }
-                Ok(())
-            })?;
+            }
+        };
 
-        state_update
-            .state_diff
-            .replaced_classes
-            .into_iter()
-            .map(|ReplacedClassItem { contract_address, class_hash }| (contract_address, class_hash))
-            .try_for_each(|(contract_address, class_hash)| -> Result<(), DeoxysStorageError> {
-                handler_contract_data_class.insert(contract_address, class_hash)?;
-                Ok(())
-            })?;
+        let task_class_db = || {
+            // Parallel compilation (should be moved to sync?)
+            let compiled_class_updates = class_updates
+                .par_iter()
+                .map(|(class_hash, contract_class)| {
+                    let compiled_class: dp_class::CompiledClass = contract_class
+                        .compile()
+                        .map_err(|e| DeoxysStorageError::CompilationClassError(e.to_string()))?;
 
-        // insert nonces for contracts that were not deployed or replaced in this block
-        nonce_map.into_iter().for_each(|(contract_address, nonce)| {
-            handler_contract_data_nonces.insert(contract_address, nonce.to_felt()).unwrap();
-        });
+                    Ok((*class_hash, compiled_class))
+                })
+                .collect::<Result<Vec<_>, DeoxysStorageError>>()?;
+            let class_info_updates = class_updates
+                .into_par_iter()
+                .map(|(class_hash, contract_class)| {
+                    let info = ClassInfo { contract_class: contract_class.into(), block_number: block_n };
+                    (class_hash, info)
+                })
+                .collect::<Vec<_>>();
 
-        handler_contract_data_class.commit(block_number)?;
-        log::debug!("committed contract_data_class");
-        handler_contract_data_nonces.commit(block_number)?;
-        log::debug!("committed contract_data_nonces");
+            match block_n {
+                None => self.class_db_store_pending(&class_info_updates, &compiled_class_updates),
+                Some(block_n) => self.class_db_store_block(block_n, &class_info_updates, &compiled_class_updates),
+            }
+        };
+
+        let ((r1, r2), r3) = rayon::join(|| rayon::join(task_block_db, task_contract_db), task_class_db);
+
+        r1.and(r2).and(r3)
+    }
+
+    pub fn clear_pending_block(&self) -> Result<(), DeoxysStorageError> {
+        self.block_db_clear_pending()?;
+        self.contract_db_clear_pending()?;
+        self.class_db_clear_pending()?;
         Ok(())
-    };
-
-    // Class hash to compiled class hash update
-    let task_2 = || {
-        let handler_contract_class_hashes = backend.contract_class_hashes_mut();
-
-        state_update
-            .state_diff
-            .declared_classes
-            .into_iter()
-            .map(|DeclaredClassItem { class_hash, compiled_class_hash }| (class_hash, compiled_class_hash))
-            .for_each(|(class_hash, compiled_class_hash)| {
-                handler_contract_class_hashes.insert(class_hash, compiled_class_hash).unwrap();
-            });
-
-        handler_contract_class_hashes.commit(block_number)?;
-        log::debug!("committed contract_class_hashes");
-        Ok(())
-    };
-
-    let (result1, result2) = rayon::join(task_1, task_2);
-
-    result1.and(result2)
-}
-
-pub fn store_class_update(
-    backend: &DeoxysBackend,
-    block_number: u64,
-    class_update: Vec<(Felt, ContractClass)>,
-) -> Result<(), DeoxysStorageError> {
-    let handler_contract_class_data_mut = backend.contract_class_data_mut();
-    let handler_compiled_contract_class_mut = backend.compiled_contract_class_mut();
-
-    class_update.into_iter().try_for_each(|(class_hash, contract_class)| {
-        let compiled_class: dp_class::CompiledClass =
-            contract_class.compile().map_err(|e| DeoxysStorageError::CompilationClassError(e.to_string()))?;
-        handler_contract_class_data_mut.insert(
-            class_hash,
-            ContractClassData { contract_class: contract_class.into(), block_number: Some(block_number) },
-        )?;
-        handler_compiled_contract_class_mut.insert(class_hash, compiled_class)?;
-        Ok::<_, DeoxysStorageError>(())
-    })?;
-
-    handler_contract_class_data_mut.commit(block_number)?;
-    handler_compiled_contract_class_mut.commit(block_number)?;
-    log::debug!("committed contract_class_data_mut");
-    Ok(())
-}
-
-pub fn store_key_update(
-    backend: &DeoxysBackend,
-    block_number: u64,
-    storage_diffs: &[ContractStorageDiffItem],
-) -> Result<(), DeoxysStorageError> {
-    let handler_storage = backend.contract_storage_mut();
-
-    storage_diffs.into_par_iter().try_for_each(|ContractStorageDiffItem { address, storage_entries }| {
-        storage_entries.iter().try_for_each(|StorageEntry { key, value }| -> Result<(), DeoxysStorageError> {
-            handler_storage.insert((*address, *key), *value)
-        })
-    })?;
-
-    handler_storage.commit(block_number)?;
-    log::debug!("committed key_update");
-
-    Ok(())
+    }
 }

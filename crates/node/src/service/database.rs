@@ -11,7 +11,7 @@ impl DatabaseService {
 
         let _deoxys_backend =
             DeoxysBackend::open(&config.base_path, config.backup_dir.clone(), config.restore_from_latest_backup)
-                .context("opening database")?;
+                .context("Opening database")?;
 
         Ok(Self(DBDropHook))
     }

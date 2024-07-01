@@ -13,12 +13,6 @@ pub use primitive_types::{H160, U256};
 use starknet_types_core::felt::Felt;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum MaybePendingStateDiff {
-    Pending(PendingStateUpdate),
-    NotPending(StateDiff),
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum DeoxysMaybePendingBlockInfo {
     Pending(DeoxysPendingBlockInfo),
     NotPending(DeoxysBlockInfo),

@@ -1,9 +1,10 @@
 use anyhow::Context;
 use dp_block::{
     BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
-    DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo, MaybePendingStateDiff,
+    DeoxysMaybePendingBlockInfo, DeoxysPendingBlock, DeoxysPendingBlockInfo,
 };
-use starknet_core::types::{Felt, PendingStateUpdate, StateDiff};
+use rocksdb::WriteOptions;
+use starknet_core::types::{Felt, StateDiff};
 
 use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
 use crate::storage_handler::{codec, DeoxysStorageError};
@@ -57,7 +58,7 @@ impl DeoxysBackend {
                 )
             }
         } else {
-            self.db.put_cf(&col, ROW_CHAIN_INFO, bincode::serialize(expected)?).context("writing chain info to db")?;
+            self.db.put_cf(&col, ROW_CHAIN_INFO, bincode::serialize(expected)?).context("Writing chain info to db")?;
         }
 
         Ok(())
@@ -132,7 +133,7 @@ impl DeoxysBackend {
         Ok(Some(res))
     }
 
-    pub fn get_pending_block_state_update(&self) -> Result<Option<PendingStateUpdate>> {
+    pub fn get_pending_block_state_update(&self) -> Result<Option<StateDiff>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_STATE_UPDATE)? else { return Ok(None) };
         let res = bincode::deserialize(&res)?;
@@ -141,12 +142,8 @@ impl DeoxysBackend {
 
     // DB write
 
-    pub fn write_pending(
-        &self,
-        tx: &mut WriteBatchWithTransaction,
-        block: &DeoxysBlock,
-        state_update: &PendingStateUpdate,
-    ) -> Result<()> {
+    pub fn block_db_store_pending(&self, block: &DeoxysPendingBlock, state_update: &StateDiff) -> Result<()> {
+        let mut tx = WriteBatchWithTransaction::default();
         let col = self.db.get_column(Column::BlockStorageMeta);
         tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(&block.info)?);
         tx.put_cf(&col, ROW_PENDING_INNER, bincode::serialize(&block.inner)?);
@@ -154,11 +151,15 @@ impl DeoxysBackend {
         Ok(())
     }
 
-    pub fn clear_pending(&self, tx: &mut WriteBatchWithTransaction) -> Result<()> {
+    pub(crate) fn block_db_clear_pending(&self) -> Result<()> {
+        let mut tx = WriteBatchWithTransaction::default();
         let col = self.db.get_column(Column::BlockStorageMeta);
         tx.delete_cf(&col, ROW_PENDING_INFO);
         tx.delete_cf(&col, ROW_PENDING_INNER);
         tx.delete_cf(&col, ROW_PENDING_STATE_UPDATE);
+        let mut writeopts = WriteOptions::new();
+        writeopts.disable_wal(true);
+        self.db.write_opt(tx, &writeopts)?;
         Ok(())
     }
 
@@ -173,12 +174,9 @@ impl DeoxysBackend {
     }
 
     /// Also clears pending block
-    pub fn write_new_block(
-        &self,
-        tx: &mut WriteBatchWithTransaction,
-        block: &DeoxysBlock,
-        state_diff: &StateDiff,
-    ) -> Result<()> {
+    pub fn block_db_store_block(&self, block: &DeoxysBlock, state_diff: &StateDiff) -> Result<()> {
+        let mut tx = WriteBatchWithTransaction::default();
+
         let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
         let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
         let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
@@ -199,7 +197,15 @@ impl DeoxysBackend {
         tx.put_cf(&block_n_to_state_diff, &block_n_encoded, bincode::serialize(state_diff)?);
         tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
 
-        self.clear_pending(tx)
+        // clear pending
+        tx.delete_cf(&meta, ROW_PENDING_INFO);
+        tx.delete_cf(&meta, ROW_PENDING_INNER);
+        tx.delete_cf(&meta, ROW_PENDING_STATE_UPDATE);
+
+        let mut writeopts = WriteOptions::new();
+        writeopts.disable_wal(true);
+        self.db.write_opt(tx, &writeopts)?;
+        Ok(())
     }
 
     // Convenience functions
@@ -248,11 +254,11 @@ impl DeoxysBackend {
         }
     }
 
-    pub fn get_block_state_diff(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MaybePendingStateDiff>> {
+    pub fn get_block_state_diff(&self, id: &impl DbBlockIdResolvable) -> Result<Option<StateDiff>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match ty {
-            DbBlockId::Pending => Ok(self.get_pending_block_state_update()?.map(MaybePendingStateDiff::Pending)),
-            DbBlockId::BlockN(block_n) => Ok(self.get_state_update(block_n)?.map(MaybePendingStateDiff::NotPending)),
+            DbBlockId::Pending => self.get_pending_block_state_update(),
+            DbBlockId::BlockN(block_n) => self.get_state_update(block_n),
         }
     }
 
