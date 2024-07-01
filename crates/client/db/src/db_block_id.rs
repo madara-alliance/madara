@@ -10,6 +10,12 @@ pub enum DbBlockId {
     BlockN(u64),
 }
 
+impl DbBlockId {
+    pub fn is_pending(&self) -> bool {
+        matches!(self, DbBlockId::Pending)
+    }
+}
+
 pub trait DbBlockIdResolvable {
     fn resolve_db_block_id(&self, backend: &DeoxysBackend) -> Result<Option<DbBlockId>, DeoxysStorageError>;
 }

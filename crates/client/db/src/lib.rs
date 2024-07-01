@@ -7,6 +7,9 @@ use std::{fmt, fs};
 
 use anyhow::{Context, Result};
 use block_db::ChainInfo;
+use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
+use bonsai_trie::id::BasicId;
+use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
 pub mod block_db;
@@ -23,6 +26,7 @@ pub mod storage_handler;
 pub mod storage_updates;
 
 pub use error::{BonsaiDbError, DbError};
+use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use tokio::sync::{mpsc, oneshot};
 
 pub type DB = DBWithThreadMode<MultiThreaded>;
@@ -406,128 +410,47 @@ impl DeoxysBackend {
         Ok(())
     }
 
-    // / Return the mapping database manager
-    // pub fn mapping(&self) -> &Arc<MappingDb> {
-    //     &self.mapping
-    // }
-
-    // pub fn expose_db(&self) -> &Arc<DB> {
-    //     &self.db
-    // }
-
-    // pub fn contract_storage_mut(&self) -> ContractStorageViewMut {
-    //     ContractStorageViewMut::new(Arc::clone(&self.db))
-    // }
-
-    // pub fn contract_storage(&self) -> ContractStorageView {
-    //     ContractStorageView::new(Arc::clone(&self.db))
-    // }
-
-    // pub fn contract_class_data_mut(&self) -> ContractClassDataViewMut {
-    //     ContractClassDataViewMut::new(Arc::clone(&self.db))
-    // }
-
-    // pub fn contract_class_data(&self) -> ContractClassDataView {
-    //     ContractClassDataView::new(Arc::clone(&self.db))
-    // }
-
-    // pub fn compiled_contract_class_mut(&self) -> CompiledContractClassViewMut {
-    //     CompiledContractClassViewMut::new(Arc::clone(&self.db))
-    // }
-
-    // pub fn compiled_contract_class(&self) -> CompiledContractClassView {
-    //     CompiledContractClassView::new(Arc::clone(&self.db))
-    // }
-
-    // pub fn contract_class_hashes_mut(&self) -> ContractClassHashesViewMut {
-    //     ContractClassHashesViewMut::new(Arc::clone(&self.db))
-    // }
-
-    // pub fn contract_class_hashes(&self) -> ContractClassHashesView {
-    //     ContractClassHashesView::new(Arc::clone(&self.db))
-    // }
-
-    // pub fn contract_class_hash(&self) -> ContractClassView {
-    //     ContractClassView::new(Arc::clone(&self.db))
-    // }
-
-    // pub fn contract_class_hash_mut(&self) -> ContractClassViewMut {
-    //     ContractClassViewMut::new(Arc::clone(&self.db))
-    // }
-
-    // pub fn contract_nonces(&self) -> ContractNoncesView {
-    //     ContractNoncesView::new(Arc::clone(&self.db))
-    // }
-
-    // pub fn contract_nonces_mut(&self) -> ContractNoncesViewMut {
-    //     ContractNoncesViewMut::new(Arc::clone(&self.db))
-    // }
-
     // tries
 
-    // pub(crate) fn get_bonsai<H: StarkHash + Send + Sync>(
-    //     &self,
-    //     map: DatabaseKeyMapping,
-    // ) -> BonsaiStorage<BasicId, BonsaiDb<'_>, H> {
-    //     // UNWRAP: function actually cannot panic
-    //     let bonsai = BonsaiStorage::new(
-    //         BonsaiDb::new(&self.db, map),
-    //         BonsaiStorageConfig {
-    //             max_saved_trie_logs: Some(0),
-    //             max_saved_snapshots: Some(0),
-    //             snapshot_interval: u64::MAX,
-    //         },
-    //     )
-    //     .unwrap();
+    pub(crate) fn get_bonsai<H: StarkHash + Send + Sync>(
+        &self,
+        map: DatabaseKeyMapping,
+    ) -> BonsaiStorage<BasicId, BonsaiDb<'_>, H> {
+        let bonsai = BonsaiStorage::new(
+            BonsaiDb::new(&self.db, map),
+            BonsaiStorageConfig {
+                max_saved_trie_logs: Some(0),
+                max_saved_snapshots: Some(0),
+                snapshot_interval: u64::MAX,
+            },
+        )
+        // UNWRAP: function actually cannot panic
+        .unwrap();
 
-    //     bonsai
-    // }
+        bonsai
+    }
 
-    // pub(crate) fn bonsai_contract(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
-    //     self.get_bonsai(DatabaseKeyMapping {
-    //         flat: Column::BonsaiContractsFlat,
-    //         trie: Column::BonsaiContractsTrie,
-    //         log: Column::BonsaiContractsLog,
-    //     })
-    // }
+    pub fn contract_trie(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
+        self.get_bonsai(DatabaseKeyMapping {
+            flat: Column::BonsaiContractsFlat,
+            trie: Column::BonsaiContractsTrie,
+            log: Column::BonsaiContractsLog,
+        })
+    }
 
-    // pub(crate) fn bonsai_storage(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
-    //     self.get_bonsai(DatabaseKeyMapping {
-    //         flat: Column::BonsaiContractsStorageFlat,
-    //         trie: Column::BonsaiContractsStorageTrie,
-    //         log: Column::BonsaiContractsStorageLog,
-    //     })
-    // }
+    pub fn contract_storage_trie(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
+        self.get_bonsai(DatabaseKeyMapping {
+            flat: Column::BonsaiContractsStorageFlat,
+            trie: Column::BonsaiContractsStorageTrie,
+            log: Column::BonsaiContractsStorageLog,
+        })
+    }
 
-    // pub(crate) fn bonsai_class(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Poseidon> {
-    //     self.get_bonsai(DatabaseKeyMapping {
-    //         flat: Column::BonsaiClassesFlat,
-    //         trie: Column::BonsaiClassesTrie,
-    //         log: Column::BonsaiClassesLog,
-    //     })
-    // }
-
-    // pub fn contract_trie_mut(&self) -> ContractTrieViewMut<'_> {
-    //     ContractTrieViewMut(self.bonsai_contract())
-    // }
-
-    // pub fn contract_trie(&self) -> ContractTrieView<'_> {
-    //     ContractTrieView(self.bonsai_contract())
-    // }
-
-    // pub fn contract_storage_trie_mut(&self) -> ContractStorageTrieViewMut<'_> {
-    //     ContractStorageTrieViewMut(self.bonsai_storage())
-    // }
-
-    // pub fn contract_storage_trie(&self) -> ContractStorageTrieView<'_> {
-    //     ContractStorageTrieView(self.bonsai_storage())
-    // }
-
-    // pub fn class_trie_mut(&self) -> ClassTrieViewMut<'_> {
-    //     ClassTrieViewMut(self.bonsai_class())
-    // }
-
-    // pub fn class_trie(&self) -> ClassTrieView<'_> {
-    //     ClassTrieView(self.bonsai_class())
-    // }
+    pub fn class_trie(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Poseidon> {
+        self.get_bonsai(DatabaseKeyMapping {
+            flat: Column::BonsaiClassesFlat,
+            trie: Column::BonsaiClassesTrie,
+            log: Column::BonsaiClassesLog,
+        })
+    }
 }

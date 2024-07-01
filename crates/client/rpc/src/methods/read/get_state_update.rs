@@ -1,11 +1,10 @@
-use starknet_core::types::{BlockId, Felt, MaybePendingStateUpdate, StateUpdate};
+use starknet_core::types::{BlockId, BlockTag, Felt, MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::OptionExt;
 use crate::utils::ResultExt;
 use crate::Starknet;
 use dc_db::db_block_id::DbBlockId;
-use dp_block::MaybePendingStateDiff;
 
 /// Get the information about the result of executing the requested block.
 ///
@@ -32,15 +31,31 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
         .or_internal_server_error("Error resolving block id")?
         .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    let block_state_diff = starknet
+    let state_diff = starknet
         .backend
         .get_block_state_diff(&resolved_block_id)
         .or_internal_server_error("Error getting contract class hash at")?
         .ok_or_internal_server_error("Block has no state diff")?;
 
-    match block_state_diff {
-        MaybePendingStateDiff::Pending(update) => Ok(MaybePendingStateUpdate::PendingUpdate(update)),
-        MaybePendingStateDiff::NotPending(state_diff) => {
+    match resolved_block_id.is_pending() {
+        true => {
+            let old_root = if let Some(block) = starknet
+                .backend
+                .get_block_info(&BlockId::Tag(BlockTag::Latest))
+                .or_internal_server_error("Error getting latest block from db")?
+            {
+                block
+                    .as_nonpending()
+                    .ok_or_internal_server_error("Latest block cannot be pending")?
+                    .header
+                    .global_state_root
+            } else {
+                // The pending block is actually genesis, so old root is zero (huh?)
+                Felt::ZERO
+            };
+            Ok(MaybePendingStateUpdate::PendingUpdate(PendingStateUpdate { old_root, state_diff }))
+        }
+        false => {
             let block_info = &starknet.get_block_info(&resolved_block_id)?;
             let block_info = block_info.as_nonpending().ok_or_internal_server_error("Block should not be pending")?;
 

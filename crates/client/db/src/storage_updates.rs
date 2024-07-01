@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use dp_block::{DeoxysBlock, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlock};
 use dp_class::{ClassInfo, ToCompiledClass};
-use rayon::iter::IntoParallelRefIterator;
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use rayon::prelude::*;
 use starknet_core::types::{
     ContractClass, ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
@@ -13,13 +12,19 @@ use starknet_types_core::felt::Felt;
 use crate::storage_handler::DeoxysStorageError;
 use crate::DeoxysBackend;
 
+pub struct DbClassUpdate {
+    pub class_hash: Felt,
+    pub contract_class: ContractClass,
+    pub compiled_class_hash: Felt,
+}
+
 impl DeoxysBackend {
-    /// NB: This functions runs on the rayon thread pool
+    /// NB: This functions needs toruns on the rayon thread pool
     pub fn store_block(
         &self,
         block: DeoxysMaybePendingBlock,
         state_diff: StateDiff,
-        class_updates: Vec<(Felt, ContractClass)>,
+        class_updates: Vec<DbClassUpdate>,
     ) -> Result<(), DeoxysStorageError> {
         let block_n = block.info.block_n();
         let state_diff_cpy = state_diff.clone();
@@ -76,7 +81,8 @@ impl DeoxysBackend {
             // Parallel compilation (should be moved to sync?)
             let compiled_class_updates = class_updates
                 .par_iter()
-                .map(|(class_hash, contract_class)| {
+                .map(|DbClassUpdate { class_hash, contract_class, .. }| {
+                    // TODO: check compiled_class_hash
                     let compiled_class: dp_class::CompiledClass = contract_class
                         .compile()
                         .map_err(|e| DeoxysStorageError::CompilationClassError(e.to_string()))?;
@@ -85,9 +91,10 @@ impl DeoxysBackend {
                 })
                 .collect::<Result<Vec<_>, DeoxysStorageError>>()?;
             let class_info_updates = class_updates
-                .into_par_iter()
-                .map(|(class_hash, contract_class)| {
-                    let info = ClassInfo { contract_class: contract_class.into(), block_number: block_n };
+                .into_iter()
+                .map(|DbClassUpdate { class_hash, contract_class, compiled_class_hash }| {
+                    let info =
+                        ClassInfo { contract_class: contract_class.into(), block_number: block_n, compiled_class_hash };
                     (class_hash, info)
                 })
                 .collect::<Vec<_>>();

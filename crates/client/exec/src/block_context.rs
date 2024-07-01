@@ -28,15 +28,18 @@ pub struct ExecutionContext<'a> {
 
 impl<'a> ExecutionContext<'a> {
     pub fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter<'a>> {
-        let block_number = self.block_context.block_info().block_number.0;
-        let prev_block = block_number.checked_sub(1); // todo? handle genesis correctly
-        CachedState::new(BlockifierStateAdapter::new(&self.backend, prev_block), GlobalContractCache::new(16))
+        let on_top_of = match self.db_id {
+            DbBlockId::Pending => Some(DbBlockId::Pending),
+            DbBlockId::BlockN(block_n) => {
+                // We exec on top of the previous block. None means we are executing genesis.
+                block_n.checked_sub(1).map(DbBlockId::BlockN)
+            }
+        };
+
+        CachedState::new(BlockifierStateAdapter::new(&self.backend, on_top_of), GlobalContractCache::new(16))
     }
 
-    pub fn new(
-        backend: &'a DeoxysBackend,
-        block_info: &DeoxysMaybePendingBlockInfo,
-    ) -> Result<Self, Error> {
+    pub fn new(backend: &'a DeoxysBackend, block_info: &DeoxysMaybePendingBlockInfo) -> Result<Self, Error> {
         let (db_id, protocol_version, block_number, block_timestamp, sequencer_address, l1_gas_price, l1_da_mode) =
             match block_info {
                 DeoxysMaybePendingBlockInfo::Pending(block) => (

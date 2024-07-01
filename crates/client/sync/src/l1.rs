@@ -3,8 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
-use dc_db::rocksdb::WriteOptions;
-use dc_db::{DeoxysBackend, WriteBatchWithTransaction};
+use dc_db::DeoxysBackend;
 use dp_convert::ToFelt;
 use dp_convert::ToStarkFelt;
 use dp_utils::channel_wait_or_graceful_shutdown;
@@ -191,13 +190,9 @@ pub fn update_l1(
 
         block_metrics.l1_block_number.set(state_update.block_number as f64);
 
-        let mut tx = WriteBatchWithTransaction::default();
         backend
-            .write_last_confirmed_block(&mut tx, state_update.block_number)
-            .context("setting l1 last confirmed block number")?;
-        let mut write_opt = WriteOptions::default(); // todo move that in db
-        write_opt.disable_wal(true);
-        backend.expose_db().write_opt(tx, &write_opt).context("writing last confirmed block number")?;
+            .write_last_confirmed_block(state_update.block_number)
+            .context("Setting l1 last confirmed block number")?;
         log::debug!("update_l1: wrote last confirmed block number");
     }
 
@@ -246,30 +241,23 @@ pub async fn sync(
     l1_core_address: Address,
 ) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
-    {
-        let mut tx = WriteBatchWithTransaction::default();
-        backend.clear_last_confirmed_block(&mut tx).context("clearing l1 last confirmed block number")?;
+    backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
+    log::debug!("update_l1: cleared confirmed block number");
 
-        let mut write_opt = WriteOptions::default(); // todo move that in db
-        write_opt.disable_wal(true);
-        backend.expose_db().write_opt(tx, &write_opt).context("clearing confirmed block number")?;
-        log::debug!("update_l1: cleared confirmed block number");
-    }
-
-    let client = EthereumClient::new(l1_url, l1_core_address).await.context("creating ethereum client")?;
+    let client = EthereumClient::new(l1_url, l1_core_address).await.context("Creating ethereum client")?;
 
     log::info!("🚀 Subscribed to L1 state verification");
 
     // Get and store the latest verified state
-    let initial_state = EthereumClient::get_initial_state(&client).await.context("getting initial ethereum state")?;
+    let initial_state = EthereumClient::get_initial_state(&client).await.context("Getting initial ethereum state")?;
     update_l1(backend, initial_state, block_metrics.clone())?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    let start_block = client.get_last_event_block_number().await.context("retrieving the last event block number")?;
+    let start_block = client.get_last_event_block_number().await.context("Retrieving the last event block number")?;
     client
         .listen_and_update_state(backend, start_block, block_metrics)
         .await
-        .context("subscribing to the LogStateUpdate event")?;
+        .context("Subscribing to the LogStateUpdate event")?;
 
     Ok(())
 }

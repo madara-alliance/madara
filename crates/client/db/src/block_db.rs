@@ -142,7 +142,7 @@ impl DeoxysBackend {
 
     // DB write
 
-    pub fn block_db_store_pending(&self, block: &DeoxysPendingBlock, state_update: &StateDiff) -> Result<()> {
+    pub(crate) fn block_db_store_pending(&self, block: &DeoxysPendingBlock, state_update: &StateDiff) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
         let col = self.db.get_column(Column::BlockStorageMeta);
         tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(&block.info)?);
@@ -163,18 +163,20 @@ impl DeoxysBackend {
         Ok(())
     }
 
-    pub fn write_last_confirmed_block(&self, tx: &mut WriteBatchWithTransaction, l1_last: u64) -> Result<()> {
+    pub fn write_last_confirmed_block(&self, l1_last: u64) -> Result<()> {
         let col = self.db.get_column(Column::BlockStorageMeta);
-        tx.put_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK, codec::Encode::encode(&l1_last)?);
+        let mut writeopts = WriteOptions::default(); // todo move that in db
+        writeopts.disable_wal(true);
+        self.db.put_cf_opt(&col, ROW_L1_LAST_CONFIRMED_BLOCK, codec::Encode::encode(&l1_last)?, &writeopts)?;
         Ok(())
     }
 
-    pub fn clear_last_confirmed_block(&self, tx: &mut WriteBatchWithTransaction) -> Result<()> {
-        self.write_last_confirmed_block(tx, 0)
+    pub fn clear_last_confirmed_block(&self) -> Result<()> {
+        self.write_last_confirmed_block(0)
     }
 
     /// Also clears pending block
-    pub fn block_db_store_block(&self, block: &DeoxysBlock, state_diff: &StateDiff) -> Result<()> {
+    pub(crate) fn block_db_store_block(&self, block: &DeoxysBlock, state_diff: &StateDiff) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
 
         let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);

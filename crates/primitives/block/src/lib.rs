@@ -6,7 +6,6 @@ use dp_receipt::TransactionReceipt;
 use dp_transactions::Transaction;
 pub use header::Header;
 use header::PendingHeader;
-use starknet_core::types::{PendingStateUpdate, StateDiff};
 pub use starknet_version::StarknetVersion;
 
 pub use primitive_types::{H160, U256};
@@ -29,6 +28,13 @@ impl DeoxysMaybePendingBlockInfo {
         match self {
             DeoxysMaybePendingBlockInfo::Pending(v) => Some(v),
             DeoxysMaybePendingBlockInfo::NotPending(_) => None,
+        }
+    }
+
+    pub fn as_block_id(&self) -> BlockId {
+        match self {
+            DeoxysMaybePendingBlockInfo::Pending(_) => BlockId::Tag(BlockTag::Pending),
+            DeoxysMaybePendingBlockInfo::NotPending(info) => BlockId::Number(info.header.block_number),
         }
     }
 

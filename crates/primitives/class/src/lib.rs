@@ -12,6 +12,7 @@ pub use compile::ToCompiledClass;
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ClassInfo {
     pub contract_class: ContractClass,
+    pub compiled_class_hash: Felt,
     /// None means it is in the pending block
     pub block_number: Option<u64>,
 }

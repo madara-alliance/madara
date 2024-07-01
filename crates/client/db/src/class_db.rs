@@ -67,6 +67,11 @@ impl DeoxysBackend {
         Ok(Some(info))
     }
 
+    pub fn contains_class(&self, id: &impl DbBlockIdResolvable, class_hash: &Felt) -> Result<bool, DeoxysStorageError> {
+        // TODO(perf): make fast path, this only needs one db contains() call and no deserialization in most cases (block id pending/latest)
+        Ok(self.get_class_info(id, class_hash)?.is_some())
+    }
+
     pub fn get_class(
         &self,
         id: &impl DbBlockIdResolvable,
@@ -83,7 +88,7 @@ impl DeoxysBackend {
         Ok(Some((info, compiled_class)))
     }
 
-    /// NB: This functions runs on the rayon thread pool
+    /// NB: This functions needs toruns on the rayon thread pool
     pub(crate) fn store_classes(
         &self,
         class_infos: &[(Felt, ClassInfo)],
@@ -125,7 +130,7 @@ impl DeoxysBackend {
         Ok(())
     }
 
-    /// NB: This functions runs on the rayon thread pool
+    /// NB: This functions needs toruns on the rayon thread pool
     pub(crate) fn class_db_store_block(
         &self,
         _block_number: u64,
@@ -135,7 +140,7 @@ impl DeoxysBackend {
         self.store_classes(class_infos, class_compiled, Column::ClassInfo, Column::ClassCompiled)
     }
 
-    /// NB: This functions runs on the rayon thread pool
+    /// NB: This functions needs toruns on the rayon thread pool
     pub(crate) fn class_db_store_pending(
         &self,
         class_infos: &[(Felt, ClassInfo)],
