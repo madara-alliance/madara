@@ -217,10 +217,6 @@ impl Starknet {
         &self.sequencer_provider
     }
 
-    // pub fn block_storage(&self) -> &MappingDb {
-    //     self.backend.mapping()
-    // }
-
     pub fn get_block_info(
         &self,
         block_id: &impl DbBlockIdResolvable,

@@ -67,14 +67,6 @@ pub struct CallContractError {
     err: TransactionExecutionError,
 }
 
-// #[derive(thiserror::Error, Debug)]
-// #[error("Executing tx {hash:#} (index {index}): {err:#}")]
-// pub struct TransactionsExecError {
-//     pub hash: TransactionHash,
-//     pub index: usize,
-//     pub err: TransactionExecutionError,
-// }
-
 pub struct ExecutionResult {
     pub hash: TransactionHash,
     pub tx_type: TransactionType,

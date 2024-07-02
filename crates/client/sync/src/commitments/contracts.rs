@@ -1,8 +1,10 @@
 use std::collections::HashSet;
 
+use bitvec::order::Msb0;
+use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
-use dc_db::storage_handler::{DeoxysStorageError, StorageType};
+use dc_db::storage_handler::{bonsai_identifier, DeoxysStorageError, StorageType};
 use dc_db::DeoxysBackend;
 use dp_block::{BlockId, BlockTag};
 use dp_convert::ToFelt;
@@ -43,8 +45,10 @@ pub fn contract_trie_root(
     // First we insert the contract storage changes
     for (contract_address, updates) in storage_updates {
         for (key, value) in updates {
+            let bytes = key.0.key().bytes();
+            let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
             contract_storage_trie
-                .insert(contract_address.0.key().bytes(), &key.0.key().bytes().as_bits()[5..].to_owned(), &value.to_felt())
+                .insert(contract_address.0.key().bytes(), &bv, &value.to_felt())
                 .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?;
         }
     }
@@ -80,8 +84,12 @@ pub fn contract_trie_root(
     log::debug!("contract_trie inserting");
 
     for (key, value) in updates {
+        log::debug!("contract_trie key {:b}", &key.0.key().bytes().as_bits::<Msb0>()[5..]);
+        log::debug!("contract_trie key {:#x} {:#x}", key.to_felt(), value);
+        let bytes = key.0.key().bytes();
+        let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
         contract_trie
-            .insert(&[], &key.0.key().bytes().as_bits()[5..].to_owned(), &value)
+            .insert(bonsai_identifier::CONTRACT, &bv, &value)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?
     }
 
@@ -90,8 +98,9 @@ pub fn contract_trie_root(
     contract_trie
         .commit(BasicId::new(block_number))
         .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
-    let root_hash =
-        contract_trie.root_hash(&[]).map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
+    let root_hash = contract_trie
+        .root_hash(bonsai_identifier::CONTRACT)
+        .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
 
     log::debug!("contract_trie committed");
 

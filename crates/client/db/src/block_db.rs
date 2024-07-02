@@ -12,12 +12,6 @@ use crate::{Column, DatabaseExt, DeoxysBackend, WriteBatchWithTransaction};
 
 type Result<T, E = DeoxysStorageError> = std::result::Result<T, E>;
 
-/// Allow interaction with the mapping db
-// #[derive(Debug)]
-// pub struct MappingDb {
-//     db: Arc<DB>,
-// }
-
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct ChainInfo {
     pub chain_id: starknet_types_core::felt::Felt,

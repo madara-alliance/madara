@@ -288,7 +288,7 @@ pub async fn sync(
     chain_id: Felt,
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
-    let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(4);
+    let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(8);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(4);
     let provider = Arc::new(provider);
     let sync_timer = Arc::new(Mutex::new(None));

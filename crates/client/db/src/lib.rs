@@ -188,12 +188,6 @@ pub enum Column {
     BonsaiClassesLog,
 }
 
-// impl Column {
-//     fn iter() -> impl Iterator<Item = Self> {
-//         Self::ALL.iter().copied()
-//     }
-// }
-
 impl fmt::Debug for Column {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.rocksdb_name())
@@ -319,7 +313,6 @@ impl DatabaseExt for DB {
 /// Deoxys client database backend singleton.
 #[derive(Debug)]
 pub struct DeoxysBackend {
-    // mapping: Arc<MappingDb>,
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
     last_flush_time: Mutex<Option<Instant>>,
@@ -380,10 +373,11 @@ impl DeoxysBackend {
 
     pub fn maybe_flush(&self, force: bool) -> Result<bool> {
         let mut inst = self.last_flush_time.lock().expect("poisoned mutex");
-        let should_flush = force || match *inst {
-            Some(inst) => inst.elapsed() >= Duration::from_secs(5),
-            None => true,
-        };
+        let should_flush = force
+            || match *inst {
+                Some(inst) => inst.elapsed() >= Duration::from_secs(5),
+                None => true,
+            };
         if should_flush {
             log::debug!("doing a db flush");
             let mut opts = FlushOptions::default();

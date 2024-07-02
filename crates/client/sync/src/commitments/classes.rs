@@ -1,6 +1,8 @@
+use bitvec::order::Msb0;
+use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
-use dc_db::storage_handler::{DeoxysStorageError, StorageType};
+use dc_db::storage_handler::{bonsai_identifier, DeoxysStorageError, StorageType};
 use dc_db::DeoxysBackend;
 use dp_convert::ToFelt;
 use indexmap::IndexMap;
@@ -44,8 +46,10 @@ pub fn class_trie_root(
 
     log::debug!("class_trie inserting");
     for (key, value) in updates {
+        let bytes = key.0.bytes();
+        let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
         class_trie
-            .insert(&[], &key.0.bytes().as_bits()[5..], &value)
+            .insert(bonsai_identifier::CLASS, &bv, &value)
             .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?
     }
 
@@ -54,8 +58,9 @@ pub fn class_trie_root(
         .commit(BasicId::new(block_number))
         .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?;
 
-    let root_hash =
-        class_trie.root_hash(&[]).map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?;
+    let root_hash = class_trie
+        .root_hash(bonsai_identifier::CLASS)
+        .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?;
 
     log::debug!("class_trie committed");
 
