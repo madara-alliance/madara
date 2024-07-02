@@ -6,6 +6,7 @@ use da_client_interface::DaVerificationStatus;
 // TODO: job types shouldn't depend on mongodb
 use mongodb::bson::serde_helpers::uuid_1_as_binary;
 use serde::{Deserialize, Serialize};
+use settlement_client_interface::SettlementVerificationStatus;
 use uuid::Uuid;
 
 /// An external id.
@@ -97,7 +98,7 @@ pub enum JobStatus {
     /// The job was processed but the was unable to be verified under the given time
     VerificationTimeout,
     /// The job failed processing
-    VerificationFailed,
+    VerificationFailed(String),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -120,14 +121,14 @@ pub struct JobItem {
     pub version: i32,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JobVerificationStatus {
     #[allow(dead_code)]
     Pending,
     #[allow(dead_code)]
     Verified,
     #[allow(dead_code)]
-    Rejected,
+    Rejected(String),
 }
 
 impl From<DaVerificationStatus> for JobVerificationStatus {
@@ -135,7 +136,17 @@ impl From<DaVerificationStatus> for JobVerificationStatus {
         match status {
             DaVerificationStatus::Pending => JobVerificationStatus::Pending,
             DaVerificationStatus::Verified => JobVerificationStatus::Verified,
-            DaVerificationStatus::Rejected => JobVerificationStatus::Rejected,
+            DaVerificationStatus::Rejected(e) => JobVerificationStatus::Rejected(e),
+        }
+    }
+}
+
+impl From<SettlementVerificationStatus> for JobVerificationStatus {
+    fn from(status: SettlementVerificationStatus) -> Self {
+        match status {
+            SettlementVerificationStatus::Pending => JobVerificationStatus::Pending,
+            SettlementVerificationStatus::Verified => JobVerificationStatus::Verified,
+            SettlementVerificationStatus::Rejected(e) => JobVerificationStatus::Rejected(e),
         }
     }
 }

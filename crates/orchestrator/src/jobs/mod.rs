@@ -35,11 +35,11 @@ pub trait Job: Send + Sync {
     /// Should process the job and return the external_id which can be used to
     /// track the status of the job. For example, a DA job will submit the state diff
     /// to the DA layer and return the txn hash.
-    async fn process_job(&self, config: &Config, job: &JobItem) -> Result<String>;
+    async fn process_job(&self, config: &Config, job: &mut JobItem) -> Result<String>;
     /// Should verify the job and return the status of the verification. For example,
     /// a DA job will verify the inclusion of the state diff in the DA layer and return
     /// the status of the verification.
-    async fn verify_job(&self, config: &Config, job: &JobItem) -> Result<JobVerificationStatus>;
+    async fn verify_job(&self, config: &Config, job: &mut JobItem) -> Result<JobVerificationStatus>;
     /// Should return the maximum number of attempts to process the job. A new attempt is made
     /// every time the verification returns `JobVerificationStatus::Rejected`
     fn max_process_attempts(&self) -> u64;
@@ -75,12 +75,12 @@ pub async fn create_job(job_type: JobType, internal_id: String, metadata: HashMa
 /// DB. It then adds the job to the verification queue.
 pub async fn process_job(id: Uuid) -> Result<()> {
     let config = config().await;
-    let job = get_job(id).await?;
+    let mut job = get_job(id).await?;
 
     match job.status {
         // we only want to process jobs that are in the created or verification failed state.
         // verification failed state means that the previous processing failed and we want to retry
-        JobStatus::Created | JobStatus::VerificationFailed => {
+        JobStatus::Created | JobStatus::VerificationFailed(_) => {
             log::info!("Processing job with id {:?}", id);
         }
         _ => {
@@ -94,13 +94,14 @@ pub async fn process_job(id: Uuid) -> Result<()> {
     config.database().update_job_status(&job, JobStatus::LockedForProcessing).await?;
 
     let job_handler = get_job_handler(&job.job_type);
-    let external_id = job_handler.process_job(config.as_ref(), &job).await?;
-
+    let external_id = job_handler.process_job(config.as_ref(), &mut job).await?;
     let metadata = increment_key_in_metadata(&job.metadata, JOB_PROCESS_ATTEMPT_METADATA_KEY)?;
-    config
-        .database()
-        .update_external_id_and_status_and_metadata(&job, external_id, JobStatus::PendingVerification, metadata)
-        .await?;
+
+    job.external_id = external_id.into();
+    job.status = JobStatus::PendingVerification;
+    job.metadata = metadata;
+
+    config.database().update_job(&job).await?;
 
     add_job_to_verification_queue(job.id, Duration::from_secs(job_handler.verification_polling_delay_seconds()))
         .await?;
@@ -114,7 +115,7 @@ pub async fn process_job(id: Uuid) -> Result<()> {
 /// job back to the queue.
 pub async fn verify_job(id: Uuid) -> Result<()> {
     let config = config().await;
-    let job = get_job(id).await?;
+    let mut job = get_job(id).await?;
 
     match job.status {
         JobStatus::PendingVerification => {
@@ -127,14 +128,14 @@ pub async fn verify_job(id: Uuid) -> Result<()> {
     }
 
     let job_handler = get_job_handler(&job.job_type);
-    let verification_status = job_handler.verify_job(config.as_ref(), &job).await?;
+    let verification_status = job_handler.verify_job(config.as_ref(), &mut job).await?;
 
     match verification_status {
         JobVerificationStatus::Verified => {
             config.database().update_job_status(&job, JobStatus::Completed).await?;
         }
-        JobVerificationStatus::Rejected => {
-            config.database().update_job_status(&job, JobStatus::VerificationFailed).await?;
+        JobVerificationStatus::Rejected(e) => {
+            config.database().update_job_status(&job, JobStatus::VerificationFailed(e)).await?;
 
             // retry job processing if we haven't exceeded the max limit
             let process_attempts = get_u64_from_metadata(&job.metadata, JOB_PROCESS_ATTEMPT_METADATA_KEY)?;

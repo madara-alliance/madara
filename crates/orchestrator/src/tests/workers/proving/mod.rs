@@ -11,6 +11,7 @@ use httpmock::MockServer;
 use mockall::predicate::eq;
 use prover_client_interface::MockProverClient;
 use rstest::rstest;
+use settlement_client_interface::MockSettlementClient;
 use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
@@ -27,6 +28,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
     let mut db = MockDatabase::new();
     let mut queue = MockQueueProvider::new();
     let mut prover_client = MockProverClient::new();
+    let settlement_client = MockSettlementClient::new();
 
     sleep(Duration::from_secs(10)).await;
 
@@ -84,6 +86,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
         Some(queue),
         Some(da_client),
         Some(prover_client),
+        Some(settlement_client),
     )
     .await;
     config_force_init(config).await;

@@ -1,0 +1,23 @@
+[package]
+name = "starknet-settlement-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+c-kzg = "1.0.0"
+color-eyre = { workspace = true }
+dotenv = "0.15"
+lazy_static = { workspace = true }
+mockall = "0.12.1"
+reqwest = { version = "0.12.3" }
+rstest = { workspace = true }
+serde = { workspace = true }
+settlement-client-interface = { workspace = true }
+starknet = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+utils = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "*"

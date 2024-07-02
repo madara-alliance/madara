@@ -60,7 +60,7 @@ impl Job for DaJob {
         })
     }
 
-    async fn process_job(&self, config: &Config, job: &JobItem) -> Result<String> {
+    async fn process_job(&self, config: &Config, job: &mut JobItem) -> Result<String> {
         let block_no = job.internal_id.parse::<u64>()?;
         let state_update = config.starknet_client().get_state_update(BlockId::Number(block_no)).await?;
 
@@ -109,7 +109,7 @@ impl Job for DaJob {
         Ok(external_id)
     }
 
-    async fn verify_job(&self, config: &Config, job: &JobItem) -> Result<JobVerificationStatus> {
+    async fn verify_job(&self, config: &Config, job: &mut JobItem) -> Result<JobVerificationStatus> {
         Ok(config.da_client().verify_inclusion(job.external_id.unwrap_string()?).await?.into())
     }
 
@@ -376,7 +376,8 @@ mod tests {
     ) {
         let server = MockServer::start();
 
-        let config = init_config(Some(format!("http://localhost:{}", server.port())), None, None, None, None).await;
+        let config =
+            init_config(Some(format!("http://localhost:{}", server.port())), None, None, None, None, None).await;
 
         get_nonce_attached(&server, nonce_file_path);
 

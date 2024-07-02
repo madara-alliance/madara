@@ -1,0 +1,23 @@
+[package]
+name = "ethereum-settlement-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+alloy = { workspace = true, features = ["full"] }
+async-trait = { workspace = true }
+c-kzg = "1.0.0"
+color-eyre = { workspace = true }
+dotenv = "0.15"
+mockall = "0.12.1"
+reqwest = { version = "0.12.3" }
+rstest = { workspace = true }
+serde = { version = "1.0.196", default-features = false, features = ["derive"] }
+settlement-client-interface = { workspace = true }
+snos = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+utils = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "*"

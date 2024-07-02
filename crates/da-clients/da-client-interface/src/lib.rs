@@ -3,14 +3,14 @@ use color_eyre::Result;
 use mockall::automock;
 use mockall::predicate::*;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DaVerificationStatus {
     #[allow(dead_code)]
     Pending,
     #[allow(dead_code)]
     Verified,
     #[allow(dead_code)]
-    Rejected,
+    Rejected(String),
 }
 
 /// Trait for every new DaClient to implement

@@ -29,14 +29,14 @@ impl Job for SnosJob {
         })
     }
 
-    async fn process_job(&self, _config: &Config, _job: &JobItem) -> Result<String> {
+    async fn process_job(&self, _config: &Config, _job: &mut JobItem) -> Result<String> {
         // 1. Fetch SNOS input data from Madara
         // 2. Import SNOS in Rust and execute it with the input data
         // 3. Store the received PIE in DB
         todo!()
     }
 
-    async fn verify_job(&self, _config: &Config, _job: &JobItem) -> Result<JobVerificationStatus> {
+    async fn verify_job(&self, _config: &Config, _job: &mut JobItem) -> Result<JobVerificationStatus> {
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another servicehow a, verify_job can be used to poll on the status of the job
         todo!()

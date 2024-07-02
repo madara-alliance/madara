@@ -1,4 +1,4 @@
-use alloy_primitives::hex::FromHexError;
+use alloy::primitives::hex::FromHexError;
 use gps_fact_checker::error::FactCheckerError;
 use prover_client_interface::ProverClientError;
 use reqwest::StatusCode;

@@ -68,9 +68,15 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
     // mock block number (madara) : 5
     let rpc_response_block_number = block;
     let response = json!({ "id": 1,"jsonrpc":"2.0","result": rpc_response_block_number });
-    let config =
-        init_config(Some(format!("http://localhost:{}", server.port())), Some(db), Some(queue), Some(da_client), None)
-            .await;
+    let config = init_config(
+        Some(format!("http://localhost:{}", server.port())),
+        Some(db),
+        Some(queue),
+        Some(da_client),
+        None,
+        None,
+    )
+    .await;
     config_force_init(config).await;
 
     // mocking block call

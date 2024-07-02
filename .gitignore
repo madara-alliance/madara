@@ -2,3 +2,6 @@
 .env
 .idea
 .DS_Store
+
+*.code-workspace
+.vscode

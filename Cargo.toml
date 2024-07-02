@@ -9,6 +9,8 @@ members = [
   "crates/prover-services/sharp-service",
   "crates/utils",
   "crates/settlement-clients/settlement-client-interface",
+  "crates/settlement-clients/ethereum",
+  "crates/settlement-clients/starknet",
   "e2e-tests",
 ]
 
@@ -22,8 +24,7 @@ authors = ["Apoorv Sadana <@apoorvsadana>"]
 [workspace.dependencies]
 num = { version = "0.4.1" }
 async-trait = { version = "0.1.77" }
-alloy = { git = "https://github.com/alloy-rs/alloy", rev = "7373f6db761d5a19888e3a0c527e8a3ca31e7a1e" }
-alloy-primitives = "0.7.4"
+alloy = { version = "0.1.2", features = ["full"] }
 axum = { version = "0.7.4" }
 axum-macros = "0.4.1"
 color-eyre = "0.6.2"
@@ -62,8 +63,11 @@ cairo-vm = { git = "https://github.com/lambdaclass/cairo-vm", features = [
   "cairo-1-hints",
 ] }
 
+# TODO: we currently use the Moonsong fork & the os-output-serde branch so we
+# can deserialize our snos input json into a StarknetOsInput struct.
+# TODO: update back to the main repo once it's merged
 # Sharp (Starkware)
-snos = { git = "https://github.com/keep-starknet-strange/snos" }
+snos = { git = "https://github.com/Moonsong-Labs/snos", branch = "od/os-output-serde" }
 
 # Madara prover API
 madara-prover-common = { git = "https://github.com/Moonsong-Labs/madara-prover-api", branch = "od/use-latest-cairo-vm" }
@@ -72,6 +76,11 @@ madara-prover-rpc-client = { git = "https://github.com/Moonsong-Labs/madara-prov
 # Project
 da-client-interface = { path = "crates/da-clients/da-client-interface" }
 ethereum-da-client = { path = "crates/da-clients/ethereum" }
+
+settlement-client-interface = { path = "crates/settlement-clients/settlement-client-interface" }
+ethereum-settlement-client = { path = "crates/settlement-clients/ethereum" }
+starknet-settlement-client = { path = "crates/settlement-clients/starknet" }
+
 utils = { path = "crates/utils" }
 prover-client-interface = { path = "crates/prover-services/prover-client-interface" }
 gps-fact-checker = { path = "crates/prover-services/gps-fact-checker" }

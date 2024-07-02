@@ -31,14 +31,14 @@ impl Job for RegisterProofJob {
         })
     }
 
-    async fn process_job(&self, _config: &Config, _job: &JobItem) -> Result<String> {
+    async fn process_job(&self, _config: &Config, _job: &mut JobItem) -> Result<String> {
         // Get proof from S3 and submit on chain for verification
         // We need to implement a generic trait for this to support multiple
         // base layers
         todo!()
     }
 
-    async fn verify_job(&self, _config: &Config, _job: &JobItem) -> Result<JobVerificationStatus> {
+    async fn verify_job(&self, _config: &Config, _job: &mut JobItem) -> Result<JobVerificationStatus> {
         // verify that the proof transaction has been included on chain
         todo!()
     }

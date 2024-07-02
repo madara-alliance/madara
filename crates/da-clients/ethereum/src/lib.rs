@@ -92,7 +92,10 @@ impl DaClient for EthereumDaClient {
             None => Ok(DaVerificationStatus::Pending),
             Some(receipt) => match receipt.status_code {
                 Some(status) if status == U64::from(1) => Ok(DaVerificationStatus::Verified),
-                _ => Ok(DaVerificationStatus::Rejected),
+                Some(status) => {
+                    Ok(DaVerificationStatus::Rejected(format!("Transaction failed with status code: {}", status)))
+                }
+                None => Ok(DaVerificationStatus::Rejected("Transaction status code is missing".into())),
             },
         }
     }

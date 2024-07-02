@@ -1,3 +1,4 @@
+pub mod collections;
 pub mod env_utils;
 pub mod settings;
 
