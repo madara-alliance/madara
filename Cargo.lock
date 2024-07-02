@@ -572,6 +572,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
+source = "git+https://github.com/cchudant/bonsai-trie.git?branch=fix_inserts_remove_leaks#1a77166d1a3c9afa590b337d8d70670b8d43eadd"
 dependencies = [
  "bitvec",
  "derive_more",

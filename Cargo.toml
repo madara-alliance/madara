@@ -61,8 +61,7 @@ rocksdb = { version = "0.22", features = [
 ] }
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, path = "../bonsai-trie", features = [
-  # bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "fix_inserts_remove_leaks", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "fix_inserts_remove_leaks", features = [
   "std",
 ] }
 
