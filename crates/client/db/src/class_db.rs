@@ -57,7 +57,7 @@ impl DeoxysBackend {
 
         let valid = match (block_n, info.block_number) {
             (None, _) => true,
-            (Some(block_n), Some(real_block_n)) => real_block_n >= block_n,
+            (Some(block_n), Some(real_block_n)) => real_block_n <= block_n,
             _ => false,
         };
         if !valid {
@@ -91,6 +91,7 @@ impl DeoxysBackend {
     /// NB: This functions needs toruns on the rayon thread pool
     pub(crate) fn store_classes(
         &self,
+        block_number: Option<u64>,
         class_infos: &[(Felt, ClassInfo)],
         class_compiled: &[(Felt, CompiledClass)],
         col_info: Column,
@@ -104,6 +105,13 @@ impl DeoxysBackend {
             |col, chunk| {
                 let mut batch = WriteBatchWithTransaction::default();
                 for (key, value) in chunk {
+                    // Check if the class is already in the db, if so, skip it
+                    // This check is needed because blocks are fetched and converted in parallel
+                    if let Some(block_n) = block_number {
+                        if self.contains_class(&DbBlockId::BlockN(block_n), key)? {
+                            continue;
+                        }
+                    }
                     let key_bin = bincode::serialize(key)?;
                     // TODO: find a way to avoid this allocation
                     batch.put_cf(col, &key_bin, bincode::serialize(&value)?);
@@ -118,6 +126,11 @@ impl DeoxysBackend {
             |col, chunk| {
                 let mut batch = WriteBatchWithTransaction::default();
                 for (key, value) in chunk {
+                    if let Some(block_n) = block_number {
+                        if self.contains_class(&DbBlockId::BlockN(block_n), key)? {
+                            continue;
+                        }
+                    }
                     let key_bin = bincode::serialize(key)?;
                     // TODO: find a way to avoid this allocation
                     batch.put_cf(col, &key_bin, bincode::serialize(&value)?);
@@ -133,11 +146,11 @@ impl DeoxysBackend {
     /// NB: This functions needs toruns on the rayon thread pool
     pub(crate) fn class_db_store_block(
         &self,
-        _block_number: u64,
+        block_number: u64,
         class_infos: &[(Felt, ClassInfo)],
         class_compiled: &[(Felt, CompiledClass)],
     ) -> Result<(), DeoxysStorageError> {
-        self.store_classes(class_infos, class_compiled, Column::ClassInfo, Column::ClassCompiled)
+        self.store_classes(Some(block_number), class_infos, class_compiled, Column::ClassInfo, Column::ClassCompiled)
     }
 
     /// NB: This functions needs toruns on the rayon thread pool
@@ -146,7 +159,7 @@ impl DeoxysBackend {
         class_infos: &[(Felt, ClassInfo)],
         class_compiled: &[(Felt, CompiledClass)],
     ) -> Result<(), DeoxysStorageError> {
-        self.store_classes(class_infos, class_compiled, Column::PendingClassInfo, Column::PendingClassCompiled)
+        self.store_classes(None, class_infos, class_compiled, Column::PendingClassInfo, Column::PendingClassCompiled)
     }
 
     pub(crate) fn class_db_clear_pending(&self) -> Result<(), DeoxysStorageError> {
