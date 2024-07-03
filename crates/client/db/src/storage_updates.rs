@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use dp_block::{DeoxysBlock, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlock};
-use dp_class::{ClassInfo, ToCompiledClass};
-use rayon::prelude::*;
+use dp_class::ConvertedClass;
 use starknet_core::types::{
     ContractClass, ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
@@ -24,7 +23,7 @@ impl DeoxysBackend {
         &self,
         block: DeoxysMaybePendingBlock,
         state_diff: StateDiff,
-        class_updates: Vec<DbClassUpdate>,
+        converted_classes: Vec<ConvertedClass>,
     ) -> Result<(), DeoxysStorageError> {
         let block_n = block.info.block_n();
         let state_diff_cpy = state_diff.clone();
@@ -78,27 +77,10 @@ impl DeoxysBackend {
         };
 
         let task_class_db = || {
-            // Parallel compilation (should be moved to sync?)
-            let compiled_class_updates = class_updates
-                .par_iter()
-                .map(|DbClassUpdate { class_hash, contract_class, .. }| {
-                    // TODO: check compiled_class_hash
-                    let compiled_class: dp_class::CompiledClass = contract_class
-                        .compile()
-                        .map_err(|e| DeoxysStorageError::CompilationClassError(e.to_string()))?;
-
-                    Ok((*class_hash, compiled_class))
-                })
-                .collect::<Result<Vec<_>, DeoxysStorageError>>()?;
-            let class_info_updates = class_updates
+            let (class_info_updates, compiled_class_updates): (Vec<_>, Vec<_>) = converted_classes
                 .into_iter()
-                .map(|DbClassUpdate { class_hash, contract_class, compiled_class_hash }| {
-                    let info =
-                        ClassInfo { contract_class: contract_class.into(), block_number: block_n, compiled_class_hash };
-                    (class_hash, info)
-                })
-                .collect::<Vec<_>>();
-
+                .map(|ConvertedClass { class_infos, class_compiled }| (class_infos, class_compiled))
+                .unzip();
             match block_n {
                 None => self.class_db_store_pending(&class_info_updates, &compiled_class_updates),
                 Some(block_n) => self.class_db_store_block(block_n, &class_info_updates, &compiled_class_updates),

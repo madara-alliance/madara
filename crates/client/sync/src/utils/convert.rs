@@ -3,13 +3,16 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use dc_db::storage_updates::DbClassUpdate;
 use dp_block::header::{GasPrices, L1DataAvailabilityMode, PendingHeader};
 use dp_block::{
     DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, DeoxysPendingBlock, DeoxysPendingBlockInfo, Header, StarknetVersion,
 };
+use dp_class::{ClassHash, ClassInfo, ConvertedClass, ToCompiledClass};
 use dp_convert::felt_to_u128;
 use dp_receipt::{Event, TransactionReceipt};
 use dp_transactions::MAIN_CHAIN_ID;
+use rayon::prelude::*;
 use starknet_core::types::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, PendingStateUpdate,
     ReplacedClassItem, StateDiff as StateDiffCore, StorageEntry,
@@ -209,4 +212,43 @@ fn nonces(nonces: HashMap<Felt, Felt>) -> Vec<NonceUpdate> {
     // TODO: make sure the order is `contract_address` -> `nonce`
     // and not `nonce` -> `contract_address`
     nonces.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect()
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ConvertClassError {
+    #[error("Mismatched class hash: {0}")]
+    MismatchedClassHash(Felt),
+    #[error("Compute class hash error: {0}")]
+    ComputeClassHashError(String),
+    #[error("Compilation class error: {0}")]
+    CompilationClassError(String),
+}
+
+pub fn convert_and_verify_class(
+    classes: Vec<DbClassUpdate>,
+    block_n: Option<u64>,
+) -> Result<Vec<ConvertedClass>, ConvertClassError> {
+    classes
+        .into_par_iter()
+        .map(|class_update| {
+            let DbClassUpdate { class_hash, contract_class, compiled_class_hash } = class_update;
+
+            if class_hash
+                != contract_class.class_hash().map_err(|e| ConvertClassError::ComputeClassHashError(e.to_string()))?
+            {
+                return Err(ConvertClassError::MismatchedClassHash(class_update.class_hash));
+            }
+
+            let compiled_class =
+                contract_class.compile().map_err(|e| ConvertClassError::CompilationClassError(e.to_string()))?;
+
+            let class_info =
+                ClassInfo { contract_class: contract_class.into(), block_number: block_n, compiled_class_hash };
+
+            Ok(ConvertedClass {
+                class_infos: (class_hash, class_info),
+                class_compiled: (compiled_class_hash, compiled_class),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()
 }

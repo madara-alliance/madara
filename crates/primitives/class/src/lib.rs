@@ -9,6 +9,12 @@ mod into_starknet_core;
 pub use class_hash::ClassHash;
 pub use compile::ToCompiledClass;
 
+#[derive(Debug)]
+pub struct ConvertedClass {
+    pub class_infos: (Felt, ClassInfo),
+    pub class_compiled: (Felt, CompiledClass),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ClassInfo {
     pub contract_class: ContractClass,

@@ -2980,6 +2980,7 @@ dependencies = [
  "dc-metrics",
  "dc-telemetry",
  "dp-block",
+ "dp-class",
  "dp-convert",
  "dp-receipt",
  "dp-transactions",

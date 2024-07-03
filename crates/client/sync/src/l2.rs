@@ -6,11 +6,11 @@ use std::time::Instant;
 
 use anyhow::{bail, Context};
 use dc_db::storage_handler::DeoxysStorageError;
-use dc_db::storage_updates::DbClassUpdate;
 use dc_db::DeoxysBackend;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlockInfo};
 use dp_block::{DeoxysMaybePendingBlock, Header};
+use dp_class::ConvertedClass;
 use dp_convert::ToStarkFelt;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
@@ -22,7 +22,7 @@ use tokio::task::JoinSet;
 use tokio::time::Duration;
 
 use crate::commitments::{build_commitment_state_diff, csd_calculate_state_root};
-use crate::convert::convert_and_verify_block;
+use crate::convert::{convert_and_verify_block, convert_and_verify_class};
 use crate::fetch::fetchers::{fetch_block_and_updates, FetchBlockId, L2BlockAndUpdates};
 use crate::fetch::l2_fetch_task;
 use crate::metrics::block_metrics::BlockMetrics;
@@ -63,7 +63,7 @@ async fn l2_verify_and_apply_task(
     sync_timer: Arc<Mutex<Option<Instant>>>,
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
-    while let Some(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update }) =
+    while let Some(L2ConvertedBlockAndUpdates { converted_block, state_update, converted_classes }) =
         channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await
     {
         let block_n = converted_block.info.header.block_number;
@@ -110,7 +110,7 @@ async fn l2_verify_and_apply_task(
                         inner: converted_block.inner,
                     },
                     state_update.state_diff,
-                    class_update,
+                    converted_classes,
                 )
                 .context("Storing new block")?;
 
@@ -162,7 +162,7 @@ async fn l2_verify_and_apply_task(
 pub struct L2ConvertedBlockAndUpdates {
     pub converted_block: DeoxysBlock,
     pub state_update: StateUpdate,
-    pub class_update: Vec<DbClassUpdate>,
+    pub converted_classes: Vec<ConvertedClass>,
 }
 
 async fn l2_block_conversion_task(
@@ -179,9 +179,18 @@ async fn l2_block_conversion_task(
                     spawn_rayon_task(move || {
                         let sw = PerfStopwatch::new();
                         let block_n = block.block_number;
-                        let converted_block = convert_and_verify_block(block, chain_id).context("converting block")?;
-                        stopwatch_end!(sw, "convert_block {:?}: {:?}", block_n);
-                        anyhow::Ok(L2ConvertedBlockAndUpdates { converted_block, state_update, class_update })
+                        let task_convert_block =
+                            || convert_and_verify_block(block, chain_id).context("Converting block");
+                        let task_convert_classes =
+                            || convert_and_verify_class(class_update, block_n).context("Converting classes");
+                        let (converted_block, converted_classes) =
+                            rayon::join(task_convert_block, task_convert_classes);
+                        stopwatch_end!(sw, "convert_block_and_class {:?}: {:?}", block_n);
+                        anyhow::Ok(L2ConvertedBlockAndUpdates {
+                            converted_block: converted_block?,
+                            state_update,
+                            converted_classes: converted_classes?,
+                        })
                     }),
                     (updates_recv, chain_id),
                 )
@@ -243,6 +252,7 @@ async fn l2_pending_block_task(
             let backend_ = Arc::clone(&backend);
             spawn_rayon_task(move || {
                 let block = crate::convert::convert_pending(block, chain_id).context("Converting pending block")?;
+                let convert_classes = convert_and_verify_class(class_update, None).context("Converting classes")?;
 
                 backend_
                     .store_block(
@@ -251,7 +261,7 @@ async fn l2_pending_block_task(
                             inner: block.inner,
                         },
                         state_update.state_diff,
-                        class_update,
+                        convert_classes,
                     )
                     .context("Storing new block")?;
 

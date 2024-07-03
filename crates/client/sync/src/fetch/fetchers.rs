@@ -177,8 +177,8 @@ async fn fetch_class_updates(
         .into_iter()
         .filter_map(|(class_hash, compiled_class_hash)| {
             match backend.contains_class(&BlockId::Tag(BlockTag::Latest), class_hash) {
-                Ok(true) => Some(Ok((class_hash, compiled_class_hash))),
-                Ok(false) => None,
+                Ok(false) => Some(Ok((class_hash, compiled_class_hash))),
+                Ok(true) => None,
                 Err(e) => Some(Err(e)),
             }
         })
