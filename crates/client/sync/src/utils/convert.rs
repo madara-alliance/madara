@@ -246,10 +246,7 @@ pub fn convert_and_verify_class(
             let class_info =
                 ClassInfo { contract_class: contract_class.into(), block_number: block_n, compiled_class_hash };
 
-            Ok(ConvertedClass {
-                class_infos: (class_hash, class_info),
-                class_compiled: (compiled_class_hash, compiled_class),
-            })
+            Ok(ConvertedClass { class_infos: (class_hash, class_info), class_compiled: (class_hash, compiled_class) })
         })
         .collect::<Result<Vec<_>, _>>()
 }

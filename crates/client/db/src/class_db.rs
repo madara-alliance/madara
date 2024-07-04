@@ -89,7 +89,7 @@ impl DeoxysBackend {
                 Column::PendingClassCompiled,
                 Column::ClassCompiled,
             )?
-            .ok_or(DeoxysStorageError::StorageDecodeError(
+            .ok_or(DeoxysStorageError::StorageRetrievalError(
                 crate::storage_handler::StorageType::CompiledContractClass,
             ))?;
 
