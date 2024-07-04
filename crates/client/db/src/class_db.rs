@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use dp_class::{ClassInfo, CompiledClass};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use rocksdb::WriteOptions;
@@ -80,10 +82,16 @@ impl DeoxysBackend {
         let Some(id) = id.resolve_db_block_id(self)? else { return Ok(None) };
         let Some(info) = self.get_class_info(&id, class_hash)? else { return Ok(None) };
 
-        let (compiled_class, _block_n) =
-            self.class_db_get_encoded_kv(&id, class_hash, Column::PendingClassCompiled, Column::ClassCompiled)?.ok_or(
-                DeoxysStorageError::StorageDecodeError(crate::storage_handler::StorageType::CompiledContractClass),
-            )?;
+        let (compiled_class, _block_n) = self
+            .class_db_get_encoded_kv::<CompiledClass>(
+                &id,
+                class_hash,
+                Column::PendingClassCompiled,
+                Column::ClassCompiled,
+            )?
+            .ok_or(DeoxysStorageError::StorageDecodeError(
+                crate::storage_handler::StorageType::CompiledContractClass,
+            ))?;
 
         Ok(Some((info, compiled_class)))
     }
@@ -100,17 +108,27 @@ impl DeoxysBackend {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 
+        // Check if the class is already in the db, if so, skip it
+        // This check is needed because blocks are fetched and converted in parallel
+        let ignore_class: HashSet<_> = if let Some(block_n) = block_number {
+            class_infos
+                .iter()
+                .filter_map(|(key, _)| match self.get_class_info(&DbBlockId::BlockN(block_n), key) {
+                    Ok(Some(_)) => Some(*key),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            HashSet::new()
+        };
+
         class_infos.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(col_info),
             |col, chunk| {
                 let mut batch = WriteBatchWithTransaction::default();
                 for (key, value) in chunk {
-                    // Check if the class is already in the db, if so, skip it
-                    // This check is needed because blocks are fetched and converted in parallel
-                    if let Some(block_n) = block_number {
-                        if self.contains_class(&DbBlockId::BlockN(block_n), key)? {
-                            continue;
-                        }
+                    if ignore_class.contains(key) {
+                        continue;
                     }
                     let key_bin = bincode::serialize(key)?;
                     // TODO: find a way to avoid this allocation
@@ -126,10 +144,8 @@ impl DeoxysBackend {
             |col, chunk| {
                 let mut batch = WriteBatchWithTransaction::default();
                 for (key, value) in chunk {
-                    if let Some(block_n) = block_number {
-                        if self.contains_class(&DbBlockId::BlockN(block_n), key)? {
-                            continue;
-                        }
+                    if ignore_class.contains(key) {
+                        continue;
                     }
                     let key_bin = bincode::serialize(key)?;
                     // TODO: find a way to avoid this allocation

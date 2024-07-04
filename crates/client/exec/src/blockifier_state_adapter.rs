@@ -54,9 +54,10 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
                 .backend
                 .get_block_hash(&BlockId::Number(block_number))
                 .map_err(|err| {
-                    StateError::StateReadError(format!(
-                        "Failed to retrieve block hash for block number {block_number}: {err:#}",
-                    ))
+                    log::warn!("Failed to retrieve block hash for block number {block_number}: {err:#}");
+                    StateError::StateReadError(
+                        format!("Failed to retrieve block hash for block number {block_number}",),
+                    )
                 })?
                 .ok_or(StateError::OldBlockHashNotProvided)?
                 .to_stark_felt());
@@ -68,8 +69,11 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
             .backend
             .get_contract_storage_at(&on_top_of_block_id, &contract_address.to_felt(), &key.to_felt())
             .map_err(|err| {
+                log::warn!(
+                    "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}: {err:#}"
+                );
                 StateError::StateReadError(format!(
-                    "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}: {err:#}",
+                    "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}",
                 ))
             })?
             .unwrap_or(Felt::ZERO)
@@ -87,9 +91,8 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
             self.backend
                 .get_contract_nonce_at(&on_top_of_block_id, &contract_address.to_felt())
                 .map_err(|err| {
-                    StateError::StateReadError(format!(
-                        "Failed to retrieve nonce for contract {contract_address:#?}: {err:#}",
-                    ))
+                    log::warn!("Failed to retrieve nonce for contract {contract_address:#?}: {err:#}");
+                    StateError::StateReadError(format!("Failed to retrieve nonce for contract {contract_address:#?}",))
                 })?
                 .unwrap_or(Felt::ZERO)
                 .to_stark_felt(),
@@ -132,7 +135,8 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
 
         let Some((_class_info, compiled_class)) =
             self.backend.get_class(&on_top_of_block_id, &class_hash.to_felt()).map_err(|err| {
-                StateError::StateReadError(format!("Failed to retrieve compiled class {class_hash:#}: {err:#}",))
+                log::warn!("Failed to retrieve compiled class {class_hash:#}: {err:#}");
+                StateError::StateReadError(format!("Failed to retrieve compiled class {class_hash:#}"))
             })?
         else {
             return Err(StateError::UndeclaredClassHash(class_hash));
@@ -152,7 +156,8 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
         };
         let Some(class_info) =
             self.backend.get_class_info(&on_top_of_block_id, &class_hash.to_felt()).map_err(|err| {
-                StateError::StateReadError(format!("Failed to retrieve compiled class {class_hash:#}: {err:#}",))
+                log::warn!("Failed to retrieve compiled class hash {class_hash:#}: {err:#}");
+                StateError::StateReadError(format!("Failed to retrieve compiled class hash {class_hash:#}",))
             })?
         else {
             return Err(StateError::UndeclaredClassHash(class_hash));
