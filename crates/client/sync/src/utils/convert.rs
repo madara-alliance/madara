@@ -216,8 +216,8 @@ fn nonces(nonces: HashMap<Felt, Felt>) -> Vec<NonceUpdate> {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConvertClassError {
-    #[error("Mismatched class hash: 0x{0:x}")]
-    MismatchedClassHash(Felt),
+    #[error("Mismatched class hash, expected {expected:#x}; got {got:#x}")]
+    MismatchedClassHash { expected: Felt, got: Felt },
     #[error("Compute class hash error: {0}")]
     ComputeClassHashError(String),
     #[error("Compilation class error: {0}")]
@@ -233,11 +233,11 @@ pub fn convert_and_verify_class(
         .map(|class_update| {
             let DbClassUpdate { class_hash, contract_class, compiled_class_hash } = class_update;
 
-            if class_hash
-                != contract_class.class_hash().map_err(|e| ConvertClassError::ComputeClassHashError(e.to_string()))?
-            {
+            let expected =
+                contract_class.class_hash().map_err(|e| ConvertClassError::ComputeClassHashError(e.to_string()))?;
+            if class_hash != expected {
                 log::warn!("Mismatched class hash: 0x{:x}", class_update.class_hash);
-                //return Err(ConvertClassError::MismatchedClassHash(class_update.class_hash));
+                // return Err(ConvertClassError::MismatchedClassHash { expected, got: class_hash });
             }
 
             let compiled_class =

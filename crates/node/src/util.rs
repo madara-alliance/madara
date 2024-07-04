@@ -12,6 +12,7 @@ pub fn setup_rayon_threadpool() -> anyhow::Result<()> {
     Ok(())
 }
 
+// Todo: Setup tracing
 pub fn setup_logging() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format(|fmt, record| {
@@ -35,17 +36,18 @@ pub fn setup_logging() -> anyhow::Result<()> {
                         time if time <= Duration::from_millis(5) => {
                             Style::new()
                         },
-                        time if time <= Duration::from_millis(10) => {
+                        // time if time <= Duration::from_millis(10) => {
+                        _ => {
                             Style::new().fg_color(Some(Color::Ansi(AnsiColor::Yellow)))
                         },
-                        _ => {
-                            Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red)))
-                        }
+                        // _ => {
+                        //     Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red)))
+                        // }
                     };
 
                     writeln!(
                         fmt,
-                        "{brackets}[{brackets:#}{ts} {rpc_style}HTTP{rpc_style:#}{brackets}] 🌐 {brackets:#} {method} {status_color}{status}{status_color:#} {res_len} bytes - {time_color}{response_time:?}{time_color:#}",
+                        "{brackets}[{brackets:#}{ts} {rpc_style}HTTP{rpc_style:#}{brackets}]{brackets:#} 🌐 {method} {status_color}{status}{status_color:#} {res_len} bytes - {time_color}{response_time:?}{time_color:#}",
                     )
                 }
                 Level::Info => {

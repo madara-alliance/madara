@@ -22,6 +22,7 @@ impl DeoxysBackend {
         nonpending_col: Column,
     ) -> Result<Option<(V, Option<u64>)>, DeoxysStorageError> {
         // todo: smallint here to avoid alloc
+        log::debug!("get encoded {key:#x}");
         let key_encoded = bincode::serialize(key)?;
 
         // Get from pending db, then normal db if not found.
@@ -36,6 +37,7 @@ impl DeoxysBackend {
             }
             DbBlockId::BlockN(block_n) => Some(*block_n),
         };
+        log::debug!("get encoded: not in pending");
 
         let col = self.db.get_column(nonpending_col);
         let Some(val) = self.db.get_pinned_cf(&col, &key_encoded)? else { return Ok(None) };
@@ -51,11 +53,15 @@ impl DeoxysBackend {
     ) -> Result<Option<ClassInfo>, DeoxysStorageError> {
         let Some(id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
+        log::debug!("class info {id:?} {class_hash:#x}");
+
         let Some((info, block_n)) =
             self.class_db_get_encoded_kv::<ClassInfo>(&id, class_hash, Column::PendingClassInfo, Column::ClassInfo)?
         else {
             return Ok(None);
         };
+
+        log::debug!("class info got {block_n:?}");
 
         let valid = match (block_n, info.block_number) {
             (None, _) => true,
@@ -65,6 +71,7 @@ impl DeoxysBackend {
         if !valid {
             return Ok(None);
         }
+        log::debug!("valid");
 
         Ok(Some(info))
     }
@@ -82,6 +89,7 @@ impl DeoxysBackend {
         let Some(id) = id.resolve_db_block_id(self)? else { return Ok(None) };
         let Some(info) = self.get_class_info(&id, class_hash)? else { return Ok(None) };
 
+        log::debug!("get_class {:?} {:#x}", id, class_hash);
         let (compiled_class, _block_n) = self
             .class_db_get_encoded_kv::<CompiledClass>(
                 &id,
@@ -96,7 +104,7 @@ impl DeoxysBackend {
         Ok(Some((info, compiled_class)))
     }
 
-    /// NB: This functions needs toruns on the rayon thread pool
+    /// NB: This functions needs to run on the rayon thread pool
     pub(crate) fn store_classes(
         &self,
         block_number: Option<u64>,
@@ -159,7 +167,7 @@ impl DeoxysBackend {
         Ok(())
     }
 
-    /// NB: This functions needs toruns on the rayon thread pool
+    /// NB: This functions needs to run on the rayon thread pool
     pub(crate) fn class_db_store_block(
         &self,
         block_number: u64,
@@ -169,7 +177,7 @@ impl DeoxysBackend {
         self.store_classes(Some(block_number), class_infos, class_compiled, Column::ClassInfo, Column::ClassCompiled)
     }
 
-    /// NB: This functions needs toruns on the rayon thread pool
+    /// NB: This functions needs to run on the rayon thread pool
     pub(crate) fn class_db_store_pending(
         &self,
         class_infos: &[(Felt, ClassInfo)],

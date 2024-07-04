@@ -124,7 +124,7 @@ impl DeoxysBackend {
         )
     }
 
-    /// NB: This functions needs toruns on the rayon thread pool
+    /// NB: This functions needs to run on the rayon thread pool
     pub(crate) fn contract_db_store_block(
         &self,
         block_number: u64,
@@ -187,7 +187,7 @@ impl DeoxysBackend {
         Ok(())
     }
 
-    /// NB: This functions needs toruns on the rayon thread pool
+    /// NB: This functions needs to run on the rayon thread pool
     pub(crate) fn contract_db_store_pending(
         &self,
         contract_class_updates: &[(Felt, Felt)],

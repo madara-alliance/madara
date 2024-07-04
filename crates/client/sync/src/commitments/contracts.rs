@@ -84,8 +84,6 @@ pub fn contract_trie_root(
     log::debug!("contract_trie inserting");
 
     for (key, value) in updates {
-        log::debug!("contract_trie key {:b}", &key.0.key().bytes().as_bits::<Msb0>()[5..]);
-        log::debug!("contract_trie key {:#x} {:#x}", key.to_felt(), value);
         let bytes = key.0.key().bytes();
         let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
         contract_trie

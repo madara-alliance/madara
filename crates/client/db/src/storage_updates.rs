@@ -18,7 +18,7 @@ pub struct DbClassUpdate {
 }
 
 impl DeoxysBackend {
-    /// NB: This functions needs toruns on the rayon thread pool
+    /// NB: This functions needs to run on the rayon thread pool
     pub fn store_block(
         &self,
         block: DeoxysMaybePendingBlock,

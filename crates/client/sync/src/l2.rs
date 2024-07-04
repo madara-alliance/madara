@@ -31,12 +31,12 @@ use dp_utils::{
     channel_wait_or_graceful_shutdown, spawn_rayon_task, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch,
 };
 
-// TODO: add more error variants, which are more explicit
+// TODO: add more explicit error variants
 #[derive(thiserror::Error, Debug)]
 pub enum L2SyncError {
-    #[error("Provider error")]
+    #[error("Provider error: {0:#}")]
     Provider(#[from] ProviderError),
-    #[error("Database error")]
+    #[error("Database error: {0:#}")]
     Db(#[from] DeoxysStorageError),
     #[error("Malformated block: {0}")]
     BlockFormat(Cow<'static, str>),
@@ -272,8 +272,6 @@ async fn l2_pending_block_task(
             log::debug!("pending block parent hash does not match latest block, clearing pending block");
             backend.clear_pending_block().context("Clearing pending block")?;
         }
-
-        log::debug!("l2_pending_block_task: wrote pending block");
     }
 
     Ok(())
