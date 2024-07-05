@@ -52,7 +52,7 @@ impl ClassHash for CompressedLegacyContractClass {
     fn class_hash(&self) -> anyhow::Result<Felt> {
         let mut contract_definition = parse_compressed_legacy_class(self.clone())?;
         contract_definition.program.debug_info = None;
-
+    
         if let Some(attributes) = &mut contract_definition.program.attributes {
             attributes.iter_mut().try_for_each(|attr| -> anyhow::Result<()> {
                 if attr.accessible_scopes.is_empty() {
@@ -64,7 +64,7 @@ impl ClassHash for CompressedLegacyContractClass {
                 Ok(())
             })?;
         }
-
+    
         fn add_extra_space_to_legacy_named_tuples(value: &mut Value) {
             match value {
                 Value::Array(v) => walk_array(v),
@@ -72,13 +72,13 @@ impl ClassHash for CompressedLegacyContractClass {
                 _ => {}
             }
         }
-
+    
         fn walk_array(array: &mut [Value]) {
             for v in array.iter_mut() {
                 add_extra_space_to_legacy_named_tuples(v);
             }
         }
-
+    
         fn walk_map(object: &mut Map<String, Value>) {
             for (k, v) in object.iter_mut() {
                 match v {
@@ -92,7 +92,7 @@ impl ClassHash for CompressedLegacyContractClass {
                 }
             }
         }
-
+    
         fn add_extra_space_to_named_tuple_type_definition<'a>(key: &str, value: &'a str) -> std::borrow::Cow<'a, str> {
             use std::borrow::Cow::*;
             match key {
@@ -100,41 +100,41 @@ impl ClassHash for CompressedLegacyContractClass {
                 _ => Borrowed(value),
             }
         }
-
+    
         fn add_extra_space_before_colon(v: &str) -> String {
             v.replace(": ", " : ").replace("  :", " :")
         }
-
+    
         if contract_definition.program.compiler_version.is_none() {
             let mut identifiers_value = serde_json::to_value(&mut contract_definition.program.identifiers)?;
             add_extra_space_to_legacy_named_tuples(&mut identifiers_value);
             contract_definition.program.identifiers = serde_json::from_value(identifiers_value)?;
-
+    
             let mut reference_manager_value = serde_json::to_value(&mut contract_definition.program.reference_manager)?;
             add_extra_space_to_legacy_named_tuples(&mut reference_manager_value);
             contract_definition.program.reference_manager = serde_json::from_value(reference_manager_value)?;
         }
-
+    
         let truncated_keccak = {
             use std::io::Write;
-
+    
             let mut string_buffer = vec![];
             let mut ser = serde_json::Serializer::new(&mut string_buffer);
             contract_definition.serialize(&mut ser).context("Serializing contract_definition for Keccak256")?;
-
+    
             let raw_json_output = String::from_utf8(string_buffer)?;
-
+    
             let mut keccak = Keccak256::new();
             keccak.write_all(raw_json_output.as_bytes()).expect("writing to Keccak256 never fails");
-
+    
             Felt::from_bytes_be_slice(&keccak.finalize())
         };
-
+    
         const API_VERSION: Felt = Felt::ZERO;
-
+    
         let mut outer = HashChain::default();
         outer.update(&API_VERSION);
-
+    
         ["constructor", "external", "l1_handler"]
             .iter()
             .map(|key| {
@@ -145,7 +145,7 @@ impl ClassHash for CompressedLegacyContractClass {
                     "l1_handler" => &contract_definition.entry_points_by_type.l1_handler,
                     _ => &empty_vec,
                 };
-
+    
                 entry_points
                     .iter()
                     .flat_map(|x| {
@@ -164,12 +164,12 @@ impl ClassHash for CompressedLegacyContractClass {
                     })
             })
             .for_each(|x| outer.update(&x.finalize()));
-
+    
         fn update_hash_chain(mut hc: HashChain, next: &Felt) -> Result<HashChain, Error> {
             hc.update(next);
             Ok(hc)
         }
-
+    
         let builtins = contract_definition
             .program
             .builtins
@@ -177,21 +177,21 @@ impl ClassHash for CompressedLegacyContractClass {
             .map(|s| Felt::from_bytes_be_slice(s.as_bytes()))
             .try_fold(HashChain::default(), |acc, item| update_hash_chain(acc, &item))
             .context("Failed to process contract_definition.program.builtins")?;
-
+    
         outer.update(&builtins.finalize());
         outer.update(&truncated_keccak);
-
+    
         let bytecodes = contract_definition
             .program
             .data
             .iter()
             .try_fold(HashChain::default(), update_hash_chain)
             .context("Failed to process contract_definition.program.data")?;
-
+    
         outer.update(&bytecodes.finalize());
-
+    
         Ok(outer.finalize())
-    }
+    }    
 }
 
 pub fn parse_compressed_legacy_class(class: CompressedLegacyContractClass) -> Result<LegacyContractClass> {
