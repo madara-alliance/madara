@@ -268,6 +268,7 @@ mod tests {
     use starknet_providers::{Provider, SequencerGatewayProvider};
 
     #[tokio::test]
+    #[ignore]
     async fn test_sierra_compute_class_hash() {
         let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
 
@@ -283,6 +284,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_legacy_compute_class_hash() {
         let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
 

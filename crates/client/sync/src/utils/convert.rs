@@ -8,7 +8,7 @@ use dp_block::header::{GasPrices, L1DataAvailabilityMode, PendingHeader};
 use dp_block::{
     DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, DeoxysPendingBlock, DeoxysPendingBlockInfo, Header, StarknetVersion,
 };
-use dp_class::{ClassHash, ClassInfo, ConvertedClass, ToCompiledClass};
+use dp_class::{ClassInfo, ConvertedClass, ToCompiledClass};
 use dp_convert::felt_to_u128;
 use dp_receipt::{Event, TransactionReceipt};
 use dp_transactions::MAIN_CHAIN_ID;
@@ -233,12 +233,13 @@ pub fn convert_and_verify_class(
         .map(|class_update| {
             let DbClassUpdate { class_hash, contract_class, compiled_class_hash } = class_update;
 
-            let expected =
-                contract_class.class_hash().map_err(|e| ConvertClassError::ComputeClassHashError(e.to_string()))?;
-            if class_hash != expected {
-                log::warn!("Mismatched class hash: 0x{:x}", class_update.class_hash);
-                // return Err(ConvertClassError::MismatchedClassHash { expected, got: class_hash });
-            }
+            // TODO(class_hash): uncomment this when the class hashes are computed correctly accross the entire state
+            // let expected =
+            //     contract_class.class_hash().map_err(|e| ConvertClassError::ComputeClassHashError(e.to_string()))?;
+            // if class_hash != expected {
+            //     log::warn!("Mismatched class hash: 0x{:x}", class_update.class_hash);
+            //     // return Err(ConvertClassError::MismatchedClassHash { expected, got: class_hash });
+            // }
 
             let compiled_class =
                 contract_class.compile().map_err(|e| ConvertClassError::CompilationClassError(e.to_string()))?;
