@@ -1,25 +1,28 @@
 <!-- markdownlint-disable -->
 <div align="center">
-    <img src="https://github.com/KasarLabs/brand/blob/main/projects/deoxys/Full/GradientFullWhite.png?raw=true" height="125" style="border-radius: 15px;">
+  <img src="docs/images/logo/PNGs/Madara logo - Red - Duotone.png" height="128">
+</div>
+<div align="center">
+  <img src="docs/images/logo/PNGs/Madara wordmark - Red.png" height="128">
 </div>
 <div align="center">
 <br />
 <!-- markdownlint-restore -->
 
-[![Workflow - Push](https://github.com/KasarLabs/deoxys/actions/workflows/push.yml/badge.svg)](https://github.com/KasarLabs/deoxys/actions/workflows/push.yml)
-[![Project license](https://img.shields.io/github/license/kasarLabs/deoxys.svg?style=flat-square)](LICENSE)
-[![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/kasarLabs/deoxys/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
+[![Workflow - Push](https://github.com/KasarLabs/madara/actions/workflows/push.yml/badge.svg)](https://github.com/KasarLabs/madara/actions/workflows/push.yml)
+[![Project license](https://img.shields.io/github/license/kasarLabs/madara.svg?style=flat-square)](LICENSE)
+[![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/kasarLabs/madara/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
 <a href="https://twitter.com/KasarLabs">
 <img src="https://img.shields.io/twitter/follow/KasarLabs?style=social"/> </a>
-<a href="https://github.com/kasarlabs/deoxys">
-<img src="https://img.shields.io/github/stars/kasarlabs/deoxys?style=social"/>
+<a href="https://github.com/kasarlabs/madara">
+<img src="https://img.shields.io/github/stars/kasarlabs/madara?style=social"/>
 </a>
 
 </div>
 
-# 👽 Deoxys: Starknet full node client
+# 🥷 Madara: Starknet client
 
-Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
+Madara is a powerfull Starknet hybrid client written in Rust.
 
 ## Table of Contents
 
@@ -58,21 +61,21 @@ Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s
    ```
 
-   Clone the Deoxys repository:
+   Clone the Madara repository:
 
    ```sh
    cd <your-destination-path>
-   git clone https://github.com/KasarLabs/deoxys .
+   git clone https://github.com/KasarLabs/madara .
    ```
 
-2. **Run Deoxys**
+2. **Run Madara**
 
-   Start the Deoxys client with synchronization to Starknet mainnet:
+   Start the Madara client with synchronization to Starknet mainnet:
 
    ```sh
    cargo run --release \
-     --name deoxys \
-     --base-path ../deoxys-db \
+     --name madara \
+     --base-path ../madara-db \
      --network main \
      --l1-endpoint ${ETHEREUM_API_URL} \
    ```
@@ -81,23 +84,23 @@ Deoxys is a powerfull Starknet full node client written in Rust from @KasarLabs.
 
 1 **Run docker image**
 
-To run Deoxys with Docker, use the following command:
+To run Madara with Docker, use the following command:
 
 ```sh
 docker run -d \
-    --name deoxys \
+    --name madara \
     -p 9944:9944 \
-    -v /var/lib/deoxys:/var/lib/deoxys \
-    deoxys:latest \
-    --base-path ../deoxys-db \
+    -v /var/lib/madara:/var/lib/madara \
+    madara:latest \
+    --base-path ../madara-db \
     --network main \
     --l1-endpoint <rpc key> \
 ```
 
-Check the logs of the running Deoxys service:
+Check the logs of the running Madara service:
 
 ```sh
-docker logs -f deoxys
+docker logs -f madara
 ```
 
 ### Run with Docker Compose
@@ -124,22 +127,22 @@ docker logs -f deoxys
    docker-compose up -d
    ```
 
-   Check the logs of the running Deoxys service:
+   Check the logs of the running Madara service:
 
    ```sh
-   docker-compose logs -f deoxys
+   docker-compose logs -f madara
    ```
 
 ## ⚙️ Configuration
 
-Configuring your Deoxys node properly ensures it meets your specific needs
+Configuring your Madara node properly ensures it meets your specific needs
 
 ### Basic Command-Line Options
 
-Here are the recommended options for a quick and simple configuration of your Deoxys full node:
+Here are the recommended options for a quick and simple configuration of your Madara full node:
 
 - **`--name <NAME>`**: The human-readable name for this node. It's used as the network node name.
-- **`--base-path <PATH>`**: Set the directory for Starknet data (default is `/tmp/deoxys`).
+- **`--base-path <PATH>`**: Set the directory for Starknet data (default is `/tmp/madara`).
 - **`--network <NETWORK>`**: The network type to connect to (`main`, `test`, or `integration`).
 - **`--l1-endpoint <URL>`**: Specify the Layer 1 endpoint the node will verify its state from.
 - **`--rpc-port <PORT>`**: Specify the JSON-RPC server TCP port.
@@ -183,7 +186,7 @@ Here are more advanced command-line options, organized by namespace, for running
 <details>
 <summary>Database</summary>
 
-- **`--base-path <PATH>`**: Specify custom base path (default: `/tmp/deoxys`).
+- **`--base-path <PATH>`**: Specify custom base path (default: `/tmp/madara`).
 - **`--snap <BLOCK_NUMBER>`**: Start syncing from the closest snapshot available for the desired block.
 - **`--tmp`**: Run a temporary node. A temporary directory will be created and deleted at the end of the process.
 - **`--cache`**: Enable caching of blocks and transactions to improve response times.
@@ -204,7 +207,7 @@ Snapshots are under developpement and will be available trought the `--snap <blo
 
 ## 🌐 Interactions
 
-Deoxys fully supports all the JSON-RPC methods as specified in the Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+Madara fully supports all the JSON-RPC methods as specified in the Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 These methods can be categorized into three main types: Read-Only Access Methods, Trace Generation Methods, and Write Methods.
 
 ### Supported JSON-RPC Methods
@@ -264,11 +267,11 @@ Here is a list of all the supported methods with their current status:
 
 </details>
 
-> ℹ️ **Info:** Deoxys currently supports latest [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs) specs up to version v0.7.1
+> ℹ️ **Info:** Madara currently supports latest [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs) specs up to version v0.7.1
 
 ### Example of Calling a JSON-RPC Method
 
-Here is an example of how to call a JSON-RPC method using Deoxys:
+Here is an example of how to call a JSON-RPC method using Madara:
 
 ```json
 {
@@ -281,7 +284,7 @@ Here is an example of how to call a JSON-RPC method using Deoxys:
 }
 ```
 
-You can use any JSON-RPC client to interact with the Deoxys node, such as `curl`, `httpie`,
+You can use any JSON-RPC client to interact with the Madara node, such as `curl`, `httpie`,
 or a custom client in your preferred programming language.
 For more detailed information and examples on each method, please refer to the [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 
@@ -290,7 +293,7 @@ For more detailed information and examples on each method, please refer to the [
 
 ## ✔ Supported Features
 
-Deoxys offers numerous features and is constantly improving to stay at the cutting edge of Starknet technology.
+Madara offers numerous features and is constantly improving to stay at the cutting edge of Starknet technology.
 
 - **Starknet Version**: `v0.13.1`
 - **JSON-RPC Version**: `v0.7.1`
@@ -311,7 +314,7 @@ special request, feel free to reach us on [telegram](https://t.me/kasarlabs).
 ## ⚠️ License
 
 Copyright (c) 2022-present, with the following
-[contributors](https://github.com/KasarLabs/deoxys/graphs/contributors).
+[contributors](https://github.com/KasarLabs/madara/graphs/contributors).
 
-Deoxys is open-source software licensed under the
-[Apache-2.0 License](https://github.com/KasarLabs/deoxys/blob/main/LICENSE).
+Madara is open-source software licensed under the
+[Apache-2.0 License](https://github.com/KasarLabs/madara/blob/main/LICENSE).

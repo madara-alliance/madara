@@ -26,6 +26,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut run_cmd: RunCmd = RunCmd::parse();
     let node_name = run_cmd.node_name_or_provide().await.to_string();
+    let network_name = run_cmd.network().await.to_string();
     let node_version = env!("DEOXYS_BUILD_VERSION");
 
     log::info!("👽 {} Node", GREET_IMPL_NAME);
@@ -36,6 +37,7 @@ async fn main() -> anyhow::Result<()> {
     log::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
     log::info!("🏷  Node Name: {}", node_name);
     log::info!("👤 Role: Full Node");
+    log::info!("🌐 Network: {}", network_name);
 
     let sys_info = SysInfo::probe();
     sys_info.show();

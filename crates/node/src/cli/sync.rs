@@ -99,7 +99,7 @@ impl SyncParams {
 }
 
 /// Starknet network types.
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq)]
 pub enum NetworkType {
     /// The main network (mainnet). Alias: mainnet
     #[value(alias("mainnet"))]
