@@ -1,6 +1,7 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
+use crate::utils::ResultExt;
 use crate::Starknet;
-use dc_exec::{block_context, execute_transactions, execution_result_to_fee_estimate, execution_result_to_tx_trace};
+use dc_exec::{execution_result_to_tx_trace, ExecutionContext};
 use dp_transactions::broadcasted_to_blockifier;
 use starknet_core::types::{BlockId, BroadcastedTransaction, SimulatedTransaction, SimulationFlag};
 
@@ -12,44 +13,31 @@ pub async fn simulate_transactions(
     transactions: Vec<BroadcastedTransaction>,
     simulation_flags: Vec<SimulationFlag>,
 ) -> StarknetRpcResult<Vec<SimulatedTransaction>> {
-    let block_info = starknet.get_block_info(block_id)?;
+    let block_info = starknet.get_block_info(&block_id)?;
 
-    if block_info.header().protocol_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
+    if block_info.protocol_version() < &FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
-    let chain_id = starknet.chain_id();
-    let block_context = block_context(block_info.header(), &chain_id);
+    let exec_context = ExecutionContext::new(&starknet.backend, &block_info)?;
 
     let charge_fee = !simulation_flags.contains(&SimulationFlag::SkipFeeCharge);
     let validate = !simulation_flags.contains(&SimulationFlag::SkipValidate);
 
     let user_transactions = transactions
         .into_iter()
-        .map(|tx| broadcasted_to_blockifier(tx, chain_id))
+        .map(|tx| broadcasted_to_blockifier(tx, starknet.chain_id()))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| StarknetRpcApiError::ErrUnexpectedError {
-            data: format!("Failed to convert broadcasted transaction to blockifier: {e}"),
-        })?;
+        .or_internal_server_error("Failed to convert broadcasted transaction to blockifier")?;
 
-    let execution_resuls = execute_transactions(
-        starknet.clone_backend(),
-        vec![],
-        user_transactions.into_iter(),
-        &block_context,
-        charge_fee,
-        validate,
-    )?;
+    let execution_resuls = exec_context.execute_transactions([], user_transactions, charge_fee, validate)?;
 
     let simulated_transactions = execution_resuls
         .iter()
         .map(|result| {
             Ok(SimulatedTransaction {
-                transaction_trace: execution_result_to_tx_trace(result).map_err(|e| {
-                    StarknetRpcApiError::ErrUnexpectedError {
-                        data: format!("Converting execution infos to tx trace: {e}"),
-                    }
-                })?,
-                fee_estimation: execution_result_to_fee_estimate(result, &block_context),
+                transaction_trace: execution_result_to_tx_trace(result)
+                    .or_internal_server_error("Converting execution infos to tx trace")?,
+                fee_estimation: exec_context.execution_result_to_fee_estimate(result),
             })
         })
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;

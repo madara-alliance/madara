@@ -1,8 +1,13 @@
-use blockifier::state::cached_state::CommitmentStateDiff;
-use dc_db::storage_handler::DeoxysStorageError;
+use bitvec::order::Msb0;
+use bitvec::vec::BitVec;
+use bitvec::view::AsBits;
+use bonsai_trie::id::BasicId;
+use dc_db::storage_handler::{bonsai_identifier, DeoxysStorageError, StorageType};
 use dc_db::DeoxysBackend;
 use dp_convert::ToFelt;
+use indexmap::IndexMap;
 use rayon::prelude::*;
+use starknet_api::core::{ClassHash, CompiledClassHash};
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
 
@@ -23,15 +28,13 @@ const CONTRACT_CLASS_HASH_VERSION: Felt =
 /// The class root.
 pub fn class_trie_root(
     backend: &DeoxysBackend,
-    csd: &CommitmentStateDiff,
+    class_hash_to_compiled_class_hash: IndexMap<ClassHash, CompiledClassHash>,
     block_number: u64,
 ) -> Result<Felt, DeoxysStorageError> {
-    let mut handler_class = backend.class_trie_mut();
+    let mut class_trie = backend.class_trie();
 
-    let updates = csd
-        .class_hash_to_compiled_class_hash
-        .iter()
-        .par_bridge()
+    let updates: Vec<_> = class_hash_to_compiled_class_hash
+        .into_par_iter()
         .map(|(class_hash, compiled_class_hash)| {
             let compiled_class_hash = compiled_class_hash.to_felt();
 
@@ -39,14 +42,29 @@ pub fn class_trie_root(
 
             (class_hash, hash)
         })
-        .collect::<Vec<_>>();
+        .collect();
 
-    handler_class.init()?;
-    handler_class.update(updates)?;
-    handler_class.commit(block_number)?;
-    log::debug!("committed class trie root");
+    log::debug!("class_trie inserting");
+    for (key, value) in updates {
+        let bytes = key.0.bytes();
+        let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
+        class_trie
+            .insert(bonsai_identifier::CLASS, &bv, &value)
+            .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?
+    }
 
-    handler_class.root()
+    log::debug!("class_trie committing");
+    class_trie
+        .commit(BasicId::new(block_number))
+        .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?;
+
+    let root_hash = class_trie
+        .root_hash(bonsai_identifier::CLASS)
+        .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Class))?;
+
+    log::debug!("class_trie committed");
+
+    Ok(root_hash)
 }
 
 #[cfg(test)]

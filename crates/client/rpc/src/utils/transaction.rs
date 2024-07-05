@@ -1,6 +1,6 @@
 use blockifier::execution::contract_class::ClassInfo;
 use blockifier::transaction::transaction_execution as btx;
-use dc_db::storage_handler::StorageView;
+use dp_block::BlockId;
 use dp_class::to_blockifier_class;
 use dp_convert::ToFelt;
 use starknet_api::transaction::{Transaction, TransactionHash};
@@ -14,6 +14,7 @@ use crate::Starknet;
 /// because it is not supported by blockifier
 pub(crate) fn to_blockifier_transactions(
     starknet: &Starknet,
+    block_id: BlockId,
     transaction: &dp_transactions::Transaction,
     tx_hash: &TransactionHash,
 ) -> StarknetRpcResult<btx::Transaction> {
@@ -28,7 +29,8 @@ pub(crate) fn to_blockifier_transactions(
         Transaction::Declare(ref declare_tx) => {
             let class_hash = declare_tx.class_hash();
 
-            let Ok(Some(compiled_class)) = starknet.backend.compiled_contract_class().get(&class_hash.to_felt()) else {
+            let Ok(Some((class_info, compiled_class))) = starknet.backend.get_class(&block_id, &class_hash.to_felt())
+            else {
                 log::error!("Failed to retrieve class from class_hash '{class_hash}'");
                 return Err(StarknetRpcApiError::ContractNotFound);
             };
@@ -38,13 +40,8 @@ pub(crate) fn to_blockifier_transactions(
                 StarknetRpcApiError::InternalServerError
             })?;
 
-            let Ok(Some(contract_class_data)) = starknet.backend.contract_class_data().get(&class_hash.to_felt())
-            else {
-                log::error!("Failed to retrieve class from class_hash '{class_hash}'");
-                return Err(StarknetRpcApiError::ContractNotFound);
-            };
-            let sierra_program_length = contract_class_data.contract_class.sierra_program_length();
-            let abi_length = contract_class_data.contract_class.abi_length();
+            let sierra_program_length = class_info.contract_class.sierra_program_length();
+            let abi_length = class_info.contract_class.abi_length();
 
             Some(ClassInfo::new(&blockifier_contract_class, sierra_program_length, abi_length).map_err(|_| {
                 log::error!("Mismatch between the length of the sierra program and the class version");

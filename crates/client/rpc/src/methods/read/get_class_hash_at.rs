@@ -18,14 +18,11 @@ use crate::Starknet;
 ///
 /// * `class_hash` - The class hash of the given contract
 pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
-    let block_number = starknet.get_block_n(block_id)?;
-
     let class_hash = starknet
         .backend
-        .contract_class_hash()
-        .get_at(&contract_address, block_number)
-        .or_internal_server_error("Failed to retrieve contract class hash")?
-        .ok_or(StarknetRpcApiError::ContractNotFound)?;
+        .get_contract_class_hash_at(&block_id, &contract_address)
+        .or_internal_server_error("Error getting contract class hash at")?
+        .ok_or(StarknetRpcApiError::ClassHashNotFound)?;
 
     Ok(class_hash)
 }

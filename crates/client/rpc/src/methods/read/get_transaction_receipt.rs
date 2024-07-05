@@ -1,7 +1,8 @@
-use dc_db::mapping_db::BlockStorageType;
+use dp_block::DeoxysMaybePendingBlockInfo;
 use starknet_core::types::{Felt, TransactionFinalityStatus, TransactionReceiptWithBlockInfo};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
+
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -31,33 +32,35 @@ pub async fn get_transaction_receipt(
     starknet: &Starknet,
     transaction_hash: Felt,
 ) -> StarknetRpcResult<TransactionReceiptWithBlockInfo> {
-    let (block, tx_info) = starknet
-        .block_storage()
+    let (block, tx_index) = starknet
+        .backend
         .find_tx_hash_block(&transaction_hash)
         .or_internal_server_error("Error getting block from tx_hash")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-    let tx_index = tx_info.tx_index;
-
-    let finality_status = if block.block_n() <= starknet.get_l1_last_confirmed_block()? {
-        TransactionFinalityStatus::AcceptedOnL1
+    let is_on_l1 = if let Some(block_n) = block.info.block_n() {
+        block_n <= starknet.get_l1_last_confirmed_block()?
     } else {
-        TransactionFinalityStatus::AcceptedOnL2
+        false
     };
 
+    let finality_status =
+        if is_on_l1 { TransactionFinalityStatus::AcceptedOnL1 } else { TransactionFinalityStatus::AcceptedOnL2 };
+
     let receipt = block
-        .receipts()
-        .get(tx_index)
+        .inner
+        .receipts
+        .get(tx_index.0 as usize)
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?
         .clone()
         .to_starknet_core(finality_status);
 
-    let block = match tx_info.storage_type {
-        BlockStorageType::Pending => starknet_core::types::ReceiptBlock::Pending,
-        BlockStorageType::BlockN(block_number) => {
-            let block_hash = *block.block_hash();
-            starknet_core::types::ReceiptBlock::Block { block_hash, block_number }
-        }
+    let block = match block.info {
+        DeoxysMaybePendingBlockInfo::Pending(_) => starknet_core::types::ReceiptBlock::Pending,
+        DeoxysMaybePendingBlockInfo::NotPending(block) => starknet_core::types::ReceiptBlock::Block {
+            block_hash: block.block_hash,
+            block_number: block.header.block_number,
+        },
     };
 
     Ok(TransactionReceiptWithBlockInfo { receipt, block })

@@ -136,9 +136,9 @@ impl StarknetRpcApiError {
     }
 }
 
-impl From<dc_exec::TransactionsExecError> for StarknetRpcApiError {
-    fn from(err: dc_exec::TransactionsExecError) -> Self {
-        Self::TxnExecutionError { tx_index: err.index, error: err.err.to_string() }
+impl From<dc_exec::Error> for StarknetRpcApiError {
+    fn from(err: dc_exec::Error) -> Self {
+        Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err) }
     }
 }
 

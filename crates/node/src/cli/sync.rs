@@ -99,7 +99,7 @@ impl SyncParams {
 }
 
 /// Starknet network types.
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq)]
 pub enum NetworkType {
     /// The main network (mainnet). Alias: mainnet
     #[value(alias("mainnet"))]
@@ -119,6 +119,16 @@ impl NetworkType {
             NetworkType::Test => "https://alpha-sepolia.starknet.io",
             NetworkType::Integration => "https://external.integration.starknet.io",
         }
+    }
+
+    pub fn db_chain_info(&self) -> dc_db::block_db::ChainInfo {
+        let chain_name = match self {
+            NetworkType::Main => "main",
+            NetworkType::Test => "test",
+            NetworkType::Integration => "integration",
+        };
+
+        dc_db::block_db::ChainInfo { chain_id: self.chain_id(), chain_name: chain_name.into() }
     }
 
     pub fn gateway(&self) -> Url {

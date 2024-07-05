@@ -3,10 +3,10 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
-use dc_db::rocksdb::WriteOptions;
-use dc_db::{DeoxysBackend, WriteBatchWithTransaction};
+use dc_db::DeoxysBackend;
 use dp_convert::ToFelt;
 use dp_convert::ToStarkFelt;
+use dp_transactions::TEST_CHAIN_ID;
 use dp_utils::channel_wait_or_graceful_shutdown;
 use ethers::contract::{abigen, EthEvent};
 use ethers::providers::{Http, Middleware, Provider};
@@ -147,6 +147,7 @@ impl EthereumClient {
         backend: &DeoxysBackend,
         start_block: u64,
         block_metrics: BlockMetrics,
+        chain_id: Felt,
     ) -> anyhow::Result<()> {
         let client = self.provider.clone();
         let address: Address = self.l1_core_address;
@@ -165,7 +166,7 @@ impl EthereumClient {
             let log = event_result.context("listening for events")?;
             let format_event =
                 convert_log_state_update(log.clone()).context("formatting event into an L1StateUpdate")?;
-            update_l1(backend, format_event, block_metrics.clone())?;
+            update_l1(backend, format_event, block_metrics.clone(), chain_id)?;
         }
 
         Ok(())
@@ -177,11 +178,12 @@ pub fn update_l1(
     backend: &DeoxysBackend,
     state_update: L1StateUpdate,
     block_metrics: BlockMetrics,
+    chain_id: Felt,
 ) -> anyhow::Result<()> {
     // This is a provisory check to avoid updating the state with an L1StateUpdate that should not have been detected
     //
     // TODO: Remove this check when the L1StateUpdate is properly verified
-    if state_update.block_number > 500000u64 {
+    if state_update.block_number > 500000u64 || chain_id == TEST_CHAIN_ID {
         log::info!(
             "🔄 Updated L1 head #{} ({}) with state root ({})",
             state_update.block_number,
@@ -191,14 +193,9 @@ pub fn update_l1(
 
         block_metrics.l1_block_number.set(state_update.block_number as f64);
 
-        let mut tx = WriteBatchWithTransaction::default();
         backend
-            .mapping()
-            .write_last_confirmed_block(&mut tx, state_update.block_number)
-            .context("setting l1 last confirmed block number")?;
-        let mut write_opt = WriteOptions::default(); // todo move that in db
-        write_opt.disable_wal(true);
-        backend.expose_db().write_opt(tx, &write_opt).context("writing last confirmed block number")?;
+            .write_last_confirmed_block(state_update.block_number)
+            .context("Setting l1 last confirmed block number")?;
         log::debug!("update_l1: wrote last confirmed block number");
     }
 
@@ -245,32 +242,26 @@ pub async fn sync(
     l1_url: Url,
     block_metrics: BlockMetrics,
     l1_core_address: Address,
+    chain_id: Felt,
 ) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
-    {
-        let mut tx = WriteBatchWithTransaction::default();
-        backend.mapping().write_no_last_confirmed_block(&mut tx).context("clearing l1 last confirmed block number")?;
+    backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
+    log::debug!("update_l1: cleared confirmed block number");
 
-        let mut write_opt = WriteOptions::default(); // todo move that in db
-        write_opt.disable_wal(true);
-        backend.expose_db().write_opt(tx, &write_opt).context("clearing confirmed block number")?;
-        log::debug!("update_l1: cleared confirmed block number");
-    }
-
-    let client = EthereumClient::new(l1_url, l1_core_address).await.context("creating ethereum client")?;
+    let client = EthereumClient::new(l1_url, l1_core_address).await.context("Creating ethereum client")?;
 
     log::info!("🚀 Subscribed to L1 state verification");
 
     // Get and store the latest verified state
-    let initial_state = EthereumClient::get_initial_state(&client).await.context("getting initial ethereum state")?;
-    update_l1(backend, initial_state, block_metrics.clone())?;
+    let initial_state = EthereumClient::get_initial_state(&client).await.context("Getting initial ethereum state")?;
+    update_l1(backend, initial_state, block_metrics.clone(), chain_id)?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    let start_block = client.get_last_event_block_number().await.context("retrieving the last event block number")?;
+    let start_block = client.get_last_event_block_number().await.context("Retrieving the last event block number")?;
     client
-        .listen_and_update_state(backend, start_block, block_metrics)
+        .listen_and_update_state(backend, start_block, block_metrics, chain_id)
         .await
-        .context("subscribing to the LogStateUpdate event")?;
+        .context("Subscribing to the LogStateUpdate event")?;
 
     Ok(())
 }

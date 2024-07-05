@@ -1,8 +1,9 @@
-use dc_exec::{block_context, call_contract};
+use dc_exec::ExecutionContext;
+use starknet_core::types::Felt;
 use starknet_core::types::{BlockId, FunctionCall};
-use starknet_types_core::felt::Felt;
 
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
+use crate::errors::StarknetRpcApiError;
+use crate::errors::StarknetRpcResult;
 use crate::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use crate::Starknet;
 
@@ -27,16 +28,16 @@ use crate::Starknet;
 /// * `CONTRACT_ERROR` - If there is an error with the contract or the function call.
 /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
 pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> StarknetRpcResult<Vec<Felt>> {
-    let block_info = starknet.get_block_info(block_id).unwrap();
-    // let block_info = starknet.get_block_info(block_id)?;
+    let block_info = starknet.get_block_info(&block_id)?;
 
-    if block_info.header().protocol_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
+    let exec_context = ExecutionContext::new(&starknet.backend, &block_info)?;
+
+    if block_info.protocol_version() < &FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let block_context = block_context(block_info.header(), &starknet.chain_id());
-
     let FunctionCall { contract_address, entry_point_selector, calldata } = request;
+    let results = exec_context.call_contract(&contract_address, &entry_point_selector, &calldata)?;
 
-    Ok(call_contract(starknet.clone_backend(), &contract_address, &entry_point_selector, &calldata, &block_context)?)
+    Ok(results)
 }

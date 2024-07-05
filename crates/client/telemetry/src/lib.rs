@@ -102,7 +102,7 @@ impl TelemetryService {
                             match websocket.send(Message::Text(msg.clone())).await {
                                 Ok(_) => {}
                                 Err(err) => {
-                                    log::warn!("Could not connect send telemetry to endpoint '{endpoint}': {err}");
+                                    log::warn!("Could not connect send telemetry to endpoint '{endpoint}': {err:#}");
                                 }
                             }
                         }

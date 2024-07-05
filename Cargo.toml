@@ -113,7 +113,7 @@ derive_more = { version = "0.99", default-features = false }
 flate2 = "1.0"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 hex = { version = "0.4", default-features = false, features = ["std"] }
-indexmap = "2.2"
+indexmap = { version = "2.2", features = ["std", "rayon", "serde"] }
 itertools = "0.12"
 jsonrpsee = { version = "0.22", default-features = false, features = [
   "server",

@@ -1,11 +1,10 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{State, StateReader, StateResult};
-use dc_db::storage_handler::StorageView;
+use dc_db::db_block_id::DbBlockId;
 use dc_db::DeoxysBackend;
 use dp_block::BlockId;
 use dp_class::to_blockifier_class;
@@ -14,14 +13,15 @@ use indexmap::IndexMap;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
+use starknet_core::types::Felt;
 
 /// `BlockifierStateAdapter` is only use to re-executing or simulate transactions.
 /// None of the setters should therefore change the storage persistently,
 /// all changes are temporary stored in the struct and are discarded after the execution
-pub struct BlockifierStateAdapter {
-    backend: Arc<DeoxysBackend>,
+pub struct BlockifierStateAdapter<'a> {
+    backend: &'a DeoxysBackend,
     /// When this value is None, we are executing the genesis block.
-    block_number: Option<u64>,
+    on_top_of_block_id: Option<DbBlockId>,
     storage_update: IndexMap<ContractAddress, IndexMap<StorageKey, StarkFelt>>,
     nonce_update: IndexMap<ContractAddress, Nonce>,
     class_hash_update: IndexMap<ContractAddress, ClassHash>,
@@ -30,11 +30,11 @@ pub struct BlockifierStateAdapter {
     visited_pcs: IndexMap<ClassHash, HashSet<usize>>,
 }
 
-impl BlockifierStateAdapter {
-    pub fn new(backend: Arc<DeoxysBackend>, block_number: Option<u64>) -> Self {
+impl<'a> BlockifierStateAdapter<'a> {
+    pub fn new(backend: &'a DeoxysBackend, on_top_of_block_id: Option<DbBlockId>) -> Self {
         Self {
             backend,
-            block_number,
+            on_top_of_block_id,
             storage_update: IndexMap::default(),
             nonce_update: IndexMap::default(),
             class_hash_update: IndexMap::default(),
@@ -45,69 +45,71 @@ impl BlockifierStateAdapter {
     }
 }
 
-impl StateReader for BlockifierStateAdapter {
+impl<'a> StateReader for BlockifierStateAdapter<'a> {
     fn get_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
         if *contract_address.key() == StarkFelt::ONE {
             let block_number = (*key.0.key()).try_into().map_err(|_| StateError::OldBlockHashNotProvided)?;
 
             return Ok(self
                 .backend
-                .mapping()
                 .get_block_hash(&BlockId::Number(block_number))
                 .map_err(|err| {
-                    StateError::StateReadError(format!(
-                        "Failed to retrieve block hash for block number {block_number}: {err:#}",
-                    ))
+                    log::warn!("Failed to retrieve block hash for block number {block_number}: {err:#}");
+                    StateError::StateReadError(
+                        format!("Failed to retrieve block hash for block number {block_number}",),
+                    )
                 })?
                 .ok_or(StateError::OldBlockHashNotProvided)?
                 .to_stark_felt());
         }
 
-        let Some(block_number) = self.block_number else { return Ok(StarkFelt::ZERO) };
+        let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(StarkFelt::ZERO) };
 
         Ok(self
             .backend
-            .contract_storage()
-            .get_at(&(contract_address.to_felt(), key.to_felt()), block_number)
+            .get_contract_storage_at(&on_top_of_block_id, &contract_address.to_felt(), &key.to_felt())
             .map_err(|err| {
+                log::warn!(
+                    "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}: {err:#}"
+                );
                 StateError::StateReadError(format!(
-                    "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}: {err:#}",
+                    "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}",
                 ))
             })?
-            .unwrap_or_default()
+            .unwrap_or(Felt::ZERO)
             .to_stark_felt())
     }
 
     fn get_nonce_at(&mut self, contract_address: ContractAddress) -> StateResult<Nonce> {
+        log::debug!("get_nonce_at for {:#?}", contract_address);
         if let Some(nonce) = self.nonce_update.get(&contract_address) {
             return Ok(*nonce);
         }
-        let Some(block_number) = self.block_number else { return Ok(Nonce::default()) };
+        let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(Nonce::default()) };
 
-        Ok(self
-            .backend
-            .contract_nonces()
-            .get_at(&contract_address.to_felt(), block_number)
-            .map_err(|err| {
-                StateError::StateReadError(format!(
-                    "Failed to retrieve nonce for contract {contract_address:#?}: {err:#}",
-                ))
-            })?
-            .unwrap_or_default())
+        Ok(Nonce(
+            self.backend
+                .get_contract_nonce_at(&on_top_of_block_id, &contract_address.to_felt())
+                .map_err(|err| {
+                    log::warn!("Failed to retrieve nonce for contract {contract_address:#?}: {err:#}");
+                    StateError::StateReadError(format!("Failed to retrieve nonce for contract {contract_address:#?}",))
+                })?
+                .unwrap_or(Felt::ZERO)
+                .to_stark_felt(),
+        ))
     }
 
     fn get_class_hash_at(&mut self, contract_address: ContractAddress) -> StateResult<ClassHash> {
+        log::debug!("get_class_hash_at for {:#?}", contract_address);
         if let Some(class_hash) = self.class_hash_update.get(&contract_address).cloned() {
             return Ok(class_hash);
         }
-        let Some(block_number) = self.block_number else { return Ok(ClassHash::default()) };
+        let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(ClassHash::default()) };
 
         // Note that blockifier is fine with us returning ZERO as a class_hash if it is not found, they do the check on their end after
-
         Ok(ClassHash(
             self.backend
-                .contract_class_hash()
-                .get_at(&contract_address.to_felt(), block_number)
+                .get_contract_class_hash_at(&on_top_of_block_id, &contract_address.to_felt())
                 .map_err(|err| {
                     StateError::StateReadError(format!(
                         "Failed to retrieve class hash for contract {:#}: {:#}",
@@ -121,35 +123,51 @@ impl StateReader for BlockifierStateAdapter {
     }
 
     fn get_compiled_contract_class(&mut self, class_hash: ClassHash) -> StateResult<ContractClass> {
-        match self.contract_class_update.get(&class_hash) {
-            Some(contract_class) => Ok(contract_class.clone()),
-            None => match self.backend.compiled_contract_class().get(&class_hash.to_felt()) {
-                Ok(Some(compiled_class)) => to_blockifier_class(compiled_class).map_err(StateError::ProgramError),
-                _ => Err(StateError::UndeclaredClassHash(class_hash)),
-            },
-        }
+        log::debug!("get_compiled_contract_class for {:#?}", class_hash);
+
+        if let Some(contract_class) = self.contract_class_update.get(&class_hash) {
+            return Ok(contract_class.clone());
+        };
+
+        let Some(on_top_of_block_id) = self.on_top_of_block_id else {
+            return Err(StateError::UndeclaredClassHash(class_hash));
+        };
+
+        let Some((_class_info, compiled_class)) =
+            self.backend.get_class(&on_top_of_block_id, &class_hash.to_felt()).map_err(|err| {
+                log::warn!("Failed to retrieve compiled class {class_hash:#}: {err:#}");
+                StateError::StateReadError(format!("Failed to retrieve compiled class {class_hash:#}"))
+            })?
+        else {
+            return Err(StateError::UndeclaredClassHash(class_hash));
+        };
+
+        to_blockifier_class(compiled_class).map_err(StateError::ProgramError)
     }
 
     fn get_compiled_class_hash(&mut self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
-        match self.compiled_class_hash_update.get(&class_hash) {
-            Some(compiled_class_hash) => Ok(*compiled_class_hash),
-            None => self
-                .backend
-                .contract_class_hashes()
-                .get(&class_hash.to_felt())
-                .map_err(|_| {
-                    StateError::StateReadError(format!(
-                        "failed to retrive compiled class hash at class hash {:#}",
-                        class_hash.0
-                    ))
-                })?
-                .map(|felt| CompiledClassHash(felt.to_stark_felt()))
-                .ok_or(StateError::UndeclaredClassHash(class_hash)),
-        }
+        log::debug!("get_compiled_contract_class for {:#?}", class_hash);
+
+        if let Some(compiled_class_hash) = self.compiled_class_hash_update.get(&class_hash) {
+            return Ok(*compiled_class_hash);
+        };
+        let Some(on_top_of_block_id) = self.on_top_of_block_id else {
+            return Err(StateError::UndeclaredClassHash(class_hash));
+        };
+        let Some(class_info) =
+            self.backend.get_class_info(&on_top_of_block_id, &class_hash.to_felt()).map_err(|err| {
+                log::warn!("Failed to retrieve compiled class hash {class_hash:#}: {err:#}");
+                StateError::StateReadError(format!("Failed to retrieve compiled class hash {class_hash:#}",))
+            })?
+        else {
+            return Err(StateError::UndeclaredClassHash(class_hash));
+        };
+
+        Ok(CompiledClassHash(class_info.compiled_class_hash.to_stark_felt()))
     }
 }
 
-impl State for BlockifierStateAdapter {
+impl<'a> State for BlockifierStateAdapter<'a> {
     fn set_storage_at(
         &mut self,
         contract_address: ContractAddress,

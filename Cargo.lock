@@ -2900,9 +2900,11 @@ dependencies = [
  "dp-block",
  "dp-class",
  "dp-convert",
+ "hashbrown 0.14.5",
  "log",
  "rayon",
  "rocksdb",
+ "serde",
  "serde_json",
  "starknet-core",
  "starknet-types-core",
@@ -2922,6 +2924,7 @@ dependencies = [
  "dp-class",
  "dp-convert",
  "indexmap 2.2.6",
+ "log",
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
@@ -2977,6 +2980,7 @@ dependencies = [
  "dc-metrics",
  "dc-telemetry",
  "dp-block",
+ "dp-class",
  "dp-convert",
  "dp-receipt",
  "dp-transactions",
@@ -3215,6 +3219,7 @@ dependencies = [
  "num-bigint",
  "serde",
  "serde_json",
+ "sha3",
  "starknet-core",
  "starknet-providers",
  "starknet-types-core",
@@ -4636,6 +4641,7 @@ checksum = "168fb715dda47215e360912c096649d23d58bf392ac62f73919e831745e40f26"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.5",
+ "rayon",
  "serde",
 ]
 

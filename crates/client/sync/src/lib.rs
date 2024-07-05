@@ -48,7 +48,6 @@ pub mod starknet_sync_worker {
             starting_block
         } else {
             backend
-                .mapping()
                 .get_block_n(&dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
                 .context("getting sync tip")?
                 .map(|block_id| block_id + 1) // next block after the tip
@@ -70,7 +69,7 @@ pub mod starknet_sync_worker {
         let l1_block_metric = block_metrics.clone();
         let l1_fut = async {
             if let Some(l1_url) = l1_url {
-                l1::sync(backend, l1_url.clone(), l1_block_metric, l1_core_address).await
+                l1::sync(backend, l1_url.clone(), l1_block_metric, l1_core_address, chain_id).await
             } else {
                 Ok(())
             }

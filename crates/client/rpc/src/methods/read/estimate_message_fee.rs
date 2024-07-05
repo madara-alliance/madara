@@ -1,12 +1,14 @@
-use dc_exec::{block_context, execute_transactions, execution_result_to_fee_estimate};
+use dc_exec::ExecutionContext;
 use dp_convert::ToStarkFelt;
 use dp_transactions::L1HandlerTransaction;
 use starknet_api::transaction::{Fee, TransactionHash};
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 use starknet_types_core::felt::Felt;
 
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
+use crate::errors::StarknetRpcApiError;
+use crate::errors::StarknetRpcResult;
 use crate::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
+use crate::utils::OptionExt;
 use crate::Starknet;
 
 /// Estimate the L2 fee of a message sent on L1
@@ -30,22 +32,21 @@ pub async fn estimate_message_fee(
     message: MsgFromL1,
     block_id: BlockId,
 ) -> StarknetRpcResult<FeeEstimate> {
-    let block_info = starknet.get_block_info(block_id)?;
-    if block_info.header().protocol_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
+    let block_info = starknet.get_block_info(&block_id)?;
+
+    if block_info.protocol_version() < &FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let block_context = block_context(block_info.header(), &starknet.chain_id());
-    let block_number = block_info.block_n();
+    let exec_context = ExecutionContext::new(&starknet.backend, &block_info)?;
 
-    let chain_id = starknet.chain_id();
-    let transaction = convert_message_into_transaction(message, chain_id, Some(block_number));
-    let execution_result =
-        execute_transactions(starknet.clone_backend(), vec![], vec![transaction], &block_context, false, true)?
-            .pop()
-            .ok_or_else(|| StarknetRpcApiError::ErrUnexpectedError { data: "No execution result found".to_string() })?;
+    let transaction = convert_message_into_transaction(message, starknet.chain_id(), block_info.block_n());
+    let execution_result = exec_context
+        .execute_transactions([], [transaction], false, true)?
+        .pop()
+        .ok_or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
-    let fee_estimate = execution_result_to_fee_estimate(&execution_result, &block_context);
+    let fee_estimate = exec_context.execution_result_to_fee_estimate(&execution_result);
 
     Ok(fee_estimate)
 }

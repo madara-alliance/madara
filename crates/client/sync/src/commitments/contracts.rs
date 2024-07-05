@@ -1,11 +1,18 @@
 use std::collections::HashSet;
 
-use blockifier::state::cached_state::CommitmentStateDiff;
-use dc_db::storage_handler::{DeoxysStorageError, StorageView};
+use bitvec::order::Msb0;
+use bitvec::vec::BitVec;
+use bitvec::view::AsBits;
+use bonsai_trie::id::BasicId;
+use dc_db::storage_handler::{bonsai_identifier, DeoxysStorageError, StorageType};
 use dc_db::DeoxysBackend;
+use dp_block::{BlockId, BlockTag};
 use dp_convert::ToFelt;
+use indexmap::IndexMap;
 use rayon::prelude::*;
-use starknet_api::core::ContractAddress;
+use starknet_api::core::{ClassHash, ContractAddress, Nonce};
+use starknet_api::hash::StarkFelt;
+use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, StarkHash};
 
@@ -21,62 +28,81 @@ use starknet_types_core::hash::{Pedersen, StarkHash};
 /// The contract root.
 pub fn contract_trie_root(
     backend: &DeoxysBackend,
-    csd: &CommitmentStateDiff,
+    address_to_class_hash: IndexMap<ContractAddress, ClassHash>,
+    address_to_nonce: IndexMap<ContractAddress, Nonce>,
+    storage_updates: IndexMap<ContractAddress, IndexMap<StorageKey, StarkFelt>>,
     block_number: u64,
 ) -> Result<Felt, DeoxysStorageError> {
-    // NOTE: handlers implicitely acquire a lock on their respective tries
-    // for the duration of their livetimes
-    let mut handler_contract = backend.contract_trie_mut();
-    let mut handler_storage_trie = backend.contract_storage_trie_mut();
+    // We need to calculate the contract_state_leaf_hash for each contract
+    // that do not appear in the storage_updates but has a class_hash or nonce update
+    let all_contract_address: HashSet<ContractAddress> =
+        storage_updates.keys().chain(address_to_class_hash.keys()).chain(address_to_nonce.keys()).cloned().collect();
+
+    let mut contract_storage_trie = backend.contract_storage_trie();
+
+    log::debug!("contract_storage_trie inserting");
 
     // First we insert the contract storage changes
-    for (contract_address, updates) in csd.storage_updates.iter() {
-        handler_storage_trie.init(contract_address)?;
-
+    for (contract_address, updates) in storage_updates {
         for (key, value) in updates {
-            handler_storage_trie.insert(*contract_address, *key, *value)?;
+            let bytes = key.0.key().bytes();
+            let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
+            contract_storage_trie
+                .insert(contract_address.0.key().bytes(), &bv, &value.to_felt())
+                .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?;
         }
     }
+
+    log::debug!("contract_storage_trie commit");
 
     // Then we commit them
-    handler_storage_trie.commit(block_number)?;
+    contract_storage_trie
+        .commit(BasicId::new(block_number))
+        .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?;
 
-    // We need to initialize the contract trie for each contract that has a class_hash or nonce update
-    // to retrieve the corresponding storage root
-    for contract_address in csd.address_to_class_hash.keys().chain(csd.address_to_nonce.keys()) {
-        if !csd.storage_updates.contains_key(contract_address) {
-            // Initialize the storage trie if this contract address does not have storage updates
-            handler_storage_trie.init(contract_address)?;
-        }
-    }
-
-    // We need to calculate the contract_state_leaf_hash for each contract
-    // that not appear in the storage_updates but has a class_hash or nonce update
-    let all_contract_address: HashSet<ContractAddress> = csd
-        .storage_updates
-        .keys()
-        .chain(csd.address_to_class_hash.keys())
-        .chain(csd.address_to_nonce.keys())
-        .cloned()
-        .collect();
+    let mut contract_trie = backend.contract_trie();
 
     // Then we compute the leaf hashes retrieving the corresponding storage root
-    let updates = all_contract_address
-        .iter()
-        .par_bridge()
+    let updates: Vec<_> = all_contract_address
+        .into_par_iter()
         .map(|contract_address| {
-            let storage_root = handler_storage_trie.root(contract_address)?;
-            let leaf_hash = contract_state_leaf_hash(backend, csd, contract_address, storage_root)?;
+            let storage_root = contract_storage_trie
+                .root_hash(contract_address.0.key().bytes())
+                .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))?;
+            let leaf_hash = contract_state_leaf_hash(
+                backend,
+                &address_to_class_hash,
+                &address_to_nonce,
+                &contract_address,
+                storage_root,
+            )?;
 
-            Ok::<(&ContractAddress, Felt), DeoxysStorageError>((contract_address, leaf_hash))
+            Ok((contract_address, leaf_hash))
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<_, DeoxysStorageError>>()?;
 
-    // then we compute the contract root by applying the changes so far
-    handler_contract.update(updates)?;
-    handler_contract.commit(block_number)?;
+    log::debug!("contract_trie inserting");
 
-    handler_contract.root()
+    for (key, value) in updates {
+        let bytes = key.0.key().bytes();
+        let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
+        contract_trie
+            .insert(bonsai_identifier::CONTRACT, &bv, &value)
+            .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?
+    }
+
+    log::debug!("contract_trie committing");
+
+    contract_trie
+        .commit(BasicId::new(block_number))
+        .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
+    let root_hash = contract_trie
+        .root_hash(bonsai_identifier::CONTRACT)
+        .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
+
+    log::debug!("contract_trie committed");
+
+    Ok(root_hash)
 }
 
 /// Computes the contract state leaf hash
@@ -92,11 +118,12 @@ pub fn contract_trie_root(
 /// The contract state leaf hash.
 fn contract_state_leaf_hash(
     backend: &DeoxysBackend,
-    csd: &CommitmentStateDiff,
+    address_to_class_hash: &IndexMap<ContractAddress, ClassHash>,
+    address_to_nonce: &IndexMap<ContractAddress, Nonce>,
     contract_address: &ContractAddress,
     storage_root: Felt,
 ) -> Result<Felt, DeoxysStorageError> {
-    let (class_hash, nonce) = class_hash_and_nonce(backend, csd, contract_address)?;
+    let (class_hash, nonce) = class_hash_and_nonce(backend, address_to_class_hash, address_to_nonce, contract_address)?;
 
     // computes the contract state leaf hash
     let contract_state_hash = Pedersen::hash(&class_hash, &storage_root);
@@ -118,16 +145,24 @@ fn contract_state_leaf_hash(
 /// The class hash and nonce of the contract address.
 fn class_hash_and_nonce(
     backend: &DeoxysBackend,
-    csd: &CommitmentStateDiff,
+    address_to_class_hash: &IndexMap<ContractAddress, ClassHash>,
+    address_to_nonce: &IndexMap<ContractAddress, Nonce>,
     contract_address: &ContractAddress,
 ) -> Result<(Felt, Felt), DeoxysStorageError> {
-    let class_hash = match csd.address_to_class_hash.get(contract_address) {
+    let class_hash = match address_to_class_hash.get(contract_address) {
         Some(class_hash) => class_hash.to_felt(),
-        None => backend.contract_class_hash().get(&contract_address.to_felt())?.unwrap_or_default(),
+        None => {
+            // TODO: This is suspect: if class hash not found in the trie, we default to class hash zero?
+            backend
+                .get_contract_class_hash_at(&BlockId::Tag(BlockTag::Latest), &contract_address.to_felt())?
+                .unwrap_or(Felt::ZERO)
+        }
     };
-    let nonce = match csd.address_to_nonce.get(contract_address) {
+    let nonce = match address_to_nonce.get(contract_address) {
         Some(nonce) => nonce.to_felt(),
-        None => backend.contract_nonces().get(&contract_address.to_felt())?.unwrap_or_default().to_felt(),
+        None => backend
+            .get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), &contract_address.to_felt())?
+            .unwrap_or(Felt::ZERO),
     };
     Ok((class_hash, nonce))
 }

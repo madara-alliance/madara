@@ -55,4 +55,14 @@ impl RunCmd {
         }
         self.name.as_ref().unwrap()
     }
+
+    pub async fn network(&mut self) -> &str {
+        if self.sync_params.network == NetworkType::Integration {
+            "Integration"
+        } else if self.sync_params.network == NetworkType::Test {
+            "Testnet"
+        } else {
+            "Mainnet"
+        }
+    }
 }

@@ -77,7 +77,7 @@ impl StarknetReadRpcApiServer for Starknet {
     }
 
     fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
-        Ok(get_block_with_txs(self, block_id)?)
+        get_block_with_txs(self, block_id)
     }
 
     fn get_class_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<ContractClass> {

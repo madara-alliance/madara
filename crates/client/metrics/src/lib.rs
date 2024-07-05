@@ -105,7 +105,7 @@ impl MetricsService {
                 Ok::<_, hyper::Error>(service_fn(move |req: Request<Body>| {
                     let registry = registry.clone();
                     async move {
-                        match endpoint(req, registry.0.expect("registry should not be none").clone()).await {
+                        match endpoint(req, registry.0.expect("Registry should not be none").clone()).await {
                             Ok(res) => Ok::<_, Error>(res),
                             Err(err) => {
                                 log::error!("Error when handling prometheus request: {}", err);
@@ -123,14 +123,14 @@ impl MetricsService {
         self.stop_handle = StopHandle::new(Some(stop_send));
 
         join_set.spawn(async move {
-            let socket = TcpListener::bind(addr).await.with_context(|| format!("opening socket server at {addr}"))?;
+            let socket = TcpListener::bind(addr).await.with_context(|| format!("Opening socket server at {addr}"))?;
             let listener = hyper::server::conn::AddrIncoming::from_listener(socket)
-                .with_context(|| format!("opening socket server at {addr}"))?;
+                .with_context(|| format!("Opening socket server at {addr}"))?;
             log::info!("📈 Prometheus endpoint started at {}", listener.local_addr());
             let server = Server::builder(listener).serve(service).with_graceful_shutdown(async {
                 wait_or_graceful_shutdown(stop_recv).await;
             });
-            server.await.context("running prometheus server")?;
+            server.await.context("Running prometheus server")?;
             Ok(())
         });
 

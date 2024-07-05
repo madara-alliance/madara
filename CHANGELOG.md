@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor: support pending blocks & db crate
 - refactor: new crate exec
 - fix(issue): Removed unrelated link from issue template
 - feat: adding new readme and github issue templates for codebase reorg
