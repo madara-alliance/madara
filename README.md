@@ -1,8 +1,5 @@
 <!-- markdownlint-disable -->
 <div align="center">
-  <img src="https://github.com/keep-starknet-strange/madara-branding/blob/main/logo/PNGs/Madara%20logo%20-%20Red%20-%20Duotone.png?raw=true" height="128">
-</div>
-<div align="center">
   <img src="https://github.com/keep-starknet-strange/madara-branding/blob/main/logo/PNGs/Madara%20logomark%20-%20Red%20-%20Duotone.png?raw=true" height="128">
 </div>
 <div align="center">
