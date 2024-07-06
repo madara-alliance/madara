@@ -388,9 +388,8 @@ async fn update_sync_metrics(
     block_metrics.l1_gas_price_strk.set(f64::from_u128(block_header.l1_gas_price.strk_l1_gas_price).unwrap_or(0f64));
 
     let size_bytes = get_directory_size(base_path);
-    log::info!("Node storage usage: {} GB", size_bytes);
-    let size_gb = size_bytes as f64;
-    block_metrics.l2_state_size.set(size_gb / 1024.0 / 1024.0 / 1024.0);
+    let size_gb = size_bytes as f64 / (1024 * 1024 * 1024) as f64;
+    block_metrics.l2_state_size.set(size_gb);
 
     Ok(())
 }
