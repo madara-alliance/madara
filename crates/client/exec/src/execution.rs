@@ -24,7 +24,7 @@ impl<'a> ExecutionContext<'a> {
         let mut executed_prev = 0;
         for (index, tx) in transactions_before.into_iter().enumerate() {
             let hash = tx.tx_hash();
-            log::debug!("reexecuting {hash:#}");
+            log::debug!("executing {hash:#}");
             tx.execute(&mut cached_state, &self.block_context, charge_fee, validate).map_err(|err| TxReexecError {
                 block_n: self.db_id,
                 hash,
@@ -39,7 +39,7 @@ impl<'a> ExecutionContext<'a> {
             .enumerate()
             .map(|(index, tx)| {
                 let hash = tx.tx_hash();
-                log::debug!("reexecuting {hash:#} (trace)");
+                log::debug!("executing {hash:#} (trace)");
                 let tx_type = tx.tx_type();
                 let fee_type = tx.fee_type();
 
@@ -54,6 +54,16 @@ impl<'a> ExecutionContext<'a> {
                 let mut state = CachedState::<_>::create_transactional(&mut cached_state);
                 let execution_info = tx
                     .execute(&mut state, &self.block_context, charge_fee, validate)
+                    .and_then(|mut tx_info| {
+                        if tx_info.actual_fee.0 == 0 {
+                            tx_info.actual_fee = blockifier::fee::fee_utils::calculate_tx_fee(
+                                &tx_info.actual_resources,
+                                &self.block_context,
+                                &fee_type,
+                            )?;
+                        }
+                        Ok(tx_info)
+                    })
                     .map_err(|err| TxReexecError { block_n: self.db_id, hash, index: executed_prev + index, err })?;
                 let state_diff = state.to_state_diff();
                 state.commit();
