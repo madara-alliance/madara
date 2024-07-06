@@ -142,6 +142,9 @@ impl DeoxysBackend {
         tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(&block.info)?);
         tx.put_cf(&col, ROW_PENDING_INNER, bincode::serialize(&block.inner)?);
         tx.put_cf(&col, ROW_PENDING_STATE_UPDATE, bincode::serialize(&state_update)?);
+        let mut writeopts = WriteOptions::new();
+        writeopts.disable_wal(true);
+        self.db.write_opt(tx, &writeopts)?;
         Ok(())
     }
 
