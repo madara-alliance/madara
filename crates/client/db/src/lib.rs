@@ -341,6 +341,10 @@ impl DatabaseService {
     pub fn backend(&self) -> &Arc<DeoxysBackend> {
         &self.handle
     }
+
+    pub fn get_base_path(&self) -> PathBuf {
+        self.handle.db.path().to_owned()
+    }
 }
 
 struct BackupRequest {
