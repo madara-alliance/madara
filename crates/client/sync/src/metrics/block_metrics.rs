@@ -27,7 +27,7 @@ impl BlockMetrics {
             l2_latest_sync_time: registry
                 .register(Gauge::new("deoxys_l2_latest_sync_time", "Gauge for deoxys L2 latest sync time")?)?,
             l2_state_size: registry
-                .register(Gauge::new("node_storage_usage_gb", "Gauge for node storage usage in GB")?)?,
+                .register(Gauge::new("deoxys_l2_state_size", "Gauge for node storage usage in GB")?)?,
             l1_block_number: registry
                 .register(Gauge::new("deoxys_l1_block_number", "Gauge for deoxys L1 block number")?)?,
             transaction_count: registry

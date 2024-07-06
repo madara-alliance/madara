@@ -93,36 +93,6 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards
       - ./grafana/datasources/datasource.yml:/etc/grafana/provisioning/datasources/main.yml
 
-  influxdb:
-    container_name: influxdb
-    image: influxdb:latest
-    restart: unless-stopped
-    ports:
-      - "8086:8086"
-    volumes:
-      - ./influxdb:/var/lib/influxdb
-    environment:
-      - INFLUXDB_DB=mydb
-      - INFLUXDB_HTTP_AUTH_ENABLED=true
-      - INFLUXDB_ADMIN_USER=admin
-      - INFLUXDB_ADMIN_PASSWORD=adminpassword
-      - INFLUXDB_USER=user
-      - INFLUXDB_USER_PASSWORD=userpassword
-
-  telegraf:
-    container_name: telegraf
-    image: telegraf:latest
-    restart: unless-stopped
-    volumes:
-      - ./telegraf/etc/telegraf.conf:/etc/telegraf/telegraf.conf:ro
-      - /var/lib/deoxys:/var/lib/deoxys
-    depends_on:
-      - influxdb
-    links:
-      - influxdb
-    ports:
-      - "8125:8125"
-
 networks:
   loki-net:
     external: true

@@ -127,16 +127,22 @@ pub fn trim_hash(hash: &Felt) -> String {
 }
 
 pub fn get_directory_size(path: &Path) -> u64 {
-    fs::read_dir(path)
-        .unwrap()
-        .map(|entry| {
-            let entry = entry.unwrap();
-            let metadata = entry.metadata().unwrap();
-            if metadata.is_dir() {
-                get_directory_size(&entry.path())
-            } else {
-                metadata.len()
-            }
-        })
-        .sum()
+    match fs::read_dir(path) {
+        Ok(entries) => entries
+            .filter_map(|entry| match entry {
+                Ok(entry) => match entry.metadata() {
+                    Ok(metadata) => {
+                        if metadata.is_dir() {
+                            Some(get_directory_size(&entry.path()))
+                        } else {
+                            Some(metadata.len())
+                        }
+                    }
+                    Err(_) => None,
+                },
+                Err(_) => None,
+            })
+            .sum(),
+        Err(_) => 0,
+    }
 }
