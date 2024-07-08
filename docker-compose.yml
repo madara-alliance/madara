@@ -11,14 +11,40 @@ services:
       - "${RPC_PORT:-9944}:9944"
     volumes:
       - $HOME/deoxys:/var/lib/deoxys
-    environment:
-      - ETHEREUM_API_URL=${ETHEREUM_API_URL}
-    command: >
-      --name deoxys
-      --base-path /var/lib/deoxys
-      --l1-endpoint ${ETHEREUM_API_URL}
-      --network main
-      --chain starknet
-      --rpc-port 9944
-      --rpc-external
-      --rpc-cors "*"
+    entrypoint: ["tini", "--"]
+    command:
+      [
+        "/usr/local/bin/deoxys",
+        "--base-path",
+        "/var/lib/deoxys",
+        "--network",
+        "main",
+        "--l1-endpoint",
+        "${L1_ENDPOINT}",
+      ]
+    profiles:
+      - mainnet
+
+  deoxys-testnet:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    container_name: deoxys-testnet
+    restart: unless-stopped
+    ports:
+      - "${RPC_PORT:-9944}:9944"
+    volumes:
+      - $HOME/deoxys-testnet:/var/lib/deoxys-testnet
+    entrypoint: ["tini", "--"]
+    command:
+      [
+        "/usr/local/bin/deoxys",
+        "--base-path",
+        "/var/lib/deoxys-testnet",
+        "--network",
+        "test",
+        "--l1-endpoint",
+        "${L1_ENDPOINT}",
+      ]
+    profiles:
+      - testnet
