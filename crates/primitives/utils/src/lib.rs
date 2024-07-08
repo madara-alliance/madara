@@ -25,7 +25,13 @@ where
 static CTRL_C: AtomicBool = AtomicBool::new(false);
 
 pub async fn graceful_shutdown() {
-    tokio::signal::ctrl_c().await.unwrap();
+    let mut sigint =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("SIGINT not supported");
+
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {},
+        _ = sigint.recv() => {},
+    };
     CTRL_C.store(true, Ordering::SeqCst);
 }
 
