@@ -1,0 +1,31 @@
+[package]
+name = "dc-mempool"
+description = "Deoxys client mempool service"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+
+# Deoxys
+dp-utils.workspace = true
+
+# Starknet
+starknet-core.workspace = true
+starknet-types-core.workspace = true
+blockifier.workspace = true
+
+# Other
+anyhow.workspace = true
+hyper.workspace = true
+log.workspace = true
+prometheus.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+serde.workspace = true

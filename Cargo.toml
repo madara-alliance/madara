@@ -6,6 +6,7 @@ members = [
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
+  "crates/client/mempool",
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/convert",

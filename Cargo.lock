@@ -3062,6 +3062,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "dc-mempool"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blockifier",
+ "dp-utils",
+ "hyper 0.14.29",
+ "log",
+ "prometheus",
+ "serde",
+ "starknet-core",
+ "starknet-types-core",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "dc-metrics"
 version = "0.1.0"
 dependencies = [
