@@ -3,6 +3,7 @@
 ## Next release
 
 - feat: raise file-descriptor limit
+- fix: docker
 - fix: pending storage & sequencer_provider
 - refactor: support pending blocks & db crate
 - refactor: new crate exec
