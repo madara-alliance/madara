@@ -21,8 +21,9 @@ const GREET_AUTHORS: &[&str] = &["KasarLabs <https://kasar.io>"];
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    crate::util::setup_rayon_threadpool()?;
     crate::util::setup_logging()?;
+    crate::util::setup_rayon_threadpool()?;
+    crate::util::raise_fdlimit();
 
     let mut run_cmd: RunCmd = RunCmd::parse();
     let node_name = run_cmd.node_name_or_provide().await.to_string();
