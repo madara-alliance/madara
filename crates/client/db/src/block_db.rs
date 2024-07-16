@@ -7,7 +7,7 @@ use rocksdb::WriteOptions;
 use starknet_core::types::{Felt, StateDiff};
 
 use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
-use crate::storage_handler::{codec, DeoxysStorageError};
+use crate::{codec, DeoxysStorageError};
 use crate::{Column, DatabaseExt, DeoxysBackend, WriteBatchWithTransaction};
 
 type Result<T, E = DeoxysStorageError> = std::result::Result<T, E>;

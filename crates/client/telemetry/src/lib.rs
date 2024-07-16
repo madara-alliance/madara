@@ -121,18 +121,18 @@ impl TelemetryService {
         self.telemetry_handle.clone()
     }
 
-    pub fn send_connected(&self, name: &str, version: &str, sys_info: &SysInfo) {
+    pub fn send_connected(&self, name: &str, version: &str, network_id: &str, sys_info: &SysInfo) {
         let startup_time = SystemTime::UNIX_EPOCH.elapsed().map(|dur| dur.as_millis()).unwrap_or(0).to_string();
 
         let msg = serde_json::json!({
             "chain": "Starknet",
             "authority": false,
             "config": "",
-            // "genesis_hash": "",
+            "genesis_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
             "implementation": "Deoxys Node",
             "msg": "system.connected",
             "name": name,
-            // "network_id": "peer id",
+            "network_id": network_id,
             "startup_time": startup_time,
             "sysinfo": {
               "core_count": sys_info.core_count,

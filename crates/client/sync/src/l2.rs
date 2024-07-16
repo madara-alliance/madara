@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use anyhow::{bail, Context};
-use dc_db::storage_handler::DeoxysStorageError;
 use dc_db::DeoxysBackend;
+use dc_db::DeoxysStorageError;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlockInfo};
 use dp_block::{DeoxysMaybePendingBlock, Header};
@@ -136,7 +136,7 @@ async fn l2_verify_and_apply_task(
         telemetry.send(
             VerbosityLevel::Info,
             serde_json::json!({
-                "best": format!("{}", block_hash),
+                "best": block_hash.to_fixed_hex_string(),
                 "height": block_n,
                 "origin": "Own",
                 "msg": "block.import",

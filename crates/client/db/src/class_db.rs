@@ -7,8 +7,7 @@ use starknet_core::types::Felt;
 
 use crate::{
     db_block_id::{DbBlockId, DbBlockIdResolvable},
-    storage_handler::DeoxysStorageError,
-    Column, DatabaseExt, DeoxysBackend, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE,
+    Column, DatabaseExt, DeoxysBackend, DeoxysStorageError, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE,
 };
 
 const LAST_KEY: &[u8] = &[0xFF; 64];
@@ -97,9 +96,7 @@ impl DeoxysBackend {
                 Column::PendingClassCompiled,
                 Column::ClassCompiled,
             )?
-            .ok_or(DeoxysStorageError::StorageRetrievalError(
-                crate::storage_handler::StorageType::CompiledContractClass,
-            ))?;
+            .ok_or(DeoxysStorageError::StorageRetrievalError(crate::StorageType::CompiledContractClass))?;
 
         Ok(Some((info, compiled_class)))
     }

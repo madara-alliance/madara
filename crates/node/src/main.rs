@@ -77,7 +77,12 @@ async fn main() -> anyhow::Result<()> {
     telemetry_service.start(&mut task_set).await.context("Starting telemetry service")?;
     prometheus_service.start(&mut task_set).await.context("Starting prometheus metrics service")?;
 
-    telemetry_service.send_connected(&node_name, node_version, &sys_info);
+    telemetry_service.send_connected(
+        &node_name,
+        node_version,
+        &run_cmd.sync_params.network.db_chain_info().chain_name,
+        &sys_info,
+    );
 
     while let Some(result) = task_set.join_next().await {
         // Ignore tokio join errors, only bubble service errors

@@ -14,7 +14,7 @@ use blockifier::{
         transaction_types::TransactionType,
     },
 };
-use dc_db::{db_block_id::DbBlockId, storage_handler::DeoxysStorageError};
+use dc_db::{db_block_id::DbBlockId, DeoxysStorageError};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::Felt;
 pub use trace::execution_result_to_tx_trace;
