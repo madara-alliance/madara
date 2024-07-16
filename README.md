@@ -58,11 +58,11 @@ Madara is a powerfull Starknet hybrid client written in Rust.
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s
    ```
 
-   Clone the Deoxys Madara full node repository:
+   Clone the Madara repository:
 
    ```sh
    cd <your-destination-path>
-   git clone https://github.com/KasarLabs/deoxys
+   git clone https://github.com/KasarLabs/madara .
    ```
 
 2. **Run Madara**
