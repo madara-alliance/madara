@@ -1,6 +1,6 @@
 //! Utility functions for Deoxys.
 
-use std::{fs, path::Path, time::Instant};
+use std::time::Instant;
 
 use super::constant::L1_FREE_RPC_URLS;
 use anyhow::{bail, Context};
@@ -124,25 +124,4 @@ pub fn trim_hash(hash: &Felt) -> String {
     let suffix = &hash_str[hash_len - 6..];
 
     format!("{}...{}", prefix, suffix)
-}
-
-pub fn get_directory_size(path: &Path) -> u64 {
-    match fs::read_dir(path) {
-        Ok(entries) => entries
-            .filter_map(|entry| match entry {
-                Ok(entry) => match entry.metadata() {
-                    Ok(metadata) => {
-                        if metadata.is_dir() {
-                            Some(get_directory_size(&entry.path()))
-                        } else {
-                            Some(metadata.len())
-                        }
-                    }
-                    Err(_) => None,
-                },
-                Err(_) => None,
-            })
-            .sum(),
-        Err(_) => 0,
-    }
 }

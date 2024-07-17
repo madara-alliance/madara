@@ -1,6 +1,5 @@
 //! Contains the code required to sync data from the feeder efficiently.
 use std::borrow::Cow;
-use std::path::{Path, PathBuf};
 use std::pin::pin;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -27,7 +26,7 @@ use crate::convert::{convert_and_verify_block, convert_and_verify_class};
 use crate::fetch::fetchers::{fetch_block_and_updates, FetchBlockId, L2BlockAndUpdates};
 use crate::fetch::l2_fetch_task;
 use crate::metrics::block_metrics::BlockMetrics;
-use crate::utility::{get_directory_size, trim_hash};
+use crate::utility::trim_hash;
 use dp_utils::{
     channel_wait_or_graceful_shutdown, spawn_rayon_task, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch,
 };
@@ -63,7 +62,6 @@ async fn l2_verify_and_apply_task(
     starting_block: u64,
     sync_timer: Arc<Mutex<Option<Instant>>>,
     telemetry: TelemetryHandle,
-    base_path: PathBuf,
 ) -> anyhow::Result<()> {
     while let Some(L2ConvertedBlockAndUpdates { converted_block, state_update, converted_classes }) =
         channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await
@@ -120,7 +118,7 @@ async fn l2_verify_and_apply_task(
         })
         .await?;
 
-        update_sync_metrics(block_n, &block_header, starting_block, &block_metrics, sync_timer.clone(), &base_path)
+        update_sync_metrics(block_n, &block_header, starting_block, &block_metrics, sync_timer.clone(), &backend)
             .await?;
 
         let sw = PerfStopwatch::new();
@@ -287,7 +285,6 @@ pub struct L2SyncConfig {
     pub sync_polling_interval: Option<Duration>,
     pub backup_every_n_blocks: Option<u64>,
     pub pending_block_poll_interval: Duration,
-    pub base_path: PathBuf,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
@@ -336,7 +333,6 @@ pub async fn sync(
         starting_block,
         Arc::clone(&sync_timer),
         telemetry,
-        config.base_path,
     ));
     join_set.spawn(l2_pending_block_task(
         Arc::clone(backend),
@@ -359,7 +355,7 @@ async fn update_sync_metrics(
     starting_block: u64,
     block_metrics: &BlockMetrics,
     sync_timer: Arc<Mutex<Option<Instant>>>,
-    base_path: &Path,
+    backend: &DeoxysBackend,
 ) -> anyhow::Result<()> {
     // Update Block sync time metrics
     let elapsed_time;
@@ -387,9 +383,11 @@ async fn update_sync_metrics(
     block_metrics.l1_gas_price_wei.set(f64::from_u128(block_header.l1_gas_price.eth_l1_gas_price).unwrap_or(0f64));
     block_metrics.l1_gas_price_strk.set(f64::from_u128(block_header.l1_gas_price.strk_l1_gas_price).unwrap_or(0f64));
 
-    let size_bytes = get_directory_size(base_path);
-    let size_gb = size_bytes as f64 / (1024 * 1024 * 1024) as f64;
-    block_metrics.l2_state_size.set(size_gb);
+    if block_number % 1000 == 0 {
+        let storage_size = backend.get_storage_size();
+        let size_gb = storage_size as f64 / (1024 * 1024 * 1024) as f64;
+        block_metrics.l2_state_size.set(size_gb);
+    }
 
     Ok(())
 }

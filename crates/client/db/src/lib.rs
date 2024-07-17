@@ -451,6 +451,18 @@ impl DeoxysBackend {
             log: Column::BonsaiClassesLog,
         })
     }
+
+    pub fn get_storage_size(&self) -> u64 {
+        let mut storage_size = 0;
+
+        for &column in Column::ALL.iter() {
+            let cf_handle = self.db.get_column(column);
+            let cf_metadata = self.db.get_column_family_metadata_cf(&cf_handle);
+            storage_size += cf_metadata.size;
+        }
+
+        storage_size
+    }
 }
 
 pub mod bonsai_identifier {

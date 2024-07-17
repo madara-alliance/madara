@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,7 +18,6 @@ use crate::cli::SyncParams;
 #[derive(Clone)]
 pub struct SyncService {
     db_backend: Arc<DeoxysBackend>,
-    base_path: PathBuf,
     fetch_config: FetchConfig,
     backup_every_n_blocks: Option<u64>,
     l1_endpoint: Option<Url>,
@@ -55,7 +53,6 @@ impl SyncService {
 
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
-            base_path: db.get_base_path(),
             fetch_config,
             l1_endpoint,
             l1_core_address: config.network.l1_core_address(),
@@ -86,11 +83,9 @@ impl SyncService {
         let telemetry = self.start_params.take().context("service already started")?;
 
         let db_backend = Arc::clone(&self.db_backend);
-        let base_path = self.base_path.to_path_buf();
         join_set.spawn(async move {
             dc_sync::starknet_sync_worker::sync(
                 &db_backend,
-                base_path,
                 fetch_config,
                 l1_endpoint,
                 l1_core_address,

@@ -17,7 +17,7 @@ use crate::l2::L2SyncConfig;
 use starknet_types_core::felt::Felt;
 
 pub mod starknet_sync_worker {
-    use std::{path::PathBuf, sync::Arc, time::Duration};
+    use std::{sync::Arc, time::Duration};
 
     use anyhow::Context;
     use dc_db::DeoxysBackend;
@@ -32,7 +32,6 @@ pub mod starknet_sync_worker {
     #[allow(clippy::too_many_arguments)]
     pub async fn sync(
         backend: &Arc<DeoxysBackend>,
-        base_path: PathBuf,
         fetch_config: FetchConfig,
         l1_url: Option<Url>,
         l1_core_address: ethers::abi::Address,
@@ -88,7 +87,6 @@ pub mod starknet_sync_worker {
                     sync_polling_interval: fetch_config.sync_polling_interval,
                     backup_every_n_blocks,
                     pending_block_poll_interval,
-                    base_path,
                 },
                 block_metrics,
                 starting_block,
