@@ -44,6 +44,9 @@ pub struct ChainConfig {
     /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
     /// Only used for block production.
     pub bouncer_config: BouncerConfig,
+
+    /// Only used for block production.
+    pub sequencer_address: ContractAddress,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -117,6 +120,8 @@ impl ChainConfig {
                     state_diff_size: usize::MAX,
                 },
             },
+            // We are not producing blocks for these chains.
+            sequencer_address: ContractAddress::default(),
         }
     }
 
@@ -125,7 +130,7 @@ impl ChainConfig {
     }
 
     pub fn starknet_integration() -> Self {
-        Self { chain_name: "Starknet sepolia".into(), chain_id: ChainId::Sepolia, ..Self::starknet_mainnet() }
+        Self { chain_name: "Starknet integration".into(), chain_id: ChainId::IntegrationSepolia, ..Self::starknet_mainnet() }
     }
 }
 
@@ -143,6 +148,7 @@ mod tests {
             chain_id: ChainId::Mainnet,
             block_time: Default::default(),
             pending_block_update_time: Default::default(),
+            sequencer_address: Default::default(),
             versioned_constants: [
                 (StarknetVersion::new(0, 1, 5, 0), {
                     let mut constants = VersionedConstants::default();

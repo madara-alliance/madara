@@ -39,7 +39,7 @@ pub struct PendingHeader {
     pub parent_block_hash: Felt,
     /// The Starknet address of the sequencer who created this block.
     pub sequencer_address: Felt,
-    /// The time the sequencer created this block before executing transactions
+    /// Unix timestamp (seconds) when the block was produced -- before executing any transaction.
     pub block_timestamp: u64,
     /// The version of the Starknet protocol used when creating this block
     pub protocol_version: StarknetVersion,

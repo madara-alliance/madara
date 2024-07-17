@@ -1,137 +1,140 @@
-use core::hash;
-use std::cmp;
-use std::collections::BTreeSet;
-use std::time::Duration;
+use std::borrow::Cow;
+use std::sync::Arc;
+use std::sync::RwLock;
+use std::time::SystemTime;
 
-use serde::{Deserialize, Serialize};
-use starknet_core::types::{BroadcastedInvokeTransactionV3, Felt};
-
-mod tx_selection;
-
-/// Sequencer specific constants
-/// See https://docs.starknet.io/tools/limits-and-triggers
-#[derive(Serialize, Deserialize, Clone)]
-pub struct MempoolChainConfig {
-    pub block_time: Duration,
-    pub cairo_steps_per_block: u64,
-    pub eth_gas_per_block: u64,
-    pub cairo_steps_per_tx: u64,
-    pub cairo_steps_validate: u64,
-    pub contract_bytecode_sz_felts: u64,
-    pub contract_class_sz: u64,
-    pub ip_address_rw_limit: u64,
-    pub signature_sz_felts: u64,
-    pub calldata_sz_felts: u64,
-}
-
-// TODO: deserialize that from a config file.
-pub const MEMPOOL_CHAIN_CONFIG: MempoolChainConfig = MempoolChainConfig {
-    block_time: Duration::from_secs(60 * 6),
-    cairo_steps_per_block: 40_000_000,
-    eth_gas_per_block: 5_000_000,
-    cairo_steps_per_tx: 4_000_000,
-    cairo_steps_validate: 1_000_000,
-    contract_bytecode_sz_felts: 81_290,
-    contract_class_sz: 4_089_446,
-    ip_address_rw_limit: 200,
-    signature_sz_felts: 4_000,
-    calldata_sz_felts: 4_000,
+use blockifier::blockifier::stateful_validator::StatefulValidatorError;
+use blockifier::transaction::account_transaction::AccountTransaction;
+use dc_db::db_block_id::DbBlockId;
+use dc_db::storage_handler::DeoxysStorageError;
+use dc_db::DeoxysBackend;
+use dc_exec::ExecutionContext;
+use dp_block::header::PendingHeader;
+use dp_block::{
+    BlockId, BlockTag, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo,
 };
+use inner::MempoolInner;
+use starknet_api::core::{ContractAddress, Nonce};
 
-pub struct MempoolTransaction {
-    tip: u128,
-    sender_address: Felt,
-    nonce: u64,
-    tx_hash: Felt,
-}
+mod inner;
+mod l1;
 
-struct OrderMempoolTransactionByNonce(MempoolTransaction);
+pub use l1::L1DataProvider;
+use starknet_api::transaction::TransactionHash;
 
-impl PartialEq for OrderMempoolTransactionByNonce {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.tx_hash == other.0.tx_hash
-    }
-}
-impl Eq for OrderMempoolTransactionByNonce {}
-
-impl Ord for OrderMempoolTransactionByNonce {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.0.nonce.cmp(&other.0.nonce)
-    }
-}
-impl PartialOrd for OrderMempoolTransactionByNonce {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.cmp(&other))
-    }
-}
-
-pub struct NonceChain {
-    contract_addr: Felt,
-    transactions: BTreeSet<OrderMempoolTransactionByNonce>,
-}
-
-impl NonceChain {
-    /// # Panics
-    ///
-    /// Panics if the NonceChain is empty.
-    pub fn head_tip(&self) -> u128 {
-        self.transactions.first().expect("no transaction for this queue item").0.tip
-    }
-
-    /// # Panics
-    ///
-    /// Panics if the NonceChain is empty.
-    pub fn pop_head(&mut self) -> MempoolTransaction {
-        self.transactions.pop_first().map(|tx| tx.0).expect("no transaction for this queue item")
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.transactions.is_empty()
-    }
-}
-
-struct NonceChainByContract(NonceChain);
-impl PartialEq for NonceChainByContract {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.contract_addr == other.0.contract_addr
-    }
-}
-impl Eq for NonceChainByContract {}
-impl hash::Hash for NonceChainByContract {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.0.contract_addr.hash(state);
-    }
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Storage error: {0:#}")]
+    StorageError(#[from] DeoxysStorageError),
+    #[error("No genesis block in storage")]
+    NoGenesis,
+    #[error("Internal error: {0}")]
+    Internal(Cow<'static, str>),
+    #[error("Validation error: {0:#}")]
+    Validation(#[from] StatefulValidatorError),
+    #[error(transparent)]
+    Exec(#[from] dc_exec::Error),
 }
 
 pub struct Mempool {
-    /// FCFS queue.
-    tx_queue: BTreeSet<NonceChainByContract>,
-    config: MempoolChainConfig,
+    backend: Arc<DeoxysBackend>,
+    l1_data_provider: Arc<dyn L1DataProvider>,
+    inner: RwLock<MempoolInner>,
 }
 
 impl Mempool {
-    pub fn new(config: MempoolChainConfig) -> Self {
-        Mempool { tx_queue: BTreeSet::new(), config }
+    pub fn new(backend: Arc<DeoxysBackend>, l1_data_provider: Arc<dyn L1DataProvider>) -> Self {
+        Mempool { backend, l1_data_provider, inner: Default::default() }
     }
 
-    pub fn accept_tx(tx: BroadcastedInvokeTransactionV3) {
+    /// This function creates the pending block if it is not found.
+    fn pending_block(&self) -> Result<DeoxysMaybePendingBlock, Error> {
+        match self.backend.get_block(&DbBlockId::Pending)? {
+            Some(block) => Ok(block),
+            None => {
+                // No pending block: we create one :)
 
-        // let validator = StatefulValidator;
+                let block_info =
+                    self.backend.get_block_info(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
+                let block_info = block_info.as_nonpending().ok_or(Error::Internal("Latest block is pending".into()))?;
 
-        // 1. __validate__ and basic validation of the transaction
-        // * Early reject when fees are too low.
-
-        // TODO
-
-        // TODO: Stop here if only_query = true.
-
-        // 2. Add it to the nonce chain for the account nonce
+                Ok(DeoxysMaybePendingBlock {
+                    info: DeoxysMaybePendingBlockInfo::Pending(DeoxysPendingBlockInfo {
+                        header: PendingHeader {
+                            parent_block_hash: block_info.block_hash,
+                            sequencer_address: **self.backend.chain_config().sequencer_address,
+                            block_timestamp: SystemTime::now()
+                                .duration_since(SystemTime::UNIX_EPOCH)
+                                .expect("Current time is before the unix timestamp")
+                                .as_secs(),
+                            protocol_version: self.backend.chain_config().latest_protocol_version,
+                            l1_gas_price: self.l1_data_provider.get_gas_prices(),
+                            l1_da_mode: self.l1_data_provider.get_da_mode(),
+                        },
+                        tx_hashes: vec![],
+                    }),
+                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                })
+            }
+        }
     }
 
-    pub fn pop_next_nonce_chain(&mut self) -> Option<NonceChain> {
-        self.tx_queue.pop_first().map(|el| el.0)
+    pub fn accept_account_tx(&self, tx: AccountTransaction) -> Result<(), Error> {
+        // Get pending block
+        let pending_block_info = self.pending_block()?;
+
+        // If the contract has been deployed for the same block is is invoked, we need to skip validations.
+        // NB: the lock is NOT taken the entire time the tx is being validated. As such, the deploy tx
+        //  may appear during that time - but it is not a problem.
+        let deploy_account_tx_hash = if let AccountTransaction::Invoke(tx) = tx {
+            let mempool = self.inner.read().expect("Poisoned lock");
+            if mempool.has_deployed_contract(&tx.tx.sender_address()) {
+                Some(tx.tx_hash) // we return the wrong tx hash here but it's ok because the actual hash is unused by blockifier
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Perform validations
+        let exec_context = ExecutionContext::new(&self.backend, &pending_block_info.info)?;
+        let validator = exec_context.tx_validator();
+        validator.perform_validations(tx, deploy_account_tx_hash)?;
+
+        if !is_only_query(&tx) {
+            // Finally, add it to the nonce chain for the account nonce
+            self.inner.write().insert_account_tx()
+        }
+
+        Ok(())
     }
-    pub fn re_add_nonce_chain(&mut self, chain: NonceChain) {
-        self.tx_queue.insert(NonceChainByContract(chain));
+}
+
+pub(crate) fn is_only_query(tx: &AccountTransaction) -> bool {
+    match tx {
+        AccountTransaction::Declare(tx) => tx.only_query(),
+        AccountTransaction::DeployAccount(tx) => tx.only_query,
+        AccountTransaction::Invoke(tx) => tx.only_query,
     }
+}
+
+pub(crate) fn contract_addr(tx: &AccountTransaction) -> ContractAddress {
+    match tx {
+        AccountTransaction::Declare(tx) => tx.tx.sender_address(),
+        AccountTransaction::DeployAccount(tx) => tx.contract_address,
+        AccountTransaction::Invoke(tx) => tx.tx.sender_address(),
+    }
+}
+
+pub(crate) fn nonce(tx: &AccountTransaction) -> Nonce {
+    match tx {
+        AccountTransaction::Declare(tx) => tx.tx.nonce(),
+        AccountTransaction::DeployAccount(tx) => tx.tx.nonce(),
+        AccountTransaction::Invoke(tx) => tx.tx.nonce(),
+    }
+}
+
+pub(crate) fn tx_hash(tx: &AccountTransaction) -> TransactionHash {
+
 }

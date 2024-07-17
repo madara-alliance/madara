@@ -1,11 +1,20 @@
 use blockifier::{
-    blockifier::{config::TransactionExecutorConfig, transaction_executor::TransactionExecutor},
+    blockifier::{
+        config::TransactionExecutorConfig, stateful_validator::StatefulValidator,
+        transaction_executor::TransactionExecutor,
+    },
     context::{BlockContext, ChainInfo, FeeTokenAddresses},
-    state::cached_state::CachedState,
+    state::{cached_state::CachedState, state_api::StateReader},
+    transaction::errors::TransactionExecutionError,
 };
 use dc_db::{db_block_id::DbBlockId, DeoxysBackend};
 use dp_block::{header::L1DataAvailabilityMode, DeoxysMaybePendingBlockInfo};
-use starknet_api::block::{BlockNumber, BlockTimestamp};
+use dp_convert::ToFelt;
+use starknet_api::{
+    block::{BlockNumber, BlockTimestamp},
+    core::{ContractAddress, Nonce},
+};
+use starknet_types_core::felt::Felt;
 
 use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error};
 
@@ -23,6 +32,14 @@ impl<'a> ExecutionContext<'a> {
             // No concurrency yet.
             TransactionExecutorConfig { concurrency_config: Default::default() },
         )
+    }
+
+    pub fn tx_validator(&self) -> StatefulValidator<BlockifierStateAdapter<'a>> {
+        // When deploying an account and invoking a contract at the same time, we want to skip the validation step for the invoke tx.
+        // This number is the maximum nonce the invoke tx can have to qualify for the validation skip.
+        // TODO: is the number 2 good here?
+        let max_nonce_for_validation_skip = Nonce(Felt::from(2u64));
+        StatefulValidator::create(self.init_cached_state(), self.block_context.clone(), max_nonce_for_validation_skip)
     }
 
     pub fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter<'a>> {
