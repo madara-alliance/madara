@@ -21,8 +21,9 @@ const GREET_AUTHORS: &[&str] = &["KasarLabs <https://kasar.io>"];
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    crate::util::setup_rayon_threadpool()?;
     crate::util::setup_logging()?;
+    crate::util::setup_rayon_threadpool()?;
+    crate::util::raise_fdlimit();
 
     let mut run_cmd: RunCmd = RunCmd::parse();
     let node_name = run_cmd.node_name_or_provide().await.to_string();
@@ -76,7 +77,12 @@ async fn main() -> anyhow::Result<()> {
     telemetry_service.start(&mut task_set).await.context("Starting telemetry service")?;
     prometheus_service.start(&mut task_set).await.context("Starting prometheus metrics service")?;
 
-    telemetry_service.send_connected(&node_name, node_version, &sys_info);
+    telemetry_service.send_connected(
+        &node_name,
+        node_version,
+        &run_cmd.sync_params.network.db_chain_info().chain_name,
+        &sys_info,
+    );
 
     while let Some(result) = task_set.join_next().await {
         // Ignore tokio join errors, only bubble service errors

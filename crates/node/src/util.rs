@@ -12,6 +12,29 @@ pub fn setup_rayon_threadpool() -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn raise_fdlimit() {
+    use fdlimit::Outcome;
+    let recommended = 10000;
+    match fdlimit::raise_fd_limit() {
+        Ok(Outcome::LimitRaised { to, .. }) if to < recommended => {
+            log::warn!(
+                    "The file-descriptor limit for the current process is {to}, which is lower than the recommended {recommended}."
+                );
+        }
+        Ok(Outcome::LimitRaised { to, .. }) => {
+            log::debug!("File-descriptor limit was raised to {to}.");
+        }
+        Err(error) => {
+            log::warn!(
+                "Error while trying to raise the file-descriptor limit for the process: {error:#}. The recommended file-descriptor limit is {recommended}."
+            );
+        }
+        Ok(Outcome::Unsupported) => {
+            log::debug!("Unsupported platform for raising file-descriptor limit.");
+        }
+    }
+}
+
 // Todo: Setup tracing
 pub fn setup_logging() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))

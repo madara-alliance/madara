@@ -12,9 +12,9 @@ use rocksdb::{BoundColumnFamily, IteratorMode, ReadOptions, WriteOptions};
 use starknet_core::types::Felt;
 
 use crate::{
+    codec,
     db_block_id::{DbBlockId, DbBlockIdResolvable},
-    storage_handler::{codec, DeoxysStorageError},
-    Column, DatabaseExt, DeoxysBackend, WriteBatchWithTransaction, DB, DB_UPDATES_BATCH_SIZE,
+    Column, DatabaseExt, DeoxysBackend, DeoxysStorageError, WriteBatchWithTransaction, DB, DB_UPDATES_BATCH_SIZE,
 };
 
 // NB: Columns cf needs prefix extractor of these length during creation

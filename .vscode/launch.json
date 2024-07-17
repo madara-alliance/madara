@@ -18,15 +18,7 @@
       // As such, this path would have to change accordingly.
       "program": "${workspaceFolder}/target/debug/deoxys",
       // If you wish to supply arguments/parameters to the program, supply them below:
-      "args": [
-        "--deoxys",
-        "--network",
-        "main",
-        "--rpc-cors",
-        "all",
-        "--pruning",
-        "archive"
-      ],
+      "args": ["--network=test"],
       // Working folder for execution. Change as necessary if program requires a different value:
       "cwd": "${workspaceFolder}",
       "terminal": "integrated",

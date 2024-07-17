@@ -3,6 +3,11 @@
 ## Next release
 
 - fix(metrics): removed influx and added l2_state_size endpoint
+- fix: command to start the Madara client
+- refactor: database error unification
+- feat: raise file-descriptor limit
+- fix: docker
+- fix: pending storage & sequencer_provider
 - refactor: support pending blocks & db crate
 - refactor: new crate exec
 - fix(issue): Removed unrelated link from issue template

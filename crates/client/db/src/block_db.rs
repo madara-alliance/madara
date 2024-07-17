@@ -7,7 +7,7 @@ use rocksdb::WriteOptions;
 use starknet_core::types::{Felt, StateDiff};
 
 use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
-use crate::storage_handler::{codec, DeoxysStorageError};
+use crate::{codec, DeoxysStorageError};
 use crate::{Column, DatabaseExt, DeoxysBackend, WriteBatchWithTransaction};
 
 type Result<T, E = DeoxysStorageError> = std::result::Result<T, E>;
@@ -142,6 +142,9 @@ impl DeoxysBackend {
         tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(&block.info)?);
         tx.put_cf(&col, ROW_PENDING_INNER, bincode::serialize(&block.inner)?);
         tx.put_cf(&col, ROW_PENDING_STATE_UPDATE, bincode::serialize(&state_update)?);
+        let mut writeopts = WriteOptions::new();
+        writeopts.disable_wal(true);
+        self.db.write_opt(tx, &writeopts)?;
         Ok(())
     }
 
