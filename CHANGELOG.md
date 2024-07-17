@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor: database error unification
 - feat: raise file-descriptor limit
 - fix: docker
 - fix: pending storage & sequencer_provider

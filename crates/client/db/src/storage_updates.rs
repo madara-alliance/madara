@@ -8,8 +8,8 @@ use starknet_core::types::{
 };
 use starknet_types_core::felt::Felt;
 
-use crate::storage_handler::DeoxysStorageError;
 use crate::DeoxysBackend;
+use crate::DeoxysStorageError;
 
 pub struct DbClassUpdate {
     pub class_hash: Felt,

@@ -24,7 +24,7 @@ pub async fn add_invoke_transaction(
         Err(ProviderError::StarknetError(e)) => {
             return Err(StarknetRpcApiError::from(e));
         }
-        Err(e) => bail_internal_server_error!("Failed to add invoke transaction to sequencer: {e}"),
+        Err(e) => bail_internal_server_error!("Failed to add invoke transaction to sequencer: {e:#}"),
     };
 
     Ok(sequencer_response)

@@ -13,6 +13,7 @@ use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
 pub mod block_db;
+mod codec;
 mod error;
 use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, DBWithThreadMode, Env, FlushOptions, MultiThreaded,
@@ -22,10 +23,9 @@ pub mod bonsai_db;
 pub mod class_db;
 pub mod contract_db;
 pub mod db_block_id;
-pub mod storage_handler;
 pub mod storage_updates;
 
-pub use error::{BonsaiDbError, DbError};
+pub use error::{DeoxysStorageError, TrieType};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use tokio::sync::{mpsc, oneshot};
 
@@ -447,4 +447,11 @@ impl DeoxysBackend {
             log: Column::BonsaiClassesLog,
         })
     }
+}
+
+pub mod bonsai_identifier {
+    pub const CONTRACT: &[u8] = "0xcontract".as_bytes();
+    pub const CLASS: &[u8] = "0xclass".as_bytes();
+    pub const TRANSACTION: &[u8] = "0xtransaction".as_bytes();
+    pub const EVENT: &[u8] = "0xevent".as_bytes();
 }

@@ -2,7 +2,7 @@ use bitvec::prelude::*;
 use bonsai_trie::databases::HashMapDb;
 use bonsai_trie::id::{BasicId, BasicIdBuilder};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use dc_db::storage_handler::bonsai_identifier;
+use dc_db::bonsai_identifier;
 use dp_transactions::Transaction;
 use dp_transactions::MAIN_CHAIN_ID;
 use rayon::prelude::*;

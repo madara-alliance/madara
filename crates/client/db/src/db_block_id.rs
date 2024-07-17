@@ -2,7 +2,7 @@ use core::fmt;
 
 use dp_block::BlockId;
 
-use crate::{storage_handler::DeoxysStorageError, DeoxysBackend};
+use crate::{DeoxysBackend, DeoxysStorageError};
 
 #[derive(Debug, Clone, Copy)]
 pub enum DbBlockId {
