@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: command to start the Madara client
 - fix: docker
 - fix: pending storage & sequencer_provider
 - refactor: support pending blocks & db crate
