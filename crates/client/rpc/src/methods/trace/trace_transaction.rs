@@ -1,7 +1,6 @@
 use dc_exec::execution_result_to_tx_trace;
 use dc_exec::ExecutionContext;
 use dp_block::StarknetVersion;
-use dp_convert::ToStarkFelt;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::Felt;
 use starknet_core::types::TransactionTraceWithHash;
@@ -31,9 +30,8 @@ pub async fn trace_transaction(
 
     let exec_context = ExecutionContext::new(&starknet.backend, &block.info)?;
 
-    let mut block_txs = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes()).map(|(tx, hash)| {
-        to_blockifier_transactions(starknet, block.info.as_block_id(), tx, &TransactionHash(hash.to_stark_felt()))
-    });
+    let mut block_txs = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes())
+        .map(|(tx, hash)| to_blockifier_transactions(starknet, block.info.as_block_id(), tx, &TransactionHash(*hash)));
 
     // takes up until not including last tx
     let transactions_before: Vec<_> = block_txs.by_ref().take(tx_index.0 as usize).collect::<Result<_, _>>()?;

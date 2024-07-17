@@ -1,11 +1,10 @@
 //! Utility functions for Deoxys.
 
-use anyhow::{bail, Context};
+use anyhow::bail;
 use ethers::types::{I256, U256};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde_json::Value;
-use starknet_api::hash::StarkFelt;
 use starknet_types_core::felt::Felt;
 use thiserror::Error;
 
@@ -24,10 +23,10 @@ pub async fn get_random_pokemon_name() -> Result<String, Box<dyn std::error::Err
     Ok(random_pokemon["name"].as_str().unwrap().to_string())
 }
 
-pub fn u256_to_starkfelt(u256: U256) -> anyhow::Result<StarkFelt> {
+pub fn u256_to_felt(u256: U256) -> anyhow::Result<Felt> {
     let mut bytes = [0u8; 32];
     u256.to_big_endian(&mut bytes);
-    StarkFelt::new(bytes).context("converting U256 to StarkFelt")
+    Ok(Felt::from_bytes_be(&bytes))
 }
 
 pub fn convert_log_state_update(log_state_update: LogStateUpdate) -> anyhow::Result<L1StateUpdate> {
@@ -37,8 +36,8 @@ pub fn convert_log_state_update(log_state_update: LogStateUpdate) -> anyhow::Res
         bail!("Block number is negative");
     };
 
-    let global_root = u256_to_starkfelt(log_state_update.global_root)?;
-    let block_hash = u256_to_starkfelt(log_state_update.block_hash)?;
+    let global_root = u256_to_felt(log_state_update.global_root)?;
+    let block_hash = u256_to_felt(log_state_update.block_hash)?;
 
     Ok(L1StateUpdate { block_number, global_root, block_hash })
 }

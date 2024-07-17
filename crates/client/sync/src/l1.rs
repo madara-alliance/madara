@@ -4,8 +4,6 @@ use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 use dc_db::DeoxysBackend;
-use dp_convert::ToFelt;
-use dp_convert::ToStarkFelt;
 use dp_transactions::TEST_CHAIN_ID;
 use dp_utils::channel_wait_or_graceful_shutdown;
 use ethers::contract::{abigen, EthEvent};
@@ -18,7 +16,6 @@ use primitive_types::H256;
 use reqwest::Url;
 use serde::Deserialize;
 use serde_json::Value;
-use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_types_core::felt::Felt;
 
 use crate::metrics::block_metrics::BlockMetrics;
@@ -29,8 +26,8 @@ use crate::utils::constant::LOG_STATE_UPDTATE_TOPIC;
 #[derive(Debug, Clone, Deserialize)]
 pub struct L1StateUpdate {
     pub block_number: u64,
-    pub global_root: StarkHash,
-    pub block_hash: StarkHash,
+    pub global_root: Felt,
+    pub block_hash: Felt,
 }
 
 /// Starknet core LogStateUpdate event
@@ -112,23 +109,23 @@ impl EthereumClient {
     }
 
     /// Get the last Starknet state root verified on L1
-    pub async fn get_last_state_root(&self) -> Result<StarkFelt> {
+    pub async fn get_last_state_root(&self) -> Result<Felt> {
         let data = decode("9588eca2")?;
         let to: Address = self.l1_core_address;
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last state root");
-        Ok(Felt::from_hex_unchecked(&result.to_string()).to_stark_felt())
+        Ok(Felt::from_hex_unchecked(&result.to_string()))
     }
 
     /// Get the last Starknet block hash verified on L1
-    pub async fn get_last_block_hash(&self) -> Result<StarkFelt> {
+    pub async fn get_last_block_hash(&self) -> Result<Felt> {
         let data = decode("0x382d83e3")?;
         let to: Address = self.l1_core_address;
         let tx_request = TransactionRequest::new().to(to).data(data);
         let tx = TypedTransaction::Legacy(tx_request);
         let result = self.provider.call(&tx, None).await.expect("Failed to get last block hash");
-        Ok(Felt::from_hex_unchecked(&result.to_string()).to_stark_felt())
+        Ok(Felt::from_hex_unchecked(&result.to_string()))
     }
 
     /// Get the last Starknet state update verified on the L1
@@ -187,8 +184,8 @@ pub fn update_l1(
         log::info!(
             "🔄 Updated L1 head #{} ({}) with state root ({})",
             state_update.block_number,
-            trim_hash(&state_update.block_hash.to_felt()),
-            trim_hash(&state_update.global_root.to_felt())
+            trim_hash(&state_update.block_hash),
+            trim_hash(&state_update.global_root)
         );
 
         block_metrics.l1_block_number.set(state_update.block_number as f64);
@@ -309,9 +306,9 @@ mod l1_sync_tests {
         let client = EthereumClient::new(url, H160::zero()).await.expect("Failed to create EthereumClient");
 
         let initial_state = EthereumClient::get_initial_state(&client).await.expect("Failed to get initial state");
-        assert!(!initial_state.global_root.bytes().is_empty(), "Global root should not be empty");
-        assert!(!initial_state.block_number > 0, "Block number should be greater than 0");
-        assert!(!initial_state.block_hash.bytes().is_empty(), "Block hash should not be empty");
+        assert!(initial_state.global_root == Felt::ZERO, "Global root should not be empty");
+        assert!(initial_state.block_number > 0, "Block number should be greater than 0");
+        assert!(initial_state.block_hash == Felt::ZERO, "Block hash should not be empty");
     }
 
     #[tokio::test]

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::{execution::call_info::CallInfo, transaction::transaction_types::TransactionType};
+use cairo_vm::types::builtin_name::BuiltinName;
 use dp_convert::ToFelt;
 
 use crate::{ExecutionResult, TransactionExecutionError};
@@ -51,8 +52,8 @@ pub fn execution_result_to_tx_trace(
         computation_resources,
         data_resources: starknet_core::types::DataResources {
             data_availability: starknet_core::types::DataAvailabilityResources {
-                l1_gas: execution_info.da_gas.l1_gas as u64,
-                l1_data_gas: execution_info.da_gas.l1_data_gas as u64,
+                l1_gas: execution_info.transaction_receipt.da_gas.l1_gas as u64,
+                l1_data_gas: execution_info.transaction_receipt.da_gas.l1_data_gas as u64,
             },
         },
     };
@@ -139,13 +140,13 @@ fn try_get_funtion_invocation_from_call_info(
 
     Ok(starknet_core::types::FunctionInvocation {
         contract_address: call_info.call.storage_address.0.to_felt(),
-        entry_point_selector: call_info.call.entry_point_selector.0.to_felt(),
-        calldata: call_info.call.calldata.0.iter().map(|x| x.to_felt()).collect(),
+        entry_point_selector: call_info.call.entry_point_selector.0,
+        calldata: call_info.call.calldata.0.to_vec(),
         caller_address: call_info.call.caller_address.0.to_felt(),
         class_hash,
         entry_point_type,
         call_type,
-        result: call_info.execution.retdata.0.iter().map(|x| x.to_felt()).collect(),
+        result: call_info.execution.retdata.0.to_vec(),
         calls: inner_calls,
         events,
         messages,
@@ -161,7 +162,7 @@ fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_core
         .enumerate()
         .map(|(index, message)| starknet_core::types::OrderedMessage {
             order: index as u64,
-            payload: message.message.payload.0.iter().map(ToFelt::to_felt).collect(),
+            payload: message.message.payload.0.to_vec(),
             to_address: message.message.to_address.0.to_felt(),
             from_address: call_info.call.storage_address.to_felt(),
         })
@@ -176,7 +177,7 @@ fn collect_call_info_ordered_events(
         .map(|event| starknet_core::types::OrderedEvent {
             order: event.order as u64,
             keys: event.event.keys.iter().map(ToFelt::to_felt).collect(),
-            data: event.event.data.0.iter().map(ToFelt::to_felt).collect(),
+            data: event.event.data.0.to_vec(),
         })
         .collect()
 }
@@ -190,7 +191,7 @@ fn computation_resources(
 }
 
 fn resources_mapping(
-    builtin_mapping: &HashMap<String, usize>,
+    builtin_mapping: &HashMap<BuiltinName, usize>,
     steps: u64,
     memory_holes: u64,
 ) -> starknet_core::types::ComputationResources {
@@ -199,14 +200,14 @@ fn resources_mapping(
         n => Some(n),
     };
 
-    let range_check_builtin_applications = builtin_mapping.get("range_check_builtin").map(|&value| value as u64);
-    let pedersen_builtin_applications = builtin_mapping.get("pedersen_builtin").map(|&value| value as u64);
-    let poseidon_builtin_applications = builtin_mapping.get("poseidon_builtin").map(|&value| value as u64);
-    let ec_op_builtin_applications = builtin_mapping.get("ec_op_builtin").map(|&value| value as u64);
-    let ecdsa_builtin_applications = builtin_mapping.get("ecdsa_builtin").map(|&value| value as u64);
-    let bitwise_builtin_applications = builtin_mapping.get("bitwise_builtin").map(|&value| value as u64);
-    let keccak_builtin_applications = builtin_mapping.get("keccak_builtin").map(|&value| value as u64);
-    let segment_arena_builtin = builtin_mapping.get("segment_arena_builtin").map(|&value| value as u64);
+    let range_check_builtin_applications = builtin_mapping.get(&BuiltinName::range_check).map(|&value| value as u64);
+    let pedersen_builtin_applications = builtin_mapping.get(&BuiltinName::pedersen).map(|&value| value as u64);
+    let poseidon_builtin_applications = builtin_mapping.get(&BuiltinName::poseidon).map(|&value| value as u64);
+    let ec_op_builtin_applications = builtin_mapping.get(&BuiltinName::ec_op).map(|&value| value as u64);
+    let ecdsa_builtin_applications = builtin_mapping.get(&BuiltinName::ecdsa).map(|&value| value as u64);
+    let bitwise_builtin_applications = builtin_mapping.get(&BuiltinName::bitwise).map(|&value| value as u64);
+    let keccak_builtin_applications = builtin_mapping.get(&BuiltinName::keccak).map(|&value| value as u64);
+    let segment_arena_builtin = builtin_mapping.get(&BuiltinName::segment_arena).map(|&value| value as u64);
 
     starknet_core::types::ComputationResources {
         steps,
@@ -230,10 +231,7 @@ fn to_state_diff(commitment_state_diff: &CommitmentStateDiff) -> starknet_core::
             .map(|(address, updates)| {
                 let storage_entries = updates
                     .into_iter()
-                    .map(|(key, value)| starknet_core::types::StorageEntry {
-                        key: key.to_felt(),
-                        value: value.to_felt(),
-                    })
+                    .map(|(key, value)| starknet_core::types::StorageEntry { key: key.to_felt(), value: *value })
                     .collect();
                 starknet_core::types::ContractStorageDiffItem { address: address.to_felt(), storage_entries }
             })

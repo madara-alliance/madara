@@ -1,8 +1,8 @@
+use core::hash;
 use std::cmp;
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use blockifier::execution::call_info::CallInfo;
 use serde::{Deserialize, Serialize};
 use starknet_core::types::{BroadcastedInvokeTransactionV3, Felt};
 
@@ -90,27 +90,22 @@ impl NonceChain {
     }
 }
 
-struct NonceChainByNextTip(NonceChain);
-impl PartialEq for NonceChainByNextTip {
+struct NonceChainByContract(NonceChain);
+impl PartialEq for NonceChainByContract {
     fn eq(&self, other: &Self) -> bool {
         self.0.contract_addr == other.0.contract_addr
     }
 }
-impl Eq for NonceChainByNextTip {}
-
-impl Ord for NonceChainByNextTip {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.0.head_tip().cmp(&other.0.head_tip())
-    }
-}
-impl PartialOrd for NonceChainByNextTip {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.cmp(other))
+impl Eq for NonceChainByContract {}
+impl hash::Hash for NonceChainByContract {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.0.contract_addr.hash(state);
     }
 }
 
 pub struct Mempool {
-    tx_queue: BTreeSet<NonceChainByNextTip>,
+    /// FCFS queue.
+    tx_queue: BTreeSet<NonceChainByContract>,
     config: MempoolChainConfig,
 }
 
@@ -120,6 +115,9 @@ impl Mempool {
     }
 
     pub fn accept_tx(tx: BroadcastedInvokeTransactionV3) {
+
+        // let validator = StatefulValidator;
+
         // 1. __validate__ and basic validation of the transaction
         // * Early reject when fees are too low.
 
@@ -128,13 +126,12 @@ impl Mempool {
         // TODO: Stop here if only_query = true.
 
         // 2. Add it to the nonce chain for the account nonce
-
     }
 
     pub fn pop_next_nonce_chain(&mut self) -> Option<NonceChain> {
         self.tx_queue.pop_first().map(|el| el.0)
     }
     pub fn re_add_nonce_chain(&mut self, chain: NonceChain) {
-        self.tx_queue.insert(NonceChainByNextTip(chain));
+        self.tx_queue.insert(NonceChainByContract(chain));
     }
 }

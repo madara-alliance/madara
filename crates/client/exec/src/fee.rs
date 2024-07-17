@@ -15,10 +15,10 @@ impl<'a> ExecutionContext<'a> {
             .get_data_gas_price_by_fee_type(&executions_result.fee_type)
             .get();
 
-        let data_gas_consumed = executions_result.execution_info.da_gas.l1_data_gas;
+        let data_gas_consumed = executions_result.execution_info.transaction_receipt.da_gas.l1_data_gas;
         let data_gas_fee = data_gas_consumed.saturating_mul(data_gas_price);
         let gas_consumed =
-            executions_result.execution_info.actual_fee.0.saturating_sub(data_gas_fee) / gas_price.max(1);
+            executions_result.execution_info.transaction_receipt.fee.0.saturating_sub(data_gas_fee) / gas_price.max(1);
         let minimal_gas_consumed = executions_result.minimal_l1_gas.unwrap_or_default().l1_gas;
         let minimal_data_gas_consumed = executions_result.minimal_l1_gas.unwrap_or_default().l1_data_gas;
         let gas_consumed = gas_consumed.max(minimal_gas_consumed);

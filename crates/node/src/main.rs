@@ -59,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
         &run_cmd.db_params.base_path,
         run_cmd.db_params.backup_dir.clone(),
         run_cmd.db_params.restore_from_latest_backup,
-        &run_cmd.sync_params.network.db_chain_info(),
+        run_cmd.sync_params.network.db_chain_info(),
     )
     .await
     .context("Initializing db service")?;

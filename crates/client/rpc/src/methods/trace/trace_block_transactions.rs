@@ -1,5 +1,5 @@
 use dc_exec::{execution_result_to_tx_trace, ExecutionContext};
-use dp_convert::{ToFelt, ToStarkFelt};
+use dp_convert::ToFelt;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{BlockId, TransactionTraceWithHash};
 
@@ -26,9 +26,7 @@ pub async fn trace_block_transactions(
         .transactions
         .iter()
         .zip(block.info.tx_hashes())
-        .map(|(tx, hash)| {
-            to_blockifier_transactions(starknet, block_id.into(), tx, &TransactionHash(hash.to_stark_felt()))
-        })
+        .map(|(tx, hash)| to_blockifier_transactions(starknet, block_id.into(), tx, &TransactionHash(*hash)))
         .collect::<Result<_, _>>()?;
 
     let executions_results = exec_context.execute_transactions([], transactions, true, true)?;

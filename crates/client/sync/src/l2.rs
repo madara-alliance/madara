@@ -12,7 +12,6 @@ use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlockInfo, StarknetVersionError};
 use dp_block::{DeoxysMaybePendingBlock, Header};
 use dp_class::ConvertedClass;
-use dp_convert::ToStarkFelt;
 use dp_state_update::StateDiff;
 use dp_transactions::TransactionTypeError;
 use futures::{stream, StreamExt};
@@ -263,7 +262,7 @@ async fn l2_pending_block_task(
             .context("Getting latest block in db")?
             .context("No block in db")?;
 
-        log::debug!("pending block hash parent hash: {:#}", block.parent_block_hash.to_stark_felt());
+        log::debug!("pending block hash parent hash: {:#x}", block.parent_block_hash);
 
         if block.parent_block_hash == block_hash_best {
             log::debug!("pending block parent block hash matches chain tip, writing pending block");

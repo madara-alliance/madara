@@ -24,6 +24,7 @@ dc-rpc = { workspace = true }
 dc-sync = { workspace = true }
 dc-telemetry = { workspace = true }
 dp-utils = { workspace = true }
+dp-block = { workspace = true }
 
 # Starknet
 starknet-types-core = { workspace = true }

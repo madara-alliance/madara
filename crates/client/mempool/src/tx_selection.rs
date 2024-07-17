@@ -2,8 +2,6 @@ use blockifier::execution::call_info::CallInfo;
 
 use crate::Mempool;
 
-
-
 // TODO: are there other limits to worry about here?
 pub struct GasLimiter {
     max_l2_gas: u64,
@@ -23,7 +21,7 @@ impl GasLimiter {
         let new_l1_gas = self.current_l1_gas + exec_info.execution.gas_consumed;
         let new_cairo_steps = self.current_l2_gas + exec_info.resources.n_steps as u64;
         if new_l1_gas > self.max_l1_gas || new_cairo_steps > self.max_l2_gas {
-            return Err(GasLimitExceeded)
+            return Err(GasLimitExceeded);
         }
 
         self.current_l2_gas = new_cairo_steps;
@@ -48,7 +46,7 @@ fn make_block(mempool: &mut Mempool) {
 
         // exec tx
         let exec_info = todo!();
-        
+
         if gas_limiter.increment(&exec_info).is_err() {
             // Gas limit
             break;

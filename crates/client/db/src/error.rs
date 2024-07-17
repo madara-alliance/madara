@@ -1,4 +1,3 @@
-use crate::codec;
 use crate::Column;
 use std::borrow::Cow;
 
@@ -8,8 +7,6 @@ pub enum DeoxysStorageError {
     BonsaiStorageError(bonsai_trie::BonsaiStorageError<DbError>),
     #[error("Rocksdb error: {0:#}")]
     RocksDB(#[from] rocksdb::Error),
-    #[error("Codec error: {0:#}")]
-    Codec(#[from] codec::Error),
     #[error("Bincode error: {0}")]
     Bincode(#[from] bincode::Error),
     #[error("Failed to compile class: {0}")]

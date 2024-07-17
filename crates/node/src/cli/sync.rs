@@ -1,7 +1,9 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::utils::constant::starknet_core_address;
+use dp_block::chain_config::ChainConfig;
 use primitive_types::H160;
 use url::Url;
 
@@ -86,7 +88,7 @@ impl SyncParams {
         FetchConfig {
             gateway,
             feeder_gateway,
-            chain_id,
+            chain_id: chain_id.into(),
             sound,
             l1_core_address,
             verify: !self.disable_root,
@@ -112,6 +114,7 @@ pub enum NetworkType {
 }
 
 /// Starknet network configuration.
+// TODO: move all that into ChainConfig, and probably move chain config in its own primitive crate too?
 impl NetworkType {
     pub fn uri(&self) -> &'static str {
         match self {
@@ -121,14 +124,12 @@ impl NetworkType {
         }
     }
 
-    pub fn db_chain_info(&self) -> dc_db::block_db::ChainInfo {
-        let chain_name = match self {
-            NetworkType::Main => "main",
-            NetworkType::Test => "test",
-            NetworkType::Integration => "integration",
-        };
-
-        dc_db::block_db::ChainInfo { chain_id: self.chain_id(), chain_name: chain_name.into() }
+    pub fn db_chain_info(&self) -> Arc<ChainConfig> {
+        match self {
+            NetworkType::Main => Arc::new(ChainConfig::starknet_mainnet()),
+            NetworkType::Test => Arc::new(ChainConfig::starknet_sepolia()),
+            NetworkType::Integration => Arc::new(ChainConfig::starknet_integration()),
+        }
     }
 
     pub fn gateway(&self) -> Url {
@@ -139,11 +140,11 @@ impl NetworkType {
         format!("{}/feeder_gateway", self.uri()).parse().unwrap()
     }
 
-    pub fn chain_id(&self) -> starknet_types_core::felt::Felt {
+    pub fn chain_id(&self) -> &'static str {
         match self {
-            NetworkType::Main => starknet_types_core::felt::Felt::from_bytes_be_slice(b"SN_MAIN"),
-            NetworkType::Test => starknet_types_core::felt::Felt::from_bytes_be_slice(b"SN_SEPOLIA"),
-            NetworkType::Integration => starknet_types_core::felt::Felt::from_bytes_be_slice(b"SN_INTEGRATION_SEPOLIA"),
+            NetworkType::Main => "SN_MAIN",
+            NetworkType::Test => "SN_SEPOLIA",
+            NetworkType::Integration => "SN_INTE",
         }
     }
 

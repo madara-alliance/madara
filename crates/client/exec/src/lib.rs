@@ -21,18 +21,20 @@ pub use trace::execution_result_to_tx_trace;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("Unsupported protocol version")]
-    UnsupportedProtocolVersion,
-    #[error("{0:#}")]
+    #[error(transparent)]
+    UnsupportedProtocolVersion(#[from] dp_block::chain_config::UnsupportedProtocolVersion),
+    #[error(transparent)]
     Reexecution(#[from] TxReexecError),
-    #[error("{0:#}")]
+    #[error(transparent)]
     FeeEstimation(#[from] TxFeeEstimationError),
-    #[error("{0:#}")]
+    #[error(transparent)]
     MessageFeeEstimation(#[from] MessageFeeEstimationError),
-    #[error("{0:#}")]
+    #[error(transparent)]
     CallContract(#[from] CallContractError),
     #[error("Storage error: {0:#}")]
     Storage(#[from] DeoxysStorageError),
+    #[error("Invalid sequencer address: {0:#x}")]
+    InvalidSequencerAddress(Felt),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -41,6 +43,7 @@ pub struct TxReexecError {
     block_n: DbBlockId,
     hash: TransactionHash,
     index: usize,
+    #[source]
     err: TransactionExecutionError,
 }
 
@@ -49,6 +52,7 @@ pub struct TxReexecError {
 pub struct TxFeeEstimationError {
     block_n: DbBlockId,
     index: usize,
+    #[source]
     err: TransactionExecutionError,
 }
 
@@ -56,6 +60,7 @@ pub struct TxFeeEstimationError {
 #[error("Estimating message fee on top of {block_n}: {err:#}")]
 pub struct MessageFeeEstimationError {
     block_n: DbBlockId,
+    #[source]
     err: TransactionExecutionError,
 }
 
@@ -64,6 +69,7 @@ pub struct MessageFeeEstimationError {
 pub struct CallContractError {
     block_n: DbBlockId,
     contract: Felt,
+    #[source]
     err: TransactionExecutionError,
 }
 

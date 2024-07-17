@@ -1,3 +1,6 @@
+//! Starknet block primitives.
+
+pub mod chain_config;
 pub mod header;
 mod starknet_version;
 

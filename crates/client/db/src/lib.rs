@@ -6,15 +6,14 @@ use std::time::{Duration, Instant};
 use std::{fmt, fs};
 
 use anyhow::{Context, Result};
-use block_db::ChainInfo;
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
+use dp_block::chain_config::ChainConfig;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
 pub mod block_db;
-mod codec;
 mod error;
 use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, DBWithThreadMode, Env, FlushOptions, MultiThreaded,
@@ -318,6 +317,7 @@ pub struct DeoxysBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
     last_flush_time: Mutex<Option<Instant>>,
+    chain_config: Arc<ChainConfig>,
 }
 
 pub struct DatabaseService {
@@ -329,12 +329,12 @@ impl DatabaseService {
         base_path: &Path,
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
-        chain_info: &ChainInfo,
+        chain_config: Arc<ChainConfig>,
     ) -> anyhow::Result<Self> {
         log::info!("💾 Opening database at: {}", base_path.display());
 
         let handle =
-            DeoxysBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_info)
+            DeoxysBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_config)
                 .await?;
 
         Ok(Self { handle })
@@ -357,19 +357,28 @@ impl Drop for DeoxysBackend {
 }
 
 impl DeoxysBackend {
+    pub fn chain_config(&self) -> &Arc<ChainConfig> {
+        &self.chain_config
+    }
+
     /// Open the db.
     async fn open(
         db_config_dir: PathBuf,
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
-        chain_info: &ChainInfo,
+        chain_config: Arc<ChainConfig>,
     ) -> Result<Arc<DeoxysBackend>> {
         let db_path = db_config_dir.join("db");
 
         let (db, backup_handle) = open_rocksdb(&db_path, true, backup_dir, restore_from_latest_backup).await?;
 
-        let backend = Arc::new(Self { backup_handle, db, last_flush_time: Default::default() });
-        backend.assert_chain_info(chain_info)?;
+        let backend = Arc::new(Self {
+            backup_handle,
+            db,
+            last_flush_time: Default::default(),
+            chain_config: Arc::clone(&chain_config),
+        });
+        backend.assert_chain(&chain_config)?;
         Ok(backend)
     }
 

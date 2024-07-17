@@ -1,5 +1,4 @@
 use dc_exec::ExecutionContext;
-use dp_convert::ToStarkFelt;
 use dp_transactions::L1HandlerTransaction;
 use starknet_api::transaction::{Fee, TransactionHash};
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
@@ -61,7 +60,7 @@ pub fn convert_message_into_transaction(
 
     let tx = blockifier::transaction::transactions::L1HandlerTransaction {
         tx,
-        tx_hash: TransactionHash(tx_hash.to_stark_felt()),
+        tx_hash: TransactionHash(tx_hash),
         paid_fee_on_l1: Fee(1),
     };
     blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(tx)

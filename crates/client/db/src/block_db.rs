@@ -1,22 +1,24 @@
 use anyhow::Context;
+use dp_block::chain_config::ChainConfig;
 use dp_block::{
     BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
     DeoxysMaybePendingBlockInfo, DeoxysPendingBlock, DeoxysPendingBlockInfo,
 };
 use dp_state_update::StateDiff;
 use rocksdb::WriteOptions;
+use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 
 use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
-use crate::{codec, DeoxysStorageError};
+use crate::DeoxysStorageError;
 use crate::{Column, DatabaseExt, DeoxysBackend, WriteBatchWithTransaction};
 
 type Result<T, E = DeoxysStorageError> = std::result::Result<T, E>;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-pub struct ChainInfo {
-    pub chain_id: starknet_types_core::felt::Felt,
-    pub chain_name: String,
+struct ChainInfo {
+    chain_id: ChainId,
+    chain_name: String,
 }
 
 const ROW_CHAIN_INFO: &[u8] = b"chain_info";
@@ -31,21 +33,15 @@ pub struct TxIndex(pub u64);
 // TODO(error-handling): some of the else { return Ok(None) } should be replaced with hard errors for
 // inconsistent state.
 impl DeoxysBackend {
-    pub fn chain_info(&self) -> Result<ChainInfo> {
-        let col = self.db.get_column(Column::BlockStorageMeta);
-        let res = self.db.get_pinned_cf(&col, ROW_CHAIN_INFO)?.ok_or(DeoxysStorageError::MissingChainInfo)?;
-        Ok(bincode::deserialize(res.as_ref())?)
-    }
-
-    pub(crate) fn assert_chain_info(&self, expected: &ChainInfo) -> anyhow::Result<()> {
+    pub(crate) fn assert_chain(&self, expected: &ChainConfig) -> anyhow::Result<()> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         if let Some(res) = self.db.get_pinned_cf(&col, ROW_CHAIN_INFO)? {
             let res: ChainInfo = bincode::deserialize(res.as_ref())?;
 
             if res.chain_id != expected.chain_id {
                 anyhow::bail!(
-                    "The database has been created on the network `{}` (chain id {:#x}), \
-                            but the node is configured for network `{}` (chain id {:#x}).",
+                    "The database has been created on the network `{}` (chain id {}), \
+                            but the node is configured for network `{}` (chain id {}).",
                     res.chain_name,
                     res.chain_id,
                     expected.chain_name,
@@ -53,7 +49,10 @@ impl DeoxysBackend {
                 )
             }
         } else {
-            self.db.put_cf(&col, ROW_CHAIN_INFO, bincode::serialize(expected)?).context("Writing chain info to db")?;
+            let chain_info = ChainInfo { chain_id: expected.chain_id.clone(), chain_name: expected.chain_name.clone() };
+            self.db
+                .put_cf(&col, ROW_CHAIN_INFO, bincode::serialize(&chain_info)?)
+                .context("Writing chain info to db")?;
         }
 
         Ok(())
@@ -64,7 +63,7 @@ impl DeoxysBackend {
         let col = self.db.get_column(Column::TxHashToBlockN);
         let res = self.db.get_cf(&col, bincode::serialize(tx_hash)?)?;
         let Some(res) = res else { return Ok(None) };
-        let block_n = codec::Decode::decode(&res)?;
+        let block_n = bincode::deserialize(&res)?;
         Ok(Some(block_n))
     }
 
@@ -72,13 +71,13 @@ impl DeoxysBackend {
         let col = self.db.get_column(Column::BlockHashToBlockN);
         let res = self.db.get_cf(&col, bincode::serialize(block_hash)?)?;
         let Some(res) = res else { return Ok(None) };
-        let block_n = codec::Decode::decode(&res)?;
+        let block_n = bincode::deserialize(&res)?;
         Ok(Some(block_n))
     }
 
     fn get_state_update(&self, block_n: u64) -> Result<Option<StateDiff>> {
         let col = self.db.get_column(Column::BlockNToStateDiff);
-        let res = self.db.get_cf(&col, codec::Encode::encode(&block_n)?)?;
+        let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
         let Some(res) = res else { return Ok(None) };
         let block = bincode::deserialize(&res)?;
         Ok(Some(block))
@@ -86,7 +85,7 @@ impl DeoxysBackend {
 
     fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<DeoxysBlockInfo>> {
         let col = self.db.get_column(Column::BlockNToBlockInfo);
-        let res = self.db.get_cf(&col, codec::Encode::encode(&block_n)?)?;
+        let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
         let Some(res) = res else { return Ok(None) };
         let block = bincode::deserialize(&res)?;
         Ok(Some(block))
@@ -94,7 +93,7 @@ impl DeoxysBackend {
 
     fn get_block_inner_from_block_n(&self, block_n: u64) -> Result<Option<DeoxysBlockInner>> {
         let col = self.db.get_column(Column::BlockNToBlockInner);
-        let res = self.db.get_cf(&col, codec::Encode::encode(&block_n)?)?;
+        let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
         let Some(res) = res else { return Ok(None) };
         let block = bincode::deserialize(&res)?;
         Ok(Some(block))
@@ -103,7 +102,7 @@ impl DeoxysBackend {
     pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_SYNC_TIP)? else { return Ok(None) };
-        let res = codec::Decode::decode(&res)?;
+        let res = bincode::deserialize(&res)?;
         Ok(Some(res))
     }
 
@@ -124,7 +123,7 @@ impl DeoxysBackend {
     pub fn get_l1_last_confirmed_block(&self) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK)? else { return Ok(None) };
-        let res = codec::Decode::decode(&res)?;
+        let res = bincode::deserialize(&res)?;
         Ok(Some(res))
     }
 
@@ -165,7 +164,7 @@ impl DeoxysBackend {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let mut writeopts = WriteOptions::default(); // todo move that in db
         writeopts.disable_wal(true);
-        self.db.put_cf_opt(&col, ROW_L1_LAST_CONFIRMED_BLOCK, codec::Encode::encode(&l1_last)?, &writeopts)?;
+        self.db.put_cf_opt(&col, ROW_L1_LAST_CONFIRMED_BLOCK, bincode::serialize(&l1_last)?, &writeopts)?;
         Ok(())
     }
 
@@ -185,7 +184,7 @@ impl DeoxysBackend {
         let meta = self.db.get_column(Column::BlockStorageMeta);
 
         let block_hash_encoded = bincode::serialize(&block.info.block_hash)?;
-        let block_n_encoded = codec::Encode::encode(&block.info.header.block_number)?;
+        let block_n_encoded = bincode::serialize(&block.info.header.block_number)?;
 
         for hash in &block.info.tx_hashes {
             tx.put_cf(&tx_hash_to_block_n, bincode::serialize(hash)?, &block_n_encoded);

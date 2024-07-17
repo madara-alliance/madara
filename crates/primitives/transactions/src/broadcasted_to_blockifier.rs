@@ -1,7 +1,6 @@
 use crate::{to_starknet_api::TransactionApiError, Transaction, TransactionWithHash};
 use blockifier::{execution::errors::ContractClassError, transaction::errors::TransactionExecutionError};
 use dp_class::{to_blockifier_class, ClassHash, ToCompiledClass};
-use dp_convert::ToStarkFelt;
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 
@@ -76,10 +75,10 @@ pub fn broadcasted_to_blockifier(
 
     Ok(blockifier::transaction::transaction_execution::Transaction::from_api(
         transaction,
-        TransactionHash(hash.to_stark_felt()),
+        TransactionHash(hash),
         class_info,
         None,
-        deployed_address.map(|address| address.to_stark_felt().try_into().unwrap()),
+        deployed_address.map(|address| address.try_into().unwrap()),
         is_query,
     )?)
 }

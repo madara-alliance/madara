@@ -1,54 +1,33 @@
-use std::collections::HashSet;
-
 use blockifier::execution::contract_class::ContractClass;
-use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::errors::StateError;
-use blockifier::state::state_api::{State, StateReader, StateResult};
+use blockifier::state::state_api::{StateReader, StateResult};
 use dc_db::db_block_id::DbBlockId;
 use dc_db::DeoxysBackend;
 use dp_block::BlockId;
 use dp_class::to_blockifier_class;
-use dp_convert::{ToFelt, ToStarkFelt};
-use indexmap::IndexMap;
+use dp_convert::{felt_to_u64, ToFelt};
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
-use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_core::types::Felt;
 
 /// `BlockifierStateAdapter` is only use to re-executing or simulate transactions.
-/// None of the setters should therefore change the storage persistently,
-/// all changes are temporary stored in the struct and are discarded after the execution
+/// All of the setters change the storage permanently. Use blockifier's `CachedState` for a cache.
 pub struct BlockifierStateAdapter<'a> {
     backend: &'a DeoxysBackend,
     /// When this value is None, we are executing the genesis block.
     on_top_of_block_id: Option<DbBlockId>,
-    storage_update: IndexMap<ContractAddress, IndexMap<StorageKey, StarkFelt>>,
-    nonce_update: IndexMap<ContractAddress, Nonce>,
-    class_hash_update: IndexMap<ContractAddress, ClassHash>,
-    compiled_class_hash_update: IndexMap<ClassHash, CompiledClassHash>,
-    contract_class_update: IndexMap<ClassHash, ContractClass>,
-    visited_pcs: IndexMap<ClassHash, HashSet<usize>>,
 }
 
 impl<'a> BlockifierStateAdapter<'a> {
     pub fn new(backend: &'a DeoxysBackend, on_top_of_block_id: Option<DbBlockId>) -> Self {
-        Self {
-            backend,
-            on_top_of_block_id,
-            storage_update: IndexMap::default(),
-            nonce_update: IndexMap::default(),
-            class_hash_update: IndexMap::default(),
-            compiled_class_hash_update: IndexMap::default(),
-            contract_class_update: IndexMap::default(),
-            visited_pcs: IndexMap::default(),
-        }
+        Self { backend, on_top_of_block_id }
     }
 }
 
 impl<'a> StateReader for BlockifierStateAdapter<'a> {
-    fn get_storage_at(&mut self, contract_address: ContractAddress, key: StorageKey) -> StateResult<StarkFelt> {
-        if *contract_address.key() == StarkFelt::ONE {
-            let block_number = (*key.0.key()).try_into().map_err(|_| StateError::OldBlockHashNotProvided)?;
+    fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
+        if *contract_address.key() == Felt::ONE {
+            let block_number = felt_to_u64(key.0.key()).map_err(|_| StateError::OldBlockHashNotProvided)?;
 
             return Ok(self
                 .backend
@@ -59,11 +38,10 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
                         format!("Failed to retrieve block hash for block number {block_number}",),
                     )
                 })?
-                .ok_or(StateError::OldBlockHashNotProvided)?
-                .to_stark_felt());
+                .ok_or(StateError::OldBlockHashNotProvided)?);
         }
 
-        let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(StarkFelt::ZERO) };
+        let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(Felt::ZERO) };
 
         Ok(self
             .backend
@@ -76,15 +54,11 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
                     "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}",
                 ))
             })?
-            .unwrap_or(Felt::ZERO)
-            .to_stark_felt())
+            .unwrap_or(Felt::ZERO))
     }
 
-    fn get_nonce_at(&mut self, contract_address: ContractAddress) -> StateResult<Nonce> {
+    fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
         log::debug!("get_nonce_at for {:#?}", contract_address);
-        if let Some(nonce) = self.nonce_update.get(&contract_address) {
-            return Ok(*nonce);
-        }
         let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(Nonce::default()) };
 
         Ok(Nonce(
@@ -94,16 +68,12 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
                     log::warn!("Failed to retrieve nonce for contract {contract_address:#?}: {err:#}");
                     StateError::StateReadError(format!("Failed to retrieve nonce for contract {contract_address:#?}",))
                 })?
-                .unwrap_or(Felt::ZERO)
-                .to_stark_felt(),
+                .unwrap_or(Felt::ZERO),
         ))
     }
 
-    fn get_class_hash_at(&mut self, contract_address: ContractAddress) -> StateResult<ClassHash> {
+    fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
         log::debug!("get_class_hash_at for {:#?}", contract_address);
-        if let Some(class_hash) = self.class_hash_update.get(&contract_address).cloned() {
-            return Ok(class_hash);
-        }
         let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(ClassHash::default()) };
 
         // Note that blockifier is fine with us returning ZERO as a class_hash if it is not found, they do the check on their end after
@@ -117,17 +87,12 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
                         err
                     ))
                 })?
-                .unwrap_or_default()
-                .to_stark_felt(),
+                .unwrap_or_default(),
         ))
     }
 
-    fn get_compiled_contract_class(&mut self, class_hash: ClassHash) -> StateResult<ContractClass> {
+    fn get_compiled_contract_class(&self, class_hash: ClassHash) -> StateResult<ContractClass> {
         log::debug!("get_compiled_contract_class for {:#?}", class_hash);
-
-        if let Some(contract_class) = self.contract_class_update.get(&class_hash) {
-            return Ok(contract_class.clone());
-        };
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else {
             return Err(StateError::UndeclaredClassHash(class_hash));
@@ -145,12 +110,9 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
         to_blockifier_class(compiled_class).map_err(StateError::ProgramError)
     }
 
-    fn get_compiled_class_hash(&mut self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
+    fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
         log::debug!("get_compiled_contract_class for {:#?}", class_hash);
 
-        if let Some(compiled_class_hash) = self.compiled_class_hash_update.get(&class_hash) {
-            return Ok(*compiled_class_hash);
-        };
         let Some(on_top_of_block_id) = self.on_top_of_block_id else {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
@@ -163,62 +125,62 @@ impl<'a> StateReader for BlockifierStateAdapter<'a> {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
 
-        Ok(CompiledClassHash(class_info.compiled_class_hash.to_stark_felt()))
+        Ok(CompiledClassHash(class_info.compiled_class_hash))
     }
 }
 
-impl<'a> State for BlockifierStateAdapter<'a> {
-    fn set_storage_at(
-        &mut self,
-        contract_address: ContractAddress,
-        key: StorageKey,
-        value: StarkFelt,
-    ) -> StateResult<()> {
-        self.storage_update.entry(contract_address).or_default().insert(key, value);
+// impl<'a> State for BlockifierStateAdapter<'a> {
+//     fn set_storage_at(
+//         &mut self,
+//         contract_address: ContractAddress,
+//         key: StorageKey,
+//         value: StarkFelt,
+//     ) -> StateResult<()> {
+//         self.storage_update.entry(contract_address).or_default().insert(key, value);
 
-        Ok(())
-    }
+//         Ok(())
+//     }
 
-    fn increment_nonce(&mut self, contract_address: ContractAddress) -> StateResult<()> {
-        let nonce = self.get_nonce_at(contract_address)?.try_increment().map_err(StateError::StarknetApiError)?;
+//     fn increment_nonce(&mut self, contract_address: ContractAddress) -> StateResult<()> {
+//         let nonce = self.get_nonce_at(contract_address)?.try_increment().map_err(StateError::StarknetApiError)?;
 
-        self.nonce_update.insert(contract_address, nonce);
+//         self.nonce_update.insert(contract_address, nonce);
 
-        Ok(())
-    }
+//         Ok(())
+//     }
 
-    fn set_class_hash_at(&mut self, contract_address: ContractAddress, class_hash: ClassHash) -> StateResult<()> {
-        self.class_hash_update.insert(contract_address, class_hash);
+//     fn set_class_hash_at(&mut self, contract_address: ContractAddress, class_hash: ClassHash) -> StateResult<()> {
+//         self.class_hash_update.insert(contract_address, class_hash);
 
-        Ok(())
-    }
+//         Ok(())
+//     }
 
-    fn set_contract_class(&mut self, class_hash: ClassHash, contract_class: ContractClass) -> StateResult<()> {
-        self.contract_class_update.insert(class_hash, contract_class);
+//     fn set_contract_class(&mut self, class_hash: ClassHash, contract_class: ContractClass) -> StateResult<()> {
+//         self.contract_class_update.insert(class_hash, contract_class);
 
-        Ok(())
-    }
+//         Ok(())
+//     }
 
-    fn set_compiled_class_hash(
-        &mut self,
-        class_hash: ClassHash,
-        compiled_class_hash: CompiledClassHash,
-    ) -> StateResult<()> {
-        self.compiled_class_hash_update.insert(class_hash, compiled_class_hash);
+//     fn set_compiled_class_hash(
+//         &mut self,
+//         class_hash: ClassHash,
+//         compiled_class_hash: CompiledClassHash,
+//     ) -> StateResult<()> {
+//         self.compiled_class_hash_update.insert(class_hash, compiled_class_hash);
 
-        Ok(())
-    }
+//         Ok(())
+//     }
 
-    fn add_visited_pcs(&mut self, class_hash: ClassHash, pcs: &HashSet<usize>) {
-        self.visited_pcs.entry(class_hash).or_default().extend(pcs);
-    }
+//     fn add_visited_pcs(&mut self, class_hash: ClassHash, pcs: &HashSet<usize>) {
+//         self.visited_pcs.entry(class_hash).or_default().extend(pcs);
+//     }
 
-    fn to_state_diff(&mut self) -> CommitmentStateDiff {
-        CommitmentStateDiff {
-            address_to_class_hash: self.class_hash_update.clone(),
-            address_to_nonce: self.nonce_update.clone(),
-            storage_updates: self.storage_update.clone(),
-            class_hash_to_compiled_class_hash: self.compiled_class_hash_update.clone(),
-        }
-    }
-}
+//     fn to_state_diff(&mut self) -> CommitmentStateDiff {
+//         CommitmentStateDiff {
+//             address_to_class_hash: self.class_hash_update.clone(),
+//             address_to_nonce: self.nonce_update.clone(),
+//             storage_updates: self.storage_update.clone(),
+//             class_hash_to_compiled_class_hash: self.compiled_class_hash_update.clone(),
+//         }
+//     }
+// }

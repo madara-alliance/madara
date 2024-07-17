@@ -12,7 +12,6 @@ use rocksdb::{BoundColumnFamily, IteratorMode, ReadOptions, WriteOptions};
 use starknet_core::types::Felt;
 
 use crate::{
-    codec,
     db_block_id::{DbBlockId, DbBlockIdResolvable},
     Column, DatabaseExt, DeoxysBackend, DeoxysStorageError, WriteBatchWithTransaction, DB, DB_UPDATES_BATCH_SIZE,
 };
@@ -148,7 +147,7 @@ impl DeoxysBackend {
             for (key, value) in chunk {
                 // TODO: find a way to avoid this allocation
                 let key = [key.as_ref(), &block_number.to_be_bytes() as &[u8]].concat();
-                batch.put_cf(col, key, codec::Encode::encode(&value)?);
+                batch.put_cf(col, key, bincode::serialize(&value)?);
             }
             db.write_opt(batch, writeopts)?;
             Ok(())
@@ -206,7 +205,7 @@ impl DeoxysBackend {
             let mut batch = WriteBatchWithTransaction::default();
             for (key, value) in chunk {
                 // TODO: find a way to avoid this allocation
-                batch.put_cf(col, key.as_ref(), codec::Encode::encode(&value)?);
+                batch.put_cf(col, key.as_ref(), bincode::serialize(&value)?);
             }
             db.write_opt(batch, writeopts)?;
             Ok(())
