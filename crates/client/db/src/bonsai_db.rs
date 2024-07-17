@@ -2,7 +2,8 @@ use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, ByteVec, DatabaseKey};
 use rocksdb::{Direction, IteratorMode, WriteOptions};
 
-use crate::{Column, DatabaseExt, DeoxysStorageError, WriteBatchWithTransaction, DB};
+use crate::error::DbError;
+use crate::{Column, DatabaseExt, WriteBatchWithTransaction, DB};
 
 #[derive(Clone, Debug)]
 pub(crate) struct DatabaseKeyMapping {
@@ -39,7 +40,7 @@ impl<'db> BonsaiDb<'db> {
 
 impl BonsaiDatabase for BonsaiDb<'_> {
     type Batch = WriteBatchWithTransaction;
-    type DatabaseError = DeoxysStorageError;
+    type DatabaseError = DbError;
 
     fn create_batch(&self) -> Self::Batch {
         Self::Batch::default()
@@ -249,7 +250,7 @@ where
     Self: 'db,
 {
     type Transaction = Self;
-    type DatabaseError = DeoxysStorageError;
+    type DatabaseError = DbError;
 
     fn snapshot(&mut self, _id: BasicId) {
         log::trace!("Generating RocksDB snapshot");

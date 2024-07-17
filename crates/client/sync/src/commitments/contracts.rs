@@ -5,7 +5,7 @@ use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use dc_db::DeoxysBackend;
-use dc_db::{bonsai_identifier, DeoxysStorageError, StorageType};
+use dc_db::{bonsai_identifier, DeoxysStorageError};
 use dp_block::{BlockId, BlockTag};
 use dp_convert::ToFelt;
 use indexmap::IndexMap;
@@ -47,18 +47,14 @@ pub fn contract_trie_root(
         for (key, value) in updates {
             let bytes = key.0.key().bytes();
             let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-            contract_storage_trie
-                .insert(contract_address.0.key().bytes(), &bv, &value.to_felt())
-                .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?;
+            contract_storage_trie.insert(contract_address.0.key().bytes(), &bv, &value.to_felt())?;
         }
     }
 
     log::debug!("contract_storage_trie commit");
 
     // Then we commit them
-    contract_storage_trie
-        .commit(BasicId::new(block_number))
-        .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::ContractStorage))?;
+    contract_storage_trie.commit(BasicId::new(block_number))?;
 
     let mut contract_trie = backend.contract_trie();
 
@@ -66,9 +62,7 @@ pub fn contract_trie_root(
     let updates: Vec<_> = all_contract_address
         .into_par_iter()
         .map(|contract_address| {
-            let storage_root = contract_storage_trie
-                .root_hash(contract_address.0.key().bytes())
-                .map_err(|_| DeoxysStorageError::StorageRetrievalError(StorageType::Contract))?;
+            let storage_root = contract_storage_trie.root_hash(contract_address.0.key().bytes())?;
             let leaf_hash = contract_state_leaf_hash(
                 backend,
                 &address_to_class_hash,
@@ -86,19 +80,13 @@ pub fn contract_trie_root(
     for (key, value) in updates {
         let bytes = key.0.key().bytes();
         let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-        contract_trie
-            .insert(bonsai_identifier::CONTRACT, &bv, &value)
-            .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?
+        contract_trie.insert(bonsai_identifier::CONTRACT, &bv, &value)?
     }
 
     log::debug!("contract_trie committing");
 
-    contract_trie
-        .commit(BasicId::new(block_number))
-        .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
-    let root_hash = contract_trie
-        .root_hash(bonsai_identifier::CONTRACT)
-        .map_err(|_| DeoxysStorageError::StorageInsertionError(StorageType::Contract))?;
+    contract_trie.commit(BasicId::new(block_number))?;
+    let root_hash = contract_trie.root_hash(bonsai_identifier::CONTRACT)?;
 
     log::debug!("contract_trie committed");
 

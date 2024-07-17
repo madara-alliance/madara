@@ -25,7 +25,7 @@ pub mod contract_db;
 pub mod db_block_id;
 pub mod storage_updates;
 
-pub use error::{DeoxysStorageError, StorageType, TrieType};
+pub use error::{DeoxysStorageError, TrieType};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use tokio::sync::{mpsc, oneshot};
 

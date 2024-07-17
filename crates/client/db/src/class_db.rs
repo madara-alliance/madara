@@ -96,7 +96,7 @@ impl DeoxysBackend {
                 Column::PendingClassCompiled,
                 Column::ClassCompiled,
             )?
-            .ok_or(DeoxysStorageError::StorageRetrievalError(crate::StorageType::CompiledContractClass))?;
+            .ok_or(DeoxysStorageError::InconsistentStorage("Class compiled not found while class info is".into()))?;
 
         Ok(Some((info, compiled_class)))
     }
