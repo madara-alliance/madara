@@ -15,7 +15,7 @@ pub use prometheus::{
         AtomicF64 as F64, AtomicI64 as I64, AtomicU64 as U64, GenericCounter as Counter,
         GenericCounterVec as CounterVec, GenericGauge as Gauge, GenericGaugeVec as GaugeVec,
     },
-    exponential_buckets, Error as PrometheusError, Histogram, HistogramOpts, HistogramVec, Opts, Registry,
+    exponential_buckets, Error as PrometheusError, Histogram, HistogramOpts, HistogramVec, IntGaugeVec, Opts, Registry,
 };
 
 #[derive(Clone, Debug)]

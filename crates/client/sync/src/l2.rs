@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use anyhow::{bail, Context};
+use dc_db::db_metrics::DbMetrics;
 use dc_db::DeoxysBackend;
 use dc_db::DeoxysStorageError;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
@@ -59,6 +60,7 @@ async fn l2_verify_and_apply_task(
     verify: bool,
     backup_every_n_blocks: Option<u64>,
     block_metrics: BlockMetrics,
+    db_metrics: DbMetrics,
     starting_block: u64,
     sync_timer: Arc<Mutex<Option<Instant>>>,
     telemetry: TelemetryHandle,
@@ -118,8 +120,16 @@ async fn l2_verify_and_apply_task(
         })
         .await?;
 
-        update_sync_metrics(block_n, &block_header, starting_block, &block_metrics, sync_timer.clone(), &backend)
-            .await?;
+        update_sync_metrics(
+            block_n,
+            &block_header,
+            starting_block,
+            &block_metrics,
+            &db_metrics,
+            sync_timer.clone(),
+            &backend,
+        )
+        .await?;
 
         let sw = PerfStopwatch::new();
         if backend.maybe_flush(false)? {
@@ -288,11 +298,13 @@ pub struct L2SyncConfig {
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
+#[allow(clippy::too_many_arguments)]
 pub async fn sync(
     backend: &Arc<DeoxysBackend>,
     provider: SequencerGatewayProvider,
     config: L2SyncConfig,
     block_metrics: BlockMetrics,
+    db_metrics: DbMetrics,
     starting_block: u64,
     chain_id: Felt,
     telemetry: TelemetryHandle,
@@ -330,6 +342,7 @@ pub async fn sync(
         config.verify,
         config.backup_every_n_blocks,
         block_metrics,
+        db_metrics,
         starting_block,
         Arc::clone(&sync_timer),
         telemetry,
@@ -354,6 +367,7 @@ async fn update_sync_metrics(
     block_header: &Header,
     starting_block: u64,
     block_metrics: &BlockMetrics,
+    db_metrics: &DbMetrics,
     sync_timer: Arc<Mutex<Option<Instant>>>,
     backend: &DeoxysBackend,
 ) -> anyhow::Result<()> {
@@ -383,8 +397,8 @@ async fn update_sync_metrics(
     block_metrics.l1_gas_price_wei.set(f64::from_u128(block_header.l1_gas_price.eth_l1_gas_price).unwrap_or(0f64));
     block_metrics.l1_gas_price_strk.set(f64::from_u128(block_header.l1_gas_price.strk_l1_gas_price).unwrap_or(0f64));
 
-    if block_number % 1000 == 0 {
-        let storage_size = backend.get_storage_size();
+    if block_number % 200 == 0 {
+        let storage_size = backend.get_storage_size(db_metrics);
         let size_gb = storage_size as f64 / (1024 * 1024 * 1024) as f64;
         block_metrics.l2_state_size.set(size_gb);
     }
