@@ -117,7 +117,7 @@ impl NetworkType {
         match self {
             NetworkType::Main => "https://alpha-mainnet.starknet.io",
             NetworkType::Test => "https://alpha-sepolia.starknet.io",
-            NetworkType::Integration => "https://external.integration.starknet.io",
+            NetworkType::Integration => "https://integration-sepolia.starknet.io",
         }
     }
 

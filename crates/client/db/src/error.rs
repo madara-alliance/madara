@@ -1,25 +1,68 @@
-use bonsai_trie::DBError;
-
+use crate::codec;
 use crate::Column;
+use std::borrow::Cow;
+
+#[derive(thiserror::Error, Debug)]
+pub enum DeoxysStorageError {
+    #[error("Bonsai error: {0}")]
+    BonsaiStorageError(bonsai_trie::BonsaiStorageError<DbError>),
+    #[error("Rocksdb error: {0:#}")]
+    RocksDB(#[from] rocksdb::Error),
+    #[error("Codec error: {0:#}")]
+    Codec(#[from] codec::Error),
+    #[error("Bincode error: {0}")]
+    Bincode(#[from] bincode::Error),
+    #[error("Failed to compile class: {0}")]
+    CompilationClassError(String),
+    #[error("Invalid block number")]
+    InvalidBlockNumber,
+    #[error("Invalid nonce")]
+    InvalidNonce,
+    #[error("Chain info is missing from the database")]
+    MissingChainInfo,
+    #[error("Inconsistent storage")]
+    InconsistentStorage(Cow<'static, str>),
+}
+
+impl From<bonsai_trie::BonsaiStorageError<DbError>> for DeoxysStorageError {
+    fn from(e: bonsai_trie::BonsaiStorageError<DbError>) -> Self {
+        DeoxysStorageError::BonsaiStorageError(e)
+    }
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum DbError {
     #[error("Failed to commit DB Update: `{0}`")]
     RocksDB(#[from] rocksdb::Error),
-    #[error("A value was queryied that was not initialized at column: `{0}` key: `{1}`")]
+    #[error("A value was queried that was not initialized at column: `{0}` key: `{1}`")]
     ValueNotInitialized(Column, String),
     #[error("Format error: `{0}`")]
     Format(String),
-    #[error("value codec error: {0}")]
+    #[error("Value codec error: {0}")]
     Bincode(#[from] bincode::Error),
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum BonsaiDbError {
-    #[error("IO error: `{0}`")]
-    Io(#[from] std::io::Error),
-    #[error("Failed to commit DB Update: `{0}`")]
-    RocksDB(#[from] rocksdb::Error),
+impl bonsai_trie::DBError for DbError {}
+
+#[derive(Debug)]
+pub enum TrieType {
+    Contract,
+    ContractStorage,
+    Class,
 }
 
-impl DBError for BonsaiDbError {}
+impl TrieType {
+    fn as_str(&self) -> &'static str {
+        match self {
+            TrieType::Contract => "contract",
+            TrieType::ContractStorage => "contract storage",
+            TrieType::Class => "class",
+        }
+    }
+}
+
+impl std::fmt::Display for TrieType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}

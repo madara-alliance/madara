@@ -3038,6 +3038,7 @@ dependencies = [
  "dc-telemetry",
  "dp-utils",
  "env_logger 0.11.3",
+ "fdlimit",
  "forwarded-header-value",
  "futures",
  "governor",
@@ -3751,6 +3752,16 @@ name = "fastrand"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fc0510504f03c51ada170672ac806f1f105a88aa97a5281117e1ddc3368e51a"
+
+[[package]]
+name = "fdlimit"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e182f7dbc2ef73d9ef67351c5fbbea084729c48362d3ce9dd44c28e32e277fe5"
+dependencies = [
+ "libc",
+ "thiserror",
+]
 
 [[package]]
 name = "ff"

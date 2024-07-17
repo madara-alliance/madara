@@ -17,7 +17,7 @@ pub struct TelemetryParams {
 		long = "telemetry-url",
 		value_name = "URL VERBOSITY",
 		value_parser = parse_telemetry_endpoints,
-		default_value = "wss://starknodes.com/submit 1",
+		default_value = "wss://starknodes.com/submit 0",
 	)]
     pub telemetry_endpoints: Vec<(String, u8)>,
 }
