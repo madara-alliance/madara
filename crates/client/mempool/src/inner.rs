@@ -1,7 +1,7 @@
 //! The inner mempool does not perform validation, and is expected to be stored into a RwLock or Mutex.
 //! This is the chokepoint for all insertions and popping, as such, we want to make it as fast as possible.
 //! Insertion and popping should be O(log n).
-//! 
+//!
 //! TODO: mempool size limits
 //! TODO: proptest
 
@@ -64,6 +64,7 @@ impl PartialOrd for OrderMempoolTransactionByNonce {
 pub struct NonceChain {
     transactions: BTreeSet<OrderMempoolTransactionByNonce>,
     front_arrived_at: ArrivedAtTimestamp,
+    #[cfg(debug_assertions)]
     front_tx_hash: TransactionHash,
 }
 
@@ -77,6 +78,7 @@ impl NonceChain {
     pub fn new_with_first_tx(tx: MempoolTransaction) -> Self {
         Self {
             front_arrived_at: tx.arrived_at,
+            #[cfg(debug_assertions)]
             front_tx_hash: tx.tx_hash(),
             transactions: iter::once(OrderMempoolTransactionByNonce(tx)).collect(),
         }
@@ -97,7 +99,10 @@ impl NonceChain {
             // We are inserting at the front here
             let former_head_arrived_at = self.front_arrived_at;
             self.front_arrived_at = mempool_tx.arrived_at;
-            self.front_tx_hash = mempool_tx.tx_hash();
+            #[cfg(debug_assertions)]
+            {
+                self.front_tx_hash = mempool_tx.tx_hash();
+            }
             InsertedPosition::Front { former_head_arrived_at }
         } else {
             InsertedPosition::Other
@@ -113,6 +118,7 @@ impl NonceChain {
     }
 }
 
+#[derive(Clone)]
 struct AccountOrderedByTimestamp {
     contract_addr: ContractAddress,
     timestamp: ArrivedAtTimestamp,
@@ -120,7 +126,8 @@ struct AccountOrderedByTimestamp {
 
 impl PartialEq for AccountOrderedByTimestamp {
     fn eq(&self, other: &Self) -> bool {
-        // Important: Contract addr here, not timestamp
+        // Important: Contract addr here, not timestamp.
+        // There can be timestamp collisions.
         self.contract_addr == other.contract_addr
     }
 }
@@ -159,6 +166,26 @@ pub enum TxInsersionError {
 }
 
 impl MempoolInner {
+    pub fn check_invariants(&self) {
+        if cfg!(debug_assertions) {
+            self.nonce_chains.values().for_each(NonceChain::check_invariants);
+            let mut tx_queue = self.tx_queue.clone();
+            for (k, v) in &self.nonce_chains {
+                debug_assert!(
+                    tx_queue.remove(&AccountOrderedByTimestamp { contract_addr: *k, timestamp: v.front_arrived_at })
+                )
+            }
+            debug_assert!(tx_queue.is_empty());
+            let mut deployed_contracts = self.deployed_contracts.clone();
+            for contract in self.nonce_chains.values().flat_map(|chain| &chain.transactions) {
+                if let AccountTransaction::DeployAccount(tx) = &contract.0.tx {
+                    debug_assert!(deployed_contracts.remove(&tx.contract_address))
+                };
+            }
+            debug_assert!(deployed_contracts.is_empty());
+        }
+    }
+
     pub fn insert_tx(&mut self, mempool_tx: MempoolTransaction) -> Result<(), TxInsersionError> {
         // Get the nonce chain for the contract
 
