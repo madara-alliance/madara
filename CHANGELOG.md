@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: command to start the Madara client
 - refactor: database error unification
 - feat: raise file-descriptor limit
 - fix: docker
