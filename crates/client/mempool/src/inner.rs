@@ -1,3 +1,10 @@
+//! The inner mempool does not perform validation, and is expected to be stored into a RwLock or Mutex.
+//! This is the chokepoint for all insertions and popping, as such, we want to make it as fast as possible.
+//! Insertion and popping should be O(log n).
+//! 
+//! TODO: mempool size limits
+//! TODO: proptest
+
 use std::{
     cmp,
     collections::{hash_map, BTreeSet, HashMap, HashSet},
