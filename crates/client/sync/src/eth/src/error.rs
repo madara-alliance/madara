@@ -4,6 +4,8 @@ pub enum Error {
     ProviderUrlParse(#[source] url::ParseError),
     #[error("Failed to parse private key: {0}")]
     PrivateKeyParse(#[source] ethers::signers::WalletError),
+    #[error("Failed to get the wallet: {0}")]
+    WalletUnavailable(#[source] ethers::signers::WalletError),
     #[error("Failed to parse contract address: {0}")]
     AddressParseError(#[source] alloy::primitives::AddressError),
     #[error("Undefined {0} contract address")]
