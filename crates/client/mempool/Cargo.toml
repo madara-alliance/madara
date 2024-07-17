@@ -11,6 +11,12 @@ homepage.workspace = true
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
+[dev-dependencies]
+proptest.workspace = true
+proptest-derive.workspace = true
+bitvec.workspace = true
+env_logger.workspace = true
+
 [dependencies]
 
 # Deoxys

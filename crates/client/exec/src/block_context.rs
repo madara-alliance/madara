@@ -4,15 +4,13 @@ use blockifier::{
         transaction_executor::TransactionExecutor,
     },
     context::{BlockContext, ChainInfo, FeeTokenAddresses},
-    state::{cached_state::CachedState, state_api::StateReader},
-    transaction::errors::TransactionExecutionError,
+    state::cached_state::CachedState,
 };
 use dc_db::{db_block_id::DbBlockId, DeoxysBackend};
 use dp_block::{header::L1DataAvailabilityMode, DeoxysMaybePendingBlockInfo};
-use dp_convert::ToFelt;
 use starknet_api::{
     block::{BlockNumber, BlockTimestamp},
-    core::{ContractAddress, Nonce},
+    core::Nonce,
 };
 use starknet_types_core::felt::Felt;
 

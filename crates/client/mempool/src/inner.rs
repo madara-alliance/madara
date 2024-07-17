@@ -4,6 +4,7 @@
 //!
 //! TODO: mempool size limits
 //! TODO: proptest
+//! TODO(perf): should we box the MempoolTransaction?
 
 use std::{
     cmp,
@@ -68,10 +69,16 @@ pub struct NonceChain {
     front_tx_hash: TransactionHash,
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug)]
 enum InsertedPosition {
     Front { former_head_arrived_at: ArrivedAtTimestamp },
     Other,
+}
+
+#[derive(Eq, PartialEq, Debug)]
+enum NonceChainNewState {
+    Empty,
+    NotEmpty,
 }
 
 impl NonceChain {
@@ -115,6 +122,21 @@ impl NonceChain {
         }
 
         Ok(position)
+    }
+
+    pub fn pop(&mut self) -> (MempoolTransaction, NonceChainNewState) {
+        // TODO(perf): avoid double lookup
+        let tx = self.transactions.pop_first().expect("Nonce chain should not be empty");
+        if let Some(new_front) = self.transactions.first() {
+            self.front_arrived_at = new_front.0.arrived_at;
+            #[cfg(debug_assertions)]
+            {
+                self.front_tx_hash = new_front.0.tx_hash();
+            }
+            (tx.0, NonceChainNewState::NotEmpty)
+        } else {
+            (tx.0, NonceChainNewState::Empty)
+        }
     }
 }
 
@@ -249,5 +271,228 @@ impl MempoolInner {
 
     pub fn has_deployed_contract(&self, addr: &ContractAddress) -> bool {
         self.deployed_contracts.contains(addr)
+    }
+
+    pub fn pop_next_tx(&mut self) -> Option<MempoolTransaction> {
+        // Pop tx queue.
+        let tx_queue_account = self.tx_queue.pop_first()?; // Bubble up None if the mempool is empty.
+
+        // Update nonce chain.
+        let nonce_chain =
+            self.nonce_chains.get_mut(&tx_queue_account.contract_addr).expect("Nonce chain does not match tx queue");
+        let (mempool_tx, nonce_chain_new_state) = nonce_chain.pop();
+        match nonce_chain_new_state {
+            NonceChainNewState::Empty => {
+                // Remove the nonce chain.
+                let removed = self.nonce_chains.remove(&tx_queue_account.contract_addr);
+                debug_assert!(removed.is_some());
+            }
+            NonceChainNewState::NotEmpty => {
+                // Re-add to tx queue.
+                let inserted = self.tx_queue.insert(AccountOrderedByTimestamp {
+                    contract_addr: tx_queue_account.contract_addr,
+                    timestamp: nonce_chain.front_arrived_at,
+                });
+                debug_assert!(inserted);
+            }
+        }
+
+        // Update deployed contracts.
+        if let AccountTransaction::DeployAccount(tx) = &mempool_tx.tx {
+            let removed = self.deployed_contracts.remove(&tx.contract_address);
+            debug_assert!(removed);
+        }
+
+        Some(mempool_tx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bitvec::{order::Msb0, vec::BitVec};
+    use blockifier::{
+        execution::contract_class::ClassInfo,
+        test_utils::{contracts::FeatureContract, CairoVersion},
+        transaction::transactions::{DeclareTransaction, InvokeTransaction},
+    };
+    use proptest::{
+        arbitrary::{any, Arbitrary},
+        strategy::{BoxedStrategy, Strategy},
+    };
+    use proptest_derive::Arbitrary;
+    use starknet_api::{
+        data_availability::DataAvailabilityMode,
+        transaction::{DeclareTransactionV3, InvokeTransactionV3},
+    };
+    use starknet_core::types::Felt;
+
+    use super::*;
+    use std::fmt;
+
+    #[derive(PartialEq, Eq, Hash)]
+    struct AFelt(Felt);
+    impl fmt::Debug for AFelt {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{:#x}", self.0)
+        }
+    }
+    impl Arbitrary for AFelt {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            <[bool; 250]>::arbitrary()
+                .prop_map(|arr| arr.into_iter().collect::<BitVec<u8, Msb0>>())
+                .prop_map(|vec| Felt::from_bytes_be(vec.as_raw_slice().try_into().unwrap()))
+                .prop_map(Self)
+                .boxed()
+        }
+    }
+
+    struct Insert(MempoolTransaction);
+    impl fmt::Debug for Insert {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(
+                f,
+                "Insert(ty={:?},arrived_at={:?},tx_hash={:?},contract_address={:?},nonce={:?})",
+                self.0.tx.tx_type(),
+                self.0.arrived_at,
+                self.0.tx_hash(),
+                self.0.contract_address(),
+                self.0.nonce()
+            )
+        }
+    }
+    impl Arbitrary for Insert {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            #[derive(Debug, Arbitrary)]
+            enum TxTy {
+                Declare,
+                DeployAccount,
+                InvokeFunction,
+            }
+
+            <(TxTy, SystemTime, AFelt, AFelt, u64)>::arbitrary()
+                .prop_map(|(ty, arrived_at, tx_hash, contract_address, nonce)| {
+                    let tx_hash = TransactionHash(tx_hash.0);
+                    let contract_addr = ContractAddress::try_from(contract_address.0).unwrap();
+                    let nonce = Nonce(Felt::from(nonce));
+
+                    let dummy_contract_class = FeatureContract::TestContract(CairoVersion::Cairo0);
+                    let dummy_class_info = ClassInfo::new(&dummy_contract_class.get_class(), 0, 100).unwrap();
+
+                    let tx = match ty {
+                        TxTy::Declare => AccountTransaction::Declare(DeclareTransaction::new(
+                            starknet_api::transaction::DeclareTransaction::V3(DeclareTransactionV3 {
+                                resource_bounds: Default::default(),
+                                tip: Default::default(),
+                                signature: Default::default(),
+                                nonce,
+                                class_hash: Default::default(),
+                                compiled_class_hash: Default::default(),
+                                sender_address: contract_addr,
+                                nonce_data_availability_mode: DataAvailabilityMode::L1,
+                                fee_data_availability_mode: DataAvailabilityMode::L1,
+                                paymaster_data: Default::default(),
+                                account_deployment_data: Default::default(),
+                            }),
+                            tx_hash,
+                            dummy_class_info,
+                        ).unwrap()),
+                        TxTy::DeployAccount => AccountTransaction::Declare(
+                            DeclareTransaction::new(
+                                starknet_api::transaction::DeclareTransaction::V3(DeclareTransactionV3 {
+                                    resource_bounds: Default::default(),
+                                    tip: Default::default(),
+                                    signature: Default::default(),
+                                    nonce,
+                                    class_hash: Default::default(),
+                                    compiled_class_hash: Default::default(),
+                                    sender_address: contract_addr,
+                                    nonce_data_availability_mode: DataAvailabilityMode::L1,
+                                    fee_data_availability_mode: DataAvailabilityMode::L1,
+                                    paymaster_data: Default::default(),
+                                    account_deployment_data: Default::default(),
+                                }),
+                                tx_hash,
+                                dummy_class_info,
+                            )
+                            .unwrap(),
+                        ),
+                        TxTy::InvokeFunction => AccountTransaction::Invoke(InvokeTransaction::new(
+                            starknet_api::transaction::InvokeTransaction::V3(InvokeTransactionV3 {
+                                resource_bounds: Default::default(),
+                                tip: Default::default(),
+                                signature: Default::default(),
+                                nonce,
+                                sender_address: contract_addr,
+                                calldata: Default::default(),
+                                nonce_data_availability_mode: DataAvailabilityMode::L1,
+                                fee_data_availability_mode: DataAvailabilityMode::L1,
+                                paymaster_data: Default::default(),
+                                account_deployment_data: Default::default(),
+                            }),
+                            tx_hash,
+                        )),
+                    };
+
+                    Insert(MempoolTransaction {
+                        tx,
+                        arrived_at,
+                    })
+                })
+                .boxed()
+        }
+    }
+
+    #[derive(Debug, Arbitrary)]
+    enum Operation {
+        Insert(Insert),
+        Pop,
+    }
+
+    #[derive(Debug, Arbitrary)]
+    struct MempoolInvariantsProblem(Vec<Operation>);
+    impl MempoolInvariantsProblem {
+        fn check(&self) {
+            let mut mempool = MempoolInner::default();
+            mempool.check_invariants();
+
+            for op in &self.0 {
+                match op {
+                    Operation::Insert(insert) => {
+                        log::trace!("Insert {:?}", insert);
+                        let res = mempool.insert_tx(insert.0.clone());
+                        log::trace!("Result {:?}", res);
+                    },
+                    Operation::Pop => {
+                        log::trace!("Pop");
+                        let res = mempool.pop_next_tx();
+                        log::trace!("Popped {:?}", res.map(Insert));
+                    },
+                }
+                mempool.check_invariants();
+            }
+
+            loop {
+                log::trace!("Pop");
+                let Some(res) = mempool.pop_next_tx() else { break };
+                log::trace!("Popped {:?}", Insert(res));
+                mempool.check_invariants();
+            }
+            log::trace!("Done :)");
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn proptest_mempool(pb in any::<MempoolInvariantsProblem>()) {
+            let _ = env_logger::builder().is_test(true).try_init();
+            log::set_max_level(log::LevelFilter::Trace);
+            pb.check();
+        }
     }
 }

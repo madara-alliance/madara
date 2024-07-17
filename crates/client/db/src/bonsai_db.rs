@@ -139,6 +139,9 @@ impl BonsaiDatabase for BonsaiDb<'_> {
     fn write_batch(&mut self, batch: Self::Batch) -> Result<(), Self::DatabaseError> {
         Ok(self.db.write_opt(batch, &self.write_opt)?)
     }
+
+    #[cfg(test)]
+    fn dump_database(&self) { unimplemented!() }
 }
 
 // pub struct BonsaiTransaction<'db> {
