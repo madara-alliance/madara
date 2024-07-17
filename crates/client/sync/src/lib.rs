@@ -8,6 +8,8 @@ pub mod metrics;
 pub mod reorgs;
 pub mod utils;
 
+pub use eth;
+
 #[cfg(feature = "m")]
 pub use utils::m;
 pub use utils::{convert, utility};
