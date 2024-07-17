@@ -5,3 +5,5 @@
 
 *.code-workspace
 .vscode
+
+lcov.info

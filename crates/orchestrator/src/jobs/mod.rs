@@ -178,6 +178,7 @@ fn get_job_handler(job_type: &JobType) -> Box<dyn Job> {
         JobType::DataSubmission => Box::new(da_job::DaJob),
         JobType::SnosRun => Box::new(snos_job::SnosJob),
         JobType::ProofCreation => Box::new(proving_job::ProvingJob),
+        JobType::StateTransition => Box::new(state_update_job::StateUpdateJob),
         _ => unimplemented!("Job type not implemented yet."),
     }
 }

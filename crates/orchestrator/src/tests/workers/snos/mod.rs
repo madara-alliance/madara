@@ -1,8 +1,9 @@
 use crate::config::config_force_init;
 use crate::database::MockDatabase;
-use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
+use crate::jobs::types::JobType;
 use crate::queue::MockQueueProvider;
 use crate::tests::common::init_config;
+use crate::tests::workers::utils::get_job_item_mock_by_id;
 use crate::workers::snos::SnosWorker;
 use crate::workers::Worker;
 use da_client_interface::MockDaClient;
@@ -10,7 +11,6 @@ use httpmock::MockServer;
 use mockall::predicate::eq;
 use rstest::rstest;
 use serde_json::json;
-use std::collections::HashMap;
 use std::error::Error;
 use uuid::Uuid;
 
@@ -91,16 +91,4 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
     rpc_block_call_mock.assert();
 
     Ok(())
-}
-
-fn get_job_item_mock_by_id(id: String, uuid: Uuid) -> JobItem {
-    JobItem {
-        id: uuid,
-        internal_id: id.clone(),
-        job_type: JobType::SnosRun,
-        status: JobStatus::Created,
-        external_id: ExternalId::Number(0),
-        metadata: HashMap::new(),
-        version: 0,
-    }
 }

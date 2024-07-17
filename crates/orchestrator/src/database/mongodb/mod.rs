@@ -244,4 +244,50 @@ impl Database for MongoDb {
 
         Ok(vec_jobs)
     }
+
+    async fn get_last_successful_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>> {
+        let filter = doc! {
+            "job_type": bson::to_bson(&job_type)?,
+            "job_status": bson::to_bson(&JobStatus::Completed)?
+        };
+        let find_options = FindOneOptions::builder().sort(doc! { "internal_id": -1 }).build();
+
+        Ok(self
+            .get_job_collection()
+            .find_one(filter, find_options)
+            .await
+            .expect("Failed to fetch latest job by given job type"))
+    }
+
+    async fn get_jobs_after_internal_id_by_job_type(
+        &self,
+        job_type: JobType,
+        job_status: JobStatus,
+        internal_id: String,
+    ) -> Result<Vec<JobItem>> {
+        let filter = doc! {
+            "job_type": bson::to_bson(&job_type)?,
+            "job_status": bson::to_bson(&job_status)?,
+            "internal_id": { "$gt": internal_id }
+        };
+
+        let mut jobs = self
+            .get_job_collection()
+            .find(filter, None)
+            .await
+            .expect("Failed to fetch latest jobs by given job type and internal_od conditions");
+
+        let mut results = Vec::new();
+
+        while let Some(result) = jobs.next().await {
+            match result {
+                Ok(job_item) => {
+                    results.push(job_item);
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        Ok(results)
+    }
 }
