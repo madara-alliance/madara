@@ -14,11 +14,10 @@
 
 use std::fs::File;
 use std::path::PathBuf;
-
+use alloy::network::EthereumWallet;
 use alloy::primitives::{
-    address, b128, b256, b512, b64, bytes, fixed_bytes, Address, Bytes, FixedBytes,
+    Address
 };
-use ethers::types::{ H160};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
@@ -58,14 +57,11 @@ pub enum EthereumWalletConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StarknetContracts {
     pub core_contract: String,
-    // #[serde(default, skip_serializing_if = "Option::is_none")]
-    // pub verifier_contract: Option<String>,
-    // #[serde(default, skip_serializing_if = "Option::is_none")]
-    // pub memory_pages_contract: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpProviderConfig {
+    pub wallet: Option<EthereumWallet>,
     #[serde(default = "default_rpc_endpoint")]
     pub rpc_endpoint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -96,7 +92,7 @@ fn default_private_key() -> String {
 
 impl Default for HttpProviderConfig {
     fn default() -> Self {
-        Self { rpc_endpoint: default_rpc_endpoint(), tx_poll_interval_ms: None, gas_price_poll_ms: None }
+        Self { wallet: None, rpc_endpoint: default_rpc_endpoint(), tx_poll_interval_ms: None, gas_price_poll_ms: None }
     }
 }
 
@@ -137,20 +133,6 @@ impl StarknetContracts {
         Address::parse_checksummed(&self.core_contract, None)
             .map_err(|e| Error::AddressParseError(e))
     }
-
-    // pub fn verifier_contract(&self) -> Result<Address, Error> {
-    //     self.verifier_contract
-    //         .as_ref()
-    //         .map(|s| parse_contract_address(s))
-    //         .ok_or(Error::ContractAddressUndefined("verifier"))?
-    // }
-    //
-    // pub fn memory_pages_contract(&self) -> Result<Address, Error> {
-    //     self.memory_pages_contract
-    //         .as_ref()
-    //         .map(|s| parse_contract_address(s))
-    //         .ok_or(Error::ContractAddressUndefined("memory pages"))?
-    // }
 }
 
 impl EthereumClientConfig {
