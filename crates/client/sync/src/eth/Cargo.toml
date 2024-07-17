@@ -1,10 +1,10 @@
 [package]
 authors.workspace = true
-description = "This crate is responsible to sync data"
+description = "This crate is responsible to handle l1 communication"
 edition = "2021"
 homepage = "https://github.com/KasarLabs/deoxys"
 license = "MIT"
-name = "dc-sync"
+name = "dc-eth"
 publish = false
 repository = "https://github.com/KasarLabs/deoxys"
 version = "0.1.0"
@@ -18,21 +18,19 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
-dc-eth = { path = "./src/eth" }
 # Deoxys
 dc-db = { workspace = true }
-dc-eth = { workspace = true }
 dc-metrics = { workspace = true }
 dc-telemetry = { workspace = true }
 dp-block = { workspace = true }
 dp-class = { workspace = true }
 dp-convert = { workspace = true }
 dp-receipt = { workspace = true }
-dp-state-update = { workspace = true }
 dp-transactions = { workspace = true }
 dp-utils = { workspace = true }
 
 # Starknet
+blockifier = { workspace = true, features = ["testing"] }
 bonsai-trie = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
@@ -41,12 +39,14 @@ starknet_api = { workspace = true }
 
 
 # Other
-alloy = { workspace = true }
 anyhow = "1.0.75"
 bitvec = { workspace = true }
+rustc-hex = { workspace = true }
 ethers = { workspace = true }
 futures = { workspace = true, default-features = true }
 hex = { workspace = true }
+indexmap = { workspace = true }
+itertools = { workspace = true }
 log = { workspace = true }
 num-traits = { workspace = true }
 primitive-types = { workspace = true }
@@ -56,12 +56,13 @@ reqwest = { workspace = true }
 rodio = { version = "0.17", optional = true }
 serde = { workspace = true, default-features = true }
 serde_json = "1"
+alloy = { version = "0.2.0", features = ["full"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = [
-  "macros",
-  "parking_lot",
-  "test-util",
-  "signal",
+    "macros",
+    "parking_lot",
+    "test-util",
+    "signal",
 ] }
 url = { workspace = true }
 
