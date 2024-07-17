@@ -13,7 +13,9 @@ use dp_block::header::PendingHeader;
 use dp_block::{
     BlockId, BlockTag, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo,
 };
+use inner::ArrivedAtTimestamp;
 use inner::MempoolInner;
+use inner::MempoolTransaction;
 use starknet_api::core::{ContractAddress, Nonce};
 
 mod inner;
@@ -32,6 +34,8 @@ pub enum Error {
     Internal(Cow<'static, str>),
     #[error("Validation error: {0:#}")]
     Validation(#[from] StatefulValidatorError),
+    #[error(transparent)]
+    InnerMempool(#[from] inner::TxInsersionError),
     #[error(transparent)]
     Exec(#[from] dc_exec::Error),
 }
@@ -80,6 +84,9 @@ impl Mempool {
     }
 
     pub fn accept_account_tx(&self, tx: AccountTransaction) -> Result<(), Error> {
+        // The timestamp *does not* take the transaction validation time into account.
+        let arrived_at = ArrivedAtTimestamp::now();
+
         // Get pending block
         let pending_block_info = self.pending_block()?;
 
@@ -99,12 +106,15 @@ impl Mempool {
 
         // Perform validations
         let exec_context = ExecutionContext::new(&self.backend, &pending_block_info.info)?;
-        let validator = exec_context.tx_validator();
-        validator.perform_validations(tx, deploy_account_tx_hash)?;
+        let mut validator = exec_context.tx_validator();
+        validator.perform_validations(tx.clone(), deploy_account_tx_hash)?;
 
         if !is_only_query(&tx) {
             // Finally, add it to the nonce chain for the account nonce
-            self.inner.write().insert_account_tx()
+            self.inner.write().expect("Poisoned lock").insert_tx(MempoolTransaction {
+                tx,
+                arrived_at,
+            })?
         }
 
         Ok(())
@@ -136,5 +146,9 @@ pub(crate) fn nonce(tx: &AccountTransaction) -> Nonce {
 }
 
 pub(crate) fn tx_hash(tx: &AccountTransaction) -> TransactionHash {
-
+    match tx {
+        AccountTransaction::Declare(tx) => tx.tx_hash,
+        AccountTransaction::DeployAccount(tx) => tx.tx_hash,
+        AccountTransaction::Invoke(tx) => tx.tx_hash,
+    }
 }

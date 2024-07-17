@@ -2960,6 +2960,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "blockifier",
+ "dc-db",
+ "dc-exec",
+ "dp-block",
  "dp-utils",
  "hyper 0.14.29",
  "log",
@@ -2967,6 +2970,7 @@ dependencies = [
  "serde",
  "starknet-core",
  "starknet-types-core",
+ "starknet_api",
  "thiserror",
  "tokio",
 ]
