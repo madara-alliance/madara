@@ -2,14 +2,8 @@
 pub enum Error {
     #[error("Failed to parse provider URL: {0}")]
     ProviderUrlParse(#[source] url::ParseError),
-    #[error("Failed to parse private key: {0}")]
-    PrivateKeyParse(#[source] ethers::signers::WalletError),
-    #[error("Failed to get the wallet: {0}")]
-    WalletUnavailable(#[source] ethers::signers::WalletError),
     #[error("Failed to parse contract address: {0}")]
     AddressParseError(#[source] alloy::primitives::AddressError),
-    #[error("Undefined {0} contract address")]
-    ContractAddressUndefined(&'static str),
     #[error("Failed to read config from file: {0}")]
     ConfigReadFromFile(#[source] std::io::Error),
     #[error("Failed to decode from JSON: {0}")]
