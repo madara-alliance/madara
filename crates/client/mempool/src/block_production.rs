@@ -1,9 +1,10 @@
 //! This should probably be moved into another crate.
 
+use blockifier::blockifier::transaction_executor::TransactionExecutor;
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
 use blockifier::transaction::transaction_execution::Transaction;
 use dc_db::DeoxysBackend;
-use dc_exec::ExecutionContext;
+use dc_exec::{ExecutionContext, BlockifierStateAdapter};
 use dp_utils::graceful_shutdown;
 use std::sync::Arc;
 
@@ -12,32 +13,37 @@ use crate::{clone_account_tx, Error, Mempool};
 pub struct BlockProductionTask {
     backend: Arc<DeoxysBackend>,
     mempool: Arc<Mempool>,
-    bouncer: Bouncer,
-
+    executor: TransactionExecutor<BlockifierStateAdapter>,
     current_pending_tick: usize,
 }
 
 const TX_CHUNK_SIZE: usize = 128;
 
 impl BlockProductionTask {
-    pub fn new(backend: Arc<DeoxysBackend>, mempool: Arc<Mempool>) -> Self {
+    pub fn new(backend: Arc<DeoxysBackend>, mempool: Arc<Mempool>) -> Result<Self, Error> {
+        let mut pending_block = mempool.get_or_create_pending_block()?;
+        let mut executor = ExecutionContext::new(Arc::clone(&backend), &pending_block.info)?.tx_executor();
+
         let bouncer_config = backend.chain_config().bouncer_config.clone();
-        Self { backend, mempool, bouncer: Bouncer::new(bouncer_config), current_pending_tick: 0 }
+        executor.bouncer = Bouncer::new(bouncer_config);
+
+        Ok(Self { backend, mempool, executor, current_pending_tick: 0 })
     }
+
     fn update_pending_block(&mut self, finish_block: bool) -> Result<(), Error> {
         let config_bouncer = &self.backend.chain_config().bouncer_config.block_max_capacity;
 
         if finish_block {
             // Full bouncer capacity
-            self.bouncer.bouncer_config.block_max_capacity = config_bouncer.clone();
+            self.executor.bouncer.bouncer_config.block_max_capacity = config_bouncer.clone();
         } else {
             let current_pending_tick = self.current_pending_tick;
             self.current_pending_tick += 1;
-    
+
             let n_pending_ticks_per_block = self.backend.chain_config().block_time.as_millis()
                 / self.backend.chain_config().pending_block_update_time.as_millis();
             let n_pending_ticks_per_block = n_pending_ticks_per_block as usize;
-    
+
             if current_pending_tick == 0 || current_pending_tick >= n_pending_ticks_per_block {
                 // first tick is ignored.
                 // out of range ticks are also ignored.
@@ -48,7 +54,7 @@ impl BlockProductionTask {
 
             // (current_val / n_ticks_per_block) * current_tick_in_block
             let frac = n_pending_ticks_per_block * current_pending_tick;
-            self.bouncer.bouncer_config.block_max_capacity = BouncerWeights {
+            self.executor.bouncer.bouncer_config.block_max_capacity = BouncerWeights {
                 builtin_count: BuiltinCount {
                     add_mod: config_bouncer.builtin_count.add_mod / frac,
                     bitwise: config_bouncer.builtin_count.bitwise / frac,
@@ -69,9 +75,6 @@ impl BlockProductionTask {
             };
         }
 
-        let mut pending_block = self.mempool.get_or_create_pending_block()?;
-        let mut executor = ExecutionContext::new(&self.backend, &pending_block.info)?.tx_executor();
-
         let mut txs_to_process = Vec::with_capacity(TX_CHUNK_SIZE);
         self.mempool.take_txs_chunk(&mut txs_to_process, TX_CHUNK_SIZE);
 
@@ -79,7 +82,7 @@ impl BlockProductionTask {
             txs_to_process.iter().map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))).collect();
 
         // Execute the transactions.
-        let all_results = executor.execute_txs(&blockifier_txs);
+        let all_results = self.executor.execute_txs(&blockifier_txs);
 
         // Split the `txs_to_process` vec into two iterators.
         let mut to_process_iter = txs_to_process.into_iter();
@@ -89,16 +92,16 @@ impl BlockProductionTask {
         for (exec_result, mempool_tx) in Iterator::zip(all_results.into_iter(), consumed_txs_to_process) {
             match exec_result {
                 Ok(execution_info) => {
-                    log::debug!("Successful execution of {:?}", mempool_tx.tx_hash());
+                    // Note: reverted txs also appear as Ok here.
+                    log::debug!("Successful execution of transaction {:?}", mempool_tx.tx_hash());
+
+                    // exec
                 }
                 Err(err) => {
-                    log::debug!("Unsuccessful execution of {:?}: {err:#}", mempool_tx.tx_hash());
+                    // Internal Server Error: this silently drops the transaction.
+                    log::error!("Unsuccessful execution of transaction {:?}: {err:#}", mempool_tx.tx_hash());
                 }
             }
-
-            
-            // Append to the pending block.
-            // pending_block
         }
 
         // This contains the rest of `to_process_iter`.
@@ -115,13 +118,13 @@ impl BlockProductionTask {
         let finish_block = true;
         self.update_pending_block(finish_block)?;
 
-        // Reset bouncer and current tick.
-        let bouncer_config = self.backend.chain_config().bouncer_config.clone();
-        self.bouncer = Bouncer::new(bouncer_config);
-        self.current_pending_tick = 0;
-
         // Convert the pending block to a closed block and save to db.
 
+        // Prepare for next block.
+        let mut pending_block = self.mempool.get_or_create_pending_block()?;
+        let bouncer_config = self.backend.chain_config().bouncer_config.clone();
+        self.executor = ExecutionContext::new(Arc::clone(&self.backend), &pending_block.info)?.tx_executor();
+        self.current_pending_tick = 0;
 
         Ok(())
     }

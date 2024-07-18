@@ -74,13 +74,13 @@ pub struct NonceChain {
 }
 
 #[derive(Eq, PartialEq, Debug)]
-enum InsertedPosition {
+pub enum InsertedPosition {
     Front { former_head_arrived_at: ArrivedAtTimestamp },
     Other,
 }
 
 #[derive(Eq, PartialEq, Debug)]
-enum NonceChainNewState {
+pub enum NonceChainNewState {
     Empty,
     NotEmpty,
 }

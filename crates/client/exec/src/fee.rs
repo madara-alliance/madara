@@ -1,7 +1,7 @@
 use crate::{ExecutionContext, ExecutionResult};
 use blockifier::transaction::objects::FeeType;
 
-impl<'a> ExecutionContext<'a> {
+impl ExecutionContext {
     pub fn execution_result_to_fee_estimate(
         &self,
         executions_result: &ExecutionResult,

@@ -1,11 +1,3 @@
-mod block_context;
-mod blockifier_state_adapter;
-mod call;
-mod execution;
-mod fee;
-mod trace;
-
-pub use block_context::ExecutionContext;
 use blockifier::{
     state::cached_state::CommitmentStateDiff,
     transaction::{
@@ -17,6 +9,16 @@ use blockifier::{
 use dc_db::{db_block_id::DbBlockId, DeoxysStorageError};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::Felt;
+
+mod block_context;
+mod blockifier_state_adapter;
+mod call;
+mod execution;
+mod fee;
+mod trace;
+
+pub use block_context::ExecutionContext;
+pub use blockifier_state_adapter::BlockifierStateAdapter;
 pub use trace::execution_result_to_tx_trace;
 
 #[derive(thiserror::Error, Debug)]

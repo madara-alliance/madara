@@ -1,3 +1,4 @@
+use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error};
 use blockifier::{
     blockifier::{
         config::TransactionExecutorConfig, stateful_validator::StatefulValidator,
@@ -13,17 +14,16 @@ use starknet_api::{
     core::Nonce,
 };
 use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 
-use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error};
-
-pub struct ExecutionContext<'a> {
-    pub(crate) backend: &'a DeoxysBackend,
+pub struct ExecutionContext {
+    pub(crate) backend: Arc<DeoxysBackend>,
     pub(crate) block_context: BlockContext,
     pub(crate) db_id: DbBlockId,
 }
 
-impl<'a> ExecutionContext<'a> {
-    pub fn tx_executor(&self) -> TransactionExecutor<BlockifierStateAdapter<'a>> {
+impl ExecutionContext {
+    pub fn tx_executor(&self) -> TransactionExecutor<BlockifierStateAdapter> {
         TransactionExecutor::new(
             self.init_cached_state(),
             self.block_context.clone(),
@@ -32,7 +32,7 @@ impl<'a> ExecutionContext<'a> {
         )
     }
 
-    pub fn tx_validator(&self) -> StatefulValidator<BlockifierStateAdapter<'a>> {
+    pub fn tx_validator(&self) -> StatefulValidator<BlockifierStateAdapter> {
         // When deploying an account and invoking a contract at the same time, we want to skip the validation step for the invoke tx.
         // This number is the maximum nonce the invoke tx can have to qualify for the validation skip.
         // TODO: is the number 2 good here?
@@ -40,7 +40,7 @@ impl<'a> ExecutionContext<'a> {
         StatefulValidator::create(self.init_cached_state(), self.block_context.clone(), max_nonce_for_validation_skip)
     }
 
-    pub fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter<'a>> {
+    pub fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter> {
         let on_top_of = match self.db_id {
             DbBlockId::Pending => Some(DbBlockId::Pending),
             DbBlockId::BlockN(block_n) => {
@@ -49,10 +49,10 @@ impl<'a> ExecutionContext<'a> {
             }
         };
 
-        CachedState::new(BlockifierStateAdapter::new(self.backend, on_top_of))
+        CachedState::new(BlockifierStateAdapter::new(Arc::clone(&self.backend), on_top_of))
     }
 
-    pub fn new(backend: &'a DeoxysBackend, block_info: &DeoxysMaybePendingBlockInfo) -> Result<Self, Error> {
+    pub fn new(backend: Arc<DeoxysBackend>, block_info: &DeoxysMaybePendingBlockInfo) -> Result<Self, Error> {
         let (db_id, protocol_version, block_number, block_timestamp, sequencer_address, l1_gas_price, l1_da_mode) =
             match block_info {
                 DeoxysMaybePendingBlockInfo::Pending(block) => (

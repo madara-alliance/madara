@@ -11,7 +11,7 @@ use starknet_api::transaction::TransactionHash;
 
 use crate::{Error, ExecutionContext, ExecutionResult, TxFeeEstimationError, TxReexecError};
 
-impl<'a> ExecutionContext<'a> {
+impl ExecutionContext {
     /// Execute transactions. The returned `ExecutionResult`s are the results of the `transactions_to_trace`. The results of `transactions_before` are discarded.
     /// This function is useful for tracing trasaction execution, by reexecuting the block.
     pub fn execute_transactions(

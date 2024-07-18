@@ -1,11 +1,11 @@
-use dc_exec::ExecutionContext;
-use starknet_core::types::Felt;
-use starknet_core::types::{BlockId, FunctionCall};
-
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use crate::Starknet;
+use dc_exec::ExecutionContext;
+use starknet_core::types::Felt;
+use starknet_core::types::{BlockId, FunctionCall};
+use std::sync::Arc;
 
 /// Call a Function in a Contract Without Creating a Transaction
 ///
@@ -30,7 +30,7 @@ use crate::Starknet;
 pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> StarknetRpcResult<Vec<Felt>> {
     let block_info = starknet.get_block_info(&block_id)?;
 
-    let exec_context = ExecutionContext::new(&starknet.backend, &block_info)?;
+    let exec_context = ExecutionContext::new(Arc::clone(&starknet.backend), &block_info)?;
 
     if block_info.protocol_version() < &FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);

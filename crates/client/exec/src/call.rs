@@ -12,7 +12,7 @@ use starknet_types_core::felt::Felt;
 
 use crate::{CallContractError, Error, ExecutionContext};
 
-impl<'a> ExecutionContext<'a> {
+impl ExecutionContext {
     /// Call a contract, returning the retdata.
     pub fn call_contract(
         &self,

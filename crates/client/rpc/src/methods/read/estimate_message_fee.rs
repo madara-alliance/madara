@@ -1,14 +1,14 @@
-use dc_exec::ExecutionContext;
-use dp_transactions::L1HandlerTransaction;
-use starknet_api::transaction::{Fee, TransactionHash};
-use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
-use starknet_types_core::felt::Felt;
-
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use crate::utils::OptionExt;
 use crate::Starknet;
+use dc_exec::ExecutionContext;
+use dp_transactions::L1HandlerTransaction;
+use starknet_api::transaction::{Fee, TransactionHash};
+use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
+use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 
 /// Estimate the L2 fee of a message sent on L1
 ///
@@ -37,7 +37,7 @@ pub async fn estimate_message_fee(
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let exec_context = ExecutionContext::new(&starknet.backend, &block_info)?;
+    let exec_context = ExecutionContext::new(Arc::clone(&starknet.backend), &block_info)?;
 
     let transaction = convert_message_into_transaction(message, starknet.chain_id());
     let execution_result = exec_context

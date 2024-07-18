@@ -9,22 +9,23 @@ use dp_convert::{felt_to_u64, ToFelt};
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
 use starknet_core::types::Felt;
+use std::sync::Arc;
 
 /// `BlockifierStateAdapter` is only use to re-executing or simulate transactions.
 /// All of the setters change the storage permanently. Use blockifier's `CachedState` for a cache.
-pub struct BlockifierStateAdapter<'a> {
-    backend: &'a DeoxysBackend,
+pub struct BlockifierStateAdapter {
+    backend: Arc<DeoxysBackend>,
     /// When this value is None, we are executing the genesis block.
     on_top_of_block_id: Option<DbBlockId>,
 }
 
-impl<'a> BlockifierStateAdapter<'a> {
-    pub fn new(backend: &'a DeoxysBackend, on_top_of_block_id: Option<DbBlockId>) -> Self {
+impl BlockifierStateAdapter {
+    pub fn new(backend: Arc<DeoxysBackend>, on_top_of_block_id: Option<DbBlockId>) -> Self {
         Self { backend, on_top_of_block_id }
     }
 }
 
-impl<'a> StateReader for BlockifierStateAdapter<'a> {
+impl StateReader for BlockifierStateAdapter {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
         if *contract_address.key() == Felt::ONE {
             let block_number = felt_to_u64(key.0.key()).map_err(|_| StateError::OldBlockHashNotProvided)?;
