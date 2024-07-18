@@ -1,11 +1,17 @@
 //! The inner mempool does not perform validation, and is expected to be stored into a RwLock or Mutex.
 //! This is the chokepoint for all insertions and popping, as such, we want to make it as fast as possible.
 //! Insertion and popping should be O(log n).
+//! We also really don't want to poison the lock by panicking.
 //!
 //! TODO: mempool size limits
-//! TODO: proptest
 //! TODO(perf): should we box the MempoolTransaction?
 
+use crate::{clone_account_tx, contract_addr, nonce, tx_hash};
+use blockifier::transaction::account_transaction::AccountTransaction;
+use starknet_api::{
+    core::{ContractAddress, Nonce},
+    transaction::TransactionHash,
+};
 use std::{
     cmp,
     collections::{hash_map, BTreeSet, HashMap, HashSet},
@@ -13,19 +19,17 @@ use std::{
     time::SystemTime,
 };
 
-use blockifier::transaction::account_transaction::AccountTransaction;
-use starknet_api::{
-    core::{ContractAddress, Nonce},
-    transaction::TransactionHash,
-};
+pub type ArrivedAtTimestamp = SystemTime;
 
-use crate::{contract_addr, nonce, tx_hash};
+pub struct MempoolTransaction {
+    pub tx: AccountTransaction,
+    pub arrived_at: ArrivedAtTimestamp,
+}
 
-pub(crate) type ArrivedAtTimestamp = SystemTime;
-
-pub(crate) struct MempoolTransaction {
-    pub(crate) tx: AccountTransaction,
-    pub(crate) arrived_at: ArrivedAtTimestamp,
+impl Clone for MempoolTransaction {
+    fn clone(&self) -> Self {
+        Self { tx: clone_account_tx(&self.tx), arrived_at: self.arrived_at.clone() }
+    }
 }
 
 impl MempoolTransaction {
@@ -91,17 +95,21 @@ impl NonceChain {
         }
     }
 
+    #[cfg(test)]
     pub fn check_invariants(&self) {
         debug_assert!(!self.transactions.is_empty());
-        if cfg!(debug_assertions) {
-            let front = self.transactions.first().unwrap();
-            debug_assert_eq!(front.0.tx_hash(), self.front_tx_hash);
-            debug_assert_eq!(front.0.arrived_at, self.front_arrived_at);
-        }
+        let front = self.transactions.first().unwrap();
+        debug_assert_eq!(front.0.tx_hash(), self.front_tx_hash);
+        debug_assert_eq!(front.0.arrived_at, self.front_arrived_at);
     }
 
     /// Returns where in the chain it was inserted.
-    pub fn insert(&mut self, mempool_tx: MempoolTransaction) -> Result<InsertedPosition, TxInsersionError> {
+    /// When `force` is `true`, this function should never return any error.
+    pub fn insert(
+        &mut self,
+        mempool_tx: MempoolTransaction,
+        force: bool,
+    ) -> Result<InsertedPosition, TxInsersionError> {
         let position = if self.front_arrived_at > mempool_tx.arrived_at {
             // We are inserting at the front here
             let former_head_arrived_at = self.front_arrived_at;
@@ -117,8 +125,12 @@ impl NonceChain {
 
         debug_assert_eq!(self.transactions.first().unwrap().0.tx_hash(), self.front_tx_hash);
 
-        if !self.transactions.insert(OrderMempoolTransactionByNonce(mempool_tx)) {
-            return Err(TxInsersionError::NonceConflict);
+        if force {
+            self.transactions.replace(OrderMempoolTransactionByNonce(mempool_tx));
+        } else {
+            if !self.transactions.insert(OrderMempoolTransactionByNonce(mempool_tx)) {
+                return Err(TxInsersionError::NonceConflict);
+            }
         }
 
         Ok(position)
@@ -188,27 +200,27 @@ pub enum TxInsersionError {
 }
 
 impl MempoolInner {
+    #[cfg(test)]
     pub fn check_invariants(&self) {
-        if cfg!(debug_assertions) {
-            self.nonce_chains.values().for_each(NonceChain::check_invariants);
-            let mut tx_queue = self.tx_queue.clone();
-            for (k, v) in &self.nonce_chains {
-                debug_assert!(
-                    tx_queue.remove(&AccountOrderedByTimestamp { contract_addr: *k, timestamp: v.front_arrived_at })
-                )
-            }
-            debug_assert!(tx_queue.is_empty());
-            let mut deployed_contracts = self.deployed_contracts.clone();
-            for contract in self.nonce_chains.values().flat_map(|chain| &chain.transactions) {
-                if let AccountTransaction::DeployAccount(tx) = &contract.0.tx {
-                    debug_assert!(deployed_contracts.remove(&tx.contract_address))
-                };
-            }
-            debug_assert!(deployed_contracts.is_empty());
+        self.nonce_chains.values().for_each(NonceChain::check_invariants);
+        let mut tx_queue = self.tx_queue.clone();
+        for (k, v) in &self.nonce_chains {
+            debug_assert!(
+                tx_queue.remove(&AccountOrderedByTimestamp { contract_addr: *k, timestamp: v.front_arrived_at })
+            )
         }
+        debug_assert!(tx_queue.is_empty());
+        let mut deployed_contracts = self.deployed_contracts.clone();
+        for contract in self.nonce_chains.values().flat_map(|chain| &chain.transactions) {
+            if let AccountTransaction::DeployAccount(tx) = &contract.0.tx {
+                debug_assert!(deployed_contracts.remove(&tx.contract_address))
+            };
+        }
+        debug_assert!(deployed_contracts.is_empty());
     }
 
-    pub fn insert_tx(&mut self, mempool_tx: MempoolTransaction) -> Result<(), TxInsersionError> {
+    /// When `force` is `true`, this function should never return any error.
+    pub fn insert_tx(&mut self, mempool_tx: MempoolTransaction, force: bool) -> Result<(), TxInsersionError> {
         // Get the nonce chain for the contract
 
         let contract_addr = mempool_tx.contract_address();
@@ -218,7 +230,7 @@ impl MempoolInner {
             if let AccountTransaction::DeployAccount(tx) = &mempool_tx.tx { Some(tx.contract_address) } else { None };
 
         if let Some(contract_address) = &deployed_contract_address {
-            if !self.deployed_contracts.insert(*contract_address) {
+            if !self.deployed_contracts.insert(*contract_address) && !force {
                 return Err(TxInsersionError::AccountAlreadyDeployed);
             }
         }
@@ -226,9 +238,12 @@ impl MempoolInner {
         match self.nonce_chains.entry(contract_addr) {
             hash_map::Entry::Occupied(mut entry) => {
                 // Handle nonce collision.
-                let position = match entry.get_mut().insert(mempool_tx) {
+                let position = match entry.get_mut().insert(mempool_tx, force) {
                     Ok(position) => position,
                     Err(_nonce_collision) => {
+                        if force {
+                            panic!("Force add should never error")
+                        }
                         // Rollback the prior mutation.
                         if let Some(contract_address) = &deployed_contract_address {
                             if !self.deployed_contracts.remove(contract_address) {
@@ -273,7 +288,7 @@ impl MempoolInner {
         self.deployed_contracts.contains(addr)
     }
 
-    pub fn pop_next_tx(&mut self) -> Option<MempoolTransaction> {
+    pub fn pop_next(&mut self) -> Option<MempoolTransaction> {
         // Pop tx queue.
         let tx_queue_account = self.tx_queue.pop_first()?; // Bubble up None if the mempool is empty.
 
@@ -304,6 +319,20 @@ impl MempoolInner {
         }
 
         Some(mempool_tx)
+    }
+
+    pub fn pop_next_chunk(&mut self, dest: &mut Vec<MempoolTransaction>, n: usize) {
+        for _ in 0..n {
+            let Some(tx) = self.pop_next() else { break };
+            dest.push(tx);
+        }
+    }
+
+    pub fn readd_txs(&mut self, txs: Vec<MempoolTransaction>) {
+        for tx in txs {
+            let force = true;
+            self.insert_tx(tx, force).expect("Force insert tx should not error");
+        }
     }
 }
 
@@ -349,17 +378,18 @@ mod tests {
         }
     }
 
-    struct Insert(MempoolTransaction);
+    struct Insert(MempoolTransaction, /* force */ bool);
     impl fmt::Debug for Insert {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(
                 f,
-                "Insert(ty={:?},arrived_at={:?},tx_hash={:?},contract_address={:?},nonce={:?})",
+                "Insert(ty={:?},arrived_at={:?},tx_hash={:?},contract_address={:?},nonce={:?},force={:?})",
                 self.0.tx.tx_type(),
                 self.0.arrived_at,
                 self.0.tx_hash(),
                 self.0.contract_address(),
-                self.0.nonce()
+                self.0.nonce(),
+                self.1,
             )
         }
     }
@@ -375,33 +405,36 @@ mod tests {
                 InvokeFunction,
             }
 
-            <(TxTy, SystemTime, AFelt, AFelt, u64)>::arbitrary()
-                .prop_map(|(ty, arrived_at, tx_hash, contract_address, nonce)| {
+            <(TxTy, SystemTime, AFelt, AFelt, u64, bool)>::arbitrary()
+                .prop_map(|(ty, arrived_at, tx_hash, contract_address, nonce, force)| {
                     let tx_hash = TransactionHash(tx_hash.0);
                     let contract_addr = ContractAddress::try_from(contract_address.0).unwrap();
                     let nonce = Nonce(Felt::from(nonce));
 
-                    let dummy_contract_class = FeatureContract::TestContract(CairoVersion::Cairo0);
-                    let dummy_class_info = ClassInfo::new(&dummy_contract_class.get_class(), 0, 100).unwrap();
+                    let dummy_contract_class = FeatureContract::TestContract(CairoVersion::Cairo1);
+                    let dummy_class_info = ClassInfo::new(&dummy_contract_class.get_class(), 100, 100).unwrap();
 
                     let tx = match ty {
-                        TxTy::Declare => AccountTransaction::Declare(DeclareTransaction::new(
-                            starknet_api::transaction::DeclareTransaction::V3(DeclareTransactionV3 {
-                                resource_bounds: Default::default(),
-                                tip: Default::default(),
-                                signature: Default::default(),
-                                nonce,
-                                class_hash: Default::default(),
-                                compiled_class_hash: Default::default(),
-                                sender_address: contract_addr,
-                                nonce_data_availability_mode: DataAvailabilityMode::L1,
-                                fee_data_availability_mode: DataAvailabilityMode::L1,
-                                paymaster_data: Default::default(),
-                                account_deployment_data: Default::default(),
-                            }),
-                            tx_hash,
-                            dummy_class_info,
-                        ).unwrap()),
+                        TxTy::Declare => AccountTransaction::Declare(
+                            DeclareTransaction::new(
+                                starknet_api::transaction::DeclareTransaction::V3(DeclareTransactionV3 {
+                                    resource_bounds: Default::default(),
+                                    tip: Default::default(),
+                                    signature: Default::default(),
+                                    nonce,
+                                    class_hash: Default::default(),
+                                    compiled_class_hash: Default::default(),
+                                    sender_address: contract_addr,
+                                    nonce_data_availability_mode: DataAvailabilityMode::L1,
+                                    fee_data_availability_mode: DataAvailabilityMode::L1,
+                                    paymaster_data: Default::default(),
+                                    account_deployment_data: Default::default(),
+                                }),
+                                tx_hash,
+                                dummy_class_info,
+                            )
+                            .unwrap(),
+                        ),
                         TxTy::DeployAccount => AccountTransaction::Declare(
                             DeclareTransaction::new(
                                 starknet_api::transaction::DeclareTransaction::V3(DeclareTransactionV3 {
@@ -439,10 +472,7 @@ mod tests {
                         )),
                     };
 
-                    Insert(MempoolTransaction {
-                        tx,
-                        arrived_at,
-                    })
+                    Insert(MempoolTransaction { tx, arrived_at }, force)
                 })
                 .boxed()
         }
@@ -461,28 +491,36 @@ mod tests {
             let mut mempool = MempoolInner::default();
             mempool.check_invariants();
 
+            let mut inserted = HashSet::new();
+
             for op in &self.0 {
                 match op {
                     Operation::Insert(insert) => {
                         log::trace!("Insert {:?}", insert);
-                        let res = mempool.insert_tx(insert.0.clone());
+                        let res = mempool.insert_tx(insert.0.clone(), insert.1);
                         log::trace!("Result {:?}", res);
-                    },
+                        inserted.insert(insert.0.tx_hash());
+                    }
                     Operation::Pop => {
                         log::trace!("Pop");
-                        let res = mempool.pop_next_tx();
-                        log::trace!("Popped {:?}", res.map(Insert));
-                    },
+                        let res = mempool.pop_next();
+                        if let Some(res) = &res {
+                            inserted.remove(&res.tx_hash());
+                        }
+                        log::trace!("Popped {:?}", res.map(|el| Insert(el, false)));
+                    }
                 }
                 mempool.check_invariants();
             }
 
             loop {
                 log::trace!("Pop");
-                let Some(res) = mempool.pop_next_tx() else { break };
-                log::trace!("Popped {:?}", Insert(res));
+                let Some(res) = mempool.pop_next() else { break };
+                inserted.remove(&res.tx_hash());
+                log::trace!("Popped {:?}", Insert(res, false));
                 mempool.check_invariants();
             }
+            assert!(inserted.is_empty());
             log::trace!("Done :)");
         }
     }
