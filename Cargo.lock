@@ -3030,7 +3030,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/Moonsong-Labs/snos?branch=od/os-output-serde#809b3b2ad74ebde7ec48bddc10317809f8098c90"
+source = "git+https://github.com/keep-starknet-strange/snos#04f64d46fc58106711ec5328433ad54aef43d5cf"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8343,11 +8343,10 @@ dependencies = [
 [[package]]
 name = "snos"
 version = "0.1.0"
-source = "git+https://github.com/Moonsong-Labs/snos?branch=od/os-output-serde#809b3b2ad74ebde7ec48bddc10317809f8098c90"
+source = "git+https://github.com/keep-starknet-strange/snos#04f64d46fc58106711ec5328433ad54aef43d5cf"
 dependencies = [
  "anyhow",
  "assert_matches",
- "async-stream",
  "base64 0.21.7",
  "bitvec",
  "blockifier",
@@ -8381,7 +8380,6 @@ dependencies = [
  "starknet_api",
  "thiserror",
  "tokio",
- "tokio-stream",
  "uuid 1.8.0",
  "zip",
 ]

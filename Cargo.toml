@@ -67,7 +67,7 @@ cairo-vm = { git = "https://github.com/lambdaclass/cairo-vm", features = [
 # can deserialize our snos input json into a StarknetOsInput struct.
 # TODO: update back to the main repo once it's merged
 # Sharp (Starkware)
-snos = { git = "https://github.com/Moonsong-Labs/snos", branch = "od/os-output-serde" }
+snos = { git = "https://github.com/keep-starknet-strange/snos" }
 
 # Madara prover API
 madara-prover-common = { git = "https://github.com/Moonsong-Labs/madara-prover-api", branch = "od/use-latest-cairo-vm" }
