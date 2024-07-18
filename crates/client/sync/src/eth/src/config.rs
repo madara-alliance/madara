@@ -1,27 +1,12 @@
-//! Base Ethereum client configuration.
-//!
-//! Use it as is or reuse top-level fields in your config ("inherit")
-//! in order to share the same configuration file.
-//!
-//! struct MyServiceConfig {
-//!     pub provider: EthereumProviderConfig,
-//!     pub wallet: Option<EthereumWalletConfig>,
-//!     pub contracts: Option<StarknetContracts>,
-//! }
-//!
-//! Default provider and wallet configurations are set for use with Anvil
-//! - local Ethereum environment.
 
 use std::fs::File;
 use std::path::PathBuf;
-use alloy::network::EthereumWallet;
 use alloy::primitives::{
     Address
 };
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
-// use crate::oracle::OracleConfig;
 
 /// Default Anvil local endpoint
 pub const DEFAULT_RPC_ENDPOINT: &str = "http://127.0.0.1:8545";
@@ -36,8 +21,6 @@ pub const DEFAULT_PRIVATE_KEY: &str = "ac0974bec39a17e36ba4a6b4d238ff944bacb478c
 pub struct EthereumClientConfig {
     #[serde(default)]
     pub provider: EthereumProviderConfig,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wallet: Option<EthereumWalletConfig>,
     #[serde(default)]
     pub contracts: StarknetContracts
 }
@@ -48,12 +31,6 @@ pub enum EthereumProviderConfig {
     Http(HttpProviderConfig),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum EthereumWalletConfig {
-    Local(LocalWalletConfig),
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StarknetContracts {
     pub core_contract: String,
@@ -61,21 +38,8 @@ pub struct StarknetContracts {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpProviderConfig {
-    pub wallet: Option<EthereumWallet>,
     #[serde(default = "default_rpc_endpoint")]
     pub rpc_endpoint: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tx_poll_interval_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas_price_poll_ms: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LocalWalletConfig {
-    #[serde(default = "default_chain_id")]
-    pub chain_id: u64,
-    #[serde(default = "default_private_key")]
-    pub private_key: String,
 }
 
 fn default_rpc_endpoint() -> String {
@@ -92,7 +56,7 @@ fn default_private_key() -> String {
 
 impl Default for HttpProviderConfig {
     fn default() -> Self {
-        Self { wallet: None, rpc_endpoint: default_rpc_endpoint(), tx_poll_interval_ms: None, gas_price_poll_ms: None }
+        Self { rpc_endpoint: default_rpc_endpoint() }
     }
 }
 
@@ -107,24 +71,6 @@ impl EthereumProviderConfig {
         match self {
             Self::Http(config) => &config.rpc_endpoint,
         }
-    }
-
-    pub fn gas_price_poll_ms(&self) -> Option<u64> {
-        match self {
-            Self::Http(config) => config.gas_price_poll_ms,
-        }
-    }
-}
-
-impl Default for LocalWalletConfig {
-    fn default() -> Self {
-        Self { chain_id: default_chain_id(), private_key: default_private_key() }
-    }
-}
-
-impl Default for EthereumWalletConfig {
-    fn default() -> Self {
-        Self::Local(LocalWalletConfig::default())
     }
 }
 
