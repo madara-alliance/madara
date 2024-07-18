@@ -10,6 +10,7 @@ use block_db::ChainInfo;
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
+use db_metrics::DbMetrics;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
 pub mod block_db;
@@ -23,6 +24,7 @@ pub mod bonsai_db;
 pub mod class_db;
 pub mod contract_db;
 pub mod db_block_id;
+pub mod db_metrics;
 pub mod storage_updates;
 
 pub use error::{DeoxysStorageError, TrieType};
@@ -446,6 +448,21 @@ impl DeoxysBackend {
             trie: Column::BonsaiClassesTrie,
             log: Column::BonsaiClassesLog,
         })
+    }
+
+    pub fn get_storage_size(&self, db_metrics: &DbMetrics) -> u64 {
+        let mut storage_size = 0;
+
+        for &column in Column::ALL.iter() {
+            let cf_handle = self.db.get_column(column);
+            let cf_metadata = self.db.get_column_family_metadata_cf(&cf_handle);
+            let column_size = cf_metadata.size;
+            storage_size += column_size;
+
+            db_metrics.column_sizes.with_label_values(&[column.rocksdb_name()]).set(column_size as i64);
+        }
+
+        storage_size
     }
 }
 

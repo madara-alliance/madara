@@ -7,6 +7,7 @@ pub struct BlockMetrics {
     pub l2_sync_time: Gauge<F64>,
     pub l2_avg_sync_time: Gauge<F64>,
     pub l2_latest_sync_time: Gauge<F64>,
+    pub l2_state_size: Gauge<F64>,
     pub transaction_count: Gauge<F64>,
     pub event_count: Gauge<F64>,
     // L1 network metrics
@@ -25,6 +26,8 @@ impl BlockMetrics {
                 .register(Gauge::new("deoxys_l2_avg_sync_time", "Gauge for deoxys L2 average sync time")?)?,
             l2_latest_sync_time: registry
                 .register(Gauge::new("deoxys_l2_latest_sync_time", "Gauge for deoxys L2 latest sync time")?)?,
+            l2_state_size: registry
+                .register(Gauge::new("deoxys_l2_state_size", "Gauge for node storage usage in GB")?)?,
             l1_block_number: registry
                 .register(Gauge::new("deoxys_l1_block_number", "Gauge for deoxys L1 block number")?)?,
             transaction_count: registry

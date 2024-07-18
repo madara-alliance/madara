@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(metrics): removed influx and added l2_state_size data
 - fix: command to start the Madara client
 - refactor: database error unification
 - feat: raise file-descriptor limit

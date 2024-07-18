@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
+use dc_db::db_metrics::DbMetrics;
 use dc_db::{DatabaseService, DeoxysBackend};
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
@@ -24,6 +25,7 @@ pub struct SyncService {
     l1_core_address: H160,
     starting_block: Option<u64>,
     block_metrics: BlockMetrics,
+    db_metrics: DbMetrics,
     chain_id: Felt,
     start_params: Option<TelemetryHandle>,
     disabled: bool,
@@ -38,6 +40,7 @@ impl SyncService {
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
+        let db_metrics = DbMetrics::register(&metrics_handle)?;
         let fetch_config = config.block_fetch_config();
 
         let l1_endpoint = if !config.sync_l1_disabled {
@@ -59,6 +62,7 @@ impl SyncService {
             starting_block: config.starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
             block_metrics,
+            db_metrics,
             chain_id: config.network.chain_id(),
             start_params: Some(telemetry),
             disabled: config.sync_disabled,
@@ -76,6 +80,7 @@ impl SyncService {
             l1_core_address,
             starting_block,
             block_metrics,
+            db_metrics,
             chain_id,
             pending_block_poll_interval,
             ..
@@ -92,6 +97,7 @@ impl SyncService {
                 starting_block,
                 backup_every_n_blocks,
                 block_metrics,
+                db_metrics,
                 chain_id,
                 telemetry,
                 pending_block_poll_interval,

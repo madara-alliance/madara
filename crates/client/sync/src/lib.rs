@@ -20,7 +20,7 @@ pub mod starknet_sync_worker {
     use std::{sync::Arc, time::Duration};
 
     use anyhow::Context;
-    use dc_db::DeoxysBackend;
+    use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
     use dc_telemetry::TelemetryHandle;
     use reqwest::Url;
     use starknet_providers::SequencerGatewayProvider;
@@ -38,6 +38,7 @@ pub mod starknet_sync_worker {
         starting_block: Option<u64>,
         backup_every_n_blocks: Option<u64>,
         block_metrics: BlockMetrics,
+        db_metrics: DbMetrics,
         chain_id: Felt,
         telemetry: TelemetryHandle,
         pending_block_poll_interval: Duration,
@@ -89,6 +90,7 @@ pub mod starknet_sync_worker {
                     pending_block_poll_interval,
                 },
                 block_metrics,
+                db_metrics,
                 starting_block,
                 chain_id,
                 telemetry,
