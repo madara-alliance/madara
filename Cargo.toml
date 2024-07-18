@@ -3,7 +3,7 @@ members = [
   "crates/client/db",
   "crates/client/exec",
   "crates/client/sync",
-  "crates/client/sync/src/eth",
+  "crates/client/eth",
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
@@ -23,7 +23,7 @@ default-members = [
   "crates/client/db",
   "crates/client/exec",
   "crates/client/sync",
-  "crates/client/sync/src/eth",
+  "crates/client/eth",
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
@@ -84,7 +84,7 @@ dc-db = { path = "crates/client/db" }
 dc-exec = { path = "crates/client/exec" }
 dc-rpc = { path = "crates/client/rpc" }
 dc-sync = { path = "crates/client/sync" }
-dc-eth = { path = "crates/client/sync/src/eth" }
+dc-eth = { path = "crates/client/eth" }
 dc-metrics = { path = "crates/client/metrics" }
 
 # Starknet dependencies
