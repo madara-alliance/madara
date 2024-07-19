@@ -15,6 +15,7 @@
 - fix(metrics): removed influx and added l2_state_size data
 - fix: command to start the Madara client
 - refactor: database error unification
+- feat: added l1 crate
 - feat: raise file-descriptor limit
 - fix: docker
 - fix: pending storage & sequencer_provider
