@@ -8,5 +8,4 @@ pub enum Error {
     ConfigReadFromFile(#[from] std::io::Error),
     #[error("Failed to decode from JSON: {0}")]
     ConfigDecodeFromJson(#[from] serde_json::Error),
-
 }
