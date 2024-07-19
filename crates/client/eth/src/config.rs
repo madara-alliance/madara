@@ -1,9 +1,7 @@
+use alloy::primitives::Address;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::path::PathBuf;
-use alloy::primitives::{
-    Address
-};
-use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
@@ -17,7 +15,7 @@ pub struct EthereumClientConfig {
     #[serde(default)]
     pub provider: EthereumProviderConfig,
     #[serde(default)]
-    pub contracts: StarknetContracts
+    pub contracts: StarknetContracts,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,8 +65,7 @@ impl EthereumProviderConfig {
 
 impl StarknetContracts {
     pub fn core_contract(&self) -> Result<Address, Error> {
-        Address::parse_checksummed(&self.core_contract, None)
-            .map_err(|e| Error::AddressParseError(e))
+        Address::parse_checksummed(&self.core_contract, None).map_err(|e| Error::AddressParseError(e))
     }
 }
 

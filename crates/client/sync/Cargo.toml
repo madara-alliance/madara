@@ -30,7 +30,6 @@ dp-receipt = { workspace = true }
 dp-state-update = { workspace = true }
 dp-transactions = { workspace = true }
 dp-utils = { workspace = true }
-dc-eth = {workspace  = true}
 
 # Starknet
 bonsai-trie = { workspace = true }
