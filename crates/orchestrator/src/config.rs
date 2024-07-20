@@ -4,7 +4,6 @@ use arc_swap::{ArcSwap, Guard};
 use da_client_interface::{DaClient, DaConfig};
 use dotenvy::dotenv;
 use ethereum_da_client::config::EthereumDaConfig;
-use ethereum_da_client::EthereumDaClient;
 use ethereum_settlement_client::EthereumSettlementClient;
 use prover_client_interface::ProverClient;
 use settlement_client_interface::SettlementClient;
@@ -54,7 +53,7 @@ pub async fn init_config() -> Config {
     // init the queue
     let queue = Box::new(SqsQueue {});
 
-    let da_client = build_da_client();
+    let da_client = build_da_client().await;
 
     let settings_provider = DefaultSettingsProvider {};
     let settlement_client = build_settlement_client(&settings_provider).await;
@@ -135,11 +134,11 @@ pub async fn config_force_init(config: Config) {
 }
 
 /// Builds the DA client based on the environment variable DA_LAYER
-fn build_da_client() -> Box<dyn DaClient + Send + Sync> {
+async fn build_da_client() -> Box<dyn DaClient + Send + Sync> {
     match get_env_var_or_panic("DA_LAYER").as_str() {
         "ethereum" => {
             let config = EthereumDaConfig::new_from_env();
-            Box::new(EthereumDaClient::from(config))
+            Box::new(config.build_client().await)
         }
         _ => panic!("Unsupported DA layer"),
     }

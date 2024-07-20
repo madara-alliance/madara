@@ -29,7 +29,9 @@ pub trait DaClient: Send + Sync {
 }
 
 /// Trait for every new DaConfig to implement
-pub trait DaConfig {
+#[async_trait]
+pub trait DaConfig<T> {
     /// Should create a new instance of the DaConfig from the environment variables
     fn new_from_env() -> Self;
+    async fn build_client(&self) -> T;
 }

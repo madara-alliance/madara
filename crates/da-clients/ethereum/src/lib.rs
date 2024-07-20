@@ -1,8 +1,5 @@
 #![allow(missing_docs)]
 #![allow(clippy::missing_docs_in_private_items)]
-use std::env;
-use std::path::Path;
-use std::str::FromStr;
 
 use alloy::consensus::{
     BlobTransactionSidecar, SignableTransaction, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar, TxEnvelope,
@@ -12,20 +9,17 @@ use alloy::eips::eip2930::AccessList;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
 use alloy::network::{Ethereum, TxSigner};
 use alloy::primitives::{bytes, Address, FixedBytes, TxHash, U256, U64};
-use alloy::providers::{Provider, ProviderBuilder, RootProvider};
-use alloy::rpc::client::RpcClient;
+use alloy::providers::{Provider, RootProvider};
 use alloy::signers::wallet::LocalWallet;
 use alloy::transports::http::Http;
 use async_trait::async_trait;
 use c_kzg::{Blob, KzgCommitment, KzgProof, KzgSettings};
 use color_eyre::Result;
-use config::EthereumDaConfig;
 use da_client_interface::{DaClient, DaVerificationStatus};
 use dotenv::dotenv;
 use mockall::automock;
 use mockall::predicate::*;
 use reqwest::Client;
-use url::Url;
 pub mod config;
 pub struct EthereumDaClient {
     #[allow(dead_code)]
@@ -109,19 +103,6 @@ impl DaClient for EthereumDaClient {
     }
 }
 
-impl From<EthereumDaConfig> for EthereumDaClient {
-    fn from(config: EthereumDaConfig) -> Self {
-        let client =
-            RpcClient::new_http(Url::from_str(config.rpc_url.as_str()).expect("Failed to parse ETHEREUM_RPC_URL"));
-        let provider = ProviderBuilder::<_, Ethereum>::new().on_client(client);
-        let wallet: LocalWallet = env::var("PK").expect("PK must be set").parse().expect("issue while parsing");
-        // let wallet: LocalWallet = config.private_key.as_str().parse();
-        let trusted_setup = KzgSettings::load_trusted_setup_file(Path::new("./trusted_setup.txt"))
-            .expect("issue while loading the trusted setup");
-        EthereumDaClient { provider, wallet, trusted_setup }
-    }
-}
-
 async fn prepare_sidecar(
     state_diff: &[Vec<u8>],
     trusted_setup: &KzgSettings,
@@ -151,6 +132,7 @@ async fn prepare_sidecar(
 mod tests {
     use std::fs::File;
     use std::io::{self, BufRead};
+    use std::path::Path;
 
     use super::*;
 
