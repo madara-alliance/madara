@@ -7,7 +7,6 @@ use dc_db::{DatabaseService, DeoxysBackend};
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
-use dc_sync::utility::l1_free_rpc_get;
 use dc_telemetry::TelemetryHandle;
 use primitive_types::H160;
 use starknet_types_core::felt::Felt;
@@ -47,8 +46,9 @@ impl SyncService {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 Some(l1_rpc_url.clone())
             } else {
-                let l1_rpc_url = l1_free_rpc_get().await.expect("finding the best RPC URL");
-                Some(Url::parse(l1_rpc_url).expect("parsing the RPC URL"))
+                return Err(anyhow::anyhow!(
+                    "❗ No L1 endpoint provided. You must provide one in order to verify the synced state."
+                ));
             }
         } else {
             None
