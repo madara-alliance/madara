@@ -2232,6 +2232,15 @@ checksum = "230c5f1ca6a325a32553f8640d31ac9b49f2411e901e427570154868b46da4f7"
 
 [[package]]
 name = "bincode"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "bincode"
 version = "2.0.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f11ea1a0346b94ef188834a65c068a03aec181c94896d481d7a0a40d85b0ce95"
@@ -3044,7 +3053,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d90d260c5b0c0812f02fcbdc21eb0d5908fcecdca888fb779b54c3967f7f88bf"
 dependencies = [
  "anyhow",
- "bincode",
+ "bincode 2.0.0-rc.3",
  "bitvec",
  "cairo-felt",
  "generic-array",
@@ -3077,7 +3086,7 @@ dependencies = [
  "anyhow",
  "ark-ff 0.4.2",
  "ark-std 0.4.0",
- "bincode",
+ "bincode 2.0.0-rc.3",
  "bitvec",
  "cairo-lang-casm",
  "cairo-lang-starknet",
@@ -6267,6 +6276,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 name = "orchestrator"
 version = "0.1.0"
 dependencies = [
+ "alloy 0.1.2",
  "arc-swap",
  "async-std",
  "async-trait",
@@ -6274,7 +6284,9 @@ dependencies = [
  "aws-sdk-s3",
  "axum 0.7.5",
  "axum-macros",
+ "bincode 1.3.3",
  "bytes",
+ "c-kzg",
  "cairo-vm 1.0.0-rc3",
  "color-eyre",
  "da-client-interface",
@@ -8151,6 +8163,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum 0.7.5",
+ "c-kzg",
  "color-eyre",
  "mockall",
  "starknet",

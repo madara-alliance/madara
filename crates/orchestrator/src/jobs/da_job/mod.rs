@@ -18,6 +18,7 @@ use uuid::Uuid;
 use super::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use super::Job;
 use crate::config::Config;
+use crate::constants::BLOB_DATA_FILE_NAME;
 
 lazy_static! {
     /// EIP-4844 BLS12-381 modulus.
@@ -89,7 +90,8 @@ impl Job for DaJob {
         // converting BigUints to Vec<u8>, one Vec<u8> represents one blob data
         let blob_array =
             data_to_blobs(max_bytes_per_blob, transformed_data).expect("error while converting blob data to vec<u8>");
-        let current_blob_length: u64 = blob_array.len().try_into().unwrap();
+        let current_blob_length: u64 =
+            blob_array.len().try_into().expect("Unable to convert the blob length into u64 format.");
 
         // there is a limit on number of blobs per txn, checking that here
         if current_blob_length > max_blob_per_txn {
@@ -103,7 +105,6 @@ impl Job for DaJob {
         }
 
         // making the txn to the DA layer
-        // TODO: move the core contract address to the config
         let external_id = config.da_client().publish_state_diff(blob_array, &[0; 32]).await?;
 
         Ok(external_id)
@@ -131,7 +132,10 @@ fn fft_transformation(elements: Vec<BigUint>) -> Vec<BigUint> {
         .map(|i| {
             let bin = format!("{:012b}", i);
             let bin_rev = bin.chars().rev().collect::<String>();
-            GENERATOR.modpow(&BigUint::from_str_radix(&bin_rev, 2).unwrap(), &BLS_MODULUS)
+            GENERATOR.modpow(
+                &BigUint::from_str_radix(&bin_rev, 2).expect("Not able to convert the parameters into exponent."),
+                &BLS_MODULUS,
+            )
         })
         .collect();
     let n = elements.len();
@@ -272,7 +276,31 @@ async fn state_update_to_blob_data(
         blob_data.push(*compiled_class_hash);
     }
 
+    // saving the blob data of the block to storage client
+    store_blob_data(blob_data.clone(), block_no, config).await?;
+
     Ok(blob_data)
+}
+
+/// To store the blob data using the storage client with path <block_number>/blob_data.txt
+async fn store_blob_data(blob_data: Vec<FieldElement>, block_number: u64, config: &Config) -> Result<()> {
+    let storage_client = config.storage();
+    let key = block_number.to_string() + "/" + BLOB_DATA_FILE_NAME;
+    let data_blob_big_uint = convert_to_biguint(blob_data.clone());
+
+    let blobs_array = data_to_blobs(config.da_client().max_bytes_per_blob().await, data_blob_big_uint)
+        .expect("Not able to convert the data into blobs.");
+
+    let blob = blobs_array.clone();
+
+    // converting Vec<Vec<u8> into Vec<u8>
+    let blob_vec_u8 = bincode::serialize(&blob)?;
+
+    if !blobs_array.is_empty() {
+        storage_client.put_data(blob_vec_u8.into(), &key).await?;
+    }
+
+    Ok(())
 }
 
 /// DA word encoding:
@@ -291,7 +319,7 @@ fn da_word(class_flag: bool, nonce_change: Option<FieldElement>, num_changes: u6
 
     // checking for nonce here
     if let Some(_new_nonce) = nonce_change {
-        let bytes: [u8; 32] = nonce_change.unwrap().to_bytes_be();
+        let bytes: [u8; 32] = nonce_change.expect("Not able to convert the nonce_change var into [u8; 32] type. Possible Error : Improper parameter length.").to_bytes_be();
         let biguint = BigUint::from_bytes_be(&bytes);
         let binary_string_local = format!("{:b}", biguint);
         let padded_binary_string = format!("{:0>64}", binary_string_local);
@@ -325,6 +353,8 @@ mod tests {
     use majin_blob_types::serde;
     use majin_blob_types::state_diffs::UnorderedEq;
     // use majin_blob_types::serde;
+    use crate::data_storage::MockDataStorage;
+    use da_client_interface::MockDaClient;
     use rstest::rstest;
     use serde_json::json;
 
@@ -375,9 +405,26 @@ mod tests {
         #[case] nonce_file_path: &str,
     ) {
         let server = MockServer::start();
+        let mut da_client = MockDaClient::new();
+        let mut storage_client = MockDataStorage::new();
 
-        let config =
-            init_config(Some(format!("http://localhost:{}", server.port())), None, None, None, None, None).await;
+        // Mocking DA client calls
+        da_client.expect_max_blob_per_txn().with().returning(|| 6);
+        da_client.expect_max_bytes_per_blob().with().returning(|| 131072);
+
+        // Mocking storage client
+        storage_client.expect_put_data().returning(|_, _| Result::Ok(())).times(1);
+
+        let config = init_config(
+            Some(format!("http://localhost:{}", server.port())),
+            None,
+            None,
+            Some(da_client),
+            None,
+            None,
+            Some(storage_client),
+        )
+        .await;
 
         get_nonce_attached(&server, nonce_file_path);
 
@@ -409,13 +456,23 @@ mod tests {
     fn test_fft_transformation(#[case] file_to_check: &str) {
         // parsing the blob hex to the bigUints
         let original_blob_data = serde::parse_file_to_blob_data(file_to_check);
-        // converting the data to it's original format
+        // converting the data to its original format
         let ifft_blob_data = blob::recover(original_blob_data.clone());
         // applying the fft function again on the original format
         let fft_blob_data = fft_transformation(ifft_blob_data);
 
         // ideally the data after fft transformation and the data before ifft should be same.
         assert_eq!(fft_blob_data, original_blob_data);
+    }
+
+    #[rstest]
+    fn test_bincode() {
+        let data = vec![vec![1, 2], vec![3, 4]];
+
+        let serialize_data = bincode::serialize(&data).unwrap();
+        let deserialize_data: Vec<Vec<u8>> = bincode::deserialize(&serialize_data).unwrap();
+
+        assert_eq!(data, deserialize_data);
     }
 
     pub fn read_state_update_from_file(file_path: &str) -> Result<StateUpdate> {

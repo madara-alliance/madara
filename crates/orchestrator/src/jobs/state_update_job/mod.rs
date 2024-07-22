@@ -1,35 +1,28 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
+pub mod utils;
 
+use std::collections::HashMap;
+
+use ::utils::collections::{has_dup, is_sorted};
 use async_trait::async_trait;
 use cairo_vm::Felt252;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use lazy_static::lazy_static;
 use snos::io::output::StarknetOsOutput;
-use starknet::providers::Provider;
-use starknet_core::types::{BlockId, MaybePendingStateUpdate};
 use uuid::Uuid;
 
 use settlement_client_interface::SettlementVerificationStatus;
-use utils::collections::{has_dup, is_sorted};
 
 use super::constants::{
     JOB_METADATA_STATE_UPDATE_ATTEMPT_PREFIX, JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO,
     JOB_PROCESS_ATTEMPT_METADATA_KEY,
 };
 
-use crate::config::Config;
-use crate::jobs::constants::{
-    JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY, JOB_METADATA_STATE_UPDATE_FETCH_FROM_TESTS,
-};
+use crate::config::{config, Config};
+use crate::constants::SNOS_OUTPUT_FILE_NAME;
+use crate::jobs::constants::JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY;
+use crate::jobs::state_update_job::utils::fetch_blob_data_for_block;
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use crate::jobs::Job;
-
-// TODO: remove when data is correctly stored in DB/S3
-lazy_static! {
-    pub static ref CURRENT_PATH: PathBuf = std::env::current_dir().unwrap();
-}
 
 pub struct StateUpdateJob;
 #[async_trait]
@@ -57,11 +50,6 @@ impl Job for StateUpdateJob {
         let attempt_no =
             job.metadata.get(JOB_PROCESS_ATTEMPT_METADATA_KEY).expect("Could not find current attempt number.").clone();
 
-        // TODO: remove when SNOS is correctly stored in DB/S3
-        // Test metadata to fetch the snos output from the test folder, default to False
-        let fetch_from_tests =
-            job.metadata.get(JOB_METADATA_STATE_UPDATE_FETCH_FROM_TESTS).map_or(false, |value| value == "TRUE");
-
         // Read the metadata to get the blocks for which state update will be performed.
         // We assume that blocks nbrs are formatted as follow: "2,3,4,5,6".
         let mut block_numbers = self.get_block_numbers_from_metadata(job)?;
@@ -76,20 +64,19 @@ impl Job for StateUpdateJob {
 
         let mut sent_tx_hashes: Vec<String> = Vec::with_capacity(block_numbers.len());
         for block_no in block_numbers.iter() {
-            let snos = self.fetch_snos_for_block(*block_no, Some(fetch_from_tests)).await;
-            let tx_hash =
-                self.update_state_for_block(config, *block_no, snos, Some(fetch_from_tests)).await.map_err(|e| {
-                    job.metadata.insert(JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO.into(), block_no.to_string());
-                    self.insert_attempts_into_metadata(job, &attempt_no, &sent_tx_hashes);
-                    eyre!("Block #{block_no} - Error occured during the state update: {e}")
-                })?;
+            let snos = self.fetch_snos_for_block(*block_no).await;
+            let tx_hash = self.update_state_for_block(config, *block_no, snos).await.map_err(|e| {
+                job.metadata.insert(JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO.into(), block_no.to_string());
+                self.insert_attempts_into_metadata(job, &attempt_no, &sent_tx_hashes);
+                eyre!("Block #{block_no} - Error occured during the state update: {e}")
+            })?;
             sent_tx_hashes.push(tx_hash);
         }
 
         self.insert_attempts_into_metadata(job, &attempt_no, &sent_tx_hashes);
 
         // external_id returned corresponds to the last block number settled
-        Ok(block_numbers.last().unwrap().to_string())
+        Ok(block_numbers.last().expect("Last number in block_numbers array returned as None. Possible Error : Delay in job processing or Failed job execution.").to_string())
     }
 
     /// Returns the status of the passed job.
@@ -203,33 +190,15 @@ impl StateUpdateJob {
     }
 
     /// Update the state for the corresponding block using the settlement layer.
-    async fn update_state_for_block(
-        &self,
-        config: &Config,
-        block_no: u64,
-        snos: StarknetOsOutput,
-        fetch_from_tests: Option<bool>,
-    ) -> Result<String> {
-        let starknet_client = config.starknet_client();
+    async fn update_state_for_block(&self, config: &Config, block_no: u64, snos: StarknetOsOutput) -> Result<String> {
         let settlement_client = config.settlement_client();
         let last_tx_hash_executed = if snos.use_kzg_da == Felt252::ZERO {
-            let state_update = starknet_client.get_state_update(BlockId::Number(block_no)).await?;
-            let _state_update = match state_update {
-                MaybePendingStateUpdate::PendingUpdate(_) => {
-                    return Err(eyre!("Block #{} - Cannot update state as it's still in pending state", block_no));
-                }
-                MaybePendingStateUpdate::Update(state_update) => state_update,
-            };
-            // TODO: Build the required arguments & send them to update_state_calldata
-            let program_output = vec![];
-            let onchain_data_hash = vec![0_u8; 32].try_into().expect("onchain data hash size must be 32 bytes");
-            let onchain_data_size = 0;
-            settlement_client.update_state_calldata(program_output, onchain_data_hash, onchain_data_size).await?
+            unimplemented!("update_state_for_block not implemented as of now for calldata DA.")
         } else if snos.use_kzg_da == Felt252::ONE {
-            // TODO: Build the blob & the KZG proof & send them to update_state_blobs
-            let kzg_proof = self.fetch_kzg_proof_for_block(block_no, fetch_from_tests).await;
-            let kzg_proof: [u8; 48] = kzg_proof.try_into().expect("kzg proof size must be 48 bytes");
-            settlement_client.update_state_blobs(vec![], kzg_proof).await?
+            let blob_data = fetch_blob_data_for_block(block_no).await?;
+
+            // Sending update_state transaction from the settlement client
+            settlement_client.update_state_with_blobs(vec![], blob_data).await?
         } else {
             return Err(eyre!("Block #{} - SNOS error, [use_kzg_da] should be either 0 or 1.", block_no));
         };
@@ -237,33 +206,13 @@ impl StateUpdateJob {
     }
 
     /// Retrieves the SNOS output for the corresponding block.
-    /// TODO: remove the fetch_from_tests argument once we have proper fetching (db/s3)
-    async fn fetch_snos_for_block(&self, block_no: u64, fetch_from_tests: Option<bool>) -> StarknetOsOutput {
-        let fetch_from_tests = fetch_from_tests.unwrap_or(true);
-        match fetch_from_tests {
-            true => {
-                let snos_path =
-                    CURRENT_PATH.join(format!("src/jobs/state_update_job/test_data/{}/snos_output.json", block_no));
-                let snos_str = std::fs::read_to_string(snos_path).expect("Failed to read the SNOS json file");
-                serde_json::from_str(&snos_str).expect("Failed to deserialize JSON into SNOS")
-            }
-            false => unimplemented!("can't fetch SNOS from DB/S3"),
-        }
-    }
-
-    /// Retrieves the KZG Proof for the corresponding block.
-    /// TODO: remove the fetch_from_tests argument once we have proper fetching (db/s3)
-    async fn fetch_kzg_proof_for_block(&self, block_no: u64, fetch_from_tests: Option<bool>) -> Vec<u8> {
-        let fetch_from_tests = fetch_from_tests.unwrap_or(true);
-        let kzg_proof_str = match fetch_from_tests {
-            true => {
-                let kzg_path =
-                    CURRENT_PATH.join(format!("src/jobs/state_update_job/test_data/{}/kzg_proof.txt", block_no));
-                std::fs::read_to_string(kzg_path).expect("Failed to read the KZG txt file").replace("0x", "")
-            }
-            false => unimplemented!("can't fetch KZG Proof from DB/S3"),
-        };
-        hex::decode(kzg_proof_str).expect("Invalid test kzg proof")
+    async fn fetch_snos_for_block(&self, block_no: u64) -> StarknetOsOutput {
+        let config = config().await;
+        let storage_client = config.storage();
+        let key = block_no.to_string() + "/" + SNOS_OUTPUT_FILE_NAME;
+        let snos_output_bytes = storage_client.get_data(&key).await.expect("Unable to fetch snos output for block");
+        serde_json::from_slice(snos_output_bytes.iter().as_slice())
+            .expect("Unable to convert the data into snos output")
     }
 
     /// Insert the tx hashes into the the metadata for the attempt number - will be used later by

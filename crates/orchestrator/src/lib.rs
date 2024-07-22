@@ -1,5 +1,6 @@
 /// Config of the service. Contains configurations for DB, Queues and other services.
 pub mod config;
+mod constants;
 /// Controllers for the routes
 pub mod controllers;
 /// Contains the trait that implements the fetching functions

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::config::{config, config_force_init};
+use crate::data_storage::MockDataStorage;
 use da_client_interface::{DaVerificationStatus, MockDaClient};
 use httpmock::prelude::*;
 use rstest::*;
@@ -16,7 +18,7 @@ use crate::jobs::Job;
 #[rstest]
 #[tokio::test]
 async fn test_create_job() {
-    let config = init_config(None, None, None, None, None, None).await;
+    let config = init_config(None, None, None, None, None, None, None).await;
     let job = DaJob.create_job(&config, String::from("0"), HashMap::new()).await;
     assert!(job.is_ok());
 
@@ -36,7 +38,7 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     let mut da_client = MockDaClient::new();
     da_client.expect_verify_inclusion().times(1).returning(|_| Ok(DaVerificationStatus::Verified));
 
-    let config = init_config(None, None, None, Some(da_client), None, None).await;
+    let config = init_config(None, None, None, Some(da_client), None, None, None).await;
     assert!(DaJob.verify_job(&config, &mut job_item).await.is_ok());
 }
 
@@ -46,14 +48,29 @@ async fn test_process_job() {
     let server = MockServer::start();
 
     let mut da_client = MockDaClient::new();
+    let mut storage_client = MockDataStorage::new();
     let internal_id = "1";
 
-    da_client.expect_publish_state_diff().times(1).returning(|_, _| Ok(internal_id.to_string()));
-    da_client.expect_max_bytes_per_blob().times(1).returning(move || ETHEREUM_MAX_BYTES_PER_BLOB);
+    da_client.expect_max_bytes_per_blob().times(2).returning(move || ETHEREUM_MAX_BYTES_PER_BLOB);
     da_client.expect_max_blob_per_txn().times(1).returning(move || ETHEREUM_MAX_BLOB_PER_TXN);
+    da_client.expect_publish_state_diff().times(1).returning(|_, _| Ok("0xbeef".to_string()));
 
-    let config =
-        init_config(Some(format!("http://localhost:{}", server.port())), None, None, Some(da_client), None, None).await;
+    // Mocking storage client
+    storage_client.expect_put_data().returning(|_, _| Ok(())).times(1);
+
+    let config_init = init_config(
+        Some(format!("http://localhost:{}", server.port())),
+        None,
+        None,
+        Some(da_client),
+        None,
+        None,
+        Some(storage_client),
+    )
+    .await;
+
+    config_force_init(config_init).await;
+
     let state_update = MaybePendingStateUpdate::Update(StateUpdate {
         block_hash: FieldElement::default(),
         new_root: FieldElement::default(),
@@ -78,7 +95,7 @@ async fn test_process_job() {
     assert_eq!(
         DaJob
             .process_job(
-                &config,
+                config().await.as_ref(),
                 &mut JobItem {
                     id: Uuid::default(),
                     internal_id: internal_id.to_string(),
@@ -91,7 +108,7 @@ async fn test_process_job() {
             )
             .await
             .unwrap(),
-        internal_id
+        "0xbeef"
     );
 
     state_update_mock.assert();

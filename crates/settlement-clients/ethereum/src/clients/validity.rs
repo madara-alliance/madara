@@ -21,6 +21,9 @@ impl StarknetValidityContractClient {
     pub fn new(address: Address, client: Arc<LocalWalletSignerMiddleware>) -> Self {
         Self { core_contract: StarknetValidityContract::new(address, client.clone()) }
     }
+    pub fn contract_address(&self) -> Address {
+        *self.core_contract.address()
+    }
 }
 
 impl

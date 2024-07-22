@@ -28,6 +28,9 @@ pub trait SettlementClient: Send + Sync {
         onchain_data_size: usize,
     ) -> Result<String>;
 
+    /// Should be used to update state on contract and publish the blob on ethereum.
+    async fn update_state_with_blobs(&self, program_output: Vec<[u8; 32]>, state_diff: Vec<Vec<u8>>) -> Result<String>;
+
     /// Should be used to update state on core contract when DA is in blobs/alt DA
     async fn update_state_blobs(&self, program_output: Vec<[u8; 32]>, kzg_proof: [u8; 48]) -> Result<String>;
 

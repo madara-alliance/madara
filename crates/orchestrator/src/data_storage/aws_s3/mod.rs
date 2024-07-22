@@ -3,8 +3,9 @@ use crate::data_storage::DataStorage;
 use async_trait::async_trait;
 use aws_sdk_s3::config::{Builder, Credentials, Region};
 use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::{Client, Error};
+use aws_sdk_s3::Client;
 use bytes::Bytes;
+use color_eyre::Result;
 
 /// Module for AWS S3 config structs and implementations
 pub mod config;
@@ -48,7 +49,7 @@ impl AWSS3 {
 #[async_trait]
 impl DataStorage for AWSS3 {
     /// Function to get the data from S3 bucket by Key.
-    async fn get_data(&self, key: &str) -> Result<Bytes, Error> {
+    async fn get_data(&self, key: &str) -> Result<Bytes> {
         let response = self.client.get_object().bucket(self.config.s3_bucket_name.clone()).key(key).send().await?;
         let data_stream = response.body.collect().await.expect("Failed to convert body into AggregatedBytes.");
         let data_bytes = data_stream.into_bytes();
@@ -56,12 +57,12 @@ impl DataStorage for AWSS3 {
     }
 
     /// Function to put the data to S3 bucket by Key.
-    async fn put_data(&self, data: ByteStream, key: &str) -> Result<(), Error> {
+    async fn put_data(&self, data: Bytes, key: &str) -> Result<()> {
         self.client
             .put_object()
             .bucket(self.config.s3_bucket_name.clone())
             .key(key)
-            .body(data)
+            .body(ByteStream::from(data))
             .content_type("application/json")
             .send()
             .await?;

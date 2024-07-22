@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+use crate::data_storage::aws_s3::config::AWSS3Config;
+use crate::data_storage::aws_s3::AWSS3;
+use crate::data_storage::{DataStorage, DataStorageConfig};
 use arc_swap::{ArcSwap, Guard};
 use da_client_interface::{DaClient, DaConfig};
 use dotenvy::dotenv;
@@ -35,7 +38,10 @@ pub struct Config {
     settlement_client: Box<dyn SettlementClient>,
     /// The database client
     database: Box<dyn Database>,
+    /// Queue client
     queue: Box<dyn QueueProvider>,
+    /// Storage client
+    storage: Box<dyn DataStorage>,
 }
 
 /// Initializes the app config
@@ -59,7 +65,9 @@ pub async fn init_config() -> Config {
     let settlement_client = build_settlement_client(&settings_provider).await;
     let prover_client = build_prover_service(&settings_provider);
 
-    Config::new(Arc::new(provider), da_client, prover_client, settlement_client, database, queue)
+    let storage_client = build_storage_client().await;
+
+    Config::new(Arc::new(provider), da_client, prover_client, settlement_client, database, queue, storage_client)
 }
 
 impl Config {
@@ -71,8 +79,9 @@ impl Config {
         settlement_client: Box<dyn SettlementClient>,
         database: Box<dyn Database>,
         queue: Box<dyn QueueProvider>,
+        storage: Box<dyn DataStorage>,
     ) -> Self {
-        Self { starknet_client, da_client, prover_client, settlement_client, database, queue }
+        Self { starknet_client, da_client, prover_client, settlement_client, database, queue, storage }
     }
 
     /// Returns the starknet client
@@ -103,6 +112,11 @@ impl Config {
     /// Returns the queue provider
     pub fn queue(&self) -> &dyn QueueProvider {
         self.queue.as_ref()
+    }
+
+    /// Returns the storage provider
+    pub fn storage(&self) -> &dyn DataStorage {
+        self.storage.as_ref()
     }
 }
 
@@ -158,5 +172,12 @@ async fn build_settlement_client(settings_provider: &impl SettingsProvider) -> B
         "ethereum" => Box::new(EthereumSettlementClient::with_settings(settings_provider)),
         "starknet" => Box::new(StarknetSettlementClient::with_settings(settings_provider).await),
         _ => panic!("Unsupported Settlement layer"),
+    }
+}
+
+async fn build_storage_client() -> Box<dyn DataStorage + Send + Sync> {
+    match get_env_var_or_panic("DATA_STORAGE").as_str() {
+        "s3" => Box::new(AWSS3::new(AWSS3Config::new_from_env()).await),
+        _ => panic!("Unsupported Storage Client"),
     }
 }

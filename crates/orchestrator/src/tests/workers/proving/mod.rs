@@ -86,6 +86,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
         Some(da_client),
         Some(prover_client),
         Some(settlement_client),
+        None,
     )
     .await;
     config_force_init(config).await;

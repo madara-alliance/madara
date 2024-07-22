@@ -32,7 +32,7 @@ impl Job for RegisterProofJob {
     }
 
     async fn process_job(&self, _config: &Config, _job: &mut JobItem) -> Result<String> {
-        // Get proof from S3 and submit on chain for verification
+        // Get proof from storage and submit on chain for verification
         // We need to implement a generic trait for this to support multiple
         // base layers
         todo!()

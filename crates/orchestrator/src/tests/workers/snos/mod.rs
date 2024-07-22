@@ -30,13 +30,13 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
 
     // Mocking db function expectations
     if !db_val {
-        db.expect_get_latest_job_by_type_and_internal_id().times(1).with(eq(JobType::SnosRun)).returning(|_| Ok(None));
+        db.expect_get_last_successful_job_by_type().times(1).with(eq(JobType::SnosRun)).returning(|_| Ok(None));
         start_job_index = 1;
         block = 5;
     } else {
         let uuid_temp = Uuid::new_v4();
 
-        db.expect_get_latest_job_by_type_and_internal_id()
+        db.expect_get_last_successful_job_by_type()
             .with(eq(JobType::SnosRun))
             .returning(move |_| Ok(Some(get_job_item_mock_by_id("1".to_string(), uuid_temp))));
         block = 6;
@@ -73,6 +73,7 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
         Some(db),
         Some(queue),
         Some(da_client),
+        None,
         None,
         None,
     )
