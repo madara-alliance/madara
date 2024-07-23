@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: compute and verify hash of synced contract classes
 - test: add tests crate `db`
 - fix: #225
 - feat: experimental block production and mempool

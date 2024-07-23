@@ -16,6 +16,7 @@ members = [
   "crates/primitives/receipt",
   "crates/primitives/state_update",
   "crates/primitives/utils",
+  "crates/primitives/hash-chain",
 ]
 resolver = "2"
 # All previous except for `starknet-rpc-test` and `starknet-e2e-test`
@@ -36,6 +37,7 @@ default-members = [
   "crates/primitives/receipt",
   "crates/primitives/state_update",
   "crates/primitives/utils",
+  "crates/primitives/hash-chain",
 ]
 
 [profile.dev]
@@ -74,6 +76,7 @@ bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bon
 # Deoxys primtitives
 dp-block = { path = "crates/primitives/block", default-features = false }
 dp-convert = { path = "crates/primitives/convert", default-features = false }
+dp-hash-chain = { path = "crates/primitives/hash-chain", default-features = false }
 dp-transactions = { path = "crates/primitives/transactions", default-features = false }
 dp-class = { path = "crates/primitives/class", default-features = false }
 dp-receipt = { path = "crates/primitives/receipt", default-features = false }

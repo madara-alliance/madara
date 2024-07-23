@@ -1,0 +1,12 @@
+[package]
+description = "A starknet-compatible hash chain implementation"
+name = "dp-hash-chain"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+repository.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+starknet-types-core = { workspace = true }

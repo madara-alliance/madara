@@ -6,7 +6,7 @@ mod class_hash;
 mod compile;
 mod into_starknet_core;
 
-pub use class_hash::ClassHash;
+pub use class_hash::ComputeClassHash;
 pub use compile::ToCompiledClass;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
