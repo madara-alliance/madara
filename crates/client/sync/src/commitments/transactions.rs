@@ -1,13 +1,14 @@
-use bitvec::prelude::*;
-use bonsai_trie::databases::HashMapDb;
-use bonsai_trie::id::{BasicId, BasicIdBuilder};
-use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use dc_db::bonsai_identifier;
+use dp_block::StarknetVersion;
 use dp_transactions::Transaction;
+use dp_transactions::LEGACY_BLOCK_NUMBER;
 use dp_transactions::MAIN_CHAIN_ID;
+use dp_transactions::V0_7_BLOCK_NUMBER;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
+use starknet_types_core::hash::Poseidon;
 use starknet_types_core::hash::{Pedersen, StarkHash};
+
+use super::compute_root;
 
 /// Compute the combined hash of the transaction hash and the signature.
 ///
@@ -22,49 +23,72 @@ use starknet_types_core::hash::{Pedersen, StarkHash};
 /// # Returns
 ///
 /// The transaction hash with signature.
-pub fn calculate_transaction_hash_with_signature(
+pub fn calculate_transaction_leaf_with_hash(
     transaction: &Transaction,
     chain_id: Felt,
+    starknet_version: StarknetVersion,
     block_number: u64,
 ) -> (Felt, Felt) {
-    let include_signature = !(block_number < 61394 && chain_id == MAIN_CHAIN_ID);
+    let include_signature = starknet_version >= StarknetVersion::STARKNET_VERSION_0_11_1;
+    let legacy = block_number < LEGACY_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID;
+    let is_pre_v0_7 = block_number < V0_7_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID;
 
-    let (signature_hash, tx_hash) = rayon::join(
-        || match transaction {
-            Transaction::Invoke(invoke_tx) => {
-                // Include signatures for Invoke transactions or for all transactions
-                let signature = invoke_tx.signature();
+    let tx_hash = if is_pre_v0_7 {
+        transaction.compute_hash_pre_v0_7(chain_id, false)
+    } else {
+        transaction.compute_hash(chain_id, false, legacy)
+    };
 
-                Pedersen::hash_array(signature)
+    let leaf = match transaction {
+        Transaction::Invoke(tx) => {
+            // Include signatures for Invoke transactions or for all transactions
+            if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                let signature_hash = tx.compute_hash_signature::<Pedersen>();
+                Pedersen::hash(&tx_hash, &signature_hash)
+            } else {
+                let elements: Vec<Felt> = std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
+                Poseidon::hash_array(&elements)
             }
-            Transaction::Declare(declare_tx) => {
-                // Include signatures for Declare transactions if the block number is greater than 61394 (mainnet)
-                if include_signature {
-                    let signature = declare_tx.signature();
-
-                    Pedersen::hash_array(signature)
+        }
+        Transaction::Declare(tx) => {
+            if include_signature {
+                if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                    let signature_hash = tx.compute_hash_signature::<Pedersen>();
+                    Pedersen::hash(&tx_hash, &signature_hash)
                 } else {
-                    Pedersen::hash_array(&[])
+                    let elements: Vec<Felt> = std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
+                    Poseidon::hash_array(&elements)
                 }
+            } else {
+                let signature_hash = Pedersen::hash_array(&[]);
+                Pedersen::hash(&tx_hash, &signature_hash)
             }
-            Transaction::DeployAccount(deploy_account_tx) => {
-                // Include signatures for DeployAccount transactions if the block number is greater than 61394
-                // (mainnet)
-                if include_signature {
-                    let signature = deploy_account_tx.signature();
-
-                    Pedersen::hash_array(signature)
+        }
+        Transaction::DeployAccount(tx) => {
+            if include_signature {
+                if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                    let signature_hash = tx.compute_hash_signature::<Pedersen>();
+                    Pedersen::hash(&tx_hash, &signature_hash)
                 } else {
-                    Pedersen::hash_array(&[])
+                    let elements: Vec<Felt> = std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
+                    Poseidon::hash_array(&elements)
                 }
+            } else {
+                let signature_hash = Pedersen::hash_array(&[]);
+                Pedersen::hash(&tx_hash, &signature_hash)
             }
-            Transaction::L1Handler(_) => Pedersen::hash_array(&[]),
-            _ => Pedersen::hash_array(&[]),
-        },
-        || transaction.compute_hash(chain_id, false, Some(block_number)),
-    );
+        }
+        _ => {
+            if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                let signature_hash = Pedersen::hash_array(&[]);
+                Pedersen::hash(&tx_hash, &signature_hash)
+            } else {
+                Poseidon::hash_array(&[tx_hash, Felt::ZERO])
+            }
+        }
+    };
 
-    (Pedersen::hash(&tx_hash, &signature_hash), tx_hash)
+    (leaf, tx_hash)
 }
 
 /// Calculate the transaction commitment in memory using HashMapDb (which is more efficient for this
@@ -82,36 +106,23 @@ pub fn calculate_transaction_hash_with_signature(
 pub fn memory_transaction_commitment(
     transactions: &[Transaction],
     chain_id: Felt,
+    starknet_version: StarknetVersion,
     block_number: u64,
-) -> Result<(Felt, Vec<Felt>), String> {
+) -> (Felt, Vec<Felt>) {
     // TODO @cchudant refacto/optimise this function
-    let config = BonsaiStorageConfig::default();
-    let bonsai_db = HashMapDb::<BasicId>::default();
-    let mut bonsai_storage =
-        BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
-    let identifier = bonsai_identifier::TRANSACTION;
 
     // transaction hashes are computed in parallel
-    let txs = transactions
+    let (leafs, txs_hashes): (Vec<Felt>, Vec<Felt>) = transactions
         .par_iter()
-        .map(|tx| calculate_transaction_hash_with_signature(tx, chain_id, block_number))
-        .collect::<Vec<_>>();
-
-    let mut tx_hashes: Vec<Felt> = Vec::with_capacity(txs.len());
+        .map(|tx| calculate_transaction_leaf_with_hash(tx, chain_id, starknet_version, block_number))
+        .unzip();
 
     // once transaction hashes have finished computing, they are inserted into the local Bonsai db
-    for (i, &(tx_hash_signature, tx_hash)) in txs.iter().enumerate() {
-        let key = BitVec::from_vec(i.to_be_bytes().to_vec());
-        let value = tx_hash_signature;
-        bonsai_storage.insert(identifier, key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
-        tx_hashes.push(tx_hash);
-    }
+    let root = if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+        compute_root::<Pedersen>(&leafs)
+    } else {
+        compute_root::<Poseidon>(&leafs)
+    };
 
-    let mut id_builder = BasicIdBuilder::new();
-    let id = id_builder.new_id();
-
-    bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-    let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
-
-    Ok((root_hash, tx_hashes))
+    (root, txs_hashes)
 }

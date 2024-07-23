@@ -1,28 +1,10 @@
-use bitvec::vec::BitVec;
-use bonsai_trie::databases::HashMapDb;
-use bonsai_trie::id::{BasicId, BasicIdBuilder};
-use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use dc_db::bonsai_identifier;
+use dp_block::StarknetVersion;
 use dp_receipt::Event;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
-use starknet_types_core::hash::{Pedersen, StarkHash};
+use starknet_types_core::hash::{Pedersen, Poseidon};
 
-/// Calculate the hash of the event.
-///
-/// # Arguments
-///
-/// * `event` - The event we want to calculate the hash of.
-///
-/// # Returns
-///
-/// The event hash as `Felt`.
-pub fn calculate_event_hash(event: &Event) -> Felt {
-    let (keys_hash, data_hash) =
-        rayon::join(|| Pedersen::hash_array(&event.keys), || Pedersen::hash_array(&event.data));
-    let from_address = event.from_address;
-    Pedersen::hash_array(&[from_address, keys_hash, data_hash])
-}
+use super::compute_root;
 
 /// Calculate the event commitment in memory using HashMapDb (which is more efficient for this
 /// usecase).
@@ -34,38 +16,36 @@ pub fn calculate_event_hash(event: &Event) -> Felt {
 /// # Returns
 ///
 /// The event commitment as `Felt`.
-pub fn memory_event_commitment(events: &[Event]) -> Result<Felt, String> {
-    if events.is_empty() {
-        return Ok(Felt::ZERO);
+pub fn memory_event_commitment(events_with_tx_hash: &[(Felt, Event)], starknet_version: StarknetVersion) -> Felt {
+    if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+        memory_event_commitment_pedersen(events_with_tx_hash)
+    } else {
+        memory_event_commitment_poseidon(events_with_tx_hash)
     }
+}
 
-    let config = BonsaiStorageConfig::default();
-    let bonsai_db = HashMapDb::<BasicId>::default();
-    let mut bonsai_storage =
-        BonsaiStorage::<_, _, Pedersen>::new(bonsai_db, config).expect("Failed to create bonsai storage");
-    let identifier = bonsai_identifier::EVENT;
+fn memory_event_commitment_pedersen(events_with_tx_hash: &[(Felt, Event)]) -> Felt {
+    if events_with_tx_hash.is_empty() {
+        return Felt::ZERO;
+    }
 
     // event hashes are computed in parallel
-    let events = events.into_par_iter().map(calculate_event_hash).collect::<Vec<_>>();
+    let events_hash =
+        events_with_tx_hash.into_par_iter().map(|(_, event)| event.compute_hash_pedersen()).collect::<Vec<_>>();
 
     // once event hashes have finished computing, they are inserted into the local Bonsai db
-    for (i, event_hash) in events.iter().enumerate() {
-        let key = BitVec::from_vec(i.to_be_bytes().to_vec());
-        let value = event_hash;
-        bonsai_storage.insert(identifier, key.as_bitslice(), value).expect("Failed to insert into bonsai storage");
+    compute_root::<Pedersen>(&events_hash)
+}
+
+fn memory_event_commitment_poseidon(events_with_tx_hash: &[(Felt, Event)]) -> Felt {
+    if events_with_tx_hash.is_empty() {
+        return Felt::ZERO;
     }
 
-    // Note that committing changes still has the greatest performance hit
-    // as this is where the root hash is calculated. Due to the Merkle structure
-    // of Bonsai Tries, this results in a trie size that grows very rapidly with
-    // each new insertion. It seems that the only vector of optimization here
-    // would be to optimize the tree traversal and hash computation.
-    let mut id_builder = BasicIdBuilder::new();
-    let id = id_builder.new_id();
+    // event hashes are computed in parallel
+    let events_hash =
+        events_with_tx_hash.into_par_iter().map(|(hash, event)| event.compute_hash_poseidon(hash)).collect::<Vec<_>>();
 
-    // run in a blocking-safe thread to avoid starving the thread pool
-    bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
-    let root_hash = bonsai_storage.root_hash(identifier).expect("Failed to get root hash");
-
-    Ok(root_hash)
+    // once event hashes have finished computing, they are inserted into the local Bonsai db
+    compute_root::<Poseidon>(&events_hash)
 }

@@ -12,6 +12,7 @@ members = [
   "crates/primitives/transactions",
   "crates/primitives/class",
   "crates/primitives/receipt",
+  "crates/primitives/state_update",
   "crates/primitives/utils",
 ]
 resolver = "2"
@@ -29,6 +30,7 @@ default-members = [
   "crates/primitives/transactions",
   "crates/primitives/class",
   "crates/primitives/receipt",
+  "crates/primitives/state_update",
   "crates/primitives/utils",
 ]
 
@@ -68,12 +70,10 @@ bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bon
 # Deoxys primtitives
 dp-block = { path = "crates/primitives/block", default-features = false }
 dp-convert = { path = "crates/primitives/convert", default-features = false }
-dp-sequencer-address = { path = "crates/primitives/sequencer-address", default-features = false }
-dp-simulations = { path = "crates/primitives/simulations", default-features = false }
 dp-transactions = { path = "crates/primitives/transactions", default-features = false }
 dp-class = { path = "crates/primitives/class", default-features = false }
 dp-receipt = { path = "crates/primitives/receipt", default-features = false }
-dp-types = { path = "crates/primitives/types", default-features = false }
+dp-state-update = { path = "crates/primitives/state_update", default-features = false }
 dp-utils = { path = "crates/primitives/utils", default-features = false }
 
 # Deoxys client
@@ -106,6 +106,7 @@ ethers = { git = "https://github.com/gakonst/ethers-rs" }
 anyhow = "1.0"
 assert_matches = "1.5"
 async-trait = "0.1"
+sha3 = "0.10"
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
 base64 = "0.13"
 clap = { version = "4.4" }

@@ -28,7 +28,7 @@ casm-utils-v1_0_0-alpha6 = { package = "cairo-lang-utils", git = "https://github
 casm-utils-v1_0_0-rc0 = { package = "cairo-lang-utils", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-rc0" }
 casm-utils-v1_1_1 = { package = "cairo-lang-utils", version = "=1.1.1" }
 casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.6.4" }
-sha3 = "0.10.8"
+sha3 = { workspace = true }
 starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
 

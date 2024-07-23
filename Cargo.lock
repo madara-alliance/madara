@@ -558,7 +558,6 @@ dependencies = [
  "num-traits 0.2.19",
  "once_cell",
  "phf",
- "rstest 0.17.0",
  "serde",
  "serde_json",
  "sha3",
@@ -2740,16 +2739,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-skiplist"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df29de440c58ca2cc6e587ec3d22347551a32435fbde9d2bff64e78a9ffa151b"
-dependencies = [
- "crossbeam-epoch",
- "crossbeam-utils",
-]
-
-[[package]]
 name = "crossbeam-utils"
 version = "0.8.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2892,21 +2881,16 @@ name = "dc-db"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "bincode 1.3.3",
- "bitvec",
  "bonsai-trie",
- "crossbeam-skiplist",
  "dc-metrics",
  "dp-block",
  "dp-class",
- "dp-convert",
- "hashbrown 0.14.5",
+ "dp-state-update",
  "log",
  "rayon",
  "rocksdb",
  "serde",
- "serde_json",
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
@@ -2960,7 +2944,7 @@ dependencies = [
  "dp-transactions",
  "jsonrpsee",
  "log",
- "rstest 0.18.2",
+ "rstest",
  "serde_json",
  "starknet-core",
  "starknet-providers",
@@ -2975,7 +2959,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitvec",
- "blockifier",
  "bonsai-trie",
  "dc-db",
  "dc-metrics",
@@ -2984,13 +2967,12 @@ dependencies = [
  "dp-class",
  "dp-convert",
  "dp-receipt",
+ "dp-state-update",
  "dp-transactions",
  "dp-utils",
  "ethers",
  "futures",
  "hex",
- "indexmap 2.2.6",
- "itertools 0.12.1",
  "log",
  "num-traits 0.2.19",
  "primitive-types",
@@ -3249,6 +3231,16 @@ dependencies = [
  "serde",
  "starknet-core",
  "starknet-providers",
+ "starknet-types-core",
+]
+
+[[package]]
+name = "dp-state-update"
+version = "0.1.0"
+dependencies = [
+ "bincode 1.3.3",
+ "serde",
+ "starknet-core",
  "starknet-types-core",
 ]
 
@@ -6357,40 +6349,14 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 
 [[package]]
 name = "rstest"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de1bb486a691878cd320c2f0d319ba91eeaa2e894066d8b5f8f117c000e9d962"
-dependencies = [
- "futures",
- "futures-timer",
- "rstest_macros 0.17.0",
- "rustc_version",
-]
-
-[[package]]
-name = "rstest"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97eeab2f3c0a199bc4be135c36c924b6590b88c377d416494288c14f2db30199"
 dependencies = [
  "futures",
  "futures-timer",
- "rstest_macros 0.18.2",
+ "rstest_macros",
  "rustc_version",
-]
-
-[[package]]
-name = "rstest_macros"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "290ca1a1c8ca7edb7c3283bd44dc35dd54fdec6253a3912e201ba1072018fca8"
-dependencies = [
- "cfg-if",
- "proc-macro2",
- "quote",
- "rustc_version",
- "syn 1.0.109",
- "unicode-ident",
 ]
 
 [[package]]
@@ -7050,7 +7016,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "starknet-core"
 version = "0.11.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#226952b599d8f5cc63dd398e63170955e127ceb5"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#1a0428e28e31e02cee1f4ddb80476d23eac77dc1"
 dependencies = [
  "base64 0.21.7",
  "crypto-bigint",
@@ -7108,7 +7074,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto"
 version = "0.7.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#226952b599d8f5cc63dd398e63170955e127ceb5"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#1a0428e28e31e02cee1f4ddb80476d23eac77dc1"
 dependencies = [
  "crypto-bigint",
  "hex",
@@ -7138,7 +7104,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto-codegen"
 version = "0.4.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#226952b599d8f5cc63dd398e63170955e127ceb5"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#1a0428e28e31e02cee1f4ddb80476d23eac77dc1"
 dependencies = [
  "starknet-curve 0.5.0",
  "starknet-types-core",
@@ -7166,7 +7132,7 @@ dependencies = [
 [[package]]
 name = "starknet-curve"
 version = "0.5.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#226952b599d8f5cc63dd398e63170955e127ceb5"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#1a0428e28e31e02cee1f4ddb80476d23eac77dc1"
 dependencies = [
  "starknet-types-core",
 ]
@@ -7186,7 +7152,7 @@ dependencies = [
 [[package]]
 name = "starknet-providers"
 version = "0.11.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#226952b599d8f5cc63dd398e63170955e127ceb5"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#1a0428e28e31e02cee1f4ddb80476d23eac77dc1"
 dependencies = [
  "async-trait",
  "auto_impl",

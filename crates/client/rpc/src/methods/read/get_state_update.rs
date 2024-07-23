@@ -53,7 +53,7 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
                 // The pending block is actually genesis, so old root is zero (huh?)
                 Felt::ZERO
             };
-            Ok(MaybePendingStateUpdate::PendingUpdate(PendingStateUpdate { old_root, state_diff }))
+            Ok(MaybePendingStateUpdate::PendingUpdate(PendingStateUpdate { old_root, state_diff: state_diff.into() }))
         }
         false => {
             let block_info = &starknet.get_block_info(&resolved_block_id)?;
@@ -75,7 +75,7 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
                 block_hash: block_info.block_hash,
                 old_root,
                 new_root: block_info.header.global_state_root,
-                state_diff,
+                state_diff: state_diff.into(),
             }))
         }
     }

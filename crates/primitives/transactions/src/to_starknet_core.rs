@@ -24,16 +24,6 @@ impl Transaction {
             Transaction::DeployAccount(tx) => starknet_core::types::Transaction::DeployAccount(tx.to_core(hash)),
         }
     }
-
-    pub fn build_core_tx(
-        self,
-        chain_id: Felt,
-        offset_version: bool,
-        block_number: Option<u64>,
-    ) -> starknet_core::types::Transaction {
-        let hash = self.compute_hash(chain_id, offset_version, block_number);
-        self.to_core(hash)
-    }
 }
 
 impl InvokeTransaction {

@@ -130,6 +130,7 @@ impl From<starknet_core::types::ExecutionResources> for ExecutionResources {
             keccak_builtin_applications: computation_resources.keccak_builtin_applications,
             segment_arena_builtin: computation_resources.segment_arena_builtin,
             data_availability: resources.data_resources.data_availability.into(),
+            total_gas_consumed: Default::default(),
         }
     }
 }

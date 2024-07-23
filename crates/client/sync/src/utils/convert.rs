@@ -11,6 +11,7 @@ use dp_block::{
 use dp_class::{ClassInfo, ConvertedClass, ToCompiledClass};
 use dp_convert::felt_to_u128;
 use dp_receipt::{Event, TransactionReceipt};
+use dp_state_update::StateDiff;
 use dp_transactions::MAIN_CHAIN_ID;
 use rayon::prelude::*;
 use starknet_core::types::{
@@ -23,7 +24,7 @@ use starknet_providers::sequencer::models::state_update::{
 use starknet_providers::sequencer::models::{self as p, StateUpdate as StateUpdateProvider};
 use starknet_types_core::felt::Felt;
 
-use crate::commitments::calculate_tx_and_event_commitments;
+use crate::commitments::{memory_event_commitment, memory_receipt_commitment, memory_transaction_commitment};
 use crate::l2::L2SyncError;
 
 pub fn convert_inner(
@@ -40,8 +41,13 @@ pub fn convert_inner(
 }
 
 /// This function does not check block hashes and such
-pub fn convert_pending(block: p::Block, _chain_id: Felt) -> Result<DeoxysPendingBlock, L2SyncError> {
+pub fn convert_pending(
+    block: p::Block,
+    state_diff: starknet_core::types::StateDiff,
+    _chain_id: Felt,
+) -> Result<(DeoxysPendingBlock, StateDiff), L2SyncError> {
     let block_inner = convert_inner(block.transactions, block.transaction_receipts)?;
+    let converted_state_diff = state_diff.into();
 
     let header = PendingHeader {
         parent_block_hash: block.parent_block_hash,
@@ -57,42 +63,56 @@ pub fn convert_pending(block: p::Block, _chain_id: Felt) -> Result<DeoxysPending
     // let ((_transaction_commitment, txs_hashes), event_commitment) =
     //     memory_transaction_commitment(&block_inner.transactions, &events, chain_id, block_number);
 
-    Ok(DeoxysPendingBlock::new(DeoxysPendingBlockInfo::new(header, vec![]), block_inner))
+    Ok((DeoxysPendingBlock::new(DeoxysPendingBlockInfo::new(header, vec![]), block_inner), converted_state_diff))
 }
 
 /// Compute heavy, this should only be called in a rayon ctx
-pub fn convert_and_verify_block(block: p::Block, chain_id: Felt) -> Result<DeoxysBlock, L2SyncError> {
+pub fn convert_and_verify_block(
+    block: p::Block,
+    state_diff: starknet_core::types::StateDiff,
+    chain_id: Felt,
+) -> Result<(DeoxysBlock, StateDiff), L2SyncError> {
     let block_inner = convert_inner(block.transactions, block.transaction_receipts)?;
+    let converted_state_diff: StateDiff = state_diff.into();
 
     // converts starknet_provider transactions and events to dp_transactions and starknet_api events
-    let events = events(&block_inner.receipts);
+    let events_with_tx_hash = events_with_tx_hash(&block_inner.receipts);
 
     let block_hash = block.block_hash.ok_or(L2SyncError::BlockFormat("No block hash provided".into()))?;
     let block_number = block.block_number.ok_or(L2SyncError::BlockFormat("No block number provided".into()))?;
 
     let global_state_root = block.state_root.ok_or(L2SyncError::BlockFormat("No state root provided".into()))?;
-    let transaction_count = block_inner.transactions.len() as u128;
-    let event_count = events.len() as u128;
+    let transaction_count = block_inner.transactions.len() as u64;
+    let event_count = events_with_tx_hash.len() as u64;
+    let state_diff_length = converted_state_diff.len() as u64;
+    let starknet_version = protocol_version(block.starknet_version);
 
-    let ((transaction_commitment, txs_hashes), event_commitment) =
-        calculate_tx_and_event_commitments(&block_inner.transactions, &events, chain_id, block_number);
+    // TODO: parallelize this 4 commitments calculation
+    let (transaction_commitment, txs_hashes) =
+        memory_transaction_commitment(&block_inner.transactions, chain_id, starknet_version, block_number);
+    let event_commitment = memory_event_commitment(&events_with_tx_hash, starknet_version);
+    let receipt_commitment = memory_receipt_commitment(&block_inner.receipts);
+    let state_diff_commitment = converted_state_diff.compute_hash();
 
-    let header = Header {
-        parent_block_hash: block.parent_block_hash,
-        block_timestamp: block.timestamp,
-        sequencer_address: block.sequencer_address.unwrap_or(Felt::ZERO),
-        protocol_version: protocol_version(block.starknet_version),
-        l1_gas_price: resource_price(block.l1_gas_price, block.l1_data_gas_price),
-        l1_da_mode: l1_da_mode(block.l1_da_mode),
+    let header = Header::new(
+        block.parent_block_hash,
         block_number,
         global_state_root,
+        block.sequencer_address.unwrap_or(Felt::ZERO),
+        block.timestamp,
         transaction_count,
         transaction_commitment,
         event_count,
         event_commitment,
-    };
+        state_diff_length,
+        state_diff_commitment,
+        receipt_commitment,
+        starknet_version,
+        resource_price(block.l1_gas_price, block.l1_data_gas_price),
+        l1_da_mode(block.l1_da_mode),
+    );
 
-    let computed_block_hash = header.hash(chain_id);
+    let computed_block_hash = header.compute_hash(chain_id);
     // mismatched block hash is allowed for blocks 1466..=2242 on mainnet
     if computed_block_hash != block_hash && !((1466..=2242).contains(&block_number) && chain_id == MAIN_CHAIN_ID) {
         if event_commitment != block.event_commitment.unwrap() {
@@ -114,7 +134,7 @@ pub fn convert_and_verify_block(block: p::Block, chain_id: Felt) -> Result<Deoxy
         return Err(L2SyncError::MismatchedBlockHash(block_number));
     }
 
-    Ok(DeoxysBlock::new(DeoxysBlockInfo::new(header, txs_hashes, block_hash), block_inner))
+    Ok((DeoxysBlock::new(DeoxysBlockInfo::new(header, txs_hashes, block_hash), block_inner), converted_state_diff))
 }
 
 fn protocol_version(version: Option<String>) -> StarknetVersion {
@@ -143,8 +163,11 @@ fn l1_da_mode(mode: starknet_core::types::L1DataAvailabilityMode) -> L1DataAvail
     }
 }
 
-fn events(receipts: &[TransactionReceipt]) -> Vec<Event> {
-    receipts.iter().flat_map(TransactionReceipt::events).cloned().collect()
+fn events_with_tx_hash(receipts: &[TransactionReceipt]) -> Vec<(Felt, Event)> {
+    receipts
+        .iter()
+        .flat_map(|receipt| receipt.events().iter().map(move |event| (receipt.transaction_hash(), event.clone())))
+        .collect()
 }
 
 pub fn state_update(state_update: StateUpdateProvider) -> PendingStateUpdate {

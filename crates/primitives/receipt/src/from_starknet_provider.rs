@@ -156,6 +156,7 @@ impl From<starknet_providers::sequencer::models::ExecutionResources> for Executi
             keccak_builtin_applications: builtin_instance_counter.keccak_builtin,
             segment_arena_builtin: builtin_instance_counter.segment_arena_builtin,
             data_availability: resources.data_availability.map(DataAvailabilityResources::from).unwrap_or_default(),
+            total_gas_consumed: resources.total_gas_consumed.map(DataAvailabilityResources::from).unwrap_or_default(),
         }
     }
 }

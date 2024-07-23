@@ -40,7 +40,7 @@ pub async fn estimate_message_fee(
 
     let exec_context = ExecutionContext::new(&starknet.backend, &block_info)?;
 
-    let transaction = convert_message_into_transaction(message, starknet.chain_id(), block_info.block_n());
+    let transaction = convert_message_into_transaction(message, starknet.chain_id());
     let execution_result = exec_context
         .execute_transactions([], [transaction], false, true)?
         .pop()
@@ -54,10 +54,9 @@ pub async fn estimate_message_fee(
 pub fn convert_message_into_transaction(
     message: MsgFromL1,
     chain_id: Felt,
-    block_number: Option<u64>,
 ) -> blockifier::transaction::transaction_execution::Transaction {
     let l1_handler: L1HandlerTransaction = message.into();
-    let tx_hash = l1_handler.compute_hash(chain_id, false, block_number);
+    let tx_hash = l1_handler.compute_hash(chain_id, false, false);
     let tx: starknet_api::transaction::L1HandlerTransaction = (&l1_handler).try_into().unwrap();
 
     let tx = blockifier::transaction::transactions::L1HandlerTransaction {

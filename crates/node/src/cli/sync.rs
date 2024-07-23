@@ -143,7 +143,7 @@ impl NetworkType {
         match self {
             NetworkType::Main => starknet_types_core::felt::Felt::from_bytes_be_slice(b"SN_MAIN"),
             NetworkType::Test => starknet_types_core::felt::Felt::from_bytes_be_slice(b"SN_SEPOLIA"),
-            NetworkType::Integration => starknet_types_core::felt::Felt::from_bytes_be_slice(b"SN_INTE"),
+            NetworkType::Integration => starknet_types_core::felt::Felt::from_bytes_be_slice(b"SN_INTEGRATION_SEPOLIA"),
         }
     }
 

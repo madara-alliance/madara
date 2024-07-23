@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: add support for Starknet version 0.13.2
 - fix(metrics): removed influx and added l2_state_size data
 - fix: command to start the Madara client
 - refactor: database error unification

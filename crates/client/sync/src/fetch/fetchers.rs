@@ -8,7 +8,9 @@ use dc_db::DeoxysBackend;
 use dp_block::{BlockId, BlockTag};
 use dp_convert::ToStateUpdateCore;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
-use starknet_core::types::{ContractClass, DeclaredClassItem, DeployedContractItem, StarknetError, StateUpdate};
+use starknet_core::types::{
+    ContractClass, DeclaredClassItem, DeployedContractItem, StarknetError, StateDiff, StateUpdate,
+};
 use starknet_providers::sequencer::models::{self as p};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
@@ -86,7 +88,7 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 pub struct L2BlockAndUpdates {
     pub block_id: FetchBlockId,
     pub block: p::Block,
-    pub state_update: StateUpdate,
+    pub state_diff: StateDiff,
     pub class_update: Vec<DbClassUpdate>,
 }
 
@@ -104,7 +106,7 @@ pub async fn fetch_block_and_updates(
     let class_update = fetch_class_updates(backend, &state_update, block_id, provider).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
-    Ok(L2BlockAndUpdates { block_id, block, state_update, class_update })
+    Ok(L2BlockAndUpdates { block_id, block, state_diff: state_update.state_diff, class_update })
 }
 
 async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, ProviderError>

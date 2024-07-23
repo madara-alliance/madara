@@ -8,7 +8,7 @@ pub mod utils;
 
 pub use broadcasted_to_blockifier::broadcasted_to_blockifier;
 use dp_convert::ToFelt;
-use starknet_types_core::felt::Felt;
+use starknet_types_core::{felt::Felt, hash::StarkHash};
 
 const SIMULATE_TX_VERSION_OFFSET: Felt =
     Felt::from_raw([576460752142434320, 18446744073709551584, 17407, 18446744073700081665]);
@@ -17,7 +17,7 @@ const SIMULATE_TX_VERSION_OFFSET: Felt =
 /// See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/` for more details.
 
 pub const LEGACY_BLOCK_NUMBER: u64 = 1470;
-pub const LEGACY_L1_HANDLER_BLOCK: u64 = 854;
+pub const V0_7_BLOCK_NUMBER: u64 = 833;
 
 //  b"SN_MAIN" == 0x534e5f4d41494e
 pub const MAIN_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x534e5f4d41494e");
@@ -67,6 +67,13 @@ impl InvokeTransaction {
             InvokeTransaction::V1(tx) => &tx.signature,
             InvokeTransaction::V3(tx) => &tx.signature,
         }
+    }
+
+    pub fn compute_hash_signature<H>(&self) -> Felt
+    where
+        H: StarkHash,
+    {
+        H::hash_array(self.signature())
     }
 
     pub fn calldata(&self) -> Option<&[Felt]> {
@@ -165,6 +172,13 @@ impl DeclareTransaction {
         }
     }
 
+    pub fn compute_hash_signature<H>(&self) -> Felt
+    where
+        H: StarkHash,
+    {
+        H::hash_array(self.signature())
+    }
+
     pub fn call_data(&self) -> Option<&[Felt]> {
         None
     }
@@ -247,6 +261,13 @@ impl DeployAccountTransaction {
             DeployAccountTransaction::V1(tx) => &tx.signature,
             DeployAccountTransaction::V3(tx) => &tx.signature,
         }
+    }
+
+    pub fn compute_hash_signature<H>(&self) -> Felt
+    where
+        H: StarkHash,
+    {
+        H::hash_array(self.signature())
     }
 
     pub fn calldata(&self) -> Option<&[Felt]> {
