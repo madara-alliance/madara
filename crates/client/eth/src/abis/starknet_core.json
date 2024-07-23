@@ -86,12 +86,7 @@
     "name": "ConsumedMessageToL2",
     "type": "event"
   },
-  {
-    "anonymous": false,
-    "inputs": [],
-    "name": "Finalized",
-    "type": "event"
-  },
+  { "anonymous": false, "inputs": [], "name": "Finalized", "type": "event" },
   {
     "anonymous": false,
     "inputs": [
@@ -370,72 +365,30 @@
   },
   {
     "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "toAddress",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "selector",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256[]",
-        "name": "payload",
-        "type": "uint256[]"
-      },
-      {
-        "internalType": "uint256",
-        "name": "nonce",
-        "type": "uint256"
-      }
+      { "internalType": "uint256", "name": "toAddress", "type": "uint256" },
+      { "internalType": "uint256", "name": "selector", "type": "uint256" },
+      { "internalType": "uint256[]", "name": "payload", "type": "uint256[]" },
+      { "internalType": "uint256", "name": "nonce", "type": "uint256" }
     ],
     "name": "cancelL1ToL2Message",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      }
-    ],
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
     "stateMutability": "nonpayable",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "configHash",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "fromAddress",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256[]",
-        "name": "payload",
-        "type": "uint256[]"
-      }
+      { "internalType": "uint256", "name": "fromAddress", "type": "uint256" },
+      { "internalType": "uint256[]", "name": "payload", "type": "uint256[]" }
     ],
     "name": "consumeMessageFromL2",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      }
-    ],
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
     "stateMutability": "nonpayable",
     "type": "function"
   },
@@ -449,37 +402,19 @@
   {
     "inputs": [],
     "name": "getMaxL1MsgFee",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "pure",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "identify",
-    "outputs": [
-      {
-        "internalType": "string",
-        "name": "",
-        "type": "string"
-      }
-    ],
+    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
     "stateMutability": "pure",
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "bytes",
-        "name": "data",
-        "type": "bytes"
-      }
-    ],
+    "inputs": [{ "internalType": "bytes", "name": "data", "type": "bytes" }],
     "name": "initialize",
     "outputs": [],
     "stateMutability": "nonpayable",
@@ -488,151 +423,77 @@
   {
     "inputs": [],
     "name": "isFinalized",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "isFrozen",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [
-      {
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      }
+      { "internalType": "address", "name": "user", "type": "address" }
     ],
     "name": "isOperator",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "msgHash",
-        "type": "bytes32"
-      }
+      { "internalType": "bytes32", "name": "msgHash", "type": "bytes32" }
     ],
     "name": "l1ToL2MessageCancellations",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "l1ToL2MessageNonce",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "msgHash",
-        "type": "bytes32"
-      }
+      { "internalType": "bytes32", "name": "msgHash", "type": "bytes32" }
     ],
     "name": "l1ToL2Messages",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "msgHash",
-        "type": "bytes32"
-      }
+      { "internalType": "bytes32", "name": "msgHash", "type": "bytes32" }
     ],
     "name": "l2ToL1Messages",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "messageCancellationDelay",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "programHash",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [
-      {
-        "internalType": "address",
-        "name": "newOperator",
-        "type": "address"
-      }
+      { "internalType": "address", "name": "newOperator", "type": "address" }
     ],
     "name": "registerOperator",
     "outputs": [],
@@ -641,45 +502,21 @@
   },
   {
     "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "toAddress",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "selector",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256[]",
-        "name": "payload",
-        "type": "uint256[]"
-      }
+      { "internalType": "uint256", "name": "toAddress", "type": "uint256" },
+      { "internalType": "uint256", "name": "selector", "type": "uint256" },
+      { "internalType": "uint256[]", "name": "payload", "type": "uint256[]" }
     ],
     "name": "sendMessageToL2",
     "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
+      { "internalType": "bytes32", "name": "", "type": "bytes32" },
+      { "internalType": "uint256", "name": "", "type": "uint256" }
     ],
     "stateMutability": "payable",
     "type": "function"
   },
   {
     "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "newConfigHash",
-        "type": "uint256"
-      }
+      { "internalType": "uint256", "name": "newConfigHash", "type": "uint256" }
     ],
     "name": "setConfigHash",
     "outputs": [],
@@ -688,11 +525,7 @@
   },
   {
     "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "delayInSeconds",
-        "type": "uint256"
-      }
+      { "internalType": "uint256", "name": "delayInSeconds", "type": "uint256" }
     ],
     "name": "setMessageCancellationDelay",
     "outputs": [],
@@ -701,11 +534,7 @@
   },
   {
     "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "newProgramHash",
-        "type": "uint256"
-      }
+      { "internalType": "uint256", "name": "newProgramHash", "type": "uint256" }
     ],
     "name": "setProgramHash",
     "outputs": [],
@@ -728,30 +557,16 @@
   },
   {
     "inputs": [
-      {
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      }
+      { "internalType": "address", "name": "user", "type": "address" }
     ],
     "name": "starknetIsGovernor",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [
-      {
-        "internalType": "address",
-        "name": "newGovernor",
-        "type": "address"
-      }
+      { "internalType": "address", "name": "newGovernor", "type": "address" }
     ],
     "name": "starknetNominateNewGovernor",
     "outputs": [],
@@ -773,74 +588,34 @@
   },
   {
     "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "toAddress",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "selector",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256[]",
-        "name": "payload",
-        "type": "uint256[]"
-      },
-      {
-        "internalType": "uint256",
-        "name": "nonce",
-        "type": "uint256"
-      }
+      { "internalType": "uint256", "name": "toAddress", "type": "uint256" },
+      { "internalType": "uint256", "name": "selector", "type": "uint256" },
+      { "internalType": "uint256[]", "name": "payload", "type": "uint256[]" },
+      { "internalType": "uint256", "name": "nonce", "type": "uint256" }
     ],
     "name": "startL1ToL2MessageCancellation",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      }
-    ],
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
     "stateMutability": "nonpayable",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "stateBlockHash",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "stateBlockNumber",
-    "outputs": [
-      {
-        "internalType": "int256",
-        "name": "",
-        "type": "int256"
-      }
-    ],
+    "outputs": [{ "internalType": "int256", "name": "", "type": "int256" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "stateRoot",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
   },
@@ -876,24 +651,6 @@
       }
     ],
     "name": "updateState",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256[]",
-        "name": "programOutput",
-        "type": "uint256[]"
-      },
-      {
-        "internalType": "bytes",
-        "name": "kzgProof",
-        "type": "bytes"
-      }
-    ],
-    "name": "updateStateKzgDA",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

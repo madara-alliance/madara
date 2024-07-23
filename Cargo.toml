@@ -114,6 +114,8 @@ alloy = { version = "0.2.0", features = [
   "contract",
 ] }
 
+alloy = { version = "0.2.0", features = ["full", "json"] }
+
 # Ethers: using the same versions as in Anvil
 ethers = { git = "https://github.com/gakonst/ethers-rs" }
 

@@ -19,29 +19,23 @@ name = "deoxys"
 
 # Deoxys
 dc-db = { workspace = true }
-dc-eth = { workspace = true }
-dc-mempool = { workspace = true }
 dc-metrics = { workspace = true }
 dc-rpc = { workspace = true }
+dc-eth = { workspace = true }
 dc-sync = { workspace = true }
 dc-telemetry = { workspace = true }
-dp-block = { workspace = true }
-dp-convert = { workspace = true }
 dp-utils = { workspace = true }
 
 # Starknet
-starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
-starknet_api = { workspace = true }
 
 # Other
-alloy = { workspace = true }
 anyhow.workspace = true
-async-trait = { workspace = true }
+alloy = { workspace = true }
 chrono = "0.4.38"
 clap = { workspace = true, features = ["derive"] }
-env_logger = { workspace = true }
-fdlimit = { workspace = true }
+env_logger = "0.11.3"
+fdlimit.workspace = true
 forwarded-header-value = "0.1.1"
 futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true
