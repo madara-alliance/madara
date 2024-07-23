@@ -3712,6 +3712,7 @@ dependencies = [
  "bonsai-trie",
  "dc-db",
  "dc-metrics",
+ "dc-sync",
  "dc-telemetry",
  "dp-block",
  "dp-class",
@@ -3806,7 +3807,6 @@ dependencies = [
  "bitvec",
  "bonsai-trie",
  "dc-db",
- "dc-eth",
  "dc-metrics",
  "dc-telemetry",
  "dp-block",
@@ -3857,10 +3857,12 @@ dependencies = [
 name = "deoxys"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "chrono",
  "clap",
  "dc-db",
+ "dc-eth",
  "dc-metrics",
  "dc-rpc",
  "dc-sync",
