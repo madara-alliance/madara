@@ -28,6 +28,7 @@ dp-block = { workspace = true }
 
 # Starknet
 starknet-types-core = { workspace = true }
+starknet-providers = { workspace = true }
 
 # Other
 anyhow.workspace = true

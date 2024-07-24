@@ -1,10 +1,14 @@
 use dc_db::DatabaseService;
 use dc_metrics::MetricsRegistry;
-use dc_rpc::{ChainConfig, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer, StarknetWriteRpcApiServer};
+use dc_rpc::{
+    providers::ForwardToProvider, ChainConfig, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
+    StarknetWriteRpcApiServer,
+};
 use jsonrpsee::server::ServerHandle;
 use jsonrpsee::RpcModule;
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
+use starknet_providers::SequencerGatewayProvider;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use tokio::task::JoinSet;
@@ -32,18 +36,19 @@ impl RpcService {
 
         let mut rpc_api = RpcModule::new(());
 
-        let (read, write, trace) = match (config.rpc_methods, config.rpc_external) {
-            (RpcMethods::Safe, _) => (true, false, false),
-            (RpcMethods::Unsafe, _) => (true, true, true),
-            (RpcMethods::Auto, false) => (true, true, true),
+        let (rpcs, _node_operator) = match (config.rpc_methods, config.rpc_external) {
+            (RpcMethods::Safe, _) => (true, false),
+            (RpcMethods::Unsafe, _) => (true, true),
+            (RpcMethods::Auto, false) => (true, true),
             (RpcMethods::Auto, true) => {
                 log::warn!(
-                    "Option `--rpc-external` will hide Write and Trace endpoints. To enable them, please pass \
+                    "Option `--rpc-external` will hide node operator endpoints. To enable them, please pass \
                      `--rpc-methods unsafe`."
                 );
-                (true, false, false)
+                (true, false)
             }
         };
+        let (read, write, trace) = (rpcs, rpcs, rpcs);
 
         let chain_config = ChainConfig {
             chain_id: Felt::from_bytes_be_slice(network_type.chain_id().as_bytes()),
@@ -51,27 +56,25 @@ impl RpcService {
             gateway: network_type.gateway(),
         };
 
+        let starknet = Starknet::new(
+            Arc::clone(db.backend()),
+            chain_config.clone(),
+            // TODO(rate-limit): we may get rate limited with this unconfigured provider?
+            Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
+                chain_config.gateway.clone(),
+                chain_config.feeder_gateway.clone(),
+                chain_config.chain_id,
+            ))),
+        );
+
         if read {
-            // TODO: staring block
-            rpc_api.merge(StarknetReadRpcApiServer::into_rpc(Starknet::new(
-                Arc::clone(db.backend()),
-                0,
-                chain_config.clone(),
-            )))?;
+            rpc_api.merge(StarknetReadRpcApiServer::into_rpc(starknet.clone()))?;
         }
         if write {
-            rpc_api.merge(StarknetWriteRpcApiServer::into_rpc(Starknet::new(
-                Arc::clone(db.backend()),
-                0,
-                chain_config.clone(),
-            )))?;
+            rpc_api.merge(StarknetWriteRpcApiServer::into_rpc(starknet.clone()))?;
         }
         if trace {
-            rpc_api.merge(StarknetTraceRpcApiServer::into_rpc(Starknet::new(
-                Arc::clone(db.backend()),
-                0,
-                chain_config.clone(),
-            )))?;
+            rpc_api.merge(StarknetTraceRpcApiServer::into_rpc(starknet.clone()))?;
         }
 
         let metrics = RpcMetrics::register(&metrics_handle)?;

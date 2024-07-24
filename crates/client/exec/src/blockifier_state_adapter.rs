@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub struct BlockifierStateAdapter {
     backend: Arc<DeoxysBackend>,
     /// When this value is None, we are executing the genesis block.
-    on_top_of_block_id: Option<DbBlockId>,
+    pub on_top_of_block_id: Option<DbBlockId>,
 }
 
 impl BlockifierStateAdapter {
@@ -112,7 +112,7 @@ impl StateReader for BlockifierStateAdapter {
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
-        log::debug!("get_compiled_contract_class for {:#?}", class_hash);
+        log::debug!("get_compiled_class_hash for {:#?}", class_hash);
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else {
             return Err(StateError::UndeclaredClassHash(class_hash));

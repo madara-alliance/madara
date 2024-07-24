@@ -25,8 +25,12 @@ blockifier = { workspace = true, features = ["testing"] }
 # Deoxys
 dc-exec.workspace = true
 dc-db.workspace = true
+dp-class.workspace = true
+dp-transactions.workspace = true
 dp-block.workspace = true
 dp-utils.workspace = true
+dp-convert.workspace = true
+dp-receipt.workspace = true
 
 # Starknet
 blockifier.workspace = true
@@ -42,3 +46,4 @@ prometheus.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+itertools.workspace = true

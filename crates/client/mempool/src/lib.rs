@@ -17,15 +17,16 @@ use dp_block::{
     BlockId, BlockTag, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo,
 };
 use inner::MempoolInner;
-use starknet_api::core::{ContractAddress, Nonce};
-
-pub mod block_production;
-mod inner;
-mod l1;
-
 pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 pub use l1::L1DataProvider;
+use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
+use starknet_core::types::Felt;
+
+pub mod block_production;
+mod close_block;
+mod inner;
+mod l1;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -135,6 +136,10 @@ impl Mempool {
     pub fn readd_txs(&self, txs: Vec<MempoolTransaction>) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.readd_txs(txs)
+    }
+
+    pub fn chain_id(&self) -> Felt {
+        Felt::from_bytes_be_slice(format!("{}", self.backend.chain_config().chain_id).as_bytes())
     }
 }
 
