@@ -9,11 +9,12 @@ use dc_db::db_metrics::DbMetrics;
 use dc_db::DeoxysBackend;
 use dc_db::DeoxysStorageError;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
-use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlockInfo};
+use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlockInfo, StarknetVersionError};
 use dp_block::{DeoxysMaybePendingBlock, Header};
 use dp_class::ConvertedClass;
 use dp_convert::ToStarkFelt;
 use dp_state_update::StateDiff;
+use dp_transactions::TransactionTypeError;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
@@ -43,6 +44,12 @@ pub enum L2SyncError {
     BlockFormat(Cow<'static, str>),
     #[error("Mismatched block hash for block {0}")]
     MismatchedBlockHash(u64),
+    #[error("Gas price is too high: 0x{0:x}")]
+    GasPriceOutOfBounds(Felt),
+    #[error("Invalid Starknet version: {0}")]
+    InvalidStarknetVersion(#[from] StarknetVersionError),
+    #[error("Invalid transaction: {0}")]
+    InvalidTransaction(#[from] TransactionTypeError),
 }
 
 /// Contains the latest Starknet verified state on L2

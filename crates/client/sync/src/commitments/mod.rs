@@ -16,8 +16,7 @@ use starknet_types_core::hash::{Poseidon, StarkHash};
 pub use transactions::memory_transaction_commitment;
 
 /// "STARKNET_STATE_V0"
-const STARKNET_STATE_PREFIX: Felt =
-    Felt::from_raw([329108408257827203, 18446744073709548949, 8635008616843941494, 17245362975199821124]);
+const STARKNET_STATE_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e45545f53544154455f5630");
 
 /// Calculate state commitment hash value.
 ///
@@ -82,7 +81,8 @@ pub fn compute_root<H>(values: &[Felt]) -> Felt
 where
     H: StarkHash + Send + Sync,
 {
-    const IDENTIFIER: &[u8] = &[];
+    // the identifier cannot be empty otherwise it can create a bug in the bonsai
+    const IDENTIFIER: &[u8] = b"0xinmemory";
     let config = bonsai_trie::BonsaiStorageConfig::default();
     let bonsai_db = bonsai_trie::databases::HashMapDb::<bonsai_trie::id::BasicId>::default();
     let mut bonsai_storage =
@@ -110,7 +110,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_starknet_state_version() {
-        assert_eq!(STARKNET_STATE_PREFIX, Felt::from_bytes_be_slice(b"STARKNET_STATE_V0"));
+    fn test_compute_root() {
+        let values = vec![Felt::ONE, Felt::TWO, Felt::THREE];
+        let root = compute_root::<Poseidon>(&values);
+
+        assert_eq!(root, Felt::from_hex_unchecked("0x3b5cc7f1292eb3847c3f902d048a7e5dc7702d1c191ccd17c2d33f797e6fc32"));
     }
 }

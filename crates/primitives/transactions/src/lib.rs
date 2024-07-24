@@ -8,6 +8,7 @@ pub mod utils;
 
 pub use broadcasted_to_blockifier::broadcasted_to_blockifier;
 use dp_convert::ToFelt;
+pub use from_starknet_provider::TransactionTypeError;
 use starknet_types_core::{felt::Felt, hash::StarkHash};
 
 const SIMULATE_TX_VERSION_OFFSET: Felt =
