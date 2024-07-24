@@ -10,7 +10,6 @@ use dp_convert::felt_to_u128;
 use dp_receipt::{Event, TransactionReceipt};
 use dp_state_update::StateDiff;
 use dp_transactions::MAIN_CHAIN_ID;
-use dp_utils::{stopwatch_end, PerfStopwatch};
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 
