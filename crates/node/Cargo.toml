@@ -22,11 +22,9 @@ dc-db = { workspace = true }
 dc-eth = { workspace = true }
 dc-metrics = { workspace = true }
 dc-rpc = { workspace = true }
-dc-eth = { workspace = true }
 dc-sync = { workspace = true }
 dc-telemetry = { workspace = true }
 dp-utils = { workspace = true }
-dc-messaging = {workspace = true}
 
 # Starknet
 starknet-types-core = { workspace = true }
@@ -34,7 +32,6 @@ starknet-types-core = { workspace = true }
 # Other
 alloy = { workspace = true }
 anyhow.workspace = true
-alloy = { workspace = true }
 chrono = "0.4.38"
 clap = { workspace = true, features = ["derive"] }
 env_logger = "0.11.3"

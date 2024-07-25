@@ -1,9 +1,12 @@
 use alloy::primitives::Address;
+use alloy::{
+    primitives::{I256, U256},
+    providers::{Provider, ProviderBuilder, ReqwestProvider},
+};
 use serde::{Deserialize, Serialize};
+use starknet_api::hash::{StarkFelt, StarkHash};
 use std::fs::File;
 use std::path::PathBuf;
-use alloy::{providers::{Provider, ProviderBuilder, ReqwestProvider}, primitives::{U256, I256}};
-use starknet_api::hash::{StarkFelt, StarkHash};
 
 use crate::error::Error;
 
@@ -13,7 +16,6 @@ pub const DEFAULT_RPC_ENDPOINT: &str = "http://127.0.0.1:8545";
 pub const DEFAULT_CHAIN_ID: u64 = 31337;
 
 pub const LOG_STATE_UPDTATE_TOPIC: &str = "0xd342ddf7a308dec111745b00315c14b7efb2bdae570a6856e088ed0c65a3576c";
-
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EthereumClientConfig {
@@ -115,4 +117,3 @@ impl TryFrom<EthereumProviderConfig> for EthereumClient {
         }
     }
 }
-
