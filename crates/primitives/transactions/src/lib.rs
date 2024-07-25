@@ -20,10 +20,9 @@ const SIMULATE_TX_VERSION_OFFSET: Felt =
 pub const LEGACY_BLOCK_NUMBER: u64 = 1470;
 pub const V0_7_BLOCK_NUMBER: u64 = 833;
 
-//  b"SN_MAIN" == 0x534e5f4d41494e
-pub const MAIN_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x534e5f4d41494e");
-pub const TEST_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x534e5f5345504f4c4941");
-pub const INTE_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x0");
+pub const MAIN_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x0534e5f4d41494e"); // b"SN_MAIN"
+pub const TEST_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x0534e5f5345504f4c4941"); // b"SN_SEPOLIA"
+pub const INTEGRATION_CHAIN_ID: Felt = Felt::from_hex_unchecked("0x0534e5f494e544547524154494f4e5f5345504f4c4941"); // b"SN_INTEGRATION_SEPOLIA"
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TransactionWithHash {
