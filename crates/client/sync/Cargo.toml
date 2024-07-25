@@ -26,11 +26,11 @@ dp-block = { workspace = true }
 dp-class = { workspace = true }
 dp-convert = { workspace = true }
 dp-receipt = { workspace = true }
+dp-state-update = { workspace = true }
 dp-transactions = { workspace = true }
 dp-utils = { workspace = true }
 
 # Starknet
-blockifier = { workspace = true, features = ["testing"] }
 bonsai-trie = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
@@ -44,8 +44,6 @@ bitvec = { workspace = true }
 ethers = { workspace = true }
 futures = { workspace = true, default-features = true }
 hex = { workspace = true }
-indexmap = { workspace = true }
-itertools = { workspace = true }
 log = { workspace = true }
 num-traits = { workspace = true }
 primitive-types = { workspace = true }

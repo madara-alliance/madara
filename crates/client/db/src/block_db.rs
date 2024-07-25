@@ -3,8 +3,9 @@ use dp_block::{
     BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
     DeoxysMaybePendingBlockInfo, DeoxysPendingBlock, DeoxysPendingBlockInfo,
 };
+use dp_state_update::StateDiff;
 use rocksdb::WriteOptions;
-use starknet_core::types::{Felt, StateDiff};
+use starknet_core::types::Felt;
 
 use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
 use crate::{codec, DeoxysStorageError};

@@ -1,113 +1,22 @@
 mod classes;
 mod contracts;
 mod events;
+mod receipts;
 mod transactions;
 
-use blockifier::state::cached_state::CommitmentStateDiff;
+use bitvec::vec::BitVec;
 use classes::class_trie_root;
 use contracts::contract_trie_root;
 use dc_db::DeoxysBackend;
-use dp_convert::ToStarkFelt;
-use dp_receipt::Event;
-use dp_transactions::Transaction;
-use events::memory_event_commitment;
-use indexmap::IndexMap;
-use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
-use starknet_api::hash::StarkFelt;
-use starknet_core::types::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateUpdate,
-    StorageEntry,
-};
+use dp_state_update::StateDiff;
+pub use events::memory_event_commitment;
+pub use receipts::memory_receipt_commitment;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
-use transactions::memory_transaction_commitment;
+pub use transactions::memory_transaction_commitment;
 
 /// "STARKNET_STATE_V0"
-const STARKNET_STATE_PREFIX: Felt =
-    Felt::from_raw([329108408257827203, 18446744073709548949, 8635008616843941494, 17245362975199821124]);
-
-/// Calculate the transaction and event commitment.
-///
-/// # Arguments
-///
-/// * `transactions` - The transactions of the block
-/// * `events` - The events of the block
-/// * `chain_id` - The current chain id
-/// * `block_number` - The current block number
-///
-/// # Returns
-///
-/// The transaction and the event commitment as `Felt`.
-pub fn calculate_tx_and_event_commitments(
-    transactions: &[Transaction],
-    events: &[Event],
-    chain_id: Felt,
-    block_number: u64,
-) -> ((Felt, Vec<Felt>), Felt) {
-    let (commitment_tx, commitment_event) = rayon::join(
-        || memory_transaction_commitment(transactions, chain_id, block_number),
-        || memory_event_commitment(events),
-    );
-    (
-        commitment_tx.expect("Failed to calculate transaction commitment"),
-        commitment_event.expect("Failed to calculate event commitment"),
-    )
-}
-
-/// Aggregates all the changes from last state update in a way that is easy to access
-/// when computing the state root
-///
-/// * `state_update`: The last state update fetched from the sequencer
-pub fn build_commitment_state_diff(state_update: &StateUpdate) -> CommitmentStateDiff {
-    let mut commitment_state_diff = CommitmentStateDiff {
-        address_to_class_hash: IndexMap::new(),
-        address_to_nonce: IndexMap::new(),
-        storage_updates: IndexMap::new(),
-        class_hash_to_compiled_class_hash: IndexMap::new(),
-    };
-
-    for DeployedContractItem { address, class_hash } in state_update.state_diff.deployed_contracts.iter() {
-        let address: ContractAddress = address.to_stark_felt().try_into().unwrap();
-        let class_hash = if *address.0.key() == StarkFelt::ZERO {
-            // System contracts doesnt have class hashes
-            ClassHash(StarkFelt::ZERO)
-        } else {
-            ClassHash(class_hash.to_stark_felt())
-        };
-        commitment_state_diff.address_to_class_hash.insert(address, class_hash);
-    }
-
-    for ReplacedClassItem { contract_address, class_hash } in state_update.state_diff.replaced_classes.iter() {
-        let address = contract_address.to_stark_felt().try_into().unwrap();
-        let class_hash = ClassHash(class_hash.to_stark_felt());
-        commitment_state_diff.address_to_class_hash.insert(address, class_hash);
-    }
-
-    for DeclaredClassItem { class_hash, compiled_class_hash } in state_update.state_diff.declared_classes.iter() {
-        let class_hash = ClassHash(class_hash.to_stark_felt());
-        let compiled_class_hash = CompiledClassHash(compiled_class_hash.to_stark_felt());
-        commitment_state_diff.class_hash_to_compiled_class_hash.insert(class_hash, compiled_class_hash);
-    }
-
-    for NonceUpdate { contract_address, nonce } in state_update.state_diff.nonces.iter() {
-        let contract_address = contract_address.to_stark_felt().try_into().unwrap();
-        let nonce_value = Nonce(nonce.to_stark_felt());
-        commitment_state_diff.address_to_nonce.insert(contract_address, nonce_value);
-    }
-
-    for ContractStorageDiffItem { address, storage_entries } in state_update.state_diff.storage_diffs.iter() {
-        let contract_address = address.to_stark_felt().try_into().unwrap();
-        let mut storage_map = IndexMap::new();
-        for StorageEntry { key, value } in storage_entries.iter() {
-            let key = key.to_stark_felt().try_into().unwrap();
-            let value = value.to_stark_felt();
-            storage_map.insert(key, value);
-        }
-        commitment_state_diff.storage_updates.insert(contract_address, storage_map);
-    }
-
-    commitment_state_diff
-}
+const STARKNET_STATE_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e45545f53544154455f5630");
 
 /// Calculate state commitment hash value.
 ///
@@ -144,25 +53,56 @@ pub fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) 
 ///
 ///
 /// The updated state root as a `Felt`.
-pub fn csd_calculate_state_root(backend: &DeoxysBackend, csd: CommitmentStateDiff, block_number: u64) -> Felt {
-    let CommitmentStateDiff {
-        address_to_class_hash,
-        address_to_nonce,
-        storage_updates,
-        class_hash_to_compiled_class_hash,
-    } = csd;
+pub fn compute_state_root(backend: &DeoxysBackend, state_diff: &StateDiff, block_number: u64) -> Felt {
+    let StateDiff {
+        storage_diffs,
+        deprecated_declared_classes: _,
+        declared_classes,
+        deployed_contracts,
+        replaced_classes,
+        nonces,
+    } = state_diff;
+
     // Update contract and its storage tries
     let (contract_trie_root, class_trie_root) = rayon::join(
         || {
-            contract_trie_root(backend, address_to_class_hash, address_to_nonce, storage_updates, block_number)
+            contract_trie_root(backend, deployed_contracts, replaced_classes, nonces, storage_diffs, block_number)
                 .expect("Failed to compute contract root")
         },
-        || {
-            class_trie_root(backend, class_hash_to_compiled_class_hash, block_number)
-                .expect("Failed to compute class root")
-        },
+        || class_trie_root(backend, declared_classes, block_number).expect("Failed to compute class root"),
     );
+
     calculate_state_root(contract_trie_root, class_trie_root)
+}
+
+/// Compute the root hash of a list of values.
+// The `HashMapDb` can't fail, so we can safely unwrap the results.
+pub fn compute_root<H>(values: &[Felt]) -> Felt
+where
+    H: StarkHash + Send + Sync,
+{
+    //TODO: replace the identifier by an empty slice when bonsai will support it
+    const IDENTIFIER: &[u8] = b"0xinmemory";
+    let config = bonsai_trie::BonsaiStorageConfig::default();
+    let bonsai_db = bonsai_trie::databases::HashMapDb::<bonsai_trie::id::BasicId>::default();
+    let mut bonsai_storage =
+        bonsai_trie::BonsaiStorage::<_, _, H>::new(bonsai_db, config).expect("Failed to create bonsai storage");
+
+    values.iter().enumerate().for_each(|(id, value)| {
+        let key = BitVec::from_vec(id.to_be_bytes().to_vec());
+        bonsai_storage.insert(IDENTIFIER, key.as_bitslice(), value).expect("Failed to insert into bonsai storage");
+    });
+
+    // Note that committing changes still has the greatest performance hit
+    // as this is where the root hash is calculated. Due to the Merkle structure
+    // of Bonsai Tries, this results in a trie size that grows very rapidly with
+    // each new insertion. It seems that the only vector of optimization here
+    // would be to optimize the tree traversal and hash computation.
+    let id = bonsai_trie::id::BasicIdBuilder::new().new_id();
+
+    // run in a blocking-safe thread to avoid starving the thread pool
+    bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+    bonsai_storage.root_hash(IDENTIFIER).expect("Failed to get root hash")
 }
 
 #[cfg(test)]
@@ -170,7 +110,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_starknet_state_version() {
-        assert_eq!(STARKNET_STATE_PREFIX, Felt::from_bytes_be_slice("STARKNET_STATE_V0".as_bytes()));
+    fn test_compute_root() {
+        let values = vec![Felt::ONE, Felt::TWO, Felt::THREE];
+        let root = compute_root::<Poseidon>(&values);
+
+        assert_eq!(root, Felt::from_hex_unchecked("0x3b5cc7f1292eb3847c3f902d048a7e5dc7702d1c191ccd17c2d33f797e6fc32"));
     }
 }

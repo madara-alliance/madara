@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use dp_block::{DeoxysBlock, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlock};
 use dp_class::ConvertedClass;
-use starknet_core::types::{
-    ContractClass, ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
-    StorageEntry,
+use dp_state_update::{
+    ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
 };
+use starknet_core::types::ContractClass;
 use starknet_types_core::felt::Felt;
 
 use crate::DeoxysBackend;

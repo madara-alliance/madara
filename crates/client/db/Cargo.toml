@@ -17,7 +17,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 dc-metrics = { workspace = true }
 dp-block = { workspace = true }
 dp-class = { workspace = true }
-dp-convert = { workspace = true }
+dp-state-update = { workspace = true }
 
 # Starknet
 bonsai-trie = { workspace = true }
@@ -27,15 +27,10 @@ starknet_api = { workspace = true }
 
 # Other
 anyhow.workspace = true
-async-trait = { workspace = true }
 bincode = { workspace = true }
-bitvec = { workspace = true }
-crossbeam-skiplist = { workspace = true }
-hashbrown = "0.14.5"
 log = { workspace = true, default-features = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
 serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

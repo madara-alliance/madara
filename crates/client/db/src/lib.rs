@@ -467,8 +467,6 @@ impl DeoxysBackend {
 }
 
 pub mod bonsai_identifier {
-    pub const CONTRACT: &[u8] = "0xcontract".as_bytes();
-    pub const CLASS: &[u8] = "0xclass".as_bytes();
-    pub const TRANSACTION: &[u8] = "0xtransaction".as_bytes();
-    pub const EVENT: &[u8] = "0xevent".as_bytes();
+    pub const CONTRACT: &[u8] = b"0xcontract";
+    pub const CLASS: &[u8] = b"0xclass";
 }
