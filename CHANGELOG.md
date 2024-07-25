@@ -1,10 +1,7 @@
 # Deoxys Changelog
 
 ## Next release
-- test: tests added for eth client and event subscription
-- refactor: removed l1.rs from the sync crate and refactored it with alloy inside eth crate
 - refactor: eth client (l1 crate) refactored with alloy
-- feat: added l1 crate (eth crate)
 - fix(metrics): removed influx and added l2_state_size data
 - fix: command to start the Madara client
 - refactor: database error unification
