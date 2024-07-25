@@ -4,6 +4,7 @@
 
 - feat: add support for Starknet version 0.13.2
 - fix(l1): removed free l1 endpoint list
+- refactor: eth client (l1 crate) refactored with alloy
 - fix(metrics): removed influx and added l2_state_size data
 - fix: command to start the Madara client
 - refactor: database error unification
