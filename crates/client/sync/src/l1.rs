@@ -57,17 +57,6 @@ impl EthereumClient {
         Ok(Self { provider: Arc::new(provider), url, l1_core_address })
     }
 
-    /// Get current RPC URL
-    pub fn get_url(&self) -> String {
-        self.url.as_str().to_string()
-    }
-
-    /// Call the Ethereum RPC endpoint with the given JSON-RPC payload
-    pub async fn call_ethereum(&self, method: &str, params: Vec<Value>) -> Result<Value, Box<dyn std::error::Error>> {
-        let response: Value = self.provider.request(method, params).await?;
-        Ok(response)
-    }
-
     /// Retrieves the latest Ethereum block number
     pub async fn get_latest_block_number(&self) -> anyhow::Result<U64> {
         let block_number = self.provider.get_block_number().await?;

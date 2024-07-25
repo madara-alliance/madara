@@ -1,9 +1,9 @@
 pub mod db;
+pub mod l1;
 pub mod prometheus;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;
-pub mod l1;
 
 pub use db::*;
 pub use prometheus::*;

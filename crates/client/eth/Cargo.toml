@@ -40,8 +40,8 @@ starknet_api = { workspace = true }
 
 
 # Other
+alloy = { workspace = true, features = ["full"] }
 anyhow = "1.0.75"
-alloy = { workspace = true }
 bitvec = { workspace = true }
 ethers = { workspace = true }
 futures = { workspace = true, default-features = true }
