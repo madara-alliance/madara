@@ -81,7 +81,7 @@ pub fn compute_root<H>(values: &[Felt]) -> Felt
 where
     H: StarkHash + Send + Sync,
 {
-    // the identifier cannot be empty otherwise it can create a bug in the bonsai
+    //TODO: replace the identifier by an empty slice when bonsai will support it
     const IDENTIFIER: &[u8] = b"0xinmemory";
     let config = bonsai_trie::BonsaiStorageConfig::default();
     let bonsai_db = bonsai_trie::databases::HashMapDb::<bonsai_trie::id::BasicId>::default();

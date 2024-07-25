@@ -73,7 +73,7 @@ pub struct Header {
     pub event_commitment: Felt,
     pub state_diff_length: u64,
     pub state_diff_commitment: Felt,
-    pub receip_commitment: Felt,
+    pub receipt_commitment: Felt,
     /// The version of the Starknet protocol used when creating this block
     pub protocol_version: StarknetVersion,
     /// Gas prices for this block
@@ -169,7 +169,7 @@ impl Header {
         event_commitment: Felt,
         state_diff_length: u64,
         state_diff_commitment: Felt,
-        receip_commitment: Felt,
+        receipt_commitment: Felt,
         protocol_version: StarknetVersion,
         gas_prices: GasPrices,
         l1_da_mode: L1DataAvailabilityMode,
@@ -186,7 +186,7 @@ impl Header {
             event_commitment,
             state_diff_length,
             state_diff_commitment,
-            receip_commitment,
+            receipt_commitment,
             protocol_version,
             l1_gas_price: gas_prices,
             l1_da_mode,
@@ -222,7 +222,7 @@ impl Header {
                 self.state_diff_commitment,
                 self.transaction_commitment,
                 self.event_commitment,
-                self.receip_commitment,
+                self.receipt_commitment,
                 self.l1_gas_price.eth_l1_gas_price.into(),
                 self.l1_gas_price.strk_l1_gas_price.into(),
                 self.l1_gas_price.eth_l1_data_gas_price.into(),
@@ -301,7 +301,7 @@ mod tests {
             event_commitment: Felt::from(9),
             state_diff_length: 10,
             state_diff_commitment: Felt::from(11),
-            receip_commitment: Felt::from(12),
+            receipt_commitment: Felt::from(12),
             protocol_version: "0.13.2".parse().unwrap(),
             l1_gas_price: GasPrices {
                 eth_l1_gas_price: 14,
@@ -331,7 +331,7 @@ mod tests {
             event_commitment: Felt::from(9),
             state_diff_length: 10,
             state_diff_commitment: Felt::from(11),
-            receip_commitment: Felt::from(12),
+            receipt_commitment: Felt::from(12),
             protocol_version: "0.11.1".parse().unwrap(),
             l1_gas_price: GasPrices {
                 eth_l1_gas_price: 0,
@@ -361,7 +361,7 @@ mod tests {
             event_commitment: Felt::from(9),
             state_diff_length: 10,
             state_diff_commitment: Felt::from(11),
-            receip_commitment: Felt::from(12),
+            receipt_commitment: Felt::from(12),
             protocol_version: Default::default(),
             l1_gas_price: GasPrices {
                 eth_l1_gas_price: 0,
