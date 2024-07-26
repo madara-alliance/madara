@@ -33,7 +33,7 @@ impl L1Service {
         let start_block =
             client.get_last_event_block_number().await.context("Retrieving the last event block number")?;
         client
-            .listen_and_update_state(backend, start_block, block_metrics, chain_id)
+            .listen_and_update_state(backend, block_metrics, chain_id)
             .await
             .context("Subscribing to the LogStateUpdate event")?;
 
