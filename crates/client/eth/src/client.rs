@@ -1,7 +1,7 @@
 use crate::config::{L1StateUpdate, LogStateUpdate};
 use crate::utils::{convert_log_state_update, trim_hash, u256_to_starkfelt, LOG_STATE_UPDTATE_TOPIC};
 use alloy::consensus::TypedTransaction;
-use alloy::hex::decode;
+use alloy::hex;
 use alloy::primitives::{Address, BlockNumber, B256, U64};
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider};
 use alloy::rpc::types::{Filter, FilterSet, TransactionRequest};
