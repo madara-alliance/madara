@@ -1,9 +1,9 @@
-use crate::config::{L1StateUpdate, LogStateUpdate};
+use crate::config::{L1StateUpdate, LogStateUpdate, StarknetContracts};
 use crate::utils::{convert_log_state_update, trim_hash, u256_to_starkfelt, LOG_STATE_UPDTATE_TOPIC};
 use alloy::consensus::TypedTransaction;
 use alloy::hex;
 use alloy::primitives::{Address, BlockNumber, B256, U64};
-use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider};
+use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
 use alloy::rpc::types::{Filter, FilterSet, TransactionRequest};
 use alloy::sol;
 use alloy::sol_types::SolEvent;
@@ -11,7 +11,7 @@ use anyhow::{bail, Context};
 use bitvec::macros::internal::funty::Fundamental;
 use dc_db::DeoxysBackend;
 use std::sync::Arc;
-
+use alloy::transports::http::{Client, Http};
 use dc_sync::metrics::block_metrics::BlockMetrics;
 use dp_convert::{ToFelt, ToStarkFelt};
 use dp_transactions::TEST_CHAIN_ID;
@@ -22,11 +22,7 @@ use serde_json::Value;
 use starknet_api::hash::StarkFelt;
 use starknet_types_core::felt::Felt;
 use url::Url;
-
-pub struct EthereumClient {
-    provider: Arc<ReqwestProvider>,
-    l1_core_address: Address,
-}
+use crate::client::StarknetCore::StarknetCoreInstance;
 
 sol!(
     #[allow(missing_docs)]
@@ -35,12 +31,18 @@ sol!(
     "src/abis/starknet_core.json"
 );
 
+pub struct EthereumClient {
+    provider: Arc<ReqwestProvider>,
+    l1_core_contract:  StarknetCoreInstance<Http<Client>, RootProvider<Http<Client>>>,
+}
+
 impl EthereumClient {
     /// Create a new EthereumClient instance with the given RPC URL
     pub async fn new(url: Url, l1_core_address: Address) -> anyhow::Result<Self> {
         let provider = ProviderBuilder::new().on_http(url);
+        let core_contract = StarknetCore::new(l1_core_address, provider.clone());
 
-        Ok(Self { provider: Arc::new(provider), l1_core_address })
+        Ok(Self { provider: Arc::new(provider), l1_core_contract: core_contract })
     }
 
     /// Retrieves the latest Ethereum block number
@@ -59,7 +61,7 @@ impl EthereumClient {
         let filter = Filter::new()
             .from_block(latest_block - 6000)
             .to_block(latest_block)
-            .address(self.l1_core_address)
+            .address(*self.l1_core_contract.address())
             .event_signature(topic);
 
         let logs = self.provider.get_logs(&filter).await?;
@@ -73,39 +75,28 @@ impl EthereumClient {
     }
 
     /// Get the last Starknet block number verified on L1
-    pub async fn get_last_block_number(&self) -> anyhow::Result<u64> {
-        let client = self.provider.clone();
-        let address: Address = self.l1_core_address;
-        let contract = StarknetCore::new(address, client);
-
-        let block_number = contract.stateBlockNumber().call().await.unwrap();
+    pub async fn get_last_verified_block_number(&self) -> anyhow::Result<u64> {
+        let block_number = self.l1_core_contract.stateBlockNumber().call().await.unwrap();
         let last_block_number: u64 = (block_number._0).as_u64();
         Ok(last_block_number)
     }
 
     /// Get the last Starknet state root verified on L1
     pub async fn get_last_state_root(&self) -> anyhow::Result<StarkFelt> {
-        let client = self.provider.clone();
-        let address: Address = self.l1_core_address;
-        let contract = StarknetCore::new(address, client);
-        let state_root = contract.stateRoot().call().await.unwrap();
+        let state_root = self.l1_core_contract.stateRoot().call().await.unwrap();
         u256_to_starkfelt(state_root._0)
     }
 
     /// Get the last Starknet block hash verified on L1
-    pub async fn get_last_block_hash(&self) -> anyhow::Result<StarkFelt> {
-        let client = self.provider.clone();
-        let address: Address = self.l1_core_address;
-        let contract = StarknetCore::new(address, client);
-
-        let block_hash = contract.stateBlockHash().call().await.unwrap();
+    pub async fn get_last_verified_block_hash(&self) -> anyhow::Result<StarkFelt> {
+        let block_hash = self.l1_core_contract.stateBlockHash().call().await.unwrap();
         u256_to_starkfelt(block_hash._0)
     }
 
     /// Get the last Starknet state update verified on the L1
     pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1StateUpdate> {
-        let block_number = client.get_last_block_number().await?;
-        let block_hash = client.get_last_block_hash().await?;
+        let block_number = client.get_last_verified_block_number().await?;
+        let block_hash = client.get_last_verified_block_hash().await?;
         let global_root = client.get_last_state_root().await?;
 
         Ok(L1StateUpdate { global_root, block_number, block_hash })
@@ -116,19 +107,10 @@ impl EthereumClient {
     pub async fn listen_and_update_state(
         &self,
         backend: &DeoxysBackend,
-        start_block: u64,
         block_metrics: BlockMetrics,
         chain_id: Felt,
     ) -> anyhow::Result<()> {
-        let client = self.provider.clone();
-        let address: Address = self.l1_core_address;
-
-        let latest_block: u64 =
-            self.get_latest_block_number().await.expect("Failed to retrieve latest block number").into();
-
-        let contract = StarknetCore::new(address, client);
-        let event_filter = contract.event_filter::<StarknetCore::LogStateUpdate>();
-        // let event_filter = contract.event::<LogStateUpdate>().from_block(start_block).to_block(BlockNumber::Latest);
+        let event_filter = self.l1_core_contract.event_filter::<StarknetCore::LogStateUpdate>();
 
         let mut event_stream = event_filter.watch().await.unwrap().into_stream();
 
