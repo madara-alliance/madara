@@ -22,12 +22,11 @@ use starknet_types_core::felt::Felt;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Duration;
-
-use crate::commitments::compute_state_root;
+use dc_metrics::block_metrics::block_metrics::BlockMetrics;
+use crate::commitments::{build_commitment_state_diff, csd_calculate_state_root};
 use crate::convert::{convert_and_verify_block, convert_and_verify_class};
 use crate::fetch::fetchers::{fetch_block_and_updates, FetchBlockId, L2BlockAndUpdates};
 use crate::fetch::l2_fetch_task;
-use crate::metrics::block_metrics::BlockMetrics;
 use crate::utility::trim_hash;
 use dp_utils::{
     channel_wait_or_graceful_shutdown, spawn_rayon_task, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch,

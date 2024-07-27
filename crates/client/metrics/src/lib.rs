@@ -1,3 +1,5 @@
+pub mod block_metrics;
+
 use std::net::{Ipv4Addr, SocketAddr};
 
 use anyhow::Context;

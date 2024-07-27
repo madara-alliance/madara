@@ -3,7 +3,6 @@
 use std::time::Instant;
 
 use super::constant::L1_FREE_RPC_URLS;
-use crate::l1::{L1StateUpdate, LogStateUpdate};
 use anyhow::{bail, Context};
 use ethers::types::{I256, U256};
 use rand::seq::SliceRandom;
@@ -25,25 +24,6 @@ pub async fn get_random_pokemon_name() -> Result<String, Box<dyn std::error::Err
     let random_pokemon = pokemon_array.choose(&mut rng).unwrap();
 
     Ok(random_pokemon["name"].as_str().unwrap().to_string())
-}
-
-pub fn u256_to_starkfelt(u256: U256) -> anyhow::Result<StarkFelt> {
-    let mut bytes = [0u8; 32];
-    u256.to_big_endian(&mut bytes);
-    StarkFelt::new(bytes).context("converting U256 to StarkFelt")
-}
-
-pub fn convert_log_state_update(log_state_update: LogStateUpdate) -> anyhow::Result<L1StateUpdate> {
-    let block_number = if log_state_update.block_number >= I256::zero() {
-        log_state_update.block_number.low_u64()
-    } else {
-        bail!("Block number is negative");
-    };
-
-    let global_root = u256_to_starkfelt(log_state_update.global_root)?;
-    let block_hash = u256_to_starkfelt(log_state_update.block_hash)?;
-
-    Ok(L1StateUpdate { block_number, global_root, block_hash })
 }
 
 #[derive(Error, Debug)]

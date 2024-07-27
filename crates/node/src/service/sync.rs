@@ -1,18 +1,18 @@
 use std::sync::Arc;
 use std::time::Duration;
-
+use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
 use dc_db::{DatabaseService, DeoxysBackend};
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
-use dc_sync::metrics::block_metrics::BlockMetrics;
+use dc_sync::utility::l1_free_rpc_get;
 use dc_telemetry::TelemetryHandle;
 use primitive_types::H160;
 use starknet_types_core::felt::Felt;
 use tokio::task::JoinSet;
 use url::Url;
-
+use dc_metrics::block_metrics::block_metrics::BlockMetrics;
 use crate::cli::SyncParams;
 
 #[derive(Clone)]
@@ -88,12 +88,13 @@ impl SyncService {
         let telemetry = self.start_params.take().context("service already started")?;
 
         let db_backend = Arc::clone(&self.db_backend);
+        let core_address = Address::from_slice(l1_core_address.as_bytes());
         join_set.spawn(async move {
             dc_sync::starknet_sync_worker::sync(
                 &db_backend,
                 fetch_config,
                 l1_endpoint,
-                l1_core_address,
+                core_address,
                 starting_block,
                 backup_every_n_blocks,
                 block_metrics,

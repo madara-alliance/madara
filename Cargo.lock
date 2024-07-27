@@ -3710,7 +3710,6 @@ dependencies = [
  "bitvec",
  "dc-db",
  "dc-metrics",
- "dc-sync",
  "dp-convert",
  "dp-transactions",
  "dp-utils",
@@ -3785,10 +3784,12 @@ dependencies = [
 name = "dc-sync"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "bitvec",
  "bonsai-trie",
  "dc-db",
+ "dc-eth",
  "dc-metrics",
  "dc-telemetry",
  "dp-block",
