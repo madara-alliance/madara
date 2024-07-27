@@ -15,16 +15,16 @@ use crate::l2::L2SyncConfig;
 use starknet_types_core::felt::Felt;
 
 pub mod starknet_sync_worker {
-    use self::fetch::fetchers::FetchConfig;
-    use super::*;
+    use std::{sync::Arc, time::Duration};
     use alloy::primitives::Address;
     use anyhow::Context;
     use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
-    use dc_metrics::block_metrics::block_metrics::BlockMetrics;
     use dc_telemetry::TelemetryHandle;
     use reqwest::Url;
     use starknet_providers::SequencerGatewayProvider;
-    use std::{sync::Arc, time::Duration};
+    use dc_metrics::block_metrics::block_metrics::BlockMetrics;
+    use self::fetch::fetchers::FetchConfig;
+    use super::*;
 
     #[allow(clippy::too_many_arguments)]
     pub async fn sync(
@@ -65,17 +65,9 @@ pub mod starknet_sync_worker {
         };
 
         let l1_block_metric = block_metrics.clone();
-        let l1_url_1 = l1_url.clone();
         let l1_fut = async {
-            if let Some(l1_url) = l1_url_1 {
-                dc_eth::state_update::sync(backend, l1_url.clone(), l1_block_metric, l1_core_address, chain_id).await
-            } else {
-                Ok(())
-            }
-        };
-        let l1_messaging_fut = async {
             if let Some(l1_url) = l1_url {
-                dc_messaging::worker::sync(backend, l1_url.clone(), l1_core_address, chain_id).await
+                dc_eth::state_update::sync(backend, l1_url.clone(), l1_block_metric, l1_core_address, chain_id).await
             } else {
                 Ok(())
             }
@@ -83,7 +75,6 @@ pub mod starknet_sync_worker {
 
         tokio::try_join!(
             l1_fut,
-            l1_messaging_fut,
             l2::sync(
                 backend,
                 provider,
