@@ -1,6 +1,7 @@
 # Deoxys Changelog
 
 ## Next release
+- removed l1.rs from the sync crate and refactored it with alloy inside eth crate
 - refactor: eth client (l1 crate) refactored with alloy
 - fix(metrics): removed influx and added l2_state_size data
 - fix: command to start the Madara client
