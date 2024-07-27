@@ -3,15 +3,11 @@
 use std::time::Instant;
 
 use super::constant::L1_FREE_RPC_URLS;
-use anyhow::{bail, Context};
-use ethers::types::{I256, U256};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde_json::Value;
-use starknet_api::hash::StarkFelt;
 use starknet_types_core::felt::Felt;
 use thiserror::Error;
-// use crate::l1::{L1StateUpdate, LogStateUpdate};
 
 /// Returns a random Pokémon name.
 pub async fn get_random_pokemon_name() -> Result<String, Box<dyn std::error::Error>> {

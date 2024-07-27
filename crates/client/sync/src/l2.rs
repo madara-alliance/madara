@@ -4,15 +4,24 @@ use std::pin::pin;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use crate::commitments::{build_commitment_state_diff, csd_calculate_state_root};
+use crate::convert::{convert_and_verify_block, convert_and_verify_class};
+use crate::fetch::fetchers::{fetch_block_and_updates, FetchBlockId, L2BlockAndUpdates};
+use crate::fetch::l2_fetch_task;
+use crate::utility::trim_hash;
 use anyhow::{bail, Context};
 use dc_db::db_metrics::DbMetrics;
 use dc_db::DeoxysBackend;
 use dc_db::DeoxysStorageError;
+use dc_metrics::block_metrics::block_metrics::BlockMetrics;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlockInfo, StarknetVersionError};
 use dp_block::{DeoxysMaybePendingBlock, Header};
 use dp_class::ConvertedClass;
 use dp_convert::ToStarkFelt;
+use dp_utils::{
+    channel_wait_or_graceful_shutdown, spawn_rayon_task, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch,
+};
 use dp_state_update::StateDiff;
 use dp_transactions::TransactionTypeError;
 use futures::{stream, StreamExt};
@@ -22,15 +31,6 @@ use starknet_types_core::felt::Felt;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Duration;
-use dc_metrics::block_metrics::block_metrics::BlockMetrics;
-use crate::commitments::{build_commitment_state_diff, csd_calculate_state_root};
-use crate::convert::{convert_and_verify_block, convert_and_verify_class};
-use crate::fetch::fetchers::{fetch_block_and_updates, FetchBlockId, L2BlockAndUpdates};
-use crate::fetch::l2_fetch_task;
-use crate::utility::trim_hash;
-use dp_utils::{
-    channel_wait_or_graceful_shutdown, spawn_rayon_task, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch,
-};
 
 // TODO: add more explicit error variants
 #[derive(thiserror::Error, Debug)]

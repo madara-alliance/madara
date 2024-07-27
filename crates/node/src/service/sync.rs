@@ -1,19 +1,19 @@
-use std::sync::Arc;
-use std::time::Duration;
+use crate::cli::SyncParams;
 use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
 use dc_db::{DatabaseService, DeoxysBackend};
+use dc_metrics::block_metrics::block_metrics::BlockMetrics;
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::utility::l1_free_rpc_get;
 use dc_telemetry::TelemetryHandle;
 use primitive_types::H160;
 use starknet_types_core::felt::Felt;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::task::JoinSet;
 use url::Url;
-use dc_metrics::block_metrics::block_metrics::BlockMetrics;
-use crate::cli::SyncParams;
 
 #[derive(Clone)]
 pub struct SyncService {
