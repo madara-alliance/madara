@@ -1,10 +1,10 @@
 use alloy::primitives::Address;
 use alloy::{
     primitives::{I256, U256},
-    providers::{Provider, ProviderBuilder, ReqwestProvider},
+    providers::{ProviderBuilder, ReqwestProvider},
 };
 use serde::{Deserialize, Serialize};
-use starknet_api::hash::{StarkFelt, StarkHash};
+use starknet_api::hash::StarkHash;
 use std::fs::File;
 use std::path::PathBuf;
 
@@ -59,10 +59,6 @@ pub struct LogStateUpdate {
 
 fn default_rpc_endpoint() -> String {
     DEFAULT_RPC_ENDPOINT.into()
-}
-
-fn default_chain_id() -> u64 {
-    DEFAULT_CHAIN_ID
 }
 
 impl Default for HttpProviderConfig {

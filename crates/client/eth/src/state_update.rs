@@ -1,16 +1,19 @@
 use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::DeoxysBackend;
-use crate::client::{EthereumClient, StarknetCore};
-use starknet_types_core::felt::Felt;
+use dc_metrics::block_metrics::block_metrics::BlockMetrics;
 use dp_convert::ToFelt;
 use dp_transactions::TEST_CHAIN_ID;
 use dp_utils::channel_wait_or_graceful_shutdown;
-use crate::config::L1StateUpdate;
-use crate::utils::{convert_log_state_update, trim_hash};
 use futures::StreamExt;
+use starknet_types_core::felt::Felt;
 use url::Url;
-use dc_metrics::block_metrics::block_metrics::BlockMetrics;
+
+use crate::{
+    client::{EthereumClient, StarknetCore},
+    config::L1StateUpdate,
+    utils::{convert_log_state_update, trim_hash},
+};
 
 /// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
 /// verified state
@@ -82,7 +85,6 @@ pub async fn sync(
     update_l1(backend, initial_state, block_metrics.clone(), chain_id)?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    let start_block = client.get_last_event_block_number().await.context("Retrieving the last event block number")?;
     listen_and_update_state(client, backend, block_metrics, chain_id)
         .await
         .context("Subscribing to the LogStateUpdate event")?;
