@@ -1,6 +1,6 @@
 // use dc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
 
-use crate::{MetricsRegistry, PrometheusError, Gauge, F64};
+use crate::{Gauge, MetricsRegistry, PrometheusError, F64};
 
 #[derive(Clone, Debug)]
 pub struct BlockMetrics {
