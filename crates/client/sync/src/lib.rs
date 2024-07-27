@@ -1,9 +1,8 @@
-use crate::l2::L2SyncConfig;
+#![allow(deprecated)]
 
 pub mod commitments;
 pub mod fetch;
 pub mod l2;
-pub mod metrics;
 pub mod reorgs;
 pub mod utils;
 
@@ -11,31 +10,38 @@ pub mod utils;
 pub use utils::m;
 pub use utils::{convert, utility};
 
+use crate::l2::L2SyncConfig;
+
+use starknet_types_core::felt::Felt;
+
 pub mod starknet_sync_worker {
-    use super::*;
-    use crate::metrics::block_metrics::BlockMetrics;
+    use std::{sync::Arc, time::Duration};
+    use alloy::primitives::Address;
     use anyhow::Context;
     use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
-    use dc_eth::client::EthereumClient;
     use dc_telemetry::TelemetryHandle;
-    use dp_convert::ToFelt;
-    use fetch::fetchers::FetchConfig;
-
+    use reqwest::Url;
     use starknet_providers::SequencerGatewayProvider;
-    use std::{sync::Arc, time::Duration};
+    use dc_metrics::block_metrics::block_metrics::BlockMetrics;
+    use self::fetch::fetchers::FetchConfig;
+    use super::*;
 
     #[allow(clippy::too_many_arguments)]
     pub async fn sync(
         backend: &Arc<DeoxysBackend>,
         fetch_config: FetchConfig,
-        eth_client: EthereumClient,
+        l1_url: Option<Url>,
+        l1_core_address: Address,
         starting_block: Option<u64>,
         backup_every_n_blocks: Option<u64>,
         block_metrics: BlockMetrics,
         db_metrics: DbMetrics,
+        chain_id: Felt,
         telemetry: TelemetryHandle,
         pending_block_poll_interval: Duration,
     ) -> anyhow::Result<()> {
+        // let starting_block = starting_block + 1;
+
         let starting_block = if let Some(starting_block) = starting_block {
             starting_block
         } else {
@@ -48,15 +54,24 @@ pub mod starknet_sync_worker {
 
         log::info!("⛓️  Starting L2 sync from block {}", starting_block);
 
-        let chain_id = fetch_config.chain_id.to_felt();
-        let provider =
-            SequencerGatewayProvider::new(fetch_config.gateway.clone(), fetch_config.feeder_gateway.clone(), chain_id);
+        let provider = SequencerGatewayProvider::new(
+            fetch_config.gateway.clone(),
+            fetch_config.feeder_gateway.clone(),
+            fetch_config.chain_id,
+        );
         let provider = match &fetch_config.api_key {
             Some(api_key) => provider.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
             None => provider,
         };
 
-        let l1_fut = async { dc_eth::state_update::sync(backend, &eth_client, chain_id).await };
+        let l1_block_metric = block_metrics.clone();
+        let l1_fut = async {
+            if let Some(l1_url) = l1_url {
+                dc_eth::state_update::sync(backend, l1_url.clone(), l1_block_metric, l1_core_address, chain_id).await
+            } else {
+                Ok(())
+            }
+        };
 
         tokio::try_join!(
             l1_fut,

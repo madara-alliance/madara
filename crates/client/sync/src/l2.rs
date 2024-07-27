@@ -1,34 +1,35 @@
 //! Contains the code required to sync data from the feeder efficiently.
-use crate::commitments::update_tries_and_compute_state_root;
-use crate::convert::{convert_and_verify_block, convert_and_verify_class};
-use crate::fetch::fetchers::{fetch_block_and_updates, FetchBlockId, L2BlockAndUpdates};
-use crate::fetch::l2_fetch_task;
-use crate::metrics::block_metrics::BlockMetrics;
-use crate::utility::trim_hash;
+use std::borrow::Cow;
+use std::pin::pin;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
 use anyhow::{bail, Context};
 use dc_db::db_metrics::DbMetrics;
 use dc_db::DeoxysBackend;
 use dc_db::DeoxysStorageError;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
-use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlockInfo, StarknetVersionError};
+use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlockInfo};
 use dp_block::{DeoxysMaybePendingBlock, Header};
 use dp_class::ConvertedClass;
-use dp_state_update::StateDiff;
-use dp_transactions::TransactionTypeError;
-use dp_utils::{
-    channel_wait_or_graceful_shutdown, spawn_rayon_task, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch,
-};
+use dp_convert::ToStarkFelt;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
+use starknet_core::types::StateUpdate;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
-use std::borrow::Cow;
-use std::pin::pin;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Duration;
+use dc_metrics::block_metrics::block_metrics::BlockMetrics;
+use crate::commitments::{build_commitment_state_diff, csd_calculate_state_root};
+use crate::convert::{convert_and_verify_block, convert_and_verify_class};
+use crate::fetch::fetchers::{fetch_block_and_updates, FetchBlockId, L2BlockAndUpdates};
+use crate::fetch::l2_fetch_task;
+use crate::utility::trim_hash;
+use dp_utils::{
+    channel_wait_or_graceful_shutdown, spawn_rayon_task, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch,
+};
 
 // TODO: add more explicit error variants
 #[derive(thiserror::Error, Debug)]
@@ -41,12 +42,6 @@ pub enum L2SyncError {
     BlockFormat(Cow<'static, str>),
     #[error("Mismatched block hash for block {0}")]
     MismatchedBlockHash(u64),
-    #[error("Gas price is too high: 0x{0:x}")]
-    GasPriceOutOfBounds(Felt),
-    #[error("Invalid Starknet version: {0}")]
-    InvalidStarknetVersion(#[from] StarknetVersionError),
-    #[error("Invalid transaction: {0}")]
-    InvalidTransaction(#[from] TransactionTypeError),
 }
 
 /// Contains the latest Starknet verified state on L2
@@ -69,21 +64,21 @@ async fn l2_verify_and_apply_task(
     sync_timer: Arc<Mutex<Option<Instant>>>,
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
-    while let Some(L2ConvertedBlockAndUpdates { converted_block, converted_state_diff, converted_classes }) =
+    while let Some(L2ConvertedBlockAndUpdates { converted_block, state_update, converted_classes }) =
         channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await
     {
         let block_n = converted_block.info.header.block_number;
         let block_hash = converted_block.info.block_hash;
         let global_state_root = converted_block.info.header.global_state_root;
 
-        let state_diff = if verify {
-            let state_diff = Arc::new(converted_state_diff);
-            let state_diff_1 = Arc::clone(&state_diff);
+        let state_update = if verify {
+            let state_update = Arc::new(state_update);
+            let state_update_1 = Arc::clone(&state_update);
             let backend = Arc::clone(&backend);
 
             let state_root = spawn_rayon_task(move || {
                 let sw = PerfStopwatch::new();
-                let state_root = update_tries_and_compute_state_root(&backend, &state_diff, block_n);
+                let state_root = verify_l2(&backend, block_n, &state_update)?;
                 stopwatch_end!(sw, "verify_l2: {:?}");
 
                 anyhow::Ok(state_root)
@@ -101,9 +96,9 @@ async fn l2_verify_and_apply_task(
             // UNWRAP: we need a 'static future as we are spawning tokio tasks further down the line
             //         this is a hack to achieve that, we put the update in an arc and then unwrap it at the end
             //         this will not panic as the Arc should not be aliased.
-            Arc::try_unwrap(state_diff_1).unwrap()
+            Arc::try_unwrap(state_update_1).unwrap()
         } else {
-            converted_state_diff
+            state_update
         };
 
         let block_header = converted_block.info.header.clone();
@@ -115,7 +110,7 @@ async fn l2_verify_and_apply_task(
                         info: DeoxysMaybePendingBlockInfo::NotPending(converted_block.info),
                         inner: converted_block.inner,
                     },
-                    state_diff,
+                    state_update.state_diff,
                     converted_classes,
                 )
                 .context("Storing new block")?;
@@ -176,7 +171,7 @@ async fn l2_verify_and_apply_task(
 
 pub struct L2ConvertedBlockAndUpdates {
     pub converted_block: DeoxysBlock,
-    pub converted_state_diff: StateDiff,
+    pub state_update: StateUpdate,
     pub converted_classes: Vec<ConvertedClass>,
 }
 
@@ -189,22 +184,21 @@ async fn l2_block_conversion_task(
     // using futures buffered.
     let conversion_stream = stream::unfold((updates_receiver, chain_id), |(mut updates_recv, chain_id)| async move {
         channel_wait_or_graceful_shutdown(updates_recv.recv()).await.map(
-            |L2BlockAndUpdates { block, state_diff, class_update, .. }| {
+            |L2BlockAndUpdates { block, state_update, class_update, .. }| {
                 (
                     spawn_rayon_task(move || {
                         let sw = PerfStopwatch::new();
                         let block_n = block.block_number;
                         let task_convert_block =
-                            || convert_and_verify_block(block, state_diff, chain_id).context("Converting block");
+                            || convert_and_verify_block(block, chain_id).context("Converting block");
                         let task_convert_classes =
                             || convert_and_verify_class(class_update, block_n).context("Converting classes");
-                        let (converted_block_with_state_diff, converted_classes) =
+                        let (converted_block, converted_classes) =
                             rayon::join(task_convert_block, task_convert_classes);
                         stopwatch_end!(sw, "convert_block_and_class {:?}: {:?}", block_n);
-                        let (converted_block, converted_state_diff) = converted_block_with_state_diff?;
                         anyhow::Ok(L2ConvertedBlockAndUpdates {
-                            converted_block,
-                            converted_state_diff,
+                            converted_block: converted_block?,
+                            state_update,
                             converted_classes: converted_classes?,
                         })
                     }),
@@ -250,7 +244,7 @@ async fn l2_pending_block_task(
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
         log::debug!("getting pending block...");
 
-        let L2BlockAndUpdates { block_id: _, block, state_diff, class_update } =
+        let L2BlockAndUpdates { block_id: _, block, state_update, class_update } =
             fetch_block_and_updates(&backend, FetchBlockId::Pending, &provider)
                 .await
                 .context("Getting pending block from sequencer")?;
@@ -260,15 +254,14 @@ async fn l2_pending_block_task(
             .context("Getting latest block in db")?
             .context("No block in db")?;
 
-        log::debug!("pending block hash parent hash: {:#x}", block.parent_block_hash);
+        log::debug!("pending block hash parent hash: {:#}", block.parent_block_hash.to_stark_felt());
 
         if block.parent_block_hash == block_hash_best {
             log::debug!("pending block parent block hash matches chain tip, writing pending block");
 
             let backend_ = Arc::clone(&backend);
             spawn_rayon_task(move || {
-                let (block, converted_state_diff) =
-                    crate::convert::convert_pending(block, state_diff, chain_id).context("Converting pending block")?;
+                let block = crate::convert::convert_pending(block, chain_id).context("Converting pending block")?;
                 let convert_classes = convert_and_verify_class(class_update, None).context("Converting classes")?;
 
                 backend_
@@ -277,7 +270,7 @@ async fn l2_pending_block_task(
                             info: DeoxysMaybePendingBlockInfo::Pending(block.info),
                             inner: block.inner,
                         },
-                        converted_state_diff,
+                        state_update.state_diff,
                         convert_classes,
                     )
                     .context("Storing new block")?;
@@ -378,16 +371,18 @@ async fn update_sync_metrics(
     backend: &DeoxysBackend,
 ) -> anyhow::Result<()> {
     // Update Block sync time metrics
-    let elapsed_time = {
+    let elapsed_time;
+    {
         let mut timer_guard = sync_timer.lock().unwrap();
-        *timer_guard = Some(Instant::now());
         if let Some(start_time) = *timer_guard {
-            start_time.elapsed().as_secs_f64()
+            elapsed_time = start_time.elapsed().as_secs_f64();
+            *timer_guard = Some(Instant::now());
         } else {
             // For the first block, there is no previous timer set
-            0.0
+            elapsed_time = 0.0;
+            *timer_guard = Some(Instant::now());
         }
-    };
+    }
 
     let sync_time = block_metrics.l2_sync_time.get() + elapsed_time;
     block_metrics.l2_sync_time.set(sync_time);
@@ -395,8 +390,8 @@ async fn update_sync_metrics(
     block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / (block_number - starting_block) as f64);
 
     block_metrics.l2_block_number.set(block_header.block_number as f64);
-    block_metrics.transaction_count.set(f64::from_u64(block_header.transaction_count).unwrap_or(0f64));
-    block_metrics.event_count.set(f64::from_u64(block_header.event_count).unwrap_or(0f64));
+    block_metrics.transaction_count.set(f64::from_u128(block_header.transaction_count).unwrap_or(0f64));
+    block_metrics.event_count.set(f64::from_u128(block_header.event_count).unwrap_or(0f64));
 
     block_metrics.l1_gas_price_wei.set(f64::from_u128(block_header.l1_gas_price.eth_l1_gas_price).unwrap_or(0f64));
     block_metrics.l1_gas_price_strk.set(f64::from_u128(block_header.l1_gas_price.strk_l1_gas_price).unwrap_or(0f64));
@@ -408,4 +403,12 @@ async fn update_sync_metrics(
     }
 
     Ok(())
+}
+
+/// Verify and update the L2 state according to the latest state update
+pub fn verify_l2(backend: &DeoxysBackend, block_number: u64, state_update: &StateUpdate) -> anyhow::Result<Felt> {
+    let csd = build_commitment_state_diff(state_update);
+    let state_root = csd_calculate_state_root(backend, csd, block_number);
+
+    Ok(state_root)
 }

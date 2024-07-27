@@ -1,26 +1,18 @@
 use crate::client::StarknetCore::StarknetCoreInstance;
-use crate::config::{L1StateUpdate, LogStateUpdate, StarknetContracts};
-use crate::utils::{convert_log_state_update, trim_hash, u256_to_starkfelt, LOG_STATE_UPDTATE_TOPIC};
-use alloy::consensus::TypedTransaction;
+use crate::config::{L1StateUpdate };
+use crate::utils::{ u256_to_starkfelt, LOG_STATE_UPDTATE_TOPIC};
 use alloy::hex;
-use alloy::primitives::{Address, BlockNumber, B256, U64};
+use alloy::primitives::{Address, B256};
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
-use alloy::rpc::types::{Filter, FilterSet, TransactionRequest};
+use alloy::rpc::types::{Filter, };
 use alloy::sol;
 use alloy::sol_types::SolEvent;
 use alloy::transports::http::{Client, Http};
 use anyhow::{bail, Context};
 use bitvec::macros::internal::funty::Fundamental;
-use dc_db::DeoxysBackend;
-use dc_sync::metrics::block_metrics::BlockMetrics;
 use dp_convert::{ToFelt, ToStarkFelt};
-use dp_transactions::TEST_CHAIN_ID;
-use dp_utils::channel_wait_or_graceful_shutdown;
 use futures::StreamExt;
-use primitive_types::H256;
-use serde_json::Value;
 use starknet_api::hash::StarkFelt;
-use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
 
@@ -32,8 +24,8 @@ sol!(
 );
 
 pub struct EthereumClient {
-    provider: Arc<ReqwestProvider>,
-    l1_core_contract: StarknetCoreInstance<Http<Client>, RootProvider<Http<Client>>>,
+    pub provider: Arc<ReqwestProvider>,
+    pub l1_core_contract: StarknetCoreInstance<Http<Client>, RootProvider<Http<Client>>>,
 }
 
 impl EthereumClient {
@@ -102,53 +94,93 @@ impl EthereumClient {
         Ok(L1StateUpdate { global_root, block_number, block_hash })
     }
 
-    /// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
-    /// verified state
-    pub async fn listen_and_update_state(
-        &self,
-        backend: &DeoxysBackend,
-        block_metrics: BlockMetrics,
-        chain_id: Felt,
-    ) -> anyhow::Result<()> {
-        let event_filter = self.l1_core_contract.event_filter::<StarknetCore::LogStateUpdate>();
-
-        let mut event_stream = event_filter.watch().await.context("Failed to watch event filter")?.into_stream();
-
-        while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
-            let log = event_result.context("listening for events")?;
-            let format_event =
-                convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
-            update_l1(backend, format_event, block_metrics.clone(), chain_id)?;
-        }
-
-        Ok(())
-    }
 }
 
-pub fn update_l1(
-    backend: &DeoxysBackend,
-    state_update: L1StateUpdate,
-    block_metrics: BlockMetrics,
-    chain_id: Felt,
-) -> anyhow::Result<()> {
-    // This is a provisory check to avoid updating the state with an L1StateUpdate that should not have been detected
-    //
-    // TODO: Remove this check when the L1StateUpdate is properly verified
-    if state_update.block_number > 500000u64 || chain_id == TEST_CHAIN_ID {
-        log::info!(
-            "🔄 Updated L1 head #{} ({}) with state root ({})",
-            state_update.block_number,
-            trim_hash(&state_update.block_hash.to_felt()),
-            trim_hash(&state_update.global_root.to_felt())
-        );
-
-        block_metrics.l1_block_number.set(state_update.block_number as f64);
-
-        backend
-            .write_last_confirmed_block(state_update.block_number)
-            .context("Setting l1 last confirmed block number")?;
-        log::debug!("update_l1: wrote last confirmed block number");
-    }
-
-    Ok(())
-}
+// #[cfg(test)]
+// mod l1_sync_tests {
+//     use ethers::contract::EthEvent;
+//     use ethers::core::types::*;
+//     use ethers::prelude::*;
+//     use ethers::providers::Provider;
+//     use tokio;
+//     use url::Url;
+//
+//     use super::*;
+//     use crate::l1::EthereumClient;
+//
+//     #[derive(Clone, Debug, EthEvent)]
+//     pub struct Transfer {
+//         #[ethevent(indexed)]
+//         pub from: Address,
+//         #[ethevent(indexed)]
+//         pub to: Address,
+//         pub tokens: U256,
+//     }
+//
+//     pub mod eth_rpc {
+//         pub const MAINNET: &str = "<ENTER-YOUR-RPC-URL-HERE>";
+//     }
+//
+//     #[tokio::test]
+//     #[ignore]
+//     async fn test_starting_block() {
+//         let url = Url::parse(eth_rpc::MAINNET).expect("Failed to parse URL");
+//         let client = EthereumClient::new(url, H160::zero()).await.expect("Failed to create EthereumClient");
+//
+//         let start_block =
+//             EthereumClient::get_last_event_block_number(&client).await.expect("Failed to get last event block number");
+//         println!("The latest emission of the LogStateUpdate event was on block: {:?}", start_block);
+//     }
+//
+//     #[tokio::test]
+//     #[ignore]
+//     async fn test_initial_state() {
+//         let url = Url::parse(eth_rpc::MAINNET).expect("Failed to parse URL");
+//         let client = EthereumClient::new(url, H160::zero()).await.expect("Failed to create EthereumClient");
+//
+//         let initial_state = EthereumClient::get_initial_state(&client).await.expect("Failed to get initial state");
+//         assert!(!initial_state.global_root.bytes().is_empty(), "Global root should not be empty");
+//         assert!(!initial_state.block_number > 0, "Block number should be greater than 0");
+//         assert!(!initial_state.block_hash.bytes().is_empty(), "Block hash should not be empty");
+//     }
+//
+//     #[tokio::test]
+//     #[ignore]
+//     async fn test_event_subscription() -> Result<(), Box<dyn std::error::Error>> {
+//         abigen!(
+//             IERC20,
+//             r#"[
+//                 function totalSupply() external view returns (uint256)
+//                 function balanceOf(address account) external view returns (uint256)
+//                 function transfer(address recipient, uint256 amount) external returns (bool)
+//                 function allowance(address owner, address spender) external view returns (uint256)
+//                 function approve(address spender, uint256 amount) external returns (bool)
+//                 function transferFrom( address sender, address recipient, uint256 amount) external returns (bool)
+//                 event Transfer(address indexed from, address indexed to, uint256 value)
+//                 event Approval(address indexed owner, address indexed spender, uint256 value)
+//             ]"#,
+//         );
+//
+//         const WETH_ADDRESS: &str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+//
+//         let provider = Provider::<Http>::try_from(eth_rpc::MAINNET)?;
+//         let client = Arc::new(provider);
+//         let address: Address = WETH_ADDRESS.parse()?;
+//         let contract = IERC20::new(address, client);
+//
+//         let event = contract.event::<Transfer>().from_block(0).to_block(EthBlockNumber::Latest);
+//
+//         let mut event_stream = event.stream().await?;
+//
+//         while let Some(event_result) = event_stream.next().await {
+//             match event_result {
+//                 Ok(log) => {
+//                     println!("Transfer event: {:?}", log);
+//                 }
+//                 Err(e) => println!("Error while listening for events: {:?}", e),
+//             }
+//         }
+//
+//         Ok(())
+//     }
+// }
