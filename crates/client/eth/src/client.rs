@@ -1,20 +1,23 @@
-use crate::client::StarknetCore::StarknetCoreInstance;
-use crate::config::{L1StateUpdate };
-use crate::utils::{ u256_to_starkfelt, LOG_STATE_UPDTATE_TOPIC};
-use alloy::hex;
-use alloy::primitives::{Address, B256};
-use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
-use alloy::rpc::types::{Filter, };
-use alloy::sol;
-use alloy::sol_types::SolEvent;
-use alloy::transports::http::{Client, Http};
+use std::sync::Arc;
+
+use alloy::{
+    hex,
+    primitives::{Address, B256},
+    providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider},
+    rpc::types::Filter,
+    sol,
+    transports::http::{Client, Http},
+};
 use anyhow::{bail, Context};
 use bitvec::macros::internal::funty::Fundamental;
-use dp_convert::{ToFelt, ToStarkFelt};
-use futures::StreamExt;
 use starknet_api::hash::StarkFelt;
-use std::sync::Arc;
 use url::Url;
+
+use crate::{
+    client::StarknetCore::StarknetCoreInstance,
+    config::L1StateUpdate,
+    utils::{u256_to_starkfelt, LOG_STATE_UPDTATE_TOPIC},
+};
 
 sol!(
     #[allow(missing_docs)]
@@ -46,8 +49,7 @@ impl EthereumClient {
     /// Get the block number of the last occurrence of a given event.
     pub async fn get_last_event_block_number(&self) -> anyhow::Result<u64> {
         let topic = B256::from_slice(&hex::decode(&LOG_STATE_UPDTATE_TOPIC[2..])?);
-        let latest_block: u64 =
-            self.get_latest_block_number().await.expect("Failed to retrieve latest block number").into();
+        let latest_block: u64 = self.get_latest_block_number().await?;
 
         // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurence in the last ~24h
         let filter = Filter::new()
@@ -93,7 +95,6 @@ impl EthereumClient {
 
         Ok(L1StateUpdate { global_root, block_number, block_hash })
     }
-
 }
 
 // #[cfg(test)]
