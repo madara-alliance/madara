@@ -25,9 +25,11 @@ dc-sync = { workspace = true }
 dc-telemetry = { workspace = true }
 dp-utils = { workspace = true }
 dp-block = { workspace = true }
+dp-convert = { workspace = true }
 
 # Starknet
 starknet-types-core = { workspace = true }
+starknet_api = { workspace = true }
 starknet-providers = { workspace = true }
 
 # Other

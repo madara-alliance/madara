@@ -1,30 +1,29 @@
-use std::borrow::Cow;
-use std::sync::Arc;
-use std::sync::RwLock;
-use std::time::SystemTime;
-
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transactions::DeclareTransaction;
 use blockifier::transaction::transactions::DeployAccountTransaction;
 use blockifier::transaction::transactions::InvokeTransaction;
 use dc_db::db_block_id::DbBlockId;
-use dc_db::storage_handler::DeoxysStorageError;
 use dc_db::DeoxysBackend;
+use dc_db::DeoxysStorageError;
 use dc_exec::ExecutionContext;
-use dp_block::header::PendingHeader;
-use dp_block::{
-    BlockId, BlockTag, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo,
-};
+use dp_block::BlockId;
+use dp_block::BlockTag;
+use dp_block::DeoxysPendingBlockInfo;
+use dp_class::ConvertedClass;
+use header::make_pending_header;
 use inner::MempoolInner;
 pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 pub use l1::L1DataProvider;
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::Felt;
+use std::sync::Arc;
+use std::sync::RwLock;
 
 pub mod block_production;
 mod close_block;
+pub mod header;
 mod inner;
 mod l1;
 
@@ -34,8 +33,6 @@ pub enum Error {
     StorageError(#[from] DeoxysStorageError),
     #[error("No genesis block in storage")]
     NoGenesis,
-    #[error("Internal error: {0}")]
-    Internal(Cow<'static, str>),
     #[error("Validation error: {0:#}")]
     Validation(#[from] StatefulValidatorError),
     #[error(transparent)]
@@ -55,45 +52,27 @@ impl Mempool {
         Mempool { backend, l1_data_provider, inner: Default::default() }
     }
 
-    /// This function creates the pending block if it is not found.
-    // TODO: move this somewhere else
-    pub(crate) fn get_or_create_pending_block(&self) -> Result<DeoxysMaybePendingBlock, Error> {
-        match self.backend.get_block(&DbBlockId::Pending)? {
-            Some(block) => Ok(block),
-            None => {
-                // No pending block: we create one :)
-
-                let block_info =
-                    self.backend.get_block_info(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
-                let block_info = block_info.as_nonpending().ok_or(Error::Internal("Latest block is pending".into()))?;
-
-                Ok(DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::Pending(DeoxysPendingBlockInfo {
-                        header: PendingHeader {
-                            parent_block_hash: block_info.block_hash,
-                            sequencer_address: **self.backend.chain_config().sequencer_address,
-                            block_timestamp: SystemTime::now()
-                                .duration_since(SystemTime::UNIX_EPOCH)
-                                .expect("Current time is before the unix timestamp")
-                                .as_secs(),
-                            protocol_version: self.backend.chain_config().latest_protocol_version,
-                            l1_gas_price: self.l1_data_provider.get_gas_prices(),
-                            l1_da_mode: self.l1_data_provider.get_da_mode(),
-                        },
-                        tx_hashes: vec![],
-                    }),
-                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
-                })
-            }
-        }
-    }
-
-    pub fn accept_account_tx(&self, tx: AccountTransaction) -> Result<(), Error> {
+    pub fn accept_account_tx(
+        &self,
+        tx: AccountTransaction,
+        converted_class: Option<ConvertedClass>,
+    ) -> Result<(), Error> {
         // The timestamp *does not* take the transaction validation time into account.
         let arrived_at = ArrivedAtTimestamp::now();
 
-        // Get pending block
-        let pending_block_info = self.get_or_create_pending_block()?;
+        // Get pending block.
+        let pending_block_info = if let Some(block) = self.backend.get_block_info(&DbBlockId::Pending)? {
+            block
+        } else {
+            // No current pending block, we'll make an unsaved empty one for the sake of validating this tx.
+            let parent_block_hash =
+                self.backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
+            DeoxysPendingBlockInfo::new(
+                make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref()),
+                vec![],
+            )
+            .into()
+        };
 
         // If the contract has been deployed for the same block is is invoked, we need to skip validations.
         // NB: the lock is NOT taken the entire time the tx is being validated. As such, the deploy tx
@@ -110,14 +89,17 @@ impl Mempool {
         };
 
         // Perform validations
-        let exec_context = ExecutionContext::new(Arc::clone(&self.backend), &pending_block_info.info)?;
+        let exec_context = ExecutionContext::new(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
         validator.perform_validations(clone_account_tx(&tx), deploy_account_tx_hash)?;
 
         if !is_only_query(&tx) {
             // Finally, add it to the nonce chain for the account nonce
             let force = false;
-            self.inner.write().expect("Poisoned lock").insert_tx(MempoolTransaction { tx, arrived_at }, force)?
+            self.inner
+                .write()
+                .expect("Poisoned lock")
+                .insert_tx(MempoolTransaction { tx, arrived_at, converted_class }, force)?
         }
 
         Ok(())

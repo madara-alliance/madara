@@ -25,6 +25,8 @@ blockifier = { workspace = true, features = ["testing"] }
 # Deoxys
 dc-exec.workspace = true
 dc-db.workspace = true
+dc-sync.workspace = true
+dp-state-update.workspace = true
 dp-class.workspace = true
 dp-transactions.workspace = true
 dp-block.workspace = true
@@ -39,6 +41,7 @@ starknet-types-core.workspace = true
 starknet_api.workspace = true
 
 # Other
+rayon.workspace = true
 anyhow.workspace = true
 hyper.workspace = true
 log.workspace = true

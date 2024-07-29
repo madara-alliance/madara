@@ -1,19 +1,18 @@
+use crate::cli::{NetworkType, RpcMethods, RpcParams};
 use dc_db::DatabaseService;
 use dc_metrics::MetricsRegistry;
 use dc_rpc::{
     providers::ForwardToProvider, ChainConfig, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
     StarknetWriteRpcApiServer,
 };
+use dp_convert::ToFelt;
 use jsonrpsee::server::ServerHandle;
 use jsonrpsee::RpcModule;
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
 use starknet_providers::SequencerGatewayProvider;
-use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use tokio::task::JoinSet;
-
-use crate::cli::{NetworkType, RpcMethods, RpcParams};
 
 mod metrics;
 mod middleware;
@@ -51,7 +50,7 @@ impl RpcService {
         let (read, write, trace) = (rpcs, rpcs, rpcs);
 
         let chain_config = ChainConfig {
-            chain_id: Felt::from_bytes_be_slice(network_type.chain_id().as_bytes()),
+            chain_id: network_type.chain_id().to_felt(),
             feeder_gateway: network_type.feeder_gateway(),
             gateway: network_type.gateway(),
         };

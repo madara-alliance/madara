@@ -1,10 +1,9 @@
 use crate::db_block_id::DbBlockId;
 use crate::DeoxysBackend;
 use crate::DeoxysStorageError;
-use dp_block::header::{GasPrices, L1DataAvailabilityMode, PendingHeader};
+use dp_block::header::PendingHeader;
 use dp_block::{
-    BlockId, BlockTag, DeoxysBlock, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo,
-    DeoxysPendingBlock, DeoxysPendingBlockInfo,
+    BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlock,
 };
 use dp_class::ConvertedClass;
 use dp_state_update::{
@@ -13,17 +12,12 @@ use dp_state_update::{
 use starknet_core::types::ContractClass;
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
-use std::time::SystemTime;
 
+#[derive(Clone, Debug)]
 pub struct DbClassUpdate {
     pub class_hash: Felt,
     pub contract_class: ContractClass,
     pub compiled_class_hash: Felt,
-}
-
-pub struct CreatePendingBlockExtraInfo {
-    pub l1_gas_price: GasPrices,
-    pub l1_da_mode: L1DataAvailabilityMode,
 }
 
 impl DeoxysBackend {
@@ -110,9 +104,13 @@ impl DeoxysBackend {
     }
 
     /// This function creates the pending block if it is not found.
+    ///
+    /// # Arguments
+    /// - `create_header` is supplied the block hash as argument.
+    // TODO(docs): unsure how to clarify the `create_header` signature but having an untyped unnamed Felt here sux
     pub fn get_or_create_pending_block(
         &self,
-        get_create_block_extra_info: impl FnOnce() -> CreatePendingBlockExtraInfo,
+        create_header: impl FnOnce(Felt) -> PendingHeader,
     ) -> Result<DeoxysMaybePendingBlock, DeoxysStorageError> {
         match self.get_block(&DbBlockId::Pending)? {
             Some(block) => Ok(block),
@@ -122,27 +120,9 @@ impl DeoxysBackend {
                 let block_info = self
                     .get_block_info(&BlockId::Tag(BlockTag::Latest))?
                     .ok_or(DeoxysStorageError::PendingCreationNoGenesis)?;
-                let block_info = block_info.as_nonpending().ok_or(DeoxysStorageError::InvalidBlockNumber)?; // TODO(merge): change with charpa's error when rebasing on main
+                let previous = block_info.as_nonpending().ok_or(DeoxysStorageError::InvalidBlockNumber)?; // TODO(merge): change with charpa's error when rebasing on main
 
-                let CreatePendingBlockExtraInfo { l1_gas_price, l1_da_mode } = get_create_block_extra_info();
-
-                Ok(DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::Pending(DeoxysPendingBlockInfo {
-                        header: PendingHeader {
-                            parent_block_hash: block_info.block_hash,
-                            sequencer_address: **self.chain_config().sequencer_address,
-                            block_timestamp: SystemTime::now()
-                                .duration_since(SystemTime::UNIX_EPOCH)
-                                .expect("Current time is before the unix epoch")
-                                .as_secs(),
-                            protocol_version: self.chain_config().latest_protocol_version,
-                            l1_gas_price,
-                            l1_da_mode,
-                        },
-                        tx_hashes: vec![],
-                    }),
-                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
-                })
+                Ok(DeoxysPendingBlock::new_empty(create_header(previous.block_hash)).into())
             }
         }
     }

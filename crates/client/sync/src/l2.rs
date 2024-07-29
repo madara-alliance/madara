@@ -22,7 +22,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Duration;
 
-use crate::commitments::compute_state_root;
+use crate::commitments::update_tries_and_compute_state_root;
 use crate::convert::{convert_and_verify_block, convert_and_verify_class};
 use crate::fetch::fetchers::{fetch_block_and_updates, FetchBlockId, L2BlockAndUpdates};
 use crate::fetch::l2_fetch_task;
@@ -85,7 +85,7 @@ async fn l2_verify_and_apply_task(
 
             let state_root = spawn_rayon_task(move || {
                 let sw = PerfStopwatch::new();
-                let state_root = verify_l2(&backend, block_n, &state_diff)?;
+                let state_root = update_tries_and_compute_state_root(&backend, &state_diff, block_n);
                 stopwatch_end!(sw, "verify_l2: {:?}");
 
                 anyhow::Ok(state_root)
@@ -412,9 +412,4 @@ async fn update_sync_metrics(
     }
 
     Ok(())
-}
-
-/// Verify and update the L2 state according to the latest state update
-pub fn verify_l2(backend: &DeoxysBackend, block_number: u64, state_diff: &StateDiff) -> anyhow::Result<Felt> {
-    Ok(compute_state_root(backend, state_diff, block_number))
 }

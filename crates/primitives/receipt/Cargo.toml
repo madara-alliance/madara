@@ -20,6 +20,9 @@ dp-convert = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
+blockifier = { workspace = true }
+cairo-vm = { workspace = true }
+log = { workspace = true }
 
 # Other
 serde = { workspace = true, features = ["derive"] }

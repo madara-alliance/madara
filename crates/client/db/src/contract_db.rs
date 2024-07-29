@@ -84,6 +84,15 @@ impl DeoxysBackend {
         }
     }
 
+    pub fn is_contract_deployed_at(
+        &self,
+        id: &impl DbBlockIdResolvable,
+        contract_addr: &Felt,
+    ) -> Result<bool, DeoxysStorageError> {
+        // TODO(perf): use rocksdb key_may_exists bloom filters
+        Ok(self.get_contract_class_hash_at(id, contract_addr)?.is_some())
+    }
+
     pub fn get_contract_class_hash_at(
         &self,
         id: &impl DbBlockIdResolvable,

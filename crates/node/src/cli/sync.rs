@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use std::time::Duration;
-
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::utils::constant::starknet_core_address;
 use dp_block::chain_config::ChainConfig;
 use primitive_types::H160;
+use starknet_api::core::ChainId;
+use std::sync::Arc;
+use std::time::Duration;
 use url::Url;
 
 fn parse_url(s: &str) -> Result<Url, url::ParseError> {
@@ -140,11 +140,11 @@ impl NetworkType {
         format!("{}/feeder_gateway", self.uri()).parse().unwrap()
     }
 
-    pub fn chain_id(&self) -> &'static str {
+    pub fn chain_id(&self) -> ChainId {
         match self {
-            NetworkType::Main => "SN_MAIN",
-            NetworkType::Test => "SN_SEPOLIA",
-            NetworkType::Integration => "SN_INTE",
+            NetworkType::Main => ChainId::Mainnet,
+            NetworkType::Test => ChainId::Sepolia,
+            NetworkType::Integration => ChainId::IntegrationSepolia,
         }
     }
 

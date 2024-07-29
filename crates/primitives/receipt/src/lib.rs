@@ -1,6 +1,8 @@
 mod from_starknet_core;
 mod from_starknet_provider;
 mod to_starknet_core;
+mod from_blockifier;
+pub use from_blockifier::from_blockifier_execution_info;
 
 use serde::{Deserialize, Serialize};
 use starknet_core::utils::starknet_keccak;

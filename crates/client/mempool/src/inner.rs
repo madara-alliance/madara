@@ -8,6 +8,7 @@
 
 use crate::{clone_account_tx, contract_addr, nonce, tx_hash};
 use blockifier::transaction::account_transaction::AccountTransaction;
+use dp_class::ConvertedClass;
 use starknet_api::{
     core::{ContractAddress, Nonce},
     transaction::TransactionHash,
@@ -24,11 +25,16 @@ pub type ArrivedAtTimestamp = SystemTime;
 pub struct MempoolTransaction {
     pub tx: AccountTransaction,
     pub arrived_at: ArrivedAtTimestamp,
+    pub converted_class: Option<ConvertedClass>,
 }
 
 impl Clone for MempoolTransaction {
     fn clone(&self) -> Self {
-        Self { tx: clone_account_tx(&self.tx), arrived_at: self.arrived_at.clone() }
+        Self {
+            tx: clone_account_tx(&self.tx),
+            arrived_at: self.arrived_at.clone(),
+            converted_class: self.converted_class.clone(),
+        }
     }
 }
 
@@ -472,7 +478,7 @@ mod tests {
                         )),
                     };
 
-                    Insert(MempoolTransaction { tx, arrived_at }, force)
+                    Insert(MempoolTransaction { tx, arrived_at, converted_class: None }, force)
                 })
                 .boxed()
         }

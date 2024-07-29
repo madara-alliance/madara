@@ -1,5 +1,4 @@
 use crate::l2::L2SyncConfig;
-use starknet_types_core::felt::Felt;
 
 pub mod commitments;
 pub mod fetch;
@@ -19,6 +18,7 @@ pub mod starknet_sync_worker {
     use anyhow::Context;
     use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
     use dc_telemetry::TelemetryHandle;
+    use dp_convert::ToFelt;
     use reqwest::Url;
     use starknet_providers::SequencerGatewayProvider;
 
@@ -51,7 +51,7 @@ pub mod starknet_sync_worker {
 
         log::info!("⛓️  Starting L2 sync from block {}", starting_block);
 
-        let chain_id = Felt::from_bytes_be_slice(fetch_config.chain_id.as_bytes());
+        let chain_id = fetch_config.chain_id.to_felt();
         let provider =
             SequencerGatewayProvider::new(fetch_config.gateway.clone(), fetch_config.feeder_gateway.clone(), chain_id);
         let provider = match &fetch_config.api_key {

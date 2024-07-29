@@ -1,16 +1,18 @@
-use blockifier::state::cached_state::CommitmentStateDiff;
 use dc_db::DeoxysBackend;
-use dc_sync::commitments::{
-    calculate_tx_and_event_commitments, update_tries_and_compute_state_root, TxAndEventCommitments,
+use dc_sync::{
+    commitments::update_tries_and_compute_state_root,
+    convert::{compute_commitments_for_block, BlockCommitments},
 };
-use dp_block::{header::PendingHeader, DeoxysBlock, DeoxysBlockInfo, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlock, DeoxysPendingBlockInfo, Header};
-use dp_receipt::{Event, TransactionReceipt};
+use dp_block::{
+    header::PendingHeader, DeoxysBlock, DeoxysBlockInfo, DeoxysPendingBlock, DeoxysPendingBlockInfo, Header,
+};
+use dp_state_update::StateDiff;
 use starknet_core::types::Felt;
 
 pub fn close_block(
     backend: &DeoxysBackend,
     block: DeoxysPendingBlock,
-    csd: CommitmentStateDiff,
+    state_diff: &StateDiff,
     chain_id: Felt,
     block_number: u64,
 ) -> DeoxysBlock {
@@ -27,14 +29,21 @@ pub fn close_block(
         l1_da_mode,
     } = header;
 
-    let global_state_root = update_tries_and_compute_state_root(backend, csd, block_number);
+    let (global_state_root, block_commitments) = rayon::join(
+        || update_tries_and_compute_state_root(backend, state_diff, block_number),
+        || compute_commitments_for_block(&inner, state_diff, protocol_version, chain_id, block_number),
+    );
 
-    fn events(receipts: &[TransactionReceipt]) -> Vec<Event> {
-        receipts.iter().flat_map(TransactionReceipt::events).cloned().collect()
-    }
-    let events = events(&inner.receipts);
-    let TxAndEventCommitments { tx_hashes, transaction_commitment: tx_commitment, event_commitment } =
-        calculate_tx_and_event_commitments(&inner.transactions, &events, chain_id, block_number);
+    let BlockCommitments {
+        transaction_commitment,
+        transaction_count,
+        event_commitment,
+        event_count,
+        receipt_commitment,
+        state_diff_commitment,
+        state_diff_length,
+        tx_hashes,
+    } = block_commitments;
 
     let header = Header {
         parent_block_hash,
@@ -49,13 +58,16 @@ pub fn close_block(
 
         // Commitments.
         global_state_root,
-        transaction_count: inner.transactions.len() as _,
-        transaction_commitment: tx_commitment,
-        event_count: events.len() as _,
+        transaction_count,
+        transaction_commitment,
+        event_count,
         event_commitment,
+        state_diff_length,
+        state_diff_commitment,
+        receipt_commitment,
     };
 
-    let block_hash = header.hash(chain_id);
+    let block_hash = header.compute_hash(chain_id);
 
     let block = DeoxysBlock { info: DeoxysBlockInfo { header, block_hash, tx_hashes }, inner };
     block

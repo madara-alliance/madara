@@ -10,6 +10,32 @@ use starknet_types_core::hash::{Pedersen, StarkHash};
 
 use super::compute_root;
 
+/// Compute transaction hash, without signatures.
+///
+/// # Arguments
+///
+/// * `transaction` - The transaction to compute the hash of.
+///
+/// # Returns
+///
+/// The transaction hash.
+pub fn calculate_transaction_hash(
+    transaction: &Transaction,
+    chain_id: Felt,
+    block_number: Option<u64>,
+) -> Felt {
+    let legacy = block_number.is_some_and(|block_number| block_number < LEGACY_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID);
+    let is_pre_v0_7 = block_number.is_some_and(|block_number| block_number < V0_7_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID);
+
+    let tx_hash = if is_pre_v0_7 {
+        transaction.compute_hash_pre_v0_7(chain_id, false)
+    } else {
+        transaction.compute_hash(chain_id, false, legacy)
+    };
+
+    tx_hash
+}
+
 /// Compute the combined hash of the transaction hash and the signature.
 ///
 /// Since the transaction hash doesn't take the signature values as its input
@@ -30,14 +56,7 @@ pub fn calculate_transaction_leaf_with_hash(
     block_number: u64,
 ) -> (Felt, Felt) {
     let include_signature = starknet_version >= StarknetVersion::STARKNET_VERSION_0_11_1;
-    let legacy = block_number < LEGACY_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID;
-    let is_pre_v0_7 = block_number < V0_7_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID;
-
-    let tx_hash = if is_pre_v0_7 {
-        transaction.compute_hash_pre_v0_7(chain_id, false)
-    } else {
-        transaction.compute_hash(chain_id, false, legacy)
-    };
+    let tx_hash = calculate_transaction_hash(transaction, chain_id, Some(block_number));
 
     let leaf = match transaction {
         Transaction::Invoke(tx) => {
@@ -109,8 +128,6 @@ pub fn memory_transaction_commitment(
     starknet_version: StarknetVersion,
     block_number: u64,
 ) -> (Felt, Vec<Felt>) {
-    // TODO @cchudant refacto/optimise this function
-
     // transaction hashes are computed in parallel
     let (leafs, txs_hashes): (Vec<Felt>, Vec<Felt>) = transactions
         .par_iter()

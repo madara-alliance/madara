@@ -4,7 +4,7 @@ use starknet_types_core::felt::Felt;
 use std::ops::Deref;
 
 use starknet_api::block::BlockHash;
-use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce, PatriciaKey};
+use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce, PatriciaKey};
 use starknet_api::transaction::{ContractAddressSalt, EventKey, TransactionHash};
 use starknet_core::types::EthAddress;
 
@@ -51,6 +51,18 @@ impl ToFelt for &ContractAddress {
 impl ToFelt for H160 {
     fn to_felt(self) -> Felt {
         Felt::from_bytes_be_slice(&self.0)
+    }
+}
+
+impl ToFelt for ChainId {
+    fn to_felt(self) -> Felt {
+        let bytes: &[u8] = match &self {
+            ChainId::Mainnet => b"SN_MAIN",
+            ChainId::Sepolia => b"SN_SEPOLIA",
+            ChainId::IntegrationSepolia => b"SN_INTEGRATION_SEPOLIA",
+            ChainId::Other(o) => o.as_bytes(),
+        };
+        Felt::from_bytes_be_slice(bytes)
     }
 }
 

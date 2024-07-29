@@ -3,6 +3,7 @@ pub mod prometheus;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;
+pub mod authority;
 
 pub use db::*;
 pub use prometheus::*;

@@ -18,6 +18,8 @@ dc-metrics = { workspace = true }
 dp-block = { workspace = true }
 dp-class = { workspace = true }
 dp-state-update = { workspace = true }
+dp-convert = { workspace = true }
+dp-transactions = { workspace = true }
 
 # Starknet
 bonsai-trie = { workspace = true }

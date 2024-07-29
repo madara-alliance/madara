@@ -13,7 +13,7 @@ use dp_transactions::MAIN_CHAIN_ID;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 
-use crate::commitments::{memory_event_commitment, memory_receipt_commitment, memory_transaction_commitment};
+use crate::commitments::{calculate_transaction_hash, memory_event_commitment, memory_receipt_commitment, memory_transaction_commitment};
 use crate::l2::L2SyncError;
 
 pub fn convert_inner(
@@ -29,11 +29,11 @@ pub fn convert_inner(
     Ok(DeoxysBlockInner::new(transactions, transactions_receipts))
 }
 
-/// This function does not check block hashes and such
+/// This function only does tx hash computation.
 pub fn convert_pending(
     block: starknet_providers::sequencer::models::Block,
     state_diff: starknet_core::types::StateDiff,
-    _chain_id: Felt,
+    chain_id: Felt,
 ) -> Result<(DeoxysPendingBlock, StateDiff), L2SyncError> {
     let block_inner = convert_inner(block.transactions, block.transaction_receipts)?;
     let converted_state_diff = state_diff.into();
@@ -46,13 +46,9 @@ pub fn convert_pending(
         l1_gas_price: resource_price(block.l1_gas_price, block.l1_data_gas_price)?,
         l1_da_mode: l1_da_mode(block.l1_da_mode),
     };
+    let tx_hashes = block_inner.transactions.iter().map(|tx| calculate_transaction_hash(tx, chain_id, None)).collect();
 
-    // TODO tx_hash
-
-    // let ((_transaction_commitment, txs_hashes), event_commitment) =
-    //     memory_transaction_commitment(&block_inner.transactions, &events, chain_id, block_number);
-
-    Ok((DeoxysPendingBlock::new(DeoxysPendingBlockInfo::new(header, vec![]), block_inner), converted_state_diff))
+    Ok((DeoxysPendingBlock::new(DeoxysPendingBlockInfo::new(header, tx_hashes), block_inner), converted_state_diff))
 }
 
 /// Compute heavy, this should only be called in a rayon ctx
@@ -64,29 +60,23 @@ pub fn convert_and_verify_block(
     let block_inner = convert_inner(block.transactions, block.transaction_receipts)?;
     let converted_state_diff: StateDiff = state_diff.into();
 
-    // converts starknet_provider transactions and events to dp_transactions and starknet_api events
-    let events_with_tx_hash = events_with_tx_hash(&block_inner.receipts);
-
     let block_hash = block.block_hash.ok_or(L2SyncError::BlockFormat("No block hash provided".into()))?;
     let block_number = block.block_number.ok_or(L2SyncError::BlockFormat("No block number provided".into()))?;
 
     let global_state_root = block.state_root.ok_or(L2SyncError::BlockFormat("No state root provided".into()))?;
-    let transaction_count = block_inner.transactions.len() as u64;
-    let event_count = events_with_tx_hash.len() as u64;
-    let state_diff_length = converted_state_diff.len() as u64;
     let starknet_version = protocol_version(block.starknet_version)?;
 
     // compute the 4 commitments in parallel
-    let tasks_tx_and_event_commitment = || {
-        rayon::join(
-            || memory_transaction_commitment(&block_inner.transactions, chain_id, starknet_version, block_number),
-            || memory_event_commitment(&events_with_tx_hash, starknet_version),
-        )
-    };
-    let tasks_receipt_and_state_diff_commitment =
-        || rayon::join(|| memory_receipt_commitment(&block_inner.receipts), || converted_state_diff.compute_hash());
-    let (((transaction_commitment, txs_hashes), event_commitment), (receipt_commitment, state_diff_commitment)) =
-        rayon::join(tasks_tx_and_event_commitment, tasks_receipt_and_state_diff_commitment);
+    let BlockCommitments {
+        transaction_commitment,
+        event_commitment,
+        receipt_commitment,
+        state_diff_commitment,
+        tx_hashes,
+        transaction_count,
+        event_count,
+        state_diff_length,
+    } = compute_commitments_for_block(&block_inner, &converted_state_diff, starknet_version, chain_id, block_number);
 
     let header = Header::new(
         block.parent_block_hash,
@@ -113,7 +103,50 @@ pub fn convert_and_verify_block(
         return Err(L2SyncError::MismatchedBlockHash(block_number));
     }
 
-    Ok((DeoxysBlock::new(DeoxysBlockInfo::new(header, txs_hashes, block_hash), block_inner), converted_state_diff))
+    Ok((DeoxysBlock::new(DeoxysBlockInfo::new(header, tx_hashes, block_hash), block_inner), converted_state_diff))
+}
+
+pub struct BlockCommitments {
+    pub transaction_commitment: Felt,
+    pub transaction_count: u64,
+    pub event_commitment: Felt,
+    pub event_count: u64,
+    pub state_diff_length: u64,
+    pub state_diff_commitment: Felt,
+    pub receipt_commitment: Felt,
+    pub tx_hashes: Vec<Felt>,
+}
+
+pub fn compute_commitments_for_block(
+    block_inner: &DeoxysBlockInner,
+    state_diff: &StateDiff,
+    starknet_version: StarknetVersion,
+    chain_id: Felt,
+    block_number: u64,
+) -> BlockCommitments {
+    let events_with_tx_hash = events_with_tx_hash(&block_inner.receipts);
+
+    let tasks_tx_and_event_commitment = || {
+        rayon::join(
+            || memory_transaction_commitment(&block_inner.transactions, chain_id, starknet_version, block_number),
+            || memory_event_commitment(&events_with_tx_hash, starknet_version),
+        )
+    };
+    let tasks_receipt_and_state_diff_commitment =
+        || rayon::join(|| memory_receipt_commitment(&block_inner.receipts), || state_diff.compute_hash());
+    let (((transaction_commitment, tx_hashes), event_commitment), (receipt_commitment, state_diff_commitment)) =
+        rayon::join(tasks_tx_and_event_commitment, tasks_receipt_and_state_diff_commitment);
+
+    BlockCommitments {
+        transaction_commitment,
+        transaction_count: block_inner.transactions.len() as _,
+        event_commitment,
+        event_count: events_with_tx_hash.len() as _,
+        receipt_commitment,
+        state_diff_commitment,
+        state_diff_length: state_diff.len() as _,
+        tx_hashes,
+    }
 }
 
 fn protocol_version(version: Option<String>) -> Result<StarknetVersion, L2SyncError> {

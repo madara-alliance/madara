@@ -13,7 +13,7 @@ pub use events::memory_event_commitment;
 pub use receipts::memory_receipt_commitment;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
-pub use transactions::memory_transaction_commitment;
+pub use transactions::{memory_transaction_commitment, calculate_transaction_hash};
 
 /// "STARKNET_STATE_V0"
 const STARKNET_STATE_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e45545f53544154455f5630");
@@ -53,7 +53,7 @@ pub fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) 
 ///
 ///
 /// The updated state root as a `Felt`.
-pub fn compute_state_root(backend: &DeoxysBackend, state_diff: &StateDiff, block_number: u64) -> Felt {
+pub fn update_tries_and_compute_state_root(backend: &DeoxysBackend, state_diff: &StateDiff, block_number: u64) -> Felt {
     let StateDiff {
         storage_diffs,
         deprecated_declared_classes: _,

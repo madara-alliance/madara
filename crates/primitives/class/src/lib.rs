@@ -9,7 +9,7 @@ mod into_starknet_core;
 pub use class_hash::ClassHash;
 pub use compile::ToCompiledClass;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ConvertedClass {
     pub class_infos: (Felt, ClassInfo),
     pub class_compiled: (Felt, CompiledClass),
@@ -154,7 +154,7 @@ pub enum FunctionStateMutability {
 }
 
 /// A contract class that has been compiled and can be transformed into a `blockifier::execution::contract_class::ContractClass`.
-#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CompiledClass {
     Sierra(CompiledSierra),
     Legacy(CompiledLegacy),
@@ -171,10 +171,10 @@ impl Deref for CompiledClass {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompiledSierra(Vec<u8>);
 
-#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompiledLegacy(Vec<u8>);
 
 pub fn to_blockifier_class(

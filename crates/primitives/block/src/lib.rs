@@ -198,4 +198,50 @@ impl DeoxysPendingBlock {
     pub fn new(info: DeoxysPendingBlockInfo, inner: DeoxysBlockInner) -> Self {
         Self { info, inner }
     }
+
+    pub fn new_empty(header: PendingHeader) -> Self {
+        Self {
+            info: DeoxysPendingBlockInfo { header, tx_hashes: vec![] },
+            inner: DeoxysBlockInner { receipts: vec![], transactions: vec![] },
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Block is pending")]
+pub struct BlockIsPendingError(());
+
+impl TryFrom<DeoxysMaybePendingBlock> for DeoxysBlock {
+    type Error = BlockIsPendingError;
+    fn try_from(value: DeoxysMaybePendingBlock) -> Result<Self, Self::Error> {
+        match value.info {
+            DeoxysMaybePendingBlockInfo::Pending(_) => Err(BlockIsPendingError(())),
+            DeoxysMaybePendingBlockInfo::NotPending(info) => Ok(DeoxysBlock { info, inner: value.inner }),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Block is not pending")]
+pub struct BlockIsNotPendingError(());
+
+impl TryFrom<DeoxysMaybePendingBlock> for DeoxysPendingBlock {
+    type Error = BlockIsNotPendingError;
+    fn try_from(value: DeoxysMaybePendingBlock) -> Result<Self, Self::Error> {
+        match value.info {
+            DeoxysMaybePendingBlockInfo::NotPending(_) => Err(BlockIsNotPendingError(())),
+            DeoxysMaybePendingBlockInfo::Pending(info) => Ok(DeoxysPendingBlock { info, inner: value.inner }),
+        }
+    }
+}
+
+impl From<DeoxysPendingBlock> for DeoxysMaybePendingBlock {
+    fn from(value: DeoxysPendingBlock) -> Self {
+        Self { info: value.info.into(), inner: value.inner }
+    }
+}
+impl From<DeoxysBlock> for DeoxysMaybePendingBlock {
+    fn from(value: DeoxysBlock) -> Self {
+        Self { info: value.info.into(), inner: value.inner }
+    }
 }
