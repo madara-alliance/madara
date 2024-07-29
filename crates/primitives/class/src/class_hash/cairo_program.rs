@@ -53,7 +53,6 @@ pub struct CairoProgram<'a> {
 
 impl<'a> CairoProgram<'a> {
     pub fn prepare(&mut self) -> anyhow::Result<()> {
-        // the other modification is handled by skipping if the attributes vec is empty
         self.debug_info = None;
 
         // Cairo 0.8 added "accessible_scopes" and "flow_tracking_data" attribute

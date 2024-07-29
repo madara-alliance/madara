@@ -1,43 +1,12 @@
 // Credit: Pathfinder
 
-use std::io::Write;
-
 use anyhow::Context;
 use serde::Serialize;
-use sha3::Digest;
 use starknet_core::types::{
     Felt, FunctionStateMutability, LegacyEventAbiType, LegacyFunctionAbiType, LegacyStructAbiType, LegacyTypedParameter,
 };
 
 use super::cairo_program::CairoProgram;
-
-#[derive(Default)]
-pub struct KeccakWriter(sha3::Keccak256);
-
-impl std::io::Write for KeccakWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.update(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        // noop is fine, we'll finalize after the write phase
-        Ok(())
-    }
-}
-
-impl KeccakWriter {
-    /// Finalize the keccak hash and convert it to felt following the [canonical implementation][canon_starknet_keccak] mask
-    ///
-    /// [canon_starknet_keccak]: https://github.com/starkware-libs/cairo-lang/blob/64a7f6aed9757d3d8d6c28bd972df73272b0cb0a/src/starkware/starknet/public/abi.py#L21-L26
-    fn finalize(self) -> Felt {
-        let mut bytes = <[u8; 32]>::from(self.0.finalize());
-        // truncation is needed not to overflow the field element.
-        // python code masks with (2**250 - 1) which starts 0x03 and is followed by 31 0xff in bigendianes
-        bytes[0] &= 0x3;
-        Felt::from_bytes_be(&bytes)
-    }
-}
 
 /// Starkware doesn't use compact formatting for JSON but default python
 /// formatting. This is required to hash to the same value after sorted
@@ -95,6 +64,35 @@ impl serde_json::ser::Formatter for PythonDefaultFormatter {
 
         Ok(())
     }
+
+    // To save space serde_json deserialize some really big numbers as their scientific notation, eg: 1e26.
+    // We have to expand them again to compute the hash.
+    fn write_number_str<W>(&mut self, writer: &mut W, value: &str) -> std::io::Result<()>
+    where
+        W: ?Sized + std::io::Write,
+    {
+        let mut chars = value.chars();
+        let mut e_pos = 0;
+        // We assume we won't encounter any floats in the contract class,
+        // so no need to check for a '.' character.
+        chars.by_ref().take_while(|&c| c != 'e').try_for_each(|c| {
+            e_pos += 1;
+            writer.write_all(&[c as u8])
+        })?;
+
+        // We encountered the 'e' character, therefore that's a scientific notation.
+        if e_pos != value.len() {
+            let exponent = chars
+                .as_str()
+                .parse::<usize>()
+                .map_err(|_| std::io::Error::other("could not parse exponent as usize"))?;
+            for _ in 0..exponent {
+                writer.write_all(&[b'0'])?
+            }
+        }
+
+        Ok(())
+    }
 }
 
 // This struct is serialized according to the python impl and the resulting bytes are fed to the starknet keccak hasher.
@@ -123,10 +121,7 @@ pub fn compute_cairo_program_keccak(
         String::from_utf8_unchecked(string_buffer)
     };
 
-    let mut keccak_writer = KeccakWriter::default();
-    keccak_writer.write_all(raw_json_output.as_bytes()).expect("writing to KeccakWriter never fails");
-
-    Ok(keccak_writer.finalize())
+    Ok(starknet_core::utils::starknet_keccak(raw_json_output.as_bytes()))
 }
 
 // Everything that follows is only required because the python serialization originaly used guarantee that fields of each struct are serialized in alphabetical order.
@@ -236,27 +231,6 @@ pub struct LegacyEventAbiEntry {
 impl From<starknet_core::types::LegacyEventAbiEntry> for LegacyEventAbiEntry {
     fn from(value: starknet_core::types::LegacyEventAbiEntry) -> Self {
         Self { data: value.data, keys: value.keys, name: value.name, r#type: value.r#type }
-    }
-}
-
-#[cfg(test)]
-mod tests_keccak {
-    use std::io::Write;
-
-    use starknet_core::types::Felt;
-
-    use crate::class_hash::starknet_keccak::KeccakWriter;
-
-    #[test]
-    fn truncated_keccak_matches_pythonic() {
-        let mut keccak_writer = KeccakWriter::default();
-        keccak_writer.write_all(&[0xffu8; 32]).unwrap();
-        let truncated = keccak_writer.finalize();
-
-        assert_eq!(
-            truncated,
-            Felt::from_hex("0x1c584056064687e149968cbab758a3376d22aedc6a55823d1b3ecbee81b8fb9").unwrap()
-        );
     }
 }
 

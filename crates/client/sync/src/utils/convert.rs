@@ -193,8 +193,8 @@ fn events_with_tx_hash(receipts: &[TransactionReceipt]) -> Vec<(Felt, Event)> {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConvertClassError {
-    #[error("Mismatched class hash, expected {expected:#x}; got {got:#x}")]
-    MismatchedClassHash { expected: Felt, got: Felt },
+    #[error("Mismatched class hash, received {received:#x}; computed {computed:#x}")]
+    MismatchedClassHash { received: Felt, computed: Felt },
     #[error("Compute class hash error: {0}")]
     ComputeClassHashError(String),
     #[error("Compilation class error: {0}")]
@@ -210,12 +210,14 @@ pub fn convert_and_verify_class(
         .map(|class_update| {
             let DbClassUpdate { class_hash, contract_class, compiled_class_hash } = class_update;
 
-            // TODO(class_hash): uncomment this when the class hashes are computed correctly accross the entire state
-            let expected =
+            let computed_class_hash =
                 contract_class.class_hash().map_err(|e| ConvertClassError::ComputeClassHashError(e.to_string()))?;
-            if class_hash != expected {
+            if class_hash != computed_class_hash {
                 log::warn!("Mismatched class hash: 0x{:x}", class_update.class_hash);
-                return Err(ConvertClassError::MismatchedClassHash { expected, got: class_hash });
+                return Err(ConvertClassError::MismatchedClassHash {
+                    received: class_hash,
+                    computed: computed_class_hash,
+                });
             }
 
             let compiled_class =

@@ -27,6 +27,9 @@ impl<SH: StarkHash> HashChain<SH> {
     pub fn finalize(self) -> Felt {
         SH::hash(&self.hash, &Felt::from(self.count))
     }
+    pub fn state(&self) -> (String, usize) {
+        (self.hash.to_hex_string(), self.count)
+    }
 }
 
 #[cfg(test)]
