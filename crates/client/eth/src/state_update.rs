@@ -10,7 +10,7 @@ use starknet_types_core::felt::Felt;
 use url::Url;
 
 use crate::{
-    client::{EthereumClient, StarknetCore},
+    client::{EthereumClient, StarknetCoreContract},
     config::L1StateUpdate,
     utils::{convert_log_state_update, trim_hash},
 };
@@ -23,7 +23,7 @@ pub async fn listen_and_update_state(
     block_metrics: BlockMetrics,
     chain_id: Felt,
 ) -> anyhow::Result<()> {
-    let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCore::LogStateUpdate>();
+    let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
     let mut event_stream = event_filter.watch().await.context("Failed to watch event filter")?.into_stream();
 
