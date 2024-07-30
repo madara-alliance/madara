@@ -20,9 +20,12 @@ pub fn convert_log_state_update(log_state_update: StarknetCoreContract::LogState
 }
 
 pub fn u256_to_starkfelt(u256: U256) -> anyhow::Result<StarkFelt> {
-    let bytes = u256.to_le_bytes();
-    // u256.to_big_endian(&mut bytes);
-    Ok(StarkFelt::new(bytes)?)
+    let binding = u256.to_be_bytes_vec();
+    let bytes = binding.as_slice();
+    let mut bytes_array = [0u8; 32];
+    bytes_array.copy_from_slice(bytes);
+    let starkfelt = StarkFelt::new(bytes_array)?;
+    Ok(starkfelt)
 }
 
 pub fn trim_hash(hash: &Felt) -> String {

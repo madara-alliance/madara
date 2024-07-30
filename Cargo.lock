@@ -4154,6 +4154,7 @@ dependencies = [
  "dp-utils",
  "futures",
  "log",
+ "once_cell",
  "primitive-types",
  "serde",
  "serde_json",
