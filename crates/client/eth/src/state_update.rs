@@ -91,3 +91,66 @@ pub async fn sync(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod eth_client_event_subscription_test {
+    use alloy::eips::BlockNumberOrTag;
+    use alloy::node_bindings::Anvil;
+    use alloy::providers::{Provider, ProviderBuilder};
+    use alloy::sol;
+    use futures::StreamExt;
+    use url::Url;
+
+    sol!(
+        #[derive(Debug)]
+        #[sol(rpc)]
+        SimpleStorage,
+        "src/abis/simple_storage.json"
+    );
+
+    #[tokio::test]
+    async fn test_event_subscription() {
+        let anvil = Anvil::new().fork("https://eth.merkle.io").fork_block_number(20395662).try_spawn().expect("issue while forking");
+        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
+        let provider =
+            ProviderBuilder::new().on_http(rpc_url.clone());
+
+        let address = anvil.addresses()[0];
+
+        let contract1 =
+            SimpleStorage::deploy(provider.clone(), "initial value".to_string()).await.unwrap();
+
+        let event1 = contract1.event_filter::<SimpleStorage::ValueChanged>();
+        let mut stream1 = event1.watch().await.unwrap().into_stream();
+
+        let num_tx = 3;
+
+        let starting_block_number = provider.get_block_number().await.unwrap();
+        for i in 0..num_tx {
+            contract1
+                .setValue(i.to_string())
+                .from(address)
+                .send()
+                .await
+                .unwrap()
+                .get_receipt()
+                .await
+                .unwrap();
+
+            let log = stream1.next().await.unwrap().unwrap();
+
+            assert_eq!(log.0.newValue, i.to_string());
+            assert_eq!(log.1.block_number.unwrap(), starting_block_number + i + 1);
+
+            let hash = provider
+                .get_block_by_number(BlockNumberOrTag::from(starting_block_number + i + 1), false)
+                .await
+                .unwrap()
+                .unwrap()
+                .header
+                .hash
+                .unwrap();
+            assert_eq!(log.1.block_hash.unwrap(), hash);
+        }
+    }
+}

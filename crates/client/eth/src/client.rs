@@ -107,7 +107,7 @@ impl EthereumClient {
 
 
 #[cfg(test)]
-mod eth_client_test {
+mod eth_client_getter_test {
     use alloy::node_bindings::Anvil;
     use super::*;
     use tokio;
