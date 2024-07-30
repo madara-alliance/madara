@@ -97,60 +97,52 @@ impl EthereumClient {
 #[cfg(test)]
 mod eth_client_getter_test {
     use super::*;
-    use alloy::node_bindings::Anvil;
+    use alloy::node_bindings::{Anvil, AnvilInstance};
     use alloy::primitives::{address, U256};
+    use rstest::*;
     use tokio;
 
-    #[tokio::test]
-    async fn test_get_latest_block_number() {
-        let anvil = Anvil::new()
-            .fork("https://eth.merkle.io")
-            .fork_block_number(20395662)
-            .try_spawn()
-            .expect("issue while forking");
+    use once_cell::sync::Lazy;
+
+    static ANVIL: Lazy<AnvilInstance> =
+        Lazy::new(|| Anvil::new().fork("https://eth.merkle.io").fork_block_number(20395662).spawn());
+
+    #[fixture]
+    fn anvil() -> &'static AnvilInstance {
+        &ANVIL
+    }
+
+    #[fixture]
+    fn eth_client(anvil: &'static AnvilInstance) -> EthereumClient {
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let contract =
             StarknetCoreContract::new(address!("c662c410C0ECf747543f5bA90660f6ABeBD9C8c4"), provider.clone());
 
-        let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone() };
+        EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone() }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_latest_block_number(eth_client: EthereumClient) {
         let block_number =
             eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
         assert_eq!(block_number, 20395662, "provider unable to get the correct block number");
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_get_last_event_block_number() {
-        let anvil = Anvil::new()
-            .fork("https://eth.merkle.io")
-            .fork_block_number(20395662)
-            .try_spawn()
-            .expect("issue while forking");
-        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
-        let contract =
-            StarknetCoreContract::new(address!("c662c410C0ECf747543f5bA90660f6ABeBD9C8c4"), provider.clone());
-
-        let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone() };
+    async fn test_get_last_event_block_number(eth_client: EthereumClient) {
         let block_number = eth_client
             .get_last_event_block_number::<StarknetCoreContract::LogStateUpdate>()
             .await
             .expect("issue while getting the last block number with given event");
         assert_eq!(block_number, 20395662, "block number with given event not matching");
     }
-    #[tokio::test]
-    async fn test_get_last_verified_block_hash() {
-        let anvil = Anvil::new()
-            .fork("https://eth.merkle.io")
-            .fork_block_number(20395662)
-            .try_spawn()
-            .expect("issue while forking");
-        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
-        let contract =
-            StarknetCoreContract::new(address!("c662c410C0ECf747543f5bA90660f6ABeBD9C8c4"), provider.clone());
 
-        let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone() };
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_last_verified_block_hash(eth_client: EthereumClient) {
         let block_hash =
             eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
         let expected = u256_to_starkfelt(
@@ -161,19 +153,9 @@ mod eth_client_getter_test {
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_get_last_state_root() {
-        let anvil = Anvil::new()
-            .fork("https://eth.merkle.io")
-            .fork_block_number(20395662)
-            .try_spawn()
-            .expect("issue while forking");
-        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
-        let contract =
-            StarknetCoreContract::new(address!("c662c410C0ECf747543f5bA90660f6ABeBD9C8c4"), provider.clone());
-
-        let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone() };
+    async fn test_get_last_state_root(eth_client: EthereumClient) {
         let state_root = eth_client.get_last_state_root().await.expect("issue while getting the state root");
         let expected = u256_to_starkfelt(
             U256::from_str_radix("1456190284387746219409791261254265303744585499659352223397867295223408682130", 10)
@@ -182,22 +164,10 @@ mod eth_client_getter_test {
         .unwrap();
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
+
+    #[rstest]
     #[tokio::test]
-    async fn test_get_last_verified_block_number() {
-        // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81
-        // link of the txn, we are using here ^
-        let anvil = Anvil::new()
-            .fork("https://eth.merkle.io")
-            .fork_block_number(20395662)
-            .try_spawn()
-            .expect("issue while forking");
-        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
-        let contract =
-            StarknetCoreContract::new(address!("c662c410C0ECf747543f5bA90660f6ABeBD9C8c4"), provider.clone());
-
-        let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone() };
-
+    async fn test_get_last_verified_block_number(eth_client: EthereumClient) {
         let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
         assert_eq!(block_number, 662703, "verified block number not matching");
     }
