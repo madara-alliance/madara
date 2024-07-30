@@ -98,7 +98,7 @@ impl ExecutionContext {
     }
 }
 
-trait TxInfo {
+pub trait TxInfo {
     fn tx_hash(&self) -> TransactionHash;
     fn tx_type(&self) -> TransactionType;
     fn fee_type(&self) -> FeeType;

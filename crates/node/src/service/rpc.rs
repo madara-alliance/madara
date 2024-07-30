@@ -2,15 +2,15 @@ use crate::cli::{NetworkType, RpcMethods, RpcParams};
 use dc_db::DatabaseService;
 use dc_metrics::MetricsRegistry;
 use dc_rpc::{
-    providers::ForwardToProvider, ChainConfig, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
+    providers::AddTransactionProvider, ChainConfig, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
     StarknetWriteRpcApiServer,
 };
 use dp_convert::ToFelt;
+use dp_utils::service::Service;
 use jsonrpsee::server::ServerHandle;
 use jsonrpsee::RpcModule;
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
-use starknet_providers::SequencerGatewayProvider;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
@@ -28,6 +28,7 @@ impl RpcService {
         db: &DatabaseService,
         network_type: NetworkType,
         metrics_handle: MetricsRegistry,
+        add_txs_method_provider: Arc<dyn AddTransactionProvider>,
     ) -> anyhow::Result<Self> {
         if config.rpc_disabled {
             return Ok(Self { server_config: None, server_handle: None });
@@ -55,16 +56,7 @@ impl RpcService {
             gateway: network_type.gateway(),
         };
 
-        let starknet = Starknet::new(
-            Arc::clone(db.backend()),
-            chain_config.clone(),
-            // TODO(rate-limit): we may get rate limited with this unconfigured provider?
-            Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
-                chain_config.gateway.clone(),
-                chain_config.feeder_gateway.clone(),
-                chain_config.chain_id,
-            ))),
-        );
+        let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider);
 
         if read {
             rpc_api.merge(StarknetReadRpcApiServer::into_rpc(starknet.clone()))?;
@@ -97,7 +89,11 @@ impl RpcService {
             server_handle: None,
         })
     }
-    pub async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+}
+
+#[async_trait::async_trait]
+impl Service for RpcService {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
         if let Some(server_config) = &self.server_config {
             // rpc enabled
             self.server_handle = Some(start_server(server_config.clone(), join_set).await?);

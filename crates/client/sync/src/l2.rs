@@ -380,18 +380,16 @@ async fn update_sync_metrics(
     backend: &DeoxysBackend,
 ) -> anyhow::Result<()> {
     // Update Block sync time metrics
-    let elapsed_time;
-    {
+    let elapsed_time = {
         let mut timer_guard = sync_timer.lock().unwrap();
+        *timer_guard = Some(Instant::now());
         if let Some(start_time) = *timer_guard {
-            elapsed_time = start_time.elapsed().as_secs_f64();
-            *timer_guard = Some(Instant::now());
+            start_time.elapsed().as_secs_f64()
         } else {
             // For the first block, there is no previous timer set
-            elapsed_time = 0.0;
-            *timer_guard = Some(Instant::now());
+            0.0
         }
-    }
+    };
 
     let sync_time = block_metrics.l2_sync_time.get() + elapsed_time;
     block_metrics.l2_sync_time.set(sync_time);

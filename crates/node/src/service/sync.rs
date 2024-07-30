@@ -8,6 +8,7 @@ use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
 use dc_telemetry::TelemetryHandle;
+use dp_utils::service::Service;
 use primitive_types::H160;
 use tokio::task::JoinSet;
 use url::Url;
@@ -66,7 +67,11 @@ impl SyncService {
             pending_block_poll_interval: Duration::from_secs(config.pending_block_poll_interval),
         })
     }
-    pub async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+}
+
+#[async_trait::async_trait]
+impl Service for SyncService {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
         if self.disabled {
             return Ok(());
         }
@@ -81,7 +86,7 @@ impl SyncService {
             pending_block_poll_interval,
             ..
         } = self.clone();
-        let telemetry = self.start_params.take().context("service already started")?;
+        let telemetry = self.start_params.take().context("Service already started")?;
 
         let db_backend = Arc::clone(&self.db_backend);
         join_set.spawn(async move {

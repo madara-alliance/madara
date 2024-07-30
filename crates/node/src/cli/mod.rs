@@ -3,13 +3,15 @@ pub mod prometheus;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;
-pub mod authority;
+pub mod block_production;
 
 pub use db::*;
 pub use prometheus::*;
 pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
+
+use self::block_production::BlockProductionParams;
 
 #[derive(Clone, Debug, clap::Parser)]
 pub struct RunCmd {
@@ -37,6 +39,14 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub rpc_params: RpcParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub block_production_params: BlockProductionParams,
+
+    /// Enable authority mode: the node will run as a sequencer and try and produce its own blocks.
+    #[arg(long)]
+    pub authority: bool,
 
     /// Run the TUI dashboard
     #[cfg(feature = "tui")]

@@ -43,6 +43,7 @@ pub struct ChainConfig {
     /// Only used for block production.
     pub block_time: Duration,
     /// Only used for block production.
+    /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.  
     pub pending_block_update_time: Duration,
 
     /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
@@ -58,6 +59,11 @@ pub struct ChainConfig {
 pub struct UnsupportedProtocolVersion(StarknetVersion);
 
 impl ChainConfig {
+    /// This is the number of pending ticks (see [`ChainConfig::pending_block_update_time`]) in a block.
+    pub fn n_pending_ticks_per_block(&self) -> usize {
+        (self.block_time.as_millis() / self.pending_block_update_time.as_millis()) as usize
+    }
+
     pub fn exec_constants_by_protocol_version(
         &self,
         version: StarknetVersion,
@@ -134,7 +140,11 @@ impl ChainConfig {
     }
 
     pub fn starknet_integration() -> Self {
-        Self { chain_name: "Starknet integration".into(), chain_id: ChainId::IntegrationSepolia, ..Self::starknet_mainnet() }
+        Self {
+            chain_name: "Starknet integration".into(),
+            chain_id: ChainId::IntegrationSepolia,
+            ..Self::starknet_mainnet()
+        }
     }
 }
 

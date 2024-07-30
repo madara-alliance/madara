@@ -13,8 +13,37 @@ use starknet_core::types::{
     BroadcastedTransaction, DeclareTransactionResult, DeployAccountTransactionResult, Felt, InvokeTransactionResult,
 };
 
+/// This [`AddTransactionProvider`] adds the received transactions to a mempool. 
 pub struct MempoolProvider {
     mempool: Arc<Mempool>,
+}
+
+impl MempoolProvider {
+    pub fn new(mempool: Arc<Mempool>) -> Self {
+        Self { mempool }
+    }
+}
+
+#[async_trait]
+impl AddTransactionProvider for MempoolProvider {
+    async fn add_declare_transaction(
+        &self,
+        declare_transaction: BroadcastedDeclareTransaction,
+    ) -> RpcResult<DeclareTransactionResult> {
+        Ok(add_declare_transaction(&self.mempool, declare_transaction)?)
+    }
+    async fn add_deploy_account_transaction(
+        &self,
+        deploy_account_transaction: BroadcastedDeployAccountTransaction,
+    ) -> RpcResult<DeployAccountTransactionResult> {
+        Ok(add_deploy_account_transaction(&self.mempool, deploy_account_transaction)?)
+    }
+    async fn add_invoke_transaction(
+        &self,
+        invoke_transaction: BroadcastedInvokeTransaction,
+    ) -> RpcResult<InvokeTransactionResult> {
+        Ok(add_invoke_transaction(&self.mempool, invoke_transaction)?)
+    }
 }
 
 fn transaction_hash(tx: &Transaction) -> Felt {
@@ -103,26 +132,4 @@ fn add_invoke_transaction(
     let res = InvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
     add_tx_to_mempool(mempool, tx, classes)?;
     Ok(res)
-}
-
-#[async_trait]
-impl AddTransactionProvider for MempoolProvider {
-    async fn add_declare_transaction(
-        &self,
-        declare_transaction: BroadcastedDeclareTransaction,
-    ) -> RpcResult<DeclareTransactionResult> {
-        Ok(add_declare_transaction(&self.mempool, declare_transaction)?)
-    }
-    async fn add_deploy_account_transaction(
-        &self,
-        deploy_account_transaction: BroadcastedDeployAccountTransaction,
-    ) -> RpcResult<DeployAccountTransactionResult> {
-        Ok(add_deploy_account_transaction(&self.mempool, deploy_account_transaction)?)
-    }
-    async fn add_invoke_transaction(
-        &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-    ) -> RpcResult<InvokeTransactionResult> {
-        Ok(add_invoke_transaction(&self.mempool, invoke_transaction)?)
-    }
 }

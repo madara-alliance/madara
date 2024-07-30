@@ -129,7 +129,8 @@ impl NonceChain {
             InsertedPosition::Other
         };
 
-        debug_assert_eq!(self.transactions.first().unwrap().0.tx_hash(), self.front_tx_hash);
+        #[cfg(debug_assertions)] // unknown field `front_tx_hash` in release if debug_assert_eq is used
+        assert_eq!(self.transactions.first().unwrap().0.tx_hash(), self.front_tx_hash);
 
         if force {
             self.transactions.replace(OrderMempoolTransactionByNonce(mempool_tx));

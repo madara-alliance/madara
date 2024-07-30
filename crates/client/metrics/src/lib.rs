@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use anyhow::Context;
-use dp_utils::{wait_or_graceful_shutdown, StopHandle};
+use dp_utils::{service::Service, wait_or_graceful_shutdown, StopHandle};
 use hyper::{
     service::{make_service_fn, service_fn},
     Body, Request, Response, Server, StatusCode,
@@ -85,8 +85,11 @@ impl MetricsService {
     pub fn registry(&self) -> MetricsRegistry {
         self.registry.clone()
     }
+}
 
-    pub async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+#[async_trait::async_trait]
+impl Service for MetricsService {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
         if self.no_prometheus {
             return Ok(());
         }

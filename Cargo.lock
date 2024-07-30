@@ -2929,6 +2929,7 @@ dependencies = [
  "dp-convert",
  "dp-state-update",
  "dp-transactions",
+ "dp-utils",
  "log",
  "rayon",
  "rocksdb",
@@ -2996,6 +2997,7 @@ name = "dc-metrics"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "dp-utils",
  "hyper 0.14.29",
  "log",
@@ -3072,6 +3074,7 @@ name = "dc-telemetry"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "dp-utils",
  "futures",
@@ -3088,9 +3091,11 @@ name = "deoxys"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "clap",
  "dc-db",
+ "dc-mempool",
  "dc-metrics",
  "dc-rpc",
  "dc-sync",
@@ -3361,7 +3366,10 @@ dependencies = [
 name = "dp-utils"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
  "futures",
+ "log",
  "rayon",
  "tokio",
 ]

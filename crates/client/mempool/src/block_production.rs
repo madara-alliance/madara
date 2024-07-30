@@ -1,8 +1,6 @@
 //! This should probably be moved into another crate.
 
-use blockifier::blockifier::transaction_executor::{
-    TransactionExecutor, VisitedSegmentsMapping,
-};
+use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
 use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::state_api::StateReader;
@@ -15,7 +13,10 @@ use dp_block::{BlockId, BlockTag, DeoxysPendingBlock};
 use dp_class::ConvertedClass;
 use dp_convert::ToFelt;
 use dp_receipt::from_blockifier_execution_info;
-use dp_state_update::{ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry};
+use dp_state_update::{
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
+    StorageEntry,
+};
 use dp_transactions::TransactionWithHash;
 use dp_utils::graceful_shutdown;
 use starknet_core::types::Felt;
@@ -120,8 +121,8 @@ fn get_visited_segments<S: StateReader>(
                 .as_ref()
                 .expect(BLOCK_STATE_ACCESS_ERR)
                 .get_compiled_contract_class(*class_hash)
-        .map_err(TransactionExecutionError::StateError)?;
-    Ok((*class_hash, contract_class.get_visited_segments(class_visited_pcs)?))
+                .map_err(TransactionExecutionError::StateError)?;
+            Ok((*class_hash, contract_class.get_visited_segments(class_visited_pcs)?))
         })
         .collect::<Result<_, Error>>()?;
 
@@ -144,7 +145,6 @@ fn finalize_execution_state<S: StateReader>(
 
     let visited_segments = get_visited_segments(tx_executor)?;
 
-    log::debug!("Final block weights: {:?}.", tx_executor.bouncer.get_accumulated_weights());
     Ok((state_update, visited_segments, *tx_executor.bouncer.get_accumulated_weights()))
 }
 
@@ -165,13 +165,18 @@ impl BlockProductionTask {
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
         let parent_block_hash = backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
-        let pending_block = DeoxysPendingBlock::new_empty(make_pending_header(parent_block_hash, backend.chain_config(), l1_data_provider.as_ref()));
+        let pending_block = DeoxysPendingBlock::new_empty(make_pending_header(
+            parent_block_hash,
+            backend.chain_config(),
+            l1_data_provider.as_ref(),
+        ));
         // NB: we cannot continue a previously started pending block yet.
         // let pending_block = backend.get_or_create_pending_block(|| CreatePendingBlockExtraInfo {
         //     l1_gas_price: l1_data_provider.get_gas_prices(),
         //     l1_da_mode: l1_data_provider.get_da_mode(),
         // })?;
-        let mut executor = ExecutionContext::new(Arc::clone(&backend), &pending_block.info.clone().into())?.tx_executor();
+        let mut executor =
+            ExecutionContext::new(Arc::clone(&backend), &pending_block.info.clone().into())?.tx_executor();
 
         let bouncer_config = backend.chain_config().bouncer_config.clone();
         executor.bouncer = Bouncer::new(bouncer_config);
@@ -209,6 +214,8 @@ impl BlockProductionTask {
         let (state_diff, _visited_segments, _weights) =
             finalize_execution_state(&executed_txs, &mut self.executor, &self.backend, &on_top_of)?;
 
+        let n_executed_txs = executed_txs.len();
+
         for (exec_result, mempool_tx) in Iterator::zip(all_results.into_iter(), executed_txs) {
             match exec_result {
                 Ok(execution_info) => {
@@ -219,21 +226,25 @@ impl BlockProductionTask {
                         self.declared_classes.push(class);
                     }
 
-                    let tx_ty = mempool_tx.tx.tx_type();
+                    self.block.inner.receipts.push(from_blockifier_execution_info(
+                        &execution_info,
+                        &Transaction::AccountTransaction(clone_account_tx(&mempool_tx.tx)),
+                    ));
                     let converted_tx = TransactionWithHash::from(mempool_tx.tx);
                     self.block.info.tx_hashes.push(converted_tx.hash);
                     self.block.inner.transactions.push(converted_tx.transaction);
-                    self.block.inner.receipts.push(from_blockifier_execution_info(
-                        &execution_info,
-                        tx_ty,
-                        converted_tx.hash,
-                    ));
                 }
                 Err(err) => {
                     log::error!("Unsuccessful execution of transaction {:?}: {err:#}", mempool_tx.tx_hash());
                 }
             }
         }
+
+        log::debug!(
+            "Finished tick with {} new transactions, now at {}",
+            n_executed_txs,
+            self.block.inner.transactions.len()
+        );
 
         // This contains the rest of `to_process_iter`.
         let rest_txs_to_process: Vec<_> = to_process_iter.collect();
@@ -249,21 +260,21 @@ impl BlockProductionTask {
         let current_pending_tick = self.current_pending_tick;
         self.current_pending_tick += 1;
 
-        let n_pending_ticks_per_block = self.backend.chain_config().block_time.as_millis()
-        / self.backend.chain_config().pending_block_update_time.as_millis();
-        let n_pending_ticks_per_block = n_pending_ticks_per_block as usize;
+        let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
 
-        if self.current_pending_tick == 0 || self.current_pending_tick >= n_pending_ticks_per_block {
+        if current_pending_tick == 0 || current_pending_tick >= n_pending_ticks_per_block {
             // first tick is ignored.
             // out of range ticks are also ignored.
-            return Ok(())
+            return Ok(());
         }
+        log::debug!("begin pending tick {}/{}", current_pending_tick, n_pending_ticks_per_block);
 
         // Reduced bouncer capacity for the current pending tick
 
-        // (current_val / n_ticks_per_block) * current_tick_in_block
         let config_bouncer = self.executor.bouncer.bouncer_config.block_max_capacity;
-        let frac = n_pending_ticks_per_block * current_pending_tick;
+        let frac = n_pending_ticks_per_block / current_pending_tick; // div by zero: current_pending_tick has been checked for 0 above
+
+        log::debug!("frac for this tick: {:.2}", 1f64 / frac as f64);
         let bouncer_cap = BouncerWeights {
             builtin_count: BuiltinCount {
                 add_mod: config_bouncer.builtin_count.add_mod / frac,
@@ -293,26 +304,34 @@ impl BlockProductionTask {
     }
 
     fn produce_block_tick(&mut self) -> Result<(), Error> {
+        let block_n = self.block_n();
+        log::debug!("closing block #{}", block_n);
+
         // Complete the block with full bouncer capacity.
         let new_state_diff = self.continue_block(self.executor.bouncer.bouncer_config.block_max_capacity.clone())?;
 
         // Convert the pending block to a closed block and save to db.
-        
+
         let parent_block_hash = Felt::ZERO; // temp parent block hash
-        let new_empty_block = DeoxysPendingBlock::new_empty(make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref()));
+        let new_empty_block = DeoxysPendingBlock::new_empty(make_pending_header(
+            parent_block_hash,
+            self.backend.chain_config(),
+            self.l1_data_provider.as_ref(),
+        ));
 
         let block_to_close = mem::replace(&mut self.block, new_empty_block);
         let declared_classes = mem::take(&mut self.declared_classes);
 
         // This is compute heavy as it does the commitments and trie computations.
         let chain_id = self.backend.chain_config().chain_id.clone().to_felt();
-        let closed_block =  close_block(&self.backend, block_to_close, &new_state_diff, chain_id, self.executor.block_context.block_info().block_number.0);
+        let closed_block = close_block(&self.backend, block_to_close, &new_state_diff, chain_id, block_n);
         self.block.info.header.parent_block_hash = closed_block.info.block_hash; // fix temp parent block hash for new pending :)
 
         self.backend.store_block(closed_block.into(), new_state_diff, declared_classes)?;
 
         // Prepare for next block.
-        self.executor = ExecutionContext::new(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
+        self.executor =
+            ExecutionContext::new(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
         self.current_pending_tick = 0;
 
         Ok(())
@@ -322,10 +341,13 @@ impl BlockProductionTask {
         let start = tokio::time::Instant::now();
 
         let mut interval_block_time = tokio::time::interval_at(start, self.backend.chain_config().block_time);
+        interval_block_time.reset(); // do not fire the first tick immediately
         interval_block_time.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut interval_pending_block_update =
             tokio::time::interval_at(start, self.backend.chain_config().pending_block_update_time);
         interval_pending_block_update.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        log::info!("⛏️  Starting block production on top of block {}", self.block_n());
 
         loop {
             tokio::select! {
@@ -344,5 +366,9 @@ impl BlockProductionTask {
         }
 
         Ok(())
+    }
+
+    fn block_n(&self) -> u64 {
+        self.executor.block_context.block_info().block_number.0
     }
 }
