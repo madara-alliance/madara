@@ -110,15 +110,17 @@ mod eth_client_event_subscription_test {
 
     #[tokio::test]
     async fn test_event_subscription() {
-        let anvil = Anvil::new().fork("https://eth.merkle.io").fork_block_number(20395662).try_spawn().expect("issue while forking");
+        let anvil = Anvil::new()
+            .fork("https://eth.merkle.io")
+            .fork_block_number(20395662)
+            .try_spawn()
+            .expect("issue while forking");
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider =
-            ProviderBuilder::new().on_http(rpc_url.clone());
+        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
 
         let address = anvil.addresses()[0];
 
-        let contract1 =
-            SimpleStorage::deploy(provider.clone(), "initial value".to_string()).await.unwrap();
+        let contract1 = SimpleStorage::deploy(provider.clone(), "initial value".to_string()).await.unwrap();
 
         let event1 = contract1.event_filter::<SimpleStorage::ValueChanged>();
         let mut stream1 = event1.watch().await.unwrap().into_stream();
@@ -127,15 +129,7 @@ mod eth_client_event_subscription_test {
 
         let starting_block_number = provider.get_block_number().await.unwrap();
         for i in 0..num_tx {
-            contract1
-                .setValue(i.to_string())
-                .from(address)
-                .send()
-                .await
-                .unwrap()
-                .get_receipt()
-                .await
-                .unwrap();
+            contract1.setValue(i.to_string()).from(address).send().await.unwrap().get_receipt().await.unwrap();
 
             let log = stream1.next().await.unwrap().unwrap();
 

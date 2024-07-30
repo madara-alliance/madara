@@ -1,6 +1,7 @@
 # Deoxys Changelog
 
 ## Next release
+- test: tests added for eth client and event subscription
 
 - feat: add support for Starknet version 0.13.2
 - fix(l1): removed free l1 endpoint list

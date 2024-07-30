@@ -6,7 +6,9 @@ use starknet_api::hash::StarkFelt;
 use starknet_types_core::felt::Felt;
 
 pub const LOG_STATE_UPDTATE_TOPIC: &str = "0xd342ddf7a308dec111745b00315c14b7efb2bdae570a6856e088ed0c65a3576c";
-pub fn convert_log_state_update(log_state_update: StarknetCoreContract::LogStateUpdate) -> anyhow::Result<L1StateUpdate> {
+pub fn convert_log_state_update(
+    log_state_update: StarknetCoreContract::LogStateUpdate,
+) -> anyhow::Result<L1StateUpdate> {
     let block_number = if log_state_update.blockNumber >= I256::ZERO {
         log_state_update.blockNumber.low_u64()
     } else {
