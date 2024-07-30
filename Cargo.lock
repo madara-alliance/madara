@@ -4156,6 +4156,7 @@ dependencies = [
  "log",
  "once_cell",
  "primitive-types",
+ "rstest 0.18.2",
  "serde",
  "serde_json",
  "starknet-types-core",
