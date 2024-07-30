@@ -16,11 +16,13 @@ use url::Url;
 use crate::client::StarknetCoreContract::StarknetCoreContractInstance;
 use crate::{config::L1StateUpdate, utils::u256_to_starkfelt};
 
+// abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
+// The official starknet core contract ^
 sol!(
     #[allow(missing_docs)]
     #[sol(rpc)]
     StarknetCoreContract,
-    "src/abis/starknet_core_new.json"
+    "src/abis/starknet_core.json"
 );
 
 pub struct EthereumClient {

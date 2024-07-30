@@ -1,6 +1,5 @@
 pub mod block_production;
 pub mod db;
-pub mod l1;
 pub mod prometheus;
 pub mod rpc;
 pub mod sync;
