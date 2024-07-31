@@ -4038,6 +4038,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "dc-messaging"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "bitvec",
+ "blockifier",
+ "dc-db",
+ "dc-eth",
+ "dc-metrics",
+ "dp-convert",
+ "dp-transactions",
+ "dp-utils",
+ "futures",
+ "log",
+ "primitive-types",
+ "serde",
+ "serde_json",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "dc-metrics"
 version = "0.1.0"
 dependencies = [
@@ -4085,6 +4111,7 @@ dependencies = [
  "bonsai-trie",
  "dc-db",
  "dc-eth",
+ "dc-messaging",
  "dc-metrics",
  "dc-telemetry",
  "dp-block",
@@ -4142,6 +4169,7 @@ dependencies = [
  "clap",
  "dc-db",
  "dc-eth",
+ "dc-messaging",
  "dc-metrics",
  "dc-rpc",
  "dc-sync",

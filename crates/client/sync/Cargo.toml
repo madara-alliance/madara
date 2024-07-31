@@ -27,6 +27,7 @@ dp-block = { workspace = true }
 dp-class = { workspace = true }
 dp-convert = { workspace = true }
 dp-receipt = { workspace = true }
+dc-messaging = {workspace = true}
 dp-transactions = { workspace = true }
 dp-utils = { workspace = true }
 

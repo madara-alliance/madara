@@ -1,6 +1,6 @@
 use crate::client::StarknetCoreContract;
 use crate::state_update::L1StateUpdate;
-use alloy::primitives::{I256, U256};
+use alloy::primitives::{Address, I256, U256};
 use anyhow::bail;
 use starknet_api::hash::StarkFelt;
 use starknet_types_core::felt::Felt;
@@ -17,6 +17,12 @@ pub fn convert_log_state_update(
     let block_hash = u256_to_starkfelt(log_state_update.blockHash)?;
 
     Ok(L1StateUpdate { block_number, global_root, block_hash })
+}
+
+pub fn address_to_starkfelt(address: Address) -> anyhow::Result<StarkFelt> {
+    let word = address.into_word();
+    let starkfelt = StarkFelt::new(word.into())?;
+    Ok(starkfelt)
 }
 
 pub fn u256_to_starkfelt(u256: U256) -> anyhow::Result<StarkFelt> {
