@@ -3550,7 +3550,6 @@ dependencies = [
  "dp-utils",
  "futures",
  "log",
- "once_cell",
  "primitive-types",
  "prometheus",
  "rstest 0.18.2",
