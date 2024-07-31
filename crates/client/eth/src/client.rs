@@ -14,7 +14,7 @@ use starknet_api::hash::StarkFelt;
 use url::Url;
 
 use crate::client::StarknetCoreContract::StarknetCoreContractInstance;
-use crate::{config::L1StateUpdate, utils::u256_to_starkfelt};
+use crate:: utils::u256_to_starkfelt;
 
 // abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
 // The official starknet core contract ^
@@ -86,14 +86,8 @@ impl EthereumClient {
         u256_to_starkfelt(block_hash._0)
     }
 
-    /// Get the last Starknet state update verified on the L1
-    pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1StateUpdate> {
-        let block_number = client.get_last_verified_block_number().await?;
-        let block_hash = client.get_last_verified_block_hash().await?;
-        let global_root = client.get_last_state_root().await?;
 
-        Ok(L1StateUpdate { global_root, block_number, block_hash })
-    }
+
 }
 
 #[cfg(test)]

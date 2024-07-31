@@ -6,14 +6,31 @@ use dp_convert::ToFelt;
 use dp_transactions::TEST_CHAIN_ID;
 use dp_utils::channel_wait_or_graceful_shutdown;
 use futures::StreamExt;
+use serde::Deserialize;
+use starknet_api::hash::StarkHash;
 use starknet_types_core::felt::Felt;
 use url::Url;
 
 use crate::{
     client::{EthereumClient, StarknetCoreContract},
-    config::L1StateUpdate,
     utils::{convert_log_state_update, trim_hash},
 };
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct L1StateUpdate {
+    pub block_number: u64,
+    pub global_root: StarkHash,
+    pub block_hash: StarkHash,
+}
+
+/// Get the last Starknet state update verified on the L1
+pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1StateUpdate> {
+    let block_number = client.get_last_verified_block_number().await?;
+    let block_hash = client.get_last_verified_block_hash().await?;
+    let global_root = client.get_last_state_root().await?;
+
+    Ok(L1StateUpdate { global_root, block_number, block_hash })
+}
 
 /// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
 /// verified state
@@ -81,7 +98,7 @@ pub async fn sync(
     log::info!("🚀 Subscribed to L1 state verification");
 
     // Get and store the latest verified state
-    let initial_state = EthereumClient::get_initial_state(&client).await.context("Getting initial ethereum state")?;
+    let initial_state = get_initial_state(&client).await.context("Getting initial ethereum state")?;
     update_l1(backend, initial_state, block_metrics.clone(), chain_id)?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
