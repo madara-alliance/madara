@@ -100,14 +100,21 @@ impl EthereumClient {
 mod eth_client_getter_test {
     use super::*;
     use alloy::node_bindings::{Anvil, AnvilInstance};
-    use alloy::primitives::{address, U256};
+    use alloy::primitives::U256;
     use rstest::*;
     use tokio;
+
+    const ETH_URL: &str = "https://eth.merkle.io";
+    const L1_BLOCK_NUMBER: u64 = 20395662;
+    const CORE_CONTRACT_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
+    const L2_BLOCK_NUMBER: u64 = 662703;
+    const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
+    const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
 
     #[fixture]
     #[once]
     fn anvil() -> AnvilInstance {
-        let anvil = Anvil::new().fork("https://eth.merkle.io").fork_block_number(20395662).spawn();
+        let anvil = Anvil::new().fork(ETH_URL).fork_block_number(L1_BLOCK_NUMBER).spawn();
         anvil
     }
 
@@ -116,8 +123,8 @@ mod eth_client_getter_test {
     fn eth_client(anvil: &AnvilInstance) -> EthereumClient {
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
-        let contract =
-            StarknetCoreContract::new(address!("c662c410C0ECf747543f5bA90660f6ABeBD9C8c4"), provider.clone());
+        let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
+        let contract = StarknetCoreContract::new(address, provider.clone());
 
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone() }
     }
@@ -127,7 +134,7 @@ mod eth_client_getter_test {
     async fn test_get_latest_block_number(eth_client: &EthereumClient) {
         let block_number =
             eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
-        assert_eq!(block_number, 20395662, "provider unable to get the correct block number");
+        assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
     }
 
     #[rstest]
@@ -137,7 +144,7 @@ mod eth_client_getter_test {
             .get_last_event_block_number::<StarknetCoreContract::LogStateUpdate>()
             .await
             .expect("issue while getting the last block number with given event");
-        assert_eq!(block_number, 20395662, "block number with given event not matching");
+        assert_eq!(block_number, L1_BLOCK_NUMBER, "block number with given event not matching");
     }
 
     #[rstest]
@@ -145,11 +152,7 @@ mod eth_client_getter_test {
     async fn test_get_last_verified_block_hash(eth_client: &EthereumClient) {
         let block_hash =
             eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
-        let expected = u256_to_starkfelt(
-            U256::from_str_radix("563216050958639290223177746678863910249919294431961492885921903486585884664", 10)
-                .unwrap(),
-        )
-        .unwrap();
+        let expected = u256_to_starkfelt(U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap()).unwrap();
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
 
@@ -157,11 +160,7 @@ mod eth_client_getter_test {
     #[tokio::test]
     async fn test_get_last_state_root(eth_client: &EthereumClient) {
         let state_root = eth_client.get_last_state_root().await.expect("issue while getting the state root");
-        let expected = u256_to_starkfelt(
-            U256::from_str_radix("1456190284387746219409791261254265303744585499659352223397867295223408682130", 10)
-                .unwrap(),
-        )
-        .unwrap();
+        let expected = u256_to_starkfelt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
 
@@ -169,6 +168,6 @@ mod eth_client_getter_test {
     #[tokio::test]
     async fn test_get_last_verified_block_number(eth_client: &EthereumClient) {
         let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
-        assert_eq!(block_number, 662703, "verified block number not matching");
+        assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");
     }
 }
