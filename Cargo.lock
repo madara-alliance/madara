@@ -4154,7 +4154,6 @@ dependencies = [
  "dp-utils",
  "futures",
  "log",
- "once_cell",
  "primitive-types",
  "rstest 0.18.2",
  "serde",
