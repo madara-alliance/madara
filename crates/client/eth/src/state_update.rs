@@ -16,7 +16,7 @@ use crate::{
     utils::{convert_log_state_update, trim_hash},
 };
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct L1StateUpdate {
     pub block_number: u64,
     pub global_root: StarkHash,
