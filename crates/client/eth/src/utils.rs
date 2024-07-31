@@ -1,9 +1,9 @@
 use crate::client::StarknetCoreContract;
+use crate::state_update::L1StateUpdate;
 use alloy::primitives::{I256, U256};
 use anyhow::bail;
 use starknet_api::hash::StarkFelt;
 use starknet_types_core::felt::Felt;
-use crate::state_update::L1StateUpdate;
 
 pub const LOG_STATE_UPDTATE_TOPIC: &str = "0xd342ddf7a308dec111745b00315c14b7efb2bdae570a6856e088ed0c65a3576c";
 pub fn convert_log_state_update(

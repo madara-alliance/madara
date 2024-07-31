@@ -137,18 +137,18 @@ mod eth_client_event_subscription_test {
 
         let address = anvil.addresses()[0];
 
-        let contract1 = SimpleStorage::deploy(provider.clone(), "initial value".to_string()).await.unwrap();
+        let contract = SimpleStorage::deploy(provider.clone(), "initial value".to_string()).await.unwrap();
 
-        let event1 = contract1.event_filter::<SimpleStorage::ValueChanged>();
-        let mut stream1 = event1.watch().await.unwrap().into_stream();
+        let event = contract.event_filter::<SimpleStorage::ValueChanged>();
+        let mut stream = event.watch().await.unwrap().into_stream();
 
         let num_tx = 3;
 
         let starting_block_number = provider.get_block_number().await.unwrap();
         for i in 0..num_tx {
-            contract1.setValue(i.to_string()).from(address).send().await.unwrap().get_receipt().await.unwrap();
+            contract.setValue(i.to_string()).from(address).send().await.unwrap().get_receipt().await.unwrap();
 
-            let log = stream1.next().await.unwrap().unwrap();
+            let log = stream.next().await.unwrap().unwrap();
 
             assert_eq!(log.0.newValue, i.to_string());
             assert_eq!(log.1.block_number.unwrap(), starting_block_number + i + 1);
