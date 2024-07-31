@@ -25,6 +25,7 @@ pub mod class_db;
 pub mod contract_db;
 pub mod db_block_id;
 pub mod db_metrics;
+pub mod messaging_db;
 pub mod storage_updates;
 
 pub use error::{DeoxysStorageError, TrieType};
@@ -188,6 +189,8 @@ pub enum Column {
     BonsaiClassesTrie,
     BonsaiClassesFlat,
     BonsaiClassesLog,
+
+    Messaging,
 }
 
 impl fmt::Debug for Column {
@@ -231,6 +234,7 @@ impl Column {
             BonsaiClassesTrie,
             BonsaiClassesFlat,
             BonsaiClassesLog,
+            Messaging,
             PendingContractToClassHashes,
             PendingContractToNonces,
             PendingContractStorage,
@@ -266,6 +270,7 @@ impl Column {
             ContractToNonces => "contract_to_nonces",
             ContractClassHashes => "contract_class_hashes",
             ContractStorage => "contract_storage",
+            Messaging => "messaging",
             PendingContractToClassHashes => "pending_contract_to_class_hashes",
             PendingContractToNonces => "pending_contract_to_nonces",
             PendingContractStorage => "pending_contract_storage",

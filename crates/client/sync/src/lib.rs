@@ -65,9 +65,17 @@ pub mod starknet_sync_worker {
         };
 
         let l1_block_metric = block_metrics.clone();
+        let l1_url_1 = l1_url.clone();
         let l1_fut = async {
-            if let Some(l1_url) = l1_url {
+            if let Some(l1_url) = l1_url_1 {
                 dc_eth::state_update::sync(backend, l1_url.clone(), l1_block_metric, l1_core_address, chain_id).await
+            } else {
+                Ok(())
+            }
+        };
+        let l1_messaging_fut = async {
+            if let Some(l1_url) = l1_url {
+                dc_messaging::worker::sync(backend, l1_url.clone(), l1_core_address, chain_id).await
             } else {
                 Ok(())
             }
@@ -75,6 +83,7 @@ pub mod starknet_sync_worker {
 
         tokio::try_join!(
             l1_fut,
+            l1_messaging_fut,
             l2::sync(
                 backend,
                 provider,
