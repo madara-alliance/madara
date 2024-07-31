@@ -14,7 +14,7 @@ use starknet_api::hash::StarkFelt;
 use url::Url;
 
 use crate::client::StarknetCoreContract::StarknetCoreContractInstance;
-use crate:: utils::u256_to_starkfelt;
+use crate::utils::u256_to_starkfelt;
 
 // abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
 // The official starknet core contract ^
@@ -85,9 +85,6 @@ impl EthereumClient {
         let block_hash = self.l1_core_contract.stateBlockHash().call().await?;
         u256_to_starkfelt(block_hash._0)
     }
-
-
-
 }
 
 #[cfg(test)]
