@@ -1,12 +1,12 @@
 # L1<>L2 messaging
 
-- [ ] Create a stream of LogMessageToL2 events
-- [ ] Get last synced block from Messaging DB
-- [ ] Consume the stream and log event
+- [X] Create a stream of LogMessageToL2 events
+- [X] Get last synced block from Messaging DB
+- [X] Consume the stream and log event
 - [ ] Process message 
-    - [ ] Parse tx fee
-    - [ ] Parse transaction from event
-    - [ ] Check if message has already been processed
-    - [ ] Build transaction
-    - [ ] Submit tx to mempool
-    - [ ] Update Messaging DB
+    - [X] Parse tx fee
+    - [X] Parse transaction from event
+    - [X] Check if message has already been processed
+    - [X] Build transaction
+    - [Waiting for mempool] Submit tx to mempool
+    - [X] Update Messaging DB
