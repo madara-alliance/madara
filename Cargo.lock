@@ -3543,6 +3543,7 @@ dependencies = [
  "rayon",
  "reqwest 0.12.5",
  "rodio",
+ "serde",
  "serde_json",
  "starknet-core",
  "starknet-providers",
@@ -6936,18 +6937,18 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.203"
+version = "1.0.204"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7253ab4de971e72fb7be983802300c30b5a7f0c2e56fab8abfc6a214307c0094"
+checksum = "bc76f558e0cbb2a839d37354c575f1dc3fdc6546b5be373ba43d95f231bf7c12"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.203"
+version = "1.0.204"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "500cbc0ebeb6f46627f50f3f5811ccf6bf00643be300b4c3eabc0ef55dc5b5ba"
+checksum = "e0cd7e117be63d3c3678776753929474f3b04a43a080c744d6b0ae2a8c28e222"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6976,11 +6977,12 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.117"
+version = "1.0.121"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "455182ea6142b14f93f4bc5320a2b31c1f266b66a4a5c858b013302a5d8cbfc3"
+checksum = "4ab380d7d9f22ef3f21ad3e6c1ebe8e4fc7a2000ccba2e4d71fc96f15b2cb609"
 dependencies = [
  "itoa",
+ "memchr",
  "ryu",
  "serde",
 ]
@@ -7244,7 +7246,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "starknet-core"
 version = "0.11.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#1a0428e28e31e02cee1f4ddb80476d23eac77dc1"
+source = "git+https://github.com/tdelabro/starknet-rs.git?branch=fix-class-hash#2d406632f97ebfc3d8f6bda7331755a062192b6a"
 dependencies = [
  "base64 0.21.7",
  "crypto-bigint",
@@ -7302,7 +7304,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto"
 version = "0.7.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#1a0428e28e31e02cee1f4ddb80476d23eac77dc1"
+source = "git+https://github.com/tdelabro/starknet-rs.git?branch=fix-class-hash#2d406632f97ebfc3d8f6bda7331755a062192b6a"
 dependencies = [
  "crypto-bigint",
  "hex",
@@ -7332,7 +7334,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto-codegen"
 version = "0.4.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#1a0428e28e31e02cee1f4ddb80476d23eac77dc1"
+source = "git+https://github.com/tdelabro/starknet-rs.git?branch=fix-class-hash#2d406632f97ebfc3d8f6bda7331755a062192b6a"
 dependencies = [
  "starknet-curve 0.5.0",
  "starknet-types-core",
@@ -7360,7 +7362,7 @@ dependencies = [
 [[package]]
 name = "starknet-curve"
 version = "0.5.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#1a0428e28e31e02cee1f4ddb80476d23eac77dc1"
+source = "git+https://github.com/tdelabro/starknet-rs.git?branch=fix-class-hash#2d406632f97ebfc3d8f6bda7331755a062192b6a"
 dependencies = [
  "starknet-types-core",
 ]
@@ -7380,7 +7382,7 @@ dependencies = [
 [[package]]
 name = "starknet-providers"
 version = "0.11.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#1a0428e28e31e02cee1f4ddb80476d23eac77dc1"
+source = "git+https://github.com/tdelabro/starknet-rs.git?branch=fix-class-hash#2d406632f97ebfc3d8f6bda7331755a062192b6a"
 dependencies = [
  "async-trait",
  "auto_impl",

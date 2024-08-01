@@ -64,35 +64,6 @@ impl serde_json::ser::Formatter for PythonDefaultFormatter {
 
         Ok(())
     }
-
-    // To save space serde_json deserialize some really big numbers as their scientific notation, eg: 1e26.
-    // We have to expand them again to compute the hash.
-    fn write_number_str<W>(&mut self, writer: &mut W, value: &str) -> std::io::Result<()>
-    where
-        W: ?Sized + std::io::Write,
-    {
-        let mut chars = value.chars();
-        let mut e_pos = 0;
-        // We assume we won't encounter any floats in the contract class,
-        // so no need to check for a '.' character.
-        chars.by_ref().take_while(|&c| c != 'e').try_for_each(|c| {
-            e_pos += 1;
-            writer.write_all(&[c as u8])
-        })?;
-
-        // We encountered the 'e' character, therefore that's a scientific notation.
-        if e_pos != value.len() {
-            let exponent = chars
-                .as_str()
-                .parse::<usize>()
-                .map_err(|_| std::io::Error::other("could not parse exponent as usize"))?;
-            for _ in 0..exponent {
-                writer.write_all(&[b'0'])?
-            }
-        }
-
-        Ok(())
-    }
 }
 
 // This struct is serialized according to the python impl and the resulting bytes are fed to the starknet keccak hasher.

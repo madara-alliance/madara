@@ -5,10 +5,10 @@ use std::{borrow::Cow, collections::BTreeMap};
 use anyhow::Context;
 
 // Those fields' content are only wrapped to easely implement `AppendToHashChain` on them
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
 pub struct Builtins<'a>(pub Vec<Cow<'a, str>>);
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
 pub struct Data<'a>(pub Vec<Cow<'a, str>>);
 
@@ -16,7 +16,7 @@ pub struct Data<'a>(pub Vec<Cow<'a, str>>);
 //
 // It's important that this is ordered alphabetically because the fields need to
 // be in alphabetical order when serialized for the keccak hashed representation.
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CairoProgram<'a> {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]

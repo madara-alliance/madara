@@ -49,6 +49,7 @@ rand = { workspace = true }
 rayon = { workspace = true }
 reqwest = { workspace = true }
 rodio = { version = "0.17", optional = true }
+serde = { workspace = true, default-features = true }
 serde_json = { workspace = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = [
