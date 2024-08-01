@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy::sol_types::SolEvent;
 use alloy::{
-    primitives::Address,
+    primitives::{Address, FixedBytes},
     providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider},
     rpc::types::Filter,
     sol,
@@ -84,6 +84,11 @@ impl EthereumClient {
     pub async fn get_last_verified_block_hash(&self) -> anyhow::Result<StarkFelt> {
         let block_hash = self.l1_core_contract.stateBlockHash().call().await?;
         u256_to_starkfelt(block_hash._0)
+    }
+
+    pub async fn get_l1_to_l2_message_cancellations(&self, msg_hash: FixedBytes<32>) -> anyhow::Result<u64> {
+        let msg_cancellations = self.l1_core_contract.l1ToL2MessageCancellations(msg_hash).call().await?;
+        Ok(msg_cancellations._0.try_into()?)
     }
 }
 

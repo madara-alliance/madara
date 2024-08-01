@@ -1,5 +1,6 @@
 use crate::contract::parse_handle_l1_message_transaction;
-use alloy::primitives::Address;
+use alloy::primitives::{keccak256, Address, FixedBytes, U256};
+use alloy::sol_types::SolValue;
 use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
 use anyhow::Context;
 use dc_db::{messaging_db::LastSyncedEventBlock, DeoxysBackend};
@@ -49,6 +50,9 @@ pub async fn sync(
                 meta.transaction_hash,
                 meta.log_index
             );
+
+            // Check if cancellation was initiated
+            let cancellations = client.get_l1_to_l2_message_cancellations(get_l1_to_l2_msg_hash(&event)?).await?;
 
             match process_l1_message(backend, &event, &meta.block_number, &meta.log_index, _chain_id).await {
                 Ok(Some(tx_hash)) => {log::info!(
@@ -110,4 +114,43 @@ async fn process_l1_message(
     backend.messaging_update_last_synced_l1_block_with_event(LastSyncedEventBlock::new(l1_block_number.unwrap(), event_index.unwrap()))?;
 
     Ok(None)
+}
+
+/// Computes the message hashed with the given event data
+fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32>> {
+    let data = (event.fromAddress.0.0, event.toAddress, event.nonce, event.selector,U256::from(event.payload.len()), event.payload.clone());
+    Ok(keccak256(data.abi_encode_packed()))
+}
+
+#[cfg(test)]
+mod tests {
+//     use super::*;
+
+use alloy::primitives::{address, U256};
+use dc_eth::client::StarknetCoreContract::LogMessageToL2;
+
+use crate::worker::get_l1_to_l2_msg_hash;
+
+    #[test]
+    fn test_msg_to_l2_hash() {
+        // Goerli-1 tx: 0374286ae28f201e61ffbc5b022cc9701208640b405ea34ea9799f97d5d2d23c
+
+        let msg = LogMessageToL2 {
+            fromAddress: address!("c3511006C04EF1d78af4C8E0e74Ec18A6E64Ff9e"),
+            toAddress: U256::from_str_radix("73314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b82",16).unwrap(),
+            selector: U256::from_str_radix("2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5",16).unwrap(),
+            payload: vec![
+                U256::from_str_radix("689ead7d814e51ed93644bc145f0754839b8dcb340027ce0c30953f38f55d7",16).unwrap(),
+                U256::from_str_radix("2c68af0bb140000",16).unwrap(),
+                U256::from_str_radix("0",16).unwrap(),
+            ],
+            nonce: U256::from(775628),
+            fee: U256::from(0),
+        };
+
+        let expected_hash = "c51a543ef9563ad2545342b390b67edfcddf9886aa36846cf70382362fc5fab3";
+
+        assert_eq!(get_l1_to_l2_msg_hash(&msg).unwrap().to_string(), expected_hash);
+    }
+
 }
