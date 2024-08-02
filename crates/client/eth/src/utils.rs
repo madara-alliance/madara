@@ -40,9 +40,10 @@ pub fn trim_hash(hash: &Felt) -> String {
 mod eth_client_conversion_tests {
     use super::*;
     use dp_convert::ToFelt;
+    use rstest::*;
 
     #[test]
-    fn test_convert_log_state_update() {
+    fn convert_log_state_update_works() {
         let block_number: u64 = 12345;
         let block_hash: u128 = 2345;
         let global_root: u128 = 456;
@@ -64,32 +65,34 @@ mod eth_client_conversion_tests {
         assert_eq!(expected, result, "log state update conversion not working");
     }
 
-    #[test]
-    fn test_u256_to_starkfelt() {
-        let random: u128 = 12345678123456789;
-        let starkfelt = StarkFelt::from(random);
+    #[rstest]
+    #[case(
+        "12345678123456789",
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x2b, 0xdc, 0x54, 0x2f, 0x0f, 0x59, 0x15]
+    )]
+    #[case(
+        "340282366920938463463374607431768211455",
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
+    )]
+    #[case(
+        "7237005577332262213973186563042994240829374041602535252466099000494570602495",
+        [0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
+    )]
+    fn u256_to_starkfelt_works(#[case] input: &str, #[case] expected_bytes: [u8; 32]) {
+        let u256_value = U256::from_str_radix(input, 10).expect("Failed to parse U256");
+        let expected = StarkFelt::new(expected_bytes).expect("Failed to create expected StarkFelt");
 
-        let random_u256: U256 = U256::from_str_radix(random.to_string().as_str(), 10).unwrap();
-        let result = u256_to_starkfelt(random_u256).unwrap();
+        let result = u256_to_starkfelt(u256_value).expect("u256_to_starkfelt failed");
 
-        assert_eq!(result, starkfelt, "u256 to StarkFelt not working");
+        assert_eq!(result, expected, "u256_to_starkfelt failed for input: {}", input);
     }
 
-    #[test]
-    fn test_trim_hash() {
-        // here we are testing trim hash the same way it's being used in the code
-        // and that it to convert StarkFelt to felt and then sending it to the trim_hash
-
-        let random: u128 = 30000000000000;
-        // 0x1b48eb57e000 is the hex value of the given random
-        let starkfelt = StarkFelt::from(random);
+    #[rstest]
+    #[case(30000000000000, "0x1b48eb...57e000")]
+    #[case(12345678123456789, "0x2bdc54...0f5915")]
+    fn trim_hash_works(#[case] input: u128, #[case] expected: &str) {
+        let starkfelt = StarkFelt::from(input);
         let trimmed = trim_hash(&starkfelt.to_felt());
-        assert_eq!(trimmed, "0x1b48eb...57e000");
-
-        let random: u128 = 12345678123456789;
-        // 0x2bdc542f0f5915 is the hex value of the given random
-        let starkfelt = StarkFelt::from(random);
-        let trimmed = trim_hash(&starkfelt.to_felt());
-        assert_eq!(trimmed, "0x2bdc54...0f5915");
+        assert_eq!(trimmed, expected);
     }
 }

@@ -67,7 +67,7 @@ pub mod starknet_sync_worker {
         let l1_block_metric = block_metrics.clone();
         let l1_fut = async {
             if let Some(l1_url) = l1_url {
-                dc_eth::state_update::sync(backend, l1_url.clone(), l1_block_metric, l1_core_address, chain_id).await
+                dc_eth::state_update::sync(backend, l1_url.clone(), &l1_block_metric, l1_core_address, chain_id).await
             } else {
                 Ok(())
             }

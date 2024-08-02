@@ -38,7 +38,7 @@ pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1Stat
 pub async fn listen_and_update_state(
     eth_client: EthereumClient,
     backend: &DeoxysBackend,
-    block_metrics: BlockMetrics,
+    block_metrics: &BlockMetrics,
     chain_id: Felt,
 ) -> anyhow::Result<()> {
     let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
@@ -49,7 +49,7 @@ pub async fn listen_and_update_state(
         let log = event_result.context("listening for events")?;
         let format_event: L1StateUpdate =
             convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
-        update_l1(backend, format_event, block_metrics.clone(), chain_id)?;
+        update_l1(backend, format_event, block_metrics, chain_id)?;
     }
 
     Ok(())
@@ -58,7 +58,7 @@ pub async fn listen_and_update_state(
 pub fn update_l1(
     backend: &DeoxysBackend,
     state_update: L1StateUpdate,
-    block_metrics: BlockMetrics,
+    block_metrics: &BlockMetrics,
     chain_id: Felt,
 ) -> anyhow::Result<()> {
     // This is a provisory check to avoid updating the state with an L1StateUpdate that should not have been detected
@@ -86,7 +86,7 @@ pub fn update_l1(
 pub async fn sync(
     backend: &DeoxysBackend,
     l1_url: Url,
-    block_metrics: BlockMetrics,
+    block_metrics: &BlockMetrics,
     l1_core_address: Address,
     chain_id: Felt,
 ) -> anyhow::Result<()> {
@@ -100,7 +100,7 @@ pub async fn sync(
 
     // Get and store the latest verified state
     let initial_state = get_initial_state(&client).await.context("Getting initial ethereum state")?;
-    update_l1(backend, initial_state, block_metrics.clone(), chain_id)?;
+    update_l1(backend, initial_state, block_metrics, chain_id)?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
     listen_and_update_state(client, backend, block_metrics, chain_id)
@@ -113,16 +113,16 @@ pub async fn sync(
 #[cfg(test)]
 mod eth_client_event_subscription_test {
     use super::*;
-    use std::{env, sync::Arc, time::Duration};
+    use std::{sync::Arc, time::Duration};
 
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
     use dc_db::{block_db::ChainInfo, DatabaseService};
     use dc_metrics::{block_metrics::block_metrics::BlockMetrics, MetricsService};
     use starknet_types_core::felt::Felt;
+    use tempfile::TempDir;
     use url::Url;
 
     sol!(
-        #[allow(missing_docs)]
         #[sol(rpc, bytecode="6080604052348015600e575f80fd5b506101618061001c5f395ff3fe608060405234801561000f575f80fd5b5060043610610029575f3560e01c80634185df151461002d575b5f80fd5b610035610037565b005b5f7f0639349b21e886487cd6b341de2050db8ab202d9c6b0e7a2666d598e5fcf81a690505f620a1caf90505f7f0279b69383ea92624c1ae4378ac7fae6428f47bbd21047ea0290c3653064188590507fd342ddf7a308dec111745b00315c14b7efb2bdae570a6856e088ed0c65a3576c8383836040516100b9939291906100f6565b60405180910390a1505050565b5f819050919050565b6100d8816100c6565b82525050565b5f819050919050565b6100f0816100de565b82525050565b5f6060820190506101095f8301866100cf565b61011660208301856100e7565b61012360408301846100cf565b94935050505056fea2646970667358221220fbc6fd165c86ed9af0c5fcab2830d4a72894fd6a98e9c16dbf9101c4c22e2f7d64736f6c634300081a0033")]
         contract DummyContract {
             event LogStateUpdate(uint256 globalRoot, int256 blockNumber, uint256 blockHash);
@@ -152,15 +152,15 @@ mod eth_client_event_subscription_test {
     /// 5. Fires an event from the dummy contract
     /// 6. Waits for event processing and verifies the block number
     #[tokio::test]
-    async fn test_event_subscription() {
+    async fn listen_and_update_state_when_event_fired_works() {
         // Set up chain info
         let chain_info =
             ChainInfo { chain_id: Felt::from_dec_str("11153111").unwrap(), chain_name: "testing".to_string() };
 
         // Set up database paths
-        let current_dir = env::current_dir().expect("Failed to get current directory");
-        let base_path = current_dir.join("data");
-        let backup_dir = Some(current_dir.parent().expect("Failed to get parent directory").join("backups"));
+        let temp_dir = TempDir::new().expect("issue while creating temporary directory");
+        let base_path = temp_dir.path().join("data");
+        let backup_dir = Some(temp_dir.path().join("backups"));
 
         // Initialize database service
         let db = Arc::new(
@@ -192,7 +192,7 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                listen_and_update_state(eth_client, &db.backend(), block_metrics.clone(), chain_info.chain_id).await
+                listen_and_update_state(eth_client, &db.backend(), &block_metrics, chain_info.chain_id).await
             })
         };
 

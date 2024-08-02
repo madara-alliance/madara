@@ -19,7 +19,6 @@ use crate::utils::u256_to_starkfelt;
 // abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
 // The official starknet core contract ^
 sol!(
-    #[allow(missing_docs)]
     #[sol(rpc)]
     StarknetCoreContract,
     "src/abis/starknet_core.json"
@@ -95,6 +94,8 @@ mod eth_client_getter_test {
     use rstest::*;
     use tokio;
 
+    // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
+    // The txn we are referring to it is here ^
     const ETH_URL: &str = "https://eth.merkle.io";
     const L1_BLOCK_NUMBER: u64 = 20395662;
     const CORE_CONTRACT_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
@@ -122,7 +123,7 @@ mod eth_client_getter_test {
 
     #[rstest]
     #[tokio::test]
-    async fn test_get_latest_block_number(eth_client: &EthereumClient) {
+    async fn get_latest_block_number_works(eth_client: &EthereumClient) {
         let block_number =
             eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
         assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
@@ -130,7 +131,7 @@ mod eth_client_getter_test {
 
     #[rstest]
     #[tokio::test]
-    async fn test_get_last_event_block_number(eth_client: &EthereumClient) {
+    async fn get_last_event_block_number_works(eth_client: &EthereumClient) {
         let block_number = eth_client
             .get_last_event_block_number::<StarknetCoreContract::LogStateUpdate>()
             .await
@@ -140,7 +141,7 @@ mod eth_client_getter_test {
 
     #[rstest]
     #[tokio::test]
-    async fn test_get_last_verified_block_hash(eth_client: &EthereumClient) {
+    async fn get_last_verified_block_hash_works(eth_client: &EthereumClient) {
         let block_hash =
             eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
         let expected = u256_to_starkfelt(U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap()).unwrap();
@@ -149,7 +150,7 @@ mod eth_client_getter_test {
 
     #[rstest]
     #[tokio::test]
-    async fn test_get_last_state_root(eth_client: &EthereumClient) {
+    async fn get_last_state_root_works(eth_client: &EthereumClient) {
         let state_root = eth_client.get_last_state_root().await.expect("issue while getting the state root");
         let expected = u256_to_starkfelt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
         assert_eq!(state_root, expected, "latest block state root not matching");
@@ -157,7 +158,7 @@ mod eth_client_getter_test {
 
     #[rstest]
     #[tokio::test]
-    async fn test_get_last_verified_block_number(eth_client: &EthereumClient) {
+    async fn get_last_verified_block_number_works(eth_client: &EthereumClient) {
         let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
         assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");
     }
