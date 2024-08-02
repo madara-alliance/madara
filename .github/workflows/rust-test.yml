@@ -17,6 +17,10 @@ jobs:
         with:
           toolchain: 1.78
 
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+            version: nightly
+
       - name: Run unit tests
         run: |
           cargo test
