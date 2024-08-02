@@ -113,26 +113,12 @@ pub async fn sync(
 #[cfg(test)]
 mod eth_client_event_subscription_test {
     use super::*;
-    use std::{
-        env,
-        sync::{
-            atomic::{AtomicBool, Ordering},
-            Arc,
-        },
-        time::Duration,
-    };
+    use std::{env, sync::Arc, time::Duration};
 
-    use crate::state_update::eth_client_event_subscription_test::DummyContract::DummyContractInstance;
-    use alloy::{
-        node_bindings::Anvil,
-        providers::{ProviderBuilder, RootProvider},
-        sol,
-        transports::http::{Client, Http},
-    };
+    use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
     use dc_db::{block_db::ChainInfo, DatabaseService};
     use dc_metrics::{block_metrics::block_metrics::BlockMetrics, MetricsService};
     use starknet_types_core::felt::Felt;
-    use tokio::time::timeout;
     use url::Url;
 
     sol!(
@@ -154,9 +140,7 @@ mod eth_client_event_subscription_test {
     const ETH_URL: &str = "https://eth.merkle.io";
     const L1_BLOCK_NUMBER: u64 = 20395662;
     const L2_BLOCK_NUMBER: u64 = 662703;
-    const TEST_TIMEOUT: u64 = 5; // Timeout in seconds
     const EVENT_PROCESSING_TIME: u64 = 2; // Time to allow for event processing in seconds
-    const ADDITIONAL_WAIT_TIME: u64 = 1; // Additional wait time in seconds
 
     /// Test the event subscription and state update functionality
     ///
@@ -204,10 +188,6 @@ mod eth_client_event_subscription_test {
 
         let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: core_contract.clone() };
 
-        // Set up stop flag for graceful shutdown
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let stop_flag_clone = stop_flag.clone();
-
         // Start listening for state updates
         let listen_handle = {
             let db = Arc::clone(&db);
@@ -216,46 +196,17 @@ mod eth_client_event_subscription_test {
             })
         };
 
-        // Function to fire events
-        async fn fire_event(contract: &DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>) {
-            let _ = contract.fireEvent().send().await.expect("Failed to fire event");
-        }
-
-        // Fire a single event
-        let event_handle = tokio::spawn({
-            let stop_flag = stop_flag_clone;
-            async move {
-                if !stop_flag.load(Ordering::Relaxed) {
-                    fire_event(&contract).await;
-                }
-            }
-        });
+        let _ = contract.fireEvent().send().await.expect("Failed to fire event");
 
         // Wait for event processing
         tokio::time::sleep(Duration::from_secs(EVENT_PROCESSING_TIME)).await;
-
-        // Signal to stop event firing
-        stop_flag.store(true, Ordering::Relaxed);
-
-        // Wait for event firing to finish
-        event_handle.await.expect("Event firing task panicked");
-
-        // Additional wait to ensure all events are processed
-        tokio::time::sleep(Duration::from_secs(ADDITIONAL_WAIT_TIME)).await;
-
-        // Cancel the listen_and_update_state task
-        listen_handle.abort();
-
-        // Wait for listen_and_update_state to finish with a timeout
-        match timeout(Duration::from_secs(TEST_TIMEOUT), listen_handle).await {
-            Ok(_) => println!("listen_and_update_state finished within the timeout"),
-            Err(_) => println!("listen_and_update_state did not finish in time, but this is expected"),
-        }
 
         // Verify the block number
         let block_in_db =
             db.backend().get_l1_last_confirmed_block().expect("Failed to get L1 last confirmed block number");
 
+        // Explicitly cancel the listen task, else it would be running in the background
+        listen_handle.abort();
         assert_eq!(block_in_db, Some(L2_BLOCK_NUMBER), "Block in DB does not match expected L2 block number");
     }
 }
