@@ -3,7 +3,7 @@ use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
 use dc_db::{DatabaseService, DeoxysBackend};
-use dc_metrics::block_metrics::block_metrics::BlockMetrics;
+use dc_metrics::block_metrics::BlockMetrics;
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_telemetry::TelemetryHandle;

@@ -13,7 +13,7 @@ use anyhow::{bail, Context};
 use dc_db::db_metrics::DbMetrics;
 use dc_db::DeoxysBackend;
 use dc_db::DeoxysStorageError;
-use dc_metrics::block_metrics::block_metrics::BlockMetrics;
+use dc_metrics::block_metrics::BlockMetrics;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlockInfo, StarknetVersionError};
 use dp_block::{DeoxysMaybePendingBlock, Header};

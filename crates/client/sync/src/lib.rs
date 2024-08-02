@@ -20,7 +20,7 @@ pub mod starknet_sync_worker {
     use alloy::primitives::Address;
     use anyhow::Context;
     use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
-    use dc_metrics::block_metrics::block_metrics::BlockMetrics;
+    use dc_metrics::block_metrics::BlockMetrics;
     use dc_telemetry::TelemetryHandle;
     use reqwest::Url;
     use starknet_providers::SequencerGatewayProvider;

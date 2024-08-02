@@ -19,7 +19,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-            version: nightly
+          version: nightly
 
       - name: Run unit tests
         run: |

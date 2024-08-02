@@ -1,7 +1,7 @@
 use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::DeoxysBackend;
-use dc_metrics::block_metrics::block_metrics::BlockMetrics;
+use dc_metrics::block_metrics::BlockMetrics;
 use dp_convert::ToFelt;
 use dp_transactions::TEST_CHAIN_ID;
 use dp_utils::channel_wait_or_graceful_shutdown;
@@ -119,7 +119,7 @@ mod eth_client_event_subscription_test {
     use alloy::node_bindings::AnvilInstance;
     use alloy::{providers::ProviderBuilder, sol};
     use dc_db::{block_db::ChainInfo, DatabaseService};
-    use dc_metrics::{block_metrics::block_metrics::BlockMetrics, MetricsService};
+    use dc_metrics::{block_metrics::BlockMetrics, MetricsService};
     use rstest::*;
     use starknet_types_core::felt::Felt;
     use tempfile::TempDir;
