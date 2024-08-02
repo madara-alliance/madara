@@ -11,8 +11,9 @@ use starknet_api::hash::StarkHash;
 use starknet_types_core::felt::Felt;
 use url::Url;
 
+use crate::client::StarknetCoreContract;
 use crate::{
-    client::{EthereumClient, StarknetCoreContract},
+    client::EthereumClient,
     utils::{convert_log_state_update, trim_hash},
 };
 
@@ -111,57 +112,150 @@ pub async fn sync(
 
 #[cfg(test)]
 mod eth_client_event_subscription_test {
-    use alloy::eips::BlockNumberOrTag;
-    use alloy::node_bindings::Anvil;
-    use alloy::providers::{Provider, ProviderBuilder};
-    use alloy::sol;
-    use futures::StreamExt;
+    use super::*;
+    use std::{
+        env,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        },
+        time::Duration,
+    };
+
+    use crate::state_update::eth_client_event_subscription_test::DummyContract::DummyContractInstance;
+    use alloy::{
+        node_bindings::Anvil,
+        providers::{ProviderBuilder, RootProvider},
+        sol,
+        transports::http::{Client, Http},
+    };
+    use dc_db::{block_db::ChainInfo, DatabaseService};
+    use dc_metrics::{block_metrics::block_metrics::BlockMetrics, MetricsService};
+    use starknet_types_core::felt::Felt;
+    use tokio::time::timeout;
     use url::Url;
 
     sol!(
-        #[derive(Debug)]
-        #[sol(rpc)]
-        SimpleStorage,
-        "src/abis/simple_storage.json"
+        #[allow(missing_docs)]
+        #[sol(rpc, bytecode="6080604052348015600e575f80fd5b506101618061001c5f395ff3fe608060405234801561000f575f80fd5b5060043610610029575f3560e01c80634185df151461002d575b5f80fd5b610035610037565b005b5f7f0639349b21e886487cd6b341de2050db8ab202d9c6b0e7a2666d598e5fcf81a690505f620a1caf90505f7f0279b69383ea92624c1ae4378ac7fae6428f47bbd21047ea0290c3653064188590507fd342ddf7a308dec111745b00315c14b7efb2bdae570a6856e088ed0c65a3576c8383836040516100b9939291906100f6565b60405180910390a1505050565b5f819050919050565b6100d8816100c6565b82525050565b5f819050919050565b6100f0816100de565b82525050565b5f6060820190506101095f8301866100cf565b61011660208301856100e7565b61012360408301846100cf565b94935050505056fea2646970667358221220fbc6fd165c86ed9af0c5fcab2830d4a72894fd6a98e9c16dbf9101c4c22e2f7d64736f6c634300081a0033")]
+        contract DummyContract {
+            event LogStateUpdate(uint256 globalRoot, int256 blockNumber, uint256 blockHash);
+
+            function fireEvent() public {
+                uint256 globalRoot = 2814950447364693428789615812443623689251959344851195711990387747563915674022;
+                int256 blockNumber = 662703;
+                uint256 blockHash = 1119674286844400689540394420005977072742999649767515920196535047615668295813;
+
+                emit LogStateUpdate(globalRoot, blockNumber, blockHash);
+            }
+        }
     );
 
+    const ETH_URL: &str = "https://eth.merkle.io";
+    const L1_BLOCK_NUMBER: u64 = 20395662;
+    const L2_BLOCK_NUMBER: u64 = 662703;
+    const TEST_TIMEOUT: u64 = 5; // Timeout in seconds
+    const EVENT_PROCESSING_TIME: u64 = 2; // Time to allow for event processing in seconds
+    const ADDITIONAL_WAIT_TIME: u64 = 1; // Additional wait time in seconds
+
+    /// Test the event subscription and state update functionality
+    ///
+    /// This test performs the following steps:
+    /// 1. Sets up a mock Ethereum environment using Anvil
+    /// 2. Initializes necessary services (Database, Metrics)
+    /// 3. Deploys a dummy contract and sets up an Ethereum client
+    /// 4. Starts listening for state updates
+    /// 5. Fires an event from the dummy contract
+    /// 6. Waits for event processing and verifies the block number
     #[tokio::test]
     async fn test_event_subscription() {
-        let anvil = Anvil::new()
-            .fork("https://eth.merkle.io")
-            .fork_block_number(20395662)
-            .try_spawn()
-            .expect("issue while forking");
-        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
+        // Set up chain info
+        let chain_info =
+            ChainInfo { chain_id: Felt::from_dec_str("11153111").unwrap(), chain_name: "testing".to_string() };
 
-        let address = anvil.addresses()[0];
+        // Set up database paths
+        let current_dir = env::current_dir().expect("Failed to get current directory");
+        let base_path = current_dir.join("data");
+        let backup_dir = Some(current_dir.parent().expect("Failed to get parent directory").join("backups"));
 
-        let contract = SimpleStorage::deploy(provider.clone(), "initial value".to_string()).await.unwrap();
-
-        let event = contract.event_filter::<SimpleStorage::ValueChanged>();
-        let mut stream = event.watch().await.unwrap().into_stream();
-
-        let num_tx = 3;
-
-        let starting_block_number = provider.get_block_number().await.unwrap();
-        for i in 0..num_tx {
-            contract.setValue(i.to_string()).from(address).send().await.unwrap().get_receipt().await.unwrap();
-
-            let log = stream.next().await.unwrap().unwrap();
-
-            assert_eq!(log.0.newValue, i.to_string());
-            assert_eq!(log.1.block_number.unwrap(), starting_block_number + i + 1);
-
-            let hash = provider
-                .get_block_by_number(BlockNumberOrTag::from(starting_block_number + i + 1), false)
+        // Initialize database service
+        let db = Arc::new(
+            DatabaseService::new(&base_path, backup_dir, false, &chain_info)
                 .await
-                .unwrap()
-                .unwrap()
-                .header
-                .hash
-                .unwrap();
-            assert_eq!(log.1.block_hash.unwrap(), hash);
+                .expect("Failed to create database service"),
+        );
+
+        // Set up metrics service
+        let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
+        let block_metrics = BlockMetrics::register(&prometheus_service.registry()).unwrap();
+
+        // Set up Anvil for local Ethereum testing
+        let anvil = Anvil::new()
+            .fork(ETH_URL)
+            .fork_block_number(L1_BLOCK_NUMBER)
+            .try_spawn()
+            .expect("Failed to spawn Anvil instance");
+        let rpc_url: Url = anvil.endpoint().parse().expect("Failed to parse RPC URL");
+
+        // Set up Ethereum provider and contracts
+        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
+        let contract = DummyContract::deploy(provider.clone()).await.unwrap();
+        let core_contract = StarknetCoreContract::new(contract.address().clone(), provider.clone());
+
+        let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: core_contract.clone() };
+
+        // Set up stop flag for graceful shutdown
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
+
+        // Start listening for state updates
+        let listen_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                listen_and_update_state(eth_client, &db.backend(), block_metrics.clone(), chain_info.chain_id).await
+            })
+        };
+
+        // Function to fire events
+        async fn fire_event(contract: &DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>) {
+            let _ = contract.fireEvent().send().await.expect("Failed to fire event");
         }
+
+        // Fire a single event
+        let event_handle = tokio::spawn({
+            let stop_flag = stop_flag_clone;
+            async move {
+                if !stop_flag.load(Ordering::Relaxed) {
+                    fire_event(&contract).await;
+                }
+            }
+        });
+
+        // Wait for event processing
+        tokio::time::sleep(Duration::from_secs(EVENT_PROCESSING_TIME)).await;
+
+        // Signal to stop event firing
+        stop_flag.store(true, Ordering::Relaxed);
+
+        // Wait for event firing to finish
+        event_handle.await.expect("Event firing task panicked");
+
+        // Additional wait to ensure all events are processed
+        tokio::time::sleep(Duration::from_secs(ADDITIONAL_WAIT_TIME)).await;
+
+        // Cancel the listen_and_update_state task
+        listen_handle.abort();
+
+        // Wait for listen_and_update_state to finish with a timeout
+        match timeout(Duration::from_secs(TEST_TIMEOUT), listen_handle).await {
+            Ok(_) => println!("listen_and_update_state finished within the timeout"),
+            Err(_) => println!("listen_and_update_state did not finish in time, but this is expected"),
+        }
+
+        // Verify the block number
+        let block_in_db =
+            db.backend().get_l1_last_confirmed_block().expect("Failed to get L1 last confirmed block number");
+
+        assert_eq!(block_in_db, Some(L2_BLOCK_NUMBER), "Block in DB does not match expected L2 block number");
     }
 }
