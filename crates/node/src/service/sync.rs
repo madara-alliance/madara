@@ -6,7 +6,6 @@ use dc_db::{DatabaseService, DeoxysBackend};
 use dc_metrics::block_metrics::block_metrics::BlockMetrics;
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
-use dc_sync::utility::l1_free_rpc_get;
 use dc_telemetry::TelemetryHandle;
 use primitive_types::H160;
 use starknet_types_core::felt::Felt;

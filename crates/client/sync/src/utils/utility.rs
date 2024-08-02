@@ -1,8 +1,5 @@
 //! Utility functions for Deoxys.
 
-use std::time::Instant;
-
-use super::constant::L1_FREE_RPC_URLS;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde_json::Value;
