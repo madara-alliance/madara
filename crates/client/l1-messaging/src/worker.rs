@@ -118,7 +118,7 @@ async fn process_l1_message(
 
 /// Computes the message hashed with the given event data
 fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32>> {
-    let data = (event.fromAddress.0.0, event.toAddress, event.nonce, event.selector,U256::from(event.payload.len()), event.payload.clone());
+    let data = ([0u8; 12],event.fromAddress.0.0, event.toAddress, event.nonce, event.selector,U256::from(event.payload.len()), event.payload.clone());
     Ok(keccak256(data.abi_encode_packed()))
 }
 
@@ -126,7 +126,8 @@ fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32
 mod tests {
 //     use super::*;
 
-use alloy::primitives::{address, U256};
+
+use alloy::{hex::FromHex, primitives::{Address, U256}};
 use dc_eth::client::StarknetCoreContract::LogMessageToL2;
 
 use crate::worker::get_l1_to_l2_msg_hash;
@@ -136,7 +137,7 @@ use crate::worker::get_l1_to_l2_msg_hash;
         // Goerli-1 tx: 0374286ae28f201e61ffbc5b022cc9701208640b405ea34ea9799f97d5d2d23c
 
         let msg = LogMessageToL2 {
-            fromAddress: address!("c3511006C04EF1d78af4C8E0e74Ec18A6E64Ff9e"),
+            fromAddress: Address::from_hex("0xc3511006C04EF1d78af4C8E0e74Ec18A6E64Ff9e").unwrap(),
             toAddress: U256::from_str_radix("73314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b82",16).unwrap(),
             selector: U256::from_str_radix("2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5",16).unwrap(),
             payload: vec![
@@ -144,11 +145,11 @@ use crate::worker::get_l1_to_l2_msg_hash;
                 U256::from_str_radix("2c68af0bb140000",16).unwrap(),
                 U256::from_str_radix("0",16).unwrap(),
             ],
-            nonce: U256::from(775628),
-            fee: U256::from(0),
+            nonce: U256::from_str_radix("775628",10).unwrap(),
+            fee: U256::from_str_radix("0",10).unwrap(),
         };
 
-        let expected_hash = "c51a543ef9563ad2545342b390b67edfcddf9886aa36846cf70382362fc5fab3";
+        let expected_hash = "0xc51a543ef9563ad2545342b390b67edfcddf9886aa36846cf70382362fc5fab3";
 
         assert_eq!(get_l1_to_l2_msg_hash(&msg).unwrap().to_string(), expected_hash);
     }
