@@ -87,7 +87,7 @@ impl EthereumClient {
 }
 
 #[cfg(test)]
-mod eth_client_getter_test {
+pub mod eth_client_getter_test {
     use super::*;
     use alloy::node_bindings::{Anvil, AnvilInstance};
     use alloy::primitives::U256;
@@ -105,14 +105,14 @@ mod eth_client_getter_test {
 
     #[fixture]
     #[once]
-    fn anvil() -> AnvilInstance {
+    pub fn anvil() -> AnvilInstance {
         let anvil = Anvil::new().fork(ETH_URL).fork_block_number(L1_BLOCK_NUMBER).spawn();
         anvil
     }
 
     #[fixture]
     #[once]
-    fn eth_client(anvil: &AnvilInstance) -> EthereumClient {
+    pub fn eth_client(anvil: &AnvilInstance) -> EthereumClient {
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();

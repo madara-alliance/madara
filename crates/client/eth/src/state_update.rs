@@ -36,7 +36,7 @@ pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1Stat
 /// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
 /// verified state
 pub async fn listen_and_update_state(
-    eth_client: EthereumClient,
+    eth_client: &EthereumClient,
     backend: &DeoxysBackend,
     block_metrics: &BlockMetrics,
     chain_id: Felt,
@@ -103,7 +103,7 @@ pub async fn sync(
     update_l1(backend, initial_state, block_metrics, chain_id)?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    listen_and_update_state(client, backend, block_metrics, chain_id)
+    listen_and_update_state(&client, backend, block_metrics, chain_id)
         .await
         .context("Subscribing to the LogStateUpdate event")?;
 
@@ -115,9 +115,12 @@ mod eth_client_event_subscription_test {
     use super::*;
     use std::{sync::Arc, time::Duration};
 
-    use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
+    use crate::client::eth_client_getter_test::anvil;
+    use alloy::node_bindings::AnvilInstance;
+    use alloy::{providers::ProviderBuilder, sol};
     use dc_db::{block_db::ChainInfo, DatabaseService};
     use dc_metrics::{block_metrics::block_metrics::BlockMetrics, MetricsService};
+    use rstest::*;
     use starknet_types_core::felt::Felt;
     use tempfile::TempDir;
     use url::Url;
@@ -137,8 +140,6 @@ mod eth_client_event_subscription_test {
         }
     );
 
-    const ETH_URL: &str = "https://eth.merkle.io";
-    const L1_BLOCK_NUMBER: u64 = 20395662;
     const L2_BLOCK_NUMBER: u64 = 662703;
     const EVENT_PROCESSING_TIME: u64 = 2; // Time to allow for event processing in seconds
 
@@ -151,8 +152,9 @@ mod eth_client_event_subscription_test {
     /// 4. Starts listening for state updates
     /// 5. Fires an event from the dummy contract
     /// 6. Waits for event processing and verifies the block number
+    #[rstest]
     #[tokio::test]
-    async fn listen_and_update_state_when_event_fired_works() {
+    async fn listen_and_update_state_when_event_fired_works(anvil: &'static AnvilInstance) {
         // Set up chain info
         let chain_info =
             ChainInfo { chain_id: Felt::from_dec_str("11153111").unwrap(), chain_name: "testing".to_string() };
@@ -173,16 +175,9 @@ mod eth_client_event_subscription_test {
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
         let block_metrics = BlockMetrics::register(&prometheus_service.registry()).unwrap();
 
-        // Set up Anvil for local Ethereum testing
-        let anvil = Anvil::new()
-            .fork(ETH_URL)
-            .fork_block_number(L1_BLOCK_NUMBER)
-            .try_spawn()
-            .expect("Failed to spawn Anvil instance");
-        let rpc_url: Url = anvil.endpoint().parse().expect("Failed to parse RPC URL");
-
-        // Set up Ethereum provider and contracts
+        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
+
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
         let core_contract = StarknetCoreContract::new(contract.address().clone(), provider.clone());
 
@@ -192,7 +187,7 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                listen_and_update_state(eth_client, &db.backend(), &block_metrics, chain_info.chain_id).await
+                listen_and_update_state(&eth_client, &db.backend(), &block_metrics, chain_info.chain_id).await
             })
         };
 
