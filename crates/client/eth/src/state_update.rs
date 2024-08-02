@@ -179,7 +179,7 @@ mod eth_client_event_subscription_test {
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
 
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
-        let core_contract = StarknetCoreContract::new(contract.address().clone(), provider.clone());
+        let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
         let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: core_contract.clone() };
 
@@ -187,7 +187,7 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                listen_and_update_state(&eth_client, &db.backend(), &block_metrics, chain_info.chain_id).await
+                listen_and_update_state(&eth_client, db.backend(), &block_metrics, chain_info.chain_id).await
             })
         };
 

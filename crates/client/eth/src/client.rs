@@ -106,8 +106,7 @@ pub mod eth_client_getter_test {
     #[fixture]
     #[once]
     pub fn anvil() -> AnvilInstance {
-        let anvil = Anvil::new().fork(ETH_URL).fork_block_number(L1_BLOCK_NUMBER).spawn();
-        anvil
+        Anvil::new().fork(ETH_URL).fork_block_number(L1_BLOCK_NUMBER).spawn()
     }
 
     #[fixture]
