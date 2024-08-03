@@ -2,6 +2,7 @@ use dotenvy::dotenv;
 use orchestrator::config::config;
 use orchestrator::queue::init_consumers;
 use orchestrator::routes::app_router;
+use orchestrator::workers::data_submission_worker::DataSubmissionWorker;
 use orchestrator::workers::proof_registration::ProofRegistrationWorker;
 use orchestrator::workers::proving::ProvingWorker;
 use orchestrator::workers::snos::SnosWorker;
@@ -33,6 +34,7 @@ async fn main() {
     tokio::spawn(start_cron(Box::new(ProvingWorker), 60));
     tokio::spawn(start_cron(Box::new(ProofRegistrationWorker), 60));
     tokio::spawn(start_cron(Box::new(UpdateStateWorker), 60));
+    tokio::spawn(start_cron(Box::new(DataSubmissionWorker), 60));
 
     tracing::info!("Listening on http://{}", address);
     axum::serve(listener, app).await.expect("Failed to start axum server");
@@ -40,7 +42,7 @@ async fn main() {
 
 async fn start_cron(worker: Box<dyn Worker>, interval: u64) {
     loop {
-        worker.run_worker().await.expect("Error in running the worker.");
+        worker.run_worker_if_enabled().await.expect("Error in running the worker.");
         tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
     }
 }

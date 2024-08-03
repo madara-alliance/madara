@@ -16,7 +16,8 @@ impl Worker for UpdateStateWorker {
     /// 3. Create state updates for all the blocks that don't have a state update job
     async fn run_worker(&self) -> Result<(), Box<dyn Error>> {
         let config = config().await;
-        let latest_successful_job = config.database().get_last_successful_job_by_type(JobType::StateTransition).await?;
+        let latest_successful_job =
+            config.database().get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await?;
 
         match latest_successful_job {
             Some(job) => {

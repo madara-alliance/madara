@@ -1,11 +1,12 @@
 use async_std::stream::StreamExt;
+use futures::TryStreamExt;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use mongodb::bson::{Bson, Document};
-use mongodb::options::{FindOneOptions, UpdateOptions};
+use mongodb::options::{FindOneOptions, FindOptions, UpdateOptions};
 use mongodb::{
     bson,
     bson::doc,
@@ -112,16 +113,12 @@ impl Database for MongoDb {
         Ok(())
     }
 
-    async fn get_latest_job_by_type_and_internal_id(&self, job_type: JobType) -> Result<Option<JobItem>> {
+    async fn get_latest_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>> {
         let filter = doc! {
             "job_type": mongodb::bson::to_bson(&job_type)?,
         };
         let find_options = FindOneOptions::builder().sort(doc! { "internal_id": -1 }).build();
-        Ok(self
-            .get_job_collection()
-            .find_one(filter, find_options)
-            .await
-            .expect("Failed to fetch latest job by given job type"))
+        Ok(self.get_job_collection().find_one(filter, find_options).await?)
     }
 
     /// function to get jobs that don't have a successor job.
@@ -226,8 +223,7 @@ impl Database for MongoDb {
         //     }
         // }
 
-        let collection = self.get_job_collection();
-        let mut cursor = collection.aggregate(pipeline, None).await?;
+        let mut cursor = self.get_job_collection().aggregate(pipeline, None).await?;
 
         let mut vec_jobs: Vec<JobItem> = Vec::new();
 
@@ -245,18 +241,18 @@ impl Database for MongoDb {
         Ok(vec_jobs)
     }
 
-    async fn get_last_successful_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>> {
+    async fn get_latest_job_by_type_and_status(
+        &self,
+        job_type: JobType,
+        job_status: JobStatus,
+    ) -> Result<Option<JobItem>> {
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
-            "job_status": bson::to_bson(&JobStatus::Completed)?
+            "job_status": bson::to_bson(&job_status)?
         };
         let find_options = FindOneOptions::builder().sort(doc! { "internal_id": -1 }).build();
 
-        Ok(self
-            .get_job_collection()
-            .find_one(filter, find_options)
-            .await
-            .expect("Failed to fetch latest job by given job type"))
+        Ok(self.get_job_collection().find_one(filter, find_options).await?)
     }
 
     async fn get_jobs_after_internal_id_by_job_type(
@@ -271,23 +267,23 @@ impl Database for MongoDb {
             "internal_id": { "$gt": internal_id }
         };
 
-        let mut jobs = self
-            .get_job_collection()
-            .find(filter, None)
-            .await
-            .expect("Failed to fetch latest jobs by given job type and internal_od conditions");
+        let jobs = self.get_job_collection().find(filter, None).await?.try_collect().await?;
 
-        let mut results = Vec::new();
+        Ok(jobs)
+    }
 
-        while let Some(result) = jobs.next().await {
-            match result {
-                Ok(job_item) => {
-                    results.push(job_item);
-                }
-                Err(e) => return Err(e.into()),
+    async fn get_jobs_by_statuses(&self, job_status: Vec<JobStatus>, limit: Option<i64>) -> Result<Vec<JobItem>> {
+        let filter = doc! {
+            "job_status": {
+                // TODO: Check that the conversion leads to valid output!
+                "$in": job_status.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
             }
-        }
+        };
 
-        Ok(results)
+        let find_options = limit.map(|val| FindOptions::builder().limit(Some(val)).build());
+
+        let jobs = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+
+        Ok(jobs)
     }
 }

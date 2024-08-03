@@ -80,7 +80,7 @@ pub async fn process_job(id: Uuid) -> Result<()> {
     match job.status {
         // we only want to process jobs that are in the created or verification failed state.
         // verification failed state means that the previous processing failed and we want to retry
-        JobStatus::Created | JobStatus::VerificationFailed(_) => {
+        JobStatus::Created | JobStatus::VerificationFailed => {
             log::info!("Processing job with id {:?}", id);
         }
         _ => {
@@ -135,7 +135,13 @@ pub async fn verify_job(id: Uuid) -> Result<()> {
             config.database().update_job_status(&job, JobStatus::Completed).await?;
         }
         JobVerificationStatus::Rejected(e) => {
-            config.database().update_job_status(&job, JobStatus::VerificationFailed(e)).await?;
+            let mut new_job = job.clone();
+            new_job.metadata.insert("error".to_string(), e);
+            new_job.status = JobStatus::VerificationFailed;
+
+            config.database().update_job(&new_job).await?;
+
+            log::error!("Verification failed for job with id {:?}. Cannot verify.", id);
 
             // retry job processing if we haven't exceeded the max limit
             let process_attempts = get_u64_from_metadata(&job.metadata, JOB_PROCESS_ATTEMPT_METADATA_KEY)?;

@@ -6,7 +6,7 @@ use starknet::providers::Provider;
 
 use crate::config::config;
 use crate::jobs::create_job;
-use crate::jobs::types::JobType;
+use crate::jobs::types::{JobStatus, JobType};
 use crate::workers::Worker;
 
 pub struct SnosWorker;
@@ -22,7 +22,7 @@ impl Worker for SnosWorker {
         let latest_block_number = provider.block_number().await?;
         let latest_block_processed_data = config
             .database()
-            .get_last_successful_job_by_type(JobType::SnosRun)
+            .get_latest_job_by_type_and_status(JobType::SnosRun, JobStatus::Completed)
             .await
             .unwrap()
             .map(|item| item.internal_id)

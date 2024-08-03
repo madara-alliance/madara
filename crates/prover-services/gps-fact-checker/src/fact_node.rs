@@ -12,8 +12,8 @@
 //! constructed using a stack of nodes (initialized to an empty stack) by repeating for each pair:
 //!   1. Add #n_pages lead nodes to the stack.
 //!   2. Pop the top #n_nodes, construct a parent node for them, and push it back to the stack.
-//! After applying the steps above, the stack must contain exactly one node, which will
-//! constitute the root of the Merkle tree.
+//!      After applying the steps above, the stack must contain exactly one node, which will
+//!      constitute the root of the Merkle tree.
 //!
 //! For example, [(2, 2)] will create a Merkle tree with a root and two direct children, while
 //! [(3, 2), (0, 2)] will create a Merkle tree with a root whose left child is a leaf and

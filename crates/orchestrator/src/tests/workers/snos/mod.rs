@@ -1,6 +1,6 @@
 use crate::config::config_force_init;
 use crate::database::MockDatabase;
-use crate::jobs::types::JobType;
+use crate::jobs::types::{JobStatus, JobType};
 use crate::queue::MockQueueProvider;
 use crate::tests::common::init_config;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
@@ -30,15 +30,18 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
 
     // Mocking db function expectations
     if !db_val {
-        db.expect_get_last_successful_job_by_type().times(1).with(eq(JobType::SnosRun)).returning(|_| Ok(None));
+        db.expect_get_latest_job_by_type_and_status()
+            .times(1)
+            .with(eq(JobType::SnosRun), eq(JobStatus::Completed))
+            .returning(|_, _| Ok(None));
         start_job_index = 1;
         block = 5;
     } else {
         let uuid_temp = Uuid::new_v4();
 
-        db.expect_get_last_successful_job_by_type()
-            .with(eq(JobType::SnosRun))
-            .returning(move |_| Ok(Some(get_job_item_mock_by_id("1".to_string(), uuid_temp))));
+        db.expect_get_latest_job_by_type_and_status()
+            .with(eq(JobType::SnosRun), eq(JobStatus::Completed))
+            .returning(move |_, _| Ok(Some(get_job_item_mock_by_id("1".to_string(), uuid_temp))));
         block = 6;
         start_job_index = 2;
     }
