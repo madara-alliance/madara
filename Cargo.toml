@@ -102,7 +102,15 @@ starknet_api = "=0.10.0"
 cairo-lang-starknet-classes = "2.6.0"
 cairo-lang-utils = "2.6.0"
 
-alloy = { version = "0.2.0", features = ["full", "json"] }
+alloy = { version = "0.2.0", features = [
+  "node-bindings",
+  "providers",
+  "transport-http",
+  "sol-types",
+  "json",
+  "rpc-types",
+  "contract",
+] }
 
 # Ethers: using the same versions as in Anvil
 ethers = { git = "https://github.com/gakonst/ethers-rs" }
@@ -152,6 +160,7 @@ prometheus = "0.13.4"
 fdlimit = "0.3.0"
 rustc-hex = { version = "2.0.0" }
 tempfile = "3.5.0"
+dotenv = "0.15.0"
 
 
 [patch.crates-io]

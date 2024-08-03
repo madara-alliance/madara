@@ -3,7 +3,7 @@ use anyhow::Context;
 use dc_db::DeoxysBackend;
 use dc_metrics::block_metrics::BlockMetrics;
 use dp_convert::ToFelt;
-use dp_transactions::TEST_CHAIN_ID;
+use dp_transactions::MAIN_CHAIN_ID;
 use dp_utils::channel_wait_or_graceful_shutdown;
 use futures::StreamExt;
 use serde::Deserialize;
@@ -64,7 +64,7 @@ pub fn update_l1(
     // This is a provisory check to avoid updating the state with an L1StateUpdate that should not have been detected
     //
     // TODO: Remove this check when the L1StateUpdate is properly verified
-    if state_update.block_number > 500000u64 || chain_id == TEST_CHAIN_ID {
+    if state_update.block_number > 500000u64 || chain_id == MAIN_CHAIN_ID {
         log::info!(
             "🔄 Updated L1 head #{} ({}) with state root ({})",
             state_update.block_number,

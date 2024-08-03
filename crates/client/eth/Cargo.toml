@@ -26,23 +26,7 @@ starknet_api = { workspace = true }
 
 
 # Other
-alloy = { workspace = true, features = [
-  "full",
-  "node-bindings",
-  "rpc-types-debug",
-  "rpc-types-trace",
-  "json-rpc",
-  "rpc-client",
-  "signer-aws",
-  "signer-keystore",
-  "signer-ledger",
-  "signer-mnemonic",
-  "signer-trezor",
-  "signer-yubihsm",
-  "transports",
-  "transport-http",
-  "providers",
-] }
+alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = "1.0.75"
 bitvec = { workspace = true }
 bytes = "1.6.0"
@@ -64,3 +48,4 @@ url = { workspace = true }
 rstest = { workspace = true }
 once_cell = { workspace = true }
 tempfile = { workspace = true }
+dotenv = { workspace = true }

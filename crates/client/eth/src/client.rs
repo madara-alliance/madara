@@ -91,12 +91,13 @@ pub mod eth_client_getter_test {
     use super::*;
     use alloy::node_bindings::{Anvil, AnvilInstance};
     use alloy::primitives::U256;
+    use dotenv::from_filename;
     use rstest::*;
+    use std::env;
     use tokio;
 
     // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
     // The txn we are referring to it is here ^
-    const ETH_URL: &str = "https://eth.merkle.io";
     const L1_BLOCK_NUMBER: u64 = 20395662;
     const CORE_CONTRACT_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
     const L2_BLOCK_NUMBER: u64 = 662703;
@@ -106,7 +107,12 @@ pub mod eth_client_getter_test {
     #[fixture]
     #[once]
     pub fn anvil() -> AnvilInstance {
-        Anvil::new().fork(ETH_URL).fork_block_number(L1_BLOCK_NUMBER).spawn()
+        // Load the .env.test file
+        from_filename(".env.test").ok();
+
+        // Now you can access environment variables
+        let eth_url = env::var("ETH_URL").expect("SOME_KEY not set in .env.test");
+        Anvil::new().fork(eth_url).fork_block_number(L1_BLOCK_NUMBER).spawn()
     }
 
     #[fixture]
