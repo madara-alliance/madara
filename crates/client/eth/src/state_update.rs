@@ -1,7 +1,11 @@
+use crate::client::{L1BlockMetrics, StarknetCoreContract};
+use crate::{
+    client::EthereumClient,
+    utils::{convert_log_state_update, trim_hash},
+};
 use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::DeoxysBackend;
-use dc_metrics::block_metrics::BlockMetrics;
 use dp_convert::ToFelt;
 use dp_transactions::MAIN_CHAIN_ID;
 use dp_utils::channel_wait_or_graceful_shutdown;
@@ -10,12 +14,6 @@ use serde::Deserialize;
 use starknet_api::hash::StarkHash;
 use starknet_types_core::felt::Felt;
 use url::Url;
-
-use crate::client::StarknetCoreContract;
-use crate::{
-    client::EthereumClient,
-    utils::{convert_log_state_update, trim_hash},
-};
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct L1StateUpdate {
@@ -38,7 +36,7 @@ pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1Stat
 pub async fn listen_and_update_state(
     eth_client: &EthereumClient,
     backend: &DeoxysBackend,
-    block_metrics: &BlockMetrics,
+    block_metrics: &L1BlockMetrics,
     chain_id: Felt,
 ) -> anyhow::Result<()> {
     let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
@@ -58,7 +56,7 @@ pub async fn listen_and_update_state(
 pub fn update_l1(
     backend: &DeoxysBackend,
     state_update: L1StateUpdate,
-    block_metrics: &BlockMetrics,
+    block_metrics: &L1BlockMetrics,
     chain_id: Felt,
 ) -> anyhow::Result<()> {
     // This is a provisory check to avoid updating the state with an L1StateUpdate that should not have been detected
@@ -86,7 +84,7 @@ pub fn update_l1(
 pub async fn sync(
     backend: &DeoxysBackend,
     l1_url: Url,
-    block_metrics: &BlockMetrics,
+    block_metrics: &L1BlockMetrics,
     l1_core_address: Address,
     chain_id: Felt,
 ) -> anyhow::Result<()> {
@@ -119,7 +117,7 @@ mod eth_client_event_subscription_test {
     use alloy::node_bindings::AnvilInstance;
     use alloy::{providers::ProviderBuilder, sol};
     use dc_db::{block_db::ChainInfo, DatabaseService};
-    use dc_metrics::{block_metrics::BlockMetrics, MetricsService};
+    use dc_metrics::MetricsService;
     use rstest::*;
     use starknet_types_core::felt::Felt;
     use tempfile::TempDir;
@@ -173,7 +171,7 @@ mod eth_client_event_subscription_test {
 
         // Set up metrics service
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
-        let block_metrics = BlockMetrics::register(&prometheus_service.registry()).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
 
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
@@ -187,7 +185,7 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                listen_and_update_state(&eth_client, db.backend(), &block_metrics, chain_info.chain_id).await
+                listen_and_update_state(&eth_client, db.backend(), &l1_block_metrics, chain_info.chain_id).await
             })
         };
 

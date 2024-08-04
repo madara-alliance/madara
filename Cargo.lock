@@ -3652,6 +3652,7 @@ dependencies = [
  "log",
  "once_cell",
  "primitive-types",
+ "prometheus",
  "rstest",
  "serde",
  "serde_json",

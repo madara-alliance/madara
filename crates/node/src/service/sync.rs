@@ -3,9 +3,10 @@ use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
 use dc_db::{DatabaseService, DeoxysBackend};
-use dc_metrics::block_metrics::BlockMetrics;
+use dc_eth::client::L1BlockMetrics;
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
+use dc_sync::metrics::block_metrics::BlockMetrics;
 use dc_telemetry::TelemetryHandle;
 use primitive_types::H160;
 use starknet_types_core::felt::Felt;
@@ -23,6 +24,7 @@ pub struct SyncService {
     l1_core_address: H160,
     starting_block: Option<u64>,
     block_metrics: BlockMetrics,
+    l1_block_metrics: L1BlockMetrics,
     db_metrics: DbMetrics,
     chain_id: Felt,
     start_params: Option<TelemetryHandle>,
@@ -37,7 +39,9 @@ impl SyncService {
         metrics_handle: MetricsRegistry,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
+        // TODO: create l1 metrics here
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
+        let l1_block_metrics = L1BlockMetrics::register(&metrics_handle)?;
         let db_metrics = DbMetrics::register(&metrics_handle)?;
         let fetch_config = config.block_fetch_config();
 
@@ -61,6 +65,7 @@ impl SyncService {
             starting_block: config.starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
             block_metrics,
+            l1_block_metrics,
             db_metrics,
             chain_id: config.network.chain_id(),
             start_params: Some(telemetry),
@@ -79,6 +84,7 @@ impl SyncService {
             l1_core_address,
             starting_block,
             block_metrics,
+            l1_block_metrics,
             db_metrics,
             chain_id,
             pending_block_poll_interval,
@@ -97,6 +103,7 @@ impl SyncService {
                 starting_block,
                 backup_every_n_blocks,
                 block_metrics,
+                l1_block_metrics,
                 db_metrics,
                 chain_id,
                 telemetry,

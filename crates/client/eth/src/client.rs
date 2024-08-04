@@ -8,13 +8,36 @@ use alloy::{
     sol,
     transports::http::{Client, Http},
 };
-use anyhow::{bail, Context};
-use bitvec::macros::internal::funty::Fundamental;
-use starknet_api::hash::StarkFelt;
-use url::Url;
 
 use crate::client::StarknetCoreContract::StarknetCoreContractInstance;
 use crate::utils::u256_to_starkfelt;
+use anyhow::{bail, Context};
+use bitvec::macros::internal::funty::Fundamental;
+use dc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
+use starknet_api::hash::StarkFelt;
+use url::Url;
+
+#[derive(Clone, Debug)]
+pub struct L1BlockMetrics {
+    // L1 network metrics
+    pub l1_block_number: Gauge<F64>,
+    // gas price is also define in sync/metrics/block_metrics.rs but this would be the price from l1
+    pub l1_gas_price_wei: Gauge<F64>,
+    pub l1_gas_price_strk: Gauge<F64>,
+}
+
+impl L1BlockMetrics {
+    pub fn register(registry: &MetricsRegistry) -> Result<Self, PrometheusError> {
+        Ok(Self {
+            l1_block_number: registry
+                .register(Gauge::new("deoxys_l1_block_number", "Gauge for deoxys L1 block number")?)?,
+
+            l1_gas_price_wei: registry.register(Gauge::new("deoxys_l1_gas_price", "Gauge for deoxys L1 gas price")?)?,
+            l1_gas_price_strk: registry
+                .register(Gauge::new("deoxys_l1_gas_price_strk", "Gauge for deoxys L1 gas price in strk")?)?,
+        })
+    }
+}
 
 // abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
 // The official starknet core contract ^
@@ -27,6 +50,10 @@ sol!(
 pub struct EthereumClient {
     pub provider: Arc<ReqwestProvider>,
     pub l1_core_contract: StarknetCoreContractInstance<Http<Client>, RootProvider<Http<Client>>>,
+    // l1 metric :
+    // l1 block number
+    // l1 gas price in wei
+    // l1 gas price in strk (from oracle wei <-> strk)
 }
 
 impl EthereumClient {
