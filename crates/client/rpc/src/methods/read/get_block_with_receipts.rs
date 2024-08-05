@@ -63,3 +63,78 @@ pub fn get_block_with_receipts(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{make_sample_chain_1, open_testing};
+    use rstest::rstest;
+    use starknet_core::types::{
+        BlockTag, ComputationResources, ExecutionResources, ExecutionResult, FeePayment, Felt, InvokeTransaction, InvokeTransactionReceipt, InvokeTransactionV0, L1DataAvailabilityMode, PriceUnit, ResourcePrice, Transaction, TransactionReceipt
+    };
+
+    #[rstest]
+    fn test_get_block_transaction_count() {
+        let (backend, rpc) = open_testing();
+        let block_hashes = make_sample_chain_1(&backend);
+
+        // Block 0
+        let res = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
+            status: BlockStatus::AcceptedOnL2,
+            block_hash: block_hashes[0],
+            parent_hash: Felt::ZERO,
+            block_number: 0,
+            new_root: Felt::from_hex_unchecked("0x88912"),
+            timestamp: 43,
+            sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
+            l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 52.into(), price_in_wei: 44.into() },
+            l1_da_mode: L1DataAvailabilityMode::Blob,
+            starknet_version: "0.13.1.1".into(),
+            transactions: vec![TransactionWithReceipt {
+                transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+                    transaction_hash: Felt::from_hex_unchecked("0x8888888"),
+                    max_fee: Felt::from_hex_unchecked("0x12"),
+                    signature: vec![],
+                    contract_address: Felt::from_hex_unchecked("0x4343"),
+                    entry_point_selector: Felt::from_hex_unchecked("0x1212"),
+                    calldata: vec![Felt::from_hex_unchecked("0x2828")],
+                })),
+                receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                    transaction_hash: Felt::from_hex_unchecked("0x8888888"),
+                    actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x9"), unit: PriceUnit::Wei },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: dp_receipt::ExecutionResources::default().into(),
+                    execution_result: ExecutionResult::Succeeded,
+                    finality_status: TransactionFinalityStatus::AcceptedOnL2,
+                }),
+            }],
+        });
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Number(0)).unwrap(), res);
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Hash(block_hashes[0])).unwrap(), res);
+        // Block 1
+        let res = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
+            status: BlockStatus::AcceptedOnL2,
+            block_hash: block_hashes[1],
+            parent_hash: block_hashes[0],
+            block_number: 1,
+            new_root: Felt::ZERO,
+            timestamp: 0,
+            sequencer_address: Felt::ZERO,
+            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_da_mode: L1DataAvailabilityMode::Calldata,
+            starknet_version: "0.13.2".into(),
+            transactions: vec![],
+        });
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Number(1)).unwrap(), res);
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Hash(block_hashes[1])).unwrap(), res);
+        // // Block 2
+        // assert_eq!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), 2);
+        // assert_eq!(get_block_with_receipts(&rpc, BlockId::Number(2)).unwrap(), 2);
+        // assert_eq!(get_block_with_receipts(&rpc, BlockId::Hash(block_hashes[2])).unwrap(), 2);
+        // // Pending
+        // assert_eq!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), 1);
+    }
+}

@@ -21,6 +21,7 @@ impl StarknetVersion {
     pub const STARKNET_VERSION_0_13_1: StarknetVersion = StarknetVersion([0, 13, 1, 0]);
     pub const STARKNET_VERSION_0_13_1_1: StarknetVersion = StarknetVersion([0, 13, 1, 1]);
     pub const STARKNET_VERSION_0_13_2: StarknetVersion = StarknetVersion([0, 13, 2, 0]);
+    pub const STARKNET_VERSION_LATEST: StarknetVersion = Self::STARKNET_VERSION_0_13_2;
 }
 
 impl std::fmt::Display for StarknetVersion {

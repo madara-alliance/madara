@@ -1,4 +1,3 @@
-use std::time::Duration;
 use url::Url;
 
 fn parse_url(s: &str) -> Result<Url, url::ParseError> {
