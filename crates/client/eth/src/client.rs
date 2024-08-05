@@ -124,12 +124,9 @@ impl EthereumClient {
 #[cfg(test)]
 pub mod eth_client_getter_test {
     use super::*;
-    use alloy::node_bindings::{Anvil, AnvilInstance};
     use alloy::primitives::U256;
     use dc_metrics::MetricsService;
-    use dotenv::from_filename;
     use rstest::*;
-    use std::env;
     use tokio;
 
     // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
@@ -142,19 +139,8 @@ pub mod eth_client_getter_test {
 
     #[fixture]
     #[once]
-    pub fn anvil() -> AnvilInstance {
-        // Load the .env.test file
-        from_filename(".env.test").ok();
-
-        // Now you can access environment variables
-        let eth_url = env::var("ETH_URL").expect("SOME_KEY not set in .env.test");
-        Anvil::new().fork(eth_url).fork_block_number(L1_BLOCK_NUMBER).spawn()
-    }
-
-    #[fixture]
-    #[once]
-    pub fn eth_client(anvil: &AnvilInstance) -> EthereumClient {
-        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
+    pub fn eth_client() -> EthereumClient {
+        let rpc_url: Url = "http://localhost:8545".parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
         let contract = StarknetCoreContract::new(address, provider.clone());

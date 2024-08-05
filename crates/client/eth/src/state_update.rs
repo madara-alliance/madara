@@ -103,8 +103,6 @@ mod eth_client_event_subscription_test {
     use super::*;
     use std::{sync::Arc, time::Duration};
 
-    use crate::client::eth_client_getter_test::anvil;
-    use alloy::node_bindings::AnvilInstance;
     use alloy::{providers::ProviderBuilder, sol};
     use dc_db::{block_db::ChainInfo, DatabaseService};
     use dc_metrics::MetricsService;
@@ -142,7 +140,7 @@ mod eth_client_event_subscription_test {
     /// 6. Waits for event processing and verifies the block number
     #[rstest]
     #[tokio::test]
-    async fn listen_and_update_state_when_event_fired_works(anvil: &'static AnvilInstance) {
+    async fn listen_and_update_state_when_event_fired_works() {
         // Set up chain info
         let chain_info =
             ChainInfo { chain_id: Felt::from_dec_str("11153111").unwrap(), chain_name: "testing".to_string() };
@@ -163,8 +161,8 @@ mod eth_client_event_subscription_test {
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
         let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
 
-        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
+        let rpc_url: Url = "http://localhost:8545".parse().expect("issue while parsing");
+        let provider = ProviderBuilder::new().on_http(rpc_url);
 
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
