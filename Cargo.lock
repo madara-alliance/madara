@@ -3529,6 +3529,7 @@ dependencies = [
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
+ "tempfile",
  "thiserror",
  "tokio",
 ]
@@ -3642,6 +3643,7 @@ dependencies = [
  "dp-class",
  "dp-convert",
  "dp-receipt",
+ "dp-state-update",
  "dp-transactions",
  "jsonrpsee",
  "log",

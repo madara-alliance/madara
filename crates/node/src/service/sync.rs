@@ -1,4 +1,4 @@
-use crate::cli::SyncParams;
+use crate::cli::{NetworkType, SyncParams};
 use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
@@ -8,6 +8,7 @@ use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
 use dc_telemetry::TelemetryHandle;
+use dp_block::chain_config::ChainConfig;
 use dp_utils::service::Service;
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,6 +31,8 @@ pub struct SyncService {
 impl SyncService {
     pub async fn new(
         config: &SyncParams,
+        chain_config: Arc<ChainConfig>,
+        network: NetworkType,
         db: &DatabaseService,
         metrics_handle: MetricsRegistry,
         telemetry: TelemetryHandle,
@@ -37,7 +40,22 @@ impl SyncService {
         // TODO: create l1 metrics here
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
         let db_metrics = DbMetrics::register(&metrics_handle)?;
-        let fetch_config = config.block_fetch_config();
+        let fetch_config = FetchConfig {
+            gateway: network.gateway(),
+            feeder_gateway: network.feeder_gateway(),
+            chain_id: chain_config.chain_id.clone(),
+            sound: false,
+            l1_core_address: chain_config.eth_core_contract_address,
+            verify: !config.disable_root,
+            api_key: config.gateway_key.clone(),
+            sync_polling_interval: if config.no_sync_polling {
+                None
+            } else {
+                Some(Duration::from_secs(config.sync_polling_interval))
+            },
+            n_blocks_to_sync: config.n_blocks_to_sync,
+            sync_l1_disabled: config.sync_l1_disabled,
+        };
 
         let l1_endpoint = if !config.sync_l1_disabled {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
@@ -51,7 +69,7 @@ impl SyncService {
             None
         };
 
-        let core_address = Address::from_slice(config.network.l1_core_address().as_bytes());
+        let core_address = Address::from_slice(chain_config.eth_core_contract_address.as_bytes());
         let eth_client = EthereumClient::new(l1_endpoint.unwrap(), core_address, metrics_handle)
             .await
             .context("Creating ethereum client")?;

@@ -3,9 +3,16 @@ use blockifier::{
     bouncer::{BouncerConfig, BouncerWeights, BuiltinCount},
     versioned_constants::VersionedConstants,
 };
+use primitive_types::H160;
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_core::types::Felt;
 use std::{collections::BTreeMap, ops::Deref, time::Duration};
+
+pub mod eth_core_contract_address {
+    pub const MAINNET: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
+    pub const SEPOLIA_TESTNET: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
+    pub const SEPOLIA_INTEGRATION: &str = "0x4737c0c1B4D5b1A687B42610DdabEE781152359c";
+}
 
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
@@ -53,6 +60,9 @@ pub struct ChainConfig {
     /// When deploying an account and invoking a contract at the same time, we want to skip the validation step for the invoke tx.
     /// This number is the maximum nonce the invoke tx can have to qualify for the validation skip.
     pub max_nonce_for_validation_skip: u64,
+
+    /// The Starknet core contract address for the L1 watcher.
+    pub eth_core_contract_address: H160,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -86,7 +96,8 @@ impl ChainConfig {
         // - bouncer builtin_count, message_segment_length, n_events, state_diff_size are probably wrong
 
         Self {
-            chain_name: "Starknet mainnet".into(),
+            chain_name: "Starknet Mainnet".into(),
+            chain_id: ChainId::Mainnet,
             native_fee_token_address: ContractAddress(
                 PatriciaKey::try_from(Felt::from_hex_unchecked(
                     "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
@@ -99,7 +110,6 @@ impl ChainConfig {
                 ))
                 .unwrap(),
             ),
-            chain_id: ChainId::Mainnet,
             versioned_constants: [
                 (StarknetVersion::STARKNET_VERSION_0_13_0, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0.deref().clone()),
                 (StarknetVersion::STARKNET_VERSION_0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
@@ -107,6 +117,9 @@ impl ChainConfig {
                 (StarknetVersion::STARKNET_VERSION_0_13_2, VersionedConstants::latest_constants().clone()),
             ]
             .into(),
+
+            eth_core_contract_address: eth_core_contract_address::MAINNET.parse().expect("parsing a constant"),
+
             latest_protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
             block_time: Duration::from_secs(6 * 60),
             pending_block_update_time: Duration::from_secs(2),
@@ -139,13 +152,21 @@ impl ChainConfig {
     }
 
     pub fn starknet_sepolia() -> Self {
-        Self { chain_name: "Starknet sepolia".into(), chain_id: ChainId::Sepolia, ..Self::starknet_mainnet() }
+        Self {
+            chain_name: "Starknet Sepolia".into(),
+            chain_id: ChainId::Sepolia,
+            eth_core_contract_address: eth_core_contract_address::SEPOLIA_TESTNET.parse().expect("parsing a constant"),
+            ..Self::starknet_mainnet()
+        }
     }
 
     pub fn starknet_integration() -> Self {
         Self {
-            chain_name: "Starknet integration".into(),
+            chain_name: "Starknet Sepolia Integration".into(),
             chain_id: ChainId::IntegrationSepolia,
+            eth_core_contract_address: eth_core_contract_address::SEPOLIA_INTEGRATION
+                .parse()
+                .expect("parsing a constant"),
             ..Self::starknet_mainnet()
         }
     }
@@ -161,19 +182,11 @@ impl ChainConfig {
 
 #[cfg(test)]
 mod tests {
-    use blockifier::bouncer::BouncerConfig;
-
     use super::*;
+
     #[test]
     fn test_exec_constants() {
         let chain_config = ChainConfig {
-            chain_name: "test".into(),
-            native_fee_token_address: Default::default(),
-            parent_fee_token_address: Default::default(),
-            chain_id: ChainId::Mainnet,
-            block_time: Default::default(),
-            pending_block_update_time: Default::default(),
-            sequencer_address: Default::default(),
             versioned_constants: [
                 (StarknetVersion::new(0, 1, 5, 0), {
                     let mut constants = VersionedConstants::default();
@@ -187,9 +200,7 @@ mod tests {
                 }),
             ]
             .into(),
-            latest_protocol_version: StarknetVersion::new(0, 2, 0, 0),
-            bouncer_config: BouncerConfig::max(),
-            max_nonce_for_validation_skip: 2,
+            ..ChainConfig::test_config()
         };
 
         assert_eq!(

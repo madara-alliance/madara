@@ -19,7 +19,7 @@ pub struct PendingStateUpdate {
     pub state_diff: StateDiff,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub struct StateDiff {
     pub storage_diffs: Vec<ContractStorageDiffItem>,
     pub deprecated_declared_classes: Vec<Felt>,

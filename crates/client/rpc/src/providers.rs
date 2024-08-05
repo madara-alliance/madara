@@ -80,3 +80,29 @@ impl<P: Provider + Send + Sync> AddTransactionProvider for ForwardToProvider<P> 
         Ok(sequencer_response)
     }
 }
+
+#[cfg(test)]
+pub struct TestTransactionProvider;
+
+#[cfg(test)]
+#[async_trait]
+impl AddTransactionProvider for TestTransactionProvider {
+    async fn add_declare_transaction(
+        &self,
+        _declare_transaction: BroadcastedDeclareTransaction,
+    ) -> RpcResult<DeclareTransactionResult> {
+        unimplemented!()
+    }
+    async fn add_deploy_account_transaction(
+        &self,
+        _deploy_account_transaction: BroadcastedDeployAccountTransaction,
+    ) -> RpcResult<DeployAccountTransactionResult> {
+        unimplemented!()
+    }
+    async fn add_invoke_transaction(
+        &self,
+        _invoke_transaction: BroadcastedInvokeTransaction,
+    ) -> RpcResult<InvokeTransactionResult> {
+        unimplemented!()
+    }
+}
