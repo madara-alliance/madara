@@ -239,6 +239,7 @@ impl BlockProductionTask {
                     self.block.inner.transactions.push(converted_tx.transaction);
                 }
                 Err(err) => {
+                    // TODO: revert handling
                     log::error!("Unsuccessful execution of transaction {:?}: {err:#}", mempool_tx.tx_hash());
                 }
             }
