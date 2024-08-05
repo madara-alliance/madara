@@ -221,15 +221,15 @@ impl DeoxysBackend {
         }
 
         contract_class_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
-            || self.db.get_column(Column::ContractToClassHashes),
+            || self.db.get_column(Column::PendingContractToClassHashes),
             |col, chunk| write_chunk(&self.db, &writeopts, col, chunk.iter().map(|(k, v)| (k.to_bytes_be(), *v))),
         )?;
         contract_nonces_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
-            || self.db.get_column(Column::ContractToNonces),
+            || self.db.get_column(Column::PendingContractToNonces),
             |col, chunk| write_chunk(&self.db, &writeopts, col, chunk.iter().map(|(k, v)| (k.to_bytes_be(), *v))),
         )?;
         contract_kv_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
-            || self.db.get_column(Column::ContractStorage),
+            || self.db.get_column(Column::PendingContractStorage),
             |col, chunk| {
                 write_chunk(
                     &self.db,

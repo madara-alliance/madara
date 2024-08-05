@@ -335,7 +335,7 @@ impl MempoolInner {
         }
     }
 
-    pub fn readd_txs(&mut self, txs: Vec<MempoolTransaction>) {
+    pub fn re_add_txs(&mut self, txs: Vec<MempoolTransaction>) {
         for tx in txs {
             let force = true;
             self.insert_tx(tx, force).expect("Force insert tx should not error");

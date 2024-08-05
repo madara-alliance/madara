@@ -41,7 +41,7 @@ pub async fn estimate_message_fee(
 
     let transaction = convert_message_into_transaction(message, starknet.chain_id());
     let execution_result = exec_context
-        .execute_transactions([], [transaction], false, true)?
+        .re_execute_transactions([], [transaction], false, true)?
         .pop()
         .ok_or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 

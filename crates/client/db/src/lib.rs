@@ -381,7 +381,7 @@ impl DeoxysBackend {
             last_flush_time: Default::default(),
             chain_config: Arc::clone(&chain_config),
         });
-        backend.assert_chain(&chain_config)?;
+        backend.check_configuration()?;
         Ok(backend)
     }
 

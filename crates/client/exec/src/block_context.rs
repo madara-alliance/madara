@@ -33,10 +33,9 @@ impl ExecutionContext {
     }
 
     pub fn tx_validator(&self) -> StatefulValidator<BlockifierStateAdapter> {
-        // When deploying an account and invoking a contract at the same time, we want to skip the validation step for the invoke tx.
-        // This number is the maximum nonce the invoke tx can have to qualify for the validation skip.
-        // TODO: is the number 2 good here?
-        let max_nonce_for_validation_skip = Nonce(Felt::from(2u64));
+        // See [`ChainConfig`].
+        let max_nonce_for_validation_skip =
+            Nonce(Felt::from(self.backend.chain_config().max_nonce_for_validation_skip));
         StatefulValidator::create(self.init_cached_state(), self.block_context.clone(), max_nonce_for_validation_skip)
     }
 
@@ -49,7 +48,11 @@ impl ExecutionContext {
             }
         };
 
-        CachedState::new(BlockifierStateAdapter::new(Arc::clone(&self.backend), on_top_of))
+        CachedState::new(BlockifierStateAdapter::new(
+            Arc::clone(&self.backend),
+            self.block_context.block_info().block_number.0,
+            on_top_of,
+        ))
     }
 
     pub fn new(backend: Arc<DeoxysBackend>, block_info: &DeoxysMaybePendingBlockInfo) -> Result<Self, Error> {
@@ -58,7 +61,9 @@ impl ExecutionContext {
                 DeoxysMaybePendingBlockInfo::Pending(block) => (
                     DbBlockId::Pending,
                     block.header.protocol_version,
-                    backend.get_latest_block_n()?.map(|el| el + 1).unwrap_or(0), // when the block is pending, we use the latest block n + 1
+                    // when the block is pending, we use the latest block n + 1
+                    // if there is no latest block, the pending block is actually the genesis block
+                    backend.get_latest_block_n()?.map(|el| el + 1).unwrap_or(0),
                     block.header.block_timestamp,
                     block.header.sequencer_address,
                     block.header.l1_gas_price.clone(),
@@ -90,7 +95,6 @@ impl ExecutionContext {
                 .try_into()
                 .map_err(|_| Error::InvalidSequencerAddress(sequencer_address))?,
             gas_prices: (&l1_gas_price).into(),
-            // TODO: Verify if this is correct
             use_kzg_da: l1_da_mode == L1DataAvailabilityMode::Blob,
         };
 

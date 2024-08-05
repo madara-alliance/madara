@@ -64,8 +64,7 @@ rocksdb = { version = "0.22", features = [
 ] }
 
 # Bonsai trie dependencies
-# bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "fix_inserts_remove_leaks", features = [
-bonsai-trie = { default-features = false, path = "../bonsai-trie", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "fix_inserts_remove_leaks", features = [
   "std",
 ] }
 
@@ -157,7 +156,6 @@ starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch =
 starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
 
 # wait for PR https://github.com/starknet-io/types-rs/pull/76 to be merged
-# starknet-types-core = { git = "https://github.com/jbcaron/types-rs.git", rev = "fd0e062" }
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.5" }
 
 blockifier = { git = "https://github.com/starkware-libs/blockifier", tag = "v0.8.0-rc.0" }

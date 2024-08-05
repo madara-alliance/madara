@@ -1,5 +1,4 @@
 use anyhow::Context;
-use dp_block::chain_config::ChainConfig;
 use dp_block::{
     BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
     DeoxysMaybePendingBlockInfo, DeoxysPendingBlock, DeoxysPendingBlockInfo,
@@ -33,7 +32,11 @@ pub struct TxIndex(pub u64);
 // TODO(error-handling): some of the else { return Ok(None) } should be replaced with hard errors for
 // inconsistent state.
 impl DeoxysBackend {
-    pub(crate) fn assert_chain(&self, expected: &ChainConfig) -> anyhow::Result<()> {
+
+    /// This function checks a that the program was started on a db of the wrong chain (ie. main vs
+    /// sepolia) and returns an error if it does.
+    pub(crate) fn check_configuration(&self) -> anyhow::Result<()> {
+        let expected = &self.chain_config;
         let col = self.db.get_column(Column::BlockStorageMeta);
         if let Some(res) = self.db.get_pinned_cf(&col, ROW_CHAIN_INFO)? {
             let res: ChainInfo = bincode::deserialize(res.as_ref())?;
@@ -57,6 +60,7 @@ impl DeoxysBackend {
 
         Ok(())
     }
+
     // DB read operations
 
     fn tx_hash_to_block_n(&self, tx_hash: &Felt) -> Result<Option<u64>> {

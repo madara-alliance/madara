@@ -1,4 +1,4 @@
-//! This should probably be moved into another crate.
+// TODO: Move this into its own crate.
 
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
@@ -27,7 +27,8 @@ use crate::close_block::close_block;
 use crate::header::make_pending_header;
 use crate::{clone_account_tx, L1DataProvider, Mempool, MempoolTransaction};
 
-const TX_CHUNK_SIZE: usize = 128;
+/// We always take transactions in batches from the mempool
+const TX_BATCH_SIZE: usize = 128;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -148,6 +149,9 @@ fn finalize_execution_state<S: StateReader>(
     Ok((state_update, visited_segments, *tx_executor.bouncer.get_accumulated_weights()))
 }
 
+/// The block production task consumes transactions from the mempool in batches.
+/// This is to allow optimistic concurrency. However, the block may get full during batch execution,
+/// and we need to re-add the transactions back into the mempool.
 pub struct BlockProductionTask {
     backend: Arc<DeoxysBackend>,
     mempool: Arc<Mempool>,
@@ -195,8 +199,8 @@ impl BlockProductionTask {
     fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<StateDiff, Error> {
         self.executor.bouncer.bouncer_config.block_max_capacity = bouncer_cap;
 
-        let mut txs_to_process = Vec::with_capacity(TX_CHUNK_SIZE);
-        self.mempool.take_txs_chunk(&mut txs_to_process, TX_CHUNK_SIZE);
+        let mut txs_to_process = Vec::with_capacity(TX_BATCH_SIZE);
+        self.mempool.take_txs_chunk(&mut txs_to_process, TX_BATCH_SIZE);
 
         let blockifier_txs: Vec<_> =
             txs_to_process.iter().map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))).collect();
@@ -250,7 +254,7 @@ impl BlockProductionTask {
         let rest_txs_to_process: Vec<_> = to_process_iter.collect();
 
         // Add back the unexecuted transactions to the mempool.
-        self.mempool.readd_txs(rest_txs_to_process);
+        self.mempool.re_add_txs(rest_txs_to_process);
 
         Ok(state_diff)
     }

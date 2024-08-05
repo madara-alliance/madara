@@ -29,7 +29,7 @@ pub async fn simulate_transactions(
         .collect::<Result<Vec<_>, _>>()
         .or_internal_server_error("Failed to convert broadcasted transaction to blockifier")?;
 
-    let execution_resuls = exec_context.execute_transactions([], user_transactions, charge_fee, validate)?;
+    let execution_resuls = exec_context.re_execute_transactions([], user_transactions, charge_fee, validate)?;
 
     let simulated_transactions = execution_resuls
         .iter()

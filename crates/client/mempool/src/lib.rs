@@ -115,9 +115,9 @@ impl Mempool {
         inner.pop_next()
     }
 
-    pub fn readd_txs(&self, txs: Vec<MempoolTransaction>) {
+    pub fn re_add_txs(&self, txs: Vec<MempoolTransaction>) {
         let mut inner = self.inner.write().expect("Poisoned lock");
-        inner.readd_txs(txs)
+        inner.re_add_txs(txs)
     }
 
     pub fn chain_id(&self) -> Felt {

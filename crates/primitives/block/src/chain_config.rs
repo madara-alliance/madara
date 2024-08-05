@@ -7,8 +7,8 @@ use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_core::types::Felt;
 use std::{collections::BTreeMap, ops::Deref, time::Duration};
 
-// const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
-// const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1: &[u8] =
     include_bytes!("../resources/versioned_constants_13_1_1.json");
 
@@ -16,13 +16,9 @@ lazy_static::lazy_static! {
     pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1: VersionedConstants =
         serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1).unwrap();
     pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1: VersionedConstants =
-        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1).unwrap();
+        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1).unwrap();
     pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0: VersionedConstants =
-        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1).unwrap();
-    // pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1: VersionedConstants =
-    //     serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1).unwrap();
-    // pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0: VersionedConstants =
-    //     serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0).unwrap();
+        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0).unwrap();
 }
 
 #[derive(Debug)]
@@ -52,6 +48,11 @@ pub struct ChainConfig {
 
     /// Only used for block production.
     pub sequencer_address: ContractAddress,
+
+    /// Only used when mempool is enabled.
+    /// When deploying an account and invoking a contract at the same time, we want to skip the validation step for the invoke tx.
+    /// This number is the maximum nonce the invoke tx can have to qualify for the validation skip.
+    pub max_nonce_for_validation_skip: u64,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -80,6 +81,7 @@ impl ChainConfig {
         // Sources:
         // - https://docs.starknet.io/tools/important-addresses
         // - https://docs.starknet.io/tools/limits-and-triggers (bouncer & block times)
+        // - state_diff_size is the blob size limit of ethereum
         // - pending_block_update_time: educated guess
         // - bouncer builtin_count, message_segment_length, n_events, state_diff_size are probably wrong
 
@@ -127,11 +129,12 @@ impl ChainConfig {
                     n_steps: 40_000_000,
                     message_segment_length: usize::MAX,
                     n_events: usize::MAX,
-                    state_diff_size: usize::MAX,
+                    state_diff_size: 131072,
                 },
             },
             // We are not producing blocks for these chains.
             sequencer_address: ContractAddress::default(),
+            max_nonce_for_validation_skip: 2,
         }
     }
 
@@ -144,6 +147,14 @@ impl ChainConfig {
             chain_name: "Starknet integration".into(),
             chain_id: ChainId::IntegrationSepolia,
             ..Self::starknet_mainnet()
+        }
+    }
+
+    pub fn test_config() -> Self {
+        Self {
+            chain_name: "Test".into(),
+            chain_id: ChainId::Other("MADARA_TEST".into()),
+            ..ChainConfig::starknet_sepolia()
         }
     }
 }
@@ -178,6 +189,7 @@ mod tests {
             .into(),
             latest_protocol_version: StarknetVersion::new(0, 2, 0, 0),
             bouncer_config: BouncerConfig::max(),
+            max_nonce_for_validation_skip: 2,
         };
 
         assert_eq!(

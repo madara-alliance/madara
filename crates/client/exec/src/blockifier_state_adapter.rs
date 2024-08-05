@@ -6,38 +6,50 @@ use dc_db::DeoxysBackend;
 use dp_block::BlockId;
 use dp_class::to_blockifier_class;
 use dp_convert::{felt_to_u64, ToFelt};
-use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
+use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
 use starknet_core::types::Felt;
 use std::sync::Arc;
 
-/// `BlockifierStateAdapter` is only use to re-executing or simulate transactions.
-/// All of the setters change the storage permanently. Use blockifier's `CachedState` for a cache.
+/// Adapter for the db queries made by blockifier.
+/// There is no actual mutable logic here - when using block production, the actual key value
+/// changes in db are evaluated at the end only from the produced state diff.
 pub struct BlockifierStateAdapter {
     backend: Arc<DeoxysBackend>,
     /// When this value is None, we are executing the genesis block.
     pub on_top_of_block_id: Option<DbBlockId>,
+    pub block_number: u64,
 }
 
 impl BlockifierStateAdapter {
-    pub fn new(backend: Arc<DeoxysBackend>, on_top_of_block_id: Option<DbBlockId>) -> Self {
-        Self { backend, on_top_of_block_id }
+    pub fn new(backend: Arc<DeoxysBackend>, block_number: u64, on_top_of_block_id: Option<DbBlockId>) -> Self {
+        Self { backend, on_top_of_block_id, block_number }
     }
 }
 
 impl StateReader for BlockifierStateAdapter {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
+        // The `0x1` address is reserved for block hashes: https://docs.starknet.io/architecture-and-concepts/network-architecture/starknet-state/#address_0x1
         if *contract_address.key() == Felt::ONE {
-            let block_number = felt_to_u64(key.0.key()).map_err(|_| StateError::OldBlockHashNotProvided)?;
+            let requested_block_number = felt_to_u64(key.0.key()).map_err(|_| StateError::OldBlockHashNotProvided)?;
+
+            // Not found if in the last 10 blocks.
+            if !block_hash_storage_check_range(
+                &self.backend.chain_config().chain_id,
+                self.block_number,
+                requested_block_number,
+            ) {
+                return Ok(Felt::ZERO);
+            }
 
             return Ok(self
                 .backend
-                .get_block_hash(&BlockId::Number(block_number))
+                .get_block_hash(&BlockId::Number(requested_block_number))
                 .map_err(|err| {
-                    log::warn!("Failed to retrieve block hash for block number {block_number}: {err:#}");
-                    StateError::StateReadError(
-                        format!("Failed to retrieve block hash for block number {block_number}",),
-                    )
+                    log::warn!("Failed to retrieve block hash for block number {requested_block_number}: {err:#}");
+                    StateError::StateReadError(format!(
+                        "Failed to retrieve block hash for block number {requested_block_number}",
+                    ))
                 })?
                 .ok_or(StateError::OldBlockHashNotProvided)?);
         }
@@ -130,58 +142,28 @@ impl StateReader for BlockifierStateAdapter {
     }
 }
 
-// impl<'a> State for BlockifierStateAdapter<'a> {
-//     fn set_storage_at(
-//         &mut self,
-//         contract_address: ContractAddress,
-//         key: StorageKey,
-//         value: StarkFelt,
-//     ) -> StateResult<()> {
-//         self.storage_update.entry(contract_address).or_default().insert(key, value);
+fn block_hash_storage_check_range(chain_id: &ChainId, current_block: u64, to_check: u64) -> bool {
+    // Allowed range is first_v0_12_0_block..=(current_block - 10).
+    let first_block = if chain_id == &ChainId::Mainnet { 103_129 } else { 0 };
 
-//         Ok(())
-//     }
+    current_block.checked_sub(10).map(|end| first_block..=end).unwrap_or(1..=0).contains(&to_check)
+}
 
-//     fn increment_nonce(&mut self, contract_address: ContractAddress) -> StateResult<()> {
-//         let nonce = self.get_nonce_at(contract_address)?.try_increment().map_err(StateError::StarknetApiError)?;
+#[cfg(test)]
+mod tests {
+    use starknet_api::core::ChainId;
 
-//         self.nonce_update.insert(contract_address, nonce);
+    use super::block_hash_storage_check_range;
 
-//         Ok(())
-//     }
-
-//     fn set_class_hash_at(&mut self, contract_address: ContractAddress, class_hash: ClassHash) -> StateResult<()> {
-//         self.class_hash_update.insert(contract_address, class_hash);
-
-//         Ok(())
-//     }
-
-//     fn set_contract_class(&mut self, class_hash: ClassHash, contract_class: ContractClass) -> StateResult<()> {
-//         self.contract_class_update.insert(class_hash, contract_class);
-
-//         Ok(())
-//     }
-
-//     fn set_compiled_class_hash(
-//         &mut self,
-//         class_hash: ClassHash,
-//         compiled_class_hash: CompiledClassHash,
-//     ) -> StateResult<()> {
-//         self.compiled_class_hash_update.insert(class_hash, compiled_class_hash);
-
-//         Ok(())
-//     }
-
-//     fn add_visited_pcs(&mut self, class_hash: ClassHash, pcs: &HashSet<usize>) {
-//         self.visited_pcs.entry(class_hash).or_default().extend(pcs);
-//     }
-
-//     fn to_state_diff(&mut self) -> CommitmentStateDiff {
-//         CommitmentStateDiff {
-//             address_to_class_hash: self.class_hash_update.clone(),
-//             address_to_nonce: self.nonce_update.clone(),
-//             storage_updates: self.storage_update.clone(),
-//             class_hash_to_compiled_class_hash: self.compiled_class_hash_update.clone(),
-//         }
-//     }
-// }
+    #[test]
+    fn check_block_n_range() {
+        let chain_id = ChainId::Other("MADARA_TEST".into());
+        assert_eq!(block_hash_storage_check_range(&chain_id, 9, 0), false);
+        assert_eq!(block_hash_storage_check_range(&chain_id, 10, 0), true);
+        assert_eq!(block_hash_storage_check_range(&chain_id, 11, 0), true);
+        assert_eq!(block_hash_storage_check_range(&chain_id, 50 + 9, 50), false);
+        assert_eq!(block_hash_storage_check_range(&chain_id, 50 + 10, 50), true);
+        assert_eq!(block_hash_storage_check_range(&chain_id, 50 + 11, 50), true);
+        assert_eq!(block_hash_storage_check_range(&ChainId::Mainnet, 50 + 11, 50), false);
+    }
+}

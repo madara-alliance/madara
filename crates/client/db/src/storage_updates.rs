@@ -1,9 +1,7 @@
-use crate::db_block_id::DbBlockId;
 use crate::DeoxysBackend;
 use crate::DeoxysStorageError;
-use dp_block::header::PendingHeader;
 use dp_block::{
-    BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlock,
+    DeoxysBlock, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlock,
 };
 use dp_class::ConvertedClass;
 use dp_state_update::{
@@ -47,8 +45,8 @@ impl DeoxysBackend {
             let nonces_from_updates =
                 state_diff.nonces.into_iter().map(|NonceUpdate { contract_address, nonce }| (contract_address, nonce));
 
+            // let nonce_map: HashMap<Felt, Felt> = nonces_from_deployed.chain(nonces_from_updates).collect(); // set nonce to zero when contract deployed
             let nonce_map: HashMap<Felt, Felt> = nonces_from_updates.collect();
-            // let nonce_map: HashMap<Felt, Felt> = nonces_from_deployed.chain(nonces_from_updates).collect();
 
             let contract_class_updates_replaced = state_diff
                 .replaced_classes
@@ -101,29 +99,5 @@ impl DeoxysBackend {
         self.contract_db_clear_pending()?;
         self.class_db_clear_pending()?;
         Ok(())
-    }
-
-    /// This function creates the pending block if it is not found.
-    ///
-    /// # Arguments
-    /// - `create_header` is supplied the block hash as argument.
-    // TODO(docs): unsure how to clarify the `create_header` signature but having an untyped unnamed Felt here sux
-    pub fn get_or_create_pending_block(
-        &self,
-        create_header: impl FnOnce(Felt) -> PendingHeader,
-    ) -> Result<DeoxysMaybePendingBlock, DeoxysStorageError> {
-        match self.get_block(&DbBlockId::Pending)? {
-            Some(block) => Ok(block),
-            None => {
-                // No pending block: we create one :)
-
-                let block_info = self
-                    .get_block_info(&BlockId::Tag(BlockTag::Latest))?
-                    .ok_or(DeoxysStorageError::PendingCreationNoGenesis)?;
-                let previous = block_info.as_nonpending().ok_or(DeoxysStorageError::InvalidBlockNumber)?; // TODO(merge): change with charpa's error when rebasing on main
-
-                Ok(DeoxysPendingBlock::new_empty(create_header(previous.block_hash)).into())
-            }
-        }
     }
 }
