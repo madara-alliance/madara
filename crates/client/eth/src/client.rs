@@ -50,10 +50,7 @@ sol!(
 pub struct EthereumClient {
     pub provider: Arc<ReqwestProvider>,
     pub l1_core_contract: StarknetCoreContractInstance<Http<Client>, RootProvider<Http<Client>>>,
-    pub l1_block_metrics: L1BlockMetrics, // l1 metric :
-                                          // l1 block number
-                                          // l1 gas price in wei
-                                          // l1 gas price in strk (from oracle wei <-> strk)
+    pub l1_block_metrics: L1BlockMetrics,
 }
 
 impl Clone for EthereumClient {
