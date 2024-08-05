@@ -13,7 +13,9 @@ use dp_transactions::MAIN_CHAIN_ID;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 
-use crate::commitments::{calculate_transaction_hash, memory_event_commitment, memory_receipt_commitment, memory_transaction_commitment};
+use crate::commitments::{
+    calculate_transaction_hash, memory_event_commitment, memory_receipt_commitment, memory_transaction_commitment,
+};
 use crate::l2::L2SyncError;
 
 pub fn convert_inner(

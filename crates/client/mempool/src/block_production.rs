@@ -190,7 +190,7 @@ impl BlockProductionTask {
             mempool,
             executor,
             current_pending_tick: 0,
-            block: pending_block.try_into().unwrap(),
+            block: pending_block,
             declared_classes: vec![],
             l1_data_provider,
         })
@@ -302,7 +302,7 @@ impl BlockProductionTask {
         let state_diff = self.continue_block(bouncer_cap)?;
 
         // Store pending block
-        self.backend.store_block(self.block.clone().into(), state_diff.into(), self.declared_classes.clone())?;
+        self.backend.store_block(self.block.clone().into(), state_diff, self.declared_classes.clone())?;
 
         Ok(())
     }
@@ -312,7 +312,7 @@ impl BlockProductionTask {
         log::debug!("closing block #{}", block_n);
 
         // Complete the block with full bouncer capacity.
-        let new_state_diff = self.continue_block(self.executor.bouncer.bouncer_config.block_max_capacity.clone())?;
+        let new_state_diff = self.continue_block(self.executor.bouncer.bouncer_config.block_max_capacity)?;
 
         // Convert the pending block to a closed block and save to db.
 

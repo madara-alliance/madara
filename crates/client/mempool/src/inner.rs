@@ -32,7 +32,7 @@ impl Clone for MempoolTransaction {
     fn clone(&self) -> Self {
         Self {
             tx: clone_account_tx(&self.tx),
-            arrived_at: self.arrived_at.clone(),
+            arrived_at: self.arrived_at,
             converted_class: self.converted_class.clone(),
         }
     }
@@ -54,7 +54,7 @@ struct OrderMempoolTransactionByNonce(MempoolTransaction);
 
 impl PartialEq for OrderMempoolTransactionByNonce {
     fn eq(&self, other: &Self) -> bool {
-        &self.0.nonce() == &other.0.nonce()
+        self.0.nonce() == other.0.nonce()
     }
 }
 impl Eq for OrderMempoolTransactionByNonce {}
@@ -65,7 +65,7 @@ impl Ord for OrderMempoolTransactionByNonce {
 }
 impl PartialOrd for OrderMempoolTransactionByNonce {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.cmp(&other))
+        Some(self.cmp(other))
     }
 }
 
@@ -134,10 +134,8 @@ impl NonceChain {
 
         if force {
             self.transactions.replace(OrderMempoolTransactionByNonce(mempool_tx));
-        } else {
-            if !self.transactions.insert(OrderMempoolTransactionByNonce(mempool_tx)) {
-                return Err(TxInsersionError::NonceConflict);
-            }
+        } else if !self.transactions.insert(OrderMempoolTransactionByNonce(mempool_tx)) {
+            return Err(TxInsersionError::NonceConflict);
         }
 
         Ok(position)
@@ -180,7 +178,7 @@ impl Ord for AccountOrderedByTimestamp {
 }
 impl PartialOrd for AccountOrderedByTimestamp {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.cmp(&other))
+        Some(self.cmp(other))
     }
 }
 

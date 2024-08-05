@@ -13,7 +13,7 @@ pub use events::memory_event_commitment;
 pub use receipts::memory_receipt_commitment;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
-pub use transactions::{memory_transaction_commitment, calculate_transaction_hash};
+pub use transactions::{calculate_transaction_hash, memory_transaction_commitment};
 
 /// "STARKNET_STATE_V0"
 const STARKNET_STATE_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e45545f53544154455f5630");

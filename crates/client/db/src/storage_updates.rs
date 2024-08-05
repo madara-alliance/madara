@@ -1,8 +1,6 @@
 use crate::DeoxysBackend;
 use crate::DeoxysStorageError;
-use dp_block::{
-    DeoxysBlock, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlock,
-};
+use dp_block::{DeoxysBlock, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlock};
 use dp_class::ConvertedClass;
 use dp_state_update::{
     ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,

@@ -61,18 +61,12 @@ impl Transaction {
     }
 
     pub fn is_l1_handler(&self) -> bool {
-        match self {
-            Transaction::L1Handler(_) => true,
-            _ => false,
-        }
+        matches!(self, Transaction::L1Handler(_))
     }
 
     /// Account transactions means everything except L1Handler.
     pub fn is_account(&self) -> bool {
-        match self {
-            Transaction::L1Handler(_) => false,
-            _ => true,
-        }
+        !matches!(self, Transaction::L1Handler(_))
     }
 
     pub fn fee_type(&self) -> FeeType {

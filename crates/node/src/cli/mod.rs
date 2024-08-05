@@ -1,9 +1,9 @@
+pub mod block_production;
 pub mod db;
 pub mod prometheus;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;
-pub mod block_production;
 
 pub use db::*;
 pub use prometheus::*;

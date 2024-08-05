@@ -13,7 +13,7 @@ use starknet_core::types::{
     BroadcastedTransaction, DeclareTransactionResult, DeployAccountTransactionResult, Felt, InvokeTransactionResult,
 };
 
-/// This [`AddTransactionProvider`] adds the received transactions to a mempool. 
+/// This [`AddTransactionProvider`] adds the received transactions to a mempool.
 pub struct MempoolProvider {
     mempool: Arc<Mempool>,
 }
@@ -71,7 +71,11 @@ fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
     }
 }
 
-fn add_tx_to_mempool(mempool: &Arc<Mempool>, tx: Transaction, converted_class: Option<ConvertedClass>) -> RpcResult<()> {
+fn add_tx_to_mempool(
+    mempool: &Arc<Mempool>,
+    tx: Transaction,
+    converted_class: Option<ConvertedClass>,
+) -> RpcResult<()> {
     let Transaction::AccountTransaction(tx) = tx else {
         bail_internal_server_error!("Created transaction should be an account transaction")
     };
@@ -86,12 +90,9 @@ fn add_declare_transaction(
     mempool: &Arc<Mempool>,
     declare_transaction: BroadcastedDeclareTransaction,
 ) -> RpcResult<DeclareTransactionResult> {
-    let (tx, classes) = broadcasted_to_blockifier(
-        BroadcastedTransaction::Declare(declare_transaction),
-        mempool.chain_id(),
-        None,
-    )
-    .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
+    let (tx, classes) =
+        broadcasted_to_blockifier(BroadcastedTransaction::Declare(declare_transaction), mempool.chain_id(), None)
+            .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
 
     let res = DeclareTransactionResult {
         transaction_hash: transaction_hash(&tx),
@@ -122,12 +123,9 @@ fn add_invoke_transaction(
     mempool: &Arc<Mempool>,
     invoke_transaction: BroadcastedInvokeTransaction,
 ) -> RpcResult<InvokeTransactionResult> {
-    let (tx, classes) = broadcasted_to_blockifier(
-        BroadcastedTransaction::Invoke(invoke_transaction),
-        mempool.chain_id(),
-        None,
-    )
-    .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
+    let (tx, classes) =
+        broadcasted_to_blockifier(BroadcastedTransaction::Invoke(invoke_transaction), mempool.chain_id(), None)
+            .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
 
     let res = InvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
     add_tx_to_mempool(mempool, tx, classes)?;

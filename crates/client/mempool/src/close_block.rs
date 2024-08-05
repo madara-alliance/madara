@@ -69,6 +69,5 @@ pub fn close_block(
 
     let block_hash = header.compute_hash(chain_id);
 
-    let block = DeoxysBlock { info: DeoxysBlockInfo { header, block_hash, tx_hashes }, inner };
-    block
+    DeoxysBlock { info: DeoxysBlockInfo { header, block_hash, tx_hashes }, inner }
 }

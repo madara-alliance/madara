@@ -19,21 +19,17 @@ use super::compute_root;
 /// # Returns
 ///
 /// The transaction hash.
-pub fn calculate_transaction_hash(
-    transaction: &Transaction,
-    chain_id: Felt,
-    block_number: Option<u64>,
-) -> Felt {
-    let legacy = block_number.is_some_and(|block_number| block_number < LEGACY_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID);
-    let is_pre_v0_7 = block_number.is_some_and(|block_number| block_number < V0_7_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID);
+pub fn calculate_transaction_hash(transaction: &Transaction, chain_id: Felt, block_number: Option<u64>) -> Felt {
+    let legacy =
+        block_number.is_some_and(|block_number| block_number < LEGACY_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID);
+    let is_pre_v0_7 =
+        block_number.is_some_and(|block_number| block_number < V0_7_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID);
 
-    let tx_hash = if is_pre_v0_7 {
+    if is_pre_v0_7 {
         transaction.compute_hash_pre_v0_7(chain_id, false)
     } else {
         transaction.compute_hash(chain_id, false, legacy)
-    };
-
-    tx_hash
+    }
 }
 
 /// Compute the combined hash of the transaction hash and the signature.

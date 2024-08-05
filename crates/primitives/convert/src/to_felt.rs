@@ -4,7 +4,9 @@ use starknet_types_core::felt::Felt;
 use std::ops::Deref;
 
 use starknet_api::block::BlockHash;
-use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce, PatriciaKey};
+use starknet_api::core::{
+    ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce, PatriciaKey,
+};
 use starknet_api::transaction::{ContractAddressSalt, EventKey, TransactionHash};
 use starknet_core::types::EthAddress;
 

@@ -32,7 +32,6 @@ pub struct TxIndex(pub u64);
 // TODO(error-handling): some of the else { return Ok(None) } should be replaced with hard errors for
 // inconsistent state.
 impl DeoxysBackend {
-
     /// This function checks a that the program was started on a db of the wrong chain (ie. main vs
     /// sepolia) and returns an error if it does.
     pub(crate) fn check_configuration(&self) -> anyhow::Result<()> {

@@ -18,9 +18,9 @@ dp-utils.workspace = true
 
 # Other
 anyhow.workspace = true
+async-trait.workspace = true
 hyper.workspace = true
 log.workspace = true
 prometheus.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-async-trait.workspace = true

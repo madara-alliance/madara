@@ -42,7 +42,7 @@ impl StateReader for BlockifierStateAdapter {
                 return Ok(Felt::ZERO);
             }
 
-            return Ok(self
+            return self
                 .backend
                 .get_block_hash(&BlockId::Number(requested_block_number))
                 .map_err(|err| {
@@ -51,7 +51,7 @@ impl StateReader for BlockifierStateAdapter {
                         "Failed to retrieve block hash for block number {requested_block_number}",
                     ))
                 })?
-                .ok_or(StateError::OldBlockHashNotProvided)?);
+                .ok_or(StateError::OldBlockHashNotProvided);
         }
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(Felt::ZERO) };
@@ -146,6 +146,7 @@ fn block_hash_storage_check_range(chain_id: &ChainId, current_block: u64, to_che
     // Allowed range is first_v0_12_0_block..=(current_block - 10).
     let first_block = if chain_id == &ChainId::Mainnet { 103_129 } else { 0 };
 
+    #[allow(clippy::reversed_empty_ranges)]
     current_block.checked_sub(10).map(|end| first_block..=end).unwrap_or(1..=0).contains(&to_check)
 }
 
@@ -158,12 +159,12 @@ mod tests {
     #[test]
     fn check_block_n_range() {
         let chain_id = ChainId::Other("MADARA_TEST".into());
-        assert_eq!(block_hash_storage_check_range(&chain_id, 9, 0), false);
-        assert_eq!(block_hash_storage_check_range(&chain_id, 10, 0), true);
-        assert_eq!(block_hash_storage_check_range(&chain_id, 11, 0), true);
-        assert_eq!(block_hash_storage_check_range(&chain_id, 50 + 9, 50), false);
-        assert_eq!(block_hash_storage_check_range(&chain_id, 50 + 10, 50), true);
-        assert_eq!(block_hash_storage_check_range(&chain_id, 50 + 11, 50), true);
-        assert_eq!(block_hash_storage_check_range(&ChainId::Mainnet, 50 + 11, 50), false);
+        assert!(!block_hash_storage_check_range(&chain_id, 9, 0));
+        assert!(block_hash_storage_check_range(&chain_id, 10, 0));
+        assert!(block_hash_storage_check_range(&chain_id, 11, 0));
+        assert!(!block_hash_storage_check_range(&chain_id, 50 + 9, 50));
+        assert!(block_hash_storage_check_range(&chain_id, 50 + 10, 50));
+        assert!(block_hash_storage_check_range(&chain_id, 50 + 11, 50));
+        assert!(!block_hash_storage_check_range(&ChainId::Mainnet, 50 + 11, 50));
     }
 }

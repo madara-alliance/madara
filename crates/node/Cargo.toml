@@ -19,22 +19,23 @@ name = "deoxys"
 
 # Deoxys
 dc-db = { workspace = true }
+dc-mempool = { workspace = true }
 dc-metrics = { workspace = true }
 dc-rpc = { workspace = true }
 dc-sync = { workspace = true }
 dc-telemetry = { workspace = true }
-dc-mempool = { workspace = true }
-dp-utils = { workspace = true }
 dp-block = { workspace = true }
 dp-convert = { workspace = true }
+dp-utils = { workspace = true }
 
 # Starknet
+starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
-starknet-providers = { workspace = true }
 
 # Other
 anyhow.workspace = true
+async-trait = { workspace = true }
 chrono = "0.4.38"
 clap = { workspace = true, features = ["derive"] }
 env_logger = { workspace = true }
@@ -54,7 +55,6 @@ tokio = { workspace = true }
 tower-http.workspace = true
 tower.workspace = true
 url = { workspace = true }
-async-trait = { workspace = true }
 
 [features]
 default = []

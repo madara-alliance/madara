@@ -20,7 +20,7 @@ pub enum DeoxysStorageError {
     #[error("Inconsistent storage")]
     InconsistentStorage(Cow<'static, str>),
     #[error("Cannot create a pending block of the genesis block of a chain")]
-    PendingCreationNoGenesis
+    PendingCreationNoGenesis,
 }
 
 impl From<bonsai_trie::BonsaiStorageError<DbError>> for DeoxysStorageError {

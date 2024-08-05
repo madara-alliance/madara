@@ -14,10 +14,9 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Orher
-futures.workspace = true
-rayon.workspace = true
-tokio.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
+futures.workspace = true
 log.workspace = true
-
+rayon.workspace = true
+tokio.workspace = true

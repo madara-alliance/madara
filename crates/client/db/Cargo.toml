@@ -17,8 +17,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 dc-metrics = { workspace = true }
 dp-block = { workspace = true }
 dp-class = { workspace = true }
-dp-state-update = { workspace = true }
 dp-convert = { workspace = true }
+dp-state-update = { workspace = true }
 dp-transactions = { workspace = true }
 dp-utils = { workspace = true }
 

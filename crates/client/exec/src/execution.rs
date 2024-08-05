@@ -67,11 +67,11 @@ impl ExecutionContext {
                         // TODO: why was this here again?
                         if tx_info.transaction_receipt.fee.0 == 0 {
                             let gas_vector = tx_info.transaction_receipt.resources.to_gas_vector(
-                                &self.block_context.versioned_constants(),
+                                self.block_context.versioned_constants(),
                                 self.block_context.block_info().use_kzg_da,
                             )?;
                             let real_fees =
-                                get_fee_by_gas_vector(&self.block_context.block_info(), gas_vector, &fee_type);
+                                get_fee_by_gas_vector(self.block_context.block_info(), gas_vector, &fee_type);
 
                             tx_info.transaction_receipt.fee = real_fees;
                         }

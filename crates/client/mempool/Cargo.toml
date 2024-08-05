@@ -23,16 +23,16 @@ blockifier = { workspace = true, features = ["testing"] }
 [dependencies]
 
 # Deoxys
-dc-exec.workspace = true
 dc-db.workspace = true
+dc-exec.workspace = true
 dc-sync.workspace = true
-dp-state-update.workspace = true
-dp-class.workspace = true
-dp-transactions.workspace = true
 dp-block.workspace = true
-dp-utils.workspace = true
+dp-class.workspace = true
 dp-convert.workspace = true
 dp-receipt.workspace = true
+dp-state-update.workspace = true
+dp-transactions.workspace = true
+dp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true
@@ -41,12 +41,12 @@ starknet-types-core.workspace = true
 starknet_api.workspace = true
 
 # Other
-rayon.workspace = true
 anyhow.workspace = true
 hyper.workspace = true
+itertools.workspace = true
 log.workspace = true
 prometheus.workspace = true
+rayon.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-itertools.workspace = true

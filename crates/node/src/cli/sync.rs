@@ -88,7 +88,7 @@ impl SyncParams {
         FetchConfig {
             gateway,
             feeder_gateway,
-            chain_id: chain_id.into(),
+            chain_id,
             sound,
             l1_core_address,
             verify: !self.disable_root,
