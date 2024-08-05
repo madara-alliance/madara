@@ -1,4 +1,5 @@
 use crate::client::{L1BlockMetrics, StarknetCoreContract};
+use crate::l1_gas_price::L1GasPrices;
 use crate::{
     client::EthereumClient,
     utils::{convert_log_state_update, trim_hash},
@@ -11,6 +12,7 @@ use futures::StreamExt;
 use serde::Deserialize;
 use starknet_api::hash::StarkHash;
 use starknet_types_core::felt::Felt;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct L1StateUpdate {
@@ -78,13 +80,18 @@ pub fn update_l1(
     Ok(())
 }
 
-pub async fn sync(backend: &DeoxysBackend, eth_client: &EthereumClient, chain_id: Felt) -> anyhow::Result<()> {
+pub async fn sync(
+    backend: &DeoxysBackend,
+    eth_client: &EthereumClient,
+    chain_id: Felt,
+    l1_gas_prices: Arc<Mutex<L1GasPrices>>,
+) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
     log::debug!("update_l1: cleared confirmed block number");
 
     log::info!("🚀 Subscribed to L1 state verification");
-
+    // ideally here there would be one service which will update the l1 gas prices and another one for messages and one that's already present is state update
     // Get and store the latest verified state
     let initial_state = get_initial_state(eth_client).await.context("Getting initial ethereum state")?;
     update_l1(backend, initial_state, &eth_client.l1_block_metrics, chain_id)?;
@@ -166,8 +173,12 @@ mod eth_client_event_subscription_test {
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
-        let eth_client =
-            EthereumClient { provider: Arc::new(provider), l1_core_contract: core_contract.clone(), l1_block_metrics };
+        let eth_client = EthereumClient {
+            provider: Arc::new(provider),
+            l1_core_contract: core_contract.clone(),
+            l1_block_metrics,
+            gas_price_poll_ms: Some(10_u64),
+        };
 
         // Start listening for state updates
         let listen_handle = {

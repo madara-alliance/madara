@@ -17,11 +17,13 @@ pub mod starknet_sync_worker {
     use anyhow::Context;
     use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
     use dc_eth::client::EthereumClient;
+    use dc_eth::l1_gas_price::L1GasPrices;
     use dc_telemetry::TelemetryHandle;
     use dp_convert::ToFelt;
     use fetch::fetchers::FetchConfig;
 
     use starknet_providers::SequencerGatewayProvider;
+    use std::sync::Mutex;
     use std::{sync::Arc, time::Duration};
 
     #[allow(clippy::too_many_arguments)]
@@ -29,6 +31,7 @@ pub mod starknet_sync_worker {
         backend: &Arc<DeoxysBackend>,
         fetch_config: FetchConfig,
         eth_client: EthereumClient,
+        l1_gas_prices: Arc<Mutex<L1GasPrices>>,
         starting_block: Option<u64>,
         backup_every_n_blocks: Option<u64>,
         block_metrics: BlockMetrics,
@@ -56,7 +59,7 @@ pub mod starknet_sync_worker {
             None => provider,
         };
 
-        let l1_fut = async { dc_eth::state_update::sync(backend, &eth_client, chain_id).await };
+        let l1_fut = async { dc_eth::state_update::sync(backend, &eth_client, chain_id, l1_gas_prices).await };
 
         tokio::try_join!(
             l1_fut,
