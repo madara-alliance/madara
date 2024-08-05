@@ -50,19 +50,30 @@ sol!(
 pub struct EthereumClient {
     pub provider: Arc<ReqwestProvider>,
     pub l1_core_contract: StarknetCoreContractInstance<Http<Client>, RootProvider<Http<Client>>>,
-    // l1 metric :
-    // l1 block number
-    // l1 gas price in wei
-    // l1 gas price in strk (from oracle wei <-> strk)
+    pub l1_block_metrics: L1BlockMetrics, // l1 metric :
+                                          // l1 block number
+                                          // l1 gas price in wei
+                                          // l1 gas price in strk (from oracle wei <-> strk)
+}
+
+impl Clone for EthereumClient {
+    fn clone(&self) -> Self {
+        EthereumClient {
+            provider: Arc::clone(&self.provider),
+            l1_core_contract: self.l1_core_contract.clone(),
+            l1_block_metrics: self.l1_block_metrics.clone(),
+        }
+    }
 }
 
 impl EthereumClient {
     /// Create a new EthereumClient instance with the given RPC URL
-    pub async fn new(url: Url, l1_core_address: Address) -> anyhow::Result<Self> {
+    pub async fn new(url: Url, l1_core_address: Address, metrics_handle: MetricsRegistry) -> anyhow::Result<Self> {
         let provider = ProviderBuilder::new().on_http(url);
         let core_contract = StarknetCoreContract::new(l1_core_address, provider.clone());
+        let l1_block_metrics = L1BlockMetrics::register(&metrics_handle)?;
 
-        Ok(Self { provider: Arc::new(provider), l1_core_contract: core_contract })
+        Ok(Self { provider: Arc::new(provider), l1_core_contract: core_contract, l1_block_metrics })
     }
 
     /// Retrieves the latest Ethereum block number
@@ -118,6 +129,7 @@ pub mod eth_client_getter_test {
     use super::*;
     use alloy::node_bindings::{Anvil, AnvilInstance};
     use alloy::primitives::U256;
+    use dc_metrics::MetricsService;
     use dotenv::from_filename;
     use rstest::*;
     use std::env;
@@ -149,8 +161,9 @@ pub mod eth_client_getter_test {
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
         let contract = StarknetCoreContract::new(address, provider.clone());
-
-        EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone() }
+        let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
+        EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
     }
 
     #[rstest]

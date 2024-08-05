@@ -3,28 +3,24 @@ use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
 use dc_db::{DatabaseService, DeoxysBackend};
-use dc_eth::client::L1BlockMetrics;
+use dc_eth::client::EthereumClient;
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
 use dc_telemetry::TelemetryHandle;
-use primitive_types::H160;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
-use url::Url;
 
 #[derive(Clone)]
 pub struct SyncService {
     db_backend: Arc<DeoxysBackend>,
     fetch_config: FetchConfig,
     backup_every_n_blocks: Option<u64>,
-    l1_endpoint: Option<Url>,
-    l1_core_address: H160,
+    eth_client: EthereumClient,
     starting_block: Option<u64>,
     block_metrics: BlockMetrics,
-    l1_block_metrics: L1BlockMetrics,
     db_metrics: DbMetrics,
     chain_id: Felt,
     start_params: Option<TelemetryHandle>,
@@ -41,7 +37,6 @@ impl SyncService {
     ) -> anyhow::Result<Self> {
         // TODO: create l1 metrics here
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
-        let l1_block_metrics = L1BlockMetrics::register(&metrics_handle)?;
         let db_metrics = DbMetrics::register(&metrics_handle)?;
         let fetch_config = config.block_fetch_config();
 
@@ -57,15 +52,18 @@ impl SyncService {
             None
         };
 
+        let core_address = Address::from_slice(config.network.l1_core_address().as_bytes());
+        let eth_client = EthereumClient::new(l1_endpoint.unwrap(), core_address, metrics_handle)
+            .await
+            .context("Creating ethereum client")?;
+
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
             fetch_config,
-            l1_endpoint,
-            l1_core_address: config.network.l1_core_address(),
+            eth_client,
             starting_block: config.starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
             block_metrics,
-            l1_block_metrics,
             db_metrics,
             chain_id: config.network.chain_id(),
             start_params: Some(telemetry),
@@ -80,11 +78,9 @@ impl SyncService {
         let SyncService {
             fetch_config,
             backup_every_n_blocks,
-            l1_endpoint,
-            l1_core_address,
+            eth_client,
             starting_block,
             block_metrics,
-            l1_block_metrics,
             db_metrics,
             chain_id,
             pending_block_poll_interval,
@@ -93,17 +89,15 @@ impl SyncService {
         let telemetry = self.start_params.take().context("service already started")?;
 
         let db_backend = Arc::clone(&self.db_backend);
-        let core_address = Address::from_slice(l1_core_address.as_bytes());
+
         join_set.spawn(async move {
             dc_sync::starknet_sync_worker::sync(
                 &db_backend,
                 fetch_config,
-                l1_endpoint,
-                core_address,
+                eth_client,
                 starting_block,
                 backup_every_n_blocks,
                 block_metrics,
-                l1_block_metrics,
                 db_metrics,
                 chain_id,
                 telemetry,

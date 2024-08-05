@@ -11,7 +11,7 @@ pub struct BlockMetrics {
     pub transaction_count: Gauge<F64>,
     pub event_count: Gauge<F64>,
     // L1 network metrics
-    // gas price is also define in sync/block_metrics.rs but this would be the gas used in the block and it's price
+    // gas price is also define in eth/client.rs but this would be the gas used in the block and it's price
     pub l1_gas_price_wei: Gauge<F64>,
     pub l1_gas_price_strk: Gauge<F64>,
 }

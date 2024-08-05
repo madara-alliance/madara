@@ -19,12 +19,10 @@ pub mod starknet_sync_worker {
     use self::fetch::fetchers::FetchConfig;
     use super::*;
     use crate::metrics::block_metrics::BlockMetrics;
-    use alloy::primitives::Address;
     use anyhow::Context;
     use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
-    use dc_eth::client::L1BlockMetrics;
+    use dc_eth::client::EthereumClient;
     use dc_telemetry::TelemetryHandle;
-    use reqwest::Url;
     use starknet_providers::SequencerGatewayProvider;
     use std::{sync::Arc, time::Duration};
 
@@ -32,12 +30,10 @@ pub mod starknet_sync_worker {
     pub async fn sync(
         backend: &Arc<DeoxysBackend>,
         fetch_config: FetchConfig,
-        l1_url: Option<Url>,
-        l1_core_address: Address,
+        eth_client: EthereumClient,
         starting_block: Option<u64>,
         backup_every_n_blocks: Option<u64>,
         block_metrics: BlockMetrics,
-        l1_block_metrics: L1BlockMetrics,
         db_metrics: DbMetrics,
         chain_id: Felt,
         telemetry: TelemetryHandle,
@@ -67,13 +63,7 @@ pub mod starknet_sync_worker {
             None => provider,
         };
 
-        let l1_fut = async {
-            if let Some(l1_url) = l1_url {
-                dc_eth::state_update::sync(backend, l1_url.clone(), &l1_block_metrics, l1_core_address, chain_id).await
-            } else {
-                Ok(())
-            }
-        };
+        let l1_fut = async { dc_eth::state_update::sync(backend, &eth_client, chain_id).await };
 
         tokio::try_join!(
             l1_fut,

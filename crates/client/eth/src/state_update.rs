@@ -3,7 +3,6 @@ use crate::{
     client::EthereumClient,
     utils::{convert_log_state_update, trim_hash},
 };
-use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::DeoxysBackend;
 use dp_convert::ToFelt;
@@ -13,7 +12,6 @@ use futures::StreamExt;
 use serde::Deserialize;
 use starknet_api::hash::StarkHash;
 use starknet_types_core::felt::Felt;
-use url::Url;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct L1StateUpdate {
@@ -81,27 +79,19 @@ pub fn update_l1(
     Ok(())
 }
 
-pub async fn sync(
-    backend: &DeoxysBackend,
-    l1_url: Url,
-    block_metrics: &L1BlockMetrics,
-    l1_core_address: Address,
-    chain_id: Felt,
-) -> anyhow::Result<()> {
+pub async fn sync(backend: &DeoxysBackend, eth_client: &EthereumClient, chain_id: Felt) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
     log::debug!("update_l1: cleared confirmed block number");
 
-    let client = EthereumClient::new(l1_url, l1_core_address).await.context("Creating ethereum client")?;
-
     log::info!("🚀 Subscribed to L1 state verification");
 
     // Get and store the latest verified state
-    let initial_state = get_initial_state(&client).await.context("Getting initial ethereum state")?;
-    update_l1(backend, initial_state, block_metrics, chain_id)?;
+    let initial_state = get_initial_state(eth_client).await.context("Getting initial ethereum state")?;
+    update_l1(backend, initial_state, &eth_client.l1_block_metrics, chain_id)?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    listen_and_update_state(&client, backend, block_metrics, chain_id)
+    listen_and_update_state(eth_client, backend, &eth_client.l1_block_metrics, chain_id)
         .await
         .context("Subscribing to the LogStateUpdate event")?;
 
@@ -179,13 +169,15 @@ mod eth_client_event_subscription_test {
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
-        let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: core_contract.clone() };
+        let eth_client =
+            EthereumClient { provider: Arc::new(provider), l1_core_contract: core_contract.clone(), l1_block_metrics };
 
         // Start listening for state updates
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                listen_and_update_state(&eth_client, db.backend(), &l1_block_metrics, chain_info.chain_id).await
+                listen_and_update_state(&eth_client, db.backend(), &eth_client.l1_block_metrics, chain_info.chain_id)
+                    .await
             })
         };
 
