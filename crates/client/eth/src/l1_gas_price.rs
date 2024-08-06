@@ -98,13 +98,32 @@ async fn update_gas_price(eth_client: &EthereumClient, gas_price: Arc<Mutex<L1Ga
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::client::eth_client_getter_test::eth_client;
+    use crate::client::eth_client_getter_test::create_ethereum_client;
+    use futures::future::FutureExt;
+    use httpmock::{MockServer, Regex};
     use rstest::*;
+    use std::panic::AssertUnwindSafe;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use tokio::time::{timeout, Duration};
+
+    #[fixture]
+    #[once]
+    pub fn eth_client_with_mock() -> (MockServer, EthereumClient) {
+        let server = MockServer::start();
+        let addr = format!("http://{}", server.address());
+        let eth_client = create_ethereum_client(Some(&addr));
+        (server, eth_client)
+    }
+
+    #[fixture]
+    #[once]
+    pub fn eth_client() -> EthereumClient {
+        create_ethereum_client(None)
+    }
 
     #[rstest]
     #[tokio::test]
-    async fn test_gas_price_worker_works(eth_client: &'static EthereumClient) {
+    async fn gas_price_worker_works(eth_client: &'static EthereumClient) {
         let gas_price = Arc::new(Mutex::new(L1GasPrices::default()));
 
         // Run the worker for a short time
@@ -117,6 +136,63 @@ mod eth_client_gas_price_worker_test {
         let updated_price = gas_price.lock().await;
         assert_eq!(updated_price.eth_l1_gas_price.get(), 1);
         assert_eq!(updated_price.eth_l1_data_gas_price.get(), 1);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn gas_price_worker_fails(eth_client_with_mock: &'static (MockServer, EthereumClient)) {
+        let (mock_server, eth_client) = eth_client_with_mock;
+
+        let mock = mock_server.mock(|when, then| {
+            when.method("POST").path("/").json_body_obj(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "eth_feeHistory",
+                "params": ["0x12c", "latest", []],
+                "id": 0
+            }));
+            then.status(500).json_body_obj(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32000,
+                    "message": "Internal Server Error"
+                },
+                "id": 1
+            }));
+        });
+
+        let gas_price = Arc::new(Mutex::new(L1GasPrices::default()));
+
+        {
+            let mut price = gas_price.lock().await;
+            price.last_update_timestamp =
+                SystemTime::now().duration_since(UNIX_EPOCH).expect("duration issue").as_millis()
+                    - 11 * DEFAULT_GAS_PRICE_POLL_MS as u128;
+        }
+
+        let timeout_duration = Duration::from_secs(15); // Adjust this value as needed
+
+        let result = timeout(
+            timeout_duration,
+            AssertUnwindSafe(gas_price_worker(&eth_client, gas_price.clone(), true)).catch_unwind(),
+        )
+        .await;
+
+        match result {
+            Ok(Ok(_)) => panic!("Expected gas_price_worker to panic, but it didn't"),
+            Ok(Err(panic_msg)) => {
+                if let Some(panic_msg) = panic_msg.downcast_ref::<String>() {
+                    let re =
+                        Regex::new(r"Gas prices have not been updated for \d+ ms\. Last update was at \d+").unwrap();
+                    assert!(re.is_match(panic_msg), "Panic message did not match expected format. Got: {}", panic_msg);
+                } else {
+                    panic!("Panic occurred, but message was not a string");
+                }
+            }
+            Err(_) => panic!("gas_price_worker timed out"),
+        }
+
+        // Verify that the mock was called
+        mock.assert();
     }
 
     #[rstest]
