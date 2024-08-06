@@ -256,6 +256,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_block_tag() {
+        assert_eq!(BlockTag::Latest, BlockTag::from(starknet_core::types::BlockTag::Latest));
+        assert_eq!(BlockTag::Pending, BlockTag::from(starknet_core::types::BlockTag::Pending));
+
+        assert_eq!(starknet_core::types::BlockTag::Latest, starknet_core::types::BlockTag::from(BlockTag::Latest));
+        assert_eq!(starknet_core::types::BlockTag::Pending, starknet_core::types::BlockTag::from(BlockTag::Pending));
+    }
+
+    #[test]
+    fn test_block_id() {
+        assert_eq!(BlockId::Hash(Felt::ONE), BlockId::from(starknet_core::types::BlockId::Hash(Felt::ONE)));
+        assert_eq!(BlockId::Number(1), BlockId::from(starknet_core::types::BlockId::Number(1)));
+        assert_eq!(
+            BlockId::Tag(BlockTag::Latest),
+            BlockId::from(starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Latest))
+        );
+
+        assert_eq!(
+            starknet_core::types::BlockId::Hash(Felt::ONE),
+            starknet_core::types::BlockId::from(BlockId::Hash(Felt::ONE))
+        );
+        assert_eq!(starknet_core::types::BlockId::Number(1), starknet_core::types::BlockId::from(BlockId::Number(1)));
+        assert_eq!(
+            starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Latest),
+            starknet_core::types::BlockId::from(BlockId::Tag(BlockTag::Latest))
+        );
+    }
+
+    #[test]
     fn test_block_info_not_pending() {
         let block_info = DeoxysBlockInfo {
             header: Default::default(),
