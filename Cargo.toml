@@ -3,6 +3,7 @@ members = [
   "crates/client/db",
   "crates/client/exec",
   "crates/client/sync",
+  "crates/client/eth",
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
@@ -22,6 +23,7 @@ default-members = [
   "crates/client/db",
   "crates/client/exec",
   "crates/client/sync",
+  "crates/client/eth",
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
@@ -82,6 +84,7 @@ dc-db = { path = "crates/client/db" }
 dc-exec = { path = "crates/client/exec" }
 dc-rpc = { path = "crates/client/rpc" }
 dc-sync = { path = "crates/client/sync" }
+dc-eth = { path = "crates/client/eth" }
 dc-metrics = { path = "crates/client/metrics" }
 
 # Starknet dependencies
@@ -98,6 +101,16 @@ blockifier = "=0.6.0-rc.2"
 starknet_api = "=0.10.0"
 cairo-lang-starknet-classes = "2.6.0"
 cairo-lang-utils = "2.6.0"
+
+alloy = { version = "0.2.0", features = [
+  "node-bindings",
+  "providers",
+  "transport-http",
+  "sol-types",
+  "json",
+  "rpc-types",
+  "contract",
+] }
 
 # Ethers: using the same versions as in Anvil
 ethers = { git = "https://github.com/gakonst/ethers-rs" }
@@ -145,6 +158,10 @@ crossbeam-skiplist = "0.1"
 bincode = "1.3"
 prometheus = "0.13.4"
 fdlimit = "0.3.0"
+rustc-hex = { version = "2.0.0" }
+tempfile = "3.5.0"
+dotenv = "0.15.0"
+
 
 [patch.crates-io]
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
