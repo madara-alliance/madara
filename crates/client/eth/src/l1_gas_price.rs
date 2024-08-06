@@ -1,10 +1,10 @@
 use crate::client::EthereumClient;
 use alloy::eips::BlockNumberOrTag;
 use alloy::providers::Provider;
-use anyhow::{format_err, Context};
-use primitive_types::U256;
+use anyhow::Context;
+use futures::lock::Mutex;
 use std::num::NonZeroU128;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 const DEFAULT_GAS_PRICE_POLL_MS: u64 = 10_000;
@@ -30,7 +30,7 @@ impl Default for L1GasPrices {
     }
 }
 
-pub async fn run_worker(
+pub async fn gas_price_worker(
     eth_client: &EthereumClient,
     gas_price: Arc<Mutex<L1GasPrices>>,
     infinite_loop: bool,
@@ -43,10 +43,7 @@ pub async fn run_worker(
             Err(e) => log::error!("Failed to update gas prices: {:?}", e),
         }
 
-        let gas_price = gas_price
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock gas price: {:?}", e))
-            .context("Setting l1 last confirmed block number")?;
+        let gas_price = gas_price.lock().await;
         let last_update_timestamp = gas_price.last_update_timestamp;
         drop(gas_price);
         let current_timestamp = std::time::SystemTime::now()
@@ -84,10 +81,7 @@ async fn update_gas_price(eth_client: &EthereumClient, gas_price: Arc<Mutex<L1Ga
 
     let eth_gas_price = fee_history.base_fee_per_blob_gas.last().context("Setting l1 last confirmed block number")?;
 
-    let mut gas_price = gas_price
-        .lock()
-        .map_err(|e| anyhow::anyhow!("Failed to lock gas price: {:?}", e))
-        .context("Setting l1 last confirmed block number")?;
+    let mut gas_price = gas_price.lock().await;
 
     gas_price.eth_l1_gas_price = NonZeroU128::new(*eth_gas_price).context("Setting l1 last confirmed block number")?;
     gas_price.eth_l1_data_gas_price =
@@ -99,4 +93,59 @@ async fn update_gas_price(eth_client: &EthereumClient, gas_price: Arc<Mutex<L1Ga
     drop(gas_price);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod eth_client_gas_price_worker_test {
+    use super::*;
+    use crate::client::eth_client_getter_test::eth_client;
+    use rstest::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_gas_price_worker_works(eth_client: &'static EthereumClient) {
+        let gas_price = Arc::new(Mutex::new(L1GasPrices::default()));
+
+        // Run the worker for a short time
+        let worker_handle = tokio::spawn(gas_price_worker(&eth_client, gas_price.clone(), false));
+
+        // Wait for the worker to complete
+        worker_handle.await.expect("issue with the worker").expect("some issues");
+
+        // Check if the gas price was updated
+        let updated_price = gas_price.lock().await;
+        assert_eq!(updated_price.eth_l1_gas_price.get(), 1);
+        assert_eq!(updated_price.eth_l1_data_gas_price.get(), 1);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn update_gas_price_works(eth_client: &'static EthereumClient) {
+        // Initialize gas prices with default values
+        let l1_gas_price = Arc::new(Mutex::new(L1GasPrices::default()));
+
+        // Update gas prices
+        update_gas_price(eth_client, l1_gas_price.clone()).await.expect("Failed to update gas prices");
+
+        // Access the updated gas prices
+        let updated_prices = l1_gas_price.lock().await;
+
+        // Assert that the ETH L1 gas price has been updated to 1 (as per test environment)
+        assert_eq!(updated_prices.eth_l1_gas_price.get(), 1, "ETH L1 gas price should be 1 in test environment");
+
+        // Assert that the ETH L1 data gas price has been updated to 1 (as per test environment)
+        assert_eq!(
+            updated_prices.eth_l1_data_gas_price.get(),
+            1,
+            "ETH L1 data gas price should be 1 in test environment"
+        );
+
+        // Verify that the last update timestamp is recent
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs() as u128;
+        assert!(
+            updated_prices.last_update_timestamp > now - 60,
+            "Last update timestamp should be within the last minute"
+        );
+    }
 }
