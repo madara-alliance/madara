@@ -5,10 +5,12 @@
 //! and getting the next value.
 //!
 //! Insertion is batched and done in parallel using rayon: this is not intended for use in the RPCs.
+
 use std::sync::Arc;
 
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use rocksdb::{BoundColumnFamily, IteratorMode, ReadOptions, WriteOptions};
+use serde::Serialize;
 use starknet_core::types::Felt;
 
 use crate::{
@@ -46,6 +48,8 @@ impl DeoxysBackend {
                 // Get pending or fallback to latest block_n
                 let col = self.db.get_column(pending_col);
                 // todo: smallint here to avoid alloc
+
+                // NB: pending has keys in bincode, not bytes
                 if let Some(res) = self.db.get_pinned_cf(&col, bincode::serialize(k)?)? {
                     return Ok(Some(bincode::deserialize(&res)?)); // found in pending
                 }
@@ -205,16 +209,18 @@ impl DeoxysBackend {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 
+        // NB: pending has keys in bincode, not bytes
+
         fn write_chunk(
             db: &DB,
             writeopts: &WriteOptions,
             col: &Arc<BoundColumnFamily>,
-            chunk: impl IntoIterator<Item = (impl AsRef<[u8]>, Felt)>,
+            chunk: impl IntoIterator<Item = (impl Serialize, Felt)>,
         ) -> Result<(), DeoxysStorageError> {
             let mut batch = WriteBatchWithTransaction::default();
             for (key, value) in chunk {
                 // TODO: find a way to avoid this allocation
-                batch.put_cf(col, key.as_ref(), bincode::serialize(&value)?);
+                batch.put_cf(col, bincode::serialize(&key)?, bincode::serialize(&value)?);
             }
             db.write_opt(batch, writeopts)?;
             Ok(())
@@ -222,27 +228,15 @@ impl DeoxysBackend {
 
         contract_class_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(Column::PendingContractToClassHashes),
-            |col, chunk| write_chunk(&self.db, &writeopts, col, chunk.iter().map(|(k, v)| (k.to_bytes_be(), *v))),
+            |col, chunk| write_chunk(&self.db, &writeopts, col, chunk.iter().map(|(k, v)| (k, *v))),
         )?;
         contract_nonces_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(Column::PendingContractToNonces),
-            |col, chunk| write_chunk(&self.db, &writeopts, col, chunk.iter().map(|(k, v)| (k.to_bytes_be(), *v))),
+            |col, chunk| write_chunk(&self.db, &writeopts, col, chunk.iter().map(|(k, v)| (k, *v))),
         )?;
         contract_kv_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(Column::PendingContractStorage),
-            |col, chunk| {
-                write_chunk(
-                    &self.db,
-                    &writeopts,
-                    col,
-                    chunk.iter().map(|((k1, k2), v)| {
-                        let mut key = [0u8; 64];
-                        key[..32].copy_from_slice(k1.to_bytes_be().as_ref());
-                        key[32..].copy_from_slice(k2.to_bytes_be().as_ref());
-                        (key, *v)
-                    }),
-                )
-            },
+            |col, chunk| write_chunk(&self.db, &writeopts, col, chunk.iter().map(|((k1, k2), v)| ((k1, k2), *v))),
         )?;
 
         Ok(())

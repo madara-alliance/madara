@@ -61,6 +61,7 @@ pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
 
     opts.set_env(&env);
 
+    #[cfg(not(feature = "testing"))]
     log::debug!("opening db at {:?}", path.display());
     let db = DB::open_cf_descriptors(
         &opts,
@@ -333,12 +334,12 @@ struct BackupRequest {
 
 impl Drop for DeoxysBackend {
     fn drop(&mut self) {
+        #[cfg(not(feature = "testing"))]
         log::info!("⏳ Gracefully closing the database...");
     }
 }
 
 impl DeoxysBackend {
-
     pub fn chain_config(&self) -> &Arc<ChainConfig> {
         &self.chain_config
     }

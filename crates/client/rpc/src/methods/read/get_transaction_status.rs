@@ -41,9 +41,7 @@ pub fn get_transaction_status(starknet: &Starknet, transaction_hash: Felt) -> St
     };
 
     match block.info {
-        DeoxysMaybePendingBlockInfo::Pending(_) => {
-            Ok(TransactionStatus::AcceptedOnL2(tx_execution_status))
-        }
+        DeoxysMaybePendingBlockInfo::Pending(_) => Ok(TransactionStatus::AcceptedOnL2(tx_execution_status)),
         DeoxysMaybePendingBlockInfo::NotPending(block) => {
             if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
                 Ok(TransactionStatus::AcceptedOnL1(tx_execution_status))

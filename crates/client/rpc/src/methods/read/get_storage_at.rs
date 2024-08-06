@@ -55,3 +55,74 @@ pub fn get_storage_at(
 
     Ok(storage)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{make_sample_chain_2, open_testing, SampleChain2};
+    use rstest::rstest;
+    use starknet_core::types::BlockTag;
+
+    #[rstest]
+    fn test_get_storage_at() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let (backend, rpc) = open_testing();
+        let SampleChain2 { keys, values, contracts, .. } = make_sample_chain_2(&backend);
+
+        // Expected values are in the format `values[contract][key] = value`.
+        let check_contract_key_value = |block_n, contracts_kv: [Option<[Felt; 3]>; 3]| {
+            for (contract_i, contract_values) in contracts_kv.into_iter().enumerate() {
+                if let Some(contract_values) = contract_values {
+                    for (key_i, value) in contract_values.into_iter().enumerate() {
+                        assert_eq!(
+                            get_storage_at(&rpc, contracts[contract_i], keys[key_i], block_n).unwrap(),
+                            value,
+                            "get storage at blockid {block_n:?}, contract #{contract_i}, key #{key_i}"
+                        );
+                    }
+                } else {
+                    // contract not found
+                    for (key_i, _) in keys.iter().enumerate() {
+                        assert_eq!(
+                            get_storage_at(&rpc, contracts[contract_i], keys[key_i], block_n),
+                            Err(StarknetRpcApiError::ContractNotFound),
+                            "get storage at blockid {block_n:?}, contract #{contract_i}, key #{key_i} should not found"
+                        );
+                    }
+                }
+            }
+        };
+
+        // Block 0
+        let block_n = BlockId::Number(0);
+        let expected = [Some([values[0], Felt::ZERO, values[2]]), None, None];
+        check_contract_key_value(block_n, expected);
+
+        // Block 1
+        let block_n = BlockId::Number(1);
+        let expected = [
+            Some([values[1], Felt::ZERO, values[2]]),
+            Some([Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            Some([Felt::ZERO, Felt::ZERO, values[0]]),
+        ];
+        check_contract_key_value(block_n, expected);
+
+        // Block 2
+        let block_n = BlockId::Number(2);
+        let expected = [
+            Some([values[1], Felt::ZERO, values[2]]),
+            Some([values[0], Felt::ZERO, Felt::ZERO]),
+            Some([Felt::ZERO, values[2], values[0]]),
+        ];
+        check_contract_key_value(block_n, expected);
+
+        // Pending
+        let block_n = BlockId::Tag(BlockTag::Pending);
+        let expected = [
+            Some([values[2], values[0], values[2]]),
+            Some([values[0], Felt::ZERO, Felt::ZERO]),
+            Some([Felt::ZERO, values[2], values[0]]),
+        ];
+        check_contract_key_value(block_n, expected);
+    }
+}

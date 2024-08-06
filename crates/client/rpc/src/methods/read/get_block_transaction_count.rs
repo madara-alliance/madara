@@ -48,9 +48,9 @@ mod tests {
         assert_eq!(get_block_transaction_count(&rpc, BlockId::Number(1)).unwrap(), 0);
         assert_eq!(get_block_transaction_count(&rpc, BlockId::Hash(block_hashes[1])).unwrap(), 0);
         // Block 2
-        assert_eq!(get_block_transaction_count(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), 2);
         assert_eq!(get_block_transaction_count(&rpc, BlockId::Number(2)).unwrap(), 2);
         assert_eq!(get_block_transaction_count(&rpc, BlockId::Hash(block_hashes[2])).unwrap(), 2);
+        assert_eq!(get_block_transaction_count(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), 2);
         // Pending
         assert_eq!(get_block_transaction_count(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), 1);
     }

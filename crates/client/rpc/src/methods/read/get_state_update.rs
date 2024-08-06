@@ -80,3 +80,55 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{make_sample_chain_2, open_testing, SampleChain2};
+    use rstest::rstest;
+
+    #[rstest]
+    fn test_get_state_update() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let (backend, rpc) = open_testing();
+        let SampleChain2 { block_hashes, state_roots, state_diffs, .. } = make_sample_chain_2(&backend);
+
+        // Block 0
+        let res = MaybePendingStateUpdate::Update(StateUpdate {
+            block_hash: block_hashes[0],
+            old_root: Felt::ZERO,
+            new_root: state_roots[0],
+            state_diff: state_diffs[0].clone().into(),
+        });
+        assert_eq!(get_state_update(&rpc, BlockId::Number(0)).unwrap(), res);
+        assert_eq!(get_state_update(&rpc, BlockId::Hash(block_hashes[0])).unwrap(), res);
+
+        // Block 1
+        let res = MaybePendingStateUpdate::Update(StateUpdate {
+            block_hash: block_hashes[1],
+            old_root: state_roots[0],
+            new_root: state_roots[1],
+            state_diff: state_diffs[1].clone().into(),
+        });
+        assert_eq!(get_state_update(&rpc, BlockId::Number(1)).unwrap(), res);
+        assert_eq!(get_state_update(&rpc, BlockId::Hash(block_hashes[1])).unwrap(), res);
+
+        // Block 2
+        let res = MaybePendingStateUpdate::Update(StateUpdate {
+            block_hash: block_hashes[2],
+            old_root: state_roots[1],
+            new_root: state_roots[2],
+            state_diff: state_diffs[2].clone().into(),
+        });
+        assert_eq!(get_state_update(&rpc, BlockId::Number(2)).unwrap(), res);
+        assert_eq!(get_state_update(&rpc, BlockId::Hash(block_hashes[2])).unwrap(), res);
+        assert_eq!(get_state_update(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), res);
+
+        // Pending
+        let res = MaybePendingStateUpdate::PendingUpdate(PendingStateUpdate {
+            old_root: state_roots[2],
+            state_diff: state_diffs[3].clone().into(),
+        });
+        assert_eq!(get_state_update(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), res);
+    }
+}
