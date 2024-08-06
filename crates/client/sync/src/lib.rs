@@ -2,7 +2,6 @@ use crate::l2::L2SyncConfig;
 
 pub mod commitments;
 pub mod fetch;
-pub mod l1;
 pub mod l2;
 pub mod metrics;
 pub mod reorgs;
@@ -13,25 +12,23 @@ pub use utils::m;
 pub use utils::{convert, utility};
 
 pub mod starknet_sync_worker {
-    use std::{sync::Arc, time::Duration};
-
-    use anyhow::Context;
-    use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
-    use dc_telemetry::TelemetryHandle;
-    use dp_convert::ToFelt;
-    use reqwest::Url;
-    use starknet_providers::SequencerGatewayProvider;
-
-    use self::fetch::fetchers::FetchConfig;
     use super::*;
     use crate::metrics::block_metrics::BlockMetrics;
+    use anyhow::Context;
+    use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
+    use dc_eth::client::EthereumClient;
+    use dc_telemetry::TelemetryHandle;
+    use dp_convert::ToFelt;
+    use fetch::fetchers::FetchConfig;
+
+    use starknet_providers::SequencerGatewayProvider;
+    use std::{sync::Arc, time::Duration};
 
     #[allow(clippy::too_many_arguments)]
     pub async fn sync(
         backend: &Arc<DeoxysBackend>,
         fetch_config: FetchConfig,
-        l1_url: Option<Url>,
-        l1_core_address: ethers::abi::Address,
+        eth_client: EthereumClient,
         starting_block: Option<u64>,
         backup_every_n_blocks: Option<u64>,
         block_metrics: BlockMetrics,
@@ -59,14 +56,7 @@ pub mod starknet_sync_worker {
             None => provider,
         };
 
-        let l1_block_metric = block_metrics.clone();
-        let l1_fut = async {
-            if let Some(l1_url) = l1_url {
-                l1::sync(backend, l1_url.clone(), l1_block_metric, l1_core_address, chain_id).await
-            } else {
-                Ok(())
-            }
-        };
+        let l1_fut = async { dc_eth::state_update::sync(backend, &eth_client, chain_id).await };
 
         tokio::try_join!(
             l1_fut,

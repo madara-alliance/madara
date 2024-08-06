@@ -1,9 +1,10 @@
 //! Contains the code required to sync data from the feeder efficiently.
-use std::borrow::Cow;
-use std::pin::pin;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
-
+use crate::commitments::update_tries_and_compute_state_root;
+use crate::convert::{convert_and_verify_block, convert_and_verify_class};
+use crate::fetch::fetchers::{fetch_block_and_updates, FetchBlockId, L2BlockAndUpdates};
+use crate::fetch::l2_fetch_task;
+use crate::metrics::block_metrics::BlockMetrics;
+use crate::utility::trim_hash;
 use anyhow::{bail, Context};
 use dc_db::db_metrics::DbMetrics;
 use dc_db::DeoxysBackend;
@@ -14,23 +15,20 @@ use dp_block::{DeoxysMaybePendingBlock, Header};
 use dp_class::ConvertedClass;
 use dp_state_update::StateDiff;
 use dp_transactions::TransactionTypeError;
+use dp_utils::{
+    channel_wait_or_graceful_shutdown, spawn_rayon_task, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch,
+};
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
+use std::borrow::Cow;
+use std::pin::pin;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Duration;
-
-use crate::commitments::update_tries_and_compute_state_root;
-use crate::convert::{convert_and_verify_block, convert_and_verify_class};
-use crate::fetch::fetchers::{fetch_block_and_updates, FetchBlockId, L2BlockAndUpdates};
-use crate::fetch::l2_fetch_task;
-use crate::metrics::block_metrics::BlockMetrics;
-use crate::utility::trim_hash;
-use dp_utils::{
-    channel_wait_or_graceful_shutdown, spawn_rayon_task, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch,
-};
 
 // TODO: add more explicit error variants
 #[derive(thiserror::Error, Debug)]

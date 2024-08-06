@@ -19,6 +19,7 @@ name = "deoxys"
 
 # Deoxys
 dc-db = { workspace = true }
+dc-eth = { workspace = true }
 dc-mempool = { workspace = true }
 dc-metrics = { workspace = true }
 dc-rpc = { workspace = true }
@@ -34,6 +35,7 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
+alloy = { workspace = true }
 anyhow.workspace = true
 async-trait = { workspace = true }
 chrono = "0.4.38"

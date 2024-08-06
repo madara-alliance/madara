@@ -42,8 +42,8 @@ impl DeoxysBackend {
 
             if res.chain_id != expected.chain_id {
                 anyhow::bail!(
-                    "The database has been created on the network `{}` (chain id {}), \
-                            but the node is configured for network `{}` (chain id {}).",
+                    "The database has been created on the network \"{}\" (chain id `{}`), \
+                            but the node is configured for network \"{}\" (chain id `{}`).",
                     res.chain_name,
                     res.chain_id,
                     expected.chain_name,
