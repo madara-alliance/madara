@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: experimental block production and mempool
 - refactor: L1BlockMetric is intialized inside the EthereumClient new function
 - refactor: BlockMetrics divided in L1BlockMetrics and BlockMetrics
 - test: tests added for eth client and event subscription

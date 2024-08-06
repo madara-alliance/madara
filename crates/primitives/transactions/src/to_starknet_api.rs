@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use dp_convert::{felt_to_u128, ToStarkFelt};
-use starknet_api::hash::StarkFelt;
+use dp_convert::felt_to_u128;
 use starknet_types_core::felt::Felt;
 
 use crate::{
@@ -244,39 +243,39 @@ fn fee(fee: &Felt) -> Result<starknet_api::transaction::Fee, TransactionApiError
 }
 
 fn signature(signature: &[Felt]) -> starknet_api::transaction::TransactionSignature {
-    starknet_api::transaction::TransactionSignature(signature.iter().map(ToStarkFelt::to_stark_felt).collect())
+    starknet_api::transaction::TransactionSignature(signature.to_vec())
 }
 
 fn contract_address(contract_address: &Felt) -> Result<starknet_api::core::ContractAddress, TransactionApiError> {
-    contract_address.to_stark_felt().try_into().map_err(|_| TransactionApiError::ContractAddress)
+    (*contract_address).try_into().map_err(|_| TransactionApiError::ContractAddress)
 }
 
 fn class_hash(class_hash: &Felt) -> starknet_api::core::ClassHash {
-    starknet_api::core::ClassHash(class_hash.to_stark_felt())
+    starknet_api::core::ClassHash(*class_hash)
 }
 
 fn compiled_class_hash(compiled_class_hash: &Felt) -> starknet_api::core::CompiledClassHash {
-    starknet_api::core::CompiledClassHash(compiled_class_hash.to_stark_felt())
+    starknet_api::core::CompiledClassHash(*compiled_class_hash)
 }
 
 fn entry_point_selector(entry_point_selector: &Felt) -> starknet_api::core::EntryPointSelector {
-    starknet_api::core::EntryPointSelector(entry_point_selector.to_stark_felt())
+    starknet_api::core::EntryPointSelector(*entry_point_selector)
 }
 
 fn calldata(calldata: &[Felt]) -> starknet_api::transaction::Calldata {
-    starknet_api::transaction::Calldata(Arc::new(calldata.iter().map(ToStarkFelt::to_stark_felt).collect()))
+    starknet_api::transaction::Calldata(Arc::new(calldata.to_vec()))
 }
 
 fn contract_address_salt(salt: &Felt) -> starknet_api::transaction::ContractAddressSalt {
-    starknet_api::transaction::ContractAddressSalt(salt.to_stark_felt())
+    starknet_api::transaction::ContractAddressSalt(*salt)
 }
 
 fn nonce(nonce: &Felt) -> starknet_api::core::Nonce {
-    starknet_api::core::Nonce(nonce.to_stark_felt())
+    starknet_api::core::Nonce(*nonce)
 }
 
 fn nonce_u64(nonce: u64) -> starknet_api::core::Nonce {
-    starknet_api::core::Nonce(StarkFelt::from(nonce))
+    starknet_api::core::Nonce(nonce.into())
 }
 
 fn tip(tip: u64) -> starknet_api::transaction::Tip {
@@ -284,15 +283,15 @@ fn tip(tip: u64) -> starknet_api::transaction::Tip {
 }
 
 fn paymaster_data(data: &[Felt]) -> starknet_api::transaction::PaymasterData {
-    starknet_api::transaction::PaymasterData(data.iter().map(ToStarkFelt::to_stark_felt).collect())
+    starknet_api::transaction::PaymasterData(data.to_vec())
 }
 
 fn account_deployment_data(data: &[Felt]) -> starknet_api::transaction::AccountDeploymentData {
-    starknet_api::transaction::AccountDeploymentData(data.iter().map(ToStarkFelt::to_stark_felt).collect())
+    starknet_api::transaction::AccountDeploymentData(data.to_vec())
 }
 
 fn version(version: &Felt) -> starknet_api::transaction::TransactionVersion {
-    starknet_api::transaction::TransactionVersion(version.to_stark_felt())
+    starknet_api::transaction::TransactionVersion(*version)
 }
 
 impl From<&ResourceBoundsMapping> for starknet_api::transaction::ResourceBoundsMapping {

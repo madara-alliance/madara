@@ -8,6 +8,7 @@ use dc_db::DeoxysBackend;
 use dp_block::{BlockId, BlockTag};
 use dp_convert::ToStateUpdateCore;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
+use starknet_api::core::ChainId;
 use starknet_core::types::{
     ContractClass, DeclaredClassItem, DeployedContractItem, StarknetError, StateDiff, StateUpdate,
 };
@@ -27,7 +28,7 @@ pub struct FetchConfig {
     /// The URL of the feeder gateway.
     pub feeder_gateway: Url,
     /// The ID of the chain served by the sequencer gateway.
-    pub chain_id: Felt,
+    pub chain_id: ChainId,
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
     /// The L1 contract core address
@@ -147,6 +148,7 @@ async fn fetch_state_update_with_block(
     provider: &SequencerGatewayProvider,
     block_id: FetchBlockId,
 ) -> Result<(StateUpdate, p::Block), ProviderError> {
+    #[allow(deprecated)] // Sequencer-specific functions are deprecated. Use it via the Provider trait instead.
     let state_update_with_block = provider.get_state_update_with_block(block_id.into()).await?;
 
     Ok((state_update_with_block.state_update.to_state_update_core(), state_update_with_block.block))

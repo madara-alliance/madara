@@ -1,16 +1,15 @@
-use dc_exec::execution_result_to_tx_trace;
-use dc_exec::ExecutionContext;
-use dp_block::StarknetVersion;
-use dp_convert::ToStarkFelt;
-use starknet_api::transaction::TransactionHash;
-use starknet_core::types::Felt;
-use starknet_core::types::TransactionTraceWithHash;
-
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::utils::transaction::to_blockifier_transactions;
 use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
+use dc_exec::execution_result_to_tx_trace;
+use dc_exec::ExecutionContext;
+use dp_block::StarknetVersion;
+use starknet_api::transaction::TransactionHash;
+use starknet_core::types::Felt;
+use starknet_core::types::TransactionTraceWithHash;
+use std::sync::Arc;
 
 // For now, we fallback to the sequencer - that is what pathfinder and juno do too, but this is temporary
 pub const FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW: StarknetVersion = StarknetVersion::STARKNET_VERSION_0_13_0;
@@ -29,11 +28,10 @@ pub async fn trace_transaction(
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let exec_context = ExecutionContext::new(&starknet.backend, &block.info)?;
+    let exec_context = ExecutionContext::new(Arc::clone(&starknet.backend), &block.info)?;
 
-    let mut block_txs = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes()).map(|(tx, hash)| {
-        to_blockifier_transactions(starknet, block.info.as_block_id(), tx, &TransactionHash(hash.to_stark_felt()))
-    });
+    let mut block_txs = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes())
+        .map(|(tx, hash)| to_blockifier_transactions(starknet, block.info.as_block_id(), tx, &TransactionHash(*hash)));
 
     // takes up until not including last tx
     let transactions_before: Vec<_> = block_txs.by_ref().take(tx_index.0 as usize).collect::<Result<_, _>>()?;
@@ -41,7 +39,8 @@ pub async fn trace_transaction(
     let transaction =
         block_txs.next().ok_or_internal_server_error("There should be at least one transaction in the block")??;
 
-    let mut executions_results = exec_context.execute_transactions(transactions_before, [transaction], true, true)?;
+    let mut executions_results =
+        exec_context.re_execute_transactions(transactions_before, [transaction], true, true)?;
 
     let execution_result =
         executions_results.pop().ok_or_internal_server_error("No execution info returned for the last transaction")?;

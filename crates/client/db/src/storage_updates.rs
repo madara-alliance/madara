@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-
+use crate::DeoxysBackend;
+use crate::DeoxysStorageError;
 use dp_block::{DeoxysBlock, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlock};
 use dp_class::ConvertedClass;
 use dp_state_update::{
@@ -7,10 +7,9 @@ use dp_state_update::{
 };
 use starknet_core::types::ContractClass;
 use starknet_types_core::felt::Felt;
+use std::collections::HashMap;
 
-use crate::DeoxysBackend;
-use crate::DeoxysStorageError;
-
+#[derive(Clone, Debug)]
 pub struct DbClassUpdate {
     pub class_hash: Felt,
     pub contract_class: ContractClass,
@@ -38,13 +37,14 @@ impl DeoxysBackend {
         };
 
         let task_contract_db = || {
-            let nonces_from_deployed =
-                state_diff.deployed_contracts.iter().map(|&DeployedContractItem { address, .. }| (address, Felt::ZERO));
+            // let nonces_from_deployed =
+            //     state_diff.deployed_contracts.iter().map(|&DeployedContractItem { address, .. }| (address, Felt::ZERO));
 
             let nonces_from_updates =
                 state_diff.nonces.into_iter().map(|NonceUpdate { contract_address, nonce }| (contract_address, nonce));
 
-            let nonce_map: HashMap<Felt, Felt> = nonces_from_deployed.chain(nonces_from_updates).collect();
+            // let nonce_map: HashMap<Felt, Felt> = nonces_from_deployed.chain(nonces_from_updates).collect(); // set nonce to zero when contract deployed
+            let nonce_map: HashMap<Felt, Felt> = nonces_from_updates.collect();
 
             let contract_class_updates_replaced = state_diff
                 .replaced_classes

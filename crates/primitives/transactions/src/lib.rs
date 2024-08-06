@@ -1,14 +1,18 @@
 mod broadcasted_to_blockifier;
 pub mod compute_hash;
+mod from_blockifier;
 mod from_broadcasted_transaction;
+mod from_starknet_api;
 mod from_starknet_provider;
 mod to_starknet_api;
 mod to_starknet_core;
 pub mod utils;
 
+use blockifier::transaction::objects::FeeType;
 pub use broadcasted_to_blockifier::broadcasted_to_blockifier;
 use dp_convert::ToFelt;
 pub use from_starknet_provider::TransactionTypeError;
+use starknet_api::transaction::TransactionVersion;
 use starknet_types_core::{felt::Felt, hash::StarkHash};
 
 const SIMULATE_TX_VERSION_OFFSET: Felt =
@@ -45,6 +49,35 @@ pub enum Transaction {
     DeployAccount(DeployAccountTransaction),
 }
 
+impl Transaction {
+    pub fn version(&self) -> TransactionVersion {
+        match self {
+            Transaction::Invoke(tx) => tx.version(),
+            Transaction::L1Handler(tx) => tx.version(),
+            Transaction::Declare(tx) => tx.version(),
+            Transaction::Deploy(tx) => tx.version(),
+            Transaction::DeployAccount(tx) => tx.version(),
+        }
+    }
+
+    pub fn is_l1_handler(&self) -> bool {
+        matches!(self, Transaction::L1Handler(_))
+    }
+
+    /// Account transactions means everything except L1Handler.
+    pub fn is_account(&self) -> bool {
+        !matches!(self, Transaction::L1Handler(_))
+    }
+
+    pub fn fee_type(&self) -> FeeType {
+        if self.is_l1_handler() || self.version() < TransactionVersion::THREE {
+            FeeType::Eth
+        } else {
+            FeeType::Strk
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum InvokeTransaction {
     V0(InvokeTransactionV0),
@@ -53,6 +86,13 @@ pub enum InvokeTransaction {
 }
 
 impl InvokeTransaction {
+    pub fn version(&self) -> TransactionVersion {
+        match self {
+            InvokeTransaction::V0(tx) => tx.version(),
+            InvokeTransaction::V1(tx) => tx.version(),
+            InvokeTransaction::V3(tx) => tx.version(),
+        }
+    }
     pub fn sender_address(&self) -> &Felt {
         match self {
             InvokeTransaction::V0(tx) => &tx.contract_address,
@@ -69,10 +109,7 @@ impl InvokeTransaction {
         }
     }
 
-    pub fn compute_hash_signature<H>(&self) -> Felt
-    where
-        H: StarkHash,
-    {
+    pub fn compute_hash_signature<H: StarkHash>(&self) -> Felt {
         H::hash_array(self.signature())
     }
 
@@ -102,6 +139,12 @@ pub struct InvokeTransactionV0 {
     pub calldata: Vec<Felt>,
 }
 
+impl InvokeTransactionV0 {
+    fn version(&self) -> TransactionVersion {
+        TransactionVersion::ZERO
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV1 {
     pub sender_address: Felt,
@@ -109,6 +152,12 @@ pub struct InvokeTransactionV1 {
     pub max_fee: Felt,
     pub signature: Vec<Felt>,
     pub nonce: Felt,
+}
+
+impl InvokeTransactionV1 {
+    fn version(&self) -> TransactionVersion {
+        TransactionVersion::ONE
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -125,6 +174,12 @@ pub struct InvokeTransactionV3 {
     pub fee_data_availability_mode: DataAvailabilityMode,
 }
 
+impl InvokeTransactionV3 {
+    fn version(&self) -> TransactionVersion {
+        TransactionVersion::THREE
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct L1HandlerTransaction {
     pub version: Felt,
@@ -132,6 +187,12 @@ pub struct L1HandlerTransaction {
     pub contract_address: Felt,
     pub entry_point_selector: Felt,
     pub calldata: Vec<Felt>,
+}
+
+impl L1HandlerTransaction {
+    fn version(&self) -> TransactionVersion {
+        TransactionVersion(self.version)
+    }
 }
 
 impl From<starknet_core::types::MsgFromL1> for L1HandlerTransaction {
@@ -155,6 +216,15 @@ pub enum DeclareTransaction {
 }
 
 impl DeclareTransaction {
+    fn version(&self) -> TransactionVersion {
+        match self {
+            DeclareTransaction::V0(tx) => tx.version(),
+            DeclareTransaction::V1(tx) => tx.version(),
+            DeclareTransaction::V2(tx) => tx.version(),
+            DeclareTransaction::V3(tx) => tx.version(),
+        }
+    }
+
     pub fn sender_address(&self) -> &Felt {
         match self {
             DeclareTransaction::V0(tx) => &tx.sender_address,
@@ -201,6 +271,12 @@ pub struct DeclareTransactionV0 {
     pub class_hash: Felt,
 }
 
+impl DeclareTransactionV0 {
+    fn version(&self) -> TransactionVersion {
+        TransactionVersion::ZERO
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV1 {
     pub sender_address: Felt,
@@ -208,6 +284,12 @@ pub struct DeclareTransactionV1 {
     pub signature: Vec<Felt>,
     pub nonce: Felt,
     pub class_hash: Felt,
+}
+
+impl DeclareTransactionV1 {
+    fn version(&self) -> TransactionVersion {
+        TransactionVersion::ONE
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -218,6 +300,12 @@ pub struct DeclareTransactionV2 {
     pub signature: Vec<Felt>,
     pub nonce: Felt,
     pub class_hash: Felt,
+}
+
+impl DeclareTransactionV2 {
+    fn version(&self) -> TransactionVersion {
+        TransactionVersion::TWO
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -235,12 +323,24 @@ pub struct DeclareTransactionV3 {
     pub fee_data_availability_mode: DataAvailabilityMode,
 }
 
+impl DeclareTransactionV3 {
+    fn version(&self) -> TransactionVersion {
+        TransactionVersion::THREE
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployTransaction {
     pub version: Felt,
     pub contract_address_salt: Felt,
     pub constructor_calldata: Vec<Felt>,
     pub class_hash: Felt,
+}
+
+impl DeployTransaction {
+    fn version(&self) -> TransactionVersion {
+        TransactionVersion(self.version)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -250,6 +350,13 @@ pub enum DeployAccountTransaction {
 }
 
 impl DeployAccountTransaction {
+    pub fn version(&self) -> TransactionVersion {
+        match self {
+            DeployAccountTransaction::V1(tx) => tx.version(),
+            DeployAccountTransaction::V3(tx) => tx.version(),
+        }
+    }
+
     pub fn sender_address(&self) -> &Felt {
         match self {
             DeployAccountTransaction::V1(tx) => &tx.contract_address_salt,
@@ -295,6 +402,12 @@ pub struct DeployAccountTransactionV1 {
     pub class_hash: Felt,
 }
 
+impl DeployAccountTransactionV1 {
+    fn version(&self) -> TransactionVersion {
+        TransactionVersion::ONE
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployAccountTransactionV3 {
     pub signature: Vec<Felt>,
@@ -307,6 +420,12 @@ pub struct DeployAccountTransactionV3 {
     pub paymaster_data: Vec<Felt>,
     pub nonce_data_availability_mode: DataAvailabilityMode,
     pub fee_data_availability_mode: DataAvailabilityMode,
+}
+
+impl DeployAccountTransactionV3 {
+    fn version(&self) -> TransactionVersion {
+        TransactionVersion::THREE
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

@@ -1,10 +1,5 @@
 //! Contains the code required to sync data from the feeder efficiently.
-use std::borrow::Cow;
-use std::pin::pin;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
-
-use crate::commitments::compute_state_root;
+use crate::commitments::update_tries_and_compute_state_root;
 use crate::convert::{convert_and_verify_block, convert_and_verify_class};
 use crate::fetch::fetchers::{fetch_block_and_updates, FetchBlockId, L2BlockAndUpdates};
 use crate::fetch::l2_fetch_task;
@@ -18,7 +13,6 @@ use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlockInfo, StarknetVersionError};
 use dp_block::{DeoxysMaybePendingBlock, Header};
 use dp_class::ConvertedClass;
-use dp_convert::ToStarkFelt;
 use dp_state_update::StateDiff;
 use dp_transactions::TransactionTypeError;
 use dp_utils::{
@@ -28,6 +22,10 @@ use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
+use std::borrow::Cow;
+use std::pin::pin;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Duration;
@@ -85,7 +83,7 @@ async fn l2_verify_and_apply_task(
 
             let state_root = spawn_rayon_task(move || {
                 let sw = PerfStopwatch::new();
-                let state_root = verify_l2(&backend, block_n, &state_diff)?;
+                let state_root = update_tries_and_compute_state_root(&backend, &state_diff, block_n);
                 stopwatch_end!(sw, "verify_l2: {:?}");
 
                 anyhow::Ok(state_root)
@@ -262,7 +260,7 @@ async fn l2_pending_block_task(
             .context("Getting latest block in db")?
             .context("No block in db")?;
 
-        log::debug!("pending block hash parent hash: {:#}", block.parent_block_hash.to_stark_felt());
+        log::debug!("pending block hash parent hash: {:#x}", block.parent_block_hash);
 
         if block.parent_block_hash == block_hash_best {
             log::debug!("pending block parent block hash matches chain tip, writing pending block");
@@ -380,18 +378,16 @@ async fn update_sync_metrics(
     backend: &DeoxysBackend,
 ) -> anyhow::Result<()> {
     // Update Block sync time metrics
-    let elapsed_time;
-    {
+    let elapsed_time = {
         let mut timer_guard = sync_timer.lock().unwrap();
+        *timer_guard = Some(Instant::now());
         if let Some(start_time) = *timer_guard {
-            elapsed_time = start_time.elapsed().as_secs_f64();
-            *timer_guard = Some(Instant::now());
+            start_time.elapsed().as_secs_f64()
         } else {
             // For the first block, there is no previous timer set
-            elapsed_time = 0.0;
-            *timer_guard = Some(Instant::now());
+            0.0
         }
-    }
+    };
 
     let sync_time = block_metrics.l2_sync_time.get() + elapsed_time;
     block_metrics.l2_sync_time.set(sync_time);
@@ -412,9 +408,4 @@ async fn update_sync_metrics(
     }
 
     Ok(())
-}
-
-/// Verify and update the L2 state according to the latest state update
-pub fn verify_l2(backend: &DeoxysBackend, block_number: u64, state_diff: &StateDiff) -> anyhow::Result<Felt> {
-    Ok(compute_state_root(backend, state_diff, block_number))
 }

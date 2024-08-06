@@ -8,6 +8,9 @@ mod methods;
 mod types;
 pub mod utils;
 
+pub mod mempool_provider;
+pub mod providers;
+
 use std::sync::Arc;
 
 use dc_db::db_block_id::DbBlockIdResolvable;
@@ -16,6 +19,7 @@ use dp_block::{DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo};
 use errors::{StarknetRpcApiError, StarknetRpcResult};
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
+use providers::AddTransactionProvider;
 use starknet_core::types::Felt;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
@@ -25,7 +29,7 @@ use starknet_core::types::{
     MaybePendingStateUpdate, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
     SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
-use starknet_providers::{SequencerGatewayProvider, Url};
+use starknet_providers::Url;
 use utils::ResultExt;
 
 // Starknet RPC API trait and types
@@ -188,33 +192,24 @@ pub struct ChainConfig {
 }
 
 /// A Starknet RPC server for Deoxys
+#[derive(Clone)]
 pub struct Starknet {
     backend: Arc<DeoxysBackend>,
-    sequencer_provider: Arc<SequencerGatewayProvider>,
-    starting_block: u64,
     chain_config: ChainConfig,
+    pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
 }
 
 impl Starknet {
-    pub fn new(backend: Arc<DeoxysBackend>, starting_block: u64, chain_config: ChainConfig) -> Self {
-        Self {
-            backend,
-            starting_block,
-            sequencer_provider: Arc::new(SequencerGatewayProvider::new(
-                chain_config.gateway.clone(),
-                chain_config.feeder_gateway.clone(),
-                chain_config.chain_id,
-            )),
-            chain_config,
-        }
+    pub fn new(
+        backend: Arc<DeoxysBackend>,
+        chain_config: ChainConfig,
+        add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    ) -> Self {
+        Self { backend, add_transaction_provider, chain_config }
     }
 
     pub fn clone_backend(&self) -> Arc<DeoxysBackend> {
         Arc::clone(&self.backend)
-    }
-
-    pub fn sequencer_provider(&self) -> &SequencerGatewayProvider {
-        &self.sequencer_provider
     }
 
     pub fn get_block_info(

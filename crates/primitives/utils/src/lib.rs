@@ -1,5 +1,7 @@
 #![allow(clippy::new_without_default)]
 
+pub mod service;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -24,15 +26,20 @@ where
 
 static CTRL_C: AtomicBool = AtomicBool::new(false);
 
-pub async fn graceful_shutdown() {
+async fn graceful_shutdown_inner() {
     let mut sigint =
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("SIGINT not supported");
-
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {},
         _ = sigint.recv() => {},
     };
     CTRL_C.store(true, Ordering::SeqCst);
+}
+pub async fn graceful_shutdown() {
+    if CTRL_C.load(Ordering::SeqCst) {
+        return;
+    }
+    graceful_shutdown_inner().await
 }
 
 /// Should be used with streams/channels `next`/`recv` function.
@@ -41,7 +48,7 @@ pub async fn wait_or_graceful_shutdown<T>(future: impl Future<Output = T>) -> Op
         return None;
     }
     tokio::select! {
-        _ = graceful_shutdown() => { None },
+        _ = graceful_shutdown_inner() => { None },
         res = future => { Some(res) },
     }
 }

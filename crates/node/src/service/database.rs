@@ -16,3 +16,6 @@ impl DatabaseService {
         Ok(Self(DBDropHook))
     }
 }
+
+#[async_trait::async_trait]
+impl Service for DatabaseService {}

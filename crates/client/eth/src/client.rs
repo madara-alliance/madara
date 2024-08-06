@@ -1,5 +1,5 @@
-use std::sync::Arc;
-
+use crate::client::StarknetCoreContract::StarknetCoreContractInstance;
+use crate::utils::u256_to_felt;
 use alloy::sol_types::SolEvent;
 use alloy::{
     primitives::Address,
@@ -8,13 +8,11 @@ use alloy::{
     sol,
     transports::http::{Client, Http},
 };
-
-use crate::client::StarknetCoreContract::StarknetCoreContractInstance;
-use crate::utils::u256_to_starkfelt;
 use anyhow::{bail, Context};
 use bitvec::macros::internal::funty::Fundamental;
 use dc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
-use starknet_api::hash::StarkFelt;
+use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 use url::Url;
 
 #[derive(Clone, Debug)]
@@ -109,15 +107,15 @@ impl EthereumClient {
     }
 
     /// Get the last Starknet state root verified on L1
-    pub async fn get_last_state_root(&self) -> anyhow::Result<StarkFelt> {
+    pub async fn get_last_state_root(&self) -> anyhow::Result<Felt> {
         let state_root = self.l1_core_contract.stateRoot().call().await?;
-        u256_to_starkfelt(state_root._0)
+        u256_to_felt(state_root._0)
     }
 
     /// Get the last Starknet block hash verified on L1
-    pub async fn get_last_verified_block_hash(&self) -> anyhow::Result<StarkFelt> {
+    pub async fn get_last_verified_block_hash(&self) -> anyhow::Result<Felt> {
         let block_hash = self.l1_core_contract.stateBlockHash().call().await?;
-        u256_to_starkfelt(block_hash._0)
+        u256_to_felt(block_hash._0)
     }
 }
 
@@ -172,7 +170,7 @@ pub mod eth_client_getter_test {
     async fn get_last_verified_block_hash_works(eth_client: &EthereumClient) {
         let block_hash =
             eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
-        let expected = u256_to_starkfelt(U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap()).unwrap();
+        let expected = u256_to_felt(U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap()).unwrap();
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
 
@@ -180,7 +178,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     async fn get_last_state_root_works(eth_client: &EthereumClient) {
         let state_root = eth_client.get_last_state_root().await.expect("issue while getting the state root");
-        let expected = u256_to_starkfelt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
+        let expected = u256_to_felt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
 

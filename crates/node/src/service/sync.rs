@@ -8,7 +8,7 @@ use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
 use dc_telemetry::TelemetryHandle;
-use starknet_types_core::felt::Felt;
+use dp_utils::service::Service;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -22,7 +22,6 @@ pub struct SyncService {
     starting_block: Option<u64>,
     block_metrics: BlockMetrics,
     db_metrics: DbMetrics,
-    chain_id: Felt,
     start_params: Option<TelemetryHandle>,
     disabled: bool,
     pending_block_poll_interval: Duration,
@@ -65,13 +64,16 @@ impl SyncService {
             backup_every_n_blocks: config.backup_every_n_blocks,
             block_metrics,
             db_metrics,
-            chain_id: config.network.chain_id(),
             start_params: Some(telemetry),
             disabled: config.sync_disabled,
             pending_block_poll_interval: Duration::from_secs(config.pending_block_poll_interval),
         })
     }
-    pub async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+}
+
+#[async_trait::async_trait]
+impl Service for SyncService {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
         if self.disabled {
             return Ok(());
         }
@@ -82,11 +84,10 @@ impl SyncService {
             starting_block,
             block_metrics,
             db_metrics,
-            chain_id,
             pending_block_poll_interval,
             ..
         } = self.clone();
-        let telemetry = self.start_params.take().context("service already started")?;
+        let telemetry = self.start_params.take().context("Service already started")?;
 
         let db_backend = Arc::clone(&self.db_backend);
 
@@ -99,7 +100,6 @@ impl SyncService {
                 backup_every_n_blocks,
                 block_metrics,
                 db_metrics,
-                chain_id,
                 telemetry,
                 pending_block_poll_interval,
             )

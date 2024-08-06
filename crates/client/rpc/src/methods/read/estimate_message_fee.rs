@@ -1,15 +1,14 @@
-use dc_exec::ExecutionContext;
-use dp_convert::ToStarkFelt;
-use dp_transactions::L1HandlerTransaction;
-use starknet_api::transaction::{Fee, TransactionHash};
-use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
-use starknet_types_core::felt::Felt;
-
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use crate::utils::OptionExt;
 use crate::Starknet;
+use dc_exec::ExecutionContext;
+use dp_transactions::L1HandlerTransaction;
+use starknet_api::transaction::{Fee, TransactionHash};
+use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
+use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 
 /// Estimate the L2 fee of a message sent on L1
 ///
@@ -38,11 +37,11 @@ pub async fn estimate_message_fee(
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let exec_context = ExecutionContext::new(&starknet.backend, &block_info)?;
+    let exec_context = ExecutionContext::new(Arc::clone(&starknet.backend), &block_info)?;
 
     let transaction = convert_message_into_transaction(message, starknet.chain_id());
     let execution_result = exec_context
-        .execute_transactions([], [transaction], false, true)?
+        .re_execute_transactions([], [transaction], false, true)?
         .pop()
         .ok_or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
@@ -61,7 +60,7 @@ pub fn convert_message_into_transaction(
 
     let tx = blockifier::transaction::transactions::L1HandlerTransaction {
         tx,
-        tx_hash: TransactionHash(tx_hash.to_stark_felt()),
+        tx_hash: TransactionHash(tx_hash),
         paid_fee_on_l1: Fee(1),
     };
     blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(tx)

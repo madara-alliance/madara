@@ -1,6 +1,5 @@
 use core::num::NonZeroU128;
 
-use blockifier::versioned_constants::VersionedConstants;
 use dp_transactions::MAIN_CHAIN_ID;
 use dp_transactions::V0_7_BLOCK_NUMBER;
 use starknet_types_core::felt::Felt;
@@ -40,7 +39,7 @@ pub struct PendingHeader {
     pub parent_block_hash: Felt,
     /// The Starknet address of the sequencer who created this block.
     pub sequencer_address: Felt,
-    /// The time the sequencer created this block before executing transactions
+    /// Unix timestamp (seconds) when the block was produced -- before executing any transaction.
     pub block_timestamp: u64,
     /// The version of the Starknet protocol used when creating this block
     pub protocol_version: StarknetVersion,
@@ -90,7 +89,7 @@ pub struct GasPrices {
     pub strk_l1_data_gas_price: u128,
 }
 
-impl From<&GasPrices> for blockifier::block::GasPrices {
+impl From<&GasPrices> for blockifier::blockifier::block::GasPrices {
     fn from(gas_prices: &GasPrices) -> Self {
         let one = NonZeroU128::new(1).unwrap();
 
@@ -132,17 +131,6 @@ impl From<L1DataAvailabilityMode> for starknet_core::types::L1DataAvailabilityMo
             L1DataAvailabilityMode::Blob => Self::Blob,
         }
     }
-}
-
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
-
-lazy_static::lazy_static! {
-pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0: VersionedConstants =
-    serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0).unwrap();
-
-pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1: VersionedConstants =
-    serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1).unwrap();
 }
 
 #[derive(thiserror::Error, Debug)]

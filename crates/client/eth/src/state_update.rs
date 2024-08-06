@@ -5,7 +5,6 @@ use crate::{
 };
 use anyhow::Context;
 use dc_db::DeoxysBackend;
-use dp_convert::ToFelt;
 use dp_transactions::MAIN_CHAIN_ID;
 use dp_utils::channel_wait_or_graceful_shutdown;
 use futures::StreamExt;
@@ -64,8 +63,8 @@ pub fn update_l1(
         log::info!(
             "🔄 Updated L1 head #{} ({}) with state root ({})",
             state_update.block_number,
-            trim_hash(&state_update.block_hash.to_felt()),
-            trim_hash(&state_update.global_root.to_felt())
+            trim_hash(&state_update.block_hash),
+            trim_hash(&state_update.global_root)
         );
 
         block_metrics.l1_block_number.set(state_update.block_number as f64);
@@ -104,10 +103,11 @@ mod eth_client_event_subscription_test {
     use std::{sync::Arc, time::Duration};
 
     use alloy::{providers::ProviderBuilder, sol};
-    use dc_db::{block_db::ChainInfo, DatabaseService};
+    use dc_db::DatabaseService;
     use dc_metrics::MetricsService;
+    use dp_block::chain_config::ChainConfig;
+    use dp_convert::ToFelt;
     use rstest::*;
-    use starknet_types_core::felt::Felt;
     use tempfile::TempDir;
     use url::Url;
 
@@ -142,8 +142,7 @@ mod eth_client_event_subscription_test {
     #[tokio::test]
     async fn listen_and_update_state_when_event_fired_works() {
         // Set up chain info
-        let chain_info =
-            ChainInfo { chain_id: Felt::from_dec_str("11153111").unwrap(), chain_name: "testing".to_string() };
+        let chain_info = Arc::new(ChainConfig::test_config());
 
         // Set up database paths
         let temp_dir = TempDir::new().expect("issue while creating temporary directory");
@@ -152,7 +151,7 @@ mod eth_client_event_subscription_test {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, &chain_info)
+            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone())
                 .await
                 .expect("Failed to create database service"),
         );
@@ -174,8 +173,13 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                listen_and_update_state(&eth_client, db.backend(), &eth_client.l1_block_metrics, chain_info.chain_id)
-                    .await
+                listen_and_update_state(
+                    &eth_client,
+                    db.backend(),
+                    &eth_client.l1_block_metrics,
+                    chain_info.chain_id.clone().to_felt(),
+                )
+                .await
             })
         };
 

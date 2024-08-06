@@ -3,6 +3,7 @@ use std::time::SystemTime;
 
 use anyhow::Context;
 use dp_utils::channel_wait_or_graceful_shutdown;
+use dp_utils::service::Service;
 use futures::SinkExt;
 use reqwest_websocket::{Message, RequestBuilderExt};
 use tokio::sync::mpsc;
@@ -55,7 +56,44 @@ impl TelemetryService {
         Ok(Self { no_telemetry, telemetry_endpoints, telemetry_handle, start_state })
     }
 
-    pub async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    pub fn new_handle(&self) -> TelemetryHandle {
+        self.telemetry_handle.clone()
+    }
+
+    pub fn send_connected(&self, name: &str, version: &str, network_id: &str, sys_info: &SysInfo) {
+        let startup_time = SystemTime::UNIX_EPOCH.elapsed().map(|dur| dur.as_millis()).unwrap_or(0).to_string();
+
+        let msg = serde_json::json!({
+            "chain": "Starknet",
+            "authority": false,
+            "config": "",
+            "genesis_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "implementation": "Deoxys Node",
+            "msg": "system.connected",
+            "name": name,
+            "network_id": network_id,
+            "startup_time": startup_time,
+            "sysinfo": {
+              "core_count": sys_info.core_count,
+              "cpu": sys_info.cpu,
+              // "is_virtual_machine": false,
+              "linux_distro": sys_info.linux_distro,
+              "linux_kernel": sys_info.linux_kernel,
+              "memory": sys_info.memory,
+            },
+            "target_os": TARGET_OS,
+            "target_arch": TARGET_ARCH,
+            "target_env": TARGET_ENV,
+            "version": version,
+        });
+
+        self.telemetry_handle.send(VerbosityLevel::Info, msg)
+    }
+}
+
+#[async_trait::async_trait]
+impl Service for TelemetryService {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
         if self.no_telemetry {
             return Ok(());
         }
@@ -115,39 +153,5 @@ impl TelemetryService {
         });
 
         Ok(())
-    }
-
-    pub fn new_handle(&self) -> TelemetryHandle {
-        self.telemetry_handle.clone()
-    }
-
-    pub fn send_connected(&self, name: &str, version: &str, network_id: &str, sys_info: &SysInfo) {
-        let startup_time = SystemTime::UNIX_EPOCH.elapsed().map(|dur| dur.as_millis()).unwrap_or(0).to_string();
-
-        let msg = serde_json::json!({
-            "chain": "Starknet",
-            "authority": false,
-            "config": "",
-            "genesis_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "implementation": "Deoxys Node",
-            "msg": "system.connected",
-            "name": name,
-            "network_id": network_id,
-            "startup_time": startup_time,
-            "sysinfo": {
-              "core_count": sys_info.core_count,
-              "cpu": sys_info.cpu,
-              // "is_virtual_machine": false,
-              "linux_distro": sys_info.linux_distro,
-              "linux_kernel": sys_info.linux_kernel,
-              "memory": sys_info.memory,
-            },
-            "target_os": TARGET_OS,
-            "target_arch": TARGET_ARCH,
-            "target_env": TARGET_ENV,
-            "version": version,
-        });
-
-        self.telemetry_handle.send(VerbosityLevel::Info, msg)
     }
 }

@@ -4,7 +4,6 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde_json::Value;
 use starknet_types_core::felt::Felt;
-use thiserror::Error;
 
 /// Returns a random Pokémon name.
 pub async fn get_random_pokemon_name() -> Result<String, Box<dyn std::error::Error>> {
@@ -17,14 +16,6 @@ pub async fn get_random_pokemon_name() -> Result<String, Box<dyn std::error::Err
     let random_pokemon = pokemon_array.choose(&mut rng).unwrap();
 
     Ok(random_pokemon["name"].as_str().unwrap().to_string())
-}
-
-#[derive(Error, Debug)]
-pub enum RpcError {
-    #[error("HTTP request failed for L1 Free RPC check")]
-    HttpRequest(#[from] reqwest::Error),
-    #[error("No suitable L1 Free RPC Url found")]
-    NoSuitableUrl,
 }
 
 pub fn trim_hash(hash: &Felt) -> String {

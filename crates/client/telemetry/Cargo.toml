@@ -18,6 +18,7 @@ dp-utils = { workspace = true }
 
 # Other
 anyhow.workspace = true
+async-trait.workspace = true
 chrono = "0.4.35"
 futures = { workspace = true }
 log = { workspace = true, default-features = true }

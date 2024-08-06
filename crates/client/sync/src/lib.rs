@@ -1,4 +1,4 @@
-#![allow(deprecated)]
+use crate::l2::L2SyncConfig;
 
 pub mod commitments;
 pub mod fetch;
@@ -11,18 +11,16 @@ pub mod utils;
 pub use utils::m;
 pub use utils::{convert, utility};
 
-use crate::l2::L2SyncConfig;
-
-use starknet_types_core::felt::Felt;
-
 pub mod starknet_sync_worker {
-    use self::fetch::fetchers::FetchConfig;
     use super::*;
     use crate::metrics::block_metrics::BlockMetrics;
     use anyhow::Context;
     use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
     use dc_eth::client::EthereumClient;
     use dc_telemetry::TelemetryHandle;
+    use dp_convert::ToFelt;
+    use fetch::fetchers::FetchConfig;
+
     use starknet_providers::SequencerGatewayProvider;
     use std::{sync::Arc, time::Duration};
 
@@ -35,12 +33,9 @@ pub mod starknet_sync_worker {
         backup_every_n_blocks: Option<u64>,
         block_metrics: BlockMetrics,
         db_metrics: DbMetrics,
-        chain_id: Felt,
         telemetry: TelemetryHandle,
         pending_block_poll_interval: Duration,
     ) -> anyhow::Result<()> {
-        // let starting_block = starting_block + 1;
-
         let starting_block = if let Some(starting_block) = starting_block {
             starting_block
         } else {
@@ -53,11 +48,9 @@ pub mod starknet_sync_worker {
 
         log::info!("⛓️  Starting L2 sync from block {}", starting_block);
 
-        let provider = SequencerGatewayProvider::new(
-            fetch_config.gateway.clone(),
-            fetch_config.feeder_gateway.clone(),
-            fetch_config.chain_id,
-        );
+        let chain_id = fetch_config.chain_id.to_felt();
+        let provider =
+            SequencerGatewayProvider::new(fetch_config.gateway.clone(), fetch_config.feeder_gateway.clone(), chain_id);
         let provider = match &fetch_config.api_key {
             Some(api_key) => provider.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
             None => provider,
