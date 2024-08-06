@@ -40,8 +40,8 @@ anyhow.workspace = true
 async-trait = { workspace = true }
 chrono = "0.4.38"
 clap = { workspace = true, features = ["derive"] }
-env_logger = { workspace = true }
-fdlimit = { workspace = true }
+env_logger.workspace = true
+fdlimit.workspace = true
 forwarded-header-value = "0.1.1"
 futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true

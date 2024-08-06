@@ -11,6 +11,7 @@ pub fn get_block_with_receipts(
     starknet: &Starknet,
     block_id: BlockId,
 ) -> StarknetRpcResult<MaybePendingBlockWithReceipts> {
+    log::debug!("block_id {block_id:?}");
     let block = starknet.get_block(&block_id)?;
 
     let transactions_core = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes())
@@ -67,20 +68,19 @@ pub fn get_block_with_receipts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{make_sample_chain_1, open_testing};
+    use crate::test_utils::{make_sample_chain_1, open_testing, SampleChain1};
     use rstest::rstest;
-    use starknet_core::types::{
-        BlockTag, ComputationResources, ExecutionResources, ExecutionResult, FeePayment, Felt, InvokeTransaction, InvokeTransactionReceipt, InvokeTransactionV0, L1DataAvailabilityMode, PriceUnit, ResourcePrice, Transaction, TransactionReceipt
-    };
+    use starknet_core::types::{BlockTag, Felt, L1DataAvailabilityMode, ResourcePrice};
 
     #[rstest]
-    fn test_get_block_transaction_count() {
+    fn test_get_block_with_receipts() {
+        let _ = env_logger::builder().is_test(true).try_init();
         let (backend, rpc) = open_testing();
-        let block_hashes = make_sample_chain_1(&backend);
+        let SampleChain1 { block_hashes, expected_txs, expected_receipts, .. } = make_sample_chain_1(&backend);
 
         // Block 0
         let res = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
-            status: BlockStatus::AcceptedOnL2,
+            status: BlockStatus::AcceptedOnL1,
             block_hash: block_hashes[0],
             parent_hash: Felt::ZERO,
             block_number: 0,
@@ -92,27 +92,13 @@ mod tests {
             l1_da_mode: L1DataAvailabilityMode::Blob,
             starknet_version: "0.13.1.1".into(),
             transactions: vec![TransactionWithReceipt {
-                transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                    transaction_hash: Felt::from_hex_unchecked("0x8888888"),
-                    max_fee: Felt::from_hex_unchecked("0x12"),
-                    signature: vec![],
-                    contract_address: Felt::from_hex_unchecked("0x4343"),
-                    entry_point_selector: Felt::from_hex_unchecked("0x1212"),
-                    calldata: vec![Felt::from_hex_unchecked("0x2828")],
-                })),
-                receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
-                    transaction_hash: Felt::from_hex_unchecked("0x8888888"),
-                    actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x9"), unit: PriceUnit::Wei },
-                    messages_sent: vec![],
-                    events: vec![],
-                    execution_resources: dp_receipt::ExecutionResources::default().into(),
-                    execution_result: ExecutionResult::Succeeded,
-                    finality_status: TransactionFinalityStatus::AcceptedOnL2,
-                }),
+                transaction: expected_txs[0].clone(),
+                receipt: expected_receipts[0].clone(),
             }],
         });
         assert_eq!(get_block_with_receipts(&rpc, BlockId::Number(0)).unwrap(), res);
         assert_eq!(get_block_with_receipts(&rpc, BlockId::Hash(block_hashes[0])).unwrap(), res);
+
         // Block 1
         let res = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
             status: BlockStatus::AcceptedOnL2,
@@ -130,11 +116,43 @@ mod tests {
         });
         assert_eq!(get_block_with_receipts(&rpc, BlockId::Number(1)).unwrap(), res);
         assert_eq!(get_block_with_receipts(&rpc, BlockId::Hash(block_hashes[1])).unwrap(), res);
-        // // Block 2
-        // assert_eq!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), 2);
-        // assert_eq!(get_block_with_receipts(&rpc, BlockId::Number(2)).unwrap(), 2);
-        // assert_eq!(get_block_with_receipts(&rpc, BlockId::Hash(block_hashes[2])).unwrap(), 2);
-        // // Pending
-        // assert_eq!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), 1);
+
+        // Block 2
+        let res = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
+            status: BlockStatus::AcceptedOnL2,
+            block_hash: block_hashes[2],
+            parent_hash: block_hashes[1],
+            block_number: 2,
+            new_root: Felt::ZERO,
+            timestamp: 0,
+            sequencer_address: Felt::ZERO,
+            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_da_mode: L1DataAvailabilityMode::Calldata,
+            starknet_version: "0.13.2".into(),
+            transactions: vec![
+                TransactionWithReceipt { transaction: expected_txs[1].clone(), receipt: expected_receipts[1].clone() },
+                TransactionWithReceipt { transaction: expected_txs[2].clone(), receipt: expected_receipts[2].clone() },
+            ],
+        });
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), res);
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Number(2)).unwrap(), res);
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Hash(block_hashes[2])).unwrap(), res);
+
+        // Pending
+        let res = MaybePendingBlockWithReceipts::PendingBlock(PendingBlockWithReceipts {
+            parent_hash: block_hashes[2],
+            timestamp: 0,
+            sequencer_address: Felt::ZERO,
+            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_da_mode: L1DataAvailabilityMode::Calldata,
+            starknet_version: "0.13.2".into(),
+            transactions: vec![TransactionWithReceipt {
+                transaction: expected_txs[3].clone(),
+                receipt: expected_receipts[3].clone(),
+            }],
+        });
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), res);
     }
 }

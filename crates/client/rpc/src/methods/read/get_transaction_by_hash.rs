@@ -44,3 +44,29 @@ pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> S
         .ok_or_internal_server_error("Storage block transaction mismatch")?;
     Ok(transaction.clone().to_core(transaction_hash))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{make_sample_chain_1, open_testing, SampleChain1};
+    use rstest::rstest;
+
+    #[rstest]
+    fn test_get_transaction_by_hash() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let (backend, rpc) = open_testing();
+        let SampleChain1 { tx_hashes, expected_txs, .. } = make_sample_chain_1(&backend);
+
+        // Block 0
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[0]).unwrap(), expected_txs[0]);
+
+        // Block 1
+
+        // Block 2
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[1]).unwrap(), expected_txs[1]);
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[2]).unwrap(), expected_txs[2]);
+
+        // Pending
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[3]).unwrap(), expected_txs[3]);
+    }
+}

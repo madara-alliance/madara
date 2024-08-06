@@ -23,24 +23,17 @@ pub fn block_hash_and_number(starknet: &Starknet) -> StarknetRpcResult<BlockHash
 
 #[cfg(test)]
 mod tests {
-    use crate::providers::TestTransactionProvider;
-
     use super::*;
-    use dc_db::DeoxysBackend;
-    use dp_block::{
-        chain_config::ChainConfig, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
-        DeoxysMaybePendingBlockInfo, Header,
-    };
+    use crate::test_utils::open_testing;
+    use dp_block::{DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, Header};
     use dp_state_update::StateDiff;
     use rstest::rstest;
     use starknet_core::types::Felt;
-    use std::sync::Arc;
 
     #[rstest]
     fn test_block_hash_and_number() {
-        let chain_config = Arc::new(ChainConfig::test_config());
-        let backend = DeoxysBackend::open_for_testing(chain_config.clone());
-        let starknet = Starknet::new(backend.clone(), chain_config.clone(), Arc::new(TestTransactionProvider));
+        let _ = env_logger::builder().is_test(true).try_init();
+        let (backend, rpc) = open_testing();
 
         backend
             .store_block(
@@ -57,10 +50,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(
-            block_hash_and_number(&starknet).unwrap(),
-            BlockHashAndNumber { block_hash: Felt::ONE, block_number: 0 }
-        );
+        assert_eq!(block_hash_and_number(&rpc).unwrap(), BlockHashAndNumber { block_hash: Felt::ONE, block_number: 0 });
 
         backend
             .store_block(
@@ -78,7 +68,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            block_hash_and_number(&starknet).unwrap(),
+            block_hash_and_number(&rpc).unwrap(),
             BlockHashAndNumber { block_hash: Felt::from_hex_unchecked("0x12345"), block_number: 1 }
         );
     }

@@ -5,9 +5,9 @@
 mod constants;
 mod errors;
 mod methods;
-mod types;
 #[cfg(test)]
 pub mod test_utils;
+mod types;
 pub mod utils;
 
 pub mod mempool_provider;

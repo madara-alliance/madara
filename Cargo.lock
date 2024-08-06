@@ -3645,6 +3645,7 @@ dependencies = [
  "dp-receipt",
  "dp-state-update",
  "dp-transactions",
+ "env_logger 0.11.3",
  "jsonrpsee",
  "log",
  "rstest 0.18.2",

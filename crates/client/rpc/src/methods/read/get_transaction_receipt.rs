@@ -28,7 +28,7 @@ use crate::Starknet;
 ///
 /// The function may return a `TXN_HASH_NOT_FOUND` error if the specified transaction hash is
 /// not found.
-pub async fn get_transaction_receipt(
+pub fn get_transaction_receipt(
     starknet: &Starknet,
     transaction_hash: Felt,
 ) -> StarknetRpcResult<TransactionReceiptWithBlockInfo> {
@@ -64,4 +64,45 @@ pub async fn get_transaction_receipt(
     };
 
     Ok(TransactionReceiptWithBlockInfo { receipt, block })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{make_sample_chain_1, open_testing, SampleChain1};
+    use rstest::rstest;
+    use starknet_core::types::ReceiptBlock;
+
+    #[rstest]
+    fn test_get_transaction_receipt() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let (backend, rpc) = open_testing();
+        let SampleChain1 { block_hashes, tx_hashes, expected_receipts, .. } = make_sample_chain_1(&backend);
+
+        // Block 0
+        let res = TransactionReceiptWithBlockInfo {
+            receipt: expected_receipts[0].clone(),
+            block: ReceiptBlock::Block { block_hash: block_hashes[0], block_number: 0 },
+        };
+        assert_eq!(get_transaction_receipt(&rpc, tx_hashes[0]).unwrap(), res);
+
+        // Block 1
+
+        // Block 2
+        let res = TransactionReceiptWithBlockInfo {
+            receipt: expected_receipts[1].clone(),
+            block: ReceiptBlock::Block { block_hash: block_hashes[2], block_number: 2 },
+        };
+        assert_eq!(get_transaction_receipt(&rpc, tx_hashes[1]).unwrap(), res);
+        let res = TransactionReceiptWithBlockInfo {
+            receipt: expected_receipts[2].clone(),
+            block: ReceiptBlock::Block { block_hash: block_hashes[2], block_number: 2 },
+        };
+        assert_eq!(get_transaction_receipt(&rpc, tx_hashes[2]).unwrap(), res);
+
+        // Pending
+        let res =
+            TransactionReceiptWithBlockInfo { receipt: expected_receipts[3].clone(), block: ReceiptBlock::Pending };
+        assert_eq!(get_transaction_receipt(&rpc, tx_hashes[3]).unwrap(), res);
+    }
 }

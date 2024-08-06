@@ -67,3 +67,86 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{make_sample_chain_1, open_testing, SampleChain1};
+    use rstest::rstest;
+    use starknet_core::types::{BlockTag, Felt, L1DataAvailabilityMode, ResourcePrice};
+
+    #[rstest]
+    fn test_get_block_with_txs() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let (backend, rpc) = open_testing();
+        let SampleChain1 { block_hashes, expected_txs, .. } = make_sample_chain_1(&backend);
+
+        // Block 0
+        let res = MaybePendingBlockWithTxs::Block(BlockWithTxs {
+            status: BlockStatus::AcceptedOnL1,
+            block_hash: block_hashes[0],
+            parent_hash: Felt::ZERO,
+            block_number: 0,
+            new_root: Felt::from_hex_unchecked("0x88912"),
+            timestamp: 43,
+            sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
+            l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 52.into(), price_in_wei: 44.into() },
+            l1_da_mode: L1DataAvailabilityMode::Blob,
+            starknet_version: "0.13.1.1".into(),
+            transactions: vec![expected_txs[0].clone()],
+        });
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Number(0)).unwrap(), res);
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Hash(block_hashes[0])).unwrap(), res);
+
+        // Block 1
+        let res = MaybePendingBlockWithTxs::Block(BlockWithTxs {
+            status: BlockStatus::AcceptedOnL2,
+            block_hash: block_hashes[1],
+            parent_hash: block_hashes[0],
+            block_number: 1,
+            new_root: Felt::ZERO,
+            timestamp: 0,
+            sequencer_address: Felt::ZERO,
+            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_da_mode: L1DataAvailabilityMode::Calldata,
+            starknet_version: "0.13.2".into(),
+            transactions: vec![],
+        });
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Number(1)).unwrap(), res);
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Hash(block_hashes[1])).unwrap(), res);
+
+        // Block 2
+        let res = MaybePendingBlockWithTxs::Block(BlockWithTxs {
+            status: BlockStatus::AcceptedOnL2,
+            block_hash: block_hashes[2],
+            parent_hash: block_hashes[1],
+            block_number: 2,
+            new_root: Felt::ZERO,
+            timestamp: 0,
+            sequencer_address: Felt::ZERO,
+            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_da_mode: L1DataAvailabilityMode::Calldata,
+            starknet_version: "0.13.2".into(),
+            transactions: vec![expected_txs[1].clone(), expected_txs[2].clone()],
+        });
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), res);
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Number(2)).unwrap(), res);
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Hash(block_hashes[2])).unwrap(), res);
+
+        // Pending
+        let res = MaybePendingBlockWithTxs::PendingBlock(PendingBlockWithTxs {
+            parent_hash: block_hashes[2],
+            timestamp: 0,
+            sequencer_address: Felt::ZERO,
+            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_da_mode: L1DataAvailabilityMode::Calldata,
+            starknet_version: "0.13.2".into(),
+            transactions: vec![expected_txs[3].clone()],
+        });
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), res);
+    }
+}
