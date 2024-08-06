@@ -1096,6 +1096,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "blockgen"
+version = "0.1.0"
+dependencies = [
+ "dc-sync",
+ "dp-block",
+ "dp-class",
+ "dp-receipt",
+ "dp-state-update",
+ "dp-transactions",
+ "indexmap 2.2.6",
+ "rand",
+ "starknet-core",
+ "starknet-types-core",
+]
+
+[[package]]
 name = "blockifier"
 version = "0.8.0-rc.0"
 source = "git+https://github.com/starkware-libs/blockifier?tag=v0.8.0-rc.0#99ddb927994be44ef333c860d33ecc149e8d4273"
@@ -3519,16 +3535,20 @@ dependencies = [
  "dp-block",
  "dp-class",
  "dp-convert",
+ "dp-receipt",
  "dp-state-update",
  "dp-transactions",
  "dp-utils",
+ "lazy_static",
  "log",
  "rayon",
  "rocksdb",
  "serde",
+ "serde_json",
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
+ "tempfile",
  "thiserror",
  "tokio",
 ]

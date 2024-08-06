@@ -35,5 +35,18 @@ log = { workspace = true, default-features = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = [
+  "macros",
+  "parking_lot",
+  "test-util",
+  "signal",
+] }
+
+[dev-dependencies]
+tempfile = "3.10"
+lazy_static = { workspace = true }
+serde_json = { workspace = true }
+dp-transactions = { workspace = true }
+dp-receipt = { workspace = true }

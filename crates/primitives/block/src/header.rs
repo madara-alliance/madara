@@ -33,7 +33,7 @@ impl From<BlockStatus> for starknet_core::types::BlockStatus {
     }
 }
 
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PendingHeader {
     /// The hash of this block’s parent.
     pub parent_block_hash: Felt,
@@ -49,7 +49,7 @@ pub struct PendingHeader {
     pub l1_da_mode: L1DataAvailabilityMode,
 }
 
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// Starknet header definition.
 pub struct Header {
     /// The hash of this block’s parent.
@@ -81,7 +81,7 @@ pub struct Header {
     pub l1_da_mode: L1DataAvailabilityMode,
 }
 
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GasPrices {
     pub eth_l1_gas_price: u128,
     pub strk_l1_gas_price: u128,
@@ -119,8 +119,8 @@ impl GasPrices {
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum L1DataAvailabilityMode {
-    #[default]
     Calldata,
+    #[default]
     Blob,
 }
 

@@ -9,7 +9,7 @@ mod into_starknet_core;
 pub use class_hash::ClassHash;
 pub use compile::ToCompiledClass;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ConvertedClass {
     pub class_infos: (Felt, ClassInfo),
     pub class_compiled: (Felt, CompiledClass),

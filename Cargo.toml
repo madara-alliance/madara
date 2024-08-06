@@ -16,6 +16,7 @@ members = [
   "crates/primitives/receipt",
   "crates/primitives/state_update",
   "crates/primitives/utils",
+  "crates/blockgen",
 ]
 resolver = "2"
 # All previous except for `starknet-rpc-test` and `starknet-e2e-test`
@@ -88,6 +89,9 @@ dc-sync = { path = "crates/client/sync" }
 dc-eth = { path = "crates/client/eth" }
 dc-metrics = { path = "crates/client/metrics" }
 dc-mempool = { path = "crates/client/mempool" }
+
+# Deoxys test
+blockgen = { path = "crates/blockgen" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.0-rc5"

@@ -27,6 +27,7 @@ const ROW_PENDING_INNER: &[u8] = b"pending";
 const ROW_SYNC_TIP: &[u8] = b"sync_tip";
 const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct TxIndex(pub u64);
 
 // TODO(error-handling): some of the else { return Ok(None) } should be replaced with hard errors for

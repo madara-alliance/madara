@@ -24,6 +24,19 @@ impl DeoxysBackend {
         state_diff: StateDiff,
         converted_classes: Vec<ConvertedClass>,
     ) -> Result<(), DeoxysStorageError> {
+        // let block_json = serde_json::to_string_pretty(&block).unwrap();
+        // let state_diff_json = serde_json::to_string_pretty(&state_diff).unwrap();
+        // let converted_classes_json = serde_json::to_string(&converted_classes).unwrap();
+        // println!("-----------------");
+        // println!("{block_json}");
+        // println!("-----------------");
+        // println!("{state_diff_json}");
+        // println!("-----------------");
+        // // save in a file
+        // std::fs::write("converted_classes_pending.json", converted_classes_json).unwrap();
+        // println!("-----------------");
+        // std::thread::sleep(std::time::Duration::from_secs(5));
+
         let block_n = block.info.block_n();
         let state_diff_cpy = state_diff.clone();
 

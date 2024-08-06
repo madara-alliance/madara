@@ -4,7 +4,9 @@ mod events;
 mod receipts;
 mod transactions;
 
+use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
+use bitvec::view::AsBits;
 use classes::class_trie_root;
 use contracts::contract_trie_root;
 use dc_db::DeoxysBackend;
@@ -101,6 +103,27 @@ where
     let id = bonsai_trie::id::BasicIdBuilder::new().new_id();
 
     // run in a blocking-safe thread to avoid starving the thread pool
+    bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+    bonsai_storage.root_hash(IDENTIFIER).expect("Failed to get root hash")
+}
+
+pub fn compute_root_keyed<H>(entries: &[(Felt, Felt)]) -> Felt
+where
+    H: StarkHash + Send + Sync,
+{
+    const IDENTIFIER: &[u8] = b"0xinmemory";
+    let config = bonsai_trie::BonsaiStorageConfig::default();
+    let bonsai_db = bonsai_trie::databases::HashMapDb::<bonsai_trie::id::BasicId>::default();
+    let mut bonsai_storage =
+        bonsai_trie::BonsaiStorage::<_, _, H>::new(bonsai_db, config).expect("Failed to create bonsai storage");
+    entries.iter().for_each(|(key, value)| {
+        let bytes = key.to_bytes_be();
+        let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
+        bonsai_storage.insert(IDENTIFIER, &bv, value).expect("Failed to insert into bonsai storage");
+    });
+
+    let id = bonsai_trie::id::BasicIdBuilder::new().new_id();
+
     bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
     bonsai_storage.root_hash(IDENTIFIER).expect("Failed to get root hash")
 }
