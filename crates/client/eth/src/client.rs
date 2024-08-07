@@ -120,7 +120,7 @@ impl EthereumClient {
     }
 
     /// Get the last Starknet block hash verified on L1
-    pub async fn get_l1_to_l2_message_cancellations(&self, msg_hash : FixedBytes<32>) -> anyhow::Result<Felt> {
+    pub async fn get_l1_to_l2_message_cancellations(&self, msg_hash: FixedBytes<32>) -> anyhow::Result<Felt> {
         //l1ToL2MessageCancellations
         let block_hash = self.l1_core_contract.l1ToL2MessageCancellations(msg_hash).call().await?;
         u256_to_felt(block_hash._0)

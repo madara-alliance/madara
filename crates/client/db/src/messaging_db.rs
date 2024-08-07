@@ -58,13 +58,8 @@ impl DeoxysBackend {
 
             let mut btree_set = BTreeSet::new();
             btree_set.insert(nonce);
-            
-            self.db.put_cf_opt(
-                &messaging_column,
-                NONCES_PROCESSED,
-                bincode::serialize(&btree_set)?,
-                &writeopts,
-            )?;
+
+            self.db.put_cf_opt(&messaging_column, NONCES_PROCESSED, bincode::serialize(&btree_set)?, &writeopts)?;
             return Ok(true);
         };
 
@@ -78,13 +73,8 @@ impl DeoxysBackend {
 
             let mut writeopts = WriteOptions::default(); // todo move that in db
             writeopts.disable_wal(true);
-            
-            self.db.put_cf_opt(
-                &messaging_column,
-                NONCES_PROCESSED,
-                bincode::serialize(&nonce_tree)?,
-                &writeopts,
-            )?;
+
+            self.db.put_cf_opt(&messaging_column, NONCES_PROCESSED, bincode::serialize(&nonce_tree)?, &writeopts)?;
             return Ok(true);
         }
     }

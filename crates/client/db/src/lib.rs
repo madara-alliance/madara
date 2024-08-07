@@ -189,7 +189,7 @@ pub enum Column {
     BonsaiClassesTrie,
     BonsaiClassesFlat,
     BonsaiClassesLog,
-    
+
     Messaging,
 }
 
