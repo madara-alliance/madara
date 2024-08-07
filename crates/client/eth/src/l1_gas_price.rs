@@ -140,7 +140,9 @@ mod eth_client_gas_price_worker_test {
 
     #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_fails(eth_client_with_mock: &'static (MockServer, EthereumClient)) {
+    async fn gas_price_worker_when_eth_fee_history_fails_should_fails(
+        eth_client_with_mock: &'static (MockServer, EthereumClient),
+    ) {
         let (mock_server, eth_client) = eth_client_with_mock;
 
         let mock = mock_server.mock(|when, then| {
