@@ -4,11 +4,13 @@ use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
 use dc_db::{DatabaseService, DeoxysBackend};
 use dc_eth::client::EthereumClient;
+use dc_eth::l1_gas_price::L1GasPrices;
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
 use dc_telemetry::TelemetryHandle;
 use dp_utils::service::Service;
+use futures::lock::Mutex;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -19,6 +21,7 @@ pub struct SyncService {
     fetch_config: FetchConfig,
     backup_every_n_blocks: Option<u64>,
     eth_client: EthereumClient,
+    l1_gas_prices: Arc<Mutex<L1GasPrices>>,
     starting_block: Option<u64>,
     block_metrics: BlockMetrics,
     db_metrics: DbMetrics,
@@ -33,6 +36,7 @@ impl SyncService {
         db: &DatabaseService,
         metrics_handle: MetricsRegistry,
         telemetry: TelemetryHandle,
+        l1_gas_prices: Arc<Mutex<L1GasPrices>>,
     ) -> anyhow::Result<Self> {
         // TODO: create l1 metrics here
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
@@ -60,6 +64,7 @@ impl SyncService {
             db_backend: Arc::clone(db.backend()),
             fetch_config,
             eth_client,
+            l1_gas_prices,
             starting_block: config.starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
             block_metrics,
@@ -81,6 +86,7 @@ impl Service for SyncService {
             fetch_config,
             backup_every_n_blocks,
             eth_client,
+            l1_gas_prices,
             starting_block,
             block_metrics,
             db_metrics,
@@ -96,6 +102,7 @@ impl Service for SyncService {
                 &db_backend,
                 fetch_config,
                 eth_client,
+                l1_gas_prices,
                 starting_block,
                 backup_every_n_blocks,
                 block_metrics,

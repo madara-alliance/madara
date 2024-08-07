@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
+use futures::lock::Mutex;
 
 mod cli;
 mod service;
@@ -12,6 +13,7 @@ mod util;
 
 use cli::RunCmd;
 use dc_db::DatabaseService;
+use dc_eth::l1_gas_price::L1GasPrices;
 use dc_mempool::{L1DataProvider, Mempool};
 use dc_metrics::MetricsService;
 use dc_rpc::providers::AddTransactionProvider;
@@ -80,8 +82,10 @@ async fn main() -> anyhow::Result<()> {
         match run_cmd.authority {
             // Block production service. (authority)
             true => {
-                struct DummyProvider;
+                // gas price needs to be shifted here
+                struct DummyProvider; // create gas price mutex here
                 impl L1DataProvider for DummyProvider {
+                    // add getter and setter for the gas price
                     fn get_gas_prices(&self) -> GasPrices {
                         GasPrices {
                             eth_l1_gas_price: 100,
@@ -115,12 +119,14 @@ async fn main() -> anyhow::Result<()> {
             }
             // Block sync service. (full node)
             false => {
+                let l1_gas_prices = Arc::new(Mutex::new(L1GasPrices::default()));
                 // Feeder gateway sync service.
                 let sync_service = SyncService::new(
                     &run_cmd.sync_params,
                     &db_service,
                     prometheus_service.registry(),
                     telemetry_service.new_handle(),
+                    l1_gas_prices,
                 )
                 .await
                 .context("Initializing sync service")?;

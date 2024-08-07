@@ -1,6 +1,7 @@
 # Deoxys Changelog
 
 ## Next release
+
 - test: tests added for eth client and event subscription
 
 - feat: experimental block production and mempool

@@ -3795,6 +3795,7 @@ dependencies = [
  "once_cell",
  "primitive-types",
  "prometheus",
+ "regex",
  "rstest 0.18.2",
  "serde",
  "serde_json",

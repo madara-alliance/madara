@@ -22,8 +22,8 @@ pub mod starknet_sync_worker {
     use dp_convert::ToFelt;
     use fetch::fetchers::FetchConfig;
 
+    use futures::lock::Mutex;
     use starknet_providers::SequencerGatewayProvider;
-    use std::sync::Mutex;
     use std::{sync::Arc, time::Duration};
 
     #[allow(clippy::too_many_arguments)]
@@ -59,7 +59,7 @@ pub mod starknet_sync_worker {
             None => provider,
         };
 
-        let l1_fut = async { dc_eth::state_update::sync(backend, &eth_client, chain_id, l1_gas_prices).await };
+        let l1_fut = async { dc_eth::sync::sync(backend, &eth_client, chain_id, l1_gas_prices).await };
 
         tokio::try_join!(
             l1_fut,
