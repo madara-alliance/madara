@@ -359,6 +359,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    // use majin_blob_types::serde;
     use crate::tests::common::init_config;
 
     #[rstest]

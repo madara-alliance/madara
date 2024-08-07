@@ -1,19 +1,24 @@
+use std::error::Error;
+use std::sync::Arc;
+
+use da_client_interface::MockDaClient;
+use httpmock::MockServer;
+use mockall::predicate::eq;
+use rstest::rstest;
+use serde_json::json;
+use uuid::Uuid;
+
 use crate::config::config_force_init;
 use crate::database::MockDatabase;
+use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::types::{JobStatus, JobType};
+use crate::jobs::{Job, MockJob};
 use crate::queue::job_queue::JOB_PROCESSING_QUEUE;
 use crate::queue::MockQueueProvider;
 use crate::tests::common::init_config;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
 use crate::workers::snos::SnosWorker;
 use crate::workers::Worker;
-use da_client_interface::MockDaClient;
-use httpmock::MockServer;
-use mockall::predicate::eq;
-use rstest::rstest;
-use serde_json::json;
-use std::error::Error;
-use uuid::Uuid;
 
 #[rstest]
 #[case(false)]
@@ -26,6 +31,9 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
     let mut queue = MockQueueProvider::new();
     let start_job_index;
     let block;
+
+    // Mocking the get_job_handler function.
+    let mut job_handler = MockJob::new();
 
     // Mocking db function expectations
     if !db_val {
@@ -54,12 +62,22 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
 
         let uuid = Uuid::new_v4();
 
+        let job_item = get_job_item_mock_by_id(i.clone().to_string(), uuid);
+        let job_item_cloned = job_item.clone();
+
+        job_handler.expect_create_job().times(1).returning(move |_, _, _| Ok(job_item_cloned.clone()));
+
         // creating jobs call expectations
         db.expect_create_job()
             .times(1)
             .withf(move |item| item.internal_id == i.clone().to_string())
-            .returning(move |_| Ok(get_job_item_mock_by_id(i.clone().to_string(), uuid)));
+            .returning(move |_| Ok(job_item.clone()));
     }
+
+    let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
+    let ctx = mock_factory::get_job_handler_context();
+    // Mocking the `get_job_handler` call in create_job function.
+    ctx.expect().times(5).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // Queue function call simulations
     queue

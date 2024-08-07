@@ -1,6 +1,7 @@
 use crate::database::MockDatabase;
 use crate::jobs::constants::JOB_METADATA_CAIRO_PIE_PATH_KEY;
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
+use crate::jobs::MockJob;
 use mockall::predicate::eq;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -52,24 +53,34 @@ pub fn get_job_by_mock_id_vector(
     jobs_vec
 }
 
-pub fn db_create_job_expectations_update_state_worker(db: &mut MockDatabase, proof_creation_jobs: Vec<JobItem>) {
+pub fn db_create_job_expectations_update_state_worker(
+    db: &mut MockDatabase,
+    proof_creation_jobs: Vec<JobItem>,
+    mock_job: &mut MockJob,
+) {
     for job in proof_creation_jobs {
         let internal_id = job.internal_id.clone();
-        db.expect_create_job().times(1).withf(move |item| item.internal_id == job.internal_id).returning(move |_| {
-            Ok(JobItem {
-                id: Uuid::new_v4(),
-                internal_id: internal_id.clone(),
-                job_type: JobType::StateTransition,
-                status: JobStatus::Created,
-                external_id: ExternalId::Number(0),
-                metadata: get_hashmap(),
-                version: 0,
-            })
-        });
+        let job_item = JobItem {
+            id: Uuid::new_v4(),
+            internal_id: internal_id.clone(),
+            job_type: JobType::StateTransition,
+            status: JobStatus::Created,
+            external_id: ExternalId::Number(0),
+            metadata: get_hashmap(),
+            version: 0,
+        };
+        let job_item_cloned = job_item.clone();
+
+        mock_job.expect_create_job().times(1).returning(move |_, _, _| Ok(job_item.clone()));
+
+        db.expect_create_job()
+            .times(1)
+            .withf(move |item| item.internal_id == job.internal_id)
+            .returning(move |_| Ok(job_item_cloned.clone()));
     }
 }
 
-pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabase) {
+pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabase, mock_job: &mut MockJob) {
     fn get_job_item_mock_by_id(id: i32) -> JobItem {
         let uuid = Uuid::new_v4();
         JobItem {
@@ -88,10 +99,15 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabase) {
         .with(eq(id.clone().to_string()), eq(JobType::ProofCreation))
         .returning(|_, _| Ok(None));
 
+    let job_item = get_job_item_mock_by_id(id);
+    let job_item_cloned = job_item.clone();
+
+    mock_job.expect_create_job().times(1).returning(move |_, _, _| Ok(job_item.clone()));
+
     db.expect_create_job()
         .times(1)
         .withf(move |item| item.internal_id == id.clone().to_string())
-        .returning(move |_| Ok(get_job_item_mock_by_id(id)));
+        .returning(move |_| Ok(job_item_cloned.clone()));
 }
 
 pub fn get_hashmap() -> HashMap<String, String> {

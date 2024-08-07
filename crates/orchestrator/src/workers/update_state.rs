@@ -1,10 +1,10 @@
 use std::error::Error;
 
+use async_trait::async_trait;
+
 use crate::config::config;
 use crate::jobs::create_job;
 use crate::jobs::types::{JobStatus, JobType};
-use async_trait::async_trait;
-
 use crate::workers::Worker;
 
 pub struct UpdateStateWorker;

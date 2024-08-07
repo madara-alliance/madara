@@ -1,6 +1,17 @@
+use std::error::Error;
+use std::sync::Arc;
+
+use da_client_interface::MockDaClient;
+use httpmock::MockServer;
+use mockall::predicate::eq;
+use rstest::rstest;
+use uuid::Uuid;
+
 use crate::config::config_force_init;
 use crate::database::MockDatabase;
+use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::types::{JobStatus, JobType};
+use crate::jobs::{Job, MockJob};
 use crate::queue::MockQueueProvider;
 use crate::tests::common::init_config;
 use crate::tests::workers::utils::{
@@ -8,12 +19,6 @@ use crate::tests::workers::utils::{
 };
 use crate::workers::update_state::UpdateStateWorker;
 use crate::workers::Worker;
-use da_client_interface::MockDaClient;
-use httpmock::MockServer;
-use mockall::predicate::eq;
-use rstest::rstest;
-use std::error::Error;
-use uuid::Uuid;
 
 #[rstest]
 #[case(false, 0)]
@@ -29,6 +34,9 @@ async fn test_update_state_worker(
     let mut queue = MockQueueProvider::new();
 
     const JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_job_processing_queue";
+
+    // Mocking the get_job_handler function.
+    let mut job_handler = MockJob::new();
 
     // Mocking db function expectations
     // If no successful state update jobs exist
@@ -58,7 +66,8 @@ async fn test_update_state_worker(
                 ))
             });
 
-        // mocking getting of the jobs (when there is a safety check for any pre-existing job during job creation)
+        // mocking getting of the jobs (when there is a safety check for any pre-existing job during job
+        // creation)
         let completed_jobs =
             get_job_by_mock_id_vector(JobType::ProofCreation, JobStatus::Completed, number_of_processed_jobs as u64, 2);
         for job in completed_jobs {
@@ -72,7 +81,15 @@ async fn test_update_state_worker(
         db_create_job_expectations_update_state_worker(
             &mut db,
             get_job_by_mock_id_vector(JobType::ProofCreation, JobStatus::Completed, number_of_processed_jobs as u64, 2),
+            &mut job_handler,
         );
+    }
+
+    let y: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
+    let ctx = mock_factory::get_job_handler_context();
+    // Mocking the `get_job_handler` call in create_job function.
+    if last_successful_job_exists {
+        ctx.expect().times(5).with(eq(JobType::StateTransition)).returning(move |_| Arc::clone(&y));
     }
 
     // Queue function call simulations

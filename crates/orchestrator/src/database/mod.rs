@@ -1,6 +1,6 @@
-use ::mongodb::bson::doc;
 use std::collections::HashMap;
 
+use ::mongodb::bson::doc;
 use async_trait::async_trait;
 use color_eyre::Result;
 use mockall::automock;

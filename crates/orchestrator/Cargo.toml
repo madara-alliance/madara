@@ -14,10 +14,12 @@ path = "src/main.rs"
 [dependencies]
 alloy = { workspace = true }
 arc-swap = { workspace = true }
+assert_matches = "1.5.0"
 async-std = "1.12.0"
 async-trait = { workspace = true }
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
 aws-sdk-s3 = { version = "1.38.0", features = ["behavior-version-latest"] }
+aws-sdk-sqs = "1.36.0"
 axum = { workspace = true, features = ["macros"] }
 axum-macros = { workspace = true }
 bincode = { workspace = true }
@@ -35,7 +37,8 @@ lazy_static = { workspace = true }
 log = "0.4.21"
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-mockall = "0.12.1"
+mockall = { version = "0.13.0" }
+mockall_double = "0.3.1"
 mongodb = { workspace = true, features = ["bson-uuid-1"], optional = true }
 num = { workspace = true }
 num-bigint = { workspace = true }
