@@ -292,7 +292,7 @@ For more detailed information and examples on each method, please refer to the [
 
 Madara offers numerous features and is constantly improving to stay at the cutting edge of Starknet technology.
 
-- **Starknet Version**: `v0.13.1`
+- **Starknet Version**: `v0.13.2`
 - **JSON-RPC Version**: `v0.7.1`
 - **Feeder-Gateway State Synchronization**
 - **State Commitment Computation**

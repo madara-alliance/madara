@@ -59,7 +59,7 @@ mod test {
 
     #[test]
     fn test_db_block_id() {
-        assert_eq!(DbBlockId::Pending.is_pending(), true);
-        assert_eq!(DbBlockId::BlockN(0).is_pending(), false);
+        assert!(DbBlockId::Pending.is_pending());
+        assert!(!DbBlockId::BlockN(0).is_pending());
     }
 }
