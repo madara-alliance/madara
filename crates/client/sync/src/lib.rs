@@ -21,6 +21,7 @@ pub mod starknet_sync_worker {
     use dp_convert::ToFelt;
     use fetch::fetchers::FetchConfig;
 
+    use starknet_api::core::ChainId;
     use starknet_providers::SequencerGatewayProvider;
     use std::{sync::Arc, time::Duration};
 
@@ -56,7 +57,13 @@ pub mod starknet_sync_worker {
             None => provider,
         };
 
-        let l1_fut = async { dc_eth::state_update::sync(backend, &eth_client, chain_id).await };
+        let state_update_fut = async { dc_eth::state_update::sync(backend, &eth_client, chain_id).await };
+        let l1_l2_messaging_fut =
+            async { dc_messaging::worker::sync(backend, &eth_client, &ChainId::Other(chain_id.to_string())).await };
+        let l1_fut = async {
+            tokio::try_join!(state_update_fut, l1_l2_messaging_fut)?;
+            Ok(())
+        };
 
         tokio::try_join!(
             l1_fut,
