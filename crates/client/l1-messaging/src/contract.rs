@@ -6,24 +6,6 @@ use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersi
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
-// Blockifier type :
-//
-// pub struct L1HandlerTransaction {
-//     pub tx: starknet_api::transaction::L1HandlerTransaction,
-//     pub tx_hash: TransactionHash,
-//     pub paid_fee_on_l1: Fee,
-// }
-
-//starknet_api::transaction::L1HandlerTransaction:
-//
-// pub struct L1HandlerTransaction {
-//     pub version: TransactionVersion,
-//     pub nonce: Nonce,
-//     pub contract_address: ContractAddress,
-//     pub entry_point_selector: EntryPointSelector,
-//     pub calldata: Calldata,
-// }
-
 pub fn parse_handle_l1_message_transaction(event: &LogMessageToL2) -> anyhow::Result<L1HandlerTransaction> {
     // L1 from address.
     let from_address = u256_to_felt(U256::from_be_bytes(event.fromAddress.into()))?;
