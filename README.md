@@ -1,6 +1,6 @@
 <!-- markdownlint-disable -->
 <div align="center">
-  <img style="object-fit: contain" src="https://github.com/keep-starknet-strange/madara-branding/blob/main/logo/PNGs/Madara%20logomark%20-%20Red%20-%20Duotone.png?raw=true" height="128">
+  <img src="https://github.com/keep-starknet-strange/madara-branding/blob/main/logo/PNGs/Madara%20logomark%20-%20Red%20-%20Duotone.png?raw=true" width="500">
 </div>
 <div align="center">
 <br />
