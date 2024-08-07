@@ -88,6 +88,7 @@ dc-sync = { path = "crates/client/sync" }
 dc-eth = { path = "crates/client/eth" }
 dc-metrics = { path = "crates/client/metrics" }
 dc-mempool = { path = "crates/client/mempool" }
+dc-messaging = { path = "crates/client/l1-messaging" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.0-rc5"
