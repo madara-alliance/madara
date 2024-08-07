@@ -40,21 +40,16 @@ starknet_api = { workspace = true }
 
 
 # Other
-alloy = { workspace = true }
-anyhow = "1.0.75"
+anyhow = { workspace = true }
 bitvec = { workspace = true }
-ethers = { workspace = true }
 futures = { workspace = true, default-features = true }
-hex = { workspace = true }
 log = { workspace = true }
 num-traits = { workspace = true }
-primitive-types = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 reqwest = { workspace = true }
 rodio = { version = "0.17", optional = true }
-serde = { workspace = true, default-features = true }
-serde_json = "1"
+serde_json = { workspace = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = [
   "macros",
