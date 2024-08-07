@@ -1,5 +1,6 @@
 use crate::client::StarknetCoreContract::StarknetCoreContractInstance;
 use crate::utils::u256_to_felt;
+use alloy::primitives::FixedBytes;
 use alloy::sol_types::SolEvent;
 use alloy::{
     primitives::Address,
@@ -115,6 +116,13 @@ impl EthereumClient {
     /// Get the last Starknet block hash verified on L1
     pub async fn get_last_verified_block_hash(&self) -> anyhow::Result<Felt> {
         let block_hash = self.l1_core_contract.stateBlockHash().call().await?;
+        u256_to_felt(block_hash._0)
+    }
+
+    /// Get the last Starknet block hash verified on L1
+    pub async fn get_l1_to_l2_message_cancellations(&self, msg_hash : FixedBytes<32>) -> anyhow::Result<Felt> {
+        //l1ToL2MessageCancellations
+        let block_hash = self.l1_core_contract.l1ToL2MessageCancellations(msg_hash).call().await?;
         u256_to_felt(block_hash._0)
     }
 }

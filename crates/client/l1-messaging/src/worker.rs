@@ -49,7 +49,11 @@ pub async fn sync(
             );
 
             // Check if cancellation was initiated
-            let cancellations = client.get_l1_to_l2_message_cancellations(get_l1_to_l2_msg_hash(&event)?).await?;
+            let cancellation_timestamp = client.get_l1_to_l2_message_cancellations(get_l1_to_l2_msg_hash(&event)?).await?;
+            if cancellation_timestamp != Felt::ZERO {
+                log::info!("⟠ L1 Message was cancelled in block at timestamp : {:?}", cancellation_timestamp);
+                continue ;
+            }
 
             match process_l1_message(backend, &event, &meta.block_number, &meta.log_index, _chain_id).await {
                 Ok(Some(tx_hash)) => {log::info!(
