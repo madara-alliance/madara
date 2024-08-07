@@ -1,6 +1,6 @@
 /// Config of the service. Contains configurations for DB, Queues and other services.
 pub mod config;
-mod constants;
+pub mod constants;
 /// Controllers for the routes
 pub mod controllers;
 /// Contains the trait that implements the fetching functions
@@ -17,6 +17,6 @@ pub mod queue;
 /// Contains the routes for the service
 pub mod routes;
 #[cfg(test)]
-mod tests;
+pub mod tests;
 /// Contains workers which act like cron jobs
 pub mod workers;

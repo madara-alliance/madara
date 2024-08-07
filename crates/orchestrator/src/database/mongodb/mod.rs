@@ -41,6 +41,12 @@ impl MongoDb {
         MongoDb { client }
     }
 
+    /// Mongodb client uses Arc internally, reducing the cost of clone.
+    /// Directly using clone is not recommended for libraries not using Arc internally.
+    pub fn client(&self) -> Client {
+        self.client.clone()
+    }
+
     fn get_job_collection(&self) -> Collection<JobItem> {
         self.client.database("orchestrator").collection("jobs")
     }

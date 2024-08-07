@@ -10,6 +10,21 @@ jobs:
     # sadly, for now we have to "rebuild" for the coverage
     runs-on: ubuntu-latest
 
+    services:
+      localstack:
+        image: localstack/localstack
+        env:
+          SERVICES: s3, sqs
+          DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: "AWS_ACCESS_KEY_ID"
+          AWS_SECRET_ACCESS_KEY: "AWS_SECRET_ACCESS_KEY"
+        ports:
+          - 4566:4566
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+
     steps:
       - uses: actions/checkout@v3
 

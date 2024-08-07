@@ -12,8 +12,8 @@ use uuid::Uuid;
 use crate::config::config;
 use crate::jobs::{process_job, verify_job};
 
-const JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_job_processing_queue";
-const JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_job_verification_queue";
+pub const JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_job_processing_queue";
+pub const JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_job_verification_queue";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JobQueueMessage {

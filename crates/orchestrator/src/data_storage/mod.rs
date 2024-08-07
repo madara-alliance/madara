@@ -17,6 +17,8 @@ use mockall::automock;
 pub trait DataStorage: Send + Sync {
     async fn get_data(&self, key: &str) -> Result<Bytes>;
     async fn put_data(&self, data: Bytes, key: &str) -> Result<()>;
+    #[cfg(test)]
+    async fn build_test_bucket(&self, bucket_name: &str) -> Result<()>;
 }
 
 /// **DataStorageConfig** : Trait method to represent the config struct needed for

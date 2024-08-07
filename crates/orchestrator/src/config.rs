@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::data_storage::aws_s3::config::AWSS3Config;
+use crate::data_storage::aws_s3::config::{AWSS3Config, AWSS3ConfigType};
 use crate::data_storage::aws_s3::AWSS3;
 use crate::data_storage::{DataStorage, DataStorageConfig};
 use arc_swap::{ArcSwap, Guard};
@@ -148,7 +148,7 @@ pub async fn config_force_init(config: Config) {
 }
 
 /// Builds the DA client based on the environment variable DA_LAYER
-async fn build_da_client() -> Box<dyn DaClient + Send + Sync> {
+pub async fn build_da_client() -> Box<dyn DaClient + Send + Sync> {
     match get_env_var_or_panic("DA_LAYER").as_str() {
         "ethereum" => {
             let config = EthereumDaConfig::new_from_env();
@@ -159,7 +159,7 @@ async fn build_da_client() -> Box<dyn DaClient + Send + Sync> {
 }
 
 /// Builds the prover service based on the environment variable PROVER_SERVICE
-fn build_prover_service(settings_provider: &impl SettingsProvider) -> Box<dyn ProverClient> {
+pub fn build_prover_service(settings_provider: &impl SettingsProvider) -> Box<dyn ProverClient> {
     match get_env_var_or_panic("PROVER_SERVICE").as_str() {
         "sharp" => Box::new(SharpProverService::with_settings(settings_provider)),
         _ => panic!("Unsupported prover service"),
@@ -167,7 +167,9 @@ fn build_prover_service(settings_provider: &impl SettingsProvider) -> Box<dyn Pr
 }
 
 /// Builds the settlement client depending on the env variable SETTLEMENT_LAYER
-async fn build_settlement_client(settings_provider: &impl SettingsProvider) -> Box<dyn SettlementClient + Send + Sync> {
+pub async fn build_settlement_client(
+    settings_provider: &impl SettingsProvider,
+) -> Box<dyn SettlementClient + Send + Sync> {
     match get_env_var_or_panic("SETTLEMENT_LAYER").as_str() {
         "ethereum" => Box::new(EthereumSettlementClient::with_settings(settings_provider)),
         "starknet" => Box::new(StarknetSettlementClient::with_settings(settings_provider).await),
@@ -175,9 +177,9 @@ async fn build_settlement_client(settings_provider: &impl SettingsProvider) -> B
     }
 }
 
-async fn build_storage_client() -> Box<dyn DataStorage + Send + Sync> {
+pub async fn build_storage_client() -> Box<dyn DataStorage + Send + Sync> {
     match get_env_var_or_panic("DATA_STORAGE").as_str() {
-        "s3" => Box::new(AWSS3::new(AWSS3Config::new_from_env()).await),
+        "s3" => Box::new(AWSS3::new(AWSS3ConfigType::WithoutEndpoint(AWSS3Config::new_from_env())).await),
         _ => panic!("Unsupported Storage Client"),
     }
 }

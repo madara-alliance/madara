@@ -6,6 +6,7 @@ use std::sync::Arc;
 use ::uuid::Uuid;
 use constants::*;
 use da_client_interface::MockDaClient;
+use mongodb::Client;
 use prover_client_interface::MockProverClient;
 use rstest::*;
 use settlement_client_interface::MockSettlementClient;
@@ -14,8 +15,12 @@ use starknet::providers::JsonRpcClient;
 use url::Url;
 
 use crate::config::Config;
-use crate::data_storage::MockDataStorage;
-use crate::database::MockDatabase;
+use crate::data_storage::aws_s3::config::{AWSS3ConfigType, S3LocalStackConfig};
+use crate::data_storage::aws_s3::AWSS3;
+use crate::data_storage::{DataStorage, DataStorageConfig, MockDataStorage};
+use crate::database::mongodb::config::MongoDbConfig;
+use crate::database::mongodb::MongoDb;
+use crate::database::{DatabaseConfig, MockDatabase};
 use crate::jobs::types::JobStatus::Created;
 use crate::jobs::types::JobType::DataSubmission;
 use crate::jobs::types::{ExternalId, JobItem};
@@ -73,4 +78,17 @@ pub fn custom_job_item(default_job_item: JobItem, #[default(String::from("0"))] 
     job_item.internal_id = internal_id;
 
     job_item
+}
+
+pub async fn drop_database() -> color_eyre::Result<()> {
+    let db_client: Client = MongoDb::new(MongoDbConfig::new_from_env()).await.client();
+    // dropping all the collection.
+    // use .collection::<JobItem>("<collection_name>")
+    // if only particular collection is to be dropped
+    db_client.database("orchestrator").drop(None).await?;
+    Ok(())
+}
+
+pub async fn get_storage_client() -> Box<dyn DataStorage + Send + Sync> {
+    Box::new(AWSS3::new(AWSS3ConfigType::WithEndpoint(S3LocalStackConfig::new_from_env())).await)
 }

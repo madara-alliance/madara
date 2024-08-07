@@ -69,7 +69,10 @@ impl EthereumSettlementClient {
             ProviderBuilder::new().with_recommended_fillers().wallet(wallet.clone()).on_http(settlement_cfg.rpc_url),
         );
         let core_contract_client = StarknetValidityContractClient::new(
-            Address::from_slice(settlement_cfg.core_contract_address.as_bytes()).0.into(),
+            Address::from_str(&settlement_cfg.core_contract_address)
+                .expect("Failed to convert the validity contract address.")
+                .0
+                .into(),
             provider.clone(),
         );
 
