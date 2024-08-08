@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: gas price provider added for block production
 - feat: l1 sync service
 - feat: gas price worker for l1
 - test: tests added for eth client and event subscription
