@@ -15,6 +15,7 @@
 - test: tests added for eth client and event subscription
 - feat: Added l1->l2 messaging
 - test: add unitests primitives
+- tests: add e2e tests for the node
 - tests: add tests for the rpcs endpoints
 - fix: pending contract storage not stored properly
 - test: add tests crate `db`
