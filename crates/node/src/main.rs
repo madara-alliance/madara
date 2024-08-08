@@ -76,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .await
     .context("Initializing db service")?;
-
+    // dummy provider and
     let l1_gas_prices = Arc::new(Mutex::new(L1GasPrices::default()));
 
     let l1_service = L1SyncService::new(
@@ -101,6 +101,7 @@ async fn main() -> anyhow::Result<()> {
                 impl L1DataProvider for DummyProvider {
                     // add getter and setter for the gas price
                     fn get_gas_prices(&self) -> GasPrices {
+                        // let x = self.eth_gas_price.lock().await;
                         GasPrices {
                             eth_l1_gas_price: 100,
                             strk_l1_gas_price: 90,
@@ -112,6 +113,12 @@ async fn main() -> anyhow::Result<()> {
                         L1DataAvailabilityMode::Blob
                     }
                 }
+
+                // impl DummyProvider {
+                //     fn set_eth_gas_price() {}
+                //
+                //     fn set_strk_gas_price() {}
+                // }
 
                 let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(DummyProvider);
 

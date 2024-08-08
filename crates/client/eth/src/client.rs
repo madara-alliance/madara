@@ -74,7 +74,7 @@ impl EthereumClient {
             provider: Arc::new(provider),
             l1_core_contract: core_contract,
             l1_block_metrics,
-            gas_price_poll_ms: Some(10_u64),
+            gas_price_poll_ms: None,
         })
     }
 
@@ -157,7 +157,7 @@ pub mod eth_client_getter_test {
             provider: Arc::new(provider),
             l1_core_contract: contract.clone(),
             l1_block_metrics,
-            gas_price_poll_ms: Some(10_u64),
+            gas_price_poll_ms: Some(100_u64),
         }
     }
 

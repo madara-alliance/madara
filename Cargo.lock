@@ -3794,6 +3794,7 @@ dependencies = [
  "dp-utils",
  "futures",
  "httpmock",
+ "lazy_static",
  "log",
  "once_cell",
  "primitive-types",

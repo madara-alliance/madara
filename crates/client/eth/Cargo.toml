@@ -35,6 +35,7 @@ async-trait = "0.1.80"
 bitvec = { workspace = true }
 bytes = "1.6.0"
 futures = { workspace = true, default-features = true }
+lazy_static = { workspace = true }
 log = { workspace = true }
 primitive-types = { workspace = true }
 regex = "1.10.5"
