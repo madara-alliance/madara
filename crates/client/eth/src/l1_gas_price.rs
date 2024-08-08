@@ -7,32 +7,14 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 
+use dp_block::header::GasPrices;
 use lazy_static;
-use std::num::NonZeroU128;
 use std::time::{SystemTime, UNIX_EPOCH};
+
 const DEFAULT_GAS_PRICE_POLL_MS: u64 = 10_000;
 
 lazy_static::lazy_static! {
     static ref LAST_UPDATE_TIMESTAMP: Arc<Mutex<u128>> = Arc::new(Mutex::new(0));
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct L1GasPrices {
-    pub eth_l1_gas_price: NonZeroU128,       // In wei.
-    pub strk_l1_gas_price: NonZeroU128,      // In fri.
-    pub eth_l1_data_gas_price: NonZeroU128,  // In wei.
-    pub strk_l1_data_gas_price: NonZeroU128, // In fri.
-}
-
-impl Default for L1GasPrices {
-    fn default() -> Self {
-        L1GasPrices {
-            eth_l1_gas_price: NonZeroU128::new(10).unwrap(),
-            strk_l1_gas_price: NonZeroU128::new(10).unwrap(),
-            eth_l1_data_gas_price: NonZeroU128::new(10).unwrap(),
-            strk_l1_data_gas_price: NonZeroU128::new(10).unwrap(),
-        }
-    }
 }
 
 // Function to update the last update timestamp
@@ -49,7 +31,7 @@ pub async fn get_last_update_timestamp() -> u128 {
 
 pub async fn gas_price_worker(
     eth_client: &EthereumClient,
-    gas_price: Arc<Mutex<L1GasPrices>>,
+    gas_price: Arc<Mutex<GasPrices>>,
     infinite_loop: bool,
 ) -> anyhow::Result<()> {
     let poll_time = eth_client.gas_price_poll_ms.unwrap_or(DEFAULT_GAS_PRICE_POLL_MS);
@@ -85,7 +67,7 @@ pub async fn gas_price_worker(
     }
 }
 
-async fn update_gas_price(eth_client: &EthereumClient, gas_price: Arc<Mutex<L1GasPrices>>) -> anyhow::Result<()> {
+async fn update_gas_price(eth_client: &EthereumClient, gas_price: Arc<Mutex<GasPrices>>) -> anyhow::Result<()> {
     let fee_history = eth_client.provider.get_fee_history(300, BlockNumberOrTag::Latest, &[]).await?;
 
     // The RPC responds with 301 elements for some reason. It's also just safer to manually
@@ -100,10 +82,8 @@ async fn update_gas_price(eth_client: &EthereumClient, gas_price: Arc<Mutex<L1Ga
 
     let mut gas_price_guard = gas_price.lock().await;
 
-    gas_price_guard.eth_l1_gas_price =
-        NonZeroU128::new(*eth_gas_price).context("Setting l1 last confirmed block number")?;
-    gas_price_guard.eth_l1_data_gas_price =
-        NonZeroU128::new(avg_blob_base_fee).context("Setting l1 last confirmed block number")?;
+    gas_price_guard.eth_l1_gas_price = *eth_gas_price;
+    gas_price_guard.eth_l1_data_gas_price = avg_blob_base_fee;
 
     update_last_update_timestamp().await;
 
@@ -117,16 +97,13 @@ async fn update_gas_price(eth_client: &EthereumClient, gas_price: Arc<Mutex<L1Ga
     Ok(())
 }
 
-async fn update_l1_block_metrics(
-    eth_client: &EthereumClient,
-    gas_price: &Arc<Mutex<L1GasPrices>>,
-) -> anyhow::Result<()> {
+async fn update_l1_block_metrics(eth_client: &EthereumClient, gas_price: &Arc<Mutex<GasPrices>>) -> anyhow::Result<()> {
     // Get the latest block number
     let latest_block_number = eth_client.get_latest_block_number().await?;
 
     // Get the current gas price
     let current_gas_price = gas_price.lock().await;
-    let eth_gas_price = current_gas_price.eth_l1_gas_price.get();
+    let eth_gas_price = current_gas_price.eth_l1_gas_price;
 
     // Update the metrics
     eth_client.l1_block_metrics.l1_block_number.set(latest_block_number as f64);
@@ -166,7 +143,7 @@ mod eth_client_gas_price_worker_test {
     #[rstest]
     #[tokio::test]
     async fn gas_price_worker_works(eth_client: &'static EthereumClient) {
-        let gas_price = Arc::new(Mutex::new(L1GasPrices::default()));
+        let gas_price = Arc::new(Mutex::new(GasPrices::default()));
 
         // Run the worker for a short time
         let worker_handle = tokio::spawn(gas_price_worker(eth_client, gas_price.clone(), false));
@@ -176,8 +153,8 @@ mod eth_client_gas_price_worker_test {
 
         // Check if the gas price was updated
         let updated_price = gas_price.lock().await;
-        assert_eq!(updated_price.eth_l1_gas_price.get(), 1);
-        assert_eq!(updated_price.eth_l1_data_gas_price.get(), 1);
+        assert_eq!(updated_price.eth_l1_gas_price, 1);
+        assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
     #[rstest]
@@ -204,7 +181,7 @@ mod eth_client_gas_price_worker_test {
             }));
         });
 
-        let gas_price = Arc::new(Mutex::new(L1GasPrices::default()));
+        let gas_price = Arc::new(Mutex::new(GasPrices::default()));
 
         update_last_update_timestamp().await;
 
@@ -238,7 +215,7 @@ mod eth_client_gas_price_worker_test {
     #[tokio::test]
     async fn update_gas_price_works(eth_client: &'static EthereumClient) {
         // Initialize gas prices with default values
-        let l1_gas_price = Arc::new(Mutex::new(L1GasPrices::default()));
+        let l1_gas_price = Arc::new(Mutex::new(GasPrices::default()));
 
         // Update gas prices
         update_gas_price(eth_client, l1_gas_price.clone()).await.expect("Failed to update gas prices");
@@ -247,14 +224,10 @@ mod eth_client_gas_price_worker_test {
         let updated_prices = l1_gas_price.lock().await;
 
         // Assert that the ETH L1 gas price has been updated to 1 (as per test environment)
-        assert_eq!(updated_prices.eth_l1_gas_price.get(), 1, "ETH L1 gas price should be 1 in test environment");
+        assert_eq!(updated_prices.eth_l1_gas_price, 1, "ETH L1 gas price should be 1 in test environment");
 
         // Assert that the ETH L1 data gas price has been updated to 1 (as per test environment)
-        assert_eq!(
-            updated_prices.eth_l1_data_gas_price.get(),
-            1,
-            "ETH L1 data gas price should be 1 in test environment"
-        );
+        assert_eq!(updated_prices.eth_l1_data_gas_price, 1, "ETH L1 data gas price should be 1 in test environment");
 
         // Verify that the last update timestamp is recent
         let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs() as u128;

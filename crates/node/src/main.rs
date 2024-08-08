@@ -14,7 +14,6 @@ mod util;
 use crate::service::L1SyncService;
 use cli::RunCmd;
 use dc_db::DatabaseService;
-use dc_eth::l1_gas_price::L1GasPrices;
 use dc_mempool::{L1DataProvider, Mempool};
 use dc_metrics::MetricsService;
 use dc_rpc::providers::AddTransactionProvider;
@@ -77,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing db service")?;
     // dummy provider and
-    let l1_gas_prices = Arc::new(Mutex::new(L1GasPrices::default()));
+    let l1_gas_prices = Arc::new(Mutex::new(GasPrices::default()));
 
     let l1_service = L1SyncService::new(
         &run_cmd.l1_sync_params,

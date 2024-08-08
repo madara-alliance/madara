@@ -3,8 +3,9 @@ use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::{DatabaseService, DeoxysBackend};
 use dc_eth::client::EthereumClient;
-use dc_eth::l1_gas_price::L1GasPrices;
+// use dc_eth::l1_gas_price::L1GasPrices;
 use dc_metrics::MetricsRegistry;
+use dp_block::header::GasPrices;
 use dp_convert::ToFelt;
 use dp_utils::service::Service;
 use futures::lock::Mutex;
@@ -17,7 +18,7 @@ use tokio::task::JoinSet;
 pub struct L1SyncService {
     db_backend: Arc<DeoxysBackend>,
     eth_client: EthereumClient,
-    l1_gas_prices: Arc<Mutex<L1GasPrices>>,
+    l1_gas_prices: Arc<Mutex<GasPrices>>,
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
 }
@@ -27,7 +28,7 @@ impl L1SyncService {
         config: &L1SyncParams,
         db: &DatabaseService,
         metrics_handle: MetricsRegistry,
-        l1_gas_prices: Arc<Mutex<L1GasPrices>>,
+        l1_gas_prices: Arc<Mutex<GasPrices>>,
         chain_id: ChainId,
         l1_core_address: H160,
     ) -> anyhow::Result<Self> {
