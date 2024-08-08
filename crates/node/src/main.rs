@@ -5,8 +5,6 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
-use futures::lock::Mutex;
-
 mod cli;
 mod service;
 mod util;
@@ -14,12 +12,10 @@ mod util;
 use crate::service::L1SyncService;
 use cli::RunCmd;
 use dc_db::DatabaseService;
-// use dc_eth::l1_gas_price::GasPriceProvider;
 use dc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use dc_metrics::MetricsService;
 use dc_rpc::providers::AddTransactionProvider;
 use dc_telemetry::{SysInfo, TelemetryService};
-use dp_block::header::{GasPrices, L1DataAvailabilityMode};
 use dp_convert::ToFelt;
 use dp_utils::service::{Service, ServiceGroup};
 use service::{BlockProductionService, RpcService, SyncService};
@@ -76,9 +72,7 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing db service")?;
 
-    let l1_gas_price_provider = GasPriceProvider::new();
-
-    let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_price_provider.clone());
+    let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
 
     let l1_service = L1SyncService::new(
         &run_cmd.l1_sync_params,
@@ -97,32 +91,6 @@ async fn main() -> anyhow::Result<()> {
         match run_cmd.authority {
             // Block production service. (authority)
             true => {
-                // gas price needs to be shifted here
-                // struct DummyProvider; // create gas price mutex here
-                // impl L1DataProvider for DummyProvider {
-                //     // add getter and setter for the gas price
-                //     fn get_gas_prices(&self) -> GasPrices {
-                //         // let x = self.eth_gas_price.lock().await;
-                //         GasPrices {
-                //             eth_l1_gas_price: 100,
-                //             strk_l1_gas_price: 90,
-                //             eth_l1_data_gas_price: 10,
-                //             strk_l1_data_gas_price: 9,
-                //         }
-                //     }
-                //     fn get_da_mode(&self) -> L1DataAvailabilityMode {
-                //         L1DataAvailabilityMode::Blob
-                //     }
-                // }
-                //
-                // // impl DummyProvider {
-                // //     fn set_eth_gas_price() {}
-                // //
-                // //     fn set_strk_gas_price() {}
-                // // }
-                //
-                // let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_price_provider);
-
                 let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
 
                 let block_production_service = BlockProductionService::new(

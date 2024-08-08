@@ -6,8 +6,6 @@ use starknet_types_core::felt::Felt;
 
 use dc_db::DeoxysBackend;
 
-use dp_block::header::GasPrices;
-use futures::lock::Mutex;
 use std::sync::Arc;
 
 pub async fn l1_sync_worker(

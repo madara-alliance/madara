@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use dp_block::header::GasPrices;
 use lazy_static;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -17,46 +16,6 @@ const DEFAULT_GAS_PRICE_POLL_MS: u64 = 10_000;
 lazy_static::lazy_static! {
     static ref LAST_UPDATE_TIMESTAMP: Arc<Mutex<u128>> = Arc::new(Mutex::new(0));
 }
-
-// #[derive(Clone)]
-// pub struct GasPriceProvider {
-//     gas_prices: Arc<Mutex<GasPrices>>,
-// }
-//
-// impl GasPriceProvider {
-//     pub fn new() -> Self {
-//         GasPriceProvider { gas_prices: Arc::new(Mutex::new(GasPrices::default())) }
-//     }
-
-// pub async fn get_gas_prices(&self) -> GasPrices {
-//     (*self.gas_prices.lock().await).clone()
-// }
-//
-// pub async fn set_gas_prices(&self, new_prices: GasPrices) {
-//     let mut prices = self.gas_prices.lock().await;
-//     *prices = new_prices;
-// }
-//
-// pub async fn update_eth_l1_gas_price(&self, new_price: u128) {
-//     let mut prices = self.gas_prices.lock().await;
-//     prices.eth_l1_gas_price = new_price;
-// }
-//
-// pub async fn update_strk_l1_gas_price(&self, new_price: u128) {
-//     let mut prices = self.gas_prices.lock().await;
-//     prices.strk_l1_gas_price = new_price;
-// }
-//
-// pub async fn update_eth_l1_data_gas_price(&self, new_price: u128) {
-//     let mut prices = self.gas_prices.lock().await;
-//     prices.eth_l1_data_gas_price = new_price;
-// }
-//
-// pub async fn update_strk_l1_data_gas_price(&self, new_price: u128) {
-//     let mut prices = self.gas_prices.lock().await;
-//     prices.strk_l1_data_gas_price = new_price;
-// }
-// }
 
 // Function to update the last update timestamp
 pub async fn update_last_update_timestamp() {
@@ -182,8 +141,7 @@ mod eth_client_gas_price_worker_test {
     #[rstest]
     #[tokio::test]
     async fn gas_price_worker_works(eth_client: &'static EthereumClient) {
-        let l1_gas_price_provider = GasPriceProvider::new();
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_price_provider.clone());
+        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
 
         // Run the worker for a short time
         let worker_handle = tokio::spawn(gas_price_worker(eth_client, l1_data_provider.clone(), false));
@@ -221,8 +179,7 @@ mod eth_client_gas_price_worker_test {
             }));
         });
 
-        let l1_gas_price_provider = GasPriceProvider::new();
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_price_provider.clone());
+        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
 
         update_last_update_timestamp().await;
 
@@ -255,9 +212,7 @@ mod eth_client_gas_price_worker_test {
     #[rstest]
     #[tokio::test]
     async fn update_gas_price_works(eth_client: &'static EthereumClient) {
-        // Initialize gas prices with default values
-        let l1_gas_price_provider = GasPriceProvider::new();
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_price_provider.clone());
+        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
 
         // Update gas prices
         update_gas_price(eth_client, l1_data_provider.clone()).await.expect("Failed to update gas prices");
