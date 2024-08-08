@@ -17,6 +17,46 @@ lazy_static::lazy_static! {
     static ref LAST_UPDATE_TIMESTAMP: Arc<Mutex<u128>> = Arc::new(Mutex::new(0));
 }
 
+#[derive(Clone)]
+pub struct GasPriceProvider {
+    gas_prices: Arc<Mutex<GasPrices>>,
+}
+
+impl GasPriceProvider {
+    pub fn new() -> Self {
+        GasPriceProvider { gas_prices: Arc::new(Mutex::new(GasPrices::default())) }
+    }
+
+    pub async fn get_gas_prices(&self) -> GasPrices {
+        (*self.gas_prices.lock().await).clone()
+    }
+
+    pub async fn set_gas_prices(&self, new_prices: GasPrices) {
+        let mut prices = self.gas_prices.lock().await;
+        *prices = new_prices;
+    }
+
+    pub async fn update_eth_l1_gas_price(&self, new_price: u128) {
+        let mut prices = self.gas_prices.lock().await;
+        prices.eth_l1_gas_price = new_price;
+    }
+
+    pub async fn update_strk_l1_gas_price(&self, new_price: u128) {
+        let mut prices = self.gas_prices.lock().await;
+        prices.strk_l1_gas_price = new_price;
+    }
+
+    pub async fn update_eth_l1_data_gas_price(&self, new_price: u128) {
+        let mut prices = self.gas_prices.lock().await;
+        prices.eth_l1_data_gas_price = new_price;
+    }
+
+    pub async fn update_strk_l1_data_gas_price(&self, new_price: u128) {
+        let mut prices = self.gas_prices.lock().await;
+        prices.strk_l1_data_gas_price = new_price;
+    }
+}
+
 // Function to update the last update timestamp
 pub async fn update_last_update_timestamp() {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
