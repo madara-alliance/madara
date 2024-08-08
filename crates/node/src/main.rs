@@ -14,6 +14,7 @@ mod util;
 use crate::service::L1SyncService;
 use cli::RunCmd;
 use dc_db::DatabaseService;
+use dc_eth::l1_gas_price::GasPriceProvider;
 use dc_mempool::{L1DataProvider, Mempool};
 use dc_metrics::MetricsService;
 use dc_rpc::providers::AddTransactionProvider;
@@ -76,13 +77,13 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing db service")?;
     // dummy provider and
-    let l1_gas_prices = Arc::new(Mutex::new(GasPrices::default()));
+    let l1_gas_price_provider = GasPriceProvider::new();
 
     let l1_service = L1SyncService::new(
         &run_cmd.l1_sync_params,
         &db_service,
         prometheus_service.registry(),
-        l1_gas_prices,
+        l1_gas_price_provider,
         run_cmd.sync_params.network.chain_id(),
         run_cmd.sync_params.network.l1_core_address(),
     )

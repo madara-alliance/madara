@@ -4,6 +4,7 @@ use anyhow::Context;
 use dc_db::{DatabaseService, DeoxysBackend};
 use dc_eth::client::EthereumClient;
 // use dc_eth::l1_gas_price::L1GasPrices;
+use dc_eth::l1_gas_price::GasPriceProvider;
 use dc_metrics::MetricsRegistry;
 use dp_block::header::GasPrices;
 use dp_convert::ToFelt;
@@ -18,7 +19,7 @@ use tokio::task::JoinSet;
 pub struct L1SyncService {
     db_backend: Arc<DeoxysBackend>,
     eth_client: EthereumClient,
-    l1_gas_prices: Arc<Mutex<GasPrices>>,
+    l1_gas_price_provider: GasPriceProvider,
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
 }
@@ -28,7 +29,7 @@ impl L1SyncService {
         config: &L1SyncParams,
         db: &DatabaseService,
         metrics_handle: MetricsRegistry,
-        l1_gas_prices: Arc<Mutex<GasPrices>>,
+        l1_gas_price_provider: GasPriceProvider,
         chain_id: ChainId,
         l1_core_address: H160,
     ) -> anyhow::Result<Self> {
@@ -50,14 +51,20 @@ impl L1SyncService {
             .context("Creating ethereum client")?;
         let gas_price_sync_disabled = config.gas_price_sync_disabled;
 
-        Ok(Self { db_backend: Arc::clone(db.backend()), eth_client, l1_gas_prices, chain_id, gas_price_sync_disabled })
+        Ok(Self {
+            db_backend: Arc::clone(db.backend()),
+            eth_client,
+            l1_gas_price_provider,
+            chain_id,
+            gas_price_sync_disabled,
+        })
     }
 }
 
 #[async_trait::async_trait]
 impl Service for L1SyncService {
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
-        let L1SyncService { eth_client, l1_gas_prices, chain_id, gas_price_sync_disabled, .. } = self.clone();
+        let L1SyncService { eth_client, l1_gas_price_provider, chain_id, gas_price_sync_disabled, .. } = self.clone();
 
         let db_backend = Arc::clone(&self.db_backend);
 
@@ -66,7 +73,7 @@ impl Service for L1SyncService {
                 &db_backend,
                 &eth_client,
                 chain_id.to_felt(),
-                l1_gas_prices,
+                l1_gas_price_provider,
                 gas_price_sync_disabled,
             )
             .await
