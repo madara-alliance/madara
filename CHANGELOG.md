@@ -2,6 +2,7 @@
 
 ## Next release
 
+- tests: add e2e tests for the node
 - tests: add tests for the rpcs endpoints
 - fix: pending contract storage not stored properly
 - test: add tests crate `db`
