@@ -14,7 +14,7 @@ A few notes on the current design:
     - [X] Build transaction
     - [Waiting for mempool] Submit tx to mempool
     - [X] Update Messaging DB
-- [ ] Handle Message Cancellation (https://github.com/keep-starknet-strange/madara/issues/1638)
+- [X] Handle Message Cancellation (https://github.com/keep-starknet-strange/madara/issues/1638)
 
 ## Tests
 - E2E test #1

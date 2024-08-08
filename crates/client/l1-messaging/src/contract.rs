@@ -1,4 +1,3 @@
-use alloy::primitives::U256;
 use dc_eth::client::StarknetCoreContract::LogMessageToL2;
 use dc_eth::utils::u256_to_felt;
 use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce};
@@ -8,7 +7,7 @@ use std::sync::Arc;
 
 pub fn parse_handle_l1_message_transaction(event: &LogMessageToL2) -> anyhow::Result<L1HandlerTransaction> {
     // L1 from address.
-    let from_address = u256_to_felt(U256::from_be_bytes(event.fromAddress.into()))?;
+    let from_address = u256_to_felt(event.fromAddress.into_word().into())?;
 
     // L2 contract to call.
     let contract_address = u256_to_felt(event.toAddress)?;

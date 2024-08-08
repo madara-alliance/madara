@@ -42,6 +42,7 @@ impl L1BlockMetrics {
 // The official starknet core contract ^
 sol!(
     #[sol(rpc)]
+    #[derive(Debug)]
     StarknetCoreContract,
     "src/abis/starknet_core.json"
 );
