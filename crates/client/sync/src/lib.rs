@@ -16,8 +16,8 @@ pub mod starknet_sync_worker {
     use crate::metrics::block_metrics::BlockMetrics;
     use anyhow::Context;
     use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
-    use dc_eth::client::EthereumClient;
-    use dc_eth::l1_gas_price::L1GasPrices;
+    // use dc_eth::client::EthereumClient;
+    // use dc_eth::l1_gas_price::L1GasPrices;
     use dc_telemetry::TelemetryHandle;
     use dp_convert::ToFelt;
     use fetch::fetchers::FetchConfig;
@@ -30,8 +30,6 @@ pub mod starknet_sync_worker {
     pub async fn sync(
         backend: &Arc<DeoxysBackend>,
         fetch_config: FetchConfig,
-        eth_client: EthereumClient,
-        l1_gas_prices: Arc<Mutex<L1GasPrices>>,
         starting_block: Option<u64>,
         backup_every_n_blocks: Option<u64>,
         block_metrics: BlockMetrics,
@@ -59,28 +57,24 @@ pub mod starknet_sync_worker {
             None => provider,
         };
 
-        let l1_fut = async { dc_eth::sync::sync(backend, &eth_client, chain_id, l1_gas_prices).await };
-
-        tokio::try_join!(
-            l1_fut,
-            l2::sync(
-                backend,
-                provider,
-                L2SyncConfig {
-                    first_block: starting_block,
-                    n_blocks_to_sync: fetch_config.n_blocks_to_sync,
-                    verify: fetch_config.verify,
-                    sync_polling_interval: fetch_config.sync_polling_interval,
-                    backup_every_n_blocks,
-                    pending_block_poll_interval,
-                },
-                block_metrics,
-                db_metrics,
-                starting_block,
-                chain_id,
-                telemetry,
-            ),
-        )?;
+        // TODO: remove try join from here since there is only one service here
+        tokio::try_join!(l2::sync(
+            backend,
+            provider,
+            L2SyncConfig {
+                first_block: starting_block,
+                n_blocks_to_sync: fetch_config.n_blocks_to_sync,
+                verify: fetch_config.verify,
+                sync_polling_interval: fetch_config.sync_polling_interval,
+                backup_every_n_blocks,
+                pending_block_poll_interval,
+            },
+            block_metrics,
+            db_metrics,
+            starting_block,
+            chain_id,
+            telemetry,
+        ),)?;
 
         Ok(())
     }

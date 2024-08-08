@@ -20,7 +20,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 # Deoxys
 dc-db = { workspace = true }
-dc-eth = { workspace = true }
+#dc-eth = { workspace = true }
 dc-metrics = { workspace = true }
 dc-telemetry = { workspace = true }
 dp-block = { workspace = true }

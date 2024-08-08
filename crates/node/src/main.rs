@@ -11,6 +11,7 @@ mod cli;
 mod service;
 mod util;
 
+use crate::service::L1SyncService;
 use cli::RunCmd;
 use dc_db::DatabaseService;
 use dc_eth::l1_gas_price::L1GasPrices;
@@ -76,6 +77,18 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing db service")?;
 
+    let l1_gas_prices = Arc::new(Mutex::new(L1GasPrices::default()));
+
+    let l1_service = L1SyncService::new(
+        &run_cmd.l1_sync_params,
+        &db_service,
+        prometheus_service.registry(),
+        telemetry_service.new_handle(),
+        l1_gas_prices,
+    )
+    .await
+    .context("Initializing the l1 service")?;
+
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
     let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) =
@@ -119,14 +132,13 @@ async fn main() -> anyhow::Result<()> {
             }
             // Block sync service. (full node)
             false => {
-                let l1_gas_prices = Arc::new(Mutex::new(L1GasPrices::default()));
+                // let l1_gas_prices = Arc::new(Mutex::new(L1GasPrices::default()));
                 // Feeder gateway sync service.
                 let sync_service = SyncService::new(
                     &run_cmd.sync_params,
                     &db_service,
                     prometheus_service.registry(),
                     telemetry_service.new_handle(),
-                    l1_gas_prices,
                 )
                 .await
                 .context("Initializing sync service")?;
@@ -161,6 +173,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = ServiceGroup::default()
         .with(db_service)
+        .with(l1_service)
         .with(block_provider_service)
         .with(rpc_service)
         .with(telemetry_service)

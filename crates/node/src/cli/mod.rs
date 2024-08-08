@@ -1,17 +1,18 @@
 pub mod block_production;
 pub mod db;
+pub mod l1;
 pub mod prometheus;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;
 
+use self::block_production::BlockProductionParams;
+use crate::cli::l1::L1SyncParams;
 pub use db::*;
 pub use prometheus::*;
 pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
-
-use self::block_production::BlockProductionParams;
 
 #[derive(Clone, Debug, clap::Parser)]
 pub struct RunCmd {
@@ -27,6 +28,10 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub sync_params: SyncParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub l1_sync_params: L1SyncParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
