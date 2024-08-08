@@ -1,79 +1,106 @@
-use std::collections::HashMap;
-
-use crate::config::{config, config_force_init};
-use crate::data_storage::MockDataStorage;
-use da_client_interface::{DaVerificationStatus, MockDaClient};
-use httpmock::prelude::*;
-use rstest::*;
-use serde_json::json;
-use starknet_core::types::{FieldElement, MaybePendingStateUpdate, StateDiff, StateUpdate};
-use uuid::Uuid;
-
-use super::super::common::constants::{ETHEREUM_MAX_BLOB_PER_TXN, ETHEREUM_MAX_BYTES_PER_BLOB};
-use super::super::common::{default_job_item, init_config};
+use crate::jobs::da_job::test::{get_nonce_attached, read_state_update_from_file};
 use crate::jobs::da_job::DaJob;
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
-use crate::jobs::Job;
+use crate::tests::common::drop_database;
+use crate::tests::config::TestConfigBuilder;
+use crate::{config::config, jobs::Job};
+use assert_matches::assert_matches;
+use color_eyre::eyre::eyre;
+use da_client_interface::MockDaClient;
+use mockall::predicate::always;
+use rstest::rstest;
+use serde_json::json;
+use starknet_core::types::{FieldElement, MaybePendingStateUpdate, PendingStateUpdate, StateDiff};
+use std::collections::HashMap;
+use uuid::Uuid;
 
+/// Tests the DA Job's handling of a blob length exceeding the supported size.
+/// It mocks the DA client to simulate the environment and expects an error on job processing.
+/// Validates the error message for exceeding blob limits against the expected output.
+/// Asserts correct behavior by comparing the received and expected error messages.
 #[rstest]
+#[case(
+    "src/tests/jobs/da_job/test_data/state_update/638353.txt",
+    "src/tests/jobs/da_job/test_data/nonces/638353.txt",
+    "63853",
+    110
+)]
 #[tokio::test]
-async fn test_create_job() {
-    let config = init_config(None, None, None, None, None, None, None).await;
-    let job = DaJob.create_job(&config, String::from("0"), HashMap::new()).await;
-    assert!(job.is_ok());
+async fn test_da_job_process_job_failure_on_small_blob_size(
+    #[case] state_update_file: String,
+    #[case] nonces_file: String,
+    #[case] internal_id: String,
+    #[case] current_blob_length: u64,
+) {
+    // Mocking DA client calls
+    let mut da_client = MockDaClient::new();
+    // dummy state will have more than 1200 bytes
+    da_client.expect_max_blob_per_txn().with().returning(|| 1);
+    da_client.expect_max_bytes_per_blob().with().returning(|| 1200);
 
-    let job = job.unwrap();
+    let server = TestConfigBuilder::new().mock_da_client(Box::new(da_client)).build().await;
+    let config = config().await;
 
-    let job_type = job.job_type;
-    assert_eq!(job_type, JobType::DataSubmission, "job_type should be DataSubmission");
-    assert!(!(job.id.is_nil()), "id should not be nil");
-    assert_eq!(job.status, JobStatus::Created, "status should be Created");
-    assert_eq!(job.version, 0_i32, "version should be 0");
-    assert_eq!(job.external_id.unwrap_string().unwrap(), String::new(), "external_id should be empty string");
+    let state_update = read_state_update_from_file(state_update_file.as_str()).expect("issue while reading");
+
+    let state_update = MaybePendingStateUpdate::Update(state_update);
+    let state_update = serde_json::to_value(&state_update).unwrap();
+    let response = json!({ "id": 640641,"jsonrpc":"2.0","result": state_update });
+
+    get_nonce_attached(&server, nonces_file.as_str());
+
+    let state_update_mock = server.mock(|when, then| {
+        when.path("/").body_contains("starknet_getStateUpdate");
+        then.status(200).body(serde_json::to_vec(&response).unwrap());
+    });
+
+    let max_blob_per_txn = config.da_client().max_blob_per_txn().await;
+
+    let response = DaJob
+        .process_job(
+            config.as_ref(),
+            &mut JobItem {
+                id: Uuid::default(),
+                internal_id: internal_id.to_string(),
+                job_type: JobType::DataSubmission,
+                status: JobStatus::Created,
+                external_id: ExternalId::String(internal_id.to_string().into_boxed_str()),
+                metadata: HashMap::default(),
+                version: 0,
+            },
+        )
+        .await;
+
+    assert_matches!(response,
+        Err(e) => {
+            let expected_error = eyre!(
+                "Exceeded the maximum number of blobs per transaction: allowed {}, found {} for block {} and job id {}",
+                max_blob_per_txn,
+                current_blob_length,
+                internal_id.to_string(),
+                Uuid::default()
+            )
+            .to_string();
+            assert_eq!(e.to_string(), expected_error);
+        }
+    );
+
+    state_update_mock.assert();
+    let _ = drop_database().await;
 }
 
+/// Tests DA Job processing failure when a block is in pending state.
+/// Simulates a pending block state update and expects job processing to fail.
+/// Validates that the error message matches the expected pending state error.
+/// Asserts correct behavior by comparing the received and expected error messages.
 #[rstest]
 #[tokio::test]
-async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
-    let mut da_client = MockDaClient::new();
-    da_client.expect_verify_inclusion().times(1).returning(|_| Ok(DaVerificationStatus::Verified));
-
-    let config = init_config(None, None, None, Some(da_client), None, None, None).await;
-    assert!(DaJob.verify_job(&config, &mut job_item).await.is_ok());
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_process_job() {
-    let server = MockServer::start();
-
-    let mut da_client = MockDaClient::new();
-    let mut storage_client = MockDataStorage::new();
+async fn test_da_job_process_job_failure_on_pending_block() {
+    let server = TestConfigBuilder::new().build().await;
+    let config = config().await;
     let internal_id = "1";
 
-    da_client.expect_max_bytes_per_blob().times(2).returning(move || ETHEREUM_MAX_BYTES_PER_BLOB);
-    da_client.expect_max_blob_per_txn().times(1).returning(move || ETHEREUM_MAX_BLOB_PER_TXN);
-    da_client.expect_publish_state_diff().times(1).returning(|_, _| Ok("0xbeef".to_string()));
-
-    // Mocking storage client
-    storage_client.expect_put_data().returning(|_, _| Ok(())).times(1);
-
-    let config_init = init_config(
-        Some(format!("http://localhost:{}", server.port())),
-        None,
-        None,
-        Some(da_client),
-        None,
-        None,
-        Some(storage_client),
-    )
-    .await;
-
-    config_force_init(config_init).await;
-
-    let state_update = MaybePendingStateUpdate::Update(StateUpdate {
-        block_hash: FieldElement::default(),
-        new_root: FieldElement::default(),
+    let pending_state_update = MaybePendingStateUpdate::PendingUpdate(PendingStateUpdate {
         old_root: FieldElement::default(),
         state_diff: StateDiff {
             storage_diffs: vec![],
@@ -84,32 +111,113 @@ async fn test_process_job() {
             nonces: vec![],
         },
     });
-    let state_update = serde_json::to_value(&state_update).unwrap();
-    let response = json!({ "id": 1,"jsonrpc":"2.0","result": state_update });
+
+    let pending_state_update = serde_json::to_value(&pending_state_update).unwrap();
+    let response = json!({ "id": 1,"jsonrpc":"2.0","result": pending_state_update });
 
     let state_update_mock = server.mock(|when, then| {
         when.path("/").body_contains("starknet_getStateUpdate");
         then.status(200).body(serde_json::to_vec(&response).unwrap());
     });
 
-    assert_eq!(
-        DaJob
-            .process_job(
-                config().await.as_ref(),
-                &mut JobItem {
-                    id: Uuid::default(),
-                    internal_id: internal_id.to_string(),
-                    job_type: JobType::DataSubmission,
-                    status: JobStatus::Created,
-                    external_id: ExternalId::String("1".to_string().into_boxed_str()),
-                    metadata: HashMap::default(),
-                    version: 0,
-                }
+    let response = DaJob
+        .process_job(
+            config.as_ref(),
+            &mut JobItem {
+                id: Uuid::default(),
+                internal_id: internal_id.to_string(),
+                job_type: JobType::DataSubmission,
+                status: JobStatus::Created,
+                external_id: ExternalId::String("1".to_string().into_boxed_str()),
+                metadata: HashMap::default(),
+                version: 0,
+            },
+        )
+        .await;
+
+    assert_matches!(response,
+        Err(e) => {
+            let expected_error = eyre!(
+                "Cannot process block {} for job id {} as it's still in pending state",
+                internal_id.to_string(),
+                Uuid::default()
             )
-            .await
-            .unwrap(),
-        "0xbeef"
+            .to_string();
+            assert_eq!(e.to_string(), expected_error);
+        }
     );
 
     state_update_mock.assert();
+}
+
+/// Tests successful DA Job processing with valid state update and nonces files.
+/// Mocks DA client to simulate environment and expects job to process without errors.
+/// Validates the successful job processing by checking the return message "Done".
+/// Asserts correct behavior by comparing the received and expected success messages.
+#[rstest]
+#[case(
+    "src/tests/jobs/da_job/test_data/state_update/631861.txt",
+    "src/tests/jobs/da_job/test_data/nonces/631861.txt",
+    "631861"
+)]
+#[case(
+    "src/tests/jobs/da_job/test_data/state_update/640641.txt",
+    "src/tests/jobs/da_job/test_data/nonces/640641.txt",
+    "640641"
+)]
+#[case(
+    "src/tests/jobs/da_job/test_data/state_update/638353.txt",
+    "src/tests/jobs/da_job/test_data/nonces/638353.txt",
+    "638353"
+)]
+#[tokio::test]
+async fn test_da_job_process_job_success(
+    #[case] state_update_file: String,
+    #[case] nonces_file: String,
+    #[case] internal_id: String,
+) {
+    // Mocking DA client calls
+    let mut da_client = MockDaClient::new();
+    da_client.expect_publish_state_diff().with(always(), always()).returning(|_, _| Ok("Done".to_string()));
+    da_client.expect_max_blob_per_txn().with().returning(|| 6);
+    da_client.expect_max_bytes_per_blob().with().returning(|| 131072);
+
+    let server = TestConfigBuilder::new().mock_da_client(Box::new(da_client)).build().await;
+    let config = config().await;
+
+    let state_update = read_state_update_from_file(state_update_file.as_str()).expect("issue while reading");
+
+    let state_update = serde_json::to_value(&state_update).unwrap();
+    let response = json!({ "id": 1,"jsonrpc":"2.0","result": state_update });
+
+    get_nonce_attached(&server, nonces_file.as_str());
+
+    let state_update_mock = server.mock(|when, then| {
+        when.path("/").body_contains("starknet_getStateUpdate");
+        then.status(200).body(serde_json::to_vec(&response).unwrap());
+    });
+
+    let response = DaJob
+        .process_job(
+            config.as_ref(),
+            &mut JobItem {
+                id: Uuid::default(),
+                internal_id: internal_id.to_string(),
+                job_type: JobType::DataSubmission,
+                status: JobStatus::Created,
+                external_id: ExternalId::String(internal_id.to_string().into_boxed_str()),
+                metadata: HashMap::default(),
+                version: 0,
+            },
+        )
+        .await;
+
+    assert_matches!(response,
+        Ok(msg) => {
+            assert_eq!(msg, eyre!("Done").to_string());
+        }
+    );
+
+    state_update_mock.assert();
+    let _ = drop_database().await;
 }

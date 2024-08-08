@@ -63,6 +63,7 @@ impl Job for DaJob {
 
     async fn process_job(&self, config: &Config, job: &mut JobItem) -> Result<String> {
         let block_no = job.internal_id.parse::<u64>()?;
+
         let state_update = config.starknet_client().get_state_update(BlockId::Number(block_no)).await?;
 
         let state_update = match state_update {
@@ -127,7 +128,7 @@ impl Job for DaJob {
     }
 }
 
-fn fft_transformation(elements: Vec<BigUint>) -> Vec<BigUint> {
+pub fn fft_transformation(elements: Vec<BigUint>) -> Vec<BigUint> {
     let xs: Vec<BigUint> = (0..*BLOB_LEN)
         .map(|i| {
             let bin = format!("{:012b}", i);
@@ -149,7 +150,7 @@ fn fft_transformation(elements: Vec<BigUint>) -> Vec<BigUint> {
     transform
 }
 
-fn convert_to_biguint(elements: Vec<FieldElement>) -> Vec<BigUint> {
+pub fn convert_to_biguint(elements: Vec<FieldElement>) -> Vec<BigUint> {
     // Initialize the vector with 4096 BigUint zeros
     let mut biguint_vec = vec![BigUint::zero(); 4096];
 
@@ -200,7 +201,7 @@ fn data_to_blobs(blob_size: u64, block_data: Vec<BigUint>) -> Result<Vec<Vec<u8>
     Ok(blobs)
 }
 
-async fn state_update_to_blob_data(
+pub async fn state_update_to_blob_data(
     block_no: u64,
     state_update: StateUpdate,
     config: &Config,
@@ -342,32 +343,37 @@ fn da_word(class_flag: bool, nonce_change: Option<FieldElement>, num_changes: u6
 }
 
 #[cfg(test)]
-mod tests {
+
+pub mod test {
+    use crate::jobs::da_job::da_word;
     use std::fs;
     use std::fs::File;
     use std::io::Read;
 
+    use crate::data_storage::MockDataStorage;
     use ::serde::{Deserialize, Serialize};
+    use color_eyre::Result;
+    use da_client_interface::MockDaClient;
     use httpmock::prelude::*;
     use majin_blob_core::blob;
     use majin_blob_types::serde;
     use majin_blob_types::state_diffs::UnorderedEq;
-    // use majin_blob_types::serde;
-    use crate::data_storage::MockDataStorage;
-    use da_client_interface::MockDaClient;
     use rstest::rstest;
     use serde_json::json;
+    use starknet_core::types::{FieldElement, StateUpdate};
 
-    use super::*;
-    // use majin_blob_types::serde;
     use crate::tests::common::init_config;
 
+    /// Tests `da_word` function with various inputs for class flag, new nonce, and number of changes.
+    /// Verifies that `da_word` produces the correct FieldElement based on the provided parameters.
+    /// Uses test cases with different combinations of inputs and expected output strings.
+    /// Asserts the function's correctness by comparing the computed and expected FieldElements.
     #[rstest]
     #[case(false, 1, 1, "18446744073709551617")]
     #[case(false, 1, 0, "18446744073709551616")]
     #[case(false, 0, 6, "6")]
     #[case(true, 1, 0, "340282366920938463481821351505477763072")]
-    fn da_word_works(
+    fn test_da_word(
         #[case] class_flag: bool,
         #[case] new_nonce: u64,
         #[case] num_changes: u64,
@@ -379,24 +385,28 @@ mod tests {
         assert_eq!(da_word, expected);
     }
 
+    /// Tests `state_update_to_blob_data` conversion with different state update files and block numbers.
+    /// Mocks DA client and storage client interactions for the test environment.
+    /// Compares the generated blob data against expected values to ensure correctness.
+    /// Verifies the data integrity by checking that the parsed state diffs match the expected diffs.
     #[rstest]
     #[case(
         631861,
-        "src/jobs/da_job/test_data/state_update_from_block_631861.txt",
-        "src/jobs/da_job/test_data/test_blob_631861.txt",
-        "src/jobs/da_job/test_data/nonces_from_block_631861.txt"
+        "src/tests/jobs/da_job/test_data/state_update/631861.txt",
+        "src/tests/jobs/da_job/test_data/test_blob/631861.txt",
+        "src/tests/jobs/da_job/test_data/nonces/631861.txt"
     )]
     #[case(
         638353,
-        "src/jobs/da_job/test_data/state_update_from_block_638353.txt",
-        "src/jobs/da_job/test_data/test_blob_638353.txt",
-        "src/jobs/da_job/test_data/nonces_from_block_638353.txt"
+        "src/tests/jobs/da_job/test_data/state_update/638353.txt",
+        "src/tests/jobs/da_job/test_data/test_blob/638353.txt",
+        "src/tests/jobs/da_job/test_data/nonces/638353.txt"
     )]
     #[case(
         640641,
-        "src/jobs/da_job/test_data/state_update_from_block_640641.txt",
-        "src/jobs/da_job/test_data/test_blob_640641.txt",
-        "src/jobs/da_job/test_data/nonces_from_block_640641.txt"
+        "src/tests/jobs/da_job/test_data/state_update/640641.txt",
+        "src/tests/jobs/da_job/test_data/test_blob/640641.txt",
+        "src/tests/jobs/da_job/test_data/nonces/640641.txt"
     )]
     #[tokio::test]
     async fn test_state_update_to_blob_data(
@@ -405,6 +415,8 @@ mod tests {
         #[case] file_path: &str,
         #[case] nonce_file_path: &str,
     ) {
+        use crate::jobs::da_job::{convert_to_biguint, state_update_to_blob_data};
+
         let server = MockServer::start();
         let mut da_client = MockDaClient::new();
         let mut storage_client = MockDataStorage::new();
@@ -446,16 +458,22 @@ mod tests {
         assert!(block_data_state_diffs.unordered_eq(&blob_data_state_diffs), "value of data json should be identical");
     }
 
+    /// Tests the `fft_transformation` function with various test blob files.
+    /// Verifies the correctness of FFT and IFFT transformations by ensuring round-trip consistency.
+    /// Parses the original blob data, recovers it using IFFT, and re-applies FFT.
+    /// Asserts that the transformed data matches the original pre-IFFT data, ensuring integrity.
     #[rstest]
-    #[case("src/jobs/da_job/test_data/test_blob_631861.txt")]
-    #[case("src/jobs/da_job/test_data/test_blob_638353.txt")]
-    #[case("src/jobs/da_job/test_data/test_blob_639404.txt")]
-    #[case("src/jobs/da_job/test_data/test_blob_640641.txt")]
-    #[case("src/jobs/da_job/test_data/test_blob_640644.txt")]
-    #[case("src/jobs/da_job/test_data/test_blob_640646.txt")]
-    #[case("src/jobs/da_job/test_data/test_blob_640647.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/638353.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/631861.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/639404.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/640641.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/640644.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/640646.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/640647.txt")]
     fn test_fft_transformation(#[case] file_to_check: &str) {
         // parsing the blob hex to the bigUints
+
+        use crate::jobs::da_job::fft_transformation;
         let original_blob_data = serde::parse_file_to_blob_data(file_to_check);
         // converting the data to its original format
         let ifft_blob_data = blob::recover(original_blob_data.clone());
@@ -466,6 +484,10 @@ mod tests {
         assert_eq!(fft_blob_data, original_blob_data);
     }
 
+    /// Tests the serialization and deserialization process using bincode.
+    /// Serializes a nested vector of integers and then deserializes it back.
+    /// Verifies that the original data matches the deserialized data.
+    /// Ensures the integrity and correctness of bincode's (de)serialization.
     #[rstest]
     fn test_bincode() {
         let data = vec![vec![1, 2], vec![3, 4]];
@@ -476,7 +498,7 @@ mod tests {
         assert_eq!(data, deserialize_data);
     }
 
-    pub fn read_state_update_from_file(file_path: &str) -> Result<StateUpdate> {
+    pub(crate) fn read_state_update_from_file(file_path: &str) -> Result<StateUpdate> {
         // let file_path = format!("state_update_block_no_{}.txt", block_no);
         let mut file = File::open(file_path)?;
         let mut json = String::new();
@@ -520,8 +542,6 @@ mod tests {
 
         let mut new_hex_chars = hex_chars.join("");
         new_hex_chars = new_hex_chars.trim_start_matches('0').to_string();
-
-        // Handle the case where the trimmed string is empty (e.g., data was all zeros)
         if new_hex_chars.is_empty() {
             "0x0".to_string()
         } else {
