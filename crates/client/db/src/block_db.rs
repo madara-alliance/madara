@@ -6,7 +6,7 @@ use dp_block::{
 use dp_state_update::StateDiff;
 use rocksdb::WriteOptions;
 use starknet_api::core::ChainId;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
 use crate::DeoxysStorageError;

@@ -326,8 +326,8 @@ mod tests {
     use super::*;
     use starknet_core::types::BlockId;
     use starknet_core::types::BlockTag;
-    use starknet_core::types::Felt;
     use starknet_providers::{Provider, SequencerGatewayProvider};
+    use starknet_types_core::felt::Felt;
 
     #[tokio::test]
     async fn test_legacy_contract_class_blockifier() {

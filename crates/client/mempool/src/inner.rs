@@ -358,7 +358,7 @@ mod tests {
         data_availability::DataAvailabilityMode,
         transaction::{DeclareTransactionV3, InvokeTransactionV3},
     };
-    use starknet_core::types::Felt;
+    use starknet_types_core::felt::Felt;
 
     use super::*;
     use std::fmt;

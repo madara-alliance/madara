@@ -17,7 +17,7 @@ use dp_transactions::{
     DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3,
     L1HandlerTransaction,
 };
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 #[tokio::test]
 async fn test_chain_info() {

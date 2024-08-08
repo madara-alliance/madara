@@ -264,8 +264,8 @@ mod tests {
     use starknet_core::types::BlockId;
     use starknet_core::types::BlockTag;
     use starknet_core::types::ContractClass;
-    use starknet_core::types::Felt;
     use starknet_providers::{Provider, SequencerGatewayProvider};
+    use starknet_types_core::felt::Felt;
 
     #[tokio::test]
     #[ignore]

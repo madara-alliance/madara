@@ -3473,7 +3473,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rayon",
- "starknet-core",
+ "starknet-types-core",
  "starknet_api",
  "thiserror",
  "tokio",

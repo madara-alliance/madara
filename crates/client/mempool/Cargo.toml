@@ -36,7 +36,7 @@ dp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true
-starknet-core.workspace = true
+starknet-types-core.workspace = true
 starknet_api.workspace = true
 
 # Other
