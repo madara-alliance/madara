@@ -3,7 +3,7 @@ use dp_block::{chain_config::ChainConfig, header::PendingHeader};
 use starknet_core::types::Felt;
 use std::time::SystemTime;
 
-pub fn make_pending_header(
+pub async fn make_pending_header(
     parent_block_hash: Felt,
     chain_config: &ChainConfig,
     l1_info: &dyn L1DataProvider,
@@ -16,7 +16,7 @@ pub fn make_pending_header(
             .expect("Current system time is before the UNIX epoch")
             .as_secs(),
         protocol_version: chain_config.latest_protocol_version,
-        l1_gas_price: l1_info.get_gas_prices(),
+        l1_gas_price: l1_info.get_gas_prices().await,
         l1_da_mode: l1_info.get_da_mode(),
     }
 }

@@ -14,7 +14,7 @@ use dp_class::ConvertedClass;
 use header::make_pending_header;
 use inner::MempoolInner;
 pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
-pub use l1::L1DataProvider;
+pub use l1::{GasPriceProvider, L1DataProvider};
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::Felt;
@@ -52,7 +52,7 @@ impl Mempool {
         Mempool { backend, l1_data_provider, inner: Default::default() }
     }
 
-    pub fn accept_account_tx(
+    pub async fn accept_account_tx(
         &self,
         tx: AccountTransaction,
         converted_class: Option<ConvertedClass>,
@@ -68,7 +68,8 @@ impl Mempool {
             let parent_block_hash =
                 self.backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
             DeoxysPendingBlockInfo::new(
-                make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref()),
+                make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref())
+                    .await,
                 vec![],
             )
             .into()

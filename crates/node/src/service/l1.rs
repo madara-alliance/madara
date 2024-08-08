@@ -4,7 +4,8 @@ use anyhow::Context;
 use dc_db::{DatabaseService, DeoxysBackend};
 use dc_eth::client::EthereumClient;
 // use dc_eth::l1_gas_price::L1GasPrices;
-use dc_eth::l1_gas_price::GasPriceProvider;
+// use dc_eth::l1_gas_price::GasPriceProvider;
+use dc_mempool::L1DataProvider;
 use dc_metrics::MetricsRegistry;
 use dp_block::header::GasPrices;
 use dp_convert::ToFelt;
@@ -19,7 +20,7 @@ use tokio::task::JoinSet;
 pub struct L1SyncService {
     db_backend: Arc<DeoxysBackend>,
     eth_client: EthereumClient,
-    l1_gas_price_provider: GasPriceProvider,
+    l1_data_provider: Arc<dyn L1DataProvider>,
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
 }
@@ -29,7 +30,7 @@ impl L1SyncService {
         config: &L1SyncParams,
         db: &DatabaseService,
         metrics_handle: MetricsRegistry,
-        l1_gas_price_provider: GasPriceProvider,
+        l1_data_provider: Arc<dyn L1DataProvider>,
         chain_id: ChainId,
         l1_core_address: H160,
     ) -> anyhow::Result<Self> {
@@ -54,7 +55,7 @@ impl L1SyncService {
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
             eth_client,
-            l1_gas_price_provider,
+            l1_data_provider,
             chain_id,
             gas_price_sync_disabled,
         })
@@ -64,7 +65,7 @@ impl L1SyncService {
 #[async_trait::async_trait]
 impl Service for L1SyncService {
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
-        let L1SyncService { eth_client, l1_gas_price_provider, chain_id, gas_price_sync_disabled, .. } = self.clone();
+        let L1SyncService { eth_client, l1_data_provider, chain_id, gas_price_sync_disabled, .. } = self.clone();
 
         let db_backend = Arc::clone(&self.db_backend);
 
@@ -73,7 +74,7 @@ impl Service for L1SyncService {
                 &db_backend,
                 &eth_client,
                 chain_id.to_felt(),
-                l1_gas_price_provider,
+                l1_data_provider,
                 gas_price_sync_disabled,
             )
             .await

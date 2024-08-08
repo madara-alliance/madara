@@ -42,6 +42,7 @@ starknet_api.workspace = true
 
 # Other
 anyhow.workspace = true
+async-trait.workspace = true
 hyper.workspace = true
 itertools.workspace = true
 log.workspace = true

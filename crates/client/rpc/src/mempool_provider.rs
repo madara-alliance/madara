@@ -30,19 +30,19 @@ impl AddTransactionProvider for MempoolProvider {
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
     ) -> RpcResult<DeclareTransactionResult> {
-        Ok(add_declare_transaction(&self.mempool, declare_transaction)?)
+        Ok(add_declare_transaction(&self.mempool, declare_transaction).await?)
     }
     async fn add_deploy_account_transaction(
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTransaction,
     ) -> RpcResult<DeployAccountTransactionResult> {
-        Ok(add_deploy_account_transaction(&self.mempool, deploy_account_transaction)?)
+        Ok(add_deploy_account_transaction(&self.mempool, deploy_account_transaction).await?)
     }
     async fn add_invoke_transaction(
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
     ) -> RpcResult<InvokeTransactionResult> {
-        Ok(add_invoke_transaction(&self.mempool, invoke_transaction)?)
+        Ok(add_invoke_transaction(&self.mempool, invoke_transaction).await?)
     }
 }
 
@@ -71,7 +71,7 @@ fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
     }
 }
 
-fn add_tx_to_mempool(
+async fn add_tx_to_mempool(
     mempool: &Arc<Mempool>,
     tx: Transaction,
     converted_class: Option<ConvertedClass>,
@@ -82,11 +82,12 @@ fn add_tx_to_mempool(
 
     mempool
         .accept_account_tx(tx, converted_class)
+        .await
         .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
     Ok(())
 }
 
-fn add_declare_transaction(
+async fn add_declare_transaction(
     mempool: &Arc<Mempool>,
     declare_transaction: BroadcastedDeclareTransaction,
 ) -> RpcResult<DeclareTransactionResult> {
@@ -98,10 +99,10 @@ fn add_declare_transaction(
         transaction_hash: transaction_hash(&tx),
         class_hash: declare_class_hash(&tx).expect("Created transaction should be declare"),
     };
-    add_tx_to_mempool(mempool, tx, classes)?;
+    add_tx_to_mempool(mempool, tx, classes).await?;
     Ok(res)
 }
-fn add_deploy_account_transaction(
+async fn add_deploy_account_transaction(
     mempool: &Arc<Mempool>,
     deploy_account_transaction: BroadcastedDeployAccountTransaction,
 ) -> RpcResult<DeployAccountTransactionResult> {
@@ -116,10 +117,10 @@ fn add_deploy_account_transaction(
         transaction_hash: transaction_hash(&tx),
         contract_address: deployed_contract_address(&tx).expect("Created transaction should be deploy account"),
     };
-    add_tx_to_mempool(mempool, tx, classes)?;
+    add_tx_to_mempool(mempool, tx, classes).await?;
     Ok(res)
 }
-fn add_invoke_transaction(
+async fn add_invoke_transaction(
     mempool: &Arc<Mempool>,
     invoke_transaction: BroadcastedInvokeTransaction,
 ) -> RpcResult<InvokeTransactionResult> {
@@ -128,6 +129,6 @@ fn add_invoke_transaction(
             .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
 
     let res = InvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
-    add_tx_to_mempool(mempool, tx, classes)?;
+    add_tx_to_mempool(mempool, tx, classes).await?;
     Ok(res)
 }

@@ -49,7 +49,7 @@ impl Service for BlockProductionService {
         let StartParams { backend, l1_data_provider, mempool } = self.start.take().expect("Service already started");
 
         join_set.spawn(async move {
-            BlockProductionTask::new(backend, mempool, l1_data_provider)?.block_production_task().await?;
+            BlockProductionTask::new(backend, mempool, l1_data_provider).await?.block_production_task().await?;
             Ok(())
         });
 

@@ -3784,6 +3784,7 @@ dependencies = [
  "bitvec",
  "bytes",
  "dc-db",
+ "dc-mempool",
  "dc-metrics",
  "dc-sync",
  "dc-telemetry",
@@ -3834,6 +3835,7 @@ name = "dc-mempool"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bitvec",
  "blockifier",
  "dc-db",

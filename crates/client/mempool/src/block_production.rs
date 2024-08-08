@@ -163,17 +163,15 @@ pub struct BlockProductionTask {
 }
 
 impl BlockProductionTask {
-    pub fn new(
+    pub async fn new(
         backend: Arc<DeoxysBackend>,
         mempool: Arc<Mempool>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
         let parent_block_hash = backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
-        let pending_block = DeoxysPendingBlock::new_empty(make_pending_header(
-            parent_block_hash,
-            backend.chain_config(),
-            l1_data_provider.as_ref(),
-        ));
+        let pending_block = DeoxysPendingBlock::new_empty(
+            make_pending_header(parent_block_hash, backend.chain_config(), l1_data_provider.as_ref()).await,
+        );
         // NB: we cannot continue a previously started pending block yet.
         // let pending_block = backend.get_or_create_pending_block(|| CreatePendingBlockExtraInfo {
         //     l1_gas_price: l1_data_provider.get_gas_prices(),
@@ -308,7 +306,7 @@ impl BlockProductionTask {
         Ok(())
     }
 
-    fn produce_block_tick(&mut self) -> Result<(), Error> {
+    async fn produce_block_tick(&mut self) -> Result<(), Error> {
         let block_n = self.block_n();
         log::debug!("closing block #{}", block_n);
 
@@ -318,11 +316,9 @@ impl BlockProductionTask {
         // Convert the pending block to a closed block and save to db.
 
         let parent_block_hash = Felt::ZERO; // temp parent block hash
-        let new_empty_block = DeoxysPendingBlock::new_empty(make_pending_header(
-            parent_block_hash,
-            self.backend.chain_config(),
-            self.l1_data_provider.as_ref(),
-        ));
+        let new_empty_block = DeoxysPendingBlock::new_empty(
+            make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref()).await,
+        );
 
         let block_to_close = mem::replace(&mut self.block, new_empty_block);
         let declared_classes = mem::take(&mut self.declared_classes);
@@ -357,7 +353,7 @@ impl BlockProductionTask {
         loop {
             tokio::select! {
                 _ = interval_block_time.tick() => {
-                    if let Err(err) = self.produce_block_tick() {
+                    if let Err(err) = self.produce_block_tick().await {
                         log::error!("Block production task has errored: {err:#}");
                     }
                 },
