@@ -27,7 +27,7 @@ starknet_api = { workspace = true }
 
 
 # Other
-alloy = { workspace = true, features = ["node-bindings"] }
+alloy = { workspace = true }
 anyhow = "1.0.75"
 bitvec = { workspace = true }
 bytes = "1.6.0"
