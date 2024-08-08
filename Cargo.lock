@@ -67,7 +67,6 @@ dependencies = [
  "alloy-core",
  "alloy-eips",
  "alloy-genesis",
- "alloy-node-bindings",
  "alloy-provider",
  "alloy-rpc-client",
  "alloy-rpc-types",
@@ -234,22 +233,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloy-node-bindings"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16faebb9ea31a244fd6ce3288d47df4be96797d9c3c020144b8f2c31543a4512"
-dependencies = [
- "alloy-genesis",
- "alloy-primitives",
- "k256",
- "serde_json",
- "tempfile",
- "thiserror",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "alloy-primitives"
 version = "0.7.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -283,12 +266,9 @@ dependencies = [
  "alloy-json-rpc",
  "alloy-network",
  "alloy-network-primitives",
- "alloy-node-bindings",
  "alloy-primitives",
  "alloy-rpc-client",
- "alloy-rpc-types-anvil",
  "alloy-rpc-types-eth",
- "alloy-signer-local",
  "alloy-transport",
  "alloy-transport-http",
  "async-stream",
@@ -362,17 +342,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloy-rpc-types-anvil"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52ab6509cd38b2e8c8da726e0f61c1e314a81df06a38d37ddec8bced3f8d25ed"
-dependencies = [
- "alloy-primitives",
- "alloy-serde",
- "serde",
-]
-
-[[package]]
 name = "alloy-rpc-types-eth"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -413,22 +382,6 @@ dependencies = [
  "auto_impl",
  "elliptic-curve",
  "k256",
- "thiserror",
-]
-
-[[package]]
-name = "alloy-signer-local"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b0707d4f63e4356a110b30ef3add8732ab6d181dd7be4607bf79b8777105cee"
-dependencies = [
- "alloy-consensus",
- "alloy-network",
- "alloy-primitives",
- "alloy-signer",
- "async-trait",
- "k256",
- "rand",
  "thiserror",
 ]
 
@@ -3402,6 +3355,21 @@ dependencies = [
  "starknet_api",
  "tempfile",
  "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "dc-e2e-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.11.3",
+ "log",
+ "reqwest 0.12.5",
+ "rstest 0.18.2",
+ "starknet-core",
+ "starknet-providers",
+ "tempfile",
  "tokio",
 ]
 

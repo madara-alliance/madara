@@ -51,9 +51,9 @@ impl SyncService {
                         .context("Creating ethereum client")?,
                 )
             } else {
-                return Err(anyhow::anyhow!(
-                    "❗ No L1 endpoint provided. You must provide one in order to verify the synced state."
-                ));
+                anyhow::bail!(
+                    "No Ethereum endpoint provided. You need to provide one using --l1-endpoint <RPC URL> in order to verify the synced state or disable the l1 watcher using --no-l1-sync."
+                );
             }
         } else {
             None
