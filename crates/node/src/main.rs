@@ -83,11 +83,12 @@ async fn main() -> anyhow::Result<()> {
         &run_cmd.l1_sync_params,
         &db_service,
         prometheus_service.registry(),
-        telemetry_service.new_handle(),
         l1_gas_prices,
+        run_cmd.sync_params.network.chain_id(),
+        run_cmd.sync_params.network.l1_core_address(),
     )
     .await
-    .context("Initializing the l1 service")?;
+    .context("Initializing the l1 sync service")?;
 
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
@@ -132,7 +133,6 @@ async fn main() -> anyhow::Result<()> {
             }
             // Block sync service. (full node)
             false => {
-                // let l1_gas_prices = Arc::new(Mutex::new(L1GasPrices::default()));
                 // Feeder gateway sync service.
                 let sync_service = SyncService::new(
                     &run_cmd.sync_params,

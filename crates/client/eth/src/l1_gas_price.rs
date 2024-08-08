@@ -38,7 +38,7 @@ pub async fn gas_price_worker(
     let poll_time = eth_client.gas_price_poll_ms.unwrap_or(DEFAULT_GAS_PRICE_POLL_MS);
 
     loop {
-        match update_gas_price(&eth_client, gas_price.clone()).await {
+        match update_gas_price(eth_client, gas_price.clone()).await {
             Ok(_) => log::trace!("Updated gas prices"),
             Err(e) => log::error!("Failed to update gas prices: {:?}", e),
         }
@@ -76,8 +76,7 @@ async fn update_gas_price(eth_client: &EthereumClient, gas_price: Arc<Mutex<L1Ga
     let (_, blob_fee_history_one_hour) =
         fee_history.base_fee_per_blob_gas.split_at(fee_history.base_fee_per_blob_gas.len().max(300) - 300);
 
-    let avg_blob_base_fee =
-        blob_fee_history_one_hour.into_iter().sum::<u128>() / blob_fee_history_one_hour.len() as u128;
+    let avg_blob_base_fee = blob_fee_history_one_hour.iter().sum::<u128>() / blob_fee_history_one_hour.len() as u128;
 
     let eth_gas_price = fee_history.base_fee_per_blob_gas.last().context("Setting l1 last confirmed block number")?;
 
@@ -127,7 +126,7 @@ mod eth_client_gas_price_worker_test {
         let gas_price = Arc::new(Mutex::new(L1GasPrices::default()));
 
         // Run the worker for a short time
-        let worker_handle = tokio::spawn(gas_price_worker(&eth_client, gas_price.clone(), false));
+        let worker_handle = tokio::spawn(gas_price_worker(eth_client, gas_price.clone(), false));
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the worker").expect("some issues");
@@ -175,7 +174,7 @@ mod eth_client_gas_price_worker_test {
 
         let result = timeout(
             timeout_duration,
-            AssertUnwindSafe(gas_price_worker(&eth_client, gas_price.clone(), true)).catch_unwind(),
+            AssertUnwindSafe(gas_price_worker(eth_client, gas_price.clone(), true)).catch_unwind(),
         )
         .await;
 

@@ -16,13 +16,10 @@ pub mod starknet_sync_worker {
     use crate::metrics::block_metrics::BlockMetrics;
     use anyhow::Context;
     use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
-    // use dc_eth::client::EthereumClient;
-    // use dc_eth::l1_gas_price::L1GasPrices;
     use dc_telemetry::TelemetryHandle;
     use dp_convert::ToFelt;
     use fetch::fetchers::FetchConfig;
 
-    use futures::lock::Mutex;
     use starknet_providers::SequencerGatewayProvider;
     use std::{sync::Arc, time::Duration};
 

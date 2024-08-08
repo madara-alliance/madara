@@ -58,7 +58,7 @@ impl Clone for EthereumClient {
             provider: Arc::clone(&self.provider),
             l1_core_contract: self.l1_core_contract.clone(),
             l1_block_metrics: self.l1_block_metrics.clone(),
-            gas_price_poll_ms: self.gas_price_poll_ms.clone(),
+            gas_price_poll_ms: self.gas_price_poll_ms,
         }
     }
 }

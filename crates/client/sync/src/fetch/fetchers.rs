@@ -41,8 +41,6 @@ pub struct FetchConfig {
     pub sync_polling_interval: Option<Duration>,
     /// Number of blocks to sync (for testing purposes)
     pub n_blocks_to_sync: Option<u64>,
-    /// Disable l1 sync
-    pub sync_l1_disabled: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

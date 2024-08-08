@@ -7,23 +7,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
-fn parse_url(s: &str) -> Result<Url, url::ParseError> {
-    s.parse()
-}
-
 #[derive(Clone, Debug, clap::Args)]
 pub struct SyncParams {
     /// Disable the sync service. The sync service is responsible for listening for new blocks on starknet and ethereum.
     #[clap(long, alias = "no-sync")]
     pub sync_disabled: bool,
-
-    /// Disable L1 sync.
-    #[clap(long, alias = "no-l1-sync")]
-    pub sync_l1_disabled: bool,
-
-    /// The L1 rpc endpoint url for state verification.
-    #[clap(long, value_parser = parse_url, value_name = "ETHEREUM RPC URL")]
-    pub l1_endpoint: Option<Url>,
 
     /// The block you want to start syncing from.
     #[clap(long, value_name = "BLOCK NUMBER")]
@@ -95,7 +83,6 @@ impl SyncParams {
             api_key: self.gateway_key.clone(),
             sync_polling_interval: polling,
             n_blocks_to_sync: self.n_blocks_to_sync,
-            sync_l1_disabled: self.sync_l1_disabled,
         }
     }
 }
