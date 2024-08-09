@@ -43,6 +43,7 @@ regex = "1.10.5"
 serde = { workspace = true, default-features = true }
 serde_json = "1"
 thiserror.workspace = true
+time = "0.3.36"
 tokio = { workspace = true, features = [
   "macros",
   "parking_lot",

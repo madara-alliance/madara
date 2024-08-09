@@ -10,6 +10,7 @@ use dp_utils::service::Service;
 use primitive_types::H160;
 use starknet_api::core::ChainId;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::task::JoinSet;
 
 #[derive(Clone)]
@@ -19,7 +20,7 @@ pub struct L1SyncService {
     l1_gas_provider: GasPriceProvider,
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
-    gas_price_poll_ms: u64,
+    gas_price_poll_ms: Duration,
 }
 
 impl L1SyncService {
@@ -49,15 +50,14 @@ impl L1SyncService {
         };
 
         let gas_price_sync_disabled = config.gas_price_sync_disabled;
-        let gas_price_poll_ms = config.gas_price_poll_ms;
+        let gas_price_poll_ms = Duration::from_secs(config.gas_price_poll_ms);
 
         if !gas_price_sync_disabled {
             let eth_client = eth_client.clone().ok_or_else(|| {
                 anyhow::anyhow!("EthereumClient is required to start the l1 sync service but not provided.")
             })?;
             // running at-least once before the block production service
-            dc_eth::l1_gas_price::gas_price_worker(&eth_client, l1_gas_provider.clone(), false, gas_price_poll_ms)
-                .await?;
+            dc_eth::l1_gas_price::gas_price_worker(&eth_client, l1_gas_provider.clone(), gas_price_poll_ms).await?;
         }
 
         Ok(Self {

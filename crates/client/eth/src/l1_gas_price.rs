@@ -3,63 +3,67 @@ use alloy::eips::BlockNumberOrTag;
 use alloy::providers::Provider;
 use anyhow::Context;
 use dc_mempool::{GasPriceProvider, L1DataProvider};
-use futures::lock::Mutex;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::time::sleep;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, UNIX_EPOCH};
 
+use dp_utils::wait_or_graceful_shutdown;
 use lazy_static;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 lazy_static::lazy_static! {
-    static ref LAST_UPDATE_TIMESTAMP: Arc<Mutex<u128>> = Arc::new(Mutex::new(0));
+    static ref LAST_UPDATE_TIMESTAMP: Arc<Mutex<SystemTime>> = Arc::new(Mutex::new(SystemTime::now()));
 }
 
 // Function to update the last update timestamp
-pub async fn update_last_update_timestamp() {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
-    let mut timestamp = LAST_UPDATE_TIMESTAMP.lock().await;
+pub fn update_last_update_timestamp() {
+    let now = SystemTime::now();
+    let mut timestamp = LAST_UPDATE_TIMESTAMP.lock().unwrap();
     *timestamp = now;
 }
 
 // Function to get the last update timestamp
-pub async fn get_last_update_timestamp() -> u128 {
-    *LAST_UPDATE_TIMESTAMP.lock().await
+pub fn get_last_update_timestamp() -> SystemTime {
+    LAST_UPDATE_TIMESTAMP.lock().unwrap().clone()
 }
 
+pub async fn gas_price_worker_once(
+    eth_client: &EthereumClient,
+    l1_gas_provider: GasPriceProvider,
+    gas_price_poll_ms: Duration,
+) -> anyhow::Result<()> {
+    match update_gas_price(eth_client, l1_gas_provider.clone()).await {
+        Ok(_) => log::trace!("Updated gas prices"),
+        Err(e) => log::error!("Failed to update gas prices: {:?}", e),
+    }
+
+    let last_update_timestamp = get_last_update_timestamp();
+    let duration_since_last_update = SystemTime::now().duration_since(last_update_timestamp)?;
+    let last_update_timestemp =
+        last_update_timestamp.duration_since(UNIX_EPOCH).expect("SystemTime before UNIX EPOCH!").as_micros();
+    if duration_since_last_update > 10 * gas_price_poll_ms {
+        anyhow::bail!(
+            "Gas prices have not been updated for {} ms. Last update was at {}",
+            duration_since_last_update.as_micros(),
+            last_update_timestemp
+        );
+    }
+
+    Ok(())
+}
 pub async fn gas_price_worker(
     eth_client: &EthereumClient,
     l1_gas_provider: GasPriceProvider,
-    infinite_loop: bool,
-    gas_price_poll_ms: u64,
+    gas_price_poll_ms: Duration,
 ) -> anyhow::Result<()> {
-    update_last_update_timestamp().await;
-    loop {
-        match update_gas_price(eth_client, l1_gas_provider.clone()).await {
-            Ok(_) => log::trace!("Updated gas prices"),
-            Err(e) => log::error!("Failed to update gas prices: {:?}", e),
+    update_last_update_timestamp();
+    let mut interval = tokio::time::interval(gas_price_poll_ms);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
+        loop {
+            gas_price_worker_once(eth_client, l1_gas_provider.clone(), gas_price_poll_ms).await?;
         }
-
-        let last_update_timestamp = get_last_update_timestamp().await;
-        let current_timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("Failed to get current timestamp")
-            .as_millis();
-
-        if current_timestamp - last_update_timestamp > 10 * gas_price_poll_ms as u128 {
-            panic!(
-                "Gas prices have not been updated for {} ms. Last update was at {}",
-                current_timestamp - last_update_timestamp,
-                last_update_timestamp
-            );
-        }
-
-        if !infinite_loop {
-            return Ok(());
-        }
-
-        sleep(Duration::from_millis(gas_price_poll_ms)).await;
     }
+    Ok(())
 }
 
 async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPriceProvider) -> anyhow::Result<()> {
@@ -79,7 +83,7 @@ async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPrice
     l1_gas_provider.update_eth_l1_gas_price(*eth_gas_price);
     l1_gas_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
 
-    update_last_update_timestamp().await;
+    update_last_update_timestamp();
 
     // Update block number separately to avoid holding the lock for too long
     update_l1_block_metrics(eth_client, l1_gas_provider).await?;
@@ -114,7 +118,8 @@ mod eth_client_gas_price_worker_test {
     use httpmock::{MockServer, Regex};
     use rstest::*;
     use std::panic::AssertUnwindSafe;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::SystemTime;
+    use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
 
     #[fixture]
@@ -142,16 +147,22 @@ mod eth_client_gas_price_worker_test {
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
-        // Run the worker for a short time
-        let worker_handle = gas_price_worker(&eth_client, l1_gas_provider.clone(), false, 20_u64);
+        // Spawn the gas_price_worker in a separate task
+        let worker_handle: JoinHandle<anyhow::Result<()>> = tokio::spawn({
+            let eth_client = eth_client.clone();
+            let l1_gas_provider = l1_gas_provider.clone();
+            async move { gas_price_worker(&eth_client, l1_gas_provider, Duration::from_millis(200)).await }
+        });
 
-        // Wait for the worker to complete
-        worker_handle.await.expect("issue with the worker");
+        // Wait for a short duration to allow the worker to run
+        tokio::time::sleep(Duration::from_secs(3)).await;
 
-        let timeout_duration = Duration::from_secs(5);
+        // Abort the worker task
+        worker_handle.abort();
 
-        let result =
-            timeout(timeout_duration, gas_price_worker(&eth_client, l1_gas_provider.clone(), true, 20_u64)).await;
+        // Wait for the worker to finish (it should be aborted quickly)
+        let timeout_duration = Duration::from_secs(2);
+        let result = timeout(timeout_duration, worker_handle).await;
 
         match result {
             Ok(Ok(_)) => println!("Gas price worker completed successfully"),
@@ -171,7 +182,7 @@ mod eth_client_gas_price_worker_test {
         let l1_gas_provider = GasPriceProvider::new();
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker(eth_client, l1_gas_provider.clone(), false, 20_u64);
+        let worker_handle = gas_price_worker_once(eth_client, l1_gas_provider.clone(), Duration::from_millis(200));
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
@@ -182,12 +193,13 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_when_eth_fee_history_fails_should_fails(
-        eth_client_with_mock: &'static (MockServer, EthereumClient),
-    ) {
-        let (mock_server, eth_client) = eth_client_with_mock;
+    async fn gas_price_worker_when_eth_fee_history_fails_should_fails() {
+        let mock_server = MockServer::start();
+        let addr = format!("http://{}", mock_server.address());
+        let eth_client = create_ethereum_client(Some(&addr));
+
+        println!("add is: {:?} ", addr.as_str());
 
         let mock = mock_server.mock(|when, then| {
             when.method("POST").path("/").json_body_obj(&serde_json::json!({
@@ -213,13 +225,13 @@ mod eth_client_gas_price_worker_test {
 
         let l1_gas_provider = GasPriceProvider::new();
 
-        update_last_update_timestamp().await;
+        update_last_update_timestamp();
 
         let timeout_duration = Duration::from_secs(5);
 
         let result = timeout(
             timeout_duration,
-            AssertUnwindSafe(gas_price_worker(eth_client, l1_gas_provider, true, 20_u64)).catch_unwind(),
+            gas_price_worker(&eth_client, l1_gas_provider.clone(), Duration::from_millis(200)),
         )
         .await;
 
@@ -234,7 +246,7 @@ mod eth_client_gas_price_worker_test {
                     panic!("Panic occurred, but message was not a string");
                 }
             }
-            Err(_) => panic!("gas_price_worker timed out"),
+            Err(err) => panic!("gas_price_worker timed out: {err}"),
         }
 
         // Verify that the mock was called
@@ -246,7 +258,7 @@ mod eth_client_gas_price_worker_test {
     async fn update_gas_price_works(eth_client: &'static EthereumClient) {
         let l1_gas_provider = GasPriceProvider::new();
 
-        update_last_update_timestamp().await;
+        update_last_update_timestamp();
 
         // Update gas prices
         update_gas_price(eth_client, l1_gas_provider.clone()).await.expect("Failed to update gas prices");
@@ -262,9 +274,12 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_prices.eth_l1_data_gas_price, 1, "ETH L1 data gas price should be 1 in test environment");
 
         // Verify that the last update timestamp is recent
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs() as u128;
 
-        let last_update_timestamp = get_last_update_timestamp().await;
-        assert!(last_update_timestamp > now - 60, "Last update timestamp should be within the last minute");
+        let last_update_timestamp = get_last_update_timestamp();
+
+        let time_since_last_update =
+            SystemTime::now().duration_since(last_update_timestamp).expect("issue while getting the time");
+
+        assert!(time_since_last_update.as_secs() < 60, "Last update timestamp should be within the last minute");
     }
 }
