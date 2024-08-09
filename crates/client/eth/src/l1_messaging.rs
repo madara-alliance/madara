@@ -1,20 +1,22 @@
-use crate::contract::parse_handle_l1_message_transaction;
-use alloy::primitives::{keccak256, FixedBytes, U256};
+use std::sync::Arc;
 use anyhow::Context;
+use futures::StreamExt;
+
+use alloy::primitives::{keccak256, FixedBytes, U256};
 use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
 use dc_db::{messaging_db::LastSyncedEventBlock, DeoxysBackend};
-use dc_eth::client::StarknetCoreContract::LogMessageToL2;
-use dc_eth::client::{EthereumClient, StarknetCoreContract};
+use crate::client::StarknetCoreContract::LogMessageToL2;
+use crate::client::{EthereumClient, StarknetCoreContract};
+use crate::utils::u256_to_felt;
 use dp_utils::channel_wait_or_graceful_shutdown;
-use futures::StreamExt;
-use starknet_api::core::ChainId;
-use starknet_api::transaction::{Fee, Transaction, TransactionHash};
+use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
+use starknet_api::transaction::{Calldata, Fee, L1HandlerTransaction, Transaction, TransactionHash, TransactionVersion};
 use alloy::sol_types::SolValue;
 use starknet_api::transaction_hash::get_transaction_hash;
 use starknet_types_core::felt::Felt;
 
 pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &ChainId) -> anyhow::Result<()> {
-    log::info!("⟠ Starting L1 Messages Syncing...");
+    tracing::info!("⟠ Starting L1 Messages Syncing...");
     
     let last_synced_event_block = match backend.messaging_last_synced_l1_block_with_event() {
         Ok(Some(blk)) => blk,
@@ -22,7 +24,7 @@ pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &C
             unreachable!("Should never be None")
         }
         Err(e) => {
-            log::error!("⟠ Madara Messaging DB unavailable: {:?}", e);
+            tracing::error!("⟠ Madara Messaging DB unavailable: {:?}", e);
             return Err(e.into());
         }
     };
@@ -36,25 +38,27 @@ pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &C
 
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
         if let Ok((event, meta)) = event_result {
-            log::info!(
-                "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}",
+            tracing::info!(
+                "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}, fromAddress: {:?}",
                 meta.block_number,
                 meta.transaction_hash,
-                meta.log_index
-            );
-            
+                meta.log_index,
+                event.fromAddress
+            );  
 
             // Check if cancellation was initiated
+            let event_hash = get_l1_to_l2_msg_hash(&event)?;
+            tracing::info!("⟠ Checking for cancelation, event hash : {:?}",event_hash);
             let cancellation_timestamp =
-            client.get_l1_to_l2_message_cancellations(get_l1_to_l2_msg_hash(&event)?).await?;
+            client.get_l1_to_l2_message_cancellations(event_hash).await?;
             if cancellation_timestamp != Felt::ZERO {
-                log::info!("⟠ L1 Message was cancelled in block at timestamp : {:?}", cancellation_timestamp);
+                tracing::info!("⟠ L1 Message was cancelled in block at timestamp : {:?}", cancellation_timestamp);
                 continue;
             }
             
             match process_l1_message(backend, &event, &meta.block_number, &meta.log_index, chain_id).await {
                 Ok(Some(tx_hash)) => {
-                    log::info!(
+                    tracing::info!(
                         "⟠ L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?} submitted, \
                         transaction hash on L2: {:?}",
                         meta.block_number,
@@ -66,7 +70,7 @@ pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &C
                 Ok(None) => {
                 }
                 Err(e) => {
-                    log::error!(
+                    tracing::error!(
                         "⟠ Unexpected error while processing L1 Message from block: {:?}, transaction_hash: {:?}, \
                     log_index: {:?}, error: {:?}",
                         meta.block_number,
@@ -94,11 +98,11 @@ async fn process_l1_message(
     match backend.messaging_update_nonces_if_not_used(transaction.nonce) {
         Ok(true) => {}
         Ok(false) => {
-            log::debug!("⟠ Event already processed: {:?}", transaction);
+            tracing::debug!("⟠ Event already processed: {:?}", transaction);
             return Ok(None);
         }
         Err(e) => {
-            log::error!("⟠ Unexpected DB error: {:?}", e);
+            tracing::error!("⟠ Unexpected DB error: {:?}", e);
             return Err(e.into());
         }
     };
@@ -123,6 +127,39 @@ async fn process_l1_message(
     Ok(Some(blockifier_transaction.tx_hash))
 }
 
+pub fn parse_handle_l1_message_transaction(event: &LogMessageToL2) -> anyhow::Result<L1HandlerTransaction> {
+    // L1 from address.
+    let from_address = u256_to_felt(event.fromAddress.into_word().into())?;
+
+    // L2 contract to call.
+    let contract_address = u256_to_felt(event.toAddress)?;
+
+    // Function of the contract to call.
+    let entry_point_selector = u256_to_felt(event.selector)?;
+
+    // L1 message nonce.
+    let nonce = u256_to_felt(event.nonce)?;
+
+    let event_payload =
+        event.payload.clone().into_iter().map(|param| u256_to_felt(param)).collect::<anyhow::Result<Vec<_>>>()?;
+
+    let calldata: Calldata = {
+        let mut calldata: Vec<_> = Vec::with_capacity(event.payload.len() + 1);
+        calldata.push(from_address);
+        calldata.extend(event_payload);
+
+        Calldata(Arc::new(calldata))
+    };
+
+    Ok(L1HandlerTransaction {
+        nonce: Nonce(nonce),
+        contract_address: ContractAddress(contract_address.try_into()?),
+        entry_point_selector: EntryPointSelector(entry_point_selector),
+        calldata,
+        version: TransactionVersion(Felt::ZERO),
+    })
+}
+
 /// Computes the message hashed with the given event data
 fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32>> {
     let data = (
@@ -137,27 +174,31 @@ fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32
     Ok(keccak256(data.abi_encode_packed()))
 }
 
+
+
 #[cfg(test)]
 mod tests {
-    use crate::worker::{self, get_l1_to_l2_msg_hash};
 
     use std::{sync::Arc, time::Duration};
 
     use alloy::{hex::FromHex, node_bindings::{Anvil, AnvilInstance}, primitives::{Address, U256}, providers::{ProviderBuilder, RootProvider}, sol, transports::http::{Client, Http}};
     use dc_db::DatabaseService;
-    use dc_eth::client::{EthereumClient, L1BlockMetrics, StarknetCoreContract::{self, LogMessageToL2}};
+    use crate::{client::{EthereumClient, L1BlockMetrics, StarknetCoreContract::{self, LogMessageToL2}}, l1_messaging::get_l1_to_l2_msg_hash};
     use dc_metrics::MetricsService;
     use dp_block::chain_config::ChainConfig;
     use rstest::*;
     use tempfile::TempDir;
+    use tracing_test::traced_test;
     use url::Url;
+
+    use crate::l1_messaging::sync;
 
     use self::DummyContract::DummyContractInstance;
 
     // LogMessageToL2 from 0x21980d6674d33e50deee43c6c30ef3b439bd148249b4539ce37b7856ac46b843
     // bytecode is compiled DummyContractBasicTestCase
     sol!(
-        #[sol(rpc, bytecode="6080604052348015600e575f80fd5b506105928061001c5f395ff3fe608060405234801561000f575f80fd5b506004361061003f575f3560e01c80634185df15146100435780639be446bf1461004d578063af56443a1461007d575b5f80fd5b61004b610099565b005b61006760048036038101906100629190610353565b6102d5565b6040516100749190610396565b60405180910390f35b610097600480360381019061009291906103e4565b610301565b005b5f73ae0ee0a63a2ce6baeeffe56e7714fb4efe48d41990505f7f073314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b8290505f7f01b64b1b3b690b43b9b514fb81377518f4039cd3e4f4914d8a6bdf01d679fb1990505f600767ffffffffffffffff8111156101155761011461040f565b5b6040519080825280602002602001820160405280156101435781602001602082028036833780820191505090505b5090506060815f8151811061015b5761015a61043c565b5b602002602001018181525050621950918160018151811061017f5761017e61043c565b5b60200260200101818152505065231594f0c7ea816002815181106101a6576101a561043c565b5b6020026020010181815250506005816003815181106101c8576101c761043c565b5b60200260200101818152505062455448816004815181106101ec576101eb61043c565b5b60200260200101818152505073bdb193c166cfb7be2e51711c5648ebeef94063bb816005815181106102215761022061043c565b5b6020026020010181815250507e7d79cd86ba27a2508a9ca55c8b3474ca082bc5173d0467824f07a32e9db888816006815181106102615761026061043c565b5b6020026020010181815250505f662386f26fc1000090505f83858773ffffffffffffffffffffffffffffffffffffffff167fdb80dd488acf86d17c747445b0eabb5d57c541d3bd7b6b87af987858e5066b2b8686866040516102c593929190610520565b60405180910390a4505050505050565b5f805f9054906101000a900460ff166102ee575f6102f4565b6366b4f1055b63ffffffff169050919050565b805f806101000a81548160ff02191690831515021790555050565b5f80fd5b5f819050919050565b61033281610320565b811461033c575f80fd5b50565b5f8135905061034d81610329565b92915050565b5f602082840312156103685761036761031c565b5b5f6103758482850161033f565b91505092915050565b5f819050919050565b6103908161037e565b82525050565b5f6020820190506103a95f830184610387565b92915050565b5f8115159050919050565b6103c3816103af565b81146103cd575f80fd5b50565b5f813590506103de816103ba565b92915050565b5f602082840312156103f9576103f861031c565b5b5f610406848285016103d0565b91505092915050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52604160045260245ffd5b7f4e487b71000000000000000000000000000000000000000000000000000000005f52603260045260245ffd5b5f81519050919050565b5f82825260208201905092915050565b5f819050602082019050919050565b61049b8161037e565b82525050565b5f6104ac8383610492565b60208301905092915050565b5f602082019050919050565b5f6104ce82610469565b6104d88185610473565b93506104e383610483565b805f5b838110156105135781516104fa88826104a1565b9750610505836104b8565b9250506001810190506104e6565b5085935050505092915050565b5f6060820190508181035f83015261053881866104c4565b90506105476020830185610387565b6105546040830184610387565b94935050505056fea2646970667358221220965efb2d148226f2bb86a8e0151b7c5a4d5a562029c457259aa173ff71f34c6d64736f6c634300081a0033")]
+        #[sol(rpc, bytecode="6080604052348015600e575f80fd5b5061098b8061001c5f395ff3fe608060405234801561000f575f80fd5b506004361061004a575f3560e01c80634185df151461004e57806390985ef9146100585780639be446bf14610076578063af56443a146100a6575b5f80fd5b6100566100c2565b005b6100606102fe565b60405161006d9190610579565b60405180910390f35b610090600480360381019061008b91906105c0565b61051a565b60405161009d9190610603565b60405180910390f35b6100c060048036038101906100bb9190610651565b610546565b005b5f73ae0ee0a63a2ce6baeeffe56e7714fb4efe48d41990505f7f073314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b8290505f7f01b64b1b3b690b43b9b514fb81377518f4039cd3e4f4914d8a6bdf01d679fb1990505f600767ffffffffffffffff81111561013e5761013d61067c565b5b60405190808252806020026020018201604052801561016c5781602001602082028036833780820191505090505b5090506060815f81518110610184576101836106a9565b5b60200260200101818152505062195091816001815181106101a8576101a76106a9565b5b60200260200101818152505065231594f0c7ea816002815181106101cf576101ce6106a9565b5b6020026020010181815250506005816003815181106101f1576101f06106a9565b5b6020026020010181815250506245544881600481518110610215576102146106a9565b5b60200260200101818152505073bdb193c166cfb7be2e51711c5648ebeef94063bb8160058151811061024a576102496106a9565b5b6020026020010181815250507e7d79cd86ba27a2508a9ca55c8b3474ca082bc5173d0467824f07a32e9db8888160068151811061028a576102896106a9565b5b6020026020010181815250505f662386f26fc1000090505f83858773ffffffffffffffffffffffffffffffffffffffff167fdb80dd488acf86d17c747445b0eabb5d57c541d3bd7b6b87af987858e5066b2b8686866040516102ee9392919061078d565b60405180910390a4505050505050565b5f8073ae0ee0a63a2ce6baeeffe56e7714fb4efe48d41990505f7f073314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b8290505f7f01b64b1b3b690b43b9b514fb81377518f4039cd3e4f4914d8a6bdf01d679fb1990505f600767ffffffffffffffff81111561037b5761037a61067c565b5b6040519080825280602002602001820160405280156103a95781602001602082028036833780820191505090505b5090506060815f815181106103c1576103c06106a9565b5b60200260200101818152505062195091816001815181106103e5576103e46106a9565b5b60200260200101818152505065231594f0c7ea8160028151811061040c5761040b6106a9565b5b60200260200101818152505060058160038151811061042e5761042d6106a9565b5b6020026020010181815250506245544881600481518110610452576104516106a9565b5b60200260200101818152505073bdb193c166cfb7be2e51711c5648ebeef94063bb81600581518110610487576104866106a9565b5b6020026020010181815250507e7d79cd86ba27a2508a9ca55c8b3474ca082bc5173d0467824f07a32e9db888816006815181106104c7576104c66106a9565b5b6020026020010181815250505f662386f26fc100009050848482858551866040516020016104fa969594939291906108ea565b604051602081830303815290604052805190602001209550505050505090565b5f805f9054906101000a900460ff16610533575f610539565b6366b4f1055b63ffffffff169050919050565b805f806101000a81548160ff02191690831515021790555050565b5f819050919050565b61057381610561565b82525050565b5f60208201905061058c5f83018461056a565b92915050565b5f80fd5b61059f81610561565b81146105a9575f80fd5b50565b5f813590506105ba81610596565b92915050565b5f602082840312156105d5576105d4610592565b5b5f6105e2848285016105ac565b91505092915050565b5f819050919050565b6105fd816105eb565b82525050565b5f6020820190506106165f8301846105f4565b92915050565b5f8115159050919050565b6106308161061c565b811461063a575f80fd5b50565b5f8135905061064b81610627565b92915050565b5f6020828403121561066657610665610592565b5b5f6106738482850161063d565b91505092915050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52604160045260245ffd5b7f4e487b71000000000000000000000000000000000000000000000000000000005f52603260045260245ffd5b5f81519050919050565b5f82825260208201905092915050565b5f819050602082019050919050565b610708816105eb565b82525050565b5f61071983836106ff565b60208301905092915050565b5f602082019050919050565b5f61073b826106d6565b61074581856106e0565b9350610750836106f0565b805f5b83811015610780578151610767888261070e565b975061077283610725565b925050600181019050610753565b5085935050505092915050565b5f6060820190508181035f8301526107a58186610731565b90506107b460208301856105f4565b6107c160408301846105f4565b949350505050565b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f6107f2826107c9565b9050919050565b5f8160601b9050919050565b5f61080f826107f9565b9050919050565b5f61082082610805565b9050919050565b610838610833826107e8565b610816565b82525050565b5f819050919050565b610858610853826105eb565b61083e565b82525050565b5f81905092915050565b610871816105eb565b82525050565b5f6108828383610868565b60208301905092915050565b5f610898826106d6565b6108a2818561085e565b93506108ad836106f0565b805f5b838110156108dd5781516108c48882610877565b97506108cf83610725565b9250506001810190506108b0565b5085935050505092915050565b5f6108f58289610827565b6014820191506109058288610847565b6020820191506109158287610847565b6020820191506109258286610847565b6020820191506109358285610847565b602082019150610945828461088e565b915081905097965050505050505056fea26469706673582212207d9b68011c85ac74917e0c560e90ef760c209307b59f7715012aa0b6ecaa055d64736f6c634300081a0033")]
         contract DummyContract {
             bool isCanceled;
             event LogMessageToL2(address indexed _fromAddress, uint256 indexed _toAddress, uint256 indexed _selector, uint256[] payload, uint256 nonce, uint256 fee);
@@ -186,6 +227,33 @@ mod tests {
 
             function setIsCanceled(bool value) public {
                 isCanceled = value;
+            }
+
+            function getL1ToL2MsgHash() external pure returns (bytes32) {
+                address fromAddress = address(993696174272377493693496825928908586134624850969);
+                uint256 toAddress = 3256441166037631918262930812410838598500200462657642943867372734773841898370;
+                uint256 selector = 774397379524139446221206168840917193112228400237242521560346153613428128537;
+                uint256[] memory payload = new uint256[](7);
+                payload[0] = 96;
+                payload[1] = 1659025;
+                payload[2] = 38575600093162;
+                payload[3] = 5;
+                payload[4] = 4543560;
+                payload[5] = 1082959358903034162641917759097118582889062097851;
+                payload[6] = 221696535382753200248526706088340988821219073423817576256483558730535647368;
+                uint256 nonce= 10000000000000000;
+
+                return
+                    keccak256(
+                        abi.encodePacked(
+                            fromAddress,
+                            toAddress,
+                            nonce,
+                            selector,
+                            payload.length,
+                            payload
+                        )
+                    );
             }
         }
     );
@@ -241,6 +309,7 @@ mod tests {
     /// 7. Fire the same event
     /// 8. Waits for event processing and verify that the event is not stored (already processed)
     #[rstest]
+    #[traced_test]
     #[tokio::test]
     async fn e2e_test_basic_workflow() {
         let (_anvil, chain_info,db, contract,eth_client) = setup_test_env().await;
@@ -249,7 +318,7 @@ mod tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                worker::sync(
+                sync(
                     db.backend(),
                     &eth_client,
                     &chain_info.chain_id,
@@ -264,7 +333,9 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         // TODO : Assert that event was caught by the worker with correct data
+        assert!(logs_contain("fromAddress: 0xae0ee0a63a2ce6baeeffe56e7714fb4efe48d419"));
         // TODO : Assert the tx hash computed by the worker is correct
+        println!("event hash is : {:?}",contract.getL1ToL2MsgHash().send().await); 
 
         // TODO : Assert that the tx has been included in the mempool
 
@@ -289,7 +360,7 @@ mod tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                worker::sync(
+                sync(
                     db.backend(),
                     &eth_client,
                     &chain_info.chain_id,
@@ -323,7 +394,7 @@ mod tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                worker::sync(
+                sync(
                     db.backend(),
                     &eth_client,
                     &chain_info.chain_id,
