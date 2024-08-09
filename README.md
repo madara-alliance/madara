@@ -107,22 +107,30 @@ docker logs -f madara
    Set the necessary environment variable:
 
    ```sh
-   export ETHEREUM_API_URL="your-ethereum-api-url"
+   export L1_ENDPOINT="your-ethereum-api-url"
    ```
 
    Or create a `.env` file in the same directory as your `docker-compose.yml` file:
 
    ```sh
-   ETHEREUM_API_URL=your-ethereum-api-url
+   L1_ENDPOINT=your-ethereum-api-url
    ```
 
 2. **Build and Run the Container**
 
-   Navigate to the directory with your `docker-compose.yml` file and run:
+   Navigate to the directory with your `docker-compose.yml` file and run one of the following commands:
 
-   ```sh
-   docker-compose up -d
-   ```
+   - Mainnet:
+
+      ```sh
+      docker-compose --profile mainnet up -d
+      ```
+
+   - Testnet:
+
+      ```sh
+      docker-compose --profile testnet up -d
+      ```
 
    Check the logs of the running Madara service:
 
