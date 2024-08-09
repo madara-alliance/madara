@@ -4,6 +4,8 @@ use anyhow::bail;
 use rstest::rstest;
 use starknet_providers::Provider;
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Url};
+use std::ops::Range;
+use std::sync::Mutex;
 use std::{
     collections::HashMap,
     future::Future,
@@ -36,6 +38,7 @@ pub struct MadaraCmd {
     json_rpc: Option<JsonRpcClient<HttpTransport>>,
     rpc_url: Url,
     tempdir: TempDir,
+    _port: MadaraPortNum,
 }
 
 impl MadaraCmd {
@@ -103,10 +106,40 @@ impl Drop for MadaraCmd {
     }
 }
 
+// this really should use unix sockets, sad
+
+const PORT_RANGE: Range<u16> = 19944..20000;
+
+struct AvailablePorts<I: Iterator<Item = u16>> {
+    to_reuse: Vec<u16>,
+    next: I,
+}
+
+lazy_static::lazy_static! {
+    static ref AVAILABLE_PORTS: Mutex<AvailablePorts<Range<u16>>> = Mutex::new(AvailablePorts { to_reuse: vec![], next: PORT_RANGE.into_iter() });
+}
+
+pub struct MadaraPortNum(pub u16);
+impl Drop for MadaraPortNum {
+    fn drop(&mut self) {
+        let mut guard = AVAILABLE_PORTS.lock().expect("poisoned lock");
+        guard.to_reuse.push(self.0);
+    }
+}
+
+pub fn get_port() -> MadaraPortNum {
+    let mut guard = AVAILABLE_PORTS.lock().expect("poisoned lock");
+    if let Some(el) = guard.to_reuse.pop() {
+        return MadaraPortNum(el);
+    }
+    MadaraPortNum(guard.next.next().expect("no more port to use"))
+}
+
 pub struct MadaraCmdBuilder {
     args: Vec<String>,
     env: HashMap<String, String>,
     tempdir: TempDir,
+    port: MadaraPortNum,
 }
 
 impl Default for MadaraCmdBuilder {
@@ -121,6 +154,7 @@ impl MadaraCmdBuilder {
             args: Default::default(),
             env: Default::default(),
             tempdir: TempDir::with_prefix("madara-test").unwrap(),
+            port: get_port(),
         }
     }
 
@@ -143,7 +177,14 @@ impl MadaraCmdBuilder {
 
         let process = Command::new(target_bin)
             .envs(self.env)
-            .args(self.args.into_iter().chain(["--telemetry-disabled".into(), "--base-path".into(), format!("{}", self.tempdir.as_ref().display())])) // important: disable telemetry!!
+            .args(self.args.into_iter().chain([
+                "--telemetry-disabled".into(), // important: disable telemetry!!
+                "--no-prometheus".into(),
+                "--base-path".into(),
+                format!("{}", self.tempdir.as_ref().display()),
+                "--rpc-port".into(),
+                format!("{}", self.port.0),
+            ]))
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
@@ -152,8 +193,9 @@ impl MadaraCmdBuilder {
             process: Some(process),
             ready: false,
             json_rpc: None,
-            rpc_url: Url::parse("http://127.0.0.1:9944/").unwrap(),
+            rpc_url: Url::parse(&format!("http://127.0.0.1:{}/", self.port.0)).unwrap(),
             tempdir: self.tempdir,
+            _port: self.port,
         }
     }
 }
