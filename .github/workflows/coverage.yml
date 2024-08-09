@@ -11,8 +11,10 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2 # use a different cache key as coverae uses custom rustc args
       - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.78
       - name: Setup build deps
         run: |
           sudo apt-get update
