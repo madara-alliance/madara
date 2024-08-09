@@ -66,7 +66,7 @@ impl DeoxysBackend {
         let mut nonce_tree: BTreeSet<Nonce> = bincode::deserialize(&res)?;
         if nonce_tree.contains(&nonce) {
             // Nonce is already used, return false
-            return Ok(false);
+            Ok(false)
         } else {
             // Nonce isn't being used yet, add it to our db and return true
             nonce_tree.insert(nonce);
@@ -75,7 +75,7 @@ impl DeoxysBackend {
             writeopts.disable_wal(true);
 
             self.db.put_cf_opt(&messaging_column, NONCES_PROCESSED, bincode::serialize(&nonce_tree)?, &writeopts)?;
-            return Ok(true);
+            Ok(true)
         }
     }
 }
