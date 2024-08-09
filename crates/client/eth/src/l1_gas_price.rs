@@ -66,7 +66,8 @@ async fn update_gas_price(
     eth_client: &EthereumClient,
     l1_data_provider: Arc<dyn L1DataProvider>,
 ) -> anyhow::Result<()> {
-    let fee_history = eth_client.provider.get_fee_history(300, BlockNumberOrTag::Latest, &[]).await?;
+    let block_number = eth_client.get_latest_block_number().await?;
+    let fee_history = eth_client.provider.get_fee_history(300, BlockNumberOrTag::Number(block_number), &[]).await?;
 
     // The RPC responds with 301 elements for some reason. It's also just safer to manually
     // take the last 300. We choose 300 to get average gas caprice for last one hour (300 * 12 sec block
@@ -113,6 +114,7 @@ async fn update_l1_block_metrics(
 mod eth_client_gas_price_worker_test {
     use super::*;
     use crate::client::eth_client_getter_test::create_ethereum_client;
+    use alloy::node_bindings::Anvil;
     use dc_mempool::GasPriceProvider;
     use futures::future::FutureExt;
     use httpmock::{MockServer, Regex};
@@ -136,16 +138,49 @@ mod eth_client_gas_price_worker_test {
         create_ethereum_client(None)
     }
 
+    #[tokio::test]
+    async fn gas_price_worker_when_infinite_loop_true_works() {
+        let anvil = Anvil::new()
+            .fork("https://eth.merkle.io")
+            .fork_block_number(20395662)
+            .try_spawn()
+            .expect("issue while forking for the anvil");
+        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
+
+        // Run the worker for a short time
+        let worker_handle = gas_price_worker(&eth_client, l1_data_provider.clone(), false, 20_u64);
+
+        // Wait for the worker to complete
+        worker_handle.await.expect("issue with the worker");
+
+        let timeout_duration = Duration::from_secs(5);
+
+        let result =
+            timeout(timeout_duration, gas_price_worker(&eth_client, Arc::clone(&l1_data_provider), true, 20_u64)).await;
+
+        match result {
+            Ok(Ok(_)) => println!("Gas price worker completed successfully"),
+            Ok(Err(e)) => println!("Gas price worker encountered an error: {:?}", e),
+            Err(_) => println!("Gas price worker timed out"),
+        }
+
+        // Check if the gas price was updated
+        let updated_price = l1_data_provider.get_gas_prices().await;
+        assert_eq!(updated_price.eth_l1_gas_price, 948082986);
+        assert_eq!(updated_price.eth_l1_data_gas_price, 1);
+    }
+
     #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_works(eth_client: &'static EthereumClient) {
+    async fn gas_price_worker_when_infinite_loop_false_works(eth_client: &'static EthereumClient) {
         let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
 
         // Run the worker for a short time
         let worker_handle = gas_price_worker(eth_client, l1_data_provider.clone(), false, 20_u64);
 
         // Wait for the worker to complete
-        worker_handle.await.expect("issue with the worker");
+        worker_handle.await.expect("issue with the gas worker");
 
         // Check if the gas price was updated
         let updated_price = l1_data_provider.get_gas_prices().await;
@@ -164,8 +199,8 @@ mod eth_client_gas_price_worker_test {
             when.method("POST").path("/").json_body_obj(&serde_json::json!({
                 "jsonrpc": "2.0",
                 "method": "eth_feeHistory",
-                "params": ["0x12c", "latest", []],
-                "id": 0
+                "params": ["0x12c", "0x137368e", []],
+                "id": 1
             }));
             then.status(500).json_body_obj(&serde_json::json!({
                 "jsonrpc": "2.0",
@@ -175,6 +210,11 @@ mod eth_client_gas_price_worker_test {
                 },
                 "id": 1
             }));
+        });
+
+        mock_server.mock(|when, then| {
+            when.method("POST").path("/").json_body_obj(&serde_json::json!({"id":0,"jsonrpc":"2.0","method":"eth_blockNumber"}));
+            then.status(200).json_body_obj(&serde_json::json!({"jsonrpc":"2.0","id":1,"result":"0x0137368e"}                                                                                                                                                                         ));
         });
 
         let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());

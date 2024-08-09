@@ -2,7 +2,6 @@ use crate::cli::l1::L1SyncParams;
 use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::{DatabaseService, DeoxysBackend};
-use dc_eth;
 use dc_eth::client::EthereumClient;
 use dc_mempool::L1DataProvider;
 use dc_metrics::MetricsRegistry;
