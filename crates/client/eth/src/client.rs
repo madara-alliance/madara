@@ -49,7 +49,6 @@ pub struct EthereumClient {
     pub provider: Arc<ReqwestProvider>,
     pub l1_core_contract: StarknetCoreContractInstance<Http<Client>, RootProvider<Http<Client>>>,
     pub l1_block_metrics: L1BlockMetrics,
-    pub gas_price_poll_ms: Option<u64>,
 }
 
 impl Clone for EthereumClient {
@@ -58,7 +57,6 @@ impl Clone for EthereumClient {
             provider: Arc::clone(&self.provider),
             l1_core_contract: self.l1_core_contract.clone(),
             l1_block_metrics: self.l1_block_metrics.clone(),
-            gas_price_poll_ms: self.gas_price_poll_ms,
         }
     }
 }
@@ -70,12 +68,7 @@ impl EthereumClient {
         let core_contract = StarknetCoreContract::new(l1_core_address, provider.clone());
         let l1_block_metrics = L1BlockMetrics::register(&metrics_handle)?;
 
-        Ok(Self {
-            provider: Arc::new(provider),
-            l1_core_contract: core_contract,
-            l1_block_metrics,
-            gas_price_poll_ms: None,
-        })
+        Ok(Self { provider: Arc::new(provider), l1_core_contract: core_contract, l1_block_metrics })
     }
 
     /// Retrieves the latest Ethereum block number
@@ -153,12 +146,7 @@ pub mod eth_client_getter_test {
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
         let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
 
-        EthereumClient {
-            provider: Arc::new(provider),
-            l1_core_contract: contract.clone(),
-            l1_block_metrics,
-            gas_price_poll_ms: Some(100_u64),
-        }
+        EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
     }
 
     // Then, you can use this utility function in your fixture like this:

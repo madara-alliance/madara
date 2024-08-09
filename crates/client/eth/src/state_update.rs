@@ -169,12 +169,8 @@ mod eth_client_event_subscription_test {
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
-        let eth_client = EthereumClient {
-            provider: Arc::new(provider),
-            l1_core_contract: core_contract.clone(),
-            l1_block_metrics,
-            gas_price_poll_ms: Some(10_u64),
-        };
+        let eth_client =
+            EthereumClient { provider: Arc::new(provider), l1_core_contract: core_contract.clone(), l1_block_metrics };
 
         // Start listening for state updates
         let listen_handle = {

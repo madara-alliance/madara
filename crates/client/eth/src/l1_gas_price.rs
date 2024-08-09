@@ -11,8 +11,6 @@ use tokio::time::sleep;
 use lazy_static;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEFAULT_GAS_PRICE_POLL_MS: u64 = 10_000;
-
 lazy_static::lazy_static! {
     static ref LAST_UPDATE_TIMESTAMP: Arc<Mutex<u128>> = Arc::new(Mutex::new(0));
 }
@@ -33,8 +31,8 @@ pub async fn gas_price_worker(
     eth_client: &EthereumClient,
     l1_data_provider: Arc<dyn L1DataProvider>,
     infinite_loop: bool,
+    gas_price_poll_ms: u64,
 ) -> anyhow::Result<()> {
-    let poll_time = eth_client.gas_price_poll_ms.unwrap_or(DEFAULT_GAS_PRICE_POLL_MS);
     update_last_update_timestamp().await;
     loop {
         match update_gas_price(eth_client, Arc::clone(&l1_data_provider)).await {
@@ -48,7 +46,7 @@ pub async fn gas_price_worker(
             .expect("Failed to get current timestamp")
             .as_millis();
 
-        if current_timestamp - last_update_timestamp > 10 * poll_time as u128 {
+        if current_timestamp - last_update_timestamp > 10 * gas_price_poll_ms as u128 {
             panic!(
                 "Gas prices have not been updated for {} ms. Last update was at {}",
                 current_timestamp - last_update_timestamp,
@@ -60,7 +58,7 @@ pub async fn gas_price_worker(
             return Ok(());
         }
 
-        sleep(Duration::from_millis(poll_time)).await;
+        sleep(Duration::from_millis(gas_price_poll_ms)).await;
     }
 }
 
@@ -78,7 +76,7 @@ async fn update_gas_price(
 
     let avg_blob_base_fee = blob_fee_history_one_hour.iter().sum::<u128>() / blob_fee_history_one_hour.len() as u128;
 
-    let eth_gas_price = fee_history.base_fee_per_blob_gas.last().context("Setting l1 last confirmed block number")?;
+    let eth_gas_price = fee_history.base_fee_per_gas.last().context("Getting eth gas price")?;
 
     l1_data_provider.update_eth_l1_gas_price(*eth_gas_price).await;
     l1_data_provider.update_eth_l1_data_gas_price(avg_blob_base_fee).await;
@@ -144,14 +142,14 @@ mod eth_client_gas_price_worker_test {
         let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
 
         // Run the worker for a short time
-        let worker_handle = tokio::spawn(gas_price_worker(eth_client, l1_data_provider.clone(), false));
+        let worker_handle = gas_price_worker(eth_client, l1_data_provider.clone(), false, 20_u64);
 
         // Wait for the worker to complete
-        worker_handle.await.expect("issue with the worker").expect("some issues");
+        worker_handle.await.expect("issue with the worker");
 
         // Check if the gas price was updated
         let updated_price = l1_data_provider.get_gas_prices().await;
-        assert_eq!(updated_price.eth_l1_gas_price, 1);
+        assert_eq!(updated_price.eth_l1_gas_price, 948082986);
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
@@ -187,7 +185,7 @@ mod eth_client_gas_price_worker_test {
 
         let result = timeout(
             timeout_duration,
-            AssertUnwindSafe(gas_price_worker(eth_client, l1_data_provider, true)).catch_unwind(),
+            AssertUnwindSafe(gas_price_worker(eth_client, l1_data_provider, true, 20_u64)).catch_unwind(),
         )
         .await;
 
@@ -214,6 +212,8 @@ mod eth_client_gas_price_worker_test {
     async fn update_gas_price_works(eth_client: &'static EthereumClient) {
         let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
 
+        update_last_update_timestamp().await;
+
         // Update gas prices
         update_gas_price(eth_client, l1_data_provider.clone()).await.expect("Failed to update gas prices");
 
@@ -221,7 +221,10 @@ mod eth_client_gas_price_worker_test {
         let updated_prices = l1_data_provider.get_gas_prices().await;
 
         // Assert that the ETH L1 gas price has been updated to 1 (as per test environment)
-        assert_eq!(updated_prices.eth_l1_gas_price, 1, "ETH L1 gas price should be 1 in test environment");
+        assert_eq!(
+            updated_prices.eth_l1_gas_price, 948082986,
+            "ETH L1 gas price should be 948082986 in test environment"
+        );
 
         // Assert that the ETH L1 data gas price has been updated to 1 (as per test environment)
         assert_eq!(updated_prices.eth_l1_data_gas_price, 1, "ETH L1 data gas price should be 1 in test environment");

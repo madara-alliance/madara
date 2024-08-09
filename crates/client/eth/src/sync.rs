@@ -14,6 +14,7 @@ pub async fn l1_sync_worker(
     chain_id: Felt,
     l1_data_provider: Arc<dyn L1DataProvider>,
     gas_price_sync_disabled: bool,
+    gas_price_poll_ms: u64,
 ) -> anyhow::Result<()> {
     let state_update_fut = async { state_update_worker(backend, eth_client, chain_id).await };
 
@@ -22,7 +23,7 @@ pub async fn l1_sync_worker(
         state_update_fut.await?;
     } else {
         // Run both workers if gas price sync is enabled
-        let gas_price_fut = async { gas_price_worker(eth_client, l1_data_provider, true).await };
+        let gas_price_fut = async { gas_price_worker(eth_client, l1_data_provider, true, gas_price_poll_ms).await };
         tokio::try_join!(state_update_fut, gas_price_fut)?;
     }
 

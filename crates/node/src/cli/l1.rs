@@ -1,4 +1,5 @@
 use url::Url;
+const DEFAULT_GAS_PRICE_POLL_MS: u64 = 10_000;
 
 fn parse_url(s: &str) -> Result<Url, url::ParseError> {
     s.parse()
@@ -17,4 +18,8 @@ pub struct L1SyncParams {
     /// Disable the gas price sync service. The sync service is responsible to fetch the fee history from the ethereum.
     #[clap(long, alias = "no-gas-price-sync")]
     pub gas_price_sync_disabled: bool,
+
+    /// Time in milliseconds in which the gas price worker will fetch the gas price.
+    #[clap(long, default_value_t = DEFAULT_GAS_PRICE_POLL_MS, alias = "gas-price-poll")]
+    pub gas_price_poll_ms: u64,
 }

@@ -52,14 +52,14 @@ impl L1DataProvider for GasPriceProvider {
         prices.eth_l1_gas_price = new_price;
     }
 
-    async fn update_strk_l1_gas_price(&self, new_price: u128) {
-        let mut prices = self.gas_prices.lock().await;
-        prices.strk_l1_gas_price = new_price;
-    }
-
     async fn update_eth_l1_data_gas_price(&self, new_price: u128) {
         let mut prices = self.gas_prices.lock().await;
         prices.eth_l1_data_gas_price = new_price;
+    }
+
+    async fn update_strk_l1_gas_price(&self, new_price: u128) {
+        let mut prices = self.gas_prices.lock().await;
+        prices.strk_l1_gas_price = new_price;
     }
 
     async fn update_strk_l1_data_gas_price(&self, new_price: u128) {
