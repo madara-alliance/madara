@@ -22,7 +22,6 @@ dc-db = { workspace = true }
 dc-eth = { workspace = true }
 dc-mempool = { workspace = true }
 dc-metrics = { workspace = true }
-dc-messaging = { workspace = true }
 dc-rpc = { workspace = true }
 dc-sync = { workspace = true }
 dc-telemetry = { workspace = true }
