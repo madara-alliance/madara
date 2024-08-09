@@ -72,13 +72,14 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing db service")?;
 
-    let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
+    let l1_gas_setter = GasPriceProvider::new();
+    let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
     let l1_service = L1SyncService::new(
         &run_cmd.l1_sync_params,
         &db_service,
         prometheus_service.registry(),
-        Arc::clone(&l1_data_provider),
+        l1_gas_setter,
         run_cmd.sync_params.network.chain_id(),
         run_cmd.sync_params.network.l1_core_address(),
     )

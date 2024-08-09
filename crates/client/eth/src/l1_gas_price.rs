@@ -2,7 +2,7 @@ use crate::client::EthereumClient;
 use alloy::eips::BlockNumberOrTag;
 use alloy::providers::Provider;
 use anyhow::Context;
-use dc_mempool::L1DataProvider;
+use dc_mempool::{GasPriceProvider, L1DataProvider};
 use futures::lock::Mutex;
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,13 +29,13 @@ pub async fn get_last_update_timestamp() -> u128 {
 
 pub async fn gas_price_worker(
     eth_client: &EthereumClient,
-    l1_data_provider: Arc<dyn L1DataProvider>,
+    l1_gas_provider: GasPriceProvider,
     infinite_loop: bool,
     gas_price_poll_ms: u64,
 ) -> anyhow::Result<()> {
     update_last_update_timestamp().await;
     loop {
-        match update_gas_price(eth_client, Arc::clone(&l1_data_provider)).await {
+        match update_gas_price(eth_client, l1_gas_provider.clone()).await {
             Ok(_) => log::trace!("Updated gas prices"),
             Err(e) => log::error!("Failed to update gas prices: {:?}", e),
         }
@@ -62,10 +62,7 @@ pub async fn gas_price_worker(
     }
 }
 
-async fn update_gas_price(
-    eth_client: &EthereumClient,
-    l1_data_provider: Arc<dyn L1DataProvider>,
-) -> anyhow::Result<()> {
+async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPriceProvider) -> anyhow::Result<()> {
     let block_number = eth_client.get_latest_block_number().await?;
     let fee_history = eth_client.provider.get_fee_history(300, BlockNumberOrTag::Number(block_number), &[]).await?;
 
@@ -79,26 +76,23 @@ async fn update_gas_price(
 
     let eth_gas_price = fee_history.base_fee_per_gas.last().context("Getting eth gas price")?;
 
-    l1_data_provider.update_eth_l1_gas_price(*eth_gas_price);
-    l1_data_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
+    l1_gas_provider.update_eth_l1_gas_price(*eth_gas_price);
+    l1_gas_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
 
     update_last_update_timestamp().await;
 
     // Update block number separately to avoid holding the lock for too long
-    update_l1_block_metrics(eth_client, l1_data_provider).await?;
+    update_l1_block_metrics(eth_client, l1_gas_provider).await?;
 
     Ok(())
 }
 
-async fn update_l1_block_metrics(
-    eth_client: &EthereumClient,
-    l1_data_provider: Arc<dyn L1DataProvider>,
-) -> anyhow::Result<()> {
+async fn update_l1_block_metrics(eth_client: &EthereumClient, l1_gas_provider: GasPriceProvider) -> anyhow::Result<()> {
     // Get the latest block number
     let latest_block_number = eth_client.get_latest_block_number().await?;
 
     // Get the current gas price
-    let current_gas_price = l1_data_provider.get_gas_prices();
+    let current_gas_price = l1_gas_provider.get_gas_prices();
     let eth_gas_price = current_gas_price.eth_l1_gas_price;
 
     // Update the metrics
@@ -146,10 +140,10 @@ mod eth_client_gas_price_worker_test {
             .try_spawn()
             .expect("issue while forking for the anvil");
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
+        let l1_gas_provider = GasPriceProvider::new();
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker(&eth_client, l1_data_provider.clone(), false, 20_u64);
+        let worker_handle = gas_price_worker(&eth_client, l1_gas_provider.clone(), false, 20_u64);
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the worker");
@@ -157,7 +151,7 @@ mod eth_client_gas_price_worker_test {
         let timeout_duration = Duration::from_secs(5);
 
         let result =
-            timeout(timeout_duration, gas_price_worker(&eth_client, Arc::clone(&l1_data_provider), true, 20_u64)).await;
+            timeout(timeout_duration, gas_price_worker(&eth_client, l1_gas_provider.clone(), true, 20_u64)).await;
 
         match result {
             Ok(Ok(_)) => println!("Gas price worker completed successfully"),
@@ -166,7 +160,7 @@ mod eth_client_gas_price_worker_test {
         }
 
         // Check if the gas price was updated
-        let updated_price = l1_data_provider.get_gas_prices();
+        let updated_price = l1_gas_provider.get_gas_prices();
         assert_eq!(updated_price.eth_l1_gas_price, 948082986);
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
@@ -174,16 +168,16 @@ mod eth_client_gas_price_worker_test {
     #[rstest]
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_false_works(eth_client: &'static EthereumClient) {
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
+        let l1_gas_provider = GasPriceProvider::new();
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker(eth_client, l1_data_provider.clone(), false, 20_u64);
+        let worker_handle = gas_price_worker(eth_client, l1_gas_provider.clone(), false, 20_u64);
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
 
         // Check if the gas price was updated
-        let updated_price = l1_data_provider.get_gas_prices();
+        let updated_price = l1_gas_provider.get_gas_prices();
         assert_eq!(updated_price.eth_l1_gas_price, 948082986);
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
@@ -217,7 +211,7 @@ mod eth_client_gas_price_worker_test {
             then.status(200).json_body_obj(&serde_json::json!({"jsonrpc":"2.0","id":1,"result":"0x0137368e"}                                                                                                                                                                         ));
         });
 
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
+        let l1_gas_provider = GasPriceProvider::new();
 
         update_last_update_timestamp().await;
 
@@ -225,7 +219,7 @@ mod eth_client_gas_price_worker_test {
 
         let result = timeout(
             timeout_duration,
-            AssertUnwindSafe(gas_price_worker(eth_client, l1_data_provider, true, 20_u64)).catch_unwind(),
+            AssertUnwindSafe(gas_price_worker(eth_client, l1_gas_provider, true, 20_u64)).catch_unwind(),
         )
         .await;
 
@@ -250,15 +244,15 @@ mod eth_client_gas_price_worker_test {
     #[rstest]
     #[tokio::test]
     async fn update_gas_price_works(eth_client: &'static EthereumClient) {
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(GasPriceProvider::new());
+        let l1_gas_provider = GasPriceProvider::new();
 
         update_last_update_timestamp().await;
 
         // Update gas prices
-        update_gas_price(eth_client, l1_data_provider.clone()).await.expect("Failed to update gas prices");
+        update_gas_price(eth_client, l1_gas_provider.clone()).await.expect("Failed to update gas prices");
 
         // Access the updated gas prices
-        let updated_prices = l1_data_provider.get_gas_prices();
+        let updated_prices = l1_gas_provider.get_gas_prices();
 
         assert_eq!(
             updated_prices.eth_l1_gas_price, 948082986,

@@ -10,6 +10,31 @@ impl GasPriceProvider {
     pub fn new() -> Self {
         GasPriceProvider { gas_prices: Arc::new(Mutex::new(GasPrices::default())) }
     }
+
+    pub fn set_gas_prices(&self, new_prices: GasPrices) {
+        let mut prices = self.gas_prices.lock().unwrap();
+        *prices = new_prices;
+    }
+
+    pub fn update_eth_l1_gas_price(&self, new_price: u128) {
+        let mut prices = self.gas_prices.lock().unwrap();
+        prices.eth_l1_gas_price = new_price;
+    }
+
+    pub fn update_eth_l1_data_gas_price(&self, new_price: u128) {
+        let mut prices = self.gas_prices.lock().unwrap();
+        prices.eth_l1_data_gas_price = new_price;
+    }
+
+    pub fn update_strk_l1_gas_price(&self, new_price: u128) {
+        let mut prices = self.gas_prices.lock().unwrap();
+        prices.strk_l1_gas_price = new_price;
+    }
+
+    pub fn update_strk_l1_data_gas_price(&self, new_price: u128) {
+        let mut prices = self.gas_prices.lock().unwrap();
+        prices.strk_l1_data_gas_price = new_price;
+    }
 }
 
 impl Default for GasPriceProvider {
@@ -20,11 +45,6 @@ impl Default for GasPriceProvider {
 
 pub trait L1DataProvider: Send + Sync {
     fn get_gas_prices(&self) -> GasPrices;
-    fn set_gas_prices(&self, new_prices: GasPrices);
-    fn update_eth_l1_gas_price(&self, new_price: u128);
-    fn update_eth_l1_data_gas_price(&self, new_price: u128);
-    fn update_strk_l1_gas_price(&self, new_price: u128);
-    fn update_strk_l1_data_gas_price(&self, new_price: u128);
     fn get_da_mode(&self) -> L1DataAvailabilityMode;
 }
 
@@ -33,31 +53,6 @@ pub trait L1DataProvider: Send + Sync {
 impl L1DataProvider for GasPriceProvider {
     fn get_gas_prices(&self) -> GasPrices {
         self.gas_prices.lock().unwrap().clone()
-    }
-
-    fn set_gas_prices(&self, new_prices: GasPrices) {
-        let mut prices = self.gas_prices.lock().unwrap();
-        *prices = new_prices;
-    }
-
-    fn update_eth_l1_gas_price(&self, new_price: u128) {
-        let mut prices = self.gas_prices.lock().unwrap();
-        prices.eth_l1_gas_price = new_price;
-    }
-
-    fn update_eth_l1_data_gas_price(&self, new_price: u128) {
-        let mut prices = self.gas_prices.lock().unwrap();
-        prices.eth_l1_data_gas_price = new_price;
-    }
-
-    fn update_strk_l1_gas_price(&self, new_price: u128) {
-        let mut prices = self.gas_prices.lock().unwrap();
-        prices.strk_l1_gas_price = new_price;
-    }
-
-    fn update_strk_l1_data_gas_price(&self, new_price: u128) {
-        let mut prices = self.gas_prices.lock().unwrap();
-        prices.strk_l1_data_gas_price = new_price;
     }
 
     fn get_da_mode(&self) -> L1DataAvailabilityMode {
