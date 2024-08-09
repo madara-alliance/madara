@@ -144,7 +144,7 @@ mod eth_client_event_subscription_test {
         // Start Anvil instance
         let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
         println!("Anvil started and running at `{}`", anvil.endpoint());
-        
+
         // Set up chain info
         let chain_info = Arc::new(ChainConfig::test_config());
 

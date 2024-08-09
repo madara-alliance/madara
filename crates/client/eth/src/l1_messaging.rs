@@ -1,23 +1,25 @@
-use std::sync::Arc;
 use anyhow::Context;
 use futures::StreamExt;
+use std::sync::Arc;
 
-use alloy::primitives::{keccak256, FixedBytes, U256};
-use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
-use dc_db::{messaging_db::LastSyncedEventBlock, DeoxysBackend};
 use crate::client::StarknetCoreContract::LogMessageToL2;
 use crate::client::{EthereumClient, StarknetCoreContract};
 use crate::utils::u256_to_felt;
+use alloy::primitives::{keccak256, FixedBytes, U256};
+use alloy::sol_types::SolValue;
+use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
+use dc_db::{messaging_db::LastSyncedEventBlock, DeoxysBackend};
 use dp_utils::channel_wait_or_graceful_shutdown;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::transaction::{Calldata, Fee, L1HandlerTransaction, Transaction, TransactionHash, TransactionVersion};
-use alloy::sol_types::SolValue;
+use starknet_api::transaction::{
+    Calldata, Fee, L1HandlerTransaction, Transaction, TransactionHash, TransactionVersion,
+};
 use starknet_api::transaction_hash::get_transaction_hash;
 use starknet_types_core::felt::Felt;
 
 pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &ChainId) -> anyhow::Result<()> {
     tracing::info!("⟠ Starting L1 Messages Syncing...");
-    
+
     let last_synced_event_block = match backend.messaging_last_synced_l1_block_with_event() {
         Ok(Some(blk)) => blk,
         Ok(None) => {
@@ -30,11 +32,11 @@ pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &C
     };
     let event_filter = client.l1_core_contract.event_filter::<StarknetCoreContract::LogMessageToL2>();
     let mut event_stream = event_filter
-    .from_block(last_synced_event_block.block_number)
-    .watch()
-    .await
-    .context("Failed to watch event filter")?
-    .into_stream();
+        .from_block(last_synced_event_block.block_number)
+        .watch()
+        .await
+        .context("Failed to watch event filter")?
+        .into_stream();
 
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
         if let Ok((event, meta)) = event_result {
@@ -44,18 +46,17 @@ pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &C
                 meta.transaction_hash,
                 meta.log_index,
                 event.fromAddress
-            );  
+            );
 
             // Check if cancellation was initiated
             let event_hash = get_l1_to_l2_msg_hash(&event)?;
-            tracing::info!("⟠ Checking for cancelation, event hash : {:?}",event_hash);
-            let cancellation_timestamp =
-            client.get_l1_to_l2_message_cancellations(event_hash).await?;
+            tracing::info!("⟠ Checking for cancelation, event hash : {:?}", event_hash);
+            let cancellation_timestamp = client.get_l1_to_l2_message_cancellations(event_hash).await?;
             if cancellation_timestamp != Felt::ZERO {
                 tracing::info!("⟠ L1 Message was cancelled in block at timestamp : {:?}", cancellation_timestamp);
                 continue;
             }
-            
+
             match process_l1_message(backend, &event, &meta.block_number, &meta.log_index, chain_id).await {
                 Ok(Some(tx_hash)) => {
                     tracing::info!(
@@ -67,8 +68,7 @@ pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &C
                         tx_hash
                     );
                 }
-                Ok(None) => {
-                }
+                Ok(None) => {}
                 Err(e) => {
                     tracing::error!(
                         "⟠ Unexpected error while processing L1 Message from block: {:?}, transaction_hash: {:?}, \
@@ -114,16 +114,11 @@ async fn process_l1_message(
 
     // TODO: submit tx to mempool
 
-
-
-    let block_sent = LastSyncedEventBlock::new(
-        l1_block_number.unwrap(),
-        event_index.unwrap(),
-    );
+    let block_sent = LastSyncedEventBlock::new(l1_block_number.unwrap(), event_index.unwrap());
     // TODO: remove unwraps
     backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
 
-    // TODO: replace by tx hash from mempool 
+    // TODO: replace by tx hash from mempool
     Ok(Some(blockifier_transaction.tx_hash))
 }
 
@@ -174,16 +169,27 @@ fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32
     Ok(keccak256(data.abi_encode_packed()))
 }
 
-
-
 #[cfg(test)]
 mod tests {
 
     use std::{sync::Arc, time::Duration};
 
-    use alloy::{hex::FromHex, node_bindings::{Anvil, AnvilInstance}, primitives::{Address, U256}, providers::{ProviderBuilder, RootProvider}, sol, transports::http::{Client, Http}};
+    use crate::{
+        client::{
+            EthereumClient, L1BlockMetrics,
+            StarknetCoreContract::{self, LogMessageToL2},
+        },
+        l1_messaging::get_l1_to_l2_msg_hash,
+    };
+    use alloy::{
+        hex::FromHex,
+        node_bindings::{Anvil, AnvilInstance},
+        primitives::{Address, U256},
+        providers::{ProviderBuilder, RootProvider},
+        sol,
+        transports::http::{Client, Http},
+    };
     use dc_db::DatabaseService;
-    use crate::{client::{EthereumClient, L1BlockMetrics, StarknetCoreContract::{self, LogMessageToL2}}, l1_messaging::get_l1_to_l2_msg_hash};
     use dc_metrics::MetricsService;
     use dp_block::chain_config::ChainConfig;
     use rstest::*;
@@ -258,14 +264,20 @@ mod tests {
         }
     );
 
-    async fn setup_test_env() -> (AnvilInstance, Arc<ChainConfig>, Arc<DatabaseService>, DummyContractInstance<Http<Client>,RootProvider<Http<Client>>>, EthereumClient) {
+    async fn setup_test_env() -> (
+        AnvilInstance,
+        Arc<ChainConfig>,
+        Arc<DatabaseService>,
+        DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
+        EthereumClient,
+    ) {
         // Start Anvil instance
         let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
         println!("Anvil started and running at `{}`", anvil.endpoint());
 
         // Set up chain info
         let chain_info = Arc::new(ChainConfig::test_config());
-        
+
         // Set up database paths
         let temp_dir = TempDir::new().expect("issue while creating temporary directory");
         let base_path = temp_dir.path().join("data");
@@ -273,11 +285,11 @@ mod tests {
 
         // Initialize database service
         let db = Arc::new(
-                DatabaseService::new(&base_path, backup_dir, false, chain_info.clone())
-                    .await
-                    .expect("Failed to create database service"),
-            );
-        
+            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone())
+                .await
+                .expect("Failed to create database service"),
+        );
+
         // Set up metrics service
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
         let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
@@ -290,9 +302,12 @@ mod tests {
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
 
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
-        
-        let eth_client =
-        EthereumClient { provider: Arc::new(provider.clone()), l1_core_contract: core_contract.clone(),l1_block_metrics: l1_block_metrics.clone() };
+
+        let eth_client = EthereumClient {
+            provider: Arc::new(provider.clone()),
+            l1_core_contract: core_contract.clone(),
+            l1_block_metrics: l1_block_metrics.clone(),
+        };
 
         (anvil, chain_info, db, contract, eth_client)
     }
@@ -312,21 +327,14 @@ mod tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_basic_workflow() {
-        let (_anvil, chain_info,db, contract,eth_client) = setup_test_env().await;
-        
+        let (_anvil, chain_info, db, contract, eth_client) = setup_test_env().await;
+
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move {
-                sync(
-                    db.backend(),
-                    &eth_client,
-                    &chain_info.chain_id,
-                )
-                .await
-            })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_info.chain_id).await })
         };
-        
+
         let _ = contract.setIsCanceled(false).send().await;
         // Send a Event and wait for processing, Panic if fail
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
@@ -335,79 +343,73 @@ mod tests {
         // TODO : Assert that event was caught by the worker with correct data
         assert!(logs_contain("fromAddress: 0xae0ee0a63a2ce6baeeffe56e7714fb4efe48d419"));
         // TODO : Assert the tx hash computed by the worker is correct
-        println!("event hash is : {:?}",contract.getL1ToL2MsgHash().send().await); 
+        println!("event hash is : {:?}", contract.getL1ToL2MsgHash().send().await);
 
         // TODO : Assert that the tx has been included in the mempool
 
         // Assert that the event is well stored in db
-        let last_block = db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        let last_block =
+            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_ne!(last_block.block_number, 0);
 
         // Assert that the tx was correctly executed
-        
+
         // Explicitly cancel the listen task, else it would be running in the background
         worker_handle.abort();
     }
 
-
-    // Basically the same test as first but we send two times the an event with same to be sure is not inserted in db 
+    // Basically the same test as first but we send two times the an event with same to be sure is not inserted in db
     #[rstest]
     #[tokio::test]
     async fn e2e_test_already_processed_event() {
-        let (_anvil, chain_info,db,contract , eth_client) = setup_test_env().await;
-        
+        let (_anvil, chain_info, db, contract, eth_client) = setup_test_env().await;
+
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move {
-                sync(
-                    db.backend(),
-                    &eth_client,
-                    &chain_info.chain_id,
-                )
-                .await
-            })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_info.chain_id).await })
         };
 
         let _ = contract.setIsCanceled(false).send().await;
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
         tokio::time::sleep(Duration::from_secs(5)).await;
-        let last_block = db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        let last_block =
+            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_ne!(last_block.block_number, 0);
 
         // Send the event a second time
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
         tokio::time::sleep(Duration::from_secs(5)).await;
         // Assert that the last event in db is still the same as it is already processed (same nonce)
-        assert_eq!(last_block.block_number, db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap().block_number);
+        assert_eq!(
+            last_block.block_number,
+            db.backend()
+                .messaging_last_synced_l1_block_with_event()
+                .expect("failed to retrieve block")
+                .unwrap()
+                .block_number
+        );
 
         worker_handle.abort();
     }
 
-    
     #[rstest]
     #[tokio::test]
     async fn e2e_test_message_canceled() {
-        let (_anvil, chain_info,db,contract , eth_client) = setup_test_env().await;
+        let (_anvil, chain_info, db, contract, eth_client) = setup_test_env().await;
 
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move {
-                sync(
-                    db.backend(),
-                    &eth_client,
-                    &chain_info.chain_id,
-                )
-                .await
-            })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_info.chain_id).await })
         };
 
         // Mock cancelled message
         let _ = contract.setIsCanceled(true).send().await;
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
         tokio::time::sleep(Duration::from_secs(5)).await;
-        let last_block = db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        let last_block =
+            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_eq!(last_block.block_number, 0);
 
         worker_handle.abort();
