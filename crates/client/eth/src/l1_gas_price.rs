@@ -220,13 +220,11 @@ mod eth_client_gas_price_worker_test {
         // Access the updated gas prices
         let updated_prices = l1_data_provider.get_gas_prices().await;
 
-        // Assert that the ETH L1 gas price has been updated to 1 (as per test environment)
         assert_eq!(
             updated_prices.eth_l1_gas_price, 948082986,
             "ETH L1 gas price should be 948082986 in test environment"
         );
 
-        // Assert that the ETH L1 data gas price has been updated to 1 (as per test environment)
         assert_eq!(updated_prices.eth_l1_data_gas_price, 1, "ETH L1 data gas price should be 1 in test environment");
 
         // Verify that the last update timestamp is recent

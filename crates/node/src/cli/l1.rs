@@ -8,11 +8,11 @@ fn parse_url(s: &str) -> Result<Url, url::ParseError> {
 #[derive(Clone, Debug, clap::Args)]
 pub struct L1SyncParams {
     /// Disable L1 sync.
-    #[clap(long, alias = "no-l1-sync")]
+    #[clap(long, alias = "no-l1-sync", conflicts_with = "l1_endpoint")]
     pub sync_l1_disabled: bool,
 
     /// The L1 rpc endpoint url for state verification.
-    #[clap(long, value_parser = parse_url, value_name = "ETHEREUM RPC URL")]
+    #[clap(long, value_parser = parse_url, value_name = "ETHEREUM RPC URL", required_unless_present = "sync_l1_disabled")]
     pub l1_endpoint: Option<Url>,
 
     /// Disable the gas price sync service. The sync service is responsible to fetch the fee history from the ethereum.
