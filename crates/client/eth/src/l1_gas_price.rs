@@ -79,8 +79,8 @@ async fn update_gas_price(
 
     let eth_gas_price = fee_history.base_fee_per_gas.last().context("Getting eth gas price")?;
 
-    l1_data_provider.update_eth_l1_gas_price(*eth_gas_price).await;
-    l1_data_provider.update_eth_l1_data_gas_price(avg_blob_base_fee).await;
+    l1_data_provider.update_eth_l1_gas_price(*eth_gas_price);
+    l1_data_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
 
     update_last_update_timestamp().await;
 
@@ -98,7 +98,7 @@ async fn update_l1_block_metrics(
     let latest_block_number = eth_client.get_latest_block_number().await?;
 
     // Get the current gas price
-    let current_gas_price = l1_data_provider.get_gas_prices().await;
+    let current_gas_price = l1_data_provider.get_gas_prices();
     let eth_gas_price = current_gas_price.eth_l1_gas_price;
 
     // Update the metrics
@@ -166,7 +166,7 @@ mod eth_client_gas_price_worker_test {
         }
 
         // Check if the gas price was updated
-        let updated_price = l1_data_provider.get_gas_prices().await;
+        let updated_price = l1_data_provider.get_gas_prices();
         assert_eq!(updated_price.eth_l1_gas_price, 948082986);
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
@@ -183,7 +183,7 @@ mod eth_client_gas_price_worker_test {
         worker_handle.await.expect("issue with the gas worker");
 
         // Check if the gas price was updated
-        let updated_price = l1_data_provider.get_gas_prices().await;
+        let updated_price = l1_data_provider.get_gas_prices();
         assert_eq!(updated_price.eth_l1_gas_price, 948082986);
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
@@ -258,7 +258,7 @@ mod eth_client_gas_price_worker_test {
         update_gas_price(eth_client, l1_data_provider.clone()).await.expect("Failed to update gas prices");
 
         // Access the updated gas prices
-        let updated_prices = l1_data_provider.get_gas_prices().await;
+        let updated_prices = l1_data_provider.get_gas_prices();
 
         assert_eq!(
             updated_prices.eth_l1_gas_price, 948082986,

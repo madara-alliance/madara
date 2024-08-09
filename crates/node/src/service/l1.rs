@@ -56,12 +56,13 @@ impl L1SyncService {
                 anyhow::anyhow!("EthereumClient is required to start the l1 sync service but not provided.")
             })?;
             // running at-least once before the block production service
-            let _ = futures::executor::block_on(dc_eth::l1_gas_price::gas_price_worker(
+            dc_eth::l1_gas_price::gas_price_worker(
                 &eth_client,
                 Arc::clone(&l1_data_provider),
                 false,
                 gas_price_poll_ms,
-            ));
+            )
+            .await?;
         }
 
         Ok(Self {

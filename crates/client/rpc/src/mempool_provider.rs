@@ -82,7 +82,6 @@ async fn add_tx_to_mempool(
 
     mempool
         .accept_account_tx(tx, converted_class)
-        .await
         .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
     Ok(())
 }

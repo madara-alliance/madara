@@ -52,7 +52,7 @@ impl Mempool {
         Mempool { backend, l1_data_provider, inner: Default::default() }
     }
 
-    pub async fn accept_account_tx(
+    pub fn accept_account_tx(
         &self,
         tx: AccountTransaction,
         converted_class: Option<ConvertedClass>,
@@ -68,8 +68,7 @@ impl Mempool {
             let parent_block_hash =
                 self.backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
             DeoxysPendingBlockInfo::new(
-                make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref())
-                    .await,
+                make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref()),
                 vec![],
             )
             .into()
