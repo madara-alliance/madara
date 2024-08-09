@@ -29,6 +29,18 @@ pub enum ContractClass {
     Legacy(CompressedLegacyContractClass),
 }
 
+impl From<FlattenedSierraClass> for ContractClass {
+    fn from(flattened_sierra_class: FlattenedSierraClass) -> Self {
+        ContractClass::Sierra(flattened_sierra_class)
+    }
+}
+
+impl From<CompressedLegacyContractClass> for ContractClass {
+    fn from(compressed_legacy_contract_class: CompressedLegacyContractClass) -> Self {
+        ContractClass::Legacy(compressed_legacy_contract_class)
+    }
+}
+
 impl ContractClass {
     pub fn sierra_program_length(&self) -> usize {
         match self {

@@ -475,9 +475,16 @@ pub fn calculate_contract_address(
 
 #[cfg(test)]
 mod tests {
+    use crate::tests::{
+        dummy_l1_handler, dummy_tx_declare_v0, dummy_tx_declare_v1, dummy_tx_declare_v2, dummy_tx_declare_v3,
+        dummy_tx_deploy, dummy_tx_deploy_account_v1, dummy_tx_deploy_account_v3, dummy_tx_invoke_v0,
+        dummy_tx_invoke_v1, dummy_tx_invoke_v3,
+    };
     use crate::ResourceBounds;
 
     use super::*;
+
+    const CHAIN_ID: Felt = Felt::from_hex_unchecked("0x434841494e5f4944"); // b"CHAIN_ID"
 
     #[test]
     fn test_compute_gas_hash() {
@@ -510,6 +517,88 @@ mod tests {
         assert_eq!(
             prepare_data_availability_modes(DataAvailabilityMode::L2, DataAvailabilityMode::L2),
             Felt::from_hex_unchecked("0x10000000100000000000000000000000000000000")
+        );
+    }
+
+    #[test]
+    fn test_compute_hash() {
+        let tx: Transaction = dummy_tx_invoke_v0().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x2c6a2c329bf38089c34f4450d758f256535093b4cf29c599fee65f85ba74d0c"));
+
+        let tx: Transaction = dummy_tx_invoke_v1().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x701d05ab63a0193750f12fc7afd8014739aba9352d029af92987bc5232b2409"));
+
+        let tx: Transaction = dummy_tx_invoke_v3().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x604e0c6f351d1239d6774822b91c7e4ad61acec8ae78ad39a9f836ec9539931"));
+
+        let tx: Transaction = dummy_l1_handler().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x12825a135d7176b302387a1efcc96ac55b6cb4e02fdac523c68b99f4c0cb805"));
+
+        let tx: Transaction = dummy_tx_declare_v0().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x40eff03273b068d46b1679c300da89a9ad7280301c09cafcac7ac6c96de6676"));
+
+        let tx: Transaction = dummy_tx_declare_v1().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x6bdfc70a0c9423c885ca5d7f748fee466ca2c7ea8df8becea74b171a7261e02"));
+
+        let tx: Transaction = dummy_tx_declare_v2().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x24cd4f8249b10d43ba13a60ebab01bf3c3f2c02fca8c7645cb5aba677e5d633"));
+
+        let tx: Transaction = dummy_tx_declare_v3().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x3bb257dccec1e998d332813478ad734a55b3574855b818f92f58f24a6874bfe"));
+
+        let tx: Transaction = dummy_tx_deploy().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x69ec1564562e52d5399e3faa244b9c5fdf379f0857f5ec51bd824d551f7b39b"));
+
+        let tx: Transaction = dummy_tx_deploy_account_v1().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x4b94fa32600f1e6a27ab6e3d3a42bd86cfab87842bb64a1d06a0f3daed19505"));
+
+        let tx: Transaction = dummy_tx_deploy_account_v3().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x415b215091384f58219c9c9d75a31383723e4590f8480058c3902c2d92bc042"));
+    }
+
+    #[test]
+    fn compute_hash_legacy() {
+        let tx: Transaction = dummy_tx_invoke_v0().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, true);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x4136a44fdeb38f0d879b3402dc5365785f0cf2f85fee787873ae207f0ef1171"));
+
+        let tx: Transaction = dummy_l1_handler().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, true);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x51054194b846935ec55c71a52344a0adba474fc075136b31ea8dd15b48ccfb0"));
+    }
+
+    #[test]
+    fn test_compute_hash_pre_v0_7_l1_handler() {
+        let tx: Transaction = dummy_l1_handler().into();
+        let hash = tx.compute_hash_pre_v0_7(CHAIN_ID, false);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x5bde8157ae78916bd7f86aac44d1d22e5a521d2ae7293c916f333b5d34a1602"));
+    }
+
+    #[test]
+    fn test_calculate_contract_address() {
+        let tx: DeployAccountTransaction = dummy_tx_deploy_account_v1().into();
+        let contract_address = tx.calculate_contract_address();
+        assert_eq!(
+            contract_address,
+            Felt::from_hex_unchecked("0x30b9f9d92fa7a3207cfdf60194ff8f65af01fe3ee10c0f4a1fc241882d7b413")
+        );
+
+        let tx: DeployAccountTransaction = dummy_tx_deploy_account_v3().into();
+        let contract_address = tx.calculate_contract_address();
+        assert_eq!(
+            contract_address,
+            Felt::from_hex_unchecked("0x734743d11641ecb3d92bafae091346fec3b2c75f7808e39f8b23d9287636e45")
         );
     }
 }

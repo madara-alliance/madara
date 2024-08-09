@@ -3971,7 +3971,9 @@ dependencies = [
  "bincode 1.3.3",
  "serde",
  "starknet-core",
+ "starknet-providers",
  "starknet-types-core",
+ "thiserror",
 ]
 
 [[package]]

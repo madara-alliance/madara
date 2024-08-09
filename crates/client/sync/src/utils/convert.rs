@@ -56,7 +56,7 @@ pub fn convert_pending(
 /// Compute heavy, this should only be called in a rayon ctx
 pub fn convert_and_verify_block(
     block: starknet_providers::sequencer::models::Block,
-    state_diff: starknet_core::types::StateDiff,
+    state_diff: starknet_providers::sequencer::models::state_update::StateDiff,
     chain_id: Felt,
 ) -> Result<(DeoxysBlock, StateDiff), L2SyncError> {
     let block_inner = convert_inner(block.transactions, block.transaction_receipts)?;
