@@ -39,6 +39,7 @@ jobs:
           export COVERAGE_BIN=$(realpath target/debug/deoxys)
           rm -f target/madara-* lcov.info
           cargo test --profile dev
+
       - name: Generate coverage info
         run: |
           source <(cargo llvm-cov show-env --export-prefix)
