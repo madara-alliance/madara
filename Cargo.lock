@@ -1052,6 +1052,8 @@ dependencies = [
 name = "block_import"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
  "bitvec",
  "bonsai-trie",
  "dc-db",

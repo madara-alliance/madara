@@ -30,6 +30,18 @@
 //! When using p2p, validating a block could fail but that shouldn't close the whole app. This requires a retrying mechanism
 //! to get a different block from another peer, and you want to lower the peer score of the offending peer. The plumbery to
 //! get that done is not supported yet but it has been incorporated in the design of this pipeline.
+//! 
+//! ## Pull/Push based
+//! 
+//! The block import pipeline [`BlockImportService::drive_pipeline`] is pull based, and it will concurrently call
+//! [`BlockFetcher::fetch_block`] to pull new blocks into the pipeline. This is the fastest way of importing, and
+//! it supports backpressure correctly. However, this is not fit every usecase: when the chain is fully synced,
+//! consumers of this crate are expected to use the push-based [`BlockImportService::import_block`] to push new new blocks
+//! when they appear on the network.
+//! The pipeline also implements a polling mode when [`PipelineSettings::polling`] is not `None`: in this mode, once the
+//! block pipeline has reached the tip of the blockchain, it will continue polling on an interval for more blocks. When
+//! this is enabled, the pipeline task until gracefyl shutdown.
+//! The polling mode is used to implement sync from feeder gateway / rpc where we can't have live updates.
 //!
 //! ## Future plans
 //!
@@ -38,7 +50,7 @@
 //! to check for errors.
 //! A signature verification mode should be added to allow the skipping of block validation entirely if the block is signed.
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, sync::Arc, time::Duration};
 
 use dc_db::{DeoxysBackend, DeoxysStorageError};
 use dp_block::header::{GasPrices, L1DataAvailabilityMode};
@@ -50,6 +62,7 @@ use dp_transactions::Transaction;
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 
+mod pipeline;
 mod pre_validate;
 mod verify_apply;
 
@@ -99,6 +112,21 @@ pub enum BlockImportError {
     InternalDb { context: Cow<'static, str>, error: DeoxysStorageError },
     #[error("Internal error: {0}")]
     Internal(Cow<'static, str>),
+    #[error("Internal fetching error: {0}")]
+    InternalFetching(anyhow::Error),
+}
+
+impl BlockImportError {
+    /// Check this to see if this is an internal potentially unreconverable error. Useful in p2p
+    /// for differenciating between when a peer sent an invalid block and internal db errors.
+    pub fn is_internal(&self) -> bool {
+        match self {
+            BlockImportError::InternalDb { .. } => true,
+            BlockImportError::Internal(_) => true,
+            BlockImportError::InternalFetching(_) => true,
+            _ => false,
+        }
+    }
 }
 
 /// Compute the pre-validation step in parallel over 10 blocks.
@@ -121,6 +149,7 @@ pub struct UnverifiedHeader {
     pub l1_da_mode: L1DataAvailabilityMode,
 }
 
+#[derive(Clone, Debug)]
 pub struct Validation {
     pub transaction_count: Option<u64>,
     pub transaction_commitment: Option<Felt>,
@@ -155,10 +184,74 @@ pub struct UnverifiedFullBlock {
     pub declared_classes: Vec<DeclaredClass>,
 }
 
-struct BlockImportPipeline {
-    backend: Arc<DeoxysBackend>,
+#[derive(thiserror::Error, Debug)]
+pub enum BlockFetcherError {
+    /// Block not found: this instructs the pipeline to stop parallel fetching and start block polling.
+    #[error("Block not found")]
+    BlockNotFound,
+    #[error(transparent)]
+    Custom(#[from] anyhow::Error),
 }
 
-impl BlockImportPipeline {
-    fn apply_verify_block(block: PreValidatedBlock) {}
+pub struct ImportErrorResult {
+    /// Set to `true` to shutdown block import.
+    pub shutdown: bool,
+}
+
+#[async_trait::async_trait]
+pub trait BlockFetcher: Send + Sync {
+    async fn fetch_block(&self, block_n: u64) -> Result<UnverifiedFullBlock, BlockFetcherError>;
+}
+
+pub struct SyncPollingSettings {
+    pub interval: Duration,
+}
+
+pub struct PipelineSettings {
+    pub logs: bool,
+    pub first_block: Option<u64>,
+    pub n_blocks_to_sync: Option<u64>,
+    pub end_at: Option<u64>,
+    pub polling: Option<SyncPollingSettings>,
+    /// Default: 10
+    pub fetch_convert_stream_buffer: usize,
+    /// Channel size between the fetch/convert task and apply/verify.
+    /// Default: 10
+    pub channel_size: usize
+}
+
+impl Default for PipelineSettings {
+    fn default() -> Self {
+        Self {
+            logs: false,
+            first_block: None,
+            n_blocks_to_sync: None,
+            end_at: None,
+            polling: Some(SyncPollingSettings { interval: Duration::from_millis(2000) }),
+            fetch_convert_stream_buffer: 10,
+            channel_size: 10,
+        }
+    }
+}
+
+pub struct BlockImportService {
+    backend: Arc<DeoxysBackend>,
+    verify_apply: VerifyApply,
+}
+
+impl BlockImportService {
+    pub fn new(backend: Arc<DeoxysBackend>) -> Self {
+        Self { verify_apply: VerifyApply::new(Arc::clone(&backend)), backend }
+    }
+
+    /// Import a single block.
+    pub async fn import_block(
+        &self,
+        block: UnverifiedFullBlock,
+        validation: &Validation,
+    ) -> Result<(), BlockImportError> {
+        let block = pre_validate(block, validation).await?;
+        self.verify_apply.verify_apply(block, validation).await?;
+        Ok(())
+    }
 }

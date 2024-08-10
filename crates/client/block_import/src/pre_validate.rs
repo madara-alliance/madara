@@ -6,11 +6,21 @@ use dp_convert::ToFelt;
 use dp_receipt::TransactionReceipt;
 use dp_state_update::StateDiff;
 use dp_transactions::Transaction;
+use dp_utils::spawn_rayon_task;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator};
 use rayon::prelude::*;
 use starknet_core::types::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::mem;
+
+/// Pre-validate a block, computing and checking the commitments
+pub async fn pre_validate(
+    block: UnverifiedFullBlock,
+    validation: &Validation,
+) -> Result<PreValidatedBlock, BlockImportError> {
+    let validation = validation.clone();
+    spawn_rayon_task(move || pre_validate_inner(block, &validation)).await
+}
 
 #[derive(Default)]
 pub struct BlockCommitments {
@@ -33,7 +43,7 @@ pub struct PreValidatedBlock {
 }
 
 /// This runs on the [`rayon`] threadpool.
-pub fn pre_validate(
+fn pre_validate_inner(
     mut block: UnverifiedFullBlock,
     validation: &Validation,
 ) -> Result<PreValidatedBlock, BlockImportError> {

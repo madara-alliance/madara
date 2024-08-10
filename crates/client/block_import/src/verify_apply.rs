@@ -1,10 +1,11 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 use dc_db::{DeoxysBackend, DeoxysStorageError};
 use dp_block::{
     BlockId, BlockTag, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, Header,
 };
 use dp_convert::ToFelt;
+use dp_utils::spawn_rayon_task;
 use starknet_core::types::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
 
@@ -15,6 +16,12 @@ use crate::{
 
 mod classes;
 mod contracts;
+
+pub struct VerifyApplyResult {
+    pub block_hash: Felt,
+    pub block_number: u64,
+    pub state_root: Felt,
+}
 
 /// "STARKNET_STATE_V0"
 const STARKNET_STATE_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e45545f53544154455f5630");
@@ -31,14 +38,13 @@ fn make_db_error(context: impl Into<Cow<'static, str>>) -> impl FnOnce(DeoxysSto
     move |error| BlockImportError::InternalDb { context: context.into(), error }
 }
 
-// TODO: enforce sequential order with a global lock
 /// This needs to be called sequentially, it will apply the state diff to the db, verify the state root and save the block.
 /// This runs on the [`rayon`] threadpool however as it uses parallelism inside.
-pub fn verify_apply(
+fn verify_apply(
     backend: &DeoxysBackend,
     block: PreValidatedBlock,
     validation: &Validation,
-) -> Result<(), BlockImportError> {
+) -> Result<VerifyApplyResult, BlockImportError> {
     // Check block number and block hash against db
 
     let latest_block_info =
@@ -151,5 +157,27 @@ pub fn verify_apply(
         )
         .map_err(make_db_error("storing block in db"))?;
 
-    Ok(())
+    Ok(VerifyApplyResult { block_hash, block_number, state_root })
+}
+
+/// This struct enforces sequential application of blocks to the db.
+pub(crate) struct VerifyApply {
+    backend: Arc<DeoxysBackend>,
+    lock: tokio::sync::Mutex<()>,
+}
+
+impl VerifyApply {
+    pub fn new(backend: Arc<DeoxysBackend>) -> Self {
+        Self { backend, lock: Default::default() }
+    }
+    pub async fn verify_apply(
+        &self,
+        block: PreValidatedBlock,
+        validation: &Validation,
+    ) -> Result<VerifyApplyResult, BlockImportError> {
+        let backend = Arc::clone(&self.backend);
+        let validation = validation.clone();
+        let _guard = self.lock.lock().await;
+        spawn_rayon_task(move || verify_apply(&backend, block, &validation)).await
+    }
 }

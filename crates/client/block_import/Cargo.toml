@@ -9,6 +9,8 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+async-trait.workspace = true
+anyhow.workspace = true
 rayon.workspace = true
 tokio.workspace = true
 futures.workspace = true
