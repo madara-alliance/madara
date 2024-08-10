@@ -1,3 +1,4 @@
+use dp_chain_config::StarknetVersion;
 use starknet_core::utils::starknet_keccak;
 
 use starknet_types_core::felt::Felt;
@@ -7,7 +8,7 @@ use crate::{
     DataAvailabilityMode, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2,
     DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3,
     DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3,
-    L1HandlerTransaction, ResourceBoundsMapping, Transaction,
+    L1HandlerTransaction, ResourceBoundsMapping, Transaction, LEGACY_BLOCK_NUMBER, MAIN_CHAIN_ID, V0_7_BLOCK_NUMBER,
 };
 
 use super::SIMULATE_TX_VERSION_OFFSET;
@@ -23,7 +24,20 @@ const L1_GAS: &[u8] = b"L1_GAS";
 const L2_GAS: &[u8] = b"L2_GAS";
 
 impl Transaction {
-    pub fn compute_hash(&self, chain_id: Felt, offset_version: bool, legacy: bool) -> Felt {
+    pub fn compute_hash(&self, chain_id: Felt, offset_version: bool, block_number: Option<u64>) -> Felt {
+        let legacy =
+            block_number.is_some_and(|block_number| block_number < LEGACY_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID);
+        let is_pre_v0_7 =
+            block_number.is_some_and(|block_number| block_number < V0_7_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID);
+
+        if is_pre_v0_7 {
+            self.compute_hash_pre_v0_7(chain_id, offset_version)
+        } else {
+            self.compute_hash_inner(chain_id, offset_version, legacy)
+        }
+    }
+
+    fn compute_hash_inner(&self, chain_id: Felt, offset_version: bool, legacy: bool) -> Felt {
         match self {
             crate::Transaction::Invoke(tx) => tx.compute_hash(chain_id, offset_version, legacy),
             crate::Transaction::L1Handler(tx) => tx.compute_hash(chain_id, offset_version, legacy),
@@ -36,8 +50,74 @@ impl Transaction {
     pub fn compute_hash_pre_v0_7(&self, chain_id: Felt, offset_version: bool) -> Felt {
         match self {
             crate::Transaction::L1Handler(tx) => tx.compute_hash_pre_v0_7(chain_id),
-            _ => self.compute_hash(chain_id, offset_version, true),
+            _ => self.compute_hash_inner(chain_id, offset_version, true),
         }
+    }
+
+    /// Compute the combined hash of the transaction hash and the signature.
+    ///
+    /// Since the transaction hash doesn't take the signature values as its input
+    /// computing the transaction commitent uses a hash value that combines
+    /// the transaction hash with the array of signature values.
+    pub fn compute_hash_with_signature(
+        &self,
+        tx_hash: Felt,
+        starknet_version: StarknetVersion,
+    ) -> Felt {
+        let include_signature = starknet_version >= StarknetVersion::STARKNET_VERSION_0_11_1;
+
+        let leaf = match self {
+            Transaction::Invoke(tx) => {
+                // Include signatures for Invoke transactions or for all transactions
+                if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                    let signature_hash = tx.compute_hash_signature::<Pedersen>();
+                    Pedersen::hash(&tx_hash, &signature_hash)
+                } else {
+                    let elements: Vec<Felt> = std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
+                    Poseidon::hash_array(&elements)
+                }
+            }
+            Transaction::Declare(tx) => {
+                if include_signature {
+                    if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                        let signature_hash = tx.compute_hash_signature::<Pedersen>();
+                        Pedersen::hash(&tx_hash, &signature_hash)
+                    } else {
+                        let elements: Vec<Felt> =
+                            std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
+                        Poseidon::hash_array(&elements)
+                    }
+                } else {
+                    let signature_hash = Pedersen::hash_array(&[]);
+                    Pedersen::hash(&tx_hash, &signature_hash)
+                }
+            }
+            Transaction::DeployAccount(tx) => {
+                if include_signature {
+                    if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                        let signature_hash = tx.compute_hash_signature::<Pedersen>();
+                        Pedersen::hash(&tx_hash, &signature_hash)
+                    } else {
+                        let elements: Vec<Felt> =
+                            std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
+                        Poseidon::hash_array(&elements)
+                    }
+                } else {
+                    let signature_hash = Pedersen::hash_array(&[]);
+                    Pedersen::hash(&tx_hash, &signature_hash)
+                }
+            }
+            _ => {
+                if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                    let signature_hash = Pedersen::hash_array(&[]);
+                    Pedersen::hash(&tx_hash, &signature_hash)
+                } else {
+                    Poseidon::hash_array(&[tx_hash, Felt::ZERO])
+                }
+            }
+        };
+
+        leaf
     }
 }
 

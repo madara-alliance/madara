@@ -55,3 +55,5 @@ starknet-e2e-test/contracts/build
 output*
 
 tmp/
+
+*.profraw

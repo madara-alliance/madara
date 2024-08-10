@@ -1,16 +1,14 @@
 //! Starknet block primitives.
 
-pub mod chain_config;
 pub mod header;
-mod starknet_version;
 
+use dp_chain_config::StarknetVersion;
 use dp_receipt::TransactionReceipt;
 use dp_transactions::Transaction;
 pub use header::Header;
 use header::PendingHeader;
 pub use primitive_types::{H160, U256};
 use starknet_types_core::felt::Felt;
-pub use starknet_version::{StarknetVersion, StarknetVersionError};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::large_enum_variant)]

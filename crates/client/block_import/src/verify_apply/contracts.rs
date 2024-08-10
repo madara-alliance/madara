@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
@@ -8,8 +6,10 @@ use dc_db::DeoxysBackend;
 use dc_db::{bonsai_identifier, DeoxysStorageError};
 use dp_block::{BlockId, BlockTag};
 use dp_state_update::{ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StorageEntry};
+use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, StarkHash};
+use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 struct ContractLeaf {
@@ -72,14 +72,20 @@ pub fn contract_trie_root(
 
     let mut contract_trie = backend.contract_trie();
 
-    for (contract_address, mut leaf) in contract_leafs {
-        let storage_root = contract_storage_trie.root_hash(&contract_address.to_bytes_be())?;
-        leaf.storage_root = Some(storage_root);
-        // TODO: parrallelize this with rayon
-        let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf)?;
-        let bytes = contract_address.to_bytes_be();
-        let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-        contract_trie.insert(bonsai_identifier::CONTRACT, &bv, &leaf_hash)?;
+    let leaf_hashes: Vec<_> = contract_leafs
+        .into_par_iter()
+        .map(|(contract_address, mut leaf)| {
+            let storage_root = contract_storage_trie.root_hash(&contract_address.to_bytes_be())?;
+            leaf.storage_root = Some(storage_root);
+            let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf)?;
+            let bytes = contract_address.to_bytes_be();
+            let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
+            Ok((bv, leaf_hash))
+        })
+        .collect::<Result<_, DeoxysStorageError>>()?;
+
+    for (k, v) in leaf_hashes {
+        contract_trie.insert(bonsai_identifier::CONTRACT, &k, &v)?;
     }
 
     log::debug!("contract_trie committing");

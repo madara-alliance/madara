@@ -1,13 +1,11 @@
 use core::num::NonZeroU128;
-
+use dp_chain_config::StarknetVersion;
 use dp_transactions::MAIN_CHAIN_ID;
 use dp_transactions::V0_7_BLOCK_NUMBER;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 use starknet_types_core::hash::Poseidon;
 use starknet_types_core::hash::StarkHash as StarkHashTrait;
-
-use crate::starknet_version::StarknetVersion;
 
 /// Block status.
 ///

@@ -20,6 +20,7 @@ dp-class = { workspace = true }
 dp-convert = { workspace = true }
 dp-state-update = { workspace = true }
 dp-transactions = { workspace = true }
+dp-chain-config = { workspace = true }
 dp-utils = { workspace = true }
 
 # Starknet

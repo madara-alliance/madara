@@ -29,6 +29,7 @@ dp-convert = { workspace = true }
 dp-receipt = { workspace = true }
 dp-state-update = { workspace = true }
 dp-transactions = { workspace = true }
+dp-chain-config = { workspace = true }
 dp-utils = { workspace = true }
 
 # Starknet

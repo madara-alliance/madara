@@ -12,7 +12,7 @@ pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
 
-use dp_block::chain_config::ChainConfig;
+use dp_chain_config::ChainConfig;
 use std::sync::Arc;
 use url::Url;
 

@@ -1049,6 +1049,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "block_import"
+version = "0.1.0"
+dependencies = [
+ "bitvec",
+ "bonsai-trie",
+ "dc-db",
+ "dp-block",
+ "dp-chain-config",
+ "dp-class",
+ "dp-convert",
+ "dp-receipt",
+ "dp-state-update",
+ "dp-transactions",
+ "dp-utils",
+ "futures",
+ "log",
+ "rayon",
+ "starknet-core",
+ "starknet-providers",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "blockifier"
 version = "0.8.0-rc.0"
 source = "git+https://github.com/starkware-libs/blockifier?tag=v0.8.0-rc.0#99ddb927994be44ef333c860d33ecc149e8d4273"
@@ -3470,6 +3496,7 @@ dependencies = [
  "bonsai-trie",
  "dc-metrics",
  "dp-block",
+ "dp-chain-config",
  "dp-class",
  "dp-convert",
  "dp-state-update",
@@ -3493,6 +3520,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "env_logger 0.11.3",
+ "lazy_static",
  "log",
  "reqwest 0.12.5",
  "rstest 0.18.2",
@@ -3514,6 +3542,7 @@ dependencies = [
  "dc-metrics",
  "dotenv",
  "dp-block",
+ "dp-chain-config",
  "dp-convert",
  "dp-transactions",
  "dp-utils",
@@ -3541,6 +3570,7 @@ dependencies = [
  "cairo-vm",
  "dc-db",
  "dp-block",
+ "dp-chain-config",
  "dp-class",
  "dp-convert",
  "indexmap 2.2.6",
@@ -3638,6 +3668,7 @@ dependencies = [
  "dc-metrics",
  "dc-telemetry",
  "dp-block",
+ "dp-chain-config",
  "dp-class",
  "dp-convert",
  "dp-receipt",
@@ -3867,9 +3898,25 @@ name = "dp-block"
 version = "0.1.0"
 dependencies = [
  "blockifier",
+ "dp-chain-config",
  "dp-convert",
  "dp-receipt",
  "dp-transactions",
+ "lazy_static",
+ "primitive-types",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+]
+
+[[package]]
+name = "dp-chain-config"
+version = "0.1.0"
+dependencies = [
+ "blockifier",
  "lazy_static",
  "primitive-types",
  "serde",
@@ -3955,6 +4002,7 @@ dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.7.0-rc.2",
  "cairo-vm",
+ "dp-chain-config",
  "dp-class",
  "dp-convert",
  "num-bigint",

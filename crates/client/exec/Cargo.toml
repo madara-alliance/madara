@@ -18,6 +18,7 @@ dc-db = { workspace = true }
 dp-block = { workspace = true }
 dp-class = { workspace = true }
 dp-convert = { workspace = true }
+dp-chain-config = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }

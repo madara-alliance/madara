@@ -23,7 +23,6 @@ pub enum BroadcastedToBlockifierError {
 pub fn broadcasted_to_blockifier(
     transaction: starknet_core::types::BroadcastedTransaction,
     chain_id: Felt,
-    block_number: Option<u64>,
 ) -> Result<
     (blockifier::transaction::transaction_execution::Transaction, Option<ConvertedClass>),
     BroadcastedToBlockifierError,
@@ -40,7 +39,6 @@ pub fn broadcasted_to_blockifier(
                 let class_info = ClassInfo {
                     contract_class: ContractClass::Legacy((*tx.contract_class).clone().into()),
                     compiled_class_hash,
-                    block_number,
                 };
 
                 (
@@ -63,7 +61,6 @@ pub fn broadcasted_to_blockifier(
                 let class_info = ClassInfo {
                     contract_class: ContractClass::Sierra((*tx.contract_class).clone().into()),
                     compiled_class_hash,
-                    block_number,
                 };
 
                 (
@@ -86,7 +83,6 @@ pub fn broadcasted_to_blockifier(
                 let class_info = ClassInfo {
                     contract_class: ContractClass::Sierra((*tx.contract_class).clone().into()),
                     compiled_class_hash,
-                    block_number,
                 };
 
                 (

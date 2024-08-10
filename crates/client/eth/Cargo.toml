@@ -19,6 +19,7 @@ dc-metrics = { workspace = true }
 dp-block = { workspace = true }
 dp-convert = { workspace = true }
 dp-transactions = { workspace = true }
+dp-chain-config = { workspace = true }
 dp-utils = { workspace = true }
 
 # Starknet
