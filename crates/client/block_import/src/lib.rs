@@ -18,7 +18,7 @@
 //!
 //! ### Step 2: Apply block to global tries.
 //!
-//! This step is necessarily sequencial over blocks, but parallelization is done internally using [`rayon`].
+//! This step is necessarily sequential over blocks, but parallelization is done internally using [`rayon`].
 //! This is where the final `state_root` and `block_hash` are computed.
 //!
 //! ### Step 2.5: Store block and classes.
@@ -31,13 +31,13 @@
 //! to get a different block from another peer, and you want to lower the peer score of the offending peer. The plumbery to
 //! get that done is not supported yet but it has been incorporated in the design of this pipeline.
 //! 
-//! ## Pull/Push based
+//! ## Pull vs Push mode
 //! 
 //! The block import pipeline [`BlockImportService::drive_pipeline`] is pull based, and it will concurrently call
 //! [`BlockFetcher::fetch_block`] to pull new blocks into the pipeline. This is the fastest way of importing, and
 //! it supports backpressure correctly. However, this is not fit every usecase: when the chain is fully synced,
 //! consumers of this crate are expected to use the push-based [`BlockImportService::import_block`] to push new new blocks
-//! when they appear on the network.
+//! when they appear on the network (on pubsub / websocket).
 //! The pipeline also implements a polling mode when [`PipelineSettings::polling`] is not `None`: in this mode, once the
 //! block pipeline has reached the tip of the blockchain, it will continue polling on an interval for more blocks. When
 //! this is enabled, the pipeline task until gracefyl shutdown.
@@ -45,13 +45,12 @@
 //!
 //! ## Future plans
 //!
-//! An optional sequencial step just before step 2 could be addded that executes the block to validate it: this will
+//! An optional sequential step just before step 2 could be addded that executes the block to validate it: this will
 //! be useful for tendermint validator nodes in the future, and it should also be useful to test-execute a whole blockchain
 //! to check for errors.
 //! A signature verification mode should be added to allow the skipping of block validation entirely if the block is signed.
 
 use std::{borrow::Cow, sync::Arc, time::Duration};
-
 use dc_db::{DeoxysBackend, DeoxysStorageError};
 use dp_block::header::{GasPrices, L1DataAvailabilityMode};
 use dp_chain_config::StarknetVersion;
@@ -102,7 +101,7 @@ pub enum BlockImportError {
     CompilationClassError { class_hash: Felt, error: String },
 
     #[error("Block order mismatch: database expects to import block #{expected}, trying to import #{got}")]
-    LatestBlockN { expected: u64, got: u64 },
+    LatestBlockN { got: u64, expected: u64 },
     #[error("Parent hash mismatch: expected {expected:#x}, got {got:#x}")]
     ParentHash { got: Felt, expected: Felt },
     #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
