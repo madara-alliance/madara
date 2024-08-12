@@ -135,8 +135,7 @@ pub fn parse_handle_l1_message_transaction(event: &LogMessageToL2) -> anyhow::Re
     // L1 message nonce.
     let nonce = u256_to_felt(event.nonce)?;
 
-    let event_payload =
-        event.payload.clone().into_iter().map(|param| u256_to_felt(param)).collect::<anyhow::Result<Vec<_>>>()?;
+    let event_payload = event.payload.clone().into_iter().map(u256_to_felt).collect::<anyhow::Result<Vec<_>>>()?;
 
     let calldata: Calldata = {
         let mut calldata: Vec<_> = Vec::with_capacity(event.payload.len() + 1);
