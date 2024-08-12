@@ -156,6 +156,13 @@ impl DeoxysBlockInfo {
     }
 }
 
+/// Starknet block inner.
+///
+/// Contains the block transactions and receipts.
+/// The transactions and receipts are in the same order.
+/// The i-th transaction corresponds to the i-th receipt.
+/// The length of the transactions and receipts must be the same.
+///
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInner {
     /// The block transactions.
