@@ -452,8 +452,7 @@ fn prepare_data_availability_modes(
 }
 
 const CONTRACT_ADDRESS_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e45545f434f4e54524143545f41444452455353"); // b"STARKNET_CONTRACT_ADDRESS"
-const L2_ADDRESS_UPPER_BOUND: Felt =
-    Felt::from_raw([576459263475590224, 18446744073709255680, 160989183, 18446743986131443745]);
+const L2_ADDRESS_UPPER_BOUND: Felt = Felt::from_hex_unchecked("0x7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00");
 
 pub fn calculate_contract_address(
     salt: Felt,
@@ -576,6 +575,10 @@ mod tests {
         let tx: Transaction = dummy_l1_handler().into();
         let hash = tx.compute_hash(CHAIN_ID, false, true);
         assert_eq!(hash, Felt::from_hex_unchecked("0x51054194b846935ec55c71a52344a0adba474fc075136b31ea8dd15b48ccfb0"));
+
+        let tx: Transaction = dummy_tx_deploy().into();
+        let hash = tx.compute_hash(CHAIN_ID, false, true);
+        assert_eq!(hash, Felt::from_hex_unchecked("0x55714434a4cf43cdfb19af13c6f8fc0fc06f694da96566c90d3e07d32233eb5"));
     }
 
     #[test]
