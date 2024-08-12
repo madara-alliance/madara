@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Added
 
+- moved mongodb serde behind feature flag
 - implemented DA worker.
 - Function to calculate the kzg proof of x_0.
 - Tests for updating the state.
