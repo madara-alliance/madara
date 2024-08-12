@@ -28,6 +28,10 @@ pub fn u256_to_felt(u256: U256) -> anyhow::Result<Felt> {
     Ok(felt)
 }
 
+pub fn felt_to_u256(felt: Felt) -> U256 {
+    U256::from_be_bytes(felt.to_bytes_be())
+}
+
 pub fn trim_hash(hash: &Felt) -> String {
     let hash_str = format!("{:#x}", hash);
     let hash_len = hash_str.len();
