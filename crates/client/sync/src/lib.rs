@@ -28,7 +28,7 @@ pub mod starknet_sync_worker {
     pub async fn sync(
         backend: &Arc<DeoxysBackend>,
         fetch_config: FetchConfig,
-        eth_client: EthereumClient,
+        eth_client: Option<EthereumClient>,
         starting_block: Option<u64>,
         backup_every_n_blocks: Option<u64>,
         block_metrics: BlockMetrics,
@@ -56,10 +56,12 @@ pub mod starknet_sync_worker {
             None => provider,
         };
 
-        let state_update_fut = async { dc_eth::state_update::sync(backend, &eth_client, chain_id).await };
         let l1_fut = async {
-            tokio::try_join!(state_update_fut)?;
-            Ok(())
+            if let Some(eth_client) = eth_client {
+                dc_eth::state_update::sync(backend, &eth_client, chain_id).await
+            } else {
+                Ok(())
+            }
         };
 
         tokio::try_join!(
