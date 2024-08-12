@@ -30,6 +30,7 @@ default-members = [
   "crates/client/metrics",
   "crates/node",
   "crates/primitives/block",
+  "crates/primitives/convert",
   "crates/primitives/transactions",
   "crates/primitives/class",
   "crates/primitives/receipt",
