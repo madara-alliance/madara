@@ -1,6 +1,6 @@
 [package]
 name = "dc-mempool"
-description = "Deoxys client mempool service"
+description = "Madara client mempool service"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -22,7 +22,7 @@ blockifier = { workspace = true, features = ["testing"] }
 
 [dependencies]
 
-# Deoxys
+# Madara
 dc-db.workspace = true
 dc-exec.workspace = true
 dc-sync.workspace = true

@@ -7,7 +7,7 @@ mod transactions;
 use bitvec::vec::BitVec;
 use classes::class_trie_root;
 use contracts::contract_trie_root;
-use dc_db::DeoxysBackend;
+use dc_db::MadaraBackend;
 use dp_state_update::StateDiff;
 pub use events::memory_event_commitment;
 pub use receipts::memory_receipt_commitment;
@@ -53,7 +53,7 @@ pub fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) 
 ///
 ///
 /// The updated state root as a `Felt`.
-pub fn update_tries_and_compute_state_root(backend: &DeoxysBackend, state_diff: &StateDiff, block_number: u64) -> Felt {
+pub fn update_tries_and_compute_state_root(backend: &MadaraBackend, state_diff: &StateDiff, block_number: u64) -> Felt {
     let StateDiff {
         storage_diffs,
         deprecated_declared_classes: _,

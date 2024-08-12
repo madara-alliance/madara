@@ -1,23 +1,23 @@
-use dc_db::DeoxysBackend;
+use dc_db::MadaraBackend;
 use dc_sync::{
     commitments::update_tries_and_compute_state_root,
     convert::{compute_commitments_for_block, BlockCommitments},
 };
 use dp_block::{
-    header::PendingHeader, DeoxysBlock, DeoxysBlockInfo, DeoxysPendingBlock, DeoxysPendingBlockInfo, Header,
+    header::PendingHeader, MadaraBlock, MadaraBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo, Header,
 };
 use dp_state_update::StateDiff;
 use starknet_core::types::Felt;
 
 pub fn close_block(
-    backend: &DeoxysBackend,
-    block: DeoxysPendingBlock,
+    backend: &MadaraBackend,
+    block: MadaraPendingBlock,
     state_diff: &StateDiff,
     chain_id: Felt,
     block_number: u64,
-) -> DeoxysBlock {
-    let DeoxysPendingBlock { info, inner } = block;
-    let DeoxysPendingBlockInfo { header, tx_hashes: _tx_hashes } = info;
+) -> MadaraBlock {
+    let MadaraPendingBlock { info, inner } = block;
+    let MadaraPendingBlockInfo { header, tx_hashes: _tx_hashes } = info;
 
     // Header
     let PendingHeader {
@@ -69,5 +69,5 @@ pub fn close_block(
 
     let block_hash = header.compute_hash(chain_id);
 
-    DeoxysBlock { info: DeoxysBlockInfo { header, block_hash, tx_hashes }, inner }
+    MadaraBlock { info: MadaraBlockInfo { header, block_hash, tx_hashes }, inner }
 }

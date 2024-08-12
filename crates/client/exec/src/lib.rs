@@ -6,7 +6,7 @@ use blockifier::{
         transaction_types::TransactionType,
     },
 };
-use dc_db::{db_block_id::DbBlockId, DeoxysStorageError};
+use dc_db::{db_block_id::DbBlockId, MadaraStorageError};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::Felt;
 
@@ -34,7 +34,7 @@ pub enum Error {
     #[error(transparent)]
     CallContract(#[from] CallContractError),
     #[error("Storage error: {0:#}")]
-    Storage(#[from] DeoxysStorageError),
+    Storage(#[from] MadaraStorageError),
     #[error("Invalid sequencer address: {0:#x}")]
     InvalidSequencerAddress(Felt),
 }

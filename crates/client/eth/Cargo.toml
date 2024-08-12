@@ -13,7 +13,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
-# Deoxys
+# Madara
 dc-db = { workspace = true }
 dc-metrics = { workspace = true }
 dp-block = { workspace = true }

@@ -1,7 +1,7 @@
 use anyhow::Context;
 use dp_block::{
-    BlockId, BlockTag, DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
-    DeoxysMaybePendingBlockInfo, DeoxysPendingBlock, DeoxysPendingBlockInfo,
+    BlockId, BlockTag, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
+    MadaraMaybePendingBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo,
 };
 use dp_state_update::StateDiff;
 use rocksdb::WriteOptions;
@@ -9,10 +9,10 @@ use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 
 use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
-use crate::DeoxysStorageError;
-use crate::{Column, DatabaseExt, DeoxysBackend, WriteBatchWithTransaction};
+use crate::MadaraStorageError;
+use crate::{Column, DatabaseExt, MadaraBackend, WriteBatchWithTransaction};
 
-type Result<T, E = DeoxysStorageError> = std::result::Result<T, E>;
+type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 struct ChainInfo {
@@ -31,7 +31,7 @@ pub struct TxIndex(pub u64);
 
 // TODO(error-handling): some of the else { return Ok(None) } should be replaced with hard errors for
 // inconsistent state.
-impl DeoxysBackend {
+impl MadaraBackend {
     /// This function checks a that the program was started on a db of the wrong chain (ie. main vs
     /// sepolia) and returns an error if it does.
     pub(crate) fn check_configuration(&self) -> anyhow::Result<()> {
@@ -86,7 +86,7 @@ impl DeoxysBackend {
         Ok(Some(block))
     }
 
-    fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<DeoxysBlockInfo>> {
+    fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>> {
         let col = self.db.get_column(Column::BlockNToBlockInfo);
         let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
         let Some(res) = res else { return Ok(None) };
@@ -94,7 +94,7 @@ impl DeoxysBackend {
         Ok(Some(block))
     }
 
-    fn get_block_inner_from_block_n(&self, block_n: u64) -> Result<Option<DeoxysBlockInner>> {
+    fn get_block_inner_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInner>> {
         let col = self.db.get_column(Column::BlockNToBlockInner);
         let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
         let Some(res) = res else { return Ok(None) };
@@ -109,14 +109,14 @@ impl DeoxysBackend {
         Ok(Some(res))
     }
 
-    fn get_pending_block_info(&self) -> Result<Option<DeoxysPendingBlockInfo>> {
+    fn get_pending_block_info(&self) -> Result<Option<MadaraPendingBlockInfo>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INFO)? else { return Ok(None) };
         let res = bincode::deserialize(&res)?;
         Ok(Some(res))
     }
 
-    fn get_pending_block_inner(&self) -> Result<Option<DeoxysBlockInner>> {
+    fn get_pending_block_inner(&self) -> Result<Option<MadaraBlockInner>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INNER)? else { return Ok(None) };
         let res = bincode::deserialize(&res)?;
@@ -139,7 +139,7 @@ impl DeoxysBackend {
 
     // DB write
 
-    pub(crate) fn block_db_store_pending(&self, block: &DeoxysPendingBlock, state_update: &StateDiff) -> Result<()> {
+    pub(crate) fn block_db_store_pending(&self, block: &MadaraPendingBlock, state_update: &StateDiff) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
         let col = self.db.get_column(Column::BlockStorageMeta);
         tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(&block.info)?);
@@ -176,7 +176,7 @@ impl DeoxysBackend {
     }
 
     /// Also clears pending block
-    pub(crate) fn block_db_store_block(&self, block: &DeoxysBlock, state_diff: &StateDiff) -> Result<()> {
+    pub(crate) fn block_db_store_block(&self, block: &MadaraBlock, state_diff: &StateDiff) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
 
         let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
@@ -221,16 +221,16 @@ impl DeoxysBackend {
         }
     }
 
-    fn storage_to_info(&self, id: &DbBlockId) -> Result<Option<DeoxysMaybePendingBlockInfo>> {
+    fn storage_to_info(&self, id: &DbBlockId) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         match id {
-            DbBlockId::Pending => Ok(self.get_pending_block_info()?.map(DeoxysMaybePendingBlockInfo::Pending)),
+            DbBlockId::Pending => Ok(self.get_pending_block_info()?.map(MadaraMaybePendingBlockInfo::Pending)),
             DbBlockId::BlockN(block_n) => {
-                Ok(self.get_block_info_from_block_n(*block_n)?.map(DeoxysMaybePendingBlockInfo::NotPending))
+                Ok(self.get_block_info_from_block_n(*block_n)?.map(MadaraMaybePendingBlockInfo::NotPending))
             }
         }
     }
 
-    fn storage_to_inner(&self, id: &DbBlockId) -> Result<Option<DeoxysBlockInner>> {
+    fn storage_to_inner(&self, id: &DbBlockId) -> Result<Option<MadaraBlockInner>> {
         match id {
             DbBlockId::Pending => self.get_pending_block_inner(),
             DbBlockId::BlockN(block_n) => self.get_block_inner_from_block_n(*block_n),
@@ -264,27 +264,27 @@ impl DeoxysBackend {
         }
     }
 
-    pub fn get_block_info(&self, id: &impl DbBlockIdResolvable) -> Result<Option<DeoxysMaybePendingBlockInfo>> {
+    pub fn get_block_info(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         self.storage_to_info(&ty)
     }
 
-    pub fn get_block_inner(&self, id: &impl DbBlockIdResolvable) -> Result<Option<DeoxysBlockInner>> {
+    pub fn get_block_inner(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MadaraBlockInner>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         self.storage_to_inner(&ty)
     }
 
-    pub fn get_block(&self, id: &impl DbBlockIdResolvable) -> Result<Option<DeoxysMaybePendingBlock>> {
+    pub fn get_block(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MadaraMaybePendingBlock>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         let Some(info) = self.storage_to_info(&ty)? else { return Ok(None) };
         let Some(inner) = self.storage_to_inner(&ty)? else { return Ok(None) };
-        Ok(Some(DeoxysMaybePendingBlock { info, inner }))
+        Ok(Some(MadaraMaybePendingBlock { info, inner }))
     }
 
     // Tx hashes and tx status
 
     /// Returns the index of the tx.
-    pub fn find_tx_hash_block_info(&self, tx_hash: &Felt) -> Result<Option<(DeoxysMaybePendingBlockInfo, TxIndex)>> {
+    pub fn find_tx_hash_block_info(&self, tx_hash: &Felt) -> Result<Option<(MadaraMaybePendingBlockInfo, TxIndex)>> {
         match self.tx_hash_to_block_n(tx_hash)? {
             Some(block_n) => {
                 let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
@@ -300,19 +300,19 @@ impl DeoxysBackend {
     }
 
     /// Returns the index of the tx.
-    pub fn find_tx_hash_block(&self, tx_hash: &Felt) -> Result<Option<(DeoxysMaybePendingBlock, TxIndex)>> {
+    pub fn find_tx_hash_block(&self, tx_hash: &Felt) -> Result<Option<(MadaraMaybePendingBlock, TxIndex)>> {
         match self.tx_hash_to_block_n(tx_hash)? {
             Some(block_n) => {
                 let Some(info) = self.get_block_info_from_block_n(block_n)? else { return Ok(None) };
                 let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
                 let Some(inner) = self.get_block_inner_from_block_n(block_n)? else { return Ok(None) };
-                Ok(Some((DeoxysMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
+                Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
             None => {
                 let Some(info) = self.get_pending_block_info()? else { return Ok(None) };
                 let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
                 let Some(inner) = self.get_pending_block_inner()? else { return Ok(None) };
-                Ok(Some((DeoxysMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
+                Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
         }
     }

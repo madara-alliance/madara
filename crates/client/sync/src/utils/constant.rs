@@ -1,4 +1,4 @@
-//! Deoxys constants.
+//! Madara constants.
 // Starknet Core contract addresses on Ethereum.
 //
 // These addresses are used to verified the L2 state accross the L1.

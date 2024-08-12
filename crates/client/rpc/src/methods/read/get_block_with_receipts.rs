@@ -1,4 +1,4 @@
-use dp_block::DeoxysMaybePendingBlockInfo;
+use dp_block::MadaraMaybePendingBlockInfo;
 use starknet_core::types::{
     BlockId, BlockStatus, BlockWithReceipts, MaybePendingBlockWithReceipts, PendingBlockWithReceipts,
     TransactionFinalityStatus, TransactionWithReceipt,
@@ -32,7 +32,7 @@ pub fn get_block_with_receipts(
         .collect();
 
     match block.info {
-        DeoxysMaybePendingBlockInfo::Pending(block) => {
+        MadaraMaybePendingBlockInfo::Pending(block) => {
             Ok(MaybePendingBlockWithReceipts::PendingBlock(PendingBlockWithReceipts {
                 transactions: transactions_with_receipts,
                 parent_hash: block.header.parent_block_hash,
@@ -44,7 +44,7 @@ pub fn get_block_with_receipts(
                 starknet_version: block.header.protocol_version.to_string(),
             }))
         }
-        DeoxysMaybePendingBlockInfo::NotPending(block) => {
+        MadaraMaybePendingBlockInfo::NotPending(block) => {
             let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
                 status,

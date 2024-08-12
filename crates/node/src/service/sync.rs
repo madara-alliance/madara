@@ -2,7 +2,7 @@ use crate::cli::SyncParams;
 use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
-use dc_db::{DatabaseService, DeoxysBackend};
+use dc_db::{DatabaseService, MadaraBackend};
 use dc_eth::client::EthereumClient;
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
@@ -15,7 +15,7 @@ use tokio::task::JoinSet;
 
 #[derive(Clone)]
 pub struct SyncService {
-    db_backend: Arc<DeoxysBackend>,
+    db_backend: Arc<MadaraBackend>,
     fetch_config: FetchConfig,
     backup_every_n_blocks: Option<u64>,
     eth_client: EthereumClient,

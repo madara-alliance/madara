@@ -1,7 +1,7 @@
 #!/bin/bash
 
 help() {
-    echo "Usage: [--deoxys=\"http://127.0.0.1:9944\"] [--pathfinder...] command args..."
+    echo "Usage: [--madara=\"http://127.0.0.1:9944\"] [--pathfinder...] command args..."
 }
 
 # ================= #
@@ -13,7 +13,7 @@ if [ $# -lt 2 ]; then
     exit 1
 fi
 
-OPTIONS=$(getopt -o '' -l deoxys:,pathfinder: -- "$@")
+OPTIONS=$(getopt -o '' -l madara:,pathfinder: -- "$@")
 if [ $? != 0 ]; then
     help
     exit 1
@@ -21,13 +21,13 @@ fi
 
 eval set -- "$OPTIONS"
 
-PROVIDER_DEOXYS="http://127.0.0.1:9944"
+PROVIDER_MADARA="http://127.0.0.1:9944"
 PROVIDER_PATHFINDER=""
 
 while true; do
     case "$1" in
-        --deoxys)
-            PROVIDER_DEOXYS="$2"
+        --madara)
+            PROVIDER_MADARA="$2"
             shift 2
             ;;
         --pathfinder)
@@ -152,7 +152,7 @@ get_block_with_tx_hashes(){
 #      PROGRAM      #
 # ================= #
 
-OUTPUT_DEOXYS="output_deoxys.json"
+OUTPUT_MADARA="output_madara.json"
 OUTPUT_PATHFINDER="output_pathfinder.json"
 
 COMMAND=$1
@@ -172,43 +172,43 @@ case $COMMAND in
     getClass)
         echo "🧪 Testing starknet_getClass"
         validate_args $# 1
-        get_class "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
+        get_class "$PROVIDER_MADARA" "$1" "$OUTPUT_MADARA"
         get_class "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
         ;;
     getClassAt)
         echo "🧪 Testing starknet_getClassAt"
         validate_args $# 1
-        get_class_at "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
+        get_class_at "$PROVIDER_MADARA" "$1" "$OUTPUT_MADARA"
         get_class_at "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
         ;;
     getClassHashAt)
         echo "🧪 Testing starknet_getClassHashAt"
         validate_args $# 2
-        get_class_hash_at "$PROVIDER_DEOXYS" "$1" "$2" "$OUTPUT_DEOXYS"
+        get_class_hash_at "$PROVIDER_MADARA" "$1" "$2" "$OUTPUT_MADARA"
         get_class_hash_at "$PROVIDER_PATHFINDER" "$1" "$2" "$OUTPUT_PATHFINDER"
         ;;
     getStorageAt)
         echo "🧪 Testing starknet_getStorageAt"
         validate_args $# 2
-        get_storage_at "$PROVIDER_DEOXYS" "$1" "$2" "$OUTPUT_DEOXYS"
+        get_storage_at "$PROVIDER_MADARA" "$1" "$2" "$OUTPUT_MADARA"
         get_storage_at "$PROVIDER_PATHFINDER" "$1" "$2" "$OUTPUT_PATHFINDER"
         ;;
     getTransactionReceipt)
         echo "🧪 Testing starknet_getTransactionReceipt"
         validate_args $# 1
-        get_transaction_receipt "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
+        get_transaction_receipt "$PROVIDER_MADARA" "$1" "$OUTPUT_MADARA"
         get_transaction_receipt "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
         ;;
     getBlockWithTxs)
         echo "🧪 Testing starknet_getBlockWithTxs"
         validate_args $# 1
-        get_block_with_tx "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
+        get_block_with_tx "$PROVIDER_MADARA" "$1" "$OUTPUT_MADARA"
         get_block_with_tx "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
         ;;
     getBlockWithTxHashes)
         echo "🧪 Testing starknet_getBlockWithTxHashes"
         validate_args $# 1
-        get_block_with_tx_hashes "$PROVIDER_DEOXYS" "$1" "$OUTPUT_DEOXYS"
+        get_block_with_tx_hashes "$PROVIDER_MADARA" "$1" "$OUTPUT_MADARA"
         get_block_with_tx_hashes "$PROVIDER_PATHFINDER" "$1" "$OUTPUT_PATHFINDER"
         ;;
     *)
@@ -217,10 +217,10 @@ case $COMMAND in
         ;;
 esac
 
-diff output_deoxys.json output_pathfinder.json
+diff output_madara.json output_pathfinder.json
 
 if [ $? -eq 0 ]; then
-    if [ -s "$OUTPUT_DEOXYS" ]; then
+    if [ -s "$OUTPUT_MADARA" ]; then
         echo "✅ RPC results match"
         exit 0
     fi

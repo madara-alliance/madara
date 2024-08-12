@@ -1,4 +1,4 @@
-use dp_block::DeoxysMaybePendingBlockInfo;
+use dp_block::MadaraMaybePendingBlockInfo;
 use starknet_core::types::{Felt, TransactionFinalityStatus, TransactionReceiptWithBlockInfo};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
@@ -56,8 +56,8 @@ pub async fn get_transaction_receipt(
         .to_starknet_core(finality_status);
 
     let block = match block.info {
-        DeoxysMaybePendingBlockInfo::Pending(_) => starknet_core::types::ReceiptBlock::Pending,
-        DeoxysMaybePendingBlockInfo::NotPending(block) => starknet_core::types::ReceiptBlock::Block {
+        MadaraMaybePendingBlockInfo::Pending(_) => starknet_core::types::ReceiptBlock::Pending,
+        MadaraMaybePendingBlockInfo::NotPending(block) => starknet_core::types::ReceiptBlock::Block {
             block_hash: block.block_hash,
             block_number: block.header.block_number,
         },

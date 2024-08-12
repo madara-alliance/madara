@@ -1,5 +1,5 @@
 [package]
-description = "Deoxys primitive for block state update"
+description = "Madara primitive for block state update"
 name = "dp-state-update"
 authors.workspace = true
 edition.workspace = true

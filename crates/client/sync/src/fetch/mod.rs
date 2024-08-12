@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use dc_db::DeoxysBackend;
+use dc_db::MadaraBackend;
 use dp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use fetchers::FetchBlockId;
 use futures::prelude::*;
@@ -17,7 +17,7 @@ pub mod fetchers;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn l2_fetch_task(
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     first_block: u64,
     n_blocks_to_sync: Option<u64>,
     fetch_stream_sender: mpsc::Sender<L2BlockAndUpdates>,

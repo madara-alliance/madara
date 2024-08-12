@@ -1,4 +1,4 @@
-use dp_block::DeoxysMaybePendingBlockInfo;
+use dp_block::MadaraMaybePendingBlockInfo;
 use dp_receipt::ExecutionResult;
 use starknet_core::types::{Felt, TransactionExecutionStatus, TransactionStatus};
 
@@ -39,10 +39,10 @@ pub fn get_transaction_status(starknet: &Starknet, transaction_hash: Felt) -> St
     };
 
     match block.info {
-        DeoxysMaybePendingBlockInfo::Pending(_) => {
+        MadaraMaybePendingBlockInfo::Pending(_) => {
             Ok(TransactionStatus::Received) // TODO(merge): is that correct?
         }
-        DeoxysMaybePendingBlockInfo::NotPending(block) => {
+        MadaraMaybePendingBlockInfo::NotPending(block) => {
             if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
                 Ok(TransactionStatus::AcceptedOnL2(tx_execution_status))
             } else {

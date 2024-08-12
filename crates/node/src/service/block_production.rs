@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dc_db::{DatabaseService, DeoxysBackend};
+use dc_db::{DatabaseService, MadaraBackend};
 use dc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
 use dc_metrics::MetricsRegistry;
 use dc_telemetry::TelemetryHandle;
@@ -10,7 +10,7 @@ use tokio::task::JoinSet;
 use crate::cli::block_production::BlockProductionParams;
 
 struct StartParams {
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
     l1_data_provider: Arc<dyn L1DataProvider>,
 }

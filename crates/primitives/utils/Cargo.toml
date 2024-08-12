@@ -1,5 +1,5 @@
 [package]
-description = "Deoxys utilities"
+description = "Madara utilities"
 name = "dp-utils"
 authors.workspace = true
 edition.workspace = true

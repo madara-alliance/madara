@@ -4,7 +4,7 @@ use core::time::Duration;
 use std::collections::HashMap;
 
 use dc_db::storage_updates::DbClassUpdate;
-use dc_db::DeoxysBackend;
+use dc_db::MadaraBackend;
 use dp_block::{BlockId, BlockTag};
 use dp_convert::ToStateUpdateCore;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
@@ -94,7 +94,7 @@ pub struct L2BlockAndUpdates {
 }
 
 pub async fn fetch_block_and_updates(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     block_id: FetchBlockId,
     provider: &SequencerGatewayProvider,
 ) -> Result<L2BlockAndUpdates, L2SyncError> {
@@ -156,7 +156,7 @@ async fn fetch_state_update_with_block(
 
 /// retrieves class updates from Starknet sequencer
 async fn fetch_class_updates(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     state_update: &StateUpdate,
     block_id: FetchBlockId,
     provider: &SequencerGatewayProvider,

@@ -7,9 +7,9 @@ use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::transaction_execution::Transaction;
 use dc_db::db_block_id::DbBlockId;
-use dc_db::{DeoxysBackend, DeoxysStorageError};
+use dc_db::{MadaraBackend, MadaraStorageError};
 use dc_exec::{BlockifierStateAdapter, ExecutionContext};
-use dp_block::{BlockId, BlockTag, DeoxysPendingBlock};
+use dp_block::{BlockId, BlockTag, MadaraPendingBlock};
 use dp_class::ConvertedClass;
 use dp_convert::ToFelt;
 use dp_receipt::from_blockifier_execution_info;
@@ -33,7 +33,7 @@ const TX_BATCH_SIZE: usize = 128;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Storage error: {0:#}")]
-    StorageError(#[from] DeoxysStorageError),
+    StorageError(#[from] MadaraStorageError),
     #[error("Execution error: {0:#}")]
     Execution(#[from] TransactionExecutionError),
     #[error(transparent)]
@@ -43,7 +43,7 @@ pub enum Error {
 }
 
 fn csd_to_state_diff(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
     csd: &CommitmentStateDiff,
 ) -> Result<StateDiff, Error> {
@@ -133,7 +133,7 @@ fn get_visited_segments<S: StateReader>(
 fn finalize_execution_state<S: StateReader>(
     _executed_txs: &[MempoolTransaction],
     tx_executor: &mut TransactionExecutor<S>,
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
 ) -> Result<(StateDiff, VisitedSegmentsMapping, BouncerWeights), Error> {
     let csd = tx_executor
@@ -153,9 +153,9 @@ fn finalize_execution_state<S: StateReader>(
 /// This is to allow optimistic concurrency. However, the block may get full during batch execution,
 /// and we need to re-add the transactions back into the mempool.
 pub struct BlockProductionTask {
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
-    block: DeoxysPendingBlock,
+    block: MadaraPendingBlock,
     declared_classes: Vec<ConvertedClass>,
     executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
@@ -164,12 +164,12 @@ pub struct BlockProductionTask {
 
 impl BlockProductionTask {
     pub fn new(
-        backend: Arc<DeoxysBackend>,
+        backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
         let parent_block_hash = backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
-        let pending_block = DeoxysPendingBlock::new_empty(make_pending_header(
+        let pending_block = MadaraPendingBlock::new_empty(make_pending_header(
             parent_block_hash,
             backend.chain_config(),
             l1_data_provider.as_ref(),
@@ -318,7 +318,7 @@ impl BlockProductionTask {
         // Convert the pending block to a closed block and save to db.
 
         let parent_block_hash = Felt::ZERO; // temp parent block hash
-        let new_empty_block = DeoxysPendingBlock::new_empty(make_pending_header(
+        let new_empty_block = MadaraPendingBlock::new_empty(make_pending_header(
             parent_block_hash,
             self.backend.chain_config(),
             self.l1_data_provider.as_ref(),

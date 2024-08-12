@@ -56,7 +56,7 @@ strip = "symbols"    # Removes debug info and symbold from final binary
 authors = ["KasarLabs <https://github.com/KasarLabs>"]
 homepage = "https://kasar.io"
 edition = "2021"
-repository = "https://github.com/KasarLabs/deoxys/"
+repository = "https://github.com/KasarLabs/madara/"
 version = "0.1.0"
 license = "Apache-2.0"
 
@@ -70,7 +70,7 @@ bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bon
   "std",
 ] }
 
-# Deoxys primtitives
+# Madara primtitives
 dp-block = { path = "crates/primitives/block", default-features = false }
 dp-convert = { path = "crates/primitives/convert", default-features = false }
 dp-transactions = { path = "crates/primitives/transactions", default-features = false }
@@ -79,7 +79,7 @@ dp-receipt = { path = "crates/primitives/receipt", default-features = false }
 dp-state-update = { path = "crates/primitives/state_update", default-features = false }
 dp-utils = { path = "crates/primitives/utils", default-features = false }
 
-# Deoxys client
+# Madara client
 dc-telemetry = { path = "crates/client/telemetry" }
 dc-db = { path = "crates/client/db" }
 dc-exec = { path = "crates/client/exec" }

@@ -2,7 +2,7 @@ use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{StateReader, StateResult};
 use dc_db::db_block_id::DbBlockId;
-use dc_db::DeoxysBackend;
+use dc_db::MadaraBackend;
 use dp_block::BlockId;
 use dp_class::to_blockifier_class;
 use dp_convert::{felt_to_u64, ToFelt};
@@ -15,14 +15,14 @@ use std::sync::Arc;
 /// There is no actual mutable logic here - when using block production, the actual key value
 /// changes in db are evaluated at the end only from the produced state diff.
 pub struct BlockifierStateAdapter {
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     /// When this value is None, we are executing the genesis block.
     pub on_top_of_block_id: Option<DbBlockId>,
     pub block_number: u64,
 }
 
 impl BlockifierStateAdapter {
-    pub fn new(backend: Arc<DeoxysBackend>, block_number: u64, on_top_of_block_id: Option<DbBlockId>) -> Self {
+    pub fn new(backend: Arc<MadaraBackend>, block_number: u64, on_top_of_block_id: Option<DbBlockId>) -> Self {
         Self { backend, on_top_of_block_id, block_number }
     }
 }

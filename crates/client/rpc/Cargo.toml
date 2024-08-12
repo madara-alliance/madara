@@ -1,6 +1,6 @@
 [package]
 name = "dc-rpc"
-description = "Deoxys client rpc service"
+description = "Madara client rpc service"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,7 +13,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
-# Deoxys
+# Madara
 dc-db = { workspace = true }
 dc-exec = { workspace = true }
 dc-mempool = { workspace = true }

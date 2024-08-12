@@ -59,7 +59,7 @@ impl RunCmd {
         if self.name.is_none() {
             let name = dc_sync::utility::get_random_pokemon_name().await.unwrap_or_else(|e| {
                 log::warn!("Failed to get random pokemon name: {}", e);
-                "deoxys".to_string()
+                "madara".to_string()
             });
 
             self.name = Some(name);

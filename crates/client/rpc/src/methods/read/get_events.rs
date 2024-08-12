@@ -1,4 +1,4 @@
-use dp_block::{DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo};
+use dp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage, Felt};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
@@ -122,10 +122,10 @@ fn block_range(
     Ok((from_block_n, to_block_n, latest_block_n))
 }
 
-fn get_block_events(_starknet: &Starknet, block: &DeoxysMaybePendingBlock) -> Vec<EmittedEvent> {
+fn get_block_events(_starknet: &Starknet, block: &MadaraMaybePendingBlock) -> Vec<EmittedEvent> {
     let (block_hash, block_number) = match &block.info {
-        DeoxysMaybePendingBlockInfo::Pending(_) => (None, None),
-        DeoxysMaybePendingBlockInfo::NotPending(block) => (Some(block.block_hash), Some(block.header.block_number)),
+        MadaraMaybePendingBlockInfo::Pending(_) => (None, None),
+        MadaraMaybePendingBlockInfo::NotPending(block) => (Some(block.block_hash), Some(block.header.block_number)),
     };
 
     let tx_hash_and_events = block.inner.receipts.iter().flat_map(|receipt| {

@@ -1,5 +1,5 @@
 [package]
-description = "Deoxys primitive for type conversion"
+description = "Madara primitive for type conversion"
 name = "dp-convert"
 authors.workspace = true
 edition.workspace = true

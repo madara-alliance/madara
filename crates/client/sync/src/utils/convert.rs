@@ -1,9 +1,9 @@
-//! Converts types from [`starknet_providers`] to deoxys's expected types.
+//! Converts types from [`starknet_providers`] to madara's expected types.
 
 use dc_db::storage_updates::DbClassUpdate;
 use dp_block::header::{GasPrices, L1DataAvailabilityMode, PendingHeader};
 use dp_block::{
-    DeoxysBlock, DeoxysBlockInfo, DeoxysBlockInner, DeoxysPendingBlock, DeoxysPendingBlockInfo, Header, StarknetVersion,
+    MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraPendingBlock, MadaraPendingBlockInfo, Header, StarknetVersion,
 };
 use dp_class::{ClassInfo, ConvertedClass, ToCompiledClass};
 use dp_convert::felt_to_u128;
@@ -21,14 +21,14 @@ use crate::l2::L2SyncError;
 pub fn convert_inner(
     txs: Vec<starknet_providers::sequencer::models::TransactionType>,
     receipts: Vec<starknet_providers::sequencer::models::ConfirmedTransactionReceipt>,
-) -> Result<DeoxysBlockInner, L2SyncError> {
+) -> Result<MadaraBlockInner, L2SyncError> {
     // converts starknet_provider transactions and events to dp_transactions and starknet_api events
     let transactions_receipts = Iterator::zip(receipts.into_iter(), txs.iter())
         .map(|(tx_receipts, tx)| TransactionReceipt::from_provider(tx_receipts, tx))
         .collect::<Vec<_>>();
     let transactions = txs.into_iter().map(|tx| tx.try_into()).collect::<Result<_, _>>()?;
 
-    Ok(DeoxysBlockInner::new(transactions, transactions_receipts))
+    Ok(MadaraBlockInner::new(transactions, transactions_receipts))
 }
 
 /// This function only does tx hash computation.
@@ -36,7 +36,7 @@ pub fn convert_pending(
     block: starknet_providers::sequencer::models::Block,
     state_diff: starknet_core::types::StateDiff,
     chain_id: Felt,
-) -> Result<(DeoxysPendingBlock, StateDiff), L2SyncError> {
+) -> Result<(MadaraPendingBlock, StateDiff), L2SyncError> {
     let block_inner = convert_inner(block.transactions, block.transaction_receipts)?;
     let converted_state_diff = state_diff.into();
 
@@ -50,7 +50,7 @@ pub fn convert_pending(
     };
     let tx_hashes = block_inner.transactions.iter().map(|tx| calculate_transaction_hash(tx, chain_id, None)).collect();
 
-    Ok((DeoxysPendingBlock::new(DeoxysPendingBlockInfo::new(header, tx_hashes), block_inner), converted_state_diff))
+    Ok((MadaraPendingBlock::new(MadaraPendingBlockInfo::new(header, tx_hashes), block_inner), converted_state_diff))
 }
 
 /// Compute heavy, this should only be called in a rayon ctx
@@ -58,7 +58,7 @@ pub fn convert_and_verify_block(
     block: starknet_providers::sequencer::models::Block,
     state_diff: starknet_core::types::StateDiff,
     chain_id: Felt,
-) -> Result<(DeoxysBlock, StateDiff), L2SyncError> {
+) -> Result<(MadaraBlock, StateDiff), L2SyncError> {
     let block_inner = convert_inner(block.transactions, block.transaction_receipts)?;
     let converted_state_diff: StateDiff = state_diff.into();
 
@@ -105,7 +105,7 @@ pub fn convert_and_verify_block(
         return Err(L2SyncError::MismatchedBlockHash(block_number));
     }
 
-    Ok((DeoxysBlock::new(DeoxysBlockInfo::new(header, tx_hashes, block_hash), block_inner), converted_state_diff))
+    Ok((MadaraBlock::new(MadaraBlockInfo::new(header, tx_hashes, block_hash), block_inner), converted_state_diff))
 }
 
 pub struct BlockCommitments {
@@ -120,7 +120,7 @@ pub struct BlockCommitments {
 }
 
 pub fn compute_commitments_for_block(
-    block_inner: &DeoxysBlockInner,
+    block_inner: &MadaraBlockInner,
     state_diff: &StateDiff,
     starknet_version: StarknetVersion,
     chain_id: Felt,

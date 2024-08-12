@@ -29,7 +29,7 @@ pub fn generate_cargo_keys() {
         }
     };
 
-    println!("cargo:rustc-env=DEOXYS_BUILD_VERSION={}", get_version(&commit))
+    println!("cargo:rustc-env=MADARA_BUILD_VERSION={}", get_version(&commit))
 }
 
 fn get_version(impl_commit: &str) -> String {

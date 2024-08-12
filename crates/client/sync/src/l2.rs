@@ -7,11 +7,11 @@ use crate::metrics::block_metrics::BlockMetrics;
 use crate::utility::trim_hash;
 use anyhow::{bail, Context};
 use dc_db::db_metrics::DbMetrics;
-use dc_db::DeoxysBackend;
-use dc_db::DeoxysStorageError;
+use dc_db::MadaraBackend;
+use dc_db::MadaraStorageError;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
-use dp_block::{BlockId, BlockTag, DeoxysBlock, DeoxysMaybePendingBlockInfo, StarknetVersionError};
-use dp_block::{DeoxysMaybePendingBlock, Header};
+use dp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, StarknetVersionError};
+use dp_block::{MadaraMaybePendingBlock, Header};
 use dp_class::ConvertedClass;
 use dp_state_update::StateDiff;
 use dp_transactions::TransactionTypeError;
@@ -36,7 +36,7 @@ pub enum L2SyncError {
     #[error("Provider error: {0:#}")]
     Provider(#[from] ProviderError),
     #[error("Database error: {0:#}")]
-    Db(#[from] DeoxysStorageError),
+    Db(#[from] MadaraStorageError),
     #[error("Malformated block: {0}")]
     BlockFormat(Cow<'static, str>),
     #[error("Mismatched block hash for block {0}")]
@@ -59,7 +59,7 @@ pub struct L2StateUpdate {
 
 #[allow(clippy::too_many_arguments)]
 async fn l2_verify_and_apply_task(
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     mut updates_receiver: mpsc::Receiver<L2ConvertedBlockAndUpdates>,
     verify: bool,
     backup_every_n_blocks: Option<u64>,
@@ -111,8 +111,8 @@ async fn l2_verify_and_apply_task(
         spawn_rayon_task(move || {
             backend_
                 .store_block(
-                    DeoxysMaybePendingBlock {
-                        info: DeoxysMaybePendingBlockInfo::NotPending(converted_block.info),
+                    MadaraMaybePendingBlock {
+                        info: MadaraMaybePendingBlockInfo::NotPending(converted_block.info),
                         inner: converted_block.inner,
                     },
                     state_diff,
@@ -175,7 +175,7 @@ async fn l2_verify_and_apply_task(
 }
 
 pub struct L2ConvertedBlockAndUpdates {
-    pub converted_block: DeoxysBlock,
+    pub converted_block: MadaraBlock,
     pub converted_state_diff: StateDiff,
     pub converted_classes: Vec<ConvertedClass>,
 }
@@ -225,7 +225,7 @@ async fn l2_block_conversion_task(
 }
 
 async fn l2_pending_block_task(
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     sync_finished_cb: oneshot::Receiver<()>,
     provider: Arc<SequencerGatewayProvider>,
     chain_id: Felt,
@@ -273,8 +273,8 @@ async fn l2_pending_block_task(
 
                 backend_
                     .store_block(
-                        DeoxysMaybePendingBlock {
-                            info: DeoxysMaybePendingBlockInfo::Pending(block.info),
+                        MadaraMaybePendingBlock {
+                            info: MadaraMaybePendingBlockInfo::Pending(block.info),
                             inner: block.inner,
                         },
                         converted_state_diff,
@@ -306,7 +306,7 @@ pub struct L2SyncConfig {
 /// Spawns workers to fetch blocks and state updates from the feeder.
 #[allow(clippy::too_many_arguments)]
 pub async fn sync(
-    backend: &Arc<DeoxysBackend>,
+    backend: &Arc<MadaraBackend>,
     provider: SequencerGatewayProvider,
     config: L2SyncConfig,
     block_metrics: BlockMetrics,
@@ -375,7 +375,7 @@ async fn update_sync_metrics(
     block_metrics: &BlockMetrics,
     db_metrics: &DbMetrics,
     sync_timer: Arc<Mutex<Option<Instant>>>,
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
 ) -> anyhow::Result<()> {
     // Update Block sync time metrics
     let elapsed_time = {

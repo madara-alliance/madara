@@ -1,4 +1,4 @@
-//! Deoxys database
+//! Madara database
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -27,7 +27,7 @@ pub mod db_block_id;
 pub mod db_metrics;
 pub mod storage_updates;
 
-pub use error::{DeoxysStorageError, TrieType};
+pub use error::{MadaraStorageError, TrieType};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use tokio::sync::{mpsc, oneshot};
 
@@ -312,9 +312,9 @@ impl DatabaseExt for DB {
     }
 }
 
-/// Deoxys client database backend singleton.
+/// Madara client database backend singleton.
 #[derive(Debug)]
-pub struct DeoxysBackend {
+pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
     last_flush_time: Mutex<Option<Instant>>,
@@ -322,7 +322,7 @@ pub struct DeoxysBackend {
 }
 
 pub struct DatabaseService {
-    handle: Arc<DeoxysBackend>,
+    handle: Arc<MadaraBackend>,
 }
 
 impl DatabaseService {
@@ -335,13 +335,13 @@ impl DatabaseService {
         log::info!("💾 Opening database at: {}", base_path.display());
 
         let handle =
-            DeoxysBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_config)
+            MadaraBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_config)
                 .await?;
 
         Ok(Self { handle })
     }
 
-    pub fn backend(&self) -> &Arc<DeoxysBackend> {
+    pub fn backend(&self) -> &Arc<MadaraBackend> {
         &self.handle
     }
 }
@@ -353,13 +353,13 @@ struct BackupRequest {
     db: Arc<DB>,
 }
 
-impl Drop for DeoxysBackend {
+impl Drop for MadaraBackend {
     fn drop(&mut self) {
         log::info!("⏳ Gracefully closing the database...");
     }
 }
 
-impl DeoxysBackend {
+impl MadaraBackend {
     pub fn chain_config(&self) -> &Arc<ChainConfig> {
         &self.chain_config
     }
@@ -370,7 +370,7 @@ impl DeoxysBackend {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
-    ) -> Result<Arc<DeoxysBackend>> {
+    ) -> Result<Arc<MadaraBackend>> {
         let db_path = db_config_dir.join("db");
 
         let (db, backup_handle) = open_rocksdb(&db_path, true, backup_dir, restore_from_latest_backup).await?;

@@ -1,4 +1,4 @@
-# Deoxys Changelog
+# Madara Changelog
 
 ## Next release
 
@@ -79,7 +79,7 @@
 - fix(lib): updated core libs to match oss
 - fix: state root - replaced_classes commit
 - feat: fetch block and state update in only one request
-- feat: added deoxys launcher script
+- feat: added madara launcher script
 - fix: creation of the block context
 - fix: is_missing_class
 - fix: state root - replaced_classes
@@ -175,10 +175,10 @@
 - fix(worflows): fix toolchain and cache issue
 - feat: Removal of the hardcoded mainnet configuration
 - refactor: pass new CI
-- fix(workflows): Fix deoxys CI
+- fix(workflows): Fix madara CI
 - feat(rpc): add_invoke_tx, add_deploy_account_tx, add_declare_tx
 - feat(rpc): tx_receipt, re-execute tx
-- feat(script): added CI scripts for starting Deoxys and comparing JSON RPC
+- feat(script): added CI scripts for starting Madara and comparing JSON RPC
   calls
 - perf(verify_l2): parallelized l2 state root update
 - perf(state_commitment): parallelized state commitment hash computations

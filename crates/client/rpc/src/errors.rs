@@ -1,4 +1,4 @@
-use dc_db::DeoxysStorageError;
+use dc_db::MadaraStorageError;
 use serde_json::json;
 use starknet_api::StarknetApiError;
 use starknet_core::types::StarknetError;
@@ -195,8 +195,8 @@ impl From<StarknetError> for StarknetRpcApiError {
     }
 }
 
-impl From<DeoxysStorageError> for StarknetRpcApiError {
-    fn from(_: DeoxysStorageError) -> Self {
+impl From<MadaraStorageError> for StarknetRpcApiError {
+    fn from(_: MadaraStorageError) -> Self {
         StarknetRpcApiError::ErrUnexpectedError { data: "DB error".to_string() }
     }
 }

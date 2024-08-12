@@ -1,6 +1,6 @@
 use starknet_core::types::{BlockId, MaybePendingBlockWithTxs};
 
-use dp_block::DeoxysMaybePendingBlockInfo;
+use dp_block::MadaraMaybePendingBlockInfo;
 use jsonrpsee::core::RpcResult;
 use starknet_core::types::{BlockStatus, BlockWithTxs, PendingBlockWithTxs};
 
@@ -32,7 +32,7 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
         .collect();
 
     match block.info {
-        DeoxysMaybePendingBlockInfo::Pending(block) => {
+        MadaraMaybePendingBlockInfo::Pending(block) => {
             Ok(MaybePendingBlockWithTxs::PendingBlock(PendingBlockWithTxs {
                 transactions: transactions_core,
                 parent_hash: block.header.parent_block_hash,
@@ -44,7 +44,7 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
                 starknet_version: block.header.protocol_version.to_string(),
             }))
         }
-        DeoxysMaybePendingBlockInfo::NotPending(block) => {
+        MadaraMaybePendingBlockInfo::NotPending(block) => {
             let status = if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
                 BlockStatus::AcceptedOnL1
             } else {

@@ -1,20 +1,20 @@
 version: "3.8"
 
 services:
-  deoxys:
+  madara:
     build:
-      context: ../../deoxys
+      context: ../../madara
       dockerfile: Dockerfile
-    container_name: deoxys
+    container_name: madara
     restart: unless-stopped
     ports:
       - "9944:9944"
       - "9615:9615"
     volumes:
-      - /var/lib/deoxys:/var/lib/deoxys
+      - /var/lib/madara:/var/lib/madara
     command:
       [
-        "--deoxys",
+        "--madara",
         "--rpc-port",
         "9944",
         "--network",
@@ -25,11 +25,11 @@ services:
         "--rpc-methods",
         "Safe",
         "--l1-endpoint",
-        "${DEOXYS_ETHEREUM_API_URL}",
+        "${MADARA_ETHEREUM_API_URL}",
         "--rpc-max-connections",
         "100",
         "--base-path",
-        "/var/lib/deoxys",
+        "/var/lib/madara",
         "--prometheus-external",
       ]
 

@@ -3712,47 +3712,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "deoxys"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "async-trait",
- "chrono",
- "clap",
- "dc-db",
- "dc-eth",
- "dc-mempool",
- "dc-metrics",
- "dc-rpc",
- "dc-sync",
- "dc-telemetry",
- "dp-block",
- "dp-convert",
- "dp-utils",
- "env_logger 0.11.3",
- "fdlimit",
- "forwarded-header-value",
- "futures",
- "governor",
- "hyper 0.14.29",
- "ip_network",
- "jsonrpsee",
- "log",
- "primitive-types",
- "rayon",
- "serde_json",
- "starknet-providers",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
- "tokio",
- "tower",
- "tower-http",
- "url",
-]
-
-[[package]]
 name = "der"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5937,6 +5896,47 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b955cdeb2a02b9117f121ce63aa52d08ade45de53e48fe6a38b39c10f6f709"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "madara"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "clap",
+ "dc-db",
+ "dc-eth",
+ "dc-mempool",
+ "dc-metrics",
+ "dc-rpc",
+ "dc-sync",
+ "dc-telemetry",
+ "dp-block",
+ "dp-convert",
+ "dp-utils",
+ "env_logger 0.11.3",
+ "fdlimit",
+ "forwarded-header-value",
+ "futures",
+ "governor",
+ "hyper 0.14.29",
+ "ip_network",
+ "jsonrpsee",
+ "log",
+ "primitive-types",
+ "rayon",
+ "serde_json",
+ "starknet-providers",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tower-http",
+ "url",
 ]
 
 [[package]]

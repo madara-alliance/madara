@@ -9,7 +9,7 @@ RUN apt-get -y update && \
     rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
-WORKDIR /usr/src/deoxys/
+WORKDIR /usr/src/madara/
 
 # Copy the source code into the container
 COPY Cargo.toml Cargo.lock ./
@@ -32,7 +32,7 @@ RUN apt-get -y update && \
 WORKDIR /usr/local/bin
 
 # Copy the compiled binary from the builder stage
-COPY --from=builder /usr/src/deoxys/target/release/deoxys .
+COPY --from=builder /usr/src/madara/target/release/madara .
 
 # Set the entrypoint
-CMD ["./deoxys"]
+CMD ["./madara"]

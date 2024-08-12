@@ -5,7 +5,7 @@ use starknet_providers::sequencer::models::Block as StarknetBlock;
 /// On Starknet with the current system relying on a single sequencer it's rare to detect a reorg,
 /// but if the L1 reorgs we must handle it the following way:
 ///
-/// 1. The last fetched block parent hash is not equal to the last synced block by Deoxys: a reorg
+/// 1. The last fetched block parent hash is not equal to the last synced block by Madara: a reorg
 ///    is detected.
 /// 2. We remove the last synced substrate digest and the associated classes/state_update we stored
 ///    until we reach the last common ancestor.
@@ -18,13 +18,13 @@ use starknet_providers::sequencer::models::Block as StarknetBlock;
 /// This function will return a `Bool` returning `true` if a reorg was detected and `false` if not.
 pub async fn reorg(_block: StarknetBlock) -> bool {
     todo!()
-    // let last_synced_block_hash = DeoxysBackend::meta().get_latest_block_hash_and_number().unwrap().0;
+    // let last_synced_block_hash = MadaraBackend::meta().get_latest_block_hash_and_number().unwrap().0;
     // if block.parent_block_hash != last_synced_block_hash {
     //     let mut new_lsbh = last_synced_block_hash;
     //     while block.parent_block_hash != new_lsbh {
     //         // 1. Remove the last synced block in the digest
     //         // 2. Remove all the downloaded stuff from the state updates
-    //         new_lsbh = DeoxysBackend::meta().get_latest_block_hash_and_number().unwrap().0;
+    //         new_lsbh = MadaraBackend::meta().get_latest_block_hash_and_number().unwrap().0;
     //     }
     //     // 3. Revert the state commitment tries to the correct block number
     //     true

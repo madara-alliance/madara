@@ -4,8 +4,8 @@ use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
-use dc_db::DeoxysBackend;
-use dc_db::{bonsai_identifier, DeoxysStorageError};
+use dc_db::MadaraBackend;
+use dc_db::{bonsai_identifier, MadaraStorageError};
 use dp_block::{BlockId, BlockTag};
 use dp_state_update::{ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StorageEntry};
 use starknet_types_core::felt::Felt;
@@ -29,13 +29,13 @@ struct ContractLeaf {
 ///
 /// The contract root.
 pub fn contract_trie_root(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     deployed_contracts: &[DeployedContractItem],
     replaced_classes: &[ReplacedClassItem],
     nonces: &[NonceUpdate],
     storage_diffs: &[ContractStorageDiffItem],
     block_number: u64,
-) -> Result<Felt, DeoxysStorageError> {
+) -> Result<Felt, MadaraStorageError> {
     let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
 
     let mut contract_storage_trie = backend.contract_storage_trie();
@@ -104,21 +104,21 @@ pub fn contract_trie_root(
 ///
 /// The contract state leaf hash.
 fn contract_state_leaf_hash(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     contract_address: &Felt,
     contract_leaf: &ContractLeaf,
-) -> Result<Felt, DeoxysStorageError> {
+) -> Result<Felt, MadaraStorageError> {
     let nonce = contract_leaf.nonce.unwrap_or(
         backend.get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), contract_address)?.unwrap_or(Felt::ZERO),
     );
 
     let class_hash = contract_leaf.class_hash.unwrap_or(
-        backend.get_contract_class_hash_at(&BlockId::Tag(BlockTag::Latest), contract_address)?.unwrap_or(Felt::ZERO), // .ok_or(DeoxysStorageError::InconsistentStorage("Class hash not found".into()))?
+        backend.get_contract_class_hash_at(&BlockId::Tag(BlockTag::Latest), contract_address)?.unwrap_or(Felt::ZERO), // .ok_or(MadaraStorageError::InconsistentStorage("Class hash not found".into()))?
     );
 
     let storage_root = contract_leaf
         .storage_root
-        .ok_or(DeoxysStorageError::InconsistentStorage("Storage root need to be set".into()))?;
+        .ok_or(MadaraStorageError::InconsistentStorage("Storage root need to be set".into()))?;
 
     // computes the contract state leaf hash
     let contract_state_hash = Pedersen::hash(&class_hash, &storage_root);

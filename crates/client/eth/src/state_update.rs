@@ -4,7 +4,7 @@ use crate::{
     utils::{convert_log_state_update, trim_hash},
 };
 use anyhow::Context;
-use dc_db::DeoxysBackend;
+use dc_db::MadaraBackend;
 use dp_transactions::MAIN_CHAIN_ID;
 use dp_utils::channel_wait_or_graceful_shutdown;
 use futures::StreamExt;
@@ -32,7 +32,7 @@ pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1Stat
 /// verified state
 pub async fn listen_and_update_state(
     eth_client: &EthereumClient,
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     block_metrics: &L1BlockMetrics,
     chain_id: Felt,
 ) -> anyhow::Result<()> {
@@ -51,7 +51,7 @@ pub async fn listen_and_update_state(
 }
 
 pub fn update_l1(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     state_update: L1StateUpdate,
     block_metrics: &L1BlockMetrics,
     chain_id: Felt,
@@ -78,7 +78,7 @@ pub fn update_l1(
     Ok(())
 }
 
-pub async fn sync(backend: &DeoxysBackend, eth_client: &EthereumClient, chain_id: Felt) -> anyhow::Result<()> {
+pub async fn sync(backend: &MadaraBackend, eth_client: &EthereumClient, chain_id: Felt) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
     log::debug!("update_l1: cleared confirmed block number");

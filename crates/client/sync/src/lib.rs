@@ -15,7 +15,7 @@ pub mod starknet_sync_worker {
     use super::*;
     use crate::metrics::block_metrics::BlockMetrics;
     use anyhow::Context;
-    use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
+    use dc_db::{db_metrics::DbMetrics, MadaraBackend};
     use dc_eth::client::EthereumClient;
     use dc_telemetry::TelemetryHandle;
     use dp_convert::ToFelt;
@@ -26,7 +26,7 @@ pub mod starknet_sync_worker {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn sync(
-        backend: &Arc<DeoxysBackend>,
+        backend: &Arc<MadaraBackend>,
         fetch_config: FetchConfig,
         eth_client: EthereumClient,
         starting_block: Option<u64>,

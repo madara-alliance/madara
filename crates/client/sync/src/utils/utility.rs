@@ -1,4 +1,4 @@
-//! Utility functions for Deoxys.
+//! Utility functions for Madara.
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;

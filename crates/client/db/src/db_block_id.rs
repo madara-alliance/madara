@@ -2,7 +2,7 @@ use core::fmt;
 
 use dp_block::BlockId;
 
-use crate::{DeoxysBackend, DeoxysStorageError};
+use crate::{MadaraBackend, MadaraStorageError};
 
 #[derive(Debug, Clone, Copy)]
 pub enum DbBlockId {
@@ -17,23 +17,23 @@ impl DbBlockId {
 }
 
 pub trait DbBlockIdResolvable {
-    fn resolve_db_block_id(&self, backend: &DeoxysBackend) -> Result<Option<DbBlockId>, DeoxysStorageError>;
+    fn resolve_db_block_id(&self, backend: &MadaraBackend) -> Result<Option<DbBlockId>, MadaraStorageError>;
 }
 
 impl DbBlockIdResolvable for BlockId {
-    fn resolve_db_block_id(&self, backend: &DeoxysBackend) -> Result<Option<DbBlockId>, DeoxysStorageError> {
+    fn resolve_db_block_id(&self, backend: &MadaraBackend) -> Result<Option<DbBlockId>, MadaraStorageError> {
         backend.id_to_storage_type(self)
     }
 }
 
 impl DbBlockIdResolvable for starknet_core::types::BlockId {
-    fn resolve_db_block_id(&self, backend: &DeoxysBackend) -> Result<Option<DbBlockId>, DeoxysStorageError> {
+    fn resolve_db_block_id(&self, backend: &MadaraBackend) -> Result<Option<DbBlockId>, MadaraStorageError> {
         backend.id_to_storage_type(&(*self).into())
     }
 }
 
 impl DbBlockIdResolvable for DbBlockId {
-    fn resolve_db_block_id(&self, _backend: &DeoxysBackend) -> Result<Option<DbBlockId>, DeoxysStorageError> {
+    fn resolve_db_block_id(&self, _backend: &MadaraBackend) -> Result<Option<DbBlockId>, MadaraStorageError> {
         Ok(Some(*self))
     }
 }
@@ -47,8 +47,8 @@ impl fmt::Display for DbBlockId {
     }
 }
 
-impl DeoxysBackend {
-    pub fn resolve_block_id(&self, id: &impl DbBlockIdResolvable) -> Result<Option<DbBlockId>, DeoxysStorageError> {
+impl MadaraBackend {
+    pub fn resolve_block_id(&self, id: &impl DbBlockIdResolvable) -> Result<Option<DbBlockId>, MadaraStorageError> {
         id.resolve_db_block_id(self)
     }
 }

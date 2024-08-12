@@ -2,11 +2,11 @@
 authors.workspace = true
 description = "This crate is responsible to sync data"
 edition = "2021"
-homepage = "https://github.com/KasarLabs/deoxys"
+homepage = "https://github.com/KasarLabs/madara"
 license = "MIT"
 name = "dc-sync"
 publish = false
-repository = "https://github.com/KasarLabs/deoxys"
+repository = "https://github.com/KasarLabs/madara"
 version = "0.1.0"
 
 [features]
@@ -18,7 +18,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
-# Deoxys
+# Madara
 dc-db = { workspace = true }
 dc-eth = { workspace = true }
 dc-metrics = { workspace = true }

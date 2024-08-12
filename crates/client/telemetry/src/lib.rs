@@ -68,7 +68,7 @@ impl TelemetryService {
             "authority": false,
             "config": "",
             "genesis_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "implementation": "Deoxys Node",
+            "implementation": "Madara Node",
             "msg": "system.connected",
             "name": name,
             "network_id": network_id,
