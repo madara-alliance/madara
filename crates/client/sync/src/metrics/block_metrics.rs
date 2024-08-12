@@ -31,9 +31,10 @@ impl BlockMetrics {
             transaction_count: registry
                 .register(Gauge::new("madara_transaction_count", "Gauge for madara transaction count")?)?,
             event_count: registry.register(Gauge::new("madara_event_count", "Gauge for madara event count")?)?,
-            l1_gas_price_wei: registry.register(Gauge::new("madara_l1_gas_price", "Gauge for madara L1 gas price")?)?,
+            l1_gas_price_wei: registry
+                .register(Gauge::new("madara_l1_block_gas_price", "Gauge for madara L1 gas price")?)?,
             l1_gas_price_strk: registry
-                .register(Gauge::new("madara_l1_gas_price_strk", "Gauge for madara L1 gas price in strk")?)?,
+                .register(Gauge::new("madara_l1_block_gas_price_strk", "Gauge for madara L1 gas price in strk")?)?,
         })
     }
 }
