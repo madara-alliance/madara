@@ -31,12 +31,12 @@ async fn test_block_id() {
     let db = temp_db().await;
     let backend = db.backend();
 
-    let block = block_zero();
+    let block = finalized_block_zero();
     let block_hash = block.info.block_hash().unwrap();
-    let state_diff = state_diff_zero();
+    let state_diff = finalized_state_diff_zero();
 
     backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
-    backend.store_block(block_pending_one(), state_diff_pending_one(), vec![]).unwrap();
+    backend.store_block(pending_block_one(), pending_state_diff_one(), vec![]).unwrap();
 
     assert_eq!(backend.resolve_block_id(&BlockId::Hash(block_hash)).unwrap().unwrap(), DbBlockId::BlockN(0));
     assert_eq!(backend.resolve_block_id(&BlockId::Number(0)).unwrap().unwrap(), DbBlockId::BlockN(0));
@@ -60,8 +60,8 @@ async fn test_store_block() {
 
     assert!(backend.get_block(&BLOCK_ID_0).unwrap().is_none());
 
-    let block = block_zero();
-    let state_diff = state_diff_zero();
+    let block = finalized_block_zero();
+    let state_diff = finalized_state_diff_zero();
 
     backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
 
@@ -83,8 +83,8 @@ async fn test_store_pending_block() {
 
     assert!(backend.get_block(&BLOCK_ID_PENDING).unwrap().is_none());
 
-    let block = block_pending_one();
-    let state_diff = state_diff_pending_one();
+    let block = pending_block_one();
+    let state_diff = pending_state_diff_one();
 
     backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
 
@@ -102,22 +102,22 @@ async fn test_erase_pending_block() {
     let db = temp_db().await;
     let backend = db.backend();
 
-    backend.store_block(block_zero(), state_diff_zero(), vec![]).unwrap();
-    backend.store_block(block_pending_one(), state_diff_pending_one(), vec![]).unwrap();
+    backend.store_block(finalized_block_zero(), finalized_state_diff_zero(), vec![]).unwrap();
+    backend.store_block(pending_block_one(), pending_state_diff_one(), vec![]).unwrap();
     backend.clear_pending_block().unwrap();
 
     assert!(backend.get_block(&BLOCK_ID_PENDING).unwrap().is_none());
 
-    backend.store_block(block_one(), state_diff_one(), vec![]).unwrap();
+    backend.store_block(finalized_block_one(), finalized_state_diff_one(), vec![]).unwrap();
 
-    let block = block_pending_two();
-    let state_diff = state_diff_pending_two();
-    backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
+    let block_pending = pending_block_two();
+    let state_diff = pending_state_diff_two();
+    backend.store_block(block_pending.clone(), state_diff.clone(), vec![]).unwrap();
 
     assert!(backend.get_block_hash(&BLOCK_ID_PENDING).unwrap().is_none());
-    assert_eq!(backend.get_block_info(&BLOCK_ID_PENDING).unwrap().unwrap(), block.info);
-    assert_eq!(backend.get_block_inner(&BLOCK_ID_PENDING).unwrap().unwrap(), block.inner);
-    assert_eq!(backend.get_block(&BLOCK_ID_PENDING).unwrap().unwrap(), block);
+    assert_eq!(backend.get_block_info(&BLOCK_ID_PENDING).unwrap().unwrap(), block_pending.info);
+    assert_eq!(backend.get_block_inner(&BLOCK_ID_PENDING).unwrap().unwrap(), block_pending.inner);
+    assert_eq!(backend.get_block(&BLOCK_ID_PENDING).unwrap().unwrap(), block_pending);
     assert_eq!(backend.get_block_state_diff(&BLOCK_ID_PENDING).unwrap().unwrap(), state_diff);
 }
 
@@ -126,10 +126,10 @@ async fn test_store_latest_block() {
     let db = temp_db().await;
     let backend = db.backend();
 
-    backend.store_block(block_zero(), state_diff_zero(), vec![]).unwrap();
+    backend.store_block(finalized_block_zero(), finalized_state_diff_zero(), vec![]).unwrap();
 
-    let latest_block = block_one();
-    backend.store_block(latest_block.clone(), state_diff_one(), vec![]).unwrap();
+    let latest_block = finalized_block_one();
+    backend.store_block(latest_block.clone(), finalized_state_diff_one(), vec![]).unwrap();
 
     assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
 }
@@ -151,8 +151,8 @@ async fn test_store_block_transactions() {
     let db = temp_db().await;
     let backend = db.backend();
 
-    let block = block_zero();
-    let state_diff = state_diff_zero();
+    let block = finalized_block_zero();
+    let state_diff = finalized_state_diff_zero();
 
     backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
 
@@ -166,17 +166,17 @@ async fn test_store_block_transactions_pending() {
     let db = temp_db().await;
     let backend = db.backend();
 
-    backend.store_block(block_zero(), state_diff_zero(), vec![]).unwrap();
+    backend.store_block(finalized_block_zero(), finalized_state_diff_zero(), vec![]).unwrap();
 
-    let block_pending = block_pending_one();
-    backend.store_block(block_pending.clone(), state_diff_pending_one(), vec![]).unwrap();
+    let block_pending = pending_block_one();
+    backend.store_block(block_pending.clone(), pending_state_diff_one(), vec![]).unwrap();
 
     let tx_hash_1 = block_pending.info.tx_hashes()[1];
     assert_eq!(backend.find_tx_hash_block_info(&tx_hash_1).unwrap().unwrap(), (block_pending.info.clone(), TxIndex(1)));
     assert_eq!(backend.find_tx_hash_block(&tx_hash_1).unwrap().unwrap(), (block_pending, TxIndex(1)));
 }
 
-fn block_zero() -> DeoxysMaybePendingBlock {
+fn finalized_block_zero() -> DeoxysMaybePendingBlock {
     let transactions = vec![
         InvokeTransactionV0::default().into(),
         L1HandlerTransaction::default().into(),
@@ -201,11 +201,11 @@ fn block_zero() -> DeoxysMaybePendingBlock {
     DeoxysMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
 
-fn state_diff_zero() -> StateDiff {
+fn finalized_state_diff_zero() -> StateDiff {
     StateDiff::default()
 }
 
-fn block_one() -> DeoxysMaybePendingBlock {
+fn finalized_block_one() -> DeoxysMaybePendingBlock {
     let transactions = vec![
         InvokeTransactionV1::default().into(),
         L1HandlerTransaction::default().into(),
@@ -231,11 +231,11 @@ fn block_one() -> DeoxysMaybePendingBlock {
     DeoxysMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
 
-fn state_diff_one() -> StateDiff {
+fn finalized_state_diff_one() -> StateDiff {
     StateDiff::default()
 }
 
-fn block_pending_one() -> DeoxysMaybePendingBlock {
+fn pending_block_one() -> DeoxysMaybePendingBlock {
     let transactions = vec![
         InvokeTransactionV3::default().into(),
         L1HandlerTransaction::default().into(),
@@ -260,11 +260,11 @@ fn block_pending_one() -> DeoxysMaybePendingBlock {
     DeoxysMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
 
-fn state_diff_pending_one() -> StateDiff {
+fn pending_state_diff_one() -> StateDiff {
     StateDiff::default()
 }
 
-fn block_pending_two() -> DeoxysMaybePendingBlock {
+fn pending_block_two() -> DeoxysMaybePendingBlock {
     let transactions = vec![
         InvokeTransactionV3::default().into(),
         L1HandlerTransaction::default().into(),
@@ -290,6 +290,6 @@ fn block_pending_two() -> DeoxysMaybePendingBlock {
     DeoxysMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
 
-fn state_diff_pending_two() -> StateDiff {
+fn pending_state_diff_two() -> StateDiff {
     StateDiff::default()
 }
