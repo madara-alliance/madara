@@ -3,7 +3,7 @@
 use dc_db::storage_updates::DbClassUpdate;
 use dp_block::header::{GasPrices, L1DataAvailabilityMode, PendingHeader};
 use dp_block::{
-    MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraPendingBlock, MadaraPendingBlockInfo, Header, StarknetVersion,
+    Header, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraPendingBlock, MadaraPendingBlockInfo, StarknetVersion,
 };
 use dp_class::{ClassInfo, ConvertedClass, ToCompiledClass};
 use dp_convert::felt_to_u128;

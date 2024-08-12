@@ -4,7 +4,7 @@ use dc_sync::{
     convert::{compute_commitments_for_block, BlockCommitments},
 };
 use dp_block::{
-    header::PendingHeader, MadaraBlock, MadaraBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo, Header,
+    header::PendingHeader, Header, MadaraBlock, MadaraBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo,
 };
 use dp_state_update::StateDiff;
 use starknet_core::types::Felt;

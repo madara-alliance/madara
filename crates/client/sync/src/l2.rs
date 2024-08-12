@@ -11,7 +11,7 @@ use dc_db::MadaraBackend;
 use dc_db::MadaraStorageError;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, StarknetVersionError};
-use dp_block::{MadaraMaybePendingBlock, Header};
+use dp_block::{Header, MadaraMaybePendingBlock};
 use dp_class::ConvertedClass;
 use dp_state_update::StateDiff;
 use dp_transactions::TransactionTypeError;

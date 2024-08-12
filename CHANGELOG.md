@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(namings): replaced all namings with new namings
 - fix: #225
 - feat: experimental block production and mempool
 - refactor: L1BlockMetric is intialized inside the EthereumClient new function
