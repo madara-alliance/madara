@@ -203,7 +203,7 @@ fi
 
 
 echo -e "\n${GREEN}We will now proceed with the download and installation of the binary from GitHub:${NC}"
-echo -e "${CYAN}${GITHUB_ICON}${UNDERLINE}https://github.com/kasarlabs/madara${NC}"
+echo -e "${CYAN}${GITHUB_ICON}${UNDERLINE}https://github.com/madara-alliance/madara${NC}"
 
 echo -e "\n${YELLOW}${BOLD}Do you want to proceed? (yes/no)${NC}"
 read -p "> " PROCEED

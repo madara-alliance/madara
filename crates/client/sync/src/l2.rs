@@ -6,6 +6,7 @@ use crate::fetch::l2_fetch_task;
 use crate::metrics::block_metrics::BlockMetrics;
 use crate::utility::trim_hash;
 use anyhow::{bail, Context};
+use futures::{stream, StreamExt};
 use mc_db::db_metrics::DbMetrics;
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
@@ -18,7 +19,6 @@ use mp_transactions::TransactionTypeError;
 use mp_utils::{
     channel_wait_or_graceful_shutdown, spawn_rayon_task, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch,
 };
-use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;

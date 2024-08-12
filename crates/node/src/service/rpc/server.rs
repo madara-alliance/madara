@@ -8,7 +8,6 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::Context;
-use mp_utils::wait_or_graceful_shutdown;
 use forwarded_header_value::ForwardedHeaderValue;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::server::conn::AddrStream;
@@ -20,6 +19,7 @@ use jsonrpsee::server::middleware::http::HostFilterLayer;
 use jsonrpsee::server::middleware::rpc::RpcServiceBuilder;
 use jsonrpsee::server::{stop_channel, ws, BatchRequestConfig, PingConfig, StopHandle, TowerServiceBuilder};
 use jsonrpsee::{Methods, RpcModule};
+use mp_utils::wait_or_graceful_shutdown;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tower::Service;

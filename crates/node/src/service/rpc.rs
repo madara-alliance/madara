@@ -1,15 +1,15 @@
 use crate::cli::{NetworkType, RpcMethods, RpcParams};
+use jsonrpsee::server::ServerHandle;
+use jsonrpsee::RpcModule;
 use mc_db::DatabaseService;
 use mc_metrics::MetricsRegistry;
 use mc_rpc::{
     providers::AddTransactionProvider, ChainConfig, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
     StarknetWriteRpcApiServer,
 };
+use metrics::RpcMetrics;
 use mp_convert::ToFelt;
 use mp_utils::service::Service;
-use jsonrpsee::server::ServerHandle;
-use jsonrpsee::RpcModule;
-use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
 use std::sync::Arc;
 use tokio::task::JoinSet;

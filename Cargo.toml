@@ -55,7 +55,7 @@ strip = "symbols"    # Removes debug info and symbold from final binary
 
 [workspace.package]
 authors = ["KasarLabs <https://github.com/KasarLabs>"]
-homepage = "https://kasar.io"
+homepage = "https://madara.build/"
 edition = "2021"
 repository = "https://github.com/madara-alliance/madara/"
 version = "0.1.0"

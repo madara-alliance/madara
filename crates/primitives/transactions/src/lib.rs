@@ -10,8 +10,8 @@ pub mod utils;
 
 use blockifier::transaction::objects::FeeType;
 pub use broadcasted_to_blockifier::broadcasted_to_blockifier;
-use mp_convert::ToFelt;
 pub use from_starknet_provider::TransactionTypeError;
+use mp_convert::ToFelt;
 use starknet_api::transaction::TransactionVersion;
 use starknet_types_core::{felt::Felt, hash::StarkHash};
 

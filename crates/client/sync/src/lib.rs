@@ -15,11 +15,11 @@ pub mod starknet_sync_worker {
     use super::*;
     use crate::metrics::block_metrics::BlockMetrics;
     use anyhow::Context;
+    use fetch::fetchers::FetchConfig;
     use mc_db::{db_metrics::DbMetrics, MadaraBackend};
     use mc_eth::client::EthereumClient;
     use mc_telemetry::TelemetryHandle;
     use mp_convert::ToFelt;
-    use fetch::fetchers::FetchConfig;
 
     use starknet_providers::SequencerGatewayProvider;
     use std::{sync::Arc, time::Duration};

@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use anyhow::Context;
+use futures::SinkExt;
 use mp_utils::channel_wait_or_graceful_shutdown;
 use mp_utils::service::Service;
-use futures::SinkExt;
 use reqwest_websocket::{Message, RequestBuilderExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;

@@ -1,7 +1,7 @@
 use starknet_core::types::{BlockId, MaybePendingBlockWithTxs};
 
-use mp_block::MadaraMaybePendingBlockInfo;
 use jsonrpsee::core::RpcResult;
+use mp_block::MadaraMaybePendingBlockInfo;
 use starknet_core::types::{BlockStatus, BlockWithTxs, PendingBlockWithTxs};
 
 use crate::Starknet;

@@ -4,10 +4,10 @@ use crate::{
     utils::{convert_log_state_update, trim_hash},
 };
 use anyhow::Context;
+use futures::StreamExt;
 use mc_db::MadaraBackend;
 use mp_transactions::MAIN_CHAIN_ID;
 use mp_utils::channel_wait_or_graceful_shutdown;
-use futures::StreamExt;
 use serde::Deserialize;
 use starknet_api::hash::StarkHash;
 use starknet_types_core::felt::Felt;

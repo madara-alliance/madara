@@ -13,12 +13,12 @@ pub mod providers;
 
 use std::sync::Arc;
 
-use mc_db::db_block_id::DbBlockIdResolvable;
-use mc_db::MadaraBackend;
-use mp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use errors::{StarknetRpcApiError, StarknetRpcResult};
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
+use mc_db::db_block_id::DbBlockIdResolvable;
+use mc_db::MadaraBackend;
+use mp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use providers::AddTransactionProvider;
 use starknet_core::types::Felt;
 use starknet_core::types::{
