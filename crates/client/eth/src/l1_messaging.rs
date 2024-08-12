@@ -173,17 +173,9 @@ mod tests {
 
     use std::{sync::Arc, time::Duration};
 
-    use crate::{
-        client::{
-            EthereumClient, L1BlockMetrics,
-            StarknetCoreContract::{self, LogMessageToL2},
-        },
-        l1_messaging::get_l1_to_l2_msg_hash,
-    };
+    use crate::client::{EthereumClient, L1BlockMetrics, StarknetCoreContract};
     use alloy::{
-        hex::FromHex,
         node_bindings::{Anvil, AnvilInstance},
-        primitives::{Address, U256},
         providers::{ProviderBuilder, RootProvider},
         sol,
         transports::http::{Client, Http},
@@ -200,7 +192,16 @@ mod tests {
 
     use self::DummyContract::DummyContractInstance;
 
-    // LogMessageToL2 from 0x21980d6674d33e50deee43c6c30ef3b439bd148249b4539ce37b7856ac46b843
+    struct TestRunner {
+        #[allow(dead_code)]
+        anvil: AnvilInstance,
+        chain_config: Arc<ChainConfig>,
+        db_service: Arc<DatabaseService>,
+        dummy_contract: DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
+        eth_client: EthereumClient,
+    }
+
+    // LogMessageToL2 from https://etherscan.io/tx/0x21980d6674d33e50deee43c6c30ef3b439bd148249b4539ce37b7856ac46b843
     // bytecode is compiled DummyContractBasicTestCase
     sol!(
         #[derive(Debug)]
@@ -275,19 +276,14 @@ mod tests {
     /// 7. TODO : Assert that the tx is succesfully submited to the mempool
     /// 8. Assert that the event is successfully pushed to the db
     /// 9. TODO : Assert that the tx was correctly executed
-    async fn setup_test_env() -> (
-        AnvilInstance,
-        Arc<ChainConfig>,
-        Arc<DatabaseService>,
-        DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
-        EthereumClient,
-    ) {
+    #[fixture]
+    async fn setup_test_env() -> TestRunner {
         // Start Anvil instance
         let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
         println!("Anvil started and running at `{}`", anvil.endpoint());
 
         // Set up chain info
-        let chain_info = Arc::new(ChainConfig::test_config());
+        let chain_config = Arc::new(ChainConfig::test_config());
 
         // Set up database paths
         let temp_dir = TempDir::new().expect("issue while creating temporary directory");
@@ -296,7 +292,7 @@ mod tests {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone())
+            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone())
                 .await
                 .expect("Failed to create database service"),
         );
@@ -320,7 +316,7 @@ mod tests {
             l1_block_metrics: l1_block_metrics.clone(),
         };
 
-        (anvil, chain_info, db, contract, eth_client)
+        TestRunner { anvil, chain_config, db_service: db, dummy_contract: contract, eth_client }
     }
 
     /// Test the basic workflow of l1 -> l2 messaging
@@ -338,13 +334,14 @@ mod tests {
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_basic_workflow() {
-        let (_anvil, chain_info, db, contract, eth_client) = setup_test_env().await;
+    async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner) {
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
+            setup_test_env.await;
 
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_info.chain_id).await })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id).await })
         };
 
         let _ = contract.setIsCanceled(false).send().await;
@@ -386,13 +383,14 @@ mod tests {
     /// 7. Assert that the last event stored is the first one
     #[rstest]
     #[tokio::test]
-    async fn e2e_test_already_processed_event() {
-        let (_anvil, chain_info, db, contract, eth_client) = setup_test_env().await;
+    async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner) {
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
+            setup_test_env.await;
 
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_info.chain_id).await })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id).await })
         };
 
         let _ = contract.setIsCanceled(false).send().await;
@@ -428,13 +426,14 @@ mod tests {
     /// 5. Assert that the event is not stored in db
     #[rstest]
     #[tokio::test]
-    async fn e2e_test_message_canceled() {
-        let (_anvil, chain_info, db, contract, eth_client) = setup_test_env().await;
+    async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner) {
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
+            setup_test_env.await;
 
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_info.chain_id).await })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id).await })
         };
 
         // Mock cancelled message
