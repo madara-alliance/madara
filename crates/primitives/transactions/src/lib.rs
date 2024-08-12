@@ -2,9 +2,8 @@ mod broadcasted_to_blockifier;
 pub mod compute_hash;
 mod from_blockifier;
 mod from_broadcasted_transaction;
-mod from_starknet_api;
 mod from_starknet_provider;
-mod to_starknet_api;
+mod into_starknet_api;
 mod to_starknet_core;
 pub mod utils;
 

@@ -452,7 +452,8 @@ fn prepare_data_availability_modes(
 }
 
 const CONTRACT_ADDRESS_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e45545f434f4e54524143545f41444452455353"); // b"STARKNET_CONTRACT_ADDRESS"
-const L2_ADDRESS_UPPER_BOUND: Felt = Felt::from_hex_unchecked("0x7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00");
+const L2_ADDRESS_UPPER_BOUND: Felt =
+    Felt::from_hex_unchecked("0x7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00");
 
 pub fn calculate_contract_address(
     salt: Felt,
