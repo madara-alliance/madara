@@ -1,5 +1,5 @@
 use crate::L1DataProvider;
-use dp_block::{chain_config::ChainConfig, header::PendingHeader};
+use mp_block::{chain_config::ChainConfig, header::PendingHeader};
 use starknet_core::types::Felt;
 use std::time::SystemTime;
 

@@ -1,12 +1,12 @@
-use dc_db::MadaraBackend;
-use dc_sync::{
+use mc_db::MadaraBackend;
+use mc_sync::{
     commitments::update_tries_and_compute_state_root,
     convert::{compute_commitments_for_block, BlockCommitments},
 };
-use dp_block::{
+use mp_block::{
     header::PendingHeader, Header, MadaraBlock, MadaraBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo,
 };
-use dp_state_update::StateDiff;
+use mp_state_update::StateDiff;
 use starknet_core::types::Felt;
 
 pub fn close_block(

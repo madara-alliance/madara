@@ -1,4 +1,4 @@
-use dp_block::header::{GasPrices, L1DataAvailabilityMode};
+use mp_block::header::{GasPrices, L1DataAvailabilityMode};
 
 /// This trait enables the block production task to fill in the L1 info.
 /// Gas prices and DA mode

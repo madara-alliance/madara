@@ -1,5 +1,5 @@
 [package]
-name = "dc-telemetry"
+name = "mc-telemetry"
 description = "Madara client telemetry service"
 authors.workspace = true
 edition.workspace = true
@@ -14,7 +14,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-dp-utils = { workspace = true }
+mp-utils = { workspace = true }
 
 # Other
 anyhow.workspace = true

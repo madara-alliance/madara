@@ -15,10 +15,10 @@ pub mod starknet_sync_worker {
     use super::*;
     use crate::metrics::block_metrics::BlockMetrics;
     use anyhow::Context;
-    use dc_db::{db_metrics::DbMetrics, MadaraBackend};
-    use dc_eth::client::EthereumClient;
-    use dc_telemetry::TelemetryHandle;
-    use dp_convert::ToFelt;
+    use mc_db::{db_metrics::DbMetrics, MadaraBackend};
+    use mc_eth::client::EthereumClient;
+    use mc_telemetry::TelemetryHandle;
+    use mp_convert::ToFelt;
     use fetch::fetchers::FetchConfig;
 
     use starknet_providers::SequencerGatewayProvider;
@@ -40,7 +40,7 @@ pub mod starknet_sync_worker {
             starting_block
         } else {
             backend
-                .get_block_n(&dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
+                .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
                 .context("getting sync tip")?
                 .map(|block_id| block_id + 1) // next block after the tip
                 .unwrap_or_default() as _ // or genesis
@@ -58,7 +58,7 @@ pub mod starknet_sync_worker {
 
         let l1_fut = async {
             if let Some(eth_client) = eth_client {
-                dc_eth::state_update::sync(backend, &eth_client, chain_id).await
+                mc_eth::state_update::sync(backend, &eth_client, chain_id).await
             } else {
                 Ok(())
             }

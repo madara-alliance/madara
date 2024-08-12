@@ -1,4 +1,4 @@
-use dp_block::MadaraMaybePendingBlockInfo;
+use mp_block::MadaraMaybePendingBlockInfo;
 use starknet_core::types::{
     BlockId, BlockStatus, BlockWithReceipts, MaybePendingBlockWithReceipts, PendingBlockWithReceipts,
     TransactionFinalityStatus, TransactionWithReceipt,

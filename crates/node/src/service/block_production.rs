@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use dc_db::{DatabaseService, MadaraBackend};
-use dc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
-use dc_metrics::MetricsRegistry;
-use dc_telemetry::TelemetryHandle;
-use dp_utils::service::Service;
+use mc_db::{DatabaseService, MadaraBackend};
+use mc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
+use mc_metrics::MetricsRegistry;
+use mc_telemetry::TelemetryHandle;
+use mp_utils::service::Service;
 use tokio::task::JoinSet;
 
 use crate::cli::block_production::BlockProductionParams;
@@ -23,7 +23,7 @@ impl BlockProductionService {
     pub fn new(
         config: &BlockProductionParams,
         db_service: &DatabaseService,
-        mempool: Arc<dc_mempool::Mempool>,
+        mempool: Arc<mc_mempool::Mempool>,
         l1_data_provider: Arc<dyn L1DataProvider>,
         _metrics_handle: MetricsRegistry,
         _telemetry: TelemetryHandle,

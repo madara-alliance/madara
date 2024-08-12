@@ -1,7 +1,7 @@
 use std::io::{Cursor, Read};
 
 use anyhow::Context;
-use dp_convert::felt_to_u64;
+use mp_convert::felt_to_u64;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_types_core::felt::Felt;
 

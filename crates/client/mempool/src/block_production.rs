@@ -6,19 +6,19 @@ use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::transaction_execution::Transaction;
-use dc_db::db_block_id::DbBlockId;
-use dc_db::{MadaraBackend, MadaraStorageError};
-use dc_exec::{BlockifierStateAdapter, ExecutionContext};
-use dp_block::{BlockId, BlockTag, MadaraPendingBlock};
-use dp_class::ConvertedClass;
-use dp_convert::ToFelt;
-use dp_receipt::from_blockifier_execution_info;
-use dp_state_update::{
+use mc_db::db_block_id::DbBlockId;
+use mc_db::{MadaraBackend, MadaraStorageError};
+use mc_exec::{BlockifierStateAdapter, ExecutionContext};
+use mp_block::{BlockId, BlockTag, MadaraPendingBlock};
+use mp_class::ConvertedClass;
+use mp_convert::ToFelt;
+use mp_receipt::from_blockifier_execution_info;
+use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use dp_transactions::TransactionWithHash;
-use dp_utils::graceful_shutdown;
+use mp_transactions::TransactionWithHash;
+use mp_utils::graceful_shutdown;
 use starknet_core::types::Felt;
 use std::mem;
 use std::sync::Arc;
@@ -37,7 +37,7 @@ pub enum Error {
     #[error("Execution error: {0:#}")]
     Execution(#[from] TransactionExecutionError),
     #[error(transparent)]
-    ExecutionContext(#[from] dc_exec::Error),
+    ExecutionContext(#[from] mc_exec::Error),
     #[error("No genesis block in storage")]
     NoGenesis,
 }

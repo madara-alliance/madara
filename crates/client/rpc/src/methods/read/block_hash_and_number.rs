@@ -1,4 +1,4 @@
-use dp_block::{BlockId, BlockTag};
+use mp_block::{BlockId, BlockTag};
 use starknet_core::types::BlockHashAndNumber;
 
 use crate::errors::StarknetRpcResult;

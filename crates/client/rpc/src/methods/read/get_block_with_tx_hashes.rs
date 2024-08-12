@@ -1,7 +1,7 @@
 use starknet_core::types::{BlockId, MaybePendingBlockWithTxHashes};
 
 use crate::errors::StarknetRpcResult;
-use dp_block::MadaraMaybePendingBlockInfo;
+use mp_block::MadaraMaybePendingBlockInfo;
 use starknet_core::types::{BlockStatus, BlockWithTxHashes, PendingBlockWithTxHashes};
 
 use crate::Starknet;

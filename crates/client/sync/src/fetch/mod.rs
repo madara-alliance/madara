@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use dc_db::MadaraBackend;
-use dp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
+use mc_db::MadaraBackend;
+use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use fetchers::FetchBlockId;
 use futures::prelude::*;
 use starknet_core::types::StarknetError;

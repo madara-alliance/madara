@@ -7,8 +7,8 @@ use blockifier::{
     context::{BlockContext, ChainInfo, FeeTokenAddresses},
     state::cached_state::CachedState,
 };
-use dc_db::{db_block_id::DbBlockId, MadaraBackend};
-use dp_block::{header::L1DataAvailabilityMode, MadaraMaybePendingBlockInfo};
+use mc_db::{db_block_id::DbBlockId, MadaraBackend};
+use mp_block::{header::L1DataAvailabilityMode, MadaraMaybePendingBlockInfo};
 use starknet_api::{
     block::{BlockNumber, BlockTimestamp},
     core::Nonce,

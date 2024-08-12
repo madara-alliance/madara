@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dp_convert::felt_to_u128;
+use mp_convert::felt_to_u128;
 use starknet_types_core::felt::Felt;
 
 use crate::{

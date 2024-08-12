@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use anyhow::Context;
-use dp_utils::channel_wait_or_graceful_shutdown;
-use dp_utils::service::Service;
+use mp_utils::channel_wait_or_graceful_shutdown;
+use mp_utils::service::Service;
 use futures::SinkExt;
 use reqwest_websocket::{Message, RequestBuilderExt};
 use tokio::sync::mpsc;

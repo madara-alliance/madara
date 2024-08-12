@@ -1,8 +1,8 @@
 use crate::MadaraBackend;
 use crate::MadaraStorageError;
-use dp_block::{MadaraBlock, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
-use dp_class::ConvertedClass;
-use dp_state_update::{
+use mp_block::{MadaraBlock, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
+use mp_class::ConvertedClass;
+use mp_state_update::{
     ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
 };
 use starknet_core::types::ContractClass;

@@ -1,5 +1,5 @@
 [package]
-name = "dc-db"
+name = "mc-db"
 description = "Madara client database service"
 authors.workspace = true
 edition.workspace = true
@@ -14,13 +14,13 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-dc-metrics = { workspace = true }
-dp-block = { workspace = true }
-dp-class = { workspace = true }
-dp-convert = { workspace = true }
-dp-state-update = { workspace = true }
-dp-transactions = { workspace = true }
-dp-utils = { workspace = true }
+mc-metrics = { workspace = true }
+mp-block = { workspace = true }
+mp-class = { workspace = true }
+mp-convert = { workspace = true }
+mp-state-update = { workspace = true }
+mp-transactions = { workspace = true }
+mp-utils = { workspace = true }
 
 # Starknet
 bonsai-trie = { workspace = true }

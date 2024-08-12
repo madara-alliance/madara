@@ -3,11 +3,11 @@ use core::fmt;
 use core::time::Duration;
 use std::collections::HashMap;
 
-use dc_db::storage_updates::DbClassUpdate;
-use dc_db::MadaraBackend;
-use dp_block::{BlockId, BlockTag};
-use dp_convert::ToStateUpdateCore;
-use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
+use mc_db::storage_updates::DbClassUpdate;
+use mc_db::MadaraBackend;
+use mp_block::{BlockId, BlockTag};
+use mp_convert::ToStateUpdateCore;
+use mp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
 use starknet_core::types::{
     ContractClass, DeclaredClassItem, DeployedContractItem, StarknetError, StateDiff, StateUpdate,
@@ -32,7 +32,7 @@ pub struct FetchConfig {
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
     /// The L1 contract core address
-    pub l1_core_address: dp_block::H160,
+    pub l1_core_address: mp_block::H160,
     /// Whether to check the root of the state update
     pub verify: bool,
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.

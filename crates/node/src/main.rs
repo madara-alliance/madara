@@ -11,19 +11,19 @@ mod service;
 mod util;
 
 use cli::RunCmd;
-use dc_db::DatabaseService;
-use dc_mempool::{L1DataProvider, Mempool};
-use dc_metrics::MetricsService;
-use dc_rpc::providers::AddTransactionProvider;
-use dc_telemetry::{SysInfo, TelemetryService};
-use dp_block::header::{GasPrices, L1DataAvailabilityMode};
-use dp_convert::ToFelt;
-use dp_utils::service::{Service, ServiceGroup};
+use mc_db::DatabaseService;
+use mc_mempool::{L1DataProvider, Mempool};
+use mc_metrics::MetricsService;
+use mc_rpc::providers::AddTransactionProvider;
+use mc_telemetry::{SysInfo, TelemetryService};
+use mp_block::header::{GasPrices, L1DataAvailabilityMode};
+use mp_convert::ToFelt;
+use mp_utils::service::{Service, ServiceGroup};
 use service::{BlockProductionService, RpcService, SyncService};
 use starknet_providers::SequencerGatewayProvider;
 
 const GREET_IMPL_NAME: &str = "Madara";
-const GREET_SUPPORT_URL: &str = "https://github.com/KasarLabs/madara/issues";
+const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 const GREET_AUTHORS: &[&str] = &["KasarLabs <https://kasar.io>"];
 
 #[tokio::main]
@@ -110,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
 
                 (
                     ServiceGroup::default().with(block_production_service),
-                    Arc::new(dc_rpc::mempool_provider::MempoolProvider::new(mempool)),
+                    Arc::new(mc_rpc::mempool_provider::MempoolProvider::new(mempool)),
                 )
             }
             // Block sync service. (full node)
@@ -128,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
                 (
                     ServiceGroup::default().with(sync_service),
                     // TODO(rate-limit): we may get rate limited with this unconfigured provider?
-                    Arc::new(dc_rpc::providers::ForwardToProvider::new(SequencerGatewayProvider::new(
+                    Arc::new(mc_rpc::providers::ForwardToProvider::new(SequencerGatewayProvider::new(
                         run_cmd.sync_params.network.gateway(),
                         run_cmd.sync_params.network.feeder_gateway(),
                         run_cmd.sync_params.network.chain_id().to_felt(),

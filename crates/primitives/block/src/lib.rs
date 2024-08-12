@@ -4,8 +4,8 @@ pub mod chain_config;
 pub mod header;
 mod starknet_version;
 
-use dp_receipt::TransactionReceipt;
-use dp_transactions::Transaction;
+use mp_receipt::TransactionReceipt;
+use mp_transactions::Transaction;
 pub use header::Header;
 use header::PendingHeader;
 pub use primitive_types::{H160, U256};

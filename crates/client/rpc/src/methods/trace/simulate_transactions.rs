@@ -2,8 +2,8 @@ use super::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
-use dc_exec::{execution_result_to_tx_trace, ExecutionContext};
-use dp_transactions::broadcasted_to_blockifier;
+use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
+use mp_transactions::broadcasted_to_blockifier;
 use starknet_core::types::{BlockId, BroadcastedTransaction, SimulatedTransaction, SimulationFlag};
 use std::sync::Arc;
 

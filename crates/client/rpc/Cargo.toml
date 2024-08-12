@@ -1,5 +1,5 @@
 [package]
-name = "dc-rpc"
+name = "mc-rpc"
 description = "Madara client rpc service"
 authors.workspace = true
 edition.workspace = true
@@ -14,14 +14,14 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-dc-db = { workspace = true }
-dc-exec = { workspace = true }
-dc-mempool = { workspace = true }
-dp-block = { workspace = true, default-features = true }
-dp-class = { workspace = true }
-dp-convert = { workspace = true, default-features = true }
-dp-receipt = { workspace = true }
-dp-transactions = { workspace = true }
+mc-db = { workspace = true }
+mc-exec = { workspace = true }
+mc-mempool = { workspace = true }
+mp-block = { workspace = true, default-features = true }
+mp-class = { workspace = true }
+mp-convert = { workspace = true, default-features = true }
+mp-receipt = { workspace = true }
+mp-transactions = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true, default-features = true }

@@ -1,6 +1,6 @@
 use core::fmt;
 
-use dp_block::BlockId;
+use mp_block::BlockId;
 
 use crate::{MadaraBackend, MadaraStorageError};
 

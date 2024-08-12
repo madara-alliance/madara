@@ -6,13 +6,13 @@
 <br />
 <!-- markdownlint-restore -->
 
-[![Workflow - Push](https://github.com/KasarLabs/madara/actions/workflows/push.yml/badge.svg)](https://github.com/KasarLabs/madara/actions/workflows/push.yml)
-[![Project license](https://img.shields.io/github/license/kasarLabs/madara.svg?style=flat-square)](LICENSE)
-[![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/kasarLabs/madara/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
-<a href="https://twitter.com/KasarLabs">
-<img src="https://img.shields.io/twitter/follow/KasarLabs?style=social"/> </a>
-<a href="https://github.com/kasarlabs/madara">
-<img src="https://img.shields.io/github/stars/kasarlabs/madara?style=social"/>
+[![Workflow - Push](https://github.com/madara-alliance/madara/actions/workflows/push.yml/badge.svg)](https://github.com/madara-alliance/madara/actions/workflows/push.yml)
+[![Project license](https://img.shields.io/github/license/madara-alliance/madara.svg?style=flat-square)](LICENSE)
+[![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/madara-alliance/madara/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
+<a href="https://twitter.com/madarastarknet">
+<img src="https://img.shields.io/twitter/follow/madarastarknet?style=social"/> </a>
+<a href="https://github.com/madara-alliance/madara">
+<img src="https://img.shields.io/github/stars/madara-alliance/madara?style=social"/>
 </a>
 
 </div>
@@ -62,7 +62,7 @@ Madara is a powerfull Starknet hybrid client written in Rust.
 
    ```sh
    cd <your-destination-path>
-   git clone https://github.com/KasarLabs/madara .
+   git clone https://github.com/madara-alliance/madara .
    ```
 
 2. **Run Madara**
@@ -306,12 +306,12 @@ Each feature is designed to ensure optimal performance and seamless integration 
 ## 🤝 Partnerships
 
 To establish a partnership with the Kasar team, or if you have any suggestion or
-special request, feel free to reach us on [telegram](https://t.me/kasarlabs).
+special request, feel free to reach us on [telegram](https://t.me/madarastarknet).
 
 ## ⚠️ License
 
 Copyright (c) 2022-present, with the following
-[contributors](https://github.com/KasarLabs/madara/graphs/contributors).
+[contributors](https://github.com/madara-alliance/madara/graphs/contributors).
 
 Madara is open-source software licensed under the
-[Apache-2.0 License](https://github.com/KasarLabs/madara/blob/main/LICENSE).
+[Apache-2.0 License](https://github.com/madara-alliance/madara/blob/main/LICENSE).

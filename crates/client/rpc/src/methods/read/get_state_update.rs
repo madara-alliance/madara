@@ -4,7 +4,7 @@ use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::OptionExt;
 use crate::utils::ResultExt;
 use crate::Starknet;
-use dc_db::db_block_id::DbBlockId;
+use mc_db::db_block_id::DbBlockId;
 
 /// Get the information about the result of executing the requested block.
 ///

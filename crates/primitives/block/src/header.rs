@@ -1,7 +1,7 @@
 use core::num::NonZeroU128;
 
-use dp_transactions::MAIN_CHAIN_ID;
-use dp_transactions::V0_7_BLOCK_NUMBER;
+use mp_transactions::MAIN_CHAIN_ID;
+use mp_transactions::V0_7_BLOCK_NUMBER;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 use starknet_types_core::hash::Poseidon;

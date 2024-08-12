@@ -1,5 +1,5 @@
-use dp_block::MadaraMaybePendingBlockInfo;
-use dp_receipt::ExecutionResult;
+use mp_block::MadaraMaybePendingBlockInfo;
+use mp_receipt::ExecutionResult;
 use starknet_core::types::{Felt, TransactionExecutionStatus, TransactionStatus};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};

@@ -1,11 +1,11 @@
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{StateReader, StateResult};
-use dc_db::db_block_id::DbBlockId;
-use dc_db::MadaraBackend;
-use dp_block::BlockId;
-use dp_class::to_blockifier_class;
-use dp_convert::{felt_to_u64, ToFelt};
+use mc_db::db_block_id::DbBlockId;
+use mc_db::MadaraBackend;
+use mp_block::BlockId;
+use mp_class::to_blockifier_class;
+use mp_convert::{felt_to_u64, ToFelt};
 use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
 use starknet_core::types::Felt;

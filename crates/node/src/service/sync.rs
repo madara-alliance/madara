@@ -1,14 +1,14 @@
 use crate::cli::SyncParams;
 use alloy::primitives::Address;
 use anyhow::Context;
-use dc_db::db_metrics::DbMetrics;
-use dc_db::{DatabaseService, MadaraBackend};
-use dc_eth::client::{EthereumClient, L1BlockMetrics};
-use dc_metrics::MetricsRegistry;
-use dc_sync::fetch::fetchers::FetchConfig;
-use dc_sync::metrics::block_metrics::BlockMetrics;
-use dc_telemetry::TelemetryHandle;
-use dp_utils::service::Service;
+use mc_db::db_metrics::DbMetrics;
+use mc_db::{DatabaseService, MadaraBackend};
+use mc_eth::client::{EthereumClient, L1BlockMetrics};
+use mc_metrics::MetricsRegistry;
+use mc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::metrics::block_metrics::BlockMetrics;
+use mc_telemetry::TelemetryHandle;
+use mp_utils::service::Service;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -93,7 +93,7 @@ impl Service for SyncService {
         let db_backend = Arc::clone(&self.db_backend);
 
         join_set.spawn(async move {
-            dc_sync::starknet_sync_worker::sync(
+            mc_sync::starknet_sync_worker::sync(
                 &db_backend,
                 fetch_config,
                 eth_client,

@@ -1,9 +1,9 @@
 use anyhow::Context;
-use dp_block::{
+use mp_block::{
     BlockId, BlockTag, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
     MadaraMaybePendingBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo,
 };
-use dp_state_update::StateDiff;
+use mp_state_update::StateDiff;
 use rocksdb::WriteOptions;
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;

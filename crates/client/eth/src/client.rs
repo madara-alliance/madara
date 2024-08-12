@@ -10,7 +10,7 @@ use alloy::{
 };
 use anyhow::{bail, Context};
 use bitvec::macros::internal::funty::Fundamental;
-use dc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
+use mc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
@@ -122,7 +122,7 @@ impl EthereumClient {
 pub mod eth_client_getter_test {
     use super::*;
     use alloy::primitives::U256;
-    use dc_metrics::MetricsService;
+    use mc_metrics::MetricsService;
     use rstest::*;
     use tokio;
 

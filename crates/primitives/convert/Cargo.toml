@@ -1,6 +1,6 @@
 [package]
 description = "Madara primitive for type conversion"
-name = "dp-convert"
+name = "mp-convert"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true

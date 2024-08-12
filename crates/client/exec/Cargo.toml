@@ -1,6 +1,6 @@
 [package]
 description = "Madara execution"
-name = "dc-exec"
+name = "mc-exec"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,10 +14,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-dc-db = { workspace = true }
-dp-block = { workspace = true }
-dp-class = { workspace = true }
-dp-convert = { workspace = true }
+mc-db = { workspace = true }
+mp-block = { workspace = true }
+mp-class = { workspace = true }
+mp-convert = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }

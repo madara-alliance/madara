@@ -1,4 +1,4 @@
-use dp_convert::felt_to_u64;
+use mp_convert::felt_to_u64;
 
 use crate::{
     DataAvailabilityMode, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2,

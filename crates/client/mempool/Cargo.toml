@@ -1,5 +1,5 @@
 [package]
-name = "dc-mempool"
+name = "mc-mempool"
 description = "Madara client mempool service"
 authors.workspace = true
 edition.workspace = true
@@ -23,16 +23,16 @@ blockifier = { workspace = true, features = ["testing"] }
 [dependencies]
 
 # Madara
-dc-db.workspace = true
-dc-exec.workspace = true
-dc-sync.workspace = true
-dp-block.workspace = true
-dp-class.workspace = true
-dp-convert.workspace = true
-dp-receipt.workspace = true
-dp-state-update.workspace = true
-dp-transactions.workspace = true
-dp-utils.workspace = true
+mc-db.workspace = true
+mc-exec.workspace = true
+mc-sync.workspace = true
+mp-block.workspace = true
+mp-class.workspace = true
+mp-convert.workspace = true
+mp-receipt.workspace = true
+mp-state-update.workspace = true
+mp-transactions.workspace = true
+mp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true

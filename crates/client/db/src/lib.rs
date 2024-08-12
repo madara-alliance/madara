@@ -10,8 +10,8 @@ use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
-use dp_block::chain_config::ChainConfig;
-use dp_utils::service::Service;
+use mp_block::chain_config::ChainConfig;
+use mp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
 pub mod block_db;

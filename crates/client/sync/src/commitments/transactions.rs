@@ -1,8 +1,8 @@
-use dp_block::StarknetVersion;
-use dp_transactions::Transaction;
-use dp_transactions::LEGACY_BLOCK_NUMBER;
-use dp_transactions::MAIN_CHAIN_ID;
-use dp_transactions::V0_7_BLOCK_NUMBER;
+use mp_block::StarknetVersion;
+use mp_transactions::Transaction;
+use mp_transactions::LEGACY_BLOCK_NUMBER;
+use mp_transactions::MAIN_CHAIN_ID;
+use mp_transactions::V0_7_BLOCK_NUMBER;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Poseidon;

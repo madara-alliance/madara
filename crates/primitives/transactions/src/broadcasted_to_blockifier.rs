@@ -1,6 +1,6 @@
 use crate::{to_starknet_api::TransactionApiError, Transaction, TransactionWithHash};
 use blockifier::{execution::errors::ContractClassError, transaction::errors::TransactionExecutionError};
-use dp_class::{to_blockifier_class, ClassHash, ClassInfo, ContractClass, ConvertedClass, ToCompiledClass};
+use mp_class::{to_blockifier_class, ClassHash, ClassInfo, ContractClass, ConvertedClass, ToCompiledClass};
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 

@@ -1,6 +1,6 @@
 [package]
 description = "Madara primitives for starknet blocks"
-name = "dp-block"
+name = "mp-block"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,9 +14,9 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-dp-convert = { workspace = true }
-dp-receipt = { workspace = true }
-dp-transactions = { workspace = true }
+mp-convert = { workspace = true }
+mp-receipt = { workspace = true }
+mp-transactions = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }

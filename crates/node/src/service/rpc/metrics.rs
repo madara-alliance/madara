@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use dc_metrics::{Counter, CounterVec, HistogramOpts, HistogramVec, MetricsRegistry, Opts, PrometheusError, U64};
+use mc_metrics::{Counter, CounterVec, HistogramOpts, HistogramVec, MetricsRegistry, Opts, PrometheusError, U64};
 use jsonrpsee::types::Request;
 use jsonrpsee::MethodResponse;
 

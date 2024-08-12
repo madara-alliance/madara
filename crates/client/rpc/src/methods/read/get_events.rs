@@ -1,4 +1,4 @@
-use dp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
+use mp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage, Felt};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};

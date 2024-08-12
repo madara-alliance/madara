@@ -4,9 +4,9 @@ use super::providers::AddTransactionProvider;
 use crate::{bail_internal_server_error, errors::StarknetRpcApiError};
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use dc_mempool::Mempool;
-use dp_class::ConvertedClass;
-use dp_transactions::broadcasted_to_blockifier;
+use mc_mempool::Mempool;
+use mp_class::ConvertedClass;
+use mp_transactions::broadcasted_to_blockifier;
 use jsonrpsee::core::{async_trait, RpcResult};
 use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,

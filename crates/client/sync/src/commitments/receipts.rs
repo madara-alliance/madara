@@ -1,4 +1,4 @@
-use dp_receipt::TransactionReceipt;
+use mp_receipt::TransactionReceipt;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Poseidon;

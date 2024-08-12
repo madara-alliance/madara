@@ -1,6 +1,6 @@
-use dc_sync::fetch::fetchers::FetchConfig;
-use dc_sync::utils::constant::starknet_core_address;
-use dp_block::chain_config::ChainConfig;
+use mc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::utils::constant::starknet_core_address;
+use mp_block::chain_config::ChainConfig;
 use primitive_types::H160;
 use starknet_api::core::ChainId;
 use std::sync::Arc;

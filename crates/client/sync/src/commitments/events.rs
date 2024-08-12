@@ -1,5 +1,5 @@
-use dp_block::StarknetVersion;
-use dp_receipt::Event;
+use mp_block::StarknetVersion;
+use mp_receipt::Event;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon};

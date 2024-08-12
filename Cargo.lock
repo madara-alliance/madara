@@ -3509,209 +3509,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
-name = "dc-db"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode 1.3.3",
- "bonsai-trie",
- "dc-metrics",
- "dp-block",
- "dp-class",
- "dp-convert",
- "dp-state-update",
- "dp-transactions",
- "dp-utils",
- "log",
- "rayon",
- "rocksdb",
- "serde",
- "starknet-core",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "dc-eth"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "bitvec",
- "bytes",
- "dc-db",
- "dc-metrics",
- "dotenv",
- "dp-block",
- "dp-convert",
- "dp-transactions",
- "dp-utils",
- "futures",
- "log",
- "once_cell",
- "primitive-types",
- "prometheus",
- "rstest 0.18.2",
- "serde",
- "serde_json",
- "starknet-types-core",
- "starknet_api",
- "tempfile",
- "thiserror",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "dc-exec"
-version = "0.1.0"
-dependencies = [
- "blockifier",
- "cairo-vm",
- "dc-db",
- "dp-block",
- "dp-class",
- "dp-convert",
- "indexmap 2.2.6",
- "log",
- "starknet-core",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
-]
-
-[[package]]
-name = "dc-mempool"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitvec",
- "blockifier",
- "dc-db",
- "dc-exec",
- "dc-sync",
- "dp-block",
- "dp-class",
- "dp-convert",
- "dp-receipt",
- "dp-state-update",
- "dp-transactions",
- "dp-utils",
- "env_logger 0.11.3",
- "hyper 0.14.29",
- "itertools 0.12.1",
- "log",
- "prometheus",
- "proptest",
- "proptest-derive",
- "rayon",
- "serde",
- "starknet-core",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "dc-metrics"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "dp-utils",
- "hyper 0.14.29",
- "log",
- "prometheus",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "dc-rpc"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "blockifier",
- "dc-db",
- "dc-exec",
- "dc-mempool",
- "dp-block",
- "dp-class",
- "dp-convert",
- "dp-receipt",
- "dp-transactions",
- "jsonrpsee",
- "log",
- "rstest 0.18.2",
- "serde_json",
- "starknet-core",
- "starknet-providers",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
-]
-
-[[package]]
-name = "dc-sync"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "bitvec",
- "bonsai-trie",
- "dc-db",
- "dc-eth",
- "dc-metrics",
- "dc-telemetry",
- "dp-block",
- "dp-class",
- "dp-convert",
- "dp-receipt",
- "dp-state-update",
- "dp-transactions",
- "dp-utils",
- "ethers",
- "futures",
- "hex",
- "log",
- "num-traits 0.2.19",
- "primitive-types",
- "rand",
- "rayon",
- "reqwest 0.12.5",
- "rodio",
- "serde",
- "serde_json",
- "starknet-core",
- "starknet-providers",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "dc-telemetry"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "dp-utils",
- "futures",
- "log",
- "reqwest 0.12.5",
- "reqwest-websocket",
- "serde_json",
- "sysinfo",
- "tokio",
-]
-
-[[package]]
 name = "der"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3849,122 +3646,6 @@ name = "dotenv"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
-
-[[package]]
-name = "dp-block"
-version = "0.1.0"
-dependencies = [
- "blockifier",
- "dp-convert",
- "dp-receipt",
- "dp-transactions",
- "lazy_static",
- "primitive-types",
- "serde",
- "serde_json",
- "starknet-core",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
-]
-
-[[package]]
-name = "dp-class"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "blockifier",
- "cairo-lang-starknet 1.0.0-alpha.6",
- "cairo-lang-starknet 1.0.0-rc0",
- "cairo-lang-starknet 1.1.1",
- "cairo-lang-starknet 2.7.0-rc.2",
- "cairo-lang-starknet-classes",
- "cairo-lang-utils 1.0.0-alpha.6",
- "cairo-lang-utils 1.0.0-rc0",
- "cairo-lang-utils 1.1.1",
- "cairo-lang-utils 2.7.0-rc.2",
- "cairo-vm",
- "dp-convert",
- "flate2",
- "num-bigint",
- "serde",
- "serde_json",
- "sha3",
- "starknet-core",
- "starknet-providers",
- "starknet-types-core",
- "tokio",
-]
-
-[[package]]
-name = "dp-convert"
-version = "0.1.0"
-dependencies = [
- "primitive-types",
- "starknet-core",
- "starknet-providers",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
-]
-
-[[package]]
-name = "dp-receipt"
-version = "0.1.0"
-dependencies = [
- "bincode 1.3.3",
- "blockifier",
- "cairo-vm",
- "dp-convert",
- "log",
- "serde",
- "starknet-core",
- "starknet-providers",
- "starknet-types-core",
-]
-
-[[package]]
-name = "dp-state-update"
-version = "0.1.0"
-dependencies = [
- "bincode 1.3.3",
- "serde",
- "starknet-core",
- "starknet-types-core",
-]
-
-[[package]]
-name = "dp-transactions"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "assert_matches",
- "blockifier",
- "cairo-lang-starknet-classes",
- "cairo-lang-utils 2.7.0-rc.2",
- "cairo-vm",
- "dp-class",
- "dp-convert",
- "num-bigint",
- "serde",
- "starknet-core",
- "starknet-providers",
- "starknet-types-core",
- "starknet_api",
- "thiserror",
-]
-
-[[package]]
-name = "dp-utils"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "log",
- "rayon",
- "tokio",
-]
 
 [[package]]
 name = "dunce"
@@ -5907,16 +5588,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "clap",
- "dc-db",
- "dc-eth",
- "dc-mempool",
- "dc-metrics",
- "dc-rpc",
- "dc-sync",
- "dc-telemetry",
- "dp-block",
- "dp-convert",
- "dp-utils",
  "env_logger 0.11.3",
  "fdlimit",
  "forwarded-header-value",
@@ -5926,6 +5597,16 @@ dependencies = [
  "ip_network",
  "jsonrpsee",
  "log",
+ "mc-db",
+ "mc-eth",
+ "mc-mempool",
+ "mc-metrics",
+ "mc-rpc",
+ "mc-sync",
+ "mc-telemetry",
+ "mp-block",
+ "mp-convert",
+ "mp-utils",
  "primitive-types",
  "rayon",
  "serde_json",
@@ -5946,6 +5627,209 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "916806ba0031cd542105d916a97c8572e1fa6dd79c9c51e7eb43a09ec2dd84c1"
 dependencies = [
  "rawpointer",
+]
+
+[[package]]
+name = "mc-db"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode 1.3.3",
+ "bonsai-trie",
+ "log",
+ "mc-metrics",
+ "mp-block",
+ "mp-class",
+ "mp-convert",
+ "mp-state-update",
+ "mp-transactions",
+ "mp-utils",
+ "rayon",
+ "rocksdb",
+ "serde",
+ "starknet-core",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "mc-eth"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "bitvec",
+ "bytes",
+ "dotenv",
+ "futures",
+ "log",
+ "mc-db",
+ "mc-metrics",
+ "mp-block",
+ "mp-convert",
+ "mp-transactions",
+ "mp-utils",
+ "once_cell",
+ "primitive-types",
+ "prometheus",
+ "rstest 0.18.2",
+ "serde",
+ "serde_json",
+ "starknet-types-core",
+ "starknet_api",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "mc-exec"
+version = "0.1.0"
+dependencies = [
+ "blockifier",
+ "cairo-vm",
+ "indexmap 2.2.6",
+ "log",
+ "mc-db",
+ "mp-block",
+ "mp-class",
+ "mp-convert",
+ "starknet-core",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+]
+
+[[package]]
+name = "mc-mempool"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitvec",
+ "blockifier",
+ "env_logger 0.11.3",
+ "hyper 0.14.29",
+ "itertools 0.12.1",
+ "log",
+ "mc-db",
+ "mc-exec",
+ "mc-sync",
+ "mp-block",
+ "mp-class",
+ "mp-convert",
+ "mp-receipt",
+ "mp-state-update",
+ "mp-transactions",
+ "mp-utils",
+ "prometheus",
+ "proptest",
+ "proptest-derive",
+ "rayon",
+ "serde",
+ "starknet-core",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "mc-metrics"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "hyper 0.14.29",
+ "log",
+ "mp-utils",
+ "prometheus",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "mc-rpc"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blockifier",
+ "jsonrpsee",
+ "log",
+ "mc-db",
+ "mc-exec",
+ "mc-mempool",
+ "mp-block",
+ "mp-class",
+ "mp-convert",
+ "mp-receipt",
+ "mp-transactions",
+ "rstest 0.18.2",
+ "serde_json",
+ "starknet-core",
+ "starknet-providers",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+]
+
+[[package]]
+name = "mc-sync"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "bitvec",
+ "bonsai-trie",
+ "ethers",
+ "futures",
+ "hex",
+ "log",
+ "mc-db",
+ "mc-eth",
+ "mc-metrics",
+ "mc-telemetry",
+ "mp-block",
+ "mp-class",
+ "mp-convert",
+ "mp-receipt",
+ "mp-state-update",
+ "mp-transactions",
+ "mp-utils",
+ "num-traits 0.2.19",
+ "primitive-types",
+ "rand",
+ "rayon",
+ "reqwest 0.12.5",
+ "rodio",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-providers",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "mc-telemetry"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "futures",
+ "log",
+ "mp-utils",
+ "reqwest 0.12.5",
+ "reqwest-websocket",
+ "serde_json",
+ "sysinfo",
+ "tokio",
 ]
 
 [[package]]
@@ -6004,6 +5888,122 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "mp-block"
+version = "0.1.0"
+dependencies = [
+ "blockifier",
+ "lazy_static",
+ "mp-convert",
+ "mp-receipt",
+ "mp-transactions",
+ "primitive-types",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+]
+
+[[package]]
+name = "mp-class"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blockifier",
+ "cairo-lang-starknet 1.0.0-alpha.6",
+ "cairo-lang-starknet 1.0.0-rc0",
+ "cairo-lang-starknet 1.1.1",
+ "cairo-lang-starknet 2.7.0-rc.2",
+ "cairo-lang-starknet-classes",
+ "cairo-lang-utils 1.0.0-alpha.6",
+ "cairo-lang-utils 1.0.0-rc0",
+ "cairo-lang-utils 1.1.1",
+ "cairo-lang-utils 2.7.0-rc.2",
+ "cairo-vm",
+ "flate2",
+ "mp-convert",
+ "num-bigint",
+ "serde",
+ "serde_json",
+ "sha3",
+ "starknet-core",
+ "starknet-providers",
+ "starknet-types-core",
+ "tokio",
+]
+
+[[package]]
+name = "mp-convert"
+version = "0.1.0"
+dependencies = [
+ "primitive-types",
+ "starknet-core",
+ "starknet-providers",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+]
+
+[[package]]
+name = "mp-receipt"
+version = "0.1.0"
+dependencies = [
+ "bincode 1.3.3",
+ "blockifier",
+ "cairo-vm",
+ "log",
+ "mp-convert",
+ "serde",
+ "starknet-core",
+ "starknet-providers",
+ "starknet-types-core",
+]
+
+[[package]]
+name = "mp-state-update"
+version = "0.1.0"
+dependencies = [
+ "bincode 1.3.3",
+ "serde",
+ "starknet-core",
+ "starknet-types-core",
+]
+
+[[package]]
+name = "mp-transactions"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "blockifier",
+ "cairo-lang-starknet-classes",
+ "cairo-lang-utils 2.7.0-rc.2",
+ "cairo-vm",
+ "mp-class",
+ "mp-convert",
+ "num-bigint",
+ "serde",
+ "starknet-core",
+ "starknet-providers",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+]
+
+[[package]]
+name = "mp-utils"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "log",
+ "rayon",
+ "tokio",
 ]
 
 [[package]]

@@ -4,9 +4,9 @@ use crate::{
     utils::{convert_log_state_update, trim_hash},
 };
 use anyhow::Context;
-use dc_db::MadaraBackend;
-use dp_transactions::MAIN_CHAIN_ID;
-use dp_utils::channel_wait_or_graceful_shutdown;
+use mc_db::MadaraBackend;
+use mp_transactions::MAIN_CHAIN_ID;
+use mp_utils::channel_wait_or_graceful_shutdown;
 use futures::StreamExt;
 use serde::Deserialize;
 use starknet_api::hash::StarkHash;
@@ -103,10 +103,10 @@ mod eth_client_event_subscription_test {
     use std::{sync::Arc, time::Duration};
 
     use alloy::{providers::ProviderBuilder, sol};
-    use dc_db::DatabaseService;
-    use dc_metrics::MetricsService;
-    use dp_block::chain_config::ChainConfig;
-    use dp_convert::ToFelt;
+    use mc_db::DatabaseService;
+    use mc_metrics::MetricsService;
+    use mp_block::chain_config::ChainConfig;
+    use mp_convert::ToFelt;
     use rstest::*;
     use tempfile::TempDir;
     use url::Url;

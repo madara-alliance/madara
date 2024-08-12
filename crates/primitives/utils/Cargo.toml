@@ -1,6 +1,6 @@
 [package]
 description = "Madara utilities"
-name = "dp-utils"
+name = "mp-utils"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true

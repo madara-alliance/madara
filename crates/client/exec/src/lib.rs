@@ -6,7 +6,7 @@ use blockifier::{
         transaction_types::TransactionType,
     },
 };
-use dc_db::{db_block_id::DbBlockId, MadaraStorageError};
+use mc_db::{db_block_id::DbBlockId, MadaraStorageError};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::Felt;
 
@@ -24,7 +24,7 @@ pub use trace::execution_result_to_tx_trace;
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error(transparent)]
-    UnsupportedProtocolVersion(#[from] dp_block::chain_config::UnsupportedProtocolVersion),
+    UnsupportedProtocolVersion(#[from] mp_block::chain_config::UnsupportedProtocolVersion),
     #[error(transparent)]
     Reexecution(#[from] TxReexecError),
     #[error(transparent)]

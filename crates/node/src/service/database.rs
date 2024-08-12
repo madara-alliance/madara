@@ -1,5 +1,5 @@
 use anyhow::Context;
-use dc_db::{DBDropHook, MadaraBackend};
+use mc_db::{DBDropHook, MadaraBackend};
 
 use crate::cli::DbParams;
 

@@ -1,15 +1,15 @@
 //! Converts types from [`starknet_providers`] to madara's expected types.
 
-use dc_db::storage_updates::DbClassUpdate;
-use dp_block::header::{GasPrices, L1DataAvailabilityMode, PendingHeader};
-use dp_block::{
+use mc_db::storage_updates::DbClassUpdate;
+use mp_block::header::{GasPrices, L1DataAvailabilityMode, PendingHeader};
+use mp_block::{
     Header, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraPendingBlock, MadaraPendingBlockInfo, StarknetVersion,
 };
-use dp_class::{ClassInfo, ConvertedClass, ToCompiledClass};
-use dp_convert::felt_to_u128;
-use dp_receipt::{Event, TransactionReceipt};
-use dp_state_update::StateDiff;
-use dp_transactions::MAIN_CHAIN_ID;
+use mp_class::{ClassInfo, ConvertedClass, ToCompiledClass};
+use mp_convert::felt_to_u128;
+use mp_receipt::{Event, TransactionReceipt};
+use mp_state_update::StateDiff;
+use mp_transactions::MAIN_CHAIN_ID;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 
@@ -22,7 +22,7 @@ pub fn convert_inner(
     txs: Vec<starknet_providers::sequencer::models::TransactionType>,
     receipts: Vec<starknet_providers::sequencer::models::ConfirmedTransactionReceipt>,
 ) -> Result<MadaraBlockInner, L2SyncError> {
-    // converts starknet_provider transactions and events to dp_transactions and starknet_api events
+    // converts starknet_provider transactions and events to mp_transactions and starknet_api events
     let transactions_receipts = Iterator::zip(receipts.into_iter(), txs.iter())
         .map(|(tx_receipts, tx)| TransactionReceipt::from_provider(tx_receipts, tx))
         .collect::<Vec<_>>();

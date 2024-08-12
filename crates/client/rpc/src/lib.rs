@@ -13,9 +13,9 @@ pub mod providers;
 
 use std::sync::Arc;
 
-use dc_db::db_block_id::DbBlockIdResolvable;
-use dc_db::MadaraBackend;
-use dp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
+use mc_db::db_block_id::DbBlockIdResolvable;
+use mc_db::MadaraBackend;
+use mp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use errors::{StarknetRpcApiError, StarknetRpcResult};
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
@@ -241,7 +241,7 @@ impl Starknet {
     }
 
     pub fn current_block_number(&self) -> StarknetRpcResult<u64> {
-        self.get_block_n(&dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
+        self.get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
     }
 
     pub fn current_spec_version(&self) -> String {
