@@ -43,11 +43,11 @@ jobs:
         run: |
           cargo llvm-cov nextest --release --lcov --output-path lcov.info --test-threads=1
 
-      - name: Upload coverage to codecov.io
-        uses: codecov/codecov-action@v3
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
         with:
           files: lcov.info
-          fail_ci_if_error: false
+          debug: true
 
       - uses: colpal/actions-clean@v1
         if: ${{ always() }} # To ensure this step runs even when earlier steps fail
