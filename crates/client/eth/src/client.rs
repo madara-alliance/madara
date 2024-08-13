@@ -119,11 +119,23 @@ impl EthereumClient {
         u256_to_felt(block_hash._0)
     }
 
-    /// Get the last Starknet block hash verified on L1
+    /// Get cancellation status of an L1 to L2 message
+    /// 
+    /// This function query the core contract to know if a L1->L2 message has been cancelled
+    /// # Arguments
+    /// 
+    /// - msg_hash : Hash of L1 to L2 message
+    /// 
+    /// # Return
+    /// 
+    /// - A felt representing a timestamp :
+    ///     - 0 if the message has not been cancelled
+    ///     - timestamp of the cancellation if it has been cancelled
+    /// - An Error if the call fail
     pub async fn get_l1_to_l2_message_cancellations(&self, msg_hash: FixedBytes<32>) -> anyhow::Result<Felt> {
         //l1ToL2MessageCancellations
-        let block_hash = self.l1_core_contract.l1ToL2MessageCancellations(msg_hash).call().await?;
-        u256_to_felt(block_hash._0)
+        let cancellation_timestamp = self.l1_core_contract.l1ToL2MessageCancellations(msg_hash).call().await?;
+        u256_to_felt(cancellation_timestamp._0)
     }
 }
 
