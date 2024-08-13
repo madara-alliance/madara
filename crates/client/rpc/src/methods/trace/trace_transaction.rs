@@ -7,8 +7,8 @@ use dc_exec::execution_result_to_tx_trace;
 use dc_exec::ExecutionContext;
 use dp_block::StarknetVersion;
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::Felt;
 use starknet_core::types::TransactionTraceWithHash;
+use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
 // For now, we fallback to the sequencer - that is what pathfinder and juno do too, but this is temporary

@@ -7,7 +7,7 @@ use dp_block::{
     header::PendingHeader, DeoxysBlock, DeoxysBlockInfo, DeoxysPendingBlock, DeoxysPendingBlockInfo, Header,
 };
 use dp_state_update::StateDiff;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 pub fn close_block(
     backend: &DeoxysBackend,

@@ -4,7 +4,7 @@ use dp_block::BlockId;
 
 use crate::{DeoxysBackend, DeoxysStorageError};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DbBlockId {
     Pending,
     BlockN(u64),
@@ -50,5 +50,16 @@ impl fmt::Display for DbBlockId {
 impl DeoxysBackend {
     pub fn resolve_block_id(&self, id: &impl DbBlockIdResolvable) -> Result<Option<DbBlockId>, DeoxysStorageError> {
         id.resolve_db_block_id(self)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_db_block_id() {
+        assert!(DbBlockId::Pending.is_pending());
+        assert!(!DbBlockId::BlockN(0).is_pending());
     }
 }

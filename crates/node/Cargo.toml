@@ -31,7 +31,6 @@ dp-utils = { workspace = true }
 
 # Starknet
 starknet-providers = { workspace = true }
-starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
