@@ -336,23 +336,21 @@ mod tests {
             MsgToL1 { from_address: Felt::ONE, to_address: Felt::TWO, payload: vec![Felt::THREE, Felt::from(4)] };
 
         let hash = compute_messages_sent_hash(&[msg1, msg2]);
+        let expected_hash =
+            Felt::from_hex_unchecked("0x00c89474a9007dc060aed76caf8b30b927cfea1ebce2d134b943b8d7121004e4");
 
-        assert_eq!(
-            hash,
-            Felt::from_hex_unchecked("0x00c89474a9007dc060aed76caf8b30b927cfea1ebce2d134b943b8d7121004e4")
-        );
+        assert_eq!(hash, expected_hash,);
     }
 
     #[test]
     fn test_execution_result_compute_hash() {
         let succeeded = ExecutionResult::Succeeded;
         let reverted = ExecutionResult::Reverted { reason: "reason".to_string() };
+        let expected_hash =
+            Felt::from_hex_unchecked("0x3da776b48d37b131aef5221e52de092c5693df8fdf02fd7acf293a075aa3be4");
 
         assert_eq!(succeeded.compute_hash(), Felt::ZERO);
-        assert_eq!(
-            reverted.compute_hash(),
-            Felt::from_hex_unchecked("0x3da776b48d37b131aef5221e52de092c5693df8fdf02fd7acf293a075aa3be4")
-        );
+        assert_eq!(reverted.compute_hash(), expected_hash,);
     }
 
     #[test]
@@ -364,8 +362,10 @@ mod tests {
         };
 
         let hash = event.compute_hash_pedersen();
+        let expected_hash =
+            Felt::from_hex_unchecked("0x770591674368ef723f40ddef92ee7cf2fcf3e244afa15cd0a703fce83a415c1");
 
-        assert_eq!(hash, Felt::from_hex_unchecked("0x770591674368ef723f40ddef92ee7cf2fcf3e244afa15cd0a703fce83a415c1"));
+        assert_eq!(hash, expected_hash);
     }
 
     #[test]
@@ -378,31 +378,37 @@ mod tests {
         let transaction_hash = Felt::from(6);
 
         let hash = event.compute_hash_poseidon(&transaction_hash);
+        let expected_hash =
+            Felt::from_hex_unchecked("0x38be6cfe9175d3f260d1886bf932e1b67415c6c0e8b8a6de565326493c5524f");
 
-        assert_eq!(hash, Felt::from_hex_unchecked("0x38be6cfe9175d3f260d1886bf932e1b67415c6c0e8b8a6de565326493c5524f"));
+        assert_eq!(hash, expected_hash);
     }
 
     #[test]
     fn test_transaction_receipt_compute_hash() {
         let receipt: TransactionReceipt = dummy_invoke_receipt().into();
         let hash = receipt.compute_hash();
-        assert_eq!(hash, Felt::from_hex_unchecked("0x4ec732a8832cee7ed43a5fb10c20077e8b6d84196ea455ce4b06d27472176e2"));
-
-        let receipt: TransactionReceipt = dummy_l1_handler_receipt().into();
-        let hash = receipt.compute_hash();
-        assert_eq!(hash, Felt::from_hex_unchecked("0x4e34009fa7c50a33edcba2912c8f8195bcebc65d73002b712d0e87e4d9c4425"));
+        let expected_hash =
+            Felt::from_hex_unchecked("0x4ec732a8832cee7ed43a5fb10c20077e8b6d84196ea455ce4b06d27472176e2");
+        assert_eq!(hash, expected_hash);
 
         let receipt: TransactionReceipt = dummy_declare_receipt().into();
         let hash = receipt.compute_hash();
-        assert_eq!(hash, Felt::from_hex_unchecked("0x4ec732a8832cee7ed43a5fb10c20077e8b6d84196ea455ce4b06d27472176e2"));
+        assert_eq!(hash, expected_hash);
 
         let receipt: TransactionReceipt = dummy_deploy_receipt().into();
         let hash = receipt.compute_hash();
-        assert_eq!(hash, Felt::from_hex_unchecked("0x4ec732a8832cee7ed43a5fb10c20077e8b6d84196ea455ce4b06d27472176e2"));
+        assert_eq!(hash, expected_hash);
 
         let receipt: TransactionReceipt = dummy_deploy_account_receipt().into();
         let hash = receipt.compute_hash();
-        assert_eq!(hash, Felt::from_hex_unchecked("0x4ec732a8832cee7ed43a5fb10c20077e8b6d84196ea455ce4b06d27472176e2"));
+        assert_eq!(hash, expected_hash);
+
+        let receipt: TransactionReceipt = dummy_l1_handler_receipt().into();
+        let hash = receipt.compute_hash();
+        let expected_hash =
+            Felt::from_hex_unchecked("0x4e34009fa7c50a33edcba2912c8f8195bcebc65d73002b712d0e87e4d9c4425");
+        assert_eq!(hash, expected_hash);
     }
 
     fn dummy_messages() -> Vec<MsgToL1> {

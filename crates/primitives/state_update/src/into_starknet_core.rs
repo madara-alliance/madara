@@ -173,11 +173,12 @@ impl From<NonceUpdate> for starknet_core::types::NonceUpdate {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
+    use dp_convert::test::assert_consistent_conversion;
     use starknet_types_core::felt::Felt;
 
     use crate::tests::dummy_state_diff;
-
-    use super::*;
 
     #[test]
     fn test_state_update_core_convertion() {
@@ -188,10 +189,7 @@ mod test {
             state_diff: dummy_state_diff(),
         };
 
-        let core_state_update: starknet_core::types::StateUpdate = state_update.clone().into();
-        let converted_state_update: StateUpdate = core_state_update.into();
-
-        assert_eq!(state_update, converted_state_update);
+        assert_consistent_conversion::<_, starknet_core::types::StateUpdate>(state_update);
     }
 
     #[test]
@@ -199,9 +197,6 @@ mod test {
         let pending_state_update =
             PendingStateUpdate { old_root: Felt::from_hex_unchecked("0x5678"), state_diff: dummy_state_diff() };
 
-        let core_pending_state_update: starknet_core::types::PendingStateUpdate = pending_state_update.clone().into();
-        let converted_pending_state_update: PendingStateUpdate = core_pending_state_update.into();
-
-        assert_eq!(pending_state_update, converted_pending_state_update);
+        assert_consistent_conversion::<_, starknet_core::types::PendingStateUpdate>(pending_state_update);
     }
 }

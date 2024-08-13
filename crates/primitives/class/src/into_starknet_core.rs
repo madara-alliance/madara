@@ -413,6 +413,7 @@ mod tests {
         LegacyEventAbiType, LegacyFunctionAbiEntry, LegacyFunctionAbiType, LegacyStructAbiEntry, LegacyStructAbiType,
         LegacyStructMember, LegacyTypedParameter, SierraEntryPoint,
     };
+    use dp_convert::test::assert_consistent_conversion;
     use starknet_core::types::ContractClass as StarknetContractClass;
     use starknet_types_core::felt::Felt;
 
@@ -453,10 +454,8 @@ mod tests {
         };
 
         let contract_class: ContractClass = legacy_contract_class.clone().into();
-        let starknet_contract_class: StarknetContractClass = contract_class.clone().into();
-        let contract_class_back: ContractClass = starknet_contract_class.clone().into();
 
-        assert_eq!(contract_class, contract_class_back);
+        assert_consistent_conversion::<_, StarknetContractClass>(contract_class);
     }
 
     #[test]
@@ -473,9 +472,7 @@ mod tests {
         };
 
         let contract_class: ContractClass = sierra_contract_class.into();
-        let starknet_contract_class: StarknetContractClass = contract_class.clone().into();
-        let contract_class_back: ContractClass = starknet_contract_class.clone().into();
 
-        assert_eq!(contract_class, contract_class_back);
+        assert_consistent_conversion::<_, StarknetContractClass>(contract_class);
     }
 }

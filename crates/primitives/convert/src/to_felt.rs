@@ -135,12 +135,19 @@ mod tests {
     #[test]
     fn test_chain_id_to_felt() {
         let main_chain_id = ChainId::Mainnet;
-        assert_eq!(main_chain_id.to_felt(), Felt::from_bytes_be_slice(b"SN_MAIN"));
+        let expected_chain_id = Felt::from_hex_unchecked("0x534e5f4d41494e");
+        assert_eq!(main_chain_id.to_felt(), expected_chain_id);
+
         let sepolia_chain_id = ChainId::Sepolia;
-        assert_eq!(sepolia_chain_id.to_felt(), Felt::from_bytes_be_slice(b"SN_SEPOLIA"));
+        let expected_chain_id = Felt::from_hex_unchecked("0x534e5f5345504f4c4941");
+        assert_eq!(sepolia_chain_id.to_felt(), expected_chain_id);
+
         let integration_sepolia_chain_id = ChainId::IntegrationSepolia;
-        assert_eq!(integration_sepolia_chain_id.to_felt(), Felt::from_bytes_be_slice(b"SN_INTEGRATION_SEPOLIA"));
+        let expected_chain_id = Felt::from_hex_unchecked("0x534e5f494e544547524154494f4e5f5345504f4c4941");
+        assert_eq!(integration_sepolia_chain_id.to_felt(), expected_chain_id);
+
         let other_chain_id = ChainId::Other("SN_OTHER".to_string());
-        assert_eq!(other_chain_id.to_felt(), Felt::from_bytes_be_slice(b"SN_OTHER"));
+        let expected_chain_id = Felt::from_hex_unchecked("0x534e5f4f54484552");
+        assert_eq!(other_chain_id.to_felt(), expected_chain_id);
     }
 }

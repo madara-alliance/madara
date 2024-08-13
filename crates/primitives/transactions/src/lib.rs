@@ -112,6 +112,65 @@ impl From<DeployAccountTransactionV3> for Transaction {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("Transaction type is note the expected one.")]
+pub struct UnexpectedTransactionType;
+
+impl TryFrom<Transaction> for InvokeTransaction {
+    type Error = UnexpectedTransactionType;
+
+    fn try_from(tx: Transaction) -> Result<Self, Self::Error> {
+        match tx {
+            Transaction::Invoke(tx) => Ok(tx),
+            _ => Err(UnexpectedTransactionType),
+        }
+    }
+}
+
+impl TryFrom<Transaction> for L1HandlerTransaction {
+    type Error = UnexpectedTransactionType;
+
+    fn try_from(tx: Transaction) -> Result<Self, Self::Error> {
+        match tx {
+            Transaction::L1Handler(tx) => Ok(tx),
+            _ => Err(UnexpectedTransactionType),
+        }
+    }
+}
+
+impl TryFrom<Transaction> for DeclareTransaction {
+    type Error = UnexpectedTransactionType;
+
+    fn try_from(tx: Transaction) -> Result<Self, Self::Error> {
+        match tx {
+            Transaction::Declare(tx) => Ok(tx),
+            _ => Err(UnexpectedTransactionType),
+        }
+    }
+}
+
+impl TryFrom<Transaction> for DeployTransaction {
+    type Error = UnexpectedTransactionType;
+
+    fn try_from(tx: Transaction) -> Result<Self, Self::Error> {
+        match tx {
+            Transaction::Deploy(tx) => Ok(tx),
+            _ => Err(UnexpectedTransactionType),
+        }
+    }
+}
+
+impl TryFrom<Transaction> for DeployAccountTransaction {
+    type Error = UnexpectedTransactionType;
+
+    fn try_from(tx: Transaction) -> Result<Self, Self::Error> {
+        match tx {
+            Transaction::DeployAccount(tx) => Ok(tx),
+            _ => Err(UnexpectedTransactionType),
+        }
+    }
+}
+
 impl Transaction {
     pub fn version(&self) -> TransactionVersion {
         match self {
@@ -656,6 +715,29 @@ mod tests {
 
         let tx: Transaction = DeployAccountTransactionV3::default().into();
         assert_eq!(tx.version(), TransactionVersion::THREE);
+    }
+
+    #[test]
+    fn test_try_from_tx() {
+        let invoke_tx: InvokeTransaction = dummy_tx_invoke_v0().into();
+        let tx = Transaction::Invoke(invoke_tx.clone());
+        assert_eq!(InvokeTransaction::try_from(tx.clone()).unwrap(), invoke_tx);
+
+        let l1_handler_tx: L1HandlerTransaction = dummy_l1_handler();
+        let tx = Transaction::L1Handler(l1_handler_tx.clone());
+        assert_eq!(L1HandlerTransaction::try_from(tx.clone()).unwrap(), l1_handler_tx);
+
+        let declare_tx: DeclareTransaction = dummy_tx_declare_v0().into();
+        let tx = Transaction::Declare(declare_tx.clone());
+        assert_eq!(DeclareTransaction::try_from(tx.clone()).unwrap(), declare_tx);
+
+        let deploy_tx: DeployTransaction = dummy_tx_deploy();
+        let tx = Transaction::Deploy(deploy_tx.clone());
+        assert_eq!(DeployTransaction::try_from(tx.clone()).unwrap(), deploy_tx);
+
+        let deploy_account_tx: DeployAccountTransaction = dummy_tx_deploy_account_v1().into();
+        let tx = Transaction::DeployAccount(deploy_account_tx.clone());
+        assert_eq!(DeployAccountTransaction::try_from(tx.clone()).unwrap(), deploy_account_tx);
     }
 
     #[test]
