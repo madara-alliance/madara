@@ -114,8 +114,8 @@ async fn process_l1_message(
 
     // TODO: submit tx to mempool
 
-    let block_sent = LastSyncedEventBlock::new(l1_block_number.unwrap(), event_index.unwrap());
     // TODO: remove unwraps
+    let block_sent = LastSyncedEventBlock::new(l1_block_number.unwrap(), event_index.unwrap());
     backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
 
     // TODO: replace by tx hash from mempool
