@@ -27,6 +27,5 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
-indexmap = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }

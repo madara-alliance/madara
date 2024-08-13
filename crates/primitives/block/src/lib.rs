@@ -12,7 +12,7 @@ pub use primitive_types::{H160, U256};
 use starknet_types_core::felt::Felt;
 pub use starknet_version::{StarknetVersion, StarknetVersionError};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum DeoxysMaybePendingBlockInfo {
     Pending(DeoxysPendingBlockInfo),
@@ -43,6 +43,11 @@ impl DeoxysMaybePendingBlockInfo {
     pub fn block_n(&self) -> Option<u64> {
         self.as_nonpending().map(|v| v.header.block_number)
     }
+
+    pub fn block_hash(&self) -> Option<Felt> {
+        self.as_nonpending().map(|v| v.block_hash)
+    }
+
     pub fn tx_hashes(&self) -> &[Felt] {
         match self {
             DeoxysMaybePendingBlockInfo::NotPending(block) => &block.tx_hashes,
@@ -125,7 +130,7 @@ impl From<BlockId> for starknet_core::types::BlockId {
 }
 
 // Light version of the block with block_hash
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysPendingBlockInfo {
     pub header: PendingHeader,
     pub tx_hashes: Vec<Felt>,
@@ -138,7 +143,7 @@ impl DeoxysPendingBlockInfo {
 }
 
 // Light version of the block with block_hash
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInfo {
     pub header: Header,
     pub block_hash: Felt,
@@ -151,7 +156,14 @@ impl DeoxysBlockInfo {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+/// Starknet block inner.
+///
+/// Contains the block transactions and receipts.
+/// The transactions and receipts are in the same order.
+/// The i-th transaction corresponds to the i-th receipt.
+/// The length of the transactions and receipts must be the same.
+///
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInner {
     /// The block transactions.
     pub transactions: Vec<Transaction>,
@@ -166,7 +178,7 @@ impl DeoxysBlockInner {
 }
 
 /// Starknet block definition.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysMaybePendingBlock {
     pub info: DeoxysMaybePendingBlockInfo,
     pub inner: DeoxysBlockInner,

@@ -10,8 +10,7 @@ use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
 
 // "CONTRACT_CLASS_LEAF_V0"
-const CONTRACT_CLASS_HASH_VERSION: Felt =
-    Felt::from_raw([115292049744600508, 18444375821049509847, 12057587991035439952, 9331882290187415277]);
+const CONTRACT_CLASS_HASH_VERSION: Felt = Felt::from_hex_unchecked("0x434f4e54524143545f434c4153535f4c4541465f5630");
 
 pub fn class_trie_root(
     backend: &DeoxysBackend,

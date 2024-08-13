@@ -4,7 +4,7 @@ use blockifier::{
     versioned_constants::VersionedConstants,
 };
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use std::{collections::BTreeMap, ops::Deref, time::Duration};
 
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");

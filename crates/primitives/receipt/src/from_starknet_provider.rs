@@ -1,5 +1,5 @@
 use dp_convert::{felt_to_u64, ToFelt};
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 use crate::{
     DataAvailabilityResources, DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt,

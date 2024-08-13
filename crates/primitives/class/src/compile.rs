@@ -333,8 +333,8 @@ mod tests {
     use super::*;
     use starknet_core::types::BlockId;
     use starknet_core::types::BlockTag;
-    use starknet_core::types::Felt;
     use starknet_providers::{Provider, SequencerGatewayProvider};
+    use starknet_types_core::felt::Felt;
 
     #[test]
     fn test_sierra_version_display() {

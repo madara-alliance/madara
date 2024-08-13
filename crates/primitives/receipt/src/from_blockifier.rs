@@ -5,7 +5,7 @@ use blockifier::transaction::{
 };
 use cairo_vm::types::builtin_name::BuiltinName;
 use dp_convert::ToFelt;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 use crate::{
     DataAvailabilityResources, DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources,

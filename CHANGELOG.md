@@ -3,7 +3,7 @@
 ## Next release
 
 - test: add unitests primitives
-- fix: #225
+- test: add tests crate `db`
 - fix: #225
 - feat: experimental block production and mempool
 - refactor: L1BlockMetric is intialized inside the EthereumClient new function
