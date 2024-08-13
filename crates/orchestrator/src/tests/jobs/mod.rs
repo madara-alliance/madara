@@ -570,6 +570,7 @@ async fn handle_job_failure_with_correct_job_status_works(#[case] job_type: JobT
     job_metadata.insert("last_job_status".to_string(), job_status.to_string());
     job_expected.metadata = job_metadata.clone();
     job_expected.status = JobStatus::Failed;
+    job_expected.version = 1;
 
     assert_eq!(job_fetched, job_expected);
 }

@@ -104,11 +104,14 @@ pub async fn process_job(id: Uuid) -> Result<()> {
     let external_id = job_handler.process_job(config.as_ref(), &mut job).await?;
     let metadata = increment_key_in_metadata(&job.metadata, JOB_PROCESS_ATTEMPT_METADATA_KEY)?;
 
-    job.external_id = external_id.into();
-    job.status = JobStatus::PendingVerification;
-    job.metadata = metadata;
+    // Fetching the job again because update status above will update the job version
+    let mut job_updated = get_job(id).await?;
 
-    config.database().update_job(&job).await?;
+    job_updated.external_id = external_id.into();
+    job_updated.status = JobStatus::PendingVerification;
+    job_updated.metadata = metadata;
+
+    config.database().update_job(&job_updated).await?;
 
     add_job_to_verification_queue(job.id, Duration::from_secs(job_handler.verification_polling_delay_seconds()))
         .await?;

@@ -64,6 +64,23 @@ impl MongoDb {
         if result.modified_count == 0 {
             return Err(eyre!("Failed to update job. Job version is likely outdated"));
         }
+        self.update_job_version(current_job).await?;
+        Ok(())
+    }
+
+    /// To update the document version
+    async fn update_job_version(&self, current_job: &JobItem) -> Result<()> {
+        let filter = doc! {
+            "id": current_job.id,
+        };
+        let combined_update = doc! {
+            "$inc": { "version": 1 }
+        };
+        let options = UpdateOptions::builder().upsert(false).build();
+        let result = self.get_job_collection().update_one(filter, combined_update, options).await?;
+        if result.modified_count == 0 {
+            return Err(eyre!("Failed to update job. version"));
+        }
         Ok(())
     }
 }
@@ -254,7 +271,7 @@ impl Database for MongoDb {
     ) -> Result<Option<JobItem>> {
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
-            "job_status": bson::to_bson(&job_status)?
+            "status": bson::to_bson(&job_status)?
         };
         let find_options = FindOneOptions::builder().sort(doc! { "internal_id": -1 }).build();
 
@@ -269,7 +286,7 @@ impl Database for MongoDb {
     ) -> Result<Vec<JobItem>> {
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
-            "job_status": bson::to_bson(&job_status)?,
+            "status": bson::to_bson(&job_status)?,
             "internal_id": { "$gt": internal_id }
         };
 
@@ -280,7 +297,7 @@ impl Database for MongoDb {
 
     async fn get_jobs_by_statuses(&self, job_status: Vec<JobStatus>, limit: Option<i64>) -> Result<Vec<JobItem>> {
         let filter = doc! {
-            "job_status": {
+            "status": {
                 // TODO: Check that the conversion leads to valid output!
                 "$in": job_status.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
             }

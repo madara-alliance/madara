@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Implement DL queue for handling failed jobs.
 - Added tests for state update job.
 - Tests for DA job.
+- Database tests
 
 ## Changed
 
