@@ -54,6 +54,7 @@ snos = { workspace = true }
 starknet = { workspace = true }
 starknet-core = "0.9.0"
 starknet-settlement-client = { workspace = true }
+strum_macros = "0.26.4"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "rt-multi-thread"] }
 tracing = { workspace = true }

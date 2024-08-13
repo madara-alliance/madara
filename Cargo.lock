@@ -6358,6 +6358,7 @@ dependencies = [
  "starknet",
  "starknet-core 0.9.0",
  "starknet-settlement-client",
+ "strum_macros 0.26.4",
  "thiserror",
  "tokio",
  "tracing",

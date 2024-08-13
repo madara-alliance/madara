@@ -132,6 +132,8 @@ impl TestConfigBuilder {
             self.storage.unwrap(),
         );
 
+        drop_database().await.unwrap();
+
         config_force_init(config).await;
 
         server
