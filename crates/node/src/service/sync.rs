@@ -1,4 +1,4 @@
-use crate::cli::SyncParams;
+use crate::cli::{NetworkType, SyncParams};
 use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
@@ -8,6 +8,7 @@ use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
 use dc_telemetry::TelemetryHandle;
+use dp_block::chain_config::ChainConfig;
 use dp_utils::service::Service;
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,18 +31,19 @@ pub struct SyncService {
 impl SyncService {
     pub async fn new(
         config: &SyncParams,
+        chain_config: Arc<ChainConfig>,
+        network: NetworkType,
         db: &DatabaseService,
         metrics_handle: MetricsRegistry,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
-        // TODO: create l1 metrics here
         let block_metrics = BlockMetrics::register(&metrics_handle).context("Registering block metrics")?;
         let db_metrics = DbMetrics::register(&metrics_handle).context("Registering db metrics")?;
-        let fetch_config = config.block_fetch_config();
+        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), network);
 
         let eth_client = if !config.sync_l1_disabled {
             if let Some(l1_endpoint) = &config.l1_endpoint {
-                let core_address = Address::from_slice(config.network.l1_core_address().as_bytes());
+                let core_address = Address::from_slice(chain_config.eth_core_contract_address.as_bytes());
                 let l1_metrics = L1BlockMetrics::register(&metrics_handle).context("Registering L1 metrics")?;
                 Some(
                     EthereumClient::new(l1_endpoint.clone(), core_address, l1_metrics)

@@ -2,8 +2,10 @@
 
 ## Next release
 
+- tests: add tests for the rpcs endpoints
+- fix: pending contract storage not stored properly
 - test: add tests crate `db`
-- fix: #225
+- fix: --sync-l1-disabled cli option (#225)
 - feat: experimental block production and mempool
 - refactor: L1BlockMetric is intialized inside the EthereumClient new function
 - refactor: BlockMetrics divided in L1BlockMetrics and BlockMetrics
