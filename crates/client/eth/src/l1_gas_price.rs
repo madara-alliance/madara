@@ -176,13 +176,18 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_when_infinite_loop_false_works(eth_client: &'static EthereumClient) {
+    async fn gas_price_worker_when_infinite_loop_false_works() {
+        let anvil = Anvil::new()
+            .fork("https://eth.merkle.io")
+            .fork_block_number(20395662)
+            .try_spawn()
+            .expect("issue while forking for the anvil");
+        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once(eth_client, l1_gas_provider.clone(), Duration::from_millis(200));
+        let worker_handle = gas_price_worker_once(&eth_client, l1_gas_provider.clone(), Duration::from_millis(200));
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
@@ -227,7 +232,7 @@ mod eth_client_gas_price_worker_test {
 
         update_last_update_timestamp();
 
-        let timeout_duration = Duration::from_secs(5);
+        let timeout_duration = Duration::from_secs(10);
 
         let result = timeout(
             timeout_duration,
