@@ -23,6 +23,9 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
       - name: Launch Anvil
         run: anvil --fork-url $ANVIL_FORK_URL --fork-block-number $ANVIL_BLOCK_NUMBER &
         env:
