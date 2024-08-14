@@ -6,6 +6,7 @@ use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
 use dc_telemetry::TelemetryHandle;
+use dp_block::chain_config::ChainConfig;
 use dp_utils::service::Service;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,6 +28,8 @@ pub struct SyncService {
 impl SyncService {
     pub async fn new(
         config: &SyncParams,
+        chain_config: Arc<ChainConfig>,
+        network: NetworkType,
         db: &DatabaseService,
         metrics_handle: MetricsRegistry,
         telemetry: TelemetryHandle,
@@ -34,7 +37,7 @@ impl SyncService {
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
         let db_metrics = DbMetrics::register(&metrics_handle)?;
         let fetch_config = config.block_fetch_config();
-
+ 
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
             fetch_config,

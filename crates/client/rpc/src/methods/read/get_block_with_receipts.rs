@@ -11,6 +11,7 @@ pub fn get_block_with_receipts(
     starknet: &Starknet,
     block_id: BlockId,
 ) -> StarknetRpcResult<MaybePendingBlockWithReceipts> {
+    log::debug!("block_id {block_id:?}");
     let block = starknet.get_block(&block_id)?;
 
     let transactions_core = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes())
@@ -61,5 +62,111 @@ pub fn get_block_with_receipts(
                 transactions: transactions_with_receipts,
             }))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        errors::StarknetRpcApiError,
+        test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
+    };
+    use rstest::rstest;
+    use starknet_core::types::{BlockTag, Felt, L1DataAvailabilityMode, ResourcePrice};
+
+    #[rstest]
+    fn test_get_block_with_receipts(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { block_hashes, expected_txs, expected_receipts, .. }, rpc) =
+            sample_chain_for_block_getters;
+
+        // Block 0
+        let res = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
+            status: BlockStatus::AcceptedOnL1,
+            block_hash: block_hashes[0],
+            parent_hash: Felt::ZERO,
+            block_number: 0,
+            new_root: Felt::from_hex_unchecked("0x88912"),
+            timestamp: 43,
+            sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
+            l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 52.into(), price_in_wei: 44.into() },
+            l1_da_mode: L1DataAvailabilityMode::Blob,
+            starknet_version: "0.13.1.1".into(),
+            transactions: vec![TransactionWithReceipt {
+                transaction: expected_txs[0].clone(),
+                receipt: expected_receipts[0].clone(),
+            }],
+        });
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Number(0)).unwrap(), res);
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Hash(block_hashes[0])).unwrap(), res);
+
+        // Block 1
+        let res = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
+            status: BlockStatus::AcceptedOnL2,
+            block_hash: block_hashes[1],
+            parent_hash: block_hashes[0],
+            block_number: 1,
+            new_root: Felt::ZERO,
+            timestamp: 0,
+            sequencer_address: Felt::ZERO,
+            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_da_mode: L1DataAvailabilityMode::Calldata,
+            starknet_version: "0.13.2".into(),
+            transactions: vec![],
+        });
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Number(1)).unwrap(), res);
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Hash(block_hashes[1])).unwrap(), res);
+
+        // Block 2
+        let res = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
+            status: BlockStatus::AcceptedOnL2,
+            block_hash: block_hashes[2],
+            parent_hash: block_hashes[1],
+            block_number: 2,
+            new_root: Felt::ZERO,
+            timestamp: 0,
+            sequencer_address: Felt::ZERO,
+            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_da_mode: L1DataAvailabilityMode::Blob,
+            starknet_version: "0.13.2".into(),
+            transactions: vec![
+                TransactionWithReceipt { transaction: expected_txs[1].clone(), receipt: expected_receipts[1].clone() },
+                TransactionWithReceipt { transaction: expected_txs[2].clone(), receipt: expected_receipts[2].clone() },
+            ],
+        });
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), res);
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Number(2)).unwrap(), res);
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Hash(block_hashes[2])).unwrap(), res);
+
+        // Pending
+        let res = MaybePendingBlockWithReceipts::PendingBlock(PendingBlockWithReceipts {
+            parent_hash: block_hashes[2],
+            timestamp: 0,
+            sequencer_address: Felt::ZERO,
+            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+            l1_da_mode: L1DataAvailabilityMode::Blob,
+            starknet_version: "0.13.2".into(),
+            transactions: vec![TransactionWithReceipt {
+                transaction: expected_txs[3].clone(),
+                receipt: expected_receipts[3].clone(),
+            }],
+        });
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), res);
+    }
+
+    #[rstest]
+    fn test_get_block_with_receipts_not_found(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { .. }, rpc) = sample_chain_for_block_getters;
+
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Number(3)), Err(StarknetRpcApiError::BlockNotFound));
+        let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
+        assert_eq!(
+            get_block_with_receipts(&rpc, BlockId::Hash(does_not_exist)),
+            Err(StarknetRpcApiError::BlockNotFound)
+        );
     }
 }
