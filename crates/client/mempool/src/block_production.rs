@@ -19,7 +19,7 @@ use dp_state_update::{
 };
 use dp_transactions::TransactionWithHash;
 use dp_utils::graceful_shutdown;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use std::mem;
 use std::sync::Arc;
 

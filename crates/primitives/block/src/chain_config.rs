@@ -5,7 +5,7 @@ use blockifier::{
 };
 use primitive_types::H160;
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use std::{collections::BTreeMap, ops::Deref, time::Duration};
 
 pub mod eth_core_contract_address {

@@ -49,6 +49,72 @@ pub enum Transaction {
     DeployAccount(DeployAccountTransaction),
 }
 
+impl From<InvokeTransactionV0> for Transaction {
+    fn from(tx: InvokeTransactionV0) -> Self {
+        Transaction::Invoke(InvokeTransaction::V0(tx))
+    }
+}
+
+impl From<InvokeTransactionV1> for Transaction {
+    fn from(tx: InvokeTransactionV1) -> Self {
+        Transaction::Invoke(InvokeTransaction::V1(tx))
+    }
+}
+
+impl From<InvokeTransactionV3> for Transaction {
+    fn from(tx: InvokeTransactionV3) -> Self {
+        Transaction::Invoke(InvokeTransaction::V3(tx))
+    }
+}
+
+impl From<L1HandlerTransaction> for Transaction {
+    fn from(tx: L1HandlerTransaction) -> Self {
+        Transaction::L1Handler(tx)
+    }
+}
+
+impl From<DeclareTransactionV0> for Transaction {
+    fn from(tx: DeclareTransactionV0) -> Self {
+        Transaction::Declare(DeclareTransaction::V0(tx))
+    }
+}
+
+impl From<DeclareTransactionV1> for Transaction {
+    fn from(tx: DeclareTransactionV1) -> Self {
+        Transaction::Declare(DeclareTransaction::V1(tx))
+    }
+}
+
+impl From<DeclareTransactionV2> for Transaction {
+    fn from(tx: DeclareTransactionV2) -> Self {
+        Transaction::Declare(DeclareTransaction::V2(tx))
+    }
+}
+
+impl From<DeclareTransactionV3> for Transaction {
+    fn from(tx: DeclareTransactionV3) -> Self {
+        Transaction::Declare(DeclareTransaction::V3(tx))
+    }
+}
+
+impl From<DeployTransaction> for Transaction {
+    fn from(tx: DeployTransaction) -> Self {
+        Transaction::Deploy(tx)
+    }
+}
+
+impl From<DeployAccountTransactionV1> for Transaction {
+    fn from(tx: DeployAccountTransactionV1) -> Self {
+        Transaction::DeployAccount(DeployAccountTransaction::V1(tx))
+    }
+}
+
+impl From<DeployAccountTransactionV3> for Transaction {
+    fn from(tx: DeployAccountTransactionV3) -> Self {
+        Transaction::DeployAccount(DeployAccountTransaction::V3(tx))
+    }
+}
+
 impl Transaction {
     pub fn version(&self) -> TransactionVersion {
         match self {
@@ -130,7 +196,7 @@ impl InvokeTransaction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV0 {
     pub max_fee: Felt,
     pub signature: Vec<Felt>,
@@ -145,7 +211,7 @@ impl InvokeTransactionV0 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV1 {
     pub sender_address: Felt,
     pub calldata: Vec<Felt>,
@@ -160,7 +226,7 @@ impl InvokeTransactionV1 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV3 {
     pub sender_address: Felt,
     pub calldata: Vec<Felt>,
@@ -180,7 +246,7 @@ impl InvokeTransactionV3 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct L1HandlerTransaction {
     pub version: Felt,
     pub nonce: u64,
@@ -263,7 +329,7 @@ impl DeclareTransaction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV0 {
     pub sender_address: Felt,
     pub max_fee: Felt,
@@ -277,7 +343,7 @@ impl DeclareTransactionV0 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV1 {
     pub sender_address: Felt,
     pub max_fee: Felt,
@@ -292,7 +358,7 @@ impl DeclareTransactionV1 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV2 {
     pub sender_address: Felt,
     pub compiled_class_hash: Felt,
@@ -308,7 +374,7 @@ impl DeclareTransactionV2 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV3 {
     pub sender_address: Felt,
     pub compiled_class_hash: Felt,
@@ -329,7 +395,7 @@ impl DeclareTransactionV3 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployTransaction {
     pub version: Felt,
     pub contract_address_salt: Felt,
@@ -392,7 +458,7 @@ impl DeployAccountTransaction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployAccountTransactionV1 {
     pub max_fee: Felt,
     pub signature: Vec<Felt>,
@@ -408,7 +474,7 @@ impl DeployAccountTransactionV1 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployAccountTransactionV3 {
     pub signature: Vec<Felt>,
     pub nonce: Felt,
@@ -428,8 +494,9 @@ impl DeployAccountTransactionV3 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DataAvailabilityMode {
+    #[default]
     L1 = 0,
     L2 = 1,
 }

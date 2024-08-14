@@ -33,7 +33,7 @@ impl From<BlockStatus> for starknet_core::types::BlockStatus {
     }
 }
 
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PendingHeader {
     /// The hash of this block’s parent.
     pub parent_block_hash: Felt,
@@ -49,7 +49,7 @@ pub struct PendingHeader {
     pub l1_da_mode: L1DataAvailabilityMode,
 }
 
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// Starknet header definition.
 pub struct Header {
     /// The hash of this block’s parent.
@@ -81,7 +81,7 @@ pub struct Header {
     pub l1_da_mode: L1DataAvailabilityMode,
 }
 
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GasPrices {
     pub eth_l1_gas_price: u128,
     pub strk_l1_gas_price: u128,
@@ -119,8 +119,8 @@ impl GasPrices {
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum L1DataAvailabilityMode {
-    #[default]
     Calldata,
+    #[default]
     Blob,
 }
 
@@ -276,29 +276,36 @@ mod tests {
     }
 
     #[test]
-    fn test_header_hash_v0_13_2() {
-        let header = Header {
-            parent_block_hash: Felt::from(1),
-            block_number: 2,
-            global_state_root: Felt::from(3),
-            sequencer_address: Felt::from(4),
-            block_timestamp: 5,
-            transaction_count: 6,
-            transaction_commitment: Felt::from(7),
-            event_count: 8,
-            event_commitment: Felt::from(9),
-            state_diff_length: 10,
-            state_diff_commitment: Felt::from(11),
-            receipt_commitment: Felt::from(12),
-            protocol_version: "0.13.2".parse().unwrap(),
-            l1_gas_price: GasPrices {
+    fn test_header_new() {
+        let header = Header::new(
+            Felt::from(1),
+            2,
+            Felt::from(3),
+            Felt::from(4),
+            5,
+            6,
+            Felt::from(7),
+            8,
+            Felt::from(9),
+            10,
+            Felt::from(11),
+            Felt::from(12),
+            "0.13.2".parse().unwrap(),
+            GasPrices {
                 eth_l1_gas_price: 14,
                 strk_l1_gas_price: 15,
                 eth_l1_data_gas_price: 16,
                 strk_l1_data_gas_price: 17,
             },
-            l1_da_mode: L1DataAvailabilityMode::Blob,
-        };
+            L1DataAvailabilityMode::Blob,
+        );
+
+        assert_eq!(header, dummy_header(StarknetVersion::STARKNET_VERSION_0_13_2));
+    }
+
+    #[test]
+    fn test_header_hash_v0_13_2() {
+        let header = dummy_header(StarknetVersion::STARKNET_VERSION_0_13_2);
 
         let hash = header.compute_hash(Felt::from_bytes_be_slice(b"CHAIN_ID"));
 
@@ -307,29 +314,7 @@ mod tests {
 
     #[test]
     fn test_header_hash_v0_11_1() {
-        let header = Header {
-            parent_block_hash: Felt::from(1),
-            block_number: 2,
-            global_state_root: Felt::from(3),
-            sequencer_address: Felt::from(4),
-            block_timestamp: 5,
-            transaction_count: 6,
-            transaction_commitment: Felt::from(7),
-            event_count: 8,
-            event_commitment: Felt::from(9),
-            state_diff_length: 10,
-            state_diff_commitment: Felt::from(11),
-            receipt_commitment: Felt::from(12),
-            protocol_version: "0.11.1".parse().unwrap(),
-            l1_gas_price: GasPrices {
-                eth_l1_gas_price: 0,
-                strk_l1_gas_price: 0,
-                eth_l1_data_gas_price: 0,
-                strk_l1_data_gas_price: 0,
-            },
-            l1_da_mode: L1DataAvailabilityMode::Calldata,
-        };
-
+        let header = dummy_header(StarknetVersion::STARKNET_VERSION_0_11_1);
         let hash = header.compute_hash(Felt::from_bytes_be_slice(b"CHAIN_ID"));
 
         assert_eq!(hash, Felt::from_hex_unchecked("0x42ec5792c165e0235d7576dc9b4a56140b217faba0b2f57c0a48b850ea5999c"));
@@ -337,7 +322,15 @@ mod tests {
 
     #[test]
     fn test_header_hash_pre_v0_7() {
-        let header = Header {
+        let header = dummy_header(Default::default());
+
+        let hash = header.compute_hash(Felt::from_bytes_be_slice(b"SN_MAIN"));
+
+        assert_eq!(hash, Felt::from_hex_unchecked("0x6028bf0975e1d4c95713e021a0f0217e74d5a748a20691d881c86d9d62d1432"));
+    }
+
+    fn dummy_header(protocol_version: StarknetVersion) -> Header {
+        Header {
             parent_block_hash: Felt::from(1),
             block_number: 2,
             global_state_root: Felt::from(3),
@@ -350,18 +343,14 @@ mod tests {
             state_diff_length: 10,
             state_diff_commitment: Felt::from(11),
             receipt_commitment: Felt::from(12),
-            protocol_version: Default::default(),
+            protocol_version,
             l1_gas_price: GasPrices {
-                eth_l1_gas_price: 0,
-                strk_l1_gas_price: 0,
-                eth_l1_data_gas_price: 0,
-                strk_l1_data_gas_price: 0,
+                eth_l1_gas_price: 14,
+                strk_l1_gas_price: 15,
+                eth_l1_data_gas_price: 16,
+                strk_l1_data_gas_price: 17,
             },
-            l1_da_mode: L1DataAvailabilityMode::Calldata,
-        };
-
-        let hash = header.compute_hash(Felt::from_bytes_be_slice(b"SN_MAIN"));
-
-        assert_eq!(hash, Felt::from_hex_unchecked("0x6028bf0975e1d4c95713e021a0f0217e74d5a748a20691d881c86d9d62d1432"));
+            l1_da_mode: L1DataAvailabilityMode::Blob,
+        }
     }
 }

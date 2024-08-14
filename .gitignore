@@ -21,8 +21,6 @@ rustc-ice-*.txt
 # Javascript dependencies
 **/node_modules/
 
-data
-
 # Artillery reports
 benchmarking/reports/*.json
 
@@ -55,3 +53,5 @@ starknet-e2e-test/contracts/build
 output*
 
 tmp/
+
+*.info

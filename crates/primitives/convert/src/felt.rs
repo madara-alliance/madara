@@ -1,4 +1,4 @@
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 #[derive(Debug, thiserror::Error)]
 #[error("Felt is too big to convert to u64.")]

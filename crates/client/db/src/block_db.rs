@@ -6,7 +6,7 @@ use dp_block::{
 use dp_state_update::StateDiff;
 use rocksdb::WriteOptions;
 use starknet_api::core::ChainId;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
 use crate::DeoxysStorageError;
@@ -27,6 +27,7 @@ const ROW_PENDING_INNER: &[u8] = b"pending";
 const ROW_SYNC_TIP: &[u8] = b"sync_tip";
 const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct TxIndex(pub u64);
 
 // TODO(error-handling): some of the else { return Ok(None) } should be replaced with hard errors for

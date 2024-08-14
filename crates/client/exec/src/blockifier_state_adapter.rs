@@ -8,7 +8,7 @@ use dp_class::to_blockifier_class;
 use dp_convert::{felt_to_u64, ToFelt};
 use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
 /// Adapter for the db queries made by blockifier.

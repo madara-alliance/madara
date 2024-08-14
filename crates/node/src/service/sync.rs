@@ -3,7 +3,7 @@ use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
 use dc_db::{DatabaseService, DeoxysBackend};
-use dc_eth::client::EthereumClient;
+use dc_eth::client::{EthereumClient, L1BlockMetrics};
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
@@ -19,7 +19,7 @@ pub struct SyncService {
     db_backend: Arc<DeoxysBackend>,
     fetch_config: FetchConfig,
     backup_every_n_blocks: Option<u64>,
-    eth_client: EthereumClient,
+    eth_client: Option<EthereumClient>,
     starting_block: Option<u64>,
     block_metrics: BlockMetrics,
     db_metrics: DbMetrics,
@@ -37,29 +37,19 @@ impl SyncService {
         metrics_handle: MetricsRegistry,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
-        // TODO: create l1 metrics here
-        let block_metrics = BlockMetrics::register(&metrics_handle)?;
-        let db_metrics = DbMetrics::register(&metrics_handle)?;
-        let fetch_config = FetchConfig {
-            gateway: network.gateway(),
-            feeder_gateway: network.feeder_gateway(),
-            chain_id: chain_config.chain_id.clone(),
-            sound: false,
-            l1_core_address: chain_config.eth_core_contract_address,
-            verify: !config.disable_root,
-            api_key: config.gateway_key.clone(),
-            sync_polling_interval: if config.no_sync_polling {
-                None
-            } else {
-                Some(Duration::from_secs(config.sync_polling_interval))
-            },
-            n_blocks_to_sync: config.n_blocks_to_sync,
-            sync_l1_disabled: config.sync_l1_disabled,
-        };
+        let block_metrics = BlockMetrics::register(&metrics_handle).context("Registering block metrics")?;
+        let db_metrics = DbMetrics::register(&metrics_handle).context("Registering db metrics")?;
+        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), network);
 
-        let l1_endpoint = if !config.sync_l1_disabled {
-            if let Some(l1_rpc_url) = &config.l1_endpoint {
-                Some(l1_rpc_url.clone())
+        let eth_client = if !config.sync_l1_disabled {
+            if let Some(l1_endpoint) = &config.l1_endpoint {
+                let core_address = Address::from_slice(chain_config.eth_core_contract_address.as_bytes());
+                let l1_metrics = L1BlockMetrics::register(&metrics_handle).context("Registering L1 metrics")?;
+                Some(
+                    EthereumClient::new(l1_endpoint.clone(), core_address, l1_metrics)
+                        .await
+                        .context("Creating ethereum client")?,
+                )
             } else {
                 return Err(anyhow::anyhow!(
                     "❗ No L1 endpoint provided. You must provide one in order to verify the synced state."
@@ -68,11 +58,6 @@ impl SyncService {
         } else {
             None
         };
-
-        let core_address = Address::from_slice(chain_config.eth_core_contract_address.as_bytes());
-        let eth_client = EthereumClient::new(l1_endpoint.unwrap(), core_address, metrics_handle)
-            .await
-            .context("Creating ethereum client")?;
 
         Ok(Self {
             db_backend: Arc::clone(db.backend()),

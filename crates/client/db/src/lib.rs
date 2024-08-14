@@ -305,6 +305,19 @@ pub struct DatabaseService {
 }
 
 impl DatabaseService {
+    /// Create a new database service.
+    ///
+    /// # Arguments
+    ///
+    /// * `base_path` - The path to the database directory.
+    /// * `backup_dir` - Optional path to the backup directory.
+    /// * `restore_from_latest_backup` - Whether to restore the database from the latest backup.
+    /// * `chain_config` - The chain configuration.
+    ///
+    /// # Returns
+    ///
+    /// A new database service.
+    ///
     pub async fn new(
         base_path: &Path,
         backup_dir: Option<PathBuf>,

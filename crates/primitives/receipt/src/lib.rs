@@ -20,6 +20,36 @@ pub enum TransactionReceipt {
     DeployAccount(DeployAccountTransactionReceipt),
 }
 
+impl From<InvokeTransactionReceipt> for TransactionReceipt {
+    fn from(receipt: InvokeTransactionReceipt) -> Self {
+        TransactionReceipt::Invoke(receipt)
+    }
+}
+
+impl From<L1HandlerTransactionReceipt> for TransactionReceipt {
+    fn from(receipt: L1HandlerTransactionReceipt) -> Self {
+        TransactionReceipt::L1Handler(receipt)
+    }
+}
+
+impl From<DeclareTransactionReceipt> for TransactionReceipt {
+    fn from(receipt: DeclareTransactionReceipt) -> Self {
+        TransactionReceipt::Declare(receipt)
+    }
+}
+
+impl From<DeployTransactionReceipt> for TransactionReceipt {
+    fn from(receipt: DeployTransactionReceipt) -> Self {
+        TransactionReceipt::Deploy(receipt)
+    }
+}
+
+impl From<DeployAccountTransactionReceipt> for TransactionReceipt {
+    fn from(receipt: DeployAccountTransactionReceipt) -> Self {
+        TransactionReceipt::DeployAccount(receipt)
+    }
+}
+
 impl TransactionReceipt {
     pub fn transaction_hash(&self) -> Felt {
         match self {
@@ -120,7 +150,7 @@ fn compute_messages_sent_hash(messages: &[MsgToL1]) -> Felt {
     Poseidon::hash_array(&elements)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvokeTransactionReceipt {
     pub transaction_hash: Felt, // This can be retrieved from the transaction itself.
     pub actual_fee: FeePayment,
@@ -130,7 +160,7 @@ pub struct InvokeTransactionReceipt {
     pub execution_result: ExecutionResult,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct L1HandlerTransactionReceipt {
     // normally this would be a Hash256, but the serde implementation doesn't work with bincode.
     pub message_hash: Felt,
@@ -142,7 +172,7 @@ pub struct L1HandlerTransactionReceipt {
     pub execution_result: ExecutionResult,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeclareTransactionReceipt {
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
@@ -152,7 +182,7 @@ pub struct DeclareTransactionReceipt {
     pub execution_result: ExecutionResult,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeployTransactionReceipt {
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
@@ -163,7 +193,7 @@ pub struct DeployTransactionReceipt {
     pub contract_address: Felt,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeployAccountTransactionReceipt {
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
@@ -174,14 +204,15 @@ pub struct DeployAccountTransactionReceipt {
     pub contract_address: Felt,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeePayment {
     pub amount: Felt,
     pub unit: PriceUnit,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PriceUnit {
+    #[default]
     Wei,
     Fri,
 }
@@ -244,10 +275,13 @@ pub struct DataAvailabilityResources {
     pub l1_data_gas: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExecutionResult {
+    #[default]
     Succeeded,
-    Reverted { reason: String },
+    Reverted {
+        reason: String,
+    },
 }
 
 impl ExecutionResult {

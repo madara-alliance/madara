@@ -63,10 +63,9 @@ impl Clone for EthereumClient {
 
 impl EthereumClient {
     /// Create a new EthereumClient instance with the given RPC URL
-    pub async fn new(url: Url, l1_core_address: Address, metrics_handle: MetricsRegistry) -> anyhow::Result<Self> {
+    pub async fn new(url: Url, l1_core_address: Address, l1_block_metrics: L1BlockMetrics) -> anyhow::Result<Self> {
         let provider = ProviderBuilder::new().on_http(url);
         let core_contract = StarknetCoreContract::new(l1_core_address, provider.clone());
-        let l1_block_metrics = L1BlockMetrics::register(&metrics_handle)?;
 
         Ok(Self { provider: Arc::new(provider), l1_core_contract: core_contract, l1_block_metrics })
     }
