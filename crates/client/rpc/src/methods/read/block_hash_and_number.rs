@@ -23,17 +23,22 @@ pub fn block_hash_and_number(starknet: &Starknet) -> StarknetRpcResult<BlockHash
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
-    use crate::test_utils::open_testing;
-    use dp_block::{DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, Header};
+    use crate::{errors::StarknetRpcApiError, test_utils::rpc_test_setup};
+    use dc_db::DeoxysBackend;
+    use dp_block::{
+        header::PendingHeader, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo,
+        DeoxysPendingBlockInfo, Header,
+    };
     use dp_state_update::StateDiff;
     use rstest::rstest;
     use starknet_core::types::Felt;
 
     #[rstest]
-    fn test_block_hash_and_number() {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let (backend, rpc) = open_testing();
+    fn test_block_hash_and_number(rpc_test_setup: (Arc<DeoxysBackend>, Starknet)) {
+        let (backend, rpc) = rpc_test_setup;
 
         backend
             .store_block(
@@ -71,5 +76,49 @@ mod tests {
             block_hash_and_number(&rpc).unwrap(),
             BlockHashAndNumber { block_hash: Felt::from_hex_unchecked("0x12345"), block_number: 1 }
         );
+
+        // pending block should not be taken into account
+        backend
+            .store_block(
+                DeoxysMaybePendingBlock {
+                    info: DeoxysMaybePendingBlockInfo::Pending(DeoxysPendingBlockInfo {
+                        header: PendingHeader { parent_block_hash: Felt::ZERO, ..Default::default() },
+                        tx_hashes: vec![],
+                    }),
+                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                },
+                StateDiff::default(),
+                vec![],
+            )
+            .unwrap();
+
+        assert_eq!(
+            block_hash_and_number(&rpc).unwrap(),
+            BlockHashAndNumber { block_hash: Felt::from_hex_unchecked("0x12345"), block_number: 1 }
+        );
+    }
+
+    #[rstest]
+    fn test_no_block_hash_and_number(rpc_test_setup: (Arc<DeoxysBackend>, Starknet)) {
+        let (backend, rpc) = rpc_test_setup;
+
+        assert_eq!(block_hash_and_number(&rpc), Err(StarknetRpcApiError::BlockNotFound));
+
+        // pending block should not be taken into account
+        backend
+            .store_block(
+                DeoxysMaybePendingBlock {
+                    info: DeoxysMaybePendingBlockInfo::Pending(DeoxysPendingBlockInfo {
+                        header: PendingHeader { parent_block_hash: Felt::ZERO, ..Default::default() },
+                        tx_hashes: vec![],
+                    }),
+                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                },
+                StateDiff::default(),
+                vec![],
+            )
+            .unwrap();
+
+        assert_eq!(block_hash_and_number(&rpc), Err(StarknetRpcApiError::BlockNotFound));
     }
 }

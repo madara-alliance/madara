@@ -32,14 +32,16 @@ pub fn get_block_transaction_count(starknet: &Starknet, block_id: BlockId) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{make_sample_chain_1, open_testing, SampleChain1};
+    use crate::{
+        errors::StarknetRpcApiError,
+        test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
+    };
     use rstest::rstest;
-    use starknet_core::types::BlockTag;
+    use starknet_core::types::{BlockTag, Felt};
 
     #[rstest]
-    fn test_get_block_transaction_count() {
-        let (backend, rpc) = open_testing();
-        let SampleChain1 { block_hashes, .. } = make_sample_chain_1(&backend);
+    fn test_get_block_transaction_count(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { block_hashes, .. }, rpc) = sample_chain_for_block_getters;
 
         // Block 0
         assert_eq!(get_block_transaction_count(&rpc, BlockId::Number(0)).unwrap(), 1);
@@ -53,5 +55,19 @@ mod tests {
         assert_eq!(get_block_transaction_count(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), 2);
         // Pending
         assert_eq!(get_block_transaction_count(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), 1);
+    }
+
+    #[rstest]
+    fn test_get_block_transaction_count_not_found(
+        sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet),
+    ) {
+        let (SampleChainForBlockGetters { .. }, rpc) = sample_chain_for_block_getters;
+
+        assert_eq!(get_block_transaction_count(&rpc, BlockId::Number(3)), Err(StarknetRpcApiError::BlockNotFound));
+        let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
+        assert_eq!(
+            get_block_transaction_count(&rpc, BlockId::Hash(does_not_exist)),
+            Err(StarknetRpcApiError::BlockNotFound)
+        );
     }
 }

@@ -69,15 +69,14 @@ pub fn get_transaction_receipt(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{make_sample_chain_1, open_testing, SampleChain1};
+    use crate::test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters};
     use rstest::rstest;
     use starknet_core::types::ReceiptBlock;
 
     #[rstest]
-    fn test_get_transaction_receipt() {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let (backend, rpc) = open_testing();
-        let SampleChain1 { block_hashes, tx_hashes, expected_receipts, .. } = make_sample_chain_1(&backend);
+    fn test_get_transaction_receipt(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { block_hashes, tx_hashes, expected_receipts, .. }, rpc) =
+            sample_chain_for_block_getters;
 
         // Block 0
         let res = TransactionReceiptWithBlockInfo {
@@ -104,5 +103,13 @@ mod tests {
         let res =
             TransactionReceiptWithBlockInfo { receipt: expected_receipts[3].clone(), block: ReceiptBlock::Pending };
         assert_eq!(get_transaction_receipt(&rpc, tx_hashes[3]).unwrap(), res);
+    }
+
+    #[rstest]
+    fn test_get_transaction_receipt_not_found(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { .. }, rpc) = sample_chain_for_block_getters;
+
+        let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
+        assert_eq!(get_transaction_receipt(&rpc, does_not_exist), Err(StarknetRpcApiError::TxnHashNotFound));
     }
 }

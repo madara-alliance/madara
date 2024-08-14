@@ -38,15 +38,15 @@ pub fn get_transaction_by_block_id_and_index(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{make_sample_chain_1, open_testing, SampleChain1};
+    use crate::test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters};
     use rstest::rstest;
     use starknet_core::types::BlockTag;
 
     #[rstest]
-    fn test_get_transaction_by_block_id_and_index() {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let (backend, rpc) = open_testing();
-        let SampleChain1 { block_hashes, expected_txs, .. } = make_sample_chain_1(&backend);
+    fn test_get_transaction_by_block_id_and_index(
+        sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet),
+    ) {
+        let (SampleChainForBlockGetters { block_hashes, expected_txs, .. }, rpc) = sample_chain_for_block_getters;
 
         // Block 0
         assert_eq!(get_transaction_by_block_id_and_index(&rpc, BlockId::Number(0), 0).unwrap(), expected_txs[0]);
@@ -82,6 +82,22 @@ mod tests {
         assert_eq!(
             get_transaction_by_block_id_and_index(&rpc, BlockId::Tag(BlockTag::Pending), 0).unwrap(),
             expected_txs[3]
+        );
+    }
+
+    #[rstest]
+    fn test_get_transaction_by_block_id_and_index_not_found(
+        sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet),
+    ) {
+        let (SampleChainForBlockGetters { .. }, rpc) = sample_chain_for_block_getters;
+
+        assert_eq!(
+            get_transaction_by_block_id_and_index(&rpc, BlockId::Number(4), 0),
+            Err(StarknetRpcApiError::BlockNotFound)
+        );
+        assert_eq!(
+            get_transaction_by_block_id_and_index(&rpc, BlockId::Number(0), 1),
+            Err(StarknetRpcApiError::InvalidTxnIndex)
         );
     }
 }

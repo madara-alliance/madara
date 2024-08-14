@@ -2,6 +2,7 @@
 
 ## Next release
 
+- tests: add tests for the rpcs endpoints
 - fix: pending contract storage not stored properly
 - test: add tests crate `db`
 - fix: --sync-l1-disabled cli option (#225)

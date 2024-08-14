@@ -61,7 +61,6 @@ pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
 
     opts.set_env(&env);
 
-    #[cfg(not(feature = "testing"))]
     log::debug!("opening db at {:?}", path.display());
     let db = DB::open_cf_descriptors(
         &opts,
@@ -347,7 +346,6 @@ struct BackupRequest {
 
 impl Drop for DeoxysBackend {
     fn drop(&mut self) {
-        #[cfg(not(feature = "testing"))]
         log::info!("⏳ Gracefully closing the database...");
     }
 }
@@ -378,6 +376,8 @@ impl DeoxysBackend {
     ) -> Result<Arc<DeoxysBackend>> {
         let db_path = db_config_dir.join("db");
 
+        // when backups are enabled, a thread is spawned that owns the rocksdb BackupEngine (it is not thread safe) and it receives backup requests using a mpsc channel
+        // There is also another oneshot channel involved: when restoring the db at startup, we want to wait for the backupengine to finish restoration before returning from open()
         let backup_handle = if let Some(backup_dir) = backup_dir {
             let (restored_cb_sender, restored_cb_recv) = oneshot::channel();
 

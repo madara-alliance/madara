@@ -71,15 +71,16 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{make_sample_chain_1, open_testing, SampleChain1};
+    use crate::{
+        errors::StarknetRpcApiError,
+        test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
+    };
     use rstest::rstest;
     use starknet_core::types::{BlockTag, Felt, L1DataAvailabilityMode, ResourcePrice};
 
     #[rstest]
-    fn test_get_block_with_txs() {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let (backend, rpc) = open_testing();
-        let SampleChain1 { block_hashes, expected_txs, .. } = make_sample_chain_1(&backend);
+    fn test_get_block_with_txs(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { block_hashes, expected_txs, .. }, rpc) = sample_chain_for_block_getters;
 
         // Block 0
         let res = MaybePendingBlockWithTxs::Block(BlockWithTxs {
@@ -128,7 +129,7 @@ mod tests {
             sequencer_address: Felt::ZERO,
             l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
             l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
-            l1_da_mode: L1DataAvailabilityMode::Calldata,
+            l1_da_mode: L1DataAvailabilityMode::Blob,
             starknet_version: "0.13.2".into(),
             transactions: vec![expected_txs[1].clone(), expected_txs[2].clone()],
         });
@@ -143,10 +144,22 @@ mod tests {
             sequencer_address: Felt::ZERO,
             l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
             l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
-            l1_da_mode: L1DataAvailabilityMode::Calldata,
+            l1_da_mode: L1DataAvailabilityMode::Blob,
             starknet_version: "0.13.2".into(),
             transactions: vec![expected_txs[3].clone()],
         });
         assert_eq!(get_block_with_txs(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), res);
+    }
+
+    #[rstest]
+    fn test_get_block_with_txs_not_found(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { .. }, rpc) = sample_chain_for_block_getters;
+
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Number(3)), Err(StarknetRpcApiError::BlockNotFound.into()));
+        let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
+        assert_eq!(
+            get_block_with_txs(&rpc, BlockId::Hash(does_not_exist)),
+            Err(StarknetRpcApiError::BlockNotFound.into())
+        );
     }
 }

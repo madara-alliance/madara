@@ -13,28 +13,38 @@ use dp_state_update::{
     StorageEntry,
 };
 use dp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
+use rstest::fixture;
 use starknet_core::types::Felt;
 use std::sync::Arc;
 
 use crate::{providers::TestTransactionProvider, Starknet};
 
-pub fn open_testing() -> (Arc<DeoxysBackend>, Starknet) {
+#[fixture]
+pub fn rpc_test_setup() -> (Arc<DeoxysBackend>, Starknet) {
     let chain_config = Arc::new(ChainConfig::test_config());
     let backend = DeoxysBackend::open_for_testing(chain_config.clone());
     let rpc = Starknet::new(backend.clone(), chain_config.clone(), Arc::new(TestTransactionProvider));
-
     (backend, rpc)
 }
 
-pub struct SampleChain1 {
+// This sample chain is only used to test get tx / get block rpcs.
+pub struct SampleChainForBlockGetters {
     pub block_hashes: Vec<Felt>,
     pub tx_hashes: Vec<Felt>,
     pub expected_txs: Vec<starknet_core::types::Transaction>,
     pub expected_receipts: Vec<starknet_core::types::TransactionReceipt>,
 }
 
+#[fixture]
+pub fn sample_chain_for_block_getters(
+    rpc_test_setup: (Arc<DeoxysBackend>, Starknet),
+) -> (SampleChainForBlockGetters, Starknet) {
+    let (backend, rpc) = rpc_test_setup;
+    (make_sample_chain_for_block_getters(&backend), rpc)
+}
+
 /// Transactions and blocks testing, no state diff, no converted class
-pub fn make_sample_chain_1(backend: &DeoxysBackend) -> SampleChain1 {
+pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleChainForBlockGetters {
     let block_hashes = vec![Felt::ONE, Felt::from_hex_unchecked("0xff"), Felt::from_hex_unchecked("0xffabab")];
     let tx_hashes = vec![
         Felt::from_hex_unchecked("0x8888888"),
@@ -210,6 +220,7 @@ pub fn make_sample_chain_1(backend: &DeoxysBackend) -> SampleChain1 {
                             parent_block_hash: block_hashes[1],
                             block_number: 2,
                             transaction_count: 2,
+                            l1_da_mode: L1DataAvailabilityMode::Blob,
                             protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
                             ..Default::default()
                         },
@@ -275,6 +286,7 @@ pub fn make_sample_chain_1(backend: &DeoxysBackend) -> SampleChain1 {
                         header: PendingHeader {
                             parent_block_hash: block_hashes[2],
                             protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+                            l1_da_mode: L1DataAvailabilityMode::Blob,
                             ..Default::default()
                         },
                         tx_hashes: vec![Felt::from_hex_unchecked("0xdd84847784")],
@@ -303,10 +315,11 @@ pub fn make_sample_chain_1(backend: &DeoxysBackend) -> SampleChain1 {
             .unwrap();
     }
 
-    SampleChain1 { block_hashes, tx_hashes, expected_txs, expected_receipts }
+    SampleChainForBlockGetters { block_hashes, tx_hashes, expected_txs, expected_receipts }
 }
 
-pub struct SampleChain2 {
+// This sample chain is used for every rpcs that query info gotten from state updates.
+pub struct SampleChainForStateUpdates {
     pub block_hashes: Vec<Felt>,
     pub state_roots: Vec<Felt>,
     pub class_hashes: Vec<Felt>,
@@ -317,8 +330,16 @@ pub struct SampleChain2 {
     pub state_diffs: Vec<StateDiff>,
 }
 
+#[fixture]
+pub fn sample_chain_for_state_updates(
+    rpc_test_setup: (Arc<DeoxysBackend>, Starknet),
+) -> (SampleChainForStateUpdates, Starknet) {
+    let (backend, rpc) = rpc_test_setup;
+    (make_sample_chain_for_state_updates(&backend), rpc)
+}
+
 /// State diff
-pub fn make_sample_chain_2(backend: &DeoxysBackend) -> SampleChain2 {
+pub fn make_sample_chain_for_state_updates(backend: &DeoxysBackend) -> SampleChainForStateUpdates {
     let block_hashes = vec![
         Felt::from_hex_unchecked("0x9999999eee"),
         Felt::from_hex_unchecked("0x9999"),
@@ -522,7 +543,7 @@ pub fn make_sample_chain_2(backend: &DeoxysBackend) -> SampleChain2 {
             .unwrap();
     }
 
-    SampleChain2 {
+    SampleChainForStateUpdates {
         block_hashes,
         state_roots,
         class_hashes,

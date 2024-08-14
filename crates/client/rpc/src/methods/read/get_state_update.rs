@@ -35,7 +35,7 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
         .backend
         .get_block_state_diff(&resolved_block_id)
         .or_internal_server_error("Error getting contract class hash at")?
-        .ok_or_internal_server_error("Block has no state diff")?;
+        .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
     match resolved_block_id.is_pending() {
         true => {
@@ -84,14 +84,13 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{make_sample_chain_2, open_testing, SampleChain2};
+    use crate::test_utils::{sample_chain_for_state_updates, SampleChainForStateUpdates};
     use rstest::rstest;
 
     #[rstest]
-    fn test_get_state_update() {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let (backend, rpc) = open_testing();
-        let SampleChain2 { block_hashes, state_roots, state_diffs, .. } = make_sample_chain_2(&backend);
+    fn test_get_state_update(sample_chain_for_state_updates: (SampleChainForStateUpdates, Starknet)) {
+        let (SampleChainForStateUpdates { block_hashes, state_roots, state_diffs, .. }, rpc) =
+            sample_chain_for_state_updates;
 
         // Block 0
         let res = MaybePendingStateUpdate::Update(StateUpdate {
@@ -130,5 +129,15 @@ mod tests {
             state_diff: state_diffs[3].clone().into(),
         });
         assert_eq!(get_state_update(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), res);
+    }
+
+    #[rstest]
+
+    fn test_get_state_update_not_found(sample_chain_for_state_updates: (SampleChainForStateUpdates, Starknet)) {
+        let (SampleChainForStateUpdates { .. }, rpc) = sample_chain_for_state_updates;
+
+        assert_eq!(get_state_update(&rpc, BlockId::Number(3)), Err(StarknetRpcApiError::BlockNotFound));
+        let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
+        assert_eq!(get_state_update(&rpc, BlockId::Hash(does_not_exist)), Err(StarknetRpcApiError::BlockNotFound));
     }
 }
