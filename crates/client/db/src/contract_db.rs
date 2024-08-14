@@ -49,7 +49,7 @@ impl DeoxysBackend {
                 let col = self.db.get_column(pending_col);
                 // todo: smallint here to avoid alloc
 
-                // NB: pending has keys in bincode, not bytes
+                // Note: pending has keys in bincode, not bytes
                 if let Some(res) = self.db.get_pinned_cf(&col, bincode::serialize(k)?)? {
                     return Ok(Some(bincode::deserialize(&res)?)); // found in pending
                 }
@@ -209,7 +209,7 @@ impl DeoxysBackend {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 
-        // NB: pending has keys in bincode, not bytes
+        // Note: pending has keys in bincode, not bytes
 
         fn write_chunk(
             db: &DB,
