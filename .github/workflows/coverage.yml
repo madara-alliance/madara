@@ -40,9 +40,9 @@ jobs:
       - name: Build and run tests
         run: |
           source <(cargo llvm-cov show-env --export-prefix)
+          cargo build --bin deoxys --profile dev
           export COVERAGE_BIN=$(realpath target/debug/deoxys)
           rm -f target/madara-* lcov.info
-          cargo build --bin deoxys --profile dev
           cargo test --profile dev
 
       - name: Generate coverage info
