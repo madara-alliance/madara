@@ -1,4 +1,4 @@
-use crate::cli::SyncParams;
+use crate::cli::{NetworkType, SyncParams};
 use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
 use dc_db::{DatabaseService, DeoxysBackend};
@@ -36,8 +36,8 @@ impl SyncService {
     ) -> anyhow::Result<Self> {
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
         let db_metrics = DbMetrics::register(&metrics_handle)?;
-        let fetch_config = config.block_fetch_config();
- 
+        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), network);
+
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
             fetch_config,

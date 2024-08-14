@@ -82,8 +82,8 @@ async fn main() -> anyhow::Result<()> {
         &db_service,
         prometheus_service.registry(),
         l1_gas_setter,
-        run_cmd.sync_params.network.chain_id(),
-        run_cmd.sync_params.network.l1_core_address(),
+        chain_config.chain_id.clone(),
+        chain_config.eth_core_contract_address,
     )
     .await
     .context("Initializing the l1 sync service")?;

@@ -2,7 +2,6 @@ use crate::cli::NetworkType;
 use dc_sync::fetch::fetchers::FetchConfig;
 use starknet_api::core::ChainId;
 use std::time::Duration;
-use url::Url;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct SyncParams {
