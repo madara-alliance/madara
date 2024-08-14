@@ -116,7 +116,7 @@ struct AvailablePorts<I: Iterator<Item = u16>> {
 }
 
 lazy_static::lazy_static! {
-    static ref AVAILABLE_PORTS: Mutex<AvailablePorts<Range<u16>>> = Mutex::new(AvailablePorts { to_reuse: vec![], next: PORT_RANGE.into_iter() });
+    static ref AVAILABLE_PORTS: Mutex<AvailablePorts<Range<u16>>> = Mutex::new(AvailablePorts { to_reuse: vec![], next: PORT_RANGE });
 }
 
 pub struct MadaraPortNum(pub u16);
