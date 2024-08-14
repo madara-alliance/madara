@@ -27,8 +27,6 @@ pub struct FetchConfig {
     pub chain_id: ChainId,
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
-    /// The L1 contract core address
-    pub l1_core_address: dp_block::H160,
     /// Whether to check the root of the state update
     pub verify: bool,
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.

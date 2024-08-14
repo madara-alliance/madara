@@ -35,7 +35,7 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
         .backend
         .get_block_state_diff(&resolved_block_id)
         .or_internal_server_error("Error getting contract class hash at")?
-        .ok_or_internal_server_error("Block has no state diff")?;
+        .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
     match resolved_block_id.is_pending() {
         true => {
@@ -78,5 +78,66 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
                 state_diff: state_diff.into(),
             }))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{sample_chain_for_state_updates, SampleChainForStateUpdates};
+    use rstest::rstest;
+
+    #[rstest]
+    fn test_get_state_update(sample_chain_for_state_updates: (SampleChainForStateUpdates, Starknet)) {
+        let (SampleChainForStateUpdates { block_hashes, state_roots, state_diffs, .. }, rpc) =
+            sample_chain_for_state_updates;
+
+        // Block 0
+        let res = MaybePendingStateUpdate::Update(StateUpdate {
+            block_hash: block_hashes[0],
+            old_root: Felt::ZERO,
+            new_root: state_roots[0],
+            state_diff: state_diffs[0].clone().into(),
+        });
+        assert_eq!(get_state_update(&rpc, BlockId::Number(0)).unwrap(), res);
+        assert_eq!(get_state_update(&rpc, BlockId::Hash(block_hashes[0])).unwrap(), res);
+
+        // Block 1
+        let res = MaybePendingStateUpdate::Update(StateUpdate {
+            block_hash: block_hashes[1],
+            old_root: state_roots[0],
+            new_root: state_roots[1],
+            state_diff: state_diffs[1].clone().into(),
+        });
+        assert_eq!(get_state_update(&rpc, BlockId::Number(1)).unwrap(), res);
+        assert_eq!(get_state_update(&rpc, BlockId::Hash(block_hashes[1])).unwrap(), res);
+
+        // Block 2
+        let res = MaybePendingStateUpdate::Update(StateUpdate {
+            block_hash: block_hashes[2],
+            old_root: state_roots[1],
+            new_root: state_roots[2],
+            state_diff: state_diffs[2].clone().into(),
+        });
+        assert_eq!(get_state_update(&rpc, BlockId::Number(2)).unwrap(), res);
+        assert_eq!(get_state_update(&rpc, BlockId::Hash(block_hashes[2])).unwrap(), res);
+        assert_eq!(get_state_update(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), res);
+
+        // Pending
+        let res = MaybePendingStateUpdate::PendingUpdate(PendingStateUpdate {
+            old_root: state_roots[2],
+            state_diff: state_diffs[3].clone().into(),
+        });
+        assert_eq!(get_state_update(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), res);
+    }
+
+    #[rstest]
+
+    fn test_get_state_update_not_found(sample_chain_for_state_updates: (SampleChainForStateUpdates, Starknet)) {
+        let (SampleChainForStateUpdates { .. }, rpc) = sample_chain_for_state_updates;
+
+        assert_eq!(get_state_update(&rpc, BlockId::Number(3)), Err(StarknetRpcApiError::BlockNotFound));
+        let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
+        assert_eq!(get_state_update(&rpc, BlockId::Hash(does_not_exist)), Err(StarknetRpcApiError::BlockNotFound));
     }
 }

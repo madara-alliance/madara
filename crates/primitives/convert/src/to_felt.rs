@@ -56,9 +56,9 @@ impl ToFelt for H160 {
     }
 }
 
-impl ToFelt for ChainId {
+impl ToFelt for &ChainId {
     fn to_felt(self) -> Felt {
-        let bytes: &[u8] = match &self {
+        let bytes: &[u8] = match self {
             ChainId::Mainnet => b"SN_MAIN",
             ChainId::Sepolia => b"SN_SEPOLIA",
             ChainId::IntegrationSepolia => b"SN_INTEGRATION_SEPOLIA",

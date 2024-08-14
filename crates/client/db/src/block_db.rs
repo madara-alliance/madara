@@ -265,6 +265,12 @@ impl DeoxysBackend {
         }
     }
 
+    pub fn contains_block(&self, id: &impl DbBlockIdResolvable) -> Result<bool> {
+        let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(false) };
+        // todo: optimize this
+        Ok(self.storage_to_info(&ty)?.is_some())
+    }
+
     pub fn get_block_info(&self, id: &impl DbBlockIdResolvable) -> Result<Option<DeoxysMaybePendingBlockInfo>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         self.storage_to_info(&ty)
