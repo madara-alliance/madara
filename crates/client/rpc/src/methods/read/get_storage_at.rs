@@ -96,9 +96,19 @@ mod tests {
             }
         };
 
+        // The SampleChainForStateUpdates has a few storage changes happening on keys[0..3] on contracts[0..3],
+        // for each block, we check all of the keys in all of the contracts
+
         // Block 0
         let block_n = BlockId::Number(0);
-        let expected = [Some([values[0], Felt::ZERO, values[2]]), None, None];
+        let expected = [
+            // contract[0] values for keys[0..3]. Second key is not found, which means Felt::ZERO.
+            Some([values[0], Felt::ZERO, values[2]]),
+            // contract[1] not deployed yet
+            None,
+            // contract[2] not deployed yet
+            None,
+        ];
         check_contract_key_value(block_n, expected);
 
         // Block 1
@@ -129,6 +139,7 @@ mod tests {
         check_contract_key_value(block_n, expected);
     }
 
+    /// Checks BlockNotFound, ContractNotFound and key not found cases.
     #[rstest]
     fn test_get_storage_at_not_found(sample_chain_for_state_updates: (SampleChainForStateUpdates, Starknet)) {
         let (SampleChainForStateUpdates { keys, contracts, .. }, rpc) = sample_chain_for_state_updates;

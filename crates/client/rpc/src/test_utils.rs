@@ -318,7 +318,7 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
     SampleChainForBlockGetters { block_hashes, tx_hashes, expected_txs, expected_receipts }
 }
 
-// This sample chain is used for every rpcs that query info gotten from state updates.
+// This sample chain is used for every rpcs that query info from state updates.
 pub struct SampleChainForStateUpdates {
     pub block_hashes: Vec<Felt>,
     pub state_roots: Vec<Felt>,
