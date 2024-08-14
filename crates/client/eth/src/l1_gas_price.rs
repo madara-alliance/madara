@@ -3,28 +3,10 @@ use alloy::eips::BlockNumberOrTag;
 use alloy::providers::Provider;
 use anyhow::Context;
 use dc_mempool::{GasPriceProvider, L1DataProvider};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 
 use dp_utils::wait_or_graceful_shutdown;
-use lazy_static;
 use std::time::SystemTime;
-
-lazy_static::lazy_static! {
-    static ref LAST_UPDATE_TIMESTAMP: Arc<Mutex<SystemTime>> = Arc::new(Mutex::new(SystemTime::now()));
-}
-
-// Function to update the last update timestamp
-pub fn update_last_update_timestamp() {
-    let now = SystemTime::now();
-    let mut timestamp = LAST_UPDATE_TIMESTAMP.lock().unwrap();
-    *timestamp = now;
-}
-
-// Function to get the last update timestamp
-pub fn get_last_update_timestamp() -> SystemTime {
-    LAST_UPDATE_TIMESTAMP.lock().unwrap().clone()
-}
 
 pub async fn gas_price_worker_once(
     eth_client: &EthereumClient,
@@ -36,7 +18,7 @@ pub async fn gas_price_worker_once(
         Err(e) => log::error!("Failed to update gas prices: {:?}", e),
     }
 
-    let last_update_timestamp = get_last_update_timestamp();
+    let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
     let duration_since_last_update = SystemTime::now().duration_since(last_update_timestamp)?;
     let last_update_timestemp =
         last_update_timestamp.duration_since(UNIX_EPOCH).expect("SystemTime before UNIX EPOCH!").as_micros();
@@ -55,13 +37,11 @@ pub async fn gas_price_worker(
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
 ) -> anyhow::Result<()> {
-    update_last_update_timestamp();
+    l1_gas_provider.update_last_update_timestamp();
     let mut interval = tokio::time::interval(gas_price_poll_ms);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
-        loop {
-            gas_price_worker_once(eth_client, l1_gas_provider.clone(), gas_price_poll_ms).await?;
-        }
+        gas_price_worker_once(eth_client, l1_gas_provider.clone(), gas_price_poll_ms).await?;
     }
     Ok(())
 }
@@ -83,7 +63,7 @@ async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPrice
     l1_gas_provider.update_eth_l1_gas_price(*eth_gas_price);
     l1_gas_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
 
-    update_last_update_timestamp();
+    l1_gas_provider.update_last_update_timestamp();
 
     // Update block number separately to avoid holding the lock for too long
     update_l1_block_metrics(eth_client, l1_gas_provider).await?;
@@ -228,7 +208,7 @@ mod eth_client_gas_price_worker_test {
 
         let l1_gas_provider = GasPriceProvider::new();
 
-        update_last_update_timestamp();
+        l1_gas_provider.update_last_update_timestamp();
 
         let timeout_duration = Duration::from_secs(10);
 
@@ -261,7 +241,7 @@ mod eth_client_gas_price_worker_test {
     async fn update_gas_price_works(eth_client: &'static EthereumClient) {
         let l1_gas_provider = GasPriceProvider::new();
 
-        update_last_update_timestamp();
+        l1_gas_provider.update_last_update_timestamp();
 
         // Update gas prices
         update_gas_price(eth_client, l1_gas_provider.clone()).await.expect("Failed to update gas prices");
@@ -278,7 +258,7 @@ mod eth_client_gas_price_worker_test {
 
         // Verify that the last update timestamp is recent
 
-        let last_update_timestamp = get_last_update_timestamp();
+        let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
 
         let time_since_last_update =
             SystemTime::now().duration_since(last_update_timestamp).expect("issue while getting the time");
