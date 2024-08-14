@@ -32,10 +32,10 @@ impl From<starknet_api::transaction::Transaction> for Transaction {
     }
 }
 
-impl TryFrom<&Transaction> for starknet_api::transaction::Transaction {
+impl TryFrom<Transaction> for starknet_api::transaction::Transaction {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &Transaction) -> Result<Self, Self::Error> {
+    fn try_from(tx: Transaction) -> Result<Self, Self::Error> {
         match tx {
             Transaction::Invoke(tx) => Ok(Self::Invoke(tx.try_into()?)),
             Transaction::L1Handler(tx) => Ok(Self::L1Handler(tx.try_into()?)),
@@ -57,10 +57,10 @@ impl From<starknet_api::transaction::DeclareTransaction> for DeclareTransaction 
     }
 }
 
-impl TryFrom<&DeclareTransaction> for starknet_api::transaction::DeclareTransaction {
+impl TryFrom<DeclareTransaction> for starknet_api::transaction::DeclareTransaction {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &DeclareTransaction) -> Result<Self, Self::Error> {
+    fn try_from(tx: DeclareTransaction) -> Result<Self, Self::Error> {
         match tx {
             DeclareTransaction::V0(tx) => Ok(Self::V0(tx.try_into()?)),
             DeclareTransaction::V1(tx) => Ok(Self::V1(tx.try_into()?)),
@@ -79,15 +79,15 @@ fn declare_v0v1_into_v0(tx: starknet_api::transaction::DeclareTransactionV0V1) -
     }
 }
 
-impl TryFrom<&DeclareTransactionV0> for starknet_api::transaction::DeclareTransactionV0V1 {
+impl TryFrom<DeclareTransactionV0> for starknet_api::transaction::DeclareTransactionV0V1 {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &DeclareTransactionV0) -> Result<Self, Self::Error> {
+    fn try_from(tx: DeclareTransactionV0) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: signature(&tx.signature),
-            nonce: nonce(&Felt::ZERO), // V0 does not have nonce
-            class_hash: class_hash(&tx.class_hash),
+            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            nonce: starknet_api::core::Nonce(Felt::ZERO), // V0 does not have nonce
+            class_hash: starknet_api::core::ClassHash(tx.class_hash),
             sender_address: contract_address(&tx.sender_address)?,
         })
     }
@@ -103,15 +103,15 @@ fn declare_v0v1_into_v1(tx: starknet_api::transaction::DeclareTransactionV0V1) -
     }
 }
 
-impl TryFrom<&DeclareTransactionV1> for starknet_api::transaction::DeclareTransactionV0V1 {
+impl TryFrom<DeclareTransactionV1> for starknet_api::transaction::DeclareTransactionV0V1 {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &DeclareTransactionV1) -> Result<Self, Self::Error> {
+    fn try_from(tx: DeclareTransactionV1) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: signature(&tx.signature),
-            nonce: nonce(&tx.nonce),
-            class_hash: class_hash(&tx.class_hash),
+            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            nonce: starknet_api::core::Nonce(tx.nonce),
+            class_hash: starknet_api::core::ClassHash(tx.class_hash),
             sender_address: contract_address(&tx.sender_address)?,
         })
     }
@@ -130,16 +130,16 @@ impl From<starknet_api::transaction::DeclareTransactionV2> for DeclareTransactio
     }
 }
 
-impl TryFrom<&DeclareTransactionV2> for starknet_api::transaction::DeclareTransactionV2 {
+impl TryFrom<DeclareTransactionV2> for starknet_api::transaction::DeclareTransactionV2 {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &DeclareTransactionV2) -> Result<Self, Self::Error> {
+    fn try_from(tx: DeclareTransactionV2) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: signature(&tx.signature),
-            nonce: nonce(&tx.nonce),
-            class_hash: class_hash(&tx.class_hash),
-            compiled_class_hash: compiled_class_hash(&tx.compiled_class_hash),
+            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            nonce: starknet_api::core::Nonce(tx.nonce),
+            class_hash: starknet_api::core::ClassHash(tx.class_hash),
+            compiled_class_hash: starknet_api::core::CompiledClassHash(tx.compiled_class_hash),
             sender_address: contract_address(&tx.sender_address)?,
         })
     }
@@ -163,22 +163,22 @@ impl From<starknet_api::transaction::DeclareTransactionV3> for DeclareTransactio
     }
 }
 
-impl TryFrom<&DeclareTransactionV3> for starknet_api::transaction::DeclareTransactionV3 {
+impl TryFrom<DeclareTransactionV3> for starknet_api::transaction::DeclareTransactionV3 {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &DeclareTransactionV3) -> Result<Self, Self::Error> {
+    fn try_from(tx: DeclareTransactionV3) -> Result<Self, Self::Error> {
         Ok(Self {
             resource_bounds: (&tx.resource_bounds).into(),
-            tip: tip(tx.tip),
-            signature: signature(&tx.signature),
-            nonce: nonce(&tx.nonce),
-            class_hash: class_hash(&tx.class_hash),
-            compiled_class_hash: compiled_class_hash(&tx.compiled_class_hash),
+            tip: starknet_api::transaction::Tip(tx.tip),
+            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            nonce: starknet_api::core::Nonce(tx.nonce),
+            class_hash: starknet_api::core::ClassHash(tx.class_hash),
+            compiled_class_hash: starknet_api::core::CompiledClassHash(tx.compiled_class_hash),
             sender_address: contract_address(&tx.sender_address)?,
             nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
             fee_data_availability_mode: tx.fee_data_availability_mode.into(),
-            paymaster_data: paymaster_data(&tx.paymaster_data),
-            account_deployment_data: account_deployment_data(&tx.account_deployment_data),
+            paymaster_data: starknet_api::transaction::PaymasterData(tx.paymaster_data),
+            account_deployment_data: starknet_api::transaction::AccountDeploymentData(tx.account_deployment_data),
         })
     }
 }
@@ -194,13 +194,13 @@ impl From<starknet_api::transaction::DeployTransaction> for DeployTransaction {
     }
 }
 
-impl From<&DeployTransaction> for starknet_api::transaction::DeployTransaction {
-    fn from(tx: &DeployTransaction) -> Self {
+impl From<DeployTransaction> for starknet_api::transaction::DeployTransaction {
+    fn from(tx: DeployTransaction) -> Self {
         Self {
-            version: version(&tx.version),
-            class_hash: class_hash(&tx.class_hash),
-            contract_address_salt: contract_address_salt(&tx.contract_address_salt),
-            constructor_calldata: calldata(&tx.constructor_calldata),
+            version: starknet_api::transaction::TransactionVersion(tx.version),
+            class_hash: starknet_api::core::ClassHash(tx.class_hash),
+            contract_address_salt: starknet_api::transaction::ContractAddressSalt(tx.contract_address_salt),
+            constructor_calldata: calldata(tx.constructor_calldata),
         }
     }
 }
@@ -214,10 +214,10 @@ impl From<starknet_api::transaction::DeployAccountTransaction> for DeployAccount
     }
 }
 
-impl TryFrom<&DeployAccountTransaction> for starknet_api::transaction::DeployAccountTransaction {
+impl TryFrom<DeployAccountTransaction> for starknet_api::transaction::DeployAccountTransaction {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &DeployAccountTransaction) -> Result<Self, Self::Error> {
+    fn try_from(tx: DeployAccountTransaction) -> Result<Self, Self::Error> {
         match tx {
             DeployAccountTransaction::V1(tx) => Ok(Self::V1(tx.try_into()?)),
             DeployAccountTransaction::V3(tx) => Ok(Self::V3(tx.into())),
@@ -238,17 +238,17 @@ impl From<starknet_api::transaction::DeployAccountTransactionV1> for DeployAccou
     }
 }
 
-impl TryFrom<&DeployAccountTransactionV1> for starknet_api::transaction::DeployAccountTransactionV1 {
+impl TryFrom<DeployAccountTransactionV1> for starknet_api::transaction::DeployAccountTransactionV1 {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &DeployAccountTransactionV1) -> Result<Self, Self::Error> {
+    fn try_from(tx: DeployAccountTransactionV1) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: signature(&tx.signature),
-            nonce: nonce(&tx.nonce),
-            class_hash: class_hash(&tx.class_hash),
-            contract_address_salt: contract_address_salt(&tx.contract_address_salt),
-            constructor_calldata: calldata(&tx.constructor_calldata),
+            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            nonce: starknet_api::core::Nonce(tx.nonce),
+            class_hash: starknet_api::core::ClassHash(tx.class_hash),
+            contract_address_salt: starknet_api::transaction::ContractAddressSalt(tx.contract_address_salt),
+            constructor_calldata: calldata(tx.constructor_calldata),
         })
     }
 }
@@ -280,27 +280,27 @@ impl From<starknet_api::transaction::InvokeTransaction> for InvokeTransaction {
     }
 }
 
-impl From<&DeployAccountTransactionV3> for starknet_api::transaction::DeployAccountTransactionV3 {
-    fn from(tx: &DeployAccountTransactionV3) -> Self {
+impl From<DeployAccountTransactionV3> for starknet_api::transaction::DeployAccountTransactionV3 {
+    fn from(tx: DeployAccountTransactionV3) -> Self {
         Self {
             resource_bounds: (&tx.resource_bounds).into(),
-            tip: tip(tx.tip),
-            signature: signature(&tx.signature),
-            nonce: nonce(&tx.nonce),
-            class_hash: class_hash(&tx.class_hash),
-            contract_address_salt: contract_address_salt(&tx.contract_address_salt),
-            constructor_calldata: calldata(&tx.constructor_calldata),
+            tip: starknet_api::transaction::Tip(tx.tip),
+            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            nonce: starknet_api::core::Nonce(tx.nonce),
+            class_hash: starknet_api::core::ClassHash(tx.class_hash),
+            contract_address_salt: starknet_api::transaction::ContractAddressSalt(tx.contract_address_salt),
+            constructor_calldata: calldata(tx.constructor_calldata),
             nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
             fee_data_availability_mode: tx.fee_data_availability_mode.into(),
-            paymaster_data: paymaster_data(&tx.paymaster_data),
+            paymaster_data: starknet_api::transaction::PaymasterData(tx.paymaster_data),
         }
     }
 }
 
-impl TryFrom<&InvokeTransaction> for starknet_api::transaction::InvokeTransaction {
+impl TryFrom<InvokeTransaction> for starknet_api::transaction::InvokeTransaction {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &InvokeTransaction) -> Result<Self, Self::Error> {
+    fn try_from(tx: InvokeTransaction) -> Result<Self, Self::Error> {
         match tx {
             InvokeTransaction::V0(tx) => Ok(Self::V0(tx.try_into()?)),
             InvokeTransaction::V1(tx) => Ok(Self::V1(tx.try_into()?)),
@@ -321,16 +321,16 @@ impl From<starknet_api::transaction::InvokeTransactionV0> for InvokeTransactionV
     }
 }
 
-impl TryFrom<&InvokeTransactionV0> for starknet_api::transaction::InvokeTransactionV0 {
+impl TryFrom<InvokeTransactionV0> for starknet_api::transaction::InvokeTransactionV0 {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &InvokeTransactionV0) -> Result<Self, Self::Error> {
+    fn try_from(tx: InvokeTransactionV0) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: signature(&tx.signature),
+            signature: starknet_api::transaction::TransactionSignature(tx.signature),
             contract_address: contract_address(&tx.contract_address)?,
-            entry_point_selector: entry_point_selector(&tx.entry_point_selector),
-            calldata: calldata(&tx.calldata),
+            entry_point_selector: starknet_api::core::EntryPointSelector(tx.entry_point_selector),
+            calldata: calldata(tx.calldata),
         })
     }
 }
@@ -347,16 +347,16 @@ impl From<starknet_api::transaction::InvokeTransactionV1> for InvokeTransactionV
     }
 }
 
-impl TryFrom<&InvokeTransactionV1> for starknet_api::transaction::InvokeTransactionV1 {
+impl TryFrom<InvokeTransactionV1> for starknet_api::transaction::InvokeTransactionV1 {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &InvokeTransactionV1) -> Result<Self, Self::Error> {
+    fn try_from(tx: InvokeTransactionV1) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: signature(&tx.signature),
-            nonce: nonce(&tx.nonce),
+            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            nonce: starknet_api::core::Nonce(tx.nonce),
             sender_address: contract_address(&tx.sender_address)?,
-            calldata: calldata(&tx.calldata),
+            calldata: calldata(tx.calldata),
         })
     }
 }
@@ -378,21 +378,21 @@ impl From<starknet_api::transaction::InvokeTransactionV3> for InvokeTransactionV
     }
 }
 
-impl TryFrom<&InvokeTransactionV3> for starknet_api::transaction::InvokeTransactionV3 {
+impl TryFrom<InvokeTransactionV3> for starknet_api::transaction::InvokeTransactionV3 {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &InvokeTransactionV3) -> Result<Self, Self::Error> {
+    fn try_from(tx: InvokeTransactionV3) -> Result<Self, Self::Error> {
         Ok(Self {
             resource_bounds: (&tx.resource_bounds).into(),
-            tip: tip(tx.tip),
-            signature: signature(&tx.signature),
-            nonce: nonce(&tx.nonce),
+            tip: starknet_api::transaction::Tip(tx.tip),
+            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            nonce: starknet_api::core::Nonce(tx.nonce),
             sender_address: contract_address(&tx.sender_address)?,
-            calldata: calldata(&tx.calldata),
+            calldata: calldata(tx.calldata),
             nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
             fee_data_availability_mode: tx.fee_data_availability_mode.into(),
-            paymaster_data: paymaster_data(&tx.paymaster_data),
-            account_deployment_data: account_deployment_data(&tx.account_deployment_data),
+            paymaster_data: starknet_api::transaction::PaymasterData(tx.paymaster_data),
+            account_deployment_data: starknet_api::transaction::AccountDeploymentData(tx.account_deployment_data),
         })
     }
 }
@@ -409,16 +409,16 @@ impl From<starknet_api::transaction::L1HandlerTransaction> for L1HandlerTransact
     }
 }
 
-impl TryFrom<&L1HandlerTransaction> for starknet_api::transaction::L1HandlerTransaction {
+impl TryFrom<L1HandlerTransaction> for starknet_api::transaction::L1HandlerTransaction {
     type Error = TransactionApiError;
 
-    fn try_from(tx: &L1HandlerTransaction) -> Result<Self, Self::Error> {
+    fn try_from(tx: L1HandlerTransaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            version: version(&tx.version),
-            nonce: nonce_u64(tx.nonce),
+            version: starknet_api::transaction::TransactionVersion(tx.version),
+            nonce: starknet_api::core::Nonce(tx.nonce.into()),
             contract_address: contract_address(&tx.contract_address)?,
-            entry_point_selector: entry_point_selector(&tx.entry_point_selector),
-            calldata: calldata(&tx.calldata),
+            entry_point_selector: starknet_api::core::EntryPointSelector(tx.entry_point_selector),
+            calldata: calldata(tx.calldata),
         })
     }
 }
@@ -452,6 +452,7 @@ impl From<starknet_api::transaction::ResourceBoundsMapping> for ResourceBoundsMa
 
 impl From<&ResourceBoundsMapping> for starknet_api::transaction::ResourceBoundsMapping {
     fn from(resources: &ResourceBoundsMapping) -> Self {
+        // unwrap is safe because we are sure that the keys are present
         Self::try_from(vec![
             (
                 starknet_api::transaction::Resource::L1Gas,
@@ -483,56 +484,12 @@ fn fee(fee: &Felt) -> Result<starknet_api::transaction::Fee, TransactionApiError
     Ok(starknet_api::transaction::Fee(fee))
 }
 
-fn signature(signature: &[Felt]) -> starknet_api::transaction::TransactionSignature {
-    starknet_api::transaction::TransactionSignature(signature.to_vec())
-}
-
 fn contract_address(contract_address: &Felt) -> Result<starknet_api::core::ContractAddress, TransactionApiError> {
     (*contract_address).try_into().map_err(|_| TransactionApiError::ContractAddress)
 }
 
-fn class_hash(class_hash: &Felt) -> starknet_api::core::ClassHash {
-    starknet_api::core::ClassHash(*class_hash)
-}
-
-fn compiled_class_hash(compiled_class_hash: &Felt) -> starknet_api::core::CompiledClassHash {
-    starknet_api::core::CompiledClassHash(*compiled_class_hash)
-}
-
-fn entry_point_selector(entry_point_selector: &Felt) -> starknet_api::core::EntryPointSelector {
-    starknet_api::core::EntryPointSelector(*entry_point_selector)
-}
-
-fn calldata(calldata: &[Felt]) -> starknet_api::transaction::Calldata {
-    starknet_api::transaction::Calldata(Arc::new(calldata.to_vec()))
-}
-
-fn contract_address_salt(salt: &Felt) -> starknet_api::transaction::ContractAddressSalt {
-    starknet_api::transaction::ContractAddressSalt(*salt)
-}
-
-fn nonce(nonce: &Felt) -> starknet_api::core::Nonce {
-    starknet_api::core::Nonce(*nonce)
-}
-
-fn nonce_u64(nonce: u64) -> starknet_api::core::Nonce {
-    starknet_api::core::Nonce(nonce.into())
-}
-
-fn tip(tip: u64) -> starknet_api::transaction::Tip {
-    starknet_api::transaction::Tip(tip)
-}
-
-fn paymaster_data(data: &[Felt]) -> starknet_api::transaction::PaymasterData {
-    starknet_api::transaction::PaymasterData(data.to_vec())
-}
-
-fn account_deployment_data(data: &[Felt]) -> starknet_api::transaction::AccountDeploymentData {
-    starknet_api::transaction::AccountDeploymentData(data.to_vec())
-}
-
-fn version(version: &Felt) -> starknet_api::transaction::TransactionVersion {
-    starknet_api::transaction::TransactionVersion(*version)
+fn calldata(calldata: Vec<Felt>) -> starknet_api::transaction::Calldata {
+    starknet_api::transaction::Calldata(Arc::new(calldata))
 }
 
 #[cfg(test)]
@@ -543,62 +500,41 @@ mod test {
         dummy_tx_deploy, dummy_tx_deploy_account_v1, dummy_tx_deploy_account_v3, dummy_tx_invoke_v0,
         dummy_tx_invoke_v1, dummy_tx_invoke_v3,
     };
+    use dp_convert::test::assert_consistent_conversion;
 
     #[test]
     fn test_into_api_transaction() {
         let tx: Transaction = dummy_tx_invoke_v0().into();
-        let api_tx = starknet_api::transaction::Transaction::try_from(&tx).unwrap();
-        let tx_back: Transaction = api_tx.into();
-        assert_eq!(tx, tx_back);
+        assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);
 
         let tx: Transaction = dummy_tx_invoke_v1().into();
-        let api_tx = starknet_api::transaction::Transaction::try_from(&tx).unwrap();
-        let tx_back: Transaction = api_tx.into();
-        assert_eq!(tx, tx_back);
+        assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);
 
         let tx: Transaction = dummy_tx_invoke_v3().into();
-        let api_tx = starknet_api::transaction::Transaction::try_from(&tx).unwrap();
-        let tx_back: Transaction = api_tx.into();
-        assert_eq!(tx, tx_back);
+        assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);
 
         let tx: Transaction = dummy_l1_handler().into();
-        let api_tx = starknet_api::transaction::Transaction::try_from(&tx).unwrap();
-        let tx_back: Transaction = api_tx.into();
-        assert_eq!(tx, tx_back);
+        assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);
 
         let tx: Transaction = dummy_tx_declare_v0().into();
-        let api_tx = starknet_api::transaction::Transaction::try_from(&tx).unwrap();
-        let tx_back: Transaction = api_tx.into();
-        assert_eq!(tx, tx_back);
+        assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);
 
         let tx: Transaction = dummy_tx_declare_v1().into();
-        let api_tx = starknet_api::transaction::Transaction::try_from(&tx).unwrap();
-        let tx_back: Transaction = api_tx.into();
-        assert_eq!(tx, tx_back);
+        assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);
 
         let tx: Transaction = dummy_tx_declare_v2().into();
-        let api_tx = starknet_api::transaction::Transaction::try_from(&tx).unwrap();
-        let tx_back: Transaction = api_tx.into();
-        assert_eq!(tx, tx_back);
+        assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);
 
         let tx: Transaction = dummy_tx_declare_v3().into();
-        let api_tx = starknet_api::transaction::Transaction::try_from(&tx).unwrap();
-        let tx_back: Transaction = api_tx.into();
-        assert_eq!(tx, tx_back);
+        assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);
 
         let tx: Transaction = dummy_tx_deploy().into();
-        let api_tx = starknet_api::transaction::Transaction::try_from(&tx).unwrap();
-        let tx_back: Transaction = api_tx.into();
-        assert_eq!(tx, tx_back);
+        assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);
 
         let tx: Transaction = dummy_tx_deploy_account_v1().into();
-        let api_tx = starknet_api::transaction::Transaction::try_from(&tx).unwrap();
-        let tx_back: Transaction = api_tx.into();
-        assert_eq!(tx, tx_back);
+        assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);
 
         let tx: Transaction = dummy_tx_deploy_account_v3().into();
-        let api_tx = starknet_api::transaction::Transaction::try_from(&tx).unwrap();
-        let tx_back: Transaction = api_tx.into();
-        assert_eq!(tx, tx_back);
+        assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);
     }
 }

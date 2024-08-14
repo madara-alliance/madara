@@ -9,13 +9,15 @@ pub mod test {
     /// Use this function only for testing purposes.
     pub fn assert_consistent_conversion<T1, T2>(a: T1)
     where
-        T1: Clone + PartialEq + std::fmt::Debug + From<T2>,
-        T2: Clone + PartialEq + std::fmt::Debug + From<T1>,
+        T1: Clone + PartialEq + std::fmt::Debug + TryFrom<T2>,
+        T2: Clone + PartialEq + std::fmt::Debug + TryFrom<T1>,
+        <T1 as TryFrom<T2>>::Error: std::fmt::Debug,
+        <T2 as TryFrom<T1>>::Error: std::fmt::Debug,
     {
-        let b: T2 = a.clone().into();
-        let c: T1 = b.clone().into();
+        let b: T2 = a.clone().try_into().unwrap();
+        let c: T1 = b.clone().try_into().unwrap();
         assert_eq!(a, c);
-        let d: T2 = c.clone().into();
+        let d: T2 = c.clone().try_into().unwrap();
         assert_eq!(b, d);
     }
 }

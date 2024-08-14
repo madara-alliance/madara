@@ -30,7 +30,7 @@ pub async fn trace_transaction(
 
     let exec_context = ExecutionContext::new(Arc::clone(&starknet.backend), &block.info)?;
 
-    let mut block_txs = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes())
+    let mut block_txs = Iterator::zip(block.inner.transactions.into_iter(), block.info.tx_hashes())
         .map(|(tx, hash)| to_blockifier_transactions(starknet, block.info.as_block_id(), tx, &TransactionHash(*hash)));
 
     // takes up until not including last tx

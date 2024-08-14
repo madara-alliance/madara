@@ -113,7 +113,7 @@ pub fn broadcasted_to_blockifier(
         Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
         _ => None,
     };
-    let transaction: starknet_api::transaction::Transaction = (&transaction).try_into()?;
+    let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
 
     Ok((
         blockifier::transaction::transaction_execution::Transaction::from_api(
