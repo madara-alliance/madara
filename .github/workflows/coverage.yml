@@ -23,22 +23,23 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Build binary
-        run: |
-          source <(cargo llvm-cov show-env --export-prefix)
-          cargo build --bin deoxys --profile dev
-
       - name: Launch Anvil
         run: anvil --fork-url $ANVIL_FORK_URL --fork-block-number $ANVIL_BLOCK_NUMBER &
         env:
           ANVIL_FORK_URL: "https://eth.merkle.io"
           ANVIL_BLOCK_NUMBER: 20395662
+      - name: Wait for Anvil to be ready
+        run: |
+          while ! nc -z localhost 8545; do
+            sleep 1
+          done
 
       - name: Build and run tests
         run: |
           source <(cargo llvm-cov show-env --export-prefix)
           export COVERAGE_BIN=$(realpath target/debug/deoxys)
           rm -f target/madara-* lcov.info
+          cargo build --bin deoxys --profile dev
           cargo test --profile dev
 
       - name: Generate coverage info
