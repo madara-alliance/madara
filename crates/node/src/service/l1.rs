@@ -2,7 +2,7 @@ use crate::cli::l1::L1SyncParams;
 use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::{DatabaseService, DeoxysBackend};
-use dc_eth::client::EthereumClient;
+use dc_eth::client::{EthereumClient, L1BlockMetrics};
 use dc_mempool::GasPriceProvider;
 use dc_metrics::MetricsRegistry;
 use dp_convert::ToFelt;
@@ -35,8 +35,9 @@ impl L1SyncService {
         let eth_client = if !config.sync_l1_disabled {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_slice(l1_core_address.as_bytes());
+                let l1_block_metrics = L1BlockMetrics::register(&metrics_handle).unwrap();
                 Some(
-                    EthereumClient::new(l1_rpc_url.clone(), core_address, metrics_handle)
+                    EthereumClient::new(l1_rpc_url.clone(), core_address, l1_block_metrics)
                         .await
                         .context("Creating ethereum client")?,
                 )

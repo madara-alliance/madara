@@ -73,7 +73,6 @@ pub mod starknet_sync_worker {
             telemetry,
         ),)?;
 
-
         Ok(())
     }
 }

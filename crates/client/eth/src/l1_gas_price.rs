@@ -114,10 +114,8 @@ mod eth_client_gas_price_worker_test {
     use crate::client::eth_client_getter_test::create_ethereum_client;
     use alloy::node_bindings::Anvil;
     use dc_mempool::GasPriceProvider;
-    use futures::future::FutureExt;
     use httpmock::{MockServer, Regex};
     use rstest::*;
-    use std::panic::AssertUnwindSafe;
     use std::time::SystemTime;
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
