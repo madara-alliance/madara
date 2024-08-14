@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use dp_class::{ClassInfo, CompiledClass};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use rocksdb::WriteOptions;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 use crate::{
     db_block_id::{DbBlockId, DbBlockIdResolvable},

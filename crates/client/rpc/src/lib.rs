@@ -5,22 +5,23 @@
 mod constants;
 mod errors;
 mod methods;
+#[cfg(test)]
+pub mod test_utils;
 mod types;
 pub mod utils;
 
 pub mod mempool_provider;
 pub mod providers;
 
-use std::sync::Arc;
-
 use dc_db::db_block_id::DbBlockIdResolvable;
 use dc_db::DeoxysBackend;
+use dp_block::chain_config::ChainConfig;
 use dp_block::{DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo};
+use dp_convert::ToFelt;
 use errors::{StarknetRpcApiError, StarknetRpcResult};
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use providers::AddTransactionProvider;
-use starknet_core::types::Felt;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
@@ -29,7 +30,8 @@ use starknet_core::types::{
     MaybePendingStateUpdate, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
     SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
-use starknet_providers::Url;
+use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 use utils::ResultExt;
 
 // Starknet RPC API trait and types
@@ -184,25 +186,18 @@ pub trait StarknetTraceRpcApi {
     async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TransactionTraceWithHash>;
 }
 
-#[derive(Clone)]
-pub struct ChainConfig {
-    pub chain_id: starknet_types_core::felt::Felt,
-    pub feeder_gateway: Url,
-    pub gateway: Url,
-}
-
 /// A Starknet RPC server for Deoxys
 #[derive(Clone)]
 pub struct Starknet {
     backend: Arc<DeoxysBackend>,
-    chain_config: ChainConfig,
+    chain_config: Arc<ChainConfig>,
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
 }
 
 impl Starknet {
     pub fn new(
         backend: Arc<DeoxysBackend>,
-        chain_config: ChainConfig,
+        chain_config: Arc<ChainConfig>,
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
     ) -> Self {
         Self { backend, add_transaction_provider, chain_config }
@@ -237,7 +232,7 @@ impl Starknet {
     }
 
     pub fn chain_id(&self) -> Felt {
-        self.chain_config.chain_id
+        self.chain_config.chain_id.clone().to_felt()
     }
 
     pub fn current_block_number(&self) -> StarknetRpcResult<u64> {

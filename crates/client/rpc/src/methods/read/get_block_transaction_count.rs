@@ -28,3 +28,46 @@ pub fn get_block_transaction_count(starknet: &Starknet, block_id: BlockId) -> St
 
     Ok(tx_count as _)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        errors::StarknetRpcApiError,
+        test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
+    };
+    use rstest::rstest;
+    use starknet_core::types::{BlockTag, Felt};
+
+    #[rstest]
+    fn test_get_block_transaction_count(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { block_hashes, .. }, rpc) = sample_chain_for_block_getters;
+
+        // Block 0
+        assert_eq!(get_block_transaction_count(&rpc, BlockId::Number(0)).unwrap(), 1);
+        assert_eq!(get_block_transaction_count(&rpc, BlockId::Hash(block_hashes[0])).unwrap(), 1);
+        // Block 1
+        assert_eq!(get_block_transaction_count(&rpc, BlockId::Number(1)).unwrap(), 0);
+        assert_eq!(get_block_transaction_count(&rpc, BlockId::Hash(block_hashes[1])).unwrap(), 0);
+        // Block 2
+        assert_eq!(get_block_transaction_count(&rpc, BlockId::Number(2)).unwrap(), 2);
+        assert_eq!(get_block_transaction_count(&rpc, BlockId::Hash(block_hashes[2])).unwrap(), 2);
+        assert_eq!(get_block_transaction_count(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), 2);
+        // Pending
+        assert_eq!(get_block_transaction_count(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), 1);
+    }
+
+    #[rstest]
+    fn test_get_block_transaction_count_not_found(
+        sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet),
+    ) {
+        let (SampleChainForBlockGetters { .. }, rpc) = sample_chain_for_block_getters;
+
+        assert_eq!(get_block_transaction_count(&rpc, BlockId::Number(3)), Err(StarknetRpcApiError::BlockNotFound));
+        let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
+        assert_eq!(
+            get_block_transaction_count(&rpc, BlockId::Hash(does_not_exist)),
+            Err(StarknetRpcApiError::BlockNotFound)
+        );
+    }
+}

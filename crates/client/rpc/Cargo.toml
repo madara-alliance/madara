@@ -11,6 +11,12 @@ homepage.workspace = true
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
+[dev-dependencies]
+
+rstest = { workspace = true }
+dc-db = { workspace = true, features = ["testing"] }
+env_logger = { workspace = true }
+
 [dependencies]
 
 # Deoxys
@@ -21,6 +27,7 @@ dp-block = { workspace = true, default-features = true }
 dp-class = { workspace = true }
 dp-convert = { workspace = true, default-features = true }
 dp-receipt = { workspace = true }
+dp-state-update = { workspace = true }
 dp-transactions = { workspace = true }
 
 # Starknet
@@ -39,6 +46,3 @@ jsonrpsee = { workspace = true, default-features = true, features = [
 log = { workspace = true, default-features = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-
-[dev-dependencies]
-rstest = { workspace = true }

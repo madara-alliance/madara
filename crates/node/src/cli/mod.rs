@@ -5,13 +5,16 @@ pub mod rpc;
 pub mod sync;
 pub mod telemetry;
 
+pub use block_production::*;
 pub use db::*;
 pub use prometheus::*;
 pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
 
-use self::block_production::BlockProductionParams;
+use dp_block::chain_config::ChainConfig;
+use std::sync::Arc;
+use url::Url;
 
 #[derive(Clone, Debug, clap::Parser)]
 pub struct RunCmd {
@@ -48,6 +51,10 @@ pub struct RunCmd {
     #[arg(long)]
     pub authority: bool,
 
+    /// The network chain configuration.
+    #[clap(long, short, default_value = "main")]
+    pub network: NetworkType,
+
     /// Run the TUI dashboard
     #[cfg(feature = "tui")]
     #[clap(long)]
@@ -66,14 +73,43 @@ impl RunCmd {
         }
         self.name.as_ref().unwrap()
     }
+}
 
-    pub async fn network(&mut self) -> &str {
-        if self.sync_params.network == NetworkType::Integration {
-            "Integration"
-        } else if self.sync_params.network == NetworkType::Test {
-            "Testnet"
-        } else {
-            "Mainnet"
+/// Starknet network types.
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq)]
+pub enum NetworkType {
+    /// The main network (mainnet). Alias: mainnet
+    #[value(alias("mainnet"))]
+    Main,
+    /// The test network (testnet). Alias: sepolia
+    #[value(alias("sepolia"))]
+    Test,
+    /// The integration network.
+    Integration,
+}
+
+impl NetworkType {
+    pub fn uri(&self) -> &'static str {
+        match self {
+            NetworkType::Main => "https://alpha-mainnet.starknet.io",
+            NetworkType::Test => "https://alpha-sepolia.starknet.io",
+            NetworkType::Integration => "https://integration-sepolia.starknet.io",
         }
+    }
+
+    pub fn chain_config(&self) -> Arc<ChainConfig> {
+        match self {
+            NetworkType::Main => Arc::new(ChainConfig::starknet_mainnet()),
+            NetworkType::Test => Arc::new(ChainConfig::starknet_sepolia()),
+            NetworkType::Integration => Arc::new(ChainConfig::starknet_integration()),
+        }
+    }
+
+    pub fn gateway(&self) -> Url {
+        format!("{}/gateway", self.uri()).parse().unwrap()
+    }
+
+    pub fn feeder_gateway(&self) -> Url {
+        format!("{}/feeder_gateway", self.uri()).parse().unwrap()
     }
 }

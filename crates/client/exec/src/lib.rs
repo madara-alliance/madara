@@ -8,7 +8,7 @@ use blockifier::{
 };
 use dc_db::{db_block_id::DbBlockId, DeoxysStorageError};
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 mod block_context;
 mod blockifier_state_adapter;

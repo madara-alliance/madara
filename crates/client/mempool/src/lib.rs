@@ -17,7 +17,7 @@ pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 pub use l1::L1DataProvider;
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use std::sync::RwLock;
 

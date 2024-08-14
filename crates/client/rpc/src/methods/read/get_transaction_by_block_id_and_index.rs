@@ -34,3 +34,70 @@ pub fn get_transaction_by_block_id_and_index(
 
     Ok(transaction.clone().to_core(*transaction_hash))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters};
+    use rstest::rstest;
+    use starknet_core::types::BlockTag;
+
+    #[rstest]
+    fn test_get_transaction_by_block_id_and_index(
+        sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet),
+    ) {
+        let (SampleChainForBlockGetters { block_hashes, expected_txs, .. }, rpc) = sample_chain_for_block_getters;
+
+        // Block 0
+        assert_eq!(get_transaction_by_block_id_and_index(&rpc, BlockId::Number(0), 0).unwrap(), expected_txs[0]);
+        assert_eq!(
+            get_transaction_by_block_id_and_index(&rpc, BlockId::Hash(block_hashes[0]), 0).unwrap(),
+            expected_txs[0]
+        );
+
+        // Block 1
+
+        // Block 2
+        assert_eq!(get_transaction_by_block_id_and_index(&rpc, BlockId::Number(2), 0).unwrap(), expected_txs[1]);
+        assert_eq!(
+            get_transaction_by_block_id_and_index(&rpc, BlockId::Hash(block_hashes[2]), 0).unwrap(),
+            expected_txs[1]
+        );
+        assert_eq!(
+            get_transaction_by_block_id_and_index(&rpc, BlockId::Tag(BlockTag::Latest), 0).unwrap(),
+            expected_txs[1]
+        );
+
+        assert_eq!(get_transaction_by_block_id_and_index(&rpc, BlockId::Number(2), 1).unwrap(), expected_txs[2]);
+        assert_eq!(
+            get_transaction_by_block_id_and_index(&rpc, BlockId::Hash(block_hashes[2]), 1).unwrap(),
+            expected_txs[2]
+        );
+        assert_eq!(
+            get_transaction_by_block_id_and_index(&rpc, BlockId::Tag(BlockTag::Latest), 1).unwrap(),
+            expected_txs[2]
+        );
+
+        // Pending
+        assert_eq!(
+            get_transaction_by_block_id_and_index(&rpc, BlockId::Tag(BlockTag::Pending), 0).unwrap(),
+            expected_txs[3]
+        );
+    }
+
+    #[rstest]
+    fn test_get_transaction_by_block_id_and_index_not_found(
+        sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet),
+    ) {
+        let (SampleChainForBlockGetters { .. }, rpc) = sample_chain_for_block_getters;
+
+        assert_eq!(
+            get_transaction_by_block_id_and_index(&rpc, BlockId::Number(4), 0),
+            Err(StarknetRpcApiError::BlockNotFound)
+        );
+        assert_eq!(
+            get_transaction_by_block_id_and_index(&rpc, BlockId::Number(0), 1),
+            Err(StarknetRpcApiError::InvalidTxnIndex)
+        );
+    }
+}
