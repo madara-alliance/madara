@@ -34,7 +34,6 @@ alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = "1.0.75"
 async-trait = "0.1.80"
 bitvec = { workspace = true }
-bytes = "1.6.0"
 futures = { workspace = true, default-features = true }
 lazy_static = { workspace = true }
 log = { workspace = true }

@@ -36,7 +36,6 @@ dp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true
-starknet-core.workspace = true
 starknet-types-core.workspace = true
 starknet_api.workspace = true
 
@@ -46,8 +45,6 @@ async-trait.workspace = true
 hyper.workspace = true
 itertools.workspace = true
 log.workspace = true
-prometheus.workspace = true
 rayon.workspace = true
-serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

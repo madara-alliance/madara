@@ -20,7 +20,6 @@ use errors::{StarknetRpcApiError, StarknetRpcResult};
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use providers::AddTransactionProvider;
-use starknet_core::types::Felt;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
@@ -30,6 +29,7 @@ use starknet_core::types::{
     SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
 use starknet_providers::Url;
+use starknet_types_core::felt::Felt;
 use utils::ResultExt;
 
 // Starknet RPC API trait and types

@@ -12,7 +12,7 @@ pub use primitive_types::{H160, U256};
 use starknet_types_core::felt::Felt;
 pub use starknet_version::{StarknetVersion, StarknetVersionError};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum DeoxysMaybePendingBlockInfo {
     Pending(DeoxysPendingBlockInfo),
@@ -43,6 +43,11 @@ impl DeoxysMaybePendingBlockInfo {
     pub fn block_n(&self) -> Option<u64> {
         self.as_nonpending().map(|v| v.header.block_number)
     }
+
+    pub fn block_hash(&self) -> Option<Felt> {
+        self.as_nonpending().map(|v| v.block_hash)
+    }
+
     pub fn tx_hashes(&self) -> &[Felt] {
         match self {
             DeoxysMaybePendingBlockInfo::NotPending(block) => &block.tx_hashes,
@@ -125,7 +130,7 @@ impl From<BlockId> for starknet_core::types::BlockId {
 }
 
 // Light version of the block with block_hash
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysPendingBlockInfo {
     pub header: PendingHeader,
     pub tx_hashes: Vec<Felt>,
@@ -138,7 +143,7 @@ impl DeoxysPendingBlockInfo {
 }
 
 // Light version of the block with block_hash
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInfo {
     pub header: Header,
     pub block_hash: Felt,
@@ -151,7 +156,14 @@ impl DeoxysBlockInfo {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+/// Starknet block inner.
+///
+/// Contains the block transactions and receipts.
+/// The transactions and receipts are in the same order.
+/// The i-th transaction corresponds to the i-th receipt.
+/// The length of the transactions and receipts must be the same.
+///
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInner {
     /// The block transactions.
     pub transactions: Vec<Transaction>,
@@ -166,7 +178,7 @@ impl DeoxysBlockInner {
 }
 
 /// Starknet block definition.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysMaybePendingBlock {
     pub info: DeoxysMaybePendingBlockInfo,
     pub inner: DeoxysBlockInner,
@@ -243,5 +255,71 @@ impl From<DeoxysPendingBlock> for DeoxysMaybePendingBlock {
 impl From<DeoxysBlock> for DeoxysMaybePendingBlock {
     fn from(value: DeoxysBlock) -> Self {
         Self { info: value.info.into(), inner: value.inner }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_block_tag() {
+        assert_eq!(BlockTag::Latest, BlockTag::from(starknet_core::types::BlockTag::Latest));
+        assert_eq!(BlockTag::Pending, BlockTag::from(starknet_core::types::BlockTag::Pending));
+
+        assert_eq!(starknet_core::types::BlockTag::Latest, starknet_core::types::BlockTag::from(BlockTag::Latest));
+        assert_eq!(starknet_core::types::BlockTag::Pending, starknet_core::types::BlockTag::from(BlockTag::Pending));
+    }
+
+    #[test]
+    fn test_block_id() {
+        assert_eq!(BlockId::Hash(Felt::ONE), BlockId::from(starknet_core::types::BlockId::Hash(Felt::ONE)));
+        assert_eq!(BlockId::Number(1), BlockId::from(starknet_core::types::BlockId::Number(1)));
+        assert_eq!(
+            BlockId::Tag(BlockTag::Latest),
+            BlockId::from(starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Latest))
+        );
+
+        assert_eq!(
+            starknet_core::types::BlockId::Hash(Felt::ONE),
+            starknet_core::types::BlockId::from(BlockId::Hash(Felt::ONE))
+        );
+        assert_eq!(starknet_core::types::BlockId::Number(1), starknet_core::types::BlockId::from(BlockId::Number(1)));
+        assert_eq!(
+            starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Latest),
+            starknet_core::types::BlockId::from(BlockId::Tag(BlockTag::Latest))
+        );
+    }
+
+    #[test]
+    fn test_block_info_not_pending() {
+        let block_info = DeoxysBlockInfo {
+            header: Default::default(),
+            block_hash: Felt::ONE,
+            tx_hashes: vec![Felt::TWO, Felt::THREE],
+        };
+        let not_pending_block_info = DeoxysMaybePendingBlockInfo::NotPending(block_info.clone());
+
+        assert!(not_pending_block_info.as_pending().is_none());
+        assert_eq!(not_pending_block_info.as_nonpending().unwrap(), &block_info);
+        assert_eq!(not_pending_block_info.as_block_id(), BlockId::Number(block_info.header.block_number));
+        assert_eq!(not_pending_block_info.block_n(), Some(block_info.header.block_number));
+        assert_eq!(not_pending_block_info.block_hash(), Some(block_info.block_hash));
+        assert_eq!(not_pending_block_info.tx_hashes(), &block_info.tx_hashes);
+        assert_eq!(not_pending_block_info.protocol_version(), &block_info.header.protocol_version);
+    }
+
+    #[test]
+    fn test_block_info_pending() {
+        let block_info = DeoxysPendingBlockInfo { header: Default::default(), tx_hashes: vec![Felt::TWO, Felt::THREE] };
+        let pending_block_info = DeoxysMaybePendingBlockInfo::Pending(block_info.clone());
+
+        assert!(pending_block_info.as_nonpending().is_none());
+        assert_eq!(pending_block_info.as_pending().unwrap(), &block_info);
+        assert_eq!(pending_block_info.as_block_id(), BlockId::Tag(BlockTag::Pending));
+        assert!(pending_block_info.block_n().is_none());
+        assert!(pending_block_info.block_hash().is_none());
+        assert_eq!(pending_block_info.tx_hashes(), &block_info.tx_hashes);
+        assert_eq!(pending_block_info.protocol_version(), &block_info.header.protocol_version);
     }
 }

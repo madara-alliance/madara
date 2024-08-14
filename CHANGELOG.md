@@ -6,6 +6,8 @@
 - feat: l1 sync service
 - feat: gas price worker for l1
 - test: tests added for eth client and event subscription
+- test: add tests crate `db`
+- fix: #225
 - feat: experimental block production and mempool
 - refactor: L1BlockMetric is intialized inside the EthereumClient new function
 - refactor: BlockMetrics divided in L1BlockMetrics and BlockMetrics

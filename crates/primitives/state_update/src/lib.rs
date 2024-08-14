@@ -13,13 +13,13 @@ pub struct StateUpdate {
     pub state_diff: StateDiff,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PendingStateUpdate {
     pub old_root: Felt,
     pub state_diff: StateDiff,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateDiff {
     pub storage_diffs: Vec<ContractStorageDiffItem>,
     pub deprecated_declared_classes: Vec<Felt>,

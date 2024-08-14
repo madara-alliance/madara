@@ -121,9 +121,5 @@ fn contract_state_leaf_hash(
         .ok_or(DeoxysStorageError::InconsistentStorage("Storage root need to be set".into()))?;
 
     // computes the contract state leaf hash
-    let contract_state_hash = Pedersen::hash(&class_hash, &storage_root);
-    let contract_state_hash = Pedersen::hash(&contract_state_hash, &nonce);
-    let contract_state_hash = Pedersen::hash(&contract_state_hash, &Felt::ZERO);
-
-    Ok(contract_state_hash)
+    Ok(Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO))
 }
