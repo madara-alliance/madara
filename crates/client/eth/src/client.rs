@@ -120,14 +120,14 @@ impl EthereumClient {
     }
 
     /// Get cancellation status of an L1 to L2 message
-    /// 
+    ///
     /// This function query the core contract to know if a L1->L2 message has been cancelled
     /// # Arguments
-    /// 
+    ///
     /// - msg_hash : Hash of L1 to L2 message
-    /// 
+    ///
     /// # Return
-    /// 
+    ///
     /// - A felt representing a timestamp :
     ///     - 0 if the message has not been cancelled
     ///     - timestamp of the cancellation if it has been cancelled

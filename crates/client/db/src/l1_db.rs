@@ -1,7 +1,6 @@
 use rocksdb::WriteOptions;
 use serde::{Deserialize, Serialize};
 use starknet_api::core::Nonce;
-use std::collections::BTreeSet;
 
 use crate::error::DbError;
 use crate::{Column, DatabaseExt, DeoxysBackend, DeoxysStorageError};
@@ -9,7 +8,6 @@ use crate::{Column, DatabaseExt, DeoxysBackend, DeoxysStorageError};
 type Result<T, E = DeoxysStorageError> = std::result::Result<T, E>;
 
 pub const LAST_SYNCED_L1_EVENT_BLOCK: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
-pub const NONCES_PROCESSED: &[u8] = b"NONCES_PROCESSED";
 
 /// Struct to store block number and event_index where L1->L2 Message occured
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -114,76 +112,16 @@ impl DeoxysBackend {
         Ok(())
     }
 
-    /// This function inserts the nonce of the last processed block into the database if it is unique.
-    ///
-    /// This function takes the nonce of the last processed block and attempts to retrieve the nonce BTreeSet
-    /// stored in the `NONCES_PROCESSED` column.
-    /// If the column is empty, a new BTreeSet is created, the nonce is inserted into it, and the set is stored in the database.
-    /// If there is an existing entry, it is deserialized and checked to see if the nonce is already present.
-    /// If the nonce is not in the set, it is inserted into the BTreeSet, which is then serialized and stored in the database,
-    /// and the function returns `Ok(true)`.
-    /// If the nonce is already present, it means the event has already been processed, so the function returns `Ok(false)`.
-    ///
-    /// # Arguments
-    ///
-    /// - `nonce`: The `Nonce` instance representing the nonce of the last messaging event.
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(true)` if the event has not been processed and the nonce has been inserted into the database.
-    /// - `Ok(false)` if the event has already been processed.
-    /// - `Err(e)` if there is a failure in interacting with the database or in serializing/deserializing the data.
-    ///
-    /// # Errors
-    ///
-    /// This function returns an error if:
-    /// - There is a failure in interacting with the database.
-    /// - There is a failure in serializing or deserializing the data.
-    ///
-    /// # Example
-    ///
-    /// match backend.messaging_update_nonces_if_not_used(transaction.nonce) {
-    ///     Ok(true) => {}
-    ///     Ok(false) => {
-    ///         tracing::debug!("⟠ Event already processed: {:?}", transaction);
-    ///         return Ok(None);
-    ///     }
-    ///     Err(e) => {
-    ///         tracing::error!("⟠ Unexpected DB error: {:?}", e);
-    ///         return Err(e.into());
-    ///     }
-    /// };
-    ///
-    /// # Panics
-    ///
-    /// This function does not panic.
-    pub fn messaging_update_nonces_if_not_used(&self, nonce: Nonce) -> Result<bool, DbError> {
-        let messaging_column = self.db.get_column(Column::Messaging);
-        let Some(res) = self.db.get_cf(&messaging_column, NONCES_PROCESSED)? else {
-            // No nonces have been processed yet, we will just create the BTreeSet
-            let mut writeopts = WriteOptions::default(); // todo move that in db
-            writeopts.disable_wal(true);
+    pub fn has_nonce(&self, nonce: Nonce) -> Result<bool> {
+        let nonce_column = self.db.get_column(Column::MessagingNonce);
+        Ok(self.db.get_pinned_cf(&nonce_column, bincode::serialize(&nonce)?)?.is_some())
+    }
 
-            let mut btree_set = BTreeSet::new();
-            btree_set.insert(nonce);
-
-            self.db.put_cf_opt(&messaging_column, NONCES_PROCESSED, bincode::serialize(&btree_set)?, &writeopts)?;
-            return Ok(true);
-        };
-
-        let mut nonce_tree: BTreeSet<Nonce> = bincode::deserialize(&res)?;
-        if nonce_tree.contains(&nonce) {
-            // Nonce is already used, return false
-            Ok(false)
-        } else {
-            // Nonce isn't being used yet, add it to our db and return true
-            nonce_tree.insert(nonce);
-
-            let mut writeopts = WriteOptions::default(); // todo move that in db
-            writeopts.disable_wal(true);
-
-            self.db.put_cf_opt(&messaging_column, NONCES_PROCESSED, bincode::serialize(&nonce_tree)?, &writeopts)?;
-            Ok(true)
-        }
+    pub fn set_nonce(&self, nonce: Nonce) -> Result<(), DbError> {
+        let nonce_column = self.db.get_column(Column::MessagingNonce);
+        let mut writeopts = WriteOptions::default();
+        writeopts.disable_wal(true);
+        self.db.put_cf_opt(&nonce_column, bincode::serialize(&nonce)?, /* empty value */ &[], &writeopts)?;
+        Ok(())
     }
 }

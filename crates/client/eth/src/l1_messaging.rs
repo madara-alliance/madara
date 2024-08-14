@@ -8,7 +8,7 @@ use crate::utils::u256_to_felt;
 use alloy::primitives::{keccak256, FixedBytes, U256};
 use alloy::sol_types::SolValue;
 use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
-use dc_db::{messaging_db::LastSyncedEventBlock, DeoxysBackend};
+use dc_db::{l1_db::LastSyncedEventBlock, DeoxysBackend};
 use dp_utils::channel_wait_or_graceful_shutdown;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{
@@ -94,10 +94,14 @@ async fn process_l1_message(
     chain_id: &ChainId,
 ) -> anyhow::Result<Option<TransactionHash>> {
     let transaction = parse_handle_l1_message_transaction(event)?;
+    let tx_nonce = transaction.nonce;
+
     // Ensure that L1 message has not been executed
-    match backend.messaging_update_nonces_if_not_used(transaction.nonce) {
-        Ok(true) => {}
+    match backend.has_nonce(tx_nonce) {
         Ok(false) => {
+            backend.set_nonce(tx_nonce)?;
+        }
+        Ok(true) => {
             tracing::debug!("⟠ Event already processed: {:?}", transaction);
             return Ok(None);
         }
@@ -106,11 +110,10 @@ async fn process_l1_message(
             return Err(e.into());
         }
     };
-    let blockifier_transaction: BlockifierL1HandlerTransaction = BlockifierL1HandlerTransaction {
-        tx: transaction.clone(),
-        tx_hash: get_transaction_hash(&Transaction::L1Handler(transaction.clone()), chain_id, &transaction.version)?,
-        paid_fee_on_l1: Fee(event.fee.try_into()?),
-    };
+
+    let tx_hash = get_transaction_hash(&Transaction::L1Handler(transaction.clone()), chain_id, &transaction.version)?;
+    let blockifier_transaction: BlockifierL1HandlerTransaction =
+        BlockifierL1HandlerTransaction { tx: transaction.clone(), tx_hash, paid_fee_on_l1: Fee(event.fee.try_into()?) };
 
     // TODO: submit tx to mempool
 
@@ -204,7 +207,7 @@ mod tests {
 
     struct TestRunner {
         #[allow(dead_code)]
-        anvil: AnvilInstance,
+        anvil: AnvilInstance, // Not used but needs to stay in scope otherwise it will be dropped
         chain_config: Arc<ChainConfig>,
         db_service: Arc<DatabaseService>,
         dummy_contract: DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
