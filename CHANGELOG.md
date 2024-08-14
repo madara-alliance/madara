@@ -35,3 +35,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `fetch_from_test` argument
 
 ## Fixed
+
+- Fixed state update worker logic as per the new implementation.

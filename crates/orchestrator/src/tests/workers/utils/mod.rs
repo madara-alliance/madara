@@ -53,33 +53,6 @@ pub fn get_job_by_mock_id_vector(
     jobs_vec
 }
 
-pub fn db_create_job_expectations_update_state_worker(
-    db: &mut MockDatabase,
-    proof_creation_jobs: Vec<JobItem>,
-    mock_job: &mut MockJob,
-) {
-    for job in proof_creation_jobs {
-        let internal_id = job.internal_id.clone();
-        let job_item = JobItem {
-            id: Uuid::new_v4(),
-            internal_id: internal_id.clone(),
-            job_type: JobType::StateTransition,
-            status: JobStatus::Created,
-            external_id: ExternalId::Number(0),
-            metadata: get_hashmap(),
-            version: 0,
-        };
-        let job_item_cloned = job_item.clone();
-
-        mock_job.expect_create_job().times(1).returning(move |_, _, _| Ok(job_item.clone()));
-
-        db.expect_create_job()
-            .times(1)
-            .withf(move |item| item.internal_id == job.internal_id)
-            .returning(move |_| Ok(job_item_cloned.clone()));
-    }
-}
-
 pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabase, mock_job: &mut MockJob) {
     fn get_job_item_mock_by_id(id: i32) -> JobItem {
         let uuid = Uuid::new_v4();

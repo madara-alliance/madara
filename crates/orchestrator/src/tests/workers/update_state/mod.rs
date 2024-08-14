@@ -14,9 +14,7 @@ use crate::jobs::types::{JobStatus, JobType};
 use crate::jobs::{Job, MockJob};
 use crate::queue::MockQueueProvider;
 use crate::tests::common::init_config;
-use crate::tests::workers::utils::{
-    db_create_job_expectations_update_state_worker, get_job_by_mock_id_vector, get_job_item_mock_by_id,
-};
+use crate::tests::workers::utils::{get_job_by_mock_id_vector, get_job_item_mock_by_id};
 use crate::workers::update_state::UpdateStateWorker;
 use crate::workers::Worker;
 
@@ -78,18 +76,22 @@ async fn test_update_state_worker(
         }
 
         // mocking the creation of jobs
-        db_create_job_expectations_update_state_worker(
-            &mut db,
-            get_job_by_mock_id_vector(JobType::ProofCreation, JobStatus::Completed, number_of_processed_jobs as u64, 2),
-            &mut job_handler,
-        );
+        let job_item = get_job_item_mock_by_id("1".to_string(), Uuid::new_v4());
+        let job_item_cloned = job_item.clone();
+
+        job_handler.expect_create_job().times(1).returning(move |_, _, _| Ok(job_item.clone()));
+
+        db.expect_create_job()
+            .times(1)
+            .withf(move |item| item.internal_id == *"1".to_string())
+            .returning(move |_| Ok(job_item_cloned.clone()));
     }
 
     let y: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
     let ctx = mock_factory::get_job_handler_context();
     // Mocking the `get_job_handler` call in create_job function.
     if last_successful_job_exists {
-        ctx.expect().times(5).with(eq(JobType::StateTransition)).returning(move |_| Arc::clone(&y));
+        ctx.expect().times(1).with(eq(JobType::StateTransition)).returning(move |_| Arc::clone(&y));
     }
 
     // Queue function call simulations
