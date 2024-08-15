@@ -218,6 +218,7 @@ mod tests {
     use dc_metrics::MetricsService;
     use dp_block::chain_config::ChainConfig;
     use rstest::*;
+    use starknet_api::core::Nonce;
     use tempfile::TempDir;
     use tracing_test::traced_test;
     use url::Url;
@@ -399,7 +400,8 @@ mod tests {
         let last_block =
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_ne!(last_block.block_number, 0);
-
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        assert_eq!(db.backend().has_l1_messaging_nonce(nonce).unwrap(),true);
         // TODO : Assert that the tx was correctly executed
 
         // Explicitly cancel the listen task, else it would be running in the background
@@ -435,6 +437,8 @@ mod tests {
         let last_block =
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_ne!(last_block.block_number, 0);
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        assert_eq!(db.backend().has_l1_messaging_nonce(nonce).unwrap(),true);
 
         // Send the event a second time
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
@@ -481,6 +485,8 @@ mod tests {
         let last_block =
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_eq!(last_block.block_number, 0);
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        assert_eq!(db.backend().has_l1_messaging_nonce(nonce).unwrap(),false);
         assert!(logs_contain("L1 Message was cancelled in block at timestamp : 0x66b4f105"));
 
         worker_handle.abort();
