@@ -2,6 +2,7 @@
 
 ## Next release
 
+- test: add unitests primitives
 - tests: add tests for the rpcs endpoints
 - fix: pending contract storage not stored properly
 - test: add tests crate `db`
