@@ -59,7 +59,7 @@ impl DeoxysBackend {
     ///
     /// This function does not panic.
     pub fn messaging_last_synced_l1_block_with_event(&self) -> Result<Option<LastSyncedEventBlock>> {
-        let messaging_column = self.db.get_column(Column::Messaging);
+        let messaging_column = self.db.get_column(Column::L1Messaging);
         let Some(res) = self.db.get_cf(&messaging_column, LAST_SYNCED_L1_EVENT_BLOCK)? else {
             return Ok(Some(LastSyncedEventBlock::new(0, 0)));
         };
@@ -100,7 +100,7 @@ impl DeoxysBackend {
         &self,
         last_synced_event_block: LastSyncedEventBlock,
     ) -> Result<(), DbError> {
-        let messaging_column = self.db.get_column(Column::Messaging);
+        let messaging_column = self.db.get_column(Column::L1Messaging);
         let mut writeopts = WriteOptions::default(); // todo move that in db
         writeopts.disable_wal(true);
         self.db.put_cf_opt(
@@ -113,12 +113,12 @@ impl DeoxysBackend {
     }
 
     pub fn has_nonce(&self, nonce: Nonce) -> Result<bool> {
-        let nonce_column = self.db.get_column(Column::MessagingNonce);
+        let nonce_column = self.db.get_column(Column::L1MessagingNonce);
         Ok(self.db.get_pinned_cf(&nonce_column, bincode::serialize(&nonce)?)?.is_some())
     }
 
     pub fn set_nonce(&self, nonce: Nonce) -> Result<(), DbError> {
-        let nonce_column = self.db.get_column(Column::MessagingNonce);
+        let nonce_column = self.db.get_column(Column::L1MessagingNonce);
         let mut writeopts = WriteOptions::default();
         writeopts.disable_wal(true);
         self.db.put_cf_opt(&nonce_column, bincode::serialize(&nonce)?, /* empty value */ &[], &writeopts)?;

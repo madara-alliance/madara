@@ -166,8 +166,8 @@ pub enum Column {
     BonsaiClassesFlat,
     BonsaiClassesLog,
 
-    Messaging,
-    MessagingNonce,
+    L1Messaging,
+    L1MessagingNonce,
 }
 
 impl fmt::Debug for Column {
@@ -211,8 +211,8 @@ impl Column {
             BonsaiClassesTrie,
             BonsaiClassesFlat,
             BonsaiClassesLog,
-            Messaging,
-            MessagingNonce,
+            L1Messaging,
+            L1MessagingNonce,
             PendingContractToClassHashes,
             PendingContractToNonces,
             PendingContractStorage,
@@ -248,8 +248,8 @@ impl Column {
             ContractToNonces => "contract_to_nonces",
             ContractClassHashes => "contract_class_hashes",
             ContractStorage => "contract_storage",
-            Messaging => "messaging",
-            MessagingNonce => "messaging_nonce",
+            L1Messaging => "l1_messaging",
+            L1MessagingNonce => "l1_messaging_nonce",
             PendingContractToClassHashes => "pending_contract_to_class_hashes",
             PendingContractToNonces => "pending_contract_to_nonces",
             PendingContractStorage => "pending_contract_storage",
