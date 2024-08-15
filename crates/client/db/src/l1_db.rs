@@ -112,12 +112,12 @@ impl DeoxysBackend {
         Ok(())
     }
 
-    pub fn has_nonce(&self, nonce: Nonce) -> Result<bool> {
+    pub fn has_l1_messaging_nonce(&self, nonce: Nonce) -> Result<bool> {
         let nonce_column = self.db.get_column(Column::L1MessagingNonce);
         Ok(self.db.get_pinned_cf(&nonce_column, bincode::serialize(&nonce)?)?.is_some())
     }
 
-    pub fn set_nonce(&self, nonce: Nonce) -> Result<(), DbError> {
+    pub fn set_l1_messaging_nonce(&self, nonce: Nonce) -> Result<(), DbError> {
         let nonce_column = self.db.get_column(Column::L1MessagingNonce);
         let mut writeopts = WriteOptions::default();
         writeopts.disable_wal(true);

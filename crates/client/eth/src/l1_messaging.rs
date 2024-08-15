@@ -118,9 +118,9 @@ async fn process_l1_message(
     let tx_nonce = transaction.nonce;
 
     // Ensure that L1 message has not been executed
-    match backend.has_nonce(tx_nonce) {
+    match backend.has_l1_messaging_nonce(tx_nonce) {
         Ok(false) => {
-            backend.set_nonce(tx_nonce)?;
+            backend.set_l1_messaging_nonce(tx_nonce)?;
         }
         Ok(true) => {
             tracing::debug!("⟠ Event already processed: {:?}", transaction);
