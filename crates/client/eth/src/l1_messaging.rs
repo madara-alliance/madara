@@ -1,3 +1,4 @@
+use alloy::eips::BlockNumberOrTag;
 use anyhow::Context;
 use futures::StreamExt;
 use std::sync::Arc;
@@ -54,6 +55,7 @@ pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &C
     let event_filter = client.l1_core_contract.event_filter::<StarknetCoreContract::LogMessageToL2>();
     let mut event_stream = event_filter
         .from_block(last_synced_event_block.block_number)
+        .select(BlockNumberOrTag::Finalized)
         .watch()
         .await
         .context("Failed to watch event filter")?
