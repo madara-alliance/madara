@@ -1,6 +1,7 @@
 use crate::jobs::da_job::test::{get_nonce_attached, read_state_update_from_file};
-use crate::jobs::da_job::DaJob;
+use crate::jobs::da_job::{DaError, DaJob};
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
+use crate::jobs::JobError;
 use crate::tests::common::drop_database;
 use crate::tests::config::TestConfigBuilder;
 use crate::{config::config, jobs::Job};
@@ -73,15 +74,9 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
 
     assert_matches!(response,
         Err(e) => {
-            let expected_error = eyre!(
-                "Exceeded the maximum number of blobs per transaction: allowed {}, found {} for block {} and job id {}",
-                max_blob_per_txn,
-                current_blob_length,
-                internal_id.to_string(),
-                Uuid::default()
-            )
-            .to_string();
-            assert_eq!(e.to_string(), expected_error);
+            let err = DaError::MaxBlobsLimitExceeded { max_blob_per_txn, current_blob_length, block_no: internal_id.to_string(), job_id: Uuid::default() };
+            let expected_error = JobError::DaJobError(err);
+            assert_eq!(e.to_string(), expected_error.to_string());
         }
     );
 
@@ -137,13 +132,12 @@ async fn test_da_job_process_job_failure_on_pending_block() {
 
     assert_matches!(response,
         Err(e) => {
-            let expected_error = eyre!(
-                "Cannot process block {} for job id {} as it's still in pending state",
-                internal_id.to_string(),
-                Uuid::default()
-            )
-            .to_string();
-            assert_eq!(e.to_string(), expected_error);
+            let err = DaError::BlockPending {
+                block_no: internal_id.to_string(),
+                job_id: Uuid::default()
+            };
+            let expected_error = JobError::DaJobError(err);
+            assert_eq!(e.to_string(), expected_error.to_string());
         }
     );
 

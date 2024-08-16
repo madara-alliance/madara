@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+use assert_matches::assert_matches;
 use bytes::Bytes;
 use httpmock::prelude::*;
 use mockall::predicate::eq;
@@ -9,6 +10,7 @@ use rstest::*;
 use settlement_client_interface::MockSettlementClient;
 
 use color_eyre::eyre::eyre;
+use utils::env_utils::get_env_var_or_panic;
 
 use super::super::common::init_config;
 use crate::config::{config, config_force_init};
@@ -19,15 +21,13 @@ use crate::jobs::constants::{
     JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY, JOB_METADATA_STATE_UPDATE_FETCH_FROM_TESTS,
     JOB_PROCESS_ATTEMPT_METADATA_KEY,
 };
-use crate::jobs::state_update_job::utils::{fetch_blob_data_for_block, hex_string_to_u8_vec};
-use crate::jobs::state_update_job::StateUpdateJob;
+use crate::jobs::state_update_job::utils::hex_string_to_u8_vec;
+use crate::jobs::state_update_job::{StateUpdateError, StateUpdateJob};
 use crate::jobs::types::{JobStatus, JobType};
-use crate::jobs::Job;
+use crate::jobs::{Job, JobError};
 use crate::tests::common::{default_job_item, get_storage_client};
 use crate::tests::config::TestConfigBuilder;
 use lazy_static::lazy_static;
-use num_traits::ToPrimitive;
-use utils::env_utils::get_env_var_or_panic;
 
 lazy_static! {
     pub static ref CURRENT_PATH: PathBuf = std::env::current_dir().unwrap();
@@ -38,7 +38,6 @@ pub const X_0_FILE_NAME: &str = "x_0.txt";
 // ================= Exhaustive tests (with minimum mock) =================
 
 #[rstest]
-#[should_panic(expected = "Could not find current attempt number.")]
 #[tokio::test]
 async fn test_process_job_attempt_not_present_fails() {
     TestConfigBuilder::new().build().await;
@@ -46,7 +45,8 @@ async fn test_process_job_attempt_not_present_fails() {
     let mut job = default_job_item();
     let config = config().await;
     let state_update_job = StateUpdateJob {};
-    let _ = state_update_job.process_job(&config, &mut job).await;
+    let res = state_update_job.process_job(&config, &mut job).await.unwrap_err();
+    assert_eq!(res, JobError::StateUpdateJobError(StateUpdateError::AttemptNumberNotFound));
 }
 
 #[rstest]
@@ -59,6 +59,10 @@ async fn test_process_job_works(
     #[case] processing_start_index: u8,
 ) {
     // Will be used by storage client which we call while storing the data.
+
+    use num::ToPrimitive;
+
+    use crate::jobs::state_update_job::utils::fetch_blob_data_for_block;
     dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
 
     // Mocking the settlement client.
@@ -248,7 +252,6 @@ async fn process_job_invalid_inputs_errors(#[case] block_numbers_to_settle: Stri
 
 #[rstest]
 #[tokio::test]
-#[should_panic(expected = "Gap detected between the first block to settle and the last one settle")]
 async fn process_job_invalid_input_gap_panics() {
     let server = MockServer::start();
     let mut settlement_client = MockSettlementClient::new();
@@ -274,7 +277,15 @@ async fn process_job_invalid_input_gap_panics() {
 
     let mut job =
         StateUpdateJob.create_job(config().await.as_ref(), String::from("internal_id"), metadata).await.unwrap();
-    let _ = StateUpdateJob.process_job(config().await.as_ref(), &mut job).await.unwrap();
+    let response = StateUpdateJob.process_job(config().await.as_ref(), &mut job).await;
+
+    assert_matches!(response,
+        Err(e) => {
+            let err = StateUpdateError::GapBetweenFirstAndLastBlock;
+            let expected_error = JobError::StateUpdateJobError(err);
+            assert_eq!(e.to_string(), expected_error.to_string());
+        }
+    );
 }
 
 // ==================== Utility functions ===========================
