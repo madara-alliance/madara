@@ -75,6 +75,16 @@ pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &C
             let cancellation_timestamp = client.get_l1_to_l2_message_cancellations(event_hash).await?;
             if cancellation_timestamp != Felt::ZERO {
                 tracing::info!("⟠ L1 Message was cancelled in block at timestamp : {:?}", cancellation_timestamp);
+                let tx_nonce = Nonce(u256_to_felt(event.nonce)?);
+                // cancelled message nonce should be inserted to avoid reprocessing
+                match backend.has_l1_messaging_nonce(tx_nonce) {
+                    Ok(false) => {backend.set_l1_messaging_nonce(tx_nonce)?;},
+                    Ok(true) => {},
+                    Err(e) => {
+                        tracing::error!("⟠ Unexpected DB error: {:?}", e);
+                        return Err(e.into());
+                    }
+                };
                 continue;
             }
 
@@ -488,7 +498,8 @@ mod tests {
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_eq!(last_block.block_number, 0);
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
-        assert_eq!(db.backend().has_l1_messaging_nonce(nonce).unwrap(),false);
+        // cancelled message nonce should be inserted to avoid reprocessing
+        assert_ne!(db.backend().has_l1_messaging_nonce(nonce).unwrap(),false);
         assert!(logs_contain("L1 Message was cancelled in block at timestamp : 0x66b4f105"));
 
         worker_handle.abort();
