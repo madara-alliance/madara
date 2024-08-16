@@ -4030,6 +4030,7 @@ dependencies = [
 name = "dp-convert"
 version = "0.1.0"
 dependencies = [
+ "assert_matches",
  "primitive-types",
  "starknet-core",
  "starknet-providers",
@@ -4057,9 +4058,12 @@ name = "dp-state-update"
 version = "0.1.0"
 dependencies = [
  "bincode 1.3.3",
+ "dp-convert",
  "serde",
  "starknet-core",
+ "starknet-providers",
  "starknet-types-core",
+ "thiserror",
 ]
 
 [[package]]
