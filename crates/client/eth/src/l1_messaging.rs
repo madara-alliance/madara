@@ -417,7 +417,7 @@ mod tests {
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_ne!(last_block.block_number, 0);
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
-        assert_eq!(db.backend().has_l1_messaging_nonce(nonce).unwrap(), true);
+        assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
         // TODO : Assert that the tx was correctly executed
 
         // Explicitly cancel the listen task, else it would be running in the background
@@ -454,7 +454,7 @@ mod tests {
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_ne!(last_block.block_number, 0);
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
-        assert_eq!(db.backend().has_l1_messaging_nonce(nonce).unwrap(), true);
+        assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
 
         // Send the event a second time
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
@@ -503,7 +503,7 @@ mod tests {
         assert_eq!(last_block.block_number, 0);
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
         // cancelled message nonce should be inserted to avoid reprocessing
-        assert_ne!(db.backend().has_l1_messaging_nonce(nonce).unwrap(), false);
+        assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
         assert!(logs_contain("L1 Message was cancelled in block at timestamp : 0x66b4f105"));
 
         worker_handle.abort();
