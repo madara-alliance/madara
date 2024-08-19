@@ -6,13 +6,9 @@ use std::collections::HashMap;
 use dc_db::storage_updates::DbClassUpdate;
 use dc_db::DeoxysBackend;
 use dp_block::{BlockId, BlockTag};
-use dp_convert::ToStateUpdateCore;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
-use starknet_core::types::{
-    ContractClass, DeclaredClassItem, DeployedContractItem, StarknetError, StateDiff, StateUpdate,
-};
-use starknet_providers::sequencer::models::{self as p};
+use starknet_core::types::{ContractClass, StarknetError};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
 use url::Url;
@@ -31,8 +27,6 @@ pub struct FetchConfig {
     pub chain_id: ChainId,
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
-    /// The L1 contract core address
-    pub l1_core_address: dp_block::H160,
     /// Whether to check the root of the state update
     pub verify: bool,
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.
@@ -69,11 +63,11 @@ impl fmt::Debug for FetchBlockId {
     }
 }
 
-impl From<FetchBlockId> for p::BlockId {
+impl From<FetchBlockId> for starknet_providers::sequencer::models::BlockId {
     fn from(value: FetchBlockId) -> Self {
         match value {
-            FetchBlockId::BlockN(block_n) => p::BlockId::Number(block_n),
-            FetchBlockId::Pending => p::BlockId::Pending,
+            FetchBlockId::BlockN(block_n) => starknet_providers::sequencer::models::BlockId::Number(block_n),
+            FetchBlockId::Pending => starknet_providers::sequencer::models::BlockId::Pending,
         }
     }
 }
@@ -88,8 +82,8 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 
 pub struct L2BlockAndUpdates {
     pub block_id: FetchBlockId,
-    pub block: p::Block,
-    pub state_diff: StateDiff,
+    pub block: starknet_providers::sequencer::models::Block,
+    pub state_diff: starknet_providers::sequencer::models::state_update::StateDiff,
     pub class_update: Vec<DbClassUpdate>,
 }
 
@@ -147,17 +141,20 @@ where
 async fn fetch_state_update_with_block(
     provider: &SequencerGatewayProvider,
     block_id: FetchBlockId,
-) -> Result<(StateUpdate, p::Block), ProviderError> {
+) -> Result<
+    (starknet_providers::sequencer::models::StateUpdate, starknet_providers::sequencer::models::Block),
+    ProviderError,
+> {
     #[allow(deprecated)] // Sequencer-specific functions are deprecated. Use it via the Provider trait instead.
     let state_update_with_block = provider.get_state_update_with_block(block_id.into()).await?;
 
-    Ok((state_update_with_block.state_update.to_state_update_core(), state_update_with_block.block))
+    Ok((state_update_with_block.state_update, state_update_with_block.block))
 }
 
 /// retrieves class updates from Starknet sequencer
 async fn fetch_class_updates(
     backend: &DeoxysBackend,
-    state_update: &StateUpdate,
+    state_update: &starknet_providers::sequencer::models::StateUpdate,
     block_id: FetchBlockId,
     provider: &SequencerGatewayProvider,
 ) -> Result<Vec<DbClassUpdate>, L2SyncError> {
@@ -167,20 +164,20 @@ async fn fetch_class_updates(
                 .state_diff
                 .deployed_contracts
                 .iter()
-                .map(|DeployedContractItem { address: _, class_hash }| (class_hash, &Felt::ZERO)),
+                .map(|deployed_contract| (deployed_contract.class_hash, &Felt::ZERO)),
         )
-        .chain(state_update.state_diff.deprecated_declared_classes.iter().map(|felt| (felt, &Felt::ZERO)))
+        .chain(state_update.state_diff.old_declared_contracts.iter().map(|&felt| (felt, &Felt::ZERO)))
         .chain(
             state_update
                 .state_diff
                 .declared_classes
                 .iter()
-                .map(|DeclaredClassItem { class_hash, compiled_class_hash }| (class_hash, compiled_class_hash)),
+                .map(|declared_class| (declared_class.class_hash, &declared_class.compiled_class_hash)),
         )
         .collect::<HashMap<_, _>>() // unique() by key
         .into_iter()
         .filter_map(|(class_hash, compiled_class_hash)| {
-            match backend.contains_class(&BlockId::Tag(BlockTag::Latest), class_hash) {
+            match backend.contains_class(&BlockId::Tag(BlockTag::Latest), &class_hash) {
                 Ok(false) => Some(Ok((class_hash, compiled_class_hash))),
                 Ok(true) => None,
                 Err(e) => Some(Err(e)),
@@ -189,7 +186,7 @@ async fn fetch_class_updates(
         .collect::<Result<_, _>>()?;
 
     let classes = futures::future::try_join_all(missing_classes.into_iter().map(
-        |(&class_hash, &compiled_class_hash)| async move {
+        |(class_hash, &compiled_class_hash)| async move {
             // TODO(correctness): Skip what appears to be a broken Sierra class definition (quick fix)
             if class_hash
                 != Felt::from_hex("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698").unwrap()

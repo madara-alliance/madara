@@ -63,8 +63,15 @@ pub fn compile_to_casm(sierra: &starknet_core::types::FlattenedSierraClass) -> a
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq, Eq)]
 struct SierraVersion(u64, u64, u64);
+
+impl std::fmt::Display for SierraVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.{}", self.0, self.1, self.2)?;
+        Ok(())
+    }
+}
 
 fn parse_sierra_version(program: &[Felt]) -> anyhow::Result<SierraVersion> {
     const VERSION_0_1_0_AS_SHORTSTRING: Felt = Felt::from_hex_unchecked("0x302e312e30");
@@ -326,13 +333,19 @@ mod tests {
     use super::*;
     use starknet_core::types::BlockId;
     use starknet_core::types::BlockTag;
-    use starknet_core::types::Felt;
     use starknet_providers::{Provider, SequencerGatewayProvider};
+    use starknet_types_core::felt::Felt;
+
+    #[test]
+    fn test_sierra_version_display() {
+        let version = SierraVersion(1, 2, 3);
+        assert_eq!(version.to_string(), "1.2.3".to_string());
+    }
 
     #[tokio::test]
     async fn test_legacy_contract_class_blockifier() {
         let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
-        let class_hash = Felt::from_hex_unchecked("0x25ec026985a3bf9d0cc1fe17326b245dfdc3ff89b8fde106542a3ea56c5a918");
+        let class_hash = Felt::from_hex_unchecked("0x010455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8");
         let class = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap();
 
         let starknet_core::types::ContractClass::Legacy(_) = class else { panic!("Not a Legacy contract") };
@@ -342,10 +355,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_compressed_sierra_contract_class_to_json() {
+    async fn test_compressed_sierra_contract_v_1_1_0_class_to_json() {
         let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
 
-        let class_hash = Felt::from_hex_unchecked("0x816dd0297efc55dc1e7559020a3a825e81ef734b558f03c83325d4da7e6253");
+        let class_hash = Felt::from_hex_unchecked("0x06c3fdaa2255c83d7fa4a01e21c46bdb55d25c616af8462ea1b3461538b163b5");
+        let class = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap();
+
+        let starknet_core::types::ContractClass::Sierra(_) = class else { panic!("Not a Sierra contract") };
+
+        let start = std::time::Instant::now();
+        let compiled_class = class.compile().unwrap();
+        println!("compile time: {:?}", start.elapsed());
+
+        let start = std::time::Instant::now();
+        to_blockifier_class(compiled_class).unwrap();
+        println!("to_blockifier_class time: {:?}", start.elapsed());
+    }
+
+    #[tokio::test]
+    async fn test_compressed_sierra_contract_v_1_2_0_class_to_json() {
+        let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
+
+        let class_hash = Felt::from_hex_unchecked("0x03c5280f83a06dc3e2935771e292ae640495e29aa9a4704510902601b9d0e6f4");
         let class = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap();
 
         let starknet_core::types::ContractClass::Sierra(_) = class else { panic!("Not a Sierra contract") };

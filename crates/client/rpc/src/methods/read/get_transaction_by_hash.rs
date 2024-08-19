@@ -44,3 +44,35 @@ pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> S
         .ok_or_internal_server_error("Storage block transaction mismatch")?;
     Ok(transaction.clone().to_core(transaction_hash))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters};
+    use rstest::rstest;
+
+    #[rstest]
+    fn test_get_transaction_by_hash(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { tx_hashes, expected_txs, .. }, rpc) = sample_chain_for_block_getters;
+
+        // Block 0
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[0]).unwrap(), expected_txs[0]);
+
+        // Block 1
+
+        // Block 2
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[1]).unwrap(), expected_txs[1]);
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[2]).unwrap(), expected_txs[2]);
+
+        // Pending
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[3]).unwrap(), expected_txs[3]);
+    }
+
+    #[rstest]
+    fn test_get_transaction_by_hash_not_found(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { .. }, rpc) = sample_chain_for_block_getters;
+
+        let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
+        assert_eq!(get_transaction_by_hash(&rpc, does_not_exist), Err(StarknetRpcApiError::TxnHashNotFound));
+    }
+}

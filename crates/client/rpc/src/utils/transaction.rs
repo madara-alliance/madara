@@ -15,7 +15,7 @@ use crate::Starknet;
 pub(crate) fn to_blockifier_transactions(
     starknet: &Starknet,
     block_id: BlockId,
-    transaction: &dp_transactions::Transaction,
+    transaction: dp_transactions::Transaction,
     tx_hash: &TransactionHash,
 ) -> StarknetRpcResult<btx::Transaction> {
     let transaction: Transaction = transaction.try_into().map_err(|_| StarknetRpcApiError::InternalServerError)?;

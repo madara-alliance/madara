@@ -24,7 +24,7 @@ pub async fn trace_block_transactions(
     let transactions: Vec<_> = block
         .inner
         .transactions
-        .iter()
+        .into_iter()
         .zip(block.info.tx_hashes())
         .map(|(tx, hash)| to_blockifier_transactions(starknet, block_id.into(), tx, &TransactionHash(*hash)))
         .collect::<Result<_, _>>()?;

@@ -19,4 +19,4 @@ async-trait.workspace = true
 futures.workspace = true
 log.workspace = true
 rayon.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }

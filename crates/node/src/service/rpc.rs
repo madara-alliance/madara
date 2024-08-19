@@ -1,11 +1,11 @@
-use crate::cli::{NetworkType, RpcMethods, RpcParams};
+use crate::cli::{RpcMethods, RpcParams};
 use dc_db::DatabaseService;
 use dc_metrics::MetricsRegistry;
 use dc_rpc::{
-    providers::AddTransactionProvider, ChainConfig, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
+    providers::AddTransactionProvider, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
     StarknetWriteRpcApiServer,
 };
-use dp_convert::ToFelt;
+use dp_block::chain_config::ChainConfig;
 use dp_utils::service::Service;
 use jsonrpsee::server::ServerHandle;
 use jsonrpsee::RpcModule;
@@ -26,7 +26,7 @@ impl RpcService {
     pub fn new(
         config: &RpcParams,
         db: &DatabaseService,
-        network_type: NetworkType,
+        chain_config: Arc<ChainConfig>,
         metrics_handle: MetricsRegistry,
         add_txs_method_provider: Arc<dyn AddTransactionProvider>,
     ) -> anyhow::Result<Self> {
@@ -49,12 +49,6 @@ impl RpcService {
             }
         };
         let (read, write, trace) = (rpcs, rpcs, rpcs);
-
-        let chain_config = ChainConfig {
-            chain_id: network_type.chain_id().to_felt(),
-            feeder_gateway: network_type.feeder_gateway(),
-            gateway: network_type.gateway(),
-        };
 
         let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider);
 

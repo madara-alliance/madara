@@ -33,8 +33,10 @@ async fn main() -> anyhow::Result<()> {
     crate::util::raise_fdlimit();
 
     let mut run_cmd: RunCmd = RunCmd::parse();
+
+    let chain_config = run_cmd.network.chain_config();
+
     let node_name = run_cmd.node_name_or_provide().await.to_string();
-    let network_name = run_cmd.network().await.to_string();
     let node_version = env!("DEOXYS_BUILD_VERSION");
 
     log::info!("👽 {} Node", GREET_IMPL_NAME);
@@ -46,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
     log::info!("🏷  Node Name: {}", node_name);
     let role = if run_cmd.authority { "authority" } else { "full node" };
     log::info!("👤 Role: {}", role);
-    log::info!("🌐 Network: {}", network_name);
+    log::info!("🌐 Network: {}", chain_config.chain_name);
 
     let sys_info = SysInfo::probe();
     sys_info.show();
@@ -69,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
         &run_cmd.db_params.base_path,
         run_cmd.db_params.backup_dir.clone(),
         run_cmd.db_params.restore_from_latest_backup,
-        run_cmd.sync_params.network.db_chain_info(),
+        Arc::clone(&chain_config),
     )
     .await
     .context("Initializing db service")?;
@@ -118,6 +120,8 @@ async fn main() -> anyhow::Result<()> {
                 // Feeder gateway sync service.
                 let sync_service = SyncService::new(
                     &run_cmd.sync_params,
+                    Arc::clone(&chain_config),
+                    run_cmd.network,
                     &db_service,
                     prometheus_service.registry(),
                     telemetry_service.new_handle(),
@@ -129,9 +133,9 @@ async fn main() -> anyhow::Result<()> {
                     ServiceGroup::default().with(sync_service),
                     // TODO(rate-limit): we may get rate limited with this unconfigured provider?
                     Arc::new(dc_rpc::providers::ForwardToProvider::new(SequencerGatewayProvider::new(
-                        run_cmd.sync_params.network.gateway(),
-                        run_cmd.sync_params.network.feeder_gateway(),
-                        run_cmd.sync_params.network.chain_id().to_felt(),
+                        run_cmd.network.gateway(),
+                        run_cmd.network.feeder_gateway(),
+                        chain_config.chain_id.to_felt(),
                     ))),
                 )
             }
@@ -140,18 +144,13 @@ async fn main() -> anyhow::Result<()> {
     let rpc_service = RpcService::new(
         &run_cmd.rpc_params,
         &db_service,
-        run_cmd.sync_params.network,
+        Arc::clone(&chain_config),
         prometheus_service.registry(),
         rpc_add_txs_method_provider,
     )
     .context("Initializing rpc service")?;
 
-    telemetry_service.send_connected(
-        &node_name,
-        node_version,
-        &run_cmd.sync_params.network.db_chain_info().chain_name,
-        &sys_info,
-    );
+    telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
     let app = ServiceGroup::default()
         .with(db_service)

@@ -264,15 +264,14 @@ mod tests {
     use starknet_core::types::BlockId;
     use starknet_core::types::BlockTag;
     use starknet_core::types::ContractClass;
-    use starknet_core::types::Felt;
     use starknet_providers::{Provider, SequencerGatewayProvider};
+    use starknet_types_core::felt::Felt;
 
     #[tokio::test]
-    #[ignore]
     async fn test_sierra_compute_class_hash() {
         let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
 
-        let class_hash = Felt::from_hex_unchecked("0x816dd0297efc55dc1e7559020a3a825e81ef734b558f03c83325d4da7e6253");
+        let class_hash = Felt::from_hex_unchecked("0x06c3fdaa2255c83d7fa4a01e21c46bdb55d25c616af8462ea1b3461538b163b5");
 
         let class = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap();
 
@@ -288,7 +287,7 @@ mod tests {
     async fn test_legacy_compute_class_hash() {
         let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
 
-        let class_hash = Felt::from_hex_unchecked("0x25ec026985a3bf9d0cc1fe17326b245dfdc3ff89b8fde106542a3ea56c5a918");
+        let class_hash = Felt::from_hex_unchecked("0x010455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8");
 
         let class = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap();
 

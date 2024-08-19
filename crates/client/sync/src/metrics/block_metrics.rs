@@ -31,9 +31,10 @@ impl BlockMetrics {
             transaction_count: registry
                 .register(Gauge::new("deoxys_transaction_count", "Gauge for deoxys transaction count")?)?,
             event_count: registry.register(Gauge::new("deoxys_event_count", "Gauge for deoxys event count")?)?,
-            l1_gas_price_wei: registry.register(Gauge::new("deoxys_l1_gas_price", "Gauge for deoxys L1 gas price")?)?,
+            l1_gas_price_wei: registry
+                .register(Gauge::new("deoxys_l1_block_gas_price", "Gauge for deoxys L1 gas price")?)?,
             l1_gas_price_strk: registry
-                .register(Gauge::new("deoxys_l1_gas_price_strk", "Gauge for deoxys L1 gas price in strk")?)?,
+                .register(Gauge::new("deoxys_l1_block_gas_price_strk", "Gauge for deoxys L1 gas price in strk")?)?,
         })
     }
 }

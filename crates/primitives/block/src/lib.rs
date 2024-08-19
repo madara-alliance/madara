@@ -12,7 +12,7 @@ pub use primitive_types::{H160, U256};
 use starknet_types_core::felt::Felt;
 pub use starknet_version::{StarknetVersion, StarknetVersionError};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum DeoxysMaybePendingBlockInfo {
     Pending(DeoxysPendingBlockInfo),
@@ -43,6 +43,11 @@ impl DeoxysMaybePendingBlockInfo {
     pub fn block_n(&self) -> Option<u64> {
         self.as_nonpending().map(|v| v.header.block_number)
     }
+
+    pub fn block_hash(&self) -> Option<Felt> {
+        self.as_nonpending().map(|v| v.block_hash)
+    }
+
     pub fn tx_hashes(&self) -> &[Felt] {
         match self {
             DeoxysMaybePendingBlockInfo::NotPending(block) => &block.tx_hashes,
@@ -125,7 +130,7 @@ impl From<BlockId> for starknet_core::types::BlockId {
 }
 
 // Light version of the block with block_hash
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysPendingBlockInfo {
     pub header: PendingHeader,
     pub tx_hashes: Vec<Felt>,
@@ -138,7 +143,7 @@ impl DeoxysPendingBlockInfo {
 }
 
 // Light version of the block with block_hash
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInfo {
     pub header: Header,
     pub block_hash: Felt,
@@ -151,7 +156,14 @@ impl DeoxysBlockInfo {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+/// Starknet block inner.
+///
+/// Contains the block transactions and receipts.
+/// The transactions and receipts are in the same order.
+/// The i-th transaction corresponds to the i-th receipt.
+/// The length of the transactions and receipts must be the same.
+///
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysBlockInner {
     /// The block transactions.
     pub transactions: Vec<Transaction>,
@@ -166,7 +178,7 @@ impl DeoxysBlockInner {
 }
 
 /// Starknet block definition.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeoxysMaybePendingBlock {
     pub info: DeoxysMaybePendingBlockInfo,
     pub inner: DeoxysBlockInner,
@@ -243,5 +255,78 @@ impl From<DeoxysPendingBlock> for DeoxysMaybePendingBlock {
 impl From<DeoxysBlock> for DeoxysMaybePendingBlock {
     fn from(value: DeoxysBlock) -> Self {
         Self { info: value.info.into(), inner: value.inner }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_maybe_pending_block_info() {
+        let tx_hashes_pending = vec![Felt::from(1), Felt::from(2)];
+        let pending = DeoxysPendingBlockInfo::new(PendingHeader::default(), tx_hashes_pending.clone());
+        let pending_as_maybe_pending: DeoxysMaybePendingBlockInfo = pending.clone().into();
+        let tx_hashes_not_pending = vec![Felt::from(3), Felt::from(4)];
+        let not_pending = DeoxysBlockInfo::new(Header::default(), tx_hashes_not_pending.clone(), Felt::from(5));
+        let not_pending_as_maybe_pending: DeoxysMaybePendingBlockInfo = not_pending.clone().into();
+
+        assert_eq!(not_pending_as_maybe_pending.as_nonpending(), Some(&not_pending));
+        assert!(pending_as_maybe_pending.as_nonpending().is_none());
+
+        assert_eq!(pending_as_maybe_pending.as_pending(), Some(&pending));
+        assert!(not_pending_as_maybe_pending.as_pending().is_none());
+
+        assert_eq!(pending_as_maybe_pending.as_block_id(), BlockId::Tag(BlockTag::Pending));
+        assert_eq!(not_pending_as_maybe_pending.as_block_id(), BlockId::Number(0));
+
+        assert_eq!(pending_as_maybe_pending.block_n(), None);
+        assert_eq!(not_pending_as_maybe_pending.block_n(), Some(0));
+
+        assert_eq!(pending_as_maybe_pending.tx_hashes(), &tx_hashes_pending);
+        assert_eq!(not_pending_as_maybe_pending.tx_hashes(), &tx_hashes_not_pending);
+
+        assert_eq!(pending_as_maybe_pending.protocol_version(), &StarknetVersion::default());
+        assert_eq!(not_pending_as_maybe_pending.protocol_version(), &StarknetVersion::default());
+
+        let maybe_pending: DeoxysMaybePendingBlock = DeoxysPendingBlock::new_empty(PendingHeader::default()).into();
+        assert!(DeoxysBlock::try_from(maybe_pending.clone()).is_err());
+        assert!(DeoxysPendingBlock::try_from(maybe_pending.clone()).is_ok());
+    }
+
+    #[test]
+    fn test_block_tag() {
+        let tag = BlockTag::Latest;
+        let tag_converted: starknet_core::types::BlockTag = tag.into();
+        assert_eq!(tag_converted, starknet_core::types::BlockTag::Latest);
+        let tag_back: BlockTag = tag_converted.into();
+        assert_eq!(tag_back, tag);
+
+        let tag = BlockTag::Pending;
+        let tag_converted: starknet_core::types::BlockTag = tag.into();
+        assert_eq!(tag_converted, starknet_core::types::BlockTag::Pending);
+        let tag_back: BlockTag = tag_converted.into();
+        assert_eq!(tag_back, tag);
+    }
+
+    #[test]
+    fn test_block_id() {
+        let hash = Felt::from(1);
+        let hash_converted: starknet_core::types::BlockId = BlockId::Hash(hash).into();
+        assert_eq!(hash_converted, starknet_core::types::BlockId::Hash(hash));
+        let hash_back: BlockId = hash_converted.into();
+        assert_eq!(hash_back, BlockId::Hash(hash));
+
+        let number = 1;
+        let number_converted: starknet_core::types::BlockId = BlockId::Number(number).into();
+        assert_eq!(number_converted, starknet_core::types::BlockId::Number(number));
+        let number_back: BlockId = number_converted.into();
+        assert_eq!(number_back, BlockId::Number(number));
+
+        let tag = BlockTag::Latest;
+        let tag_converted: starknet_core::types::BlockId = BlockId::Tag(tag).into();
+        assert_eq!(tag_converted, starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Latest));
+        let tag_back: BlockId = tag_converted.into();
+        assert_eq!(tag_back, BlockId::Tag(BlockTag::Latest));
     }
 }
