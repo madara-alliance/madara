@@ -170,3 +170,33 @@ impl From<NonceUpdate> for starknet_core::types::NonceUpdate {
         Self { contract_address: nonce_update.contract_address, nonce: nonce_update.nonce }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use dp_convert::test::assert_consistent_conversion;
+    use starknet_types_core::felt::Felt;
+
+    use crate::tests::dummy_state_diff;
+
+    #[test]
+    fn test_state_update_core_convertion() {
+        let state_update = StateUpdate {
+            block_hash: Felt::from_hex_unchecked("0x1234"),
+            old_root: Felt::from_hex_unchecked("0x5678"),
+            new_root: Felt::from_hex_unchecked("0x9abc"),
+            state_diff: dummy_state_diff(),
+        };
+
+        assert_consistent_conversion::<_, starknet_core::types::StateUpdate>(state_update);
+    }
+
+    #[test]
+    fn test_pending_state_update_core_convertion() {
+        let pending_state_update =
+            PendingStateUpdate { old_root: Felt::from_hex_unchecked("0x5678"), state_diff: dummy_state_diff() };
+
+        assert_consistent_conversion::<_, starknet_core::types::PendingStateUpdate>(pending_state_update);
+    }
+}

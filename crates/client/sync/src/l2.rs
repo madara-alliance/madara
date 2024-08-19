@@ -267,8 +267,8 @@ async fn l2_pending_block_task(
 
             let backend_ = Arc::clone(&backend);
             spawn_rayon_task(move || {
-                let (block, converted_state_diff) =
-                    crate::convert::convert_pending(block, state_diff, chain_id).context("Converting pending block")?;
+                let (block, converted_state_diff) = crate::convert::convert_pending(block, state_diff.into(), chain_id)
+                    .context("Converting pending block")?;
                 let convert_classes = convert_and_verify_class(class_update, None).context("Converting classes")?;
 
                 backend_

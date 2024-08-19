@@ -1,4 +1,4 @@
-use crate::{to_starknet_api::TransactionApiError, Transaction, TransactionWithHash};
+use crate::{into_starknet_api::TransactionApiError, Transaction, TransactionWithHash};
 use blockifier::{execution::errors::ContractClassError, transaction::errors::TransactionExecutionError};
 use dp_class::{to_blockifier_class, ClassHash, ClassInfo, ContractClass, ConvertedClass, ToCompiledClass};
 use starknet_api::transaction::TransactionHash;
@@ -113,7 +113,7 @@ pub fn broadcasted_to_blockifier(
         Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
         _ => None,
     };
-    let transaction: starknet_api::transaction::Transaction = (&transaction).try_into()?;
+    let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
 
     Ok((
         blockifier::transaction::transaction_execution::Transaction::from_api(
