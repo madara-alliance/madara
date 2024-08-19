@@ -121,7 +121,7 @@ impl DeoxysBackend {
         let nonce_column = self.db.get_column(Column::L1MessagingNonce);
         let mut writeopts = WriteOptions::default();
         writeopts.disable_wal(true);
-        self.db.put_cf_opt(&nonce_column, bincode::serialize(&nonce)?, /* empty value */ &[], &writeopts)?;
+        self.db.put_cf_opt(&nonce_column, bincode::serialize(&nonce)?, /* empty value */ [], &writeopts)?;
         Ok(())
     }
 }

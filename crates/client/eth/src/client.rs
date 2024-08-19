@@ -1,6 +1,5 @@
 use crate::client::StarknetCoreContract::StarknetCoreContractInstance;
 use crate::utils::u256_to_felt;
-use alloy::primitives::FixedBytes;
 use alloy::sol_types::SolEvent;
 use alloy::{
     primitives::Address,
@@ -118,7 +117,6 @@ impl EthereumClient {
         let block_hash = self.l1_core_contract.stateBlockHash().call().await?;
         u256_to_felt(block_hash._0)
     }
-
 }
 
 #[cfg(test)]

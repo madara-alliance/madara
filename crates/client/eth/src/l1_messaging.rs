@@ -80,8 +80,10 @@ pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &C
                 let tx_nonce = Nonce(u256_to_felt(event.nonce)?);
                 // cancelled message nonce should be inserted to avoid reprocessing
                 match backend.has_l1_messaging_nonce(tx_nonce) {
-                    Ok(false) => {backend.set_l1_messaging_nonce(tx_nonce)?;},
-                    Ok(true) => {},
+                    Ok(false) => {
+                        backend.set_l1_messaging_nonce(tx_nonce)?;
+                    }
+                    Ok(true) => {}
                     Err(e) => {
                         tracing::error!("⟠ Unexpected DB error: {:?}", e);
                         return Err(e.into());
@@ -256,7 +258,7 @@ mod tests {
         contract DummyContract {
             bool isCanceled;
             event LogMessageToL2(address indexed _fromAddress, uint256 indexed _toAddress, uint256 indexed _selector, uint256[] payload, uint256 nonce, uint256 fee);
-        
+
             struct MessageData {
                 address fromAddress;
                 uint256 toAddress;
@@ -265,7 +267,7 @@ mod tests {
                 uint256 nonce;
                 uint256 fee;
             }
-        
+
             function getMessageData() internal pure returns (MessageData memory) {
                 address fromAddress = address(993696174272377493693496825928908586134624850969);
                 uint256 toAddress = 3256441166037631918262930812410838598500200462657642943867372734773841898370;
@@ -280,23 +282,23 @@ mod tests {
                 payload[6] = 221696535382753200248526706088340988821219073423817576256483558730535647368;
                 uint256 nonce = 10000000000000000;
                 uint256 fee = 0;
-        
+
                 return MessageData(fromAddress, toAddress, selector, payload, nonce, fee);
             }
-        
+
             function fireEvent() public {
                 MessageData memory data = getMessageData();
                 emit LogMessageToL2(data.fromAddress, data.toAddress, data.selector, data.payload, data.nonce, data.fee);
             }
-        
+
             function l1ToL2MessageCancellations(bytes32 msgHash) external view returns (uint256) {
                 return isCanceled ? 1723134213 : 0;
             }
-        
+
             function setIsCanceled(bool value) public {
                 isCanceled = value;
             }
-        
+
             function getL1ToL2MsgHash() external pure returns (bytes32) {
                 MessageData memory data = getMessageData();
                 return keccak256(
@@ -415,7 +417,7 @@ mod tests {
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_ne!(last_block.block_number, 0);
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
-        assert_eq!(db.backend().has_l1_messaging_nonce(nonce).unwrap(),true);
+        assert_eq!(db.backend().has_l1_messaging_nonce(nonce).unwrap(), true);
         // TODO : Assert that the tx was correctly executed
 
         // Explicitly cancel the listen task, else it would be running in the background
@@ -452,7 +454,7 @@ mod tests {
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_ne!(last_block.block_number, 0);
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
-        assert_eq!(db.backend().has_l1_messaging_nonce(nonce).unwrap(),true);
+        assert_eq!(db.backend().has_l1_messaging_nonce(nonce).unwrap(), true);
 
         // Send the event a second time
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
@@ -501,7 +503,7 @@ mod tests {
         assert_eq!(last_block.block_number, 0);
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
         // cancelled message nonce should be inserted to avoid reprocessing
-        assert_ne!(db.backend().has_l1_messaging_nonce(nonce).unwrap(),false);
+        assert_ne!(db.backend().has_l1_messaging_nonce(nonce).unwrap(), false);
         assert!(logs_contain("L1 Message was cancelled in block at timestamp : 0x66b4f105"));
 
         worker_handle.abort();
