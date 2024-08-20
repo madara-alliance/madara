@@ -8,7 +8,7 @@ use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
 use dc_telemetry::TelemetryHandle;
-use dp_block::chain_config::ChainConfig;
+use dp_chain_config::ChainConfig;
 use dp_utils::service::Service;
 use std::sync::Arc;
 use std::time::Duration;
@@ -95,7 +95,7 @@ impl Service for SyncService {
         let db_backend = Arc::clone(&self.db_backend);
 
         join_set.spawn(async move {
-            dc_sync::starknet_sync_worker::sync(
+            dc_sync::sync(
                 &db_backend,
                 fetch_config,
                 eth_client,

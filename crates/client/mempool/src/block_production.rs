@@ -6,6 +6,7 @@ use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::transaction_execution::Transaction;
+use dc_block_import::BlockImporter;
 use dc_db::db_block_id::DbBlockId;
 use dc_db::{DeoxysBackend, DeoxysStorageError};
 use dc_exec::{BlockifierStateAdapter, ExecutionContext};
@@ -40,6 +41,8 @@ pub enum Error {
     ExecutionContext(#[from] dc_exec::Error),
     #[error("No genesis block in storage")]
     NoGenesis,
+    #[error("Import error: {0:#}")]
+    Import(#[from] dc_block_import::BlockImportError),
 }
 
 fn csd_to_state_diff(
@@ -153,6 +156,7 @@ fn finalize_execution_state<S: StateReader>(
 /// This is to allow optimistic concurrency. However, the block may get full during batch execution,
 /// and we need to re-add the transactions back into the mempool.
 pub struct BlockProductionTask {
+    importer: Arc<BlockImporter>,
     backend: Arc<DeoxysBackend>,
     mempool: Arc<Mempool>,
     block: DeoxysPendingBlock,
@@ -186,6 +190,7 @@ impl BlockProductionTask {
         executor.bouncer = Bouncer::new(bouncer_config);
 
         Ok(Self {
+            importer: BlockImporter::new(Arc::clone(&backend)).into(),
             backend,
             mempool,
             executor,
@@ -213,7 +218,13 @@ impl BlockProductionTask {
         // This iterator will consume the first part of `to_process_iter`.
         let consumed_txs_to_process = to_process_iter.by_ref().take(all_results.len());
 
-        let on_top_of = self.executor.block_state.as_ref().unwrap().state.on_top_of_block_id;
+        let on_top_of = self
+            .executor
+            .block_state
+            .as_ref()
+            .expect("Block state can not be None unless we take ownership of it")
+            .state
+            .on_top_of_block_id;
         let executed_txs: Vec<_> = consumed_txs_to_process.collect();
         let (state_diff, _visited_segments, _weights) =
             finalize_execution_state(&executed_txs, &mut self.executor, &self.backend, &on_top_of)?;
@@ -308,7 +319,7 @@ impl BlockProductionTask {
         Ok(())
     }
 
-    fn produce_block_tick(&mut self) -> Result<(), Error> {
+    async fn produce_block_tick(&mut self) -> Result<(), Error> {
         let block_n = self.block_n();
         log::debug!("closing block #{}", block_n);
 
@@ -325,14 +336,20 @@ impl BlockProductionTask {
         ));
 
         let block_to_close = mem::replace(&mut self.block, new_empty_block);
-        let declared_classes = mem::take(&mut self.declared_classes);
+        let _declared_classes = mem::take(&mut self.declared_classes);
 
         // This is compute heavy as it does the commitments and trie computations.
-        let chain_id = self.backend.chain_config().chain_id.clone().to_felt();
-        let closed_block = close_block(&self.backend, block_to_close, &new_state_diff, chain_id, block_n);
-        self.block.info.header.parent_block_hash = closed_block.info.block_hash; // fix temp parent block hash for new pending :)
+        let import_result = close_block(
+            &self.importer,
+            block_to_close,
+            &new_state_diff,
+            self.backend.chain_config().chain_id.clone(),
+            block_n,
+        )
+        .await?;
+        self.block.info.header.parent_block_hash = import_result.block_hash; // fix temp parent block hash for new pending :)
 
-        self.backend.store_block(closed_block.into(), new_state_diff, declared_classes)?;
+        // self.backend.store_block(closed_block.into(), new_state_diff, declared_classes)?;
 
         // Prepare for next block.
         self.executor =
@@ -357,7 +374,7 @@ impl BlockProductionTask {
         loop {
             tokio::select! {
                 _ = interval_block_time.tick() => {
-                    if let Err(err) = self.produce_block_tick() {
+                    if let Err(err) = self.produce_block_tick().await {
                         log::error!("Block production task has errored: {err:#}");
                     }
                 },

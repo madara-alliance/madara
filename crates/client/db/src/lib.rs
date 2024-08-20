@@ -10,7 +10,7 @@ use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
-use dp_block::chain_config::ChainConfig;
+use dp_chain_config::ChainConfig;
 use dp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
@@ -108,8 +108,6 @@ fn spawn_backup_db_task(
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Column {
-    Meta,
-
     // Blocks storage
     // block_n => Block info
     BlockNToBlockInfo,
@@ -182,7 +180,6 @@ impl Column {
     pub const ALL: &'static [Self] = {
         use Column::*;
         &[
-            Meta,
             BlockNToBlockInfo,
             BlockNToBlockInner,
             TxHashToBlockN,
@@ -217,7 +214,6 @@ impl Column {
     pub(crate) fn rocksdb_name(&self) -> &'static str {
         use Column::*;
         match self {
-            Meta => "meta",
             BlockNToBlockInfo => "block_n_to_block_info",
             BlockNToBlockInner => "block_n_to_block_inner",
             TxHashToBlockN => "tx_hash_to_block_n",
@@ -458,8 +454,8 @@ impl DeoxysBackend {
                 snapshot_interval: u64::MAX,
             },
         )
-        // UNWRAP: function actually cannot panic
-        .unwrap();
+        // TODO(bonsai-trie): change upstream to reflect that.
+        .expect("New bonsai storage can never error");
 
         bonsai
     }

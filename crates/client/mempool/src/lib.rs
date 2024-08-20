@@ -162,8 +162,11 @@ pub(crate) fn clone_account_tx(tx: &AccountTransaction) -> AccountTransaction {
     match tx {
         // Declare has a private field :(
         AccountTransaction::Declare(tx) => AccountTransaction::Declare(match tx.only_query() {
-            true => DeclareTransaction::new_for_query(tx.tx.clone(), tx.tx_hash, tx.class_info.clone()).unwrap(),
-            false => DeclareTransaction::new(tx.tx.clone(), tx.tx_hash, tx.class_info.clone()).unwrap(),
+            // These should never fail
+            true => DeclareTransaction::new_for_query(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
+                .expect("Making blockifier transaction for query"),
+            false => DeclareTransaction::new(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
+                .expect("Making blockifier transaction"),
         }),
         AccountTransaction::DeployAccount(tx) => AccountTransaction::DeployAccount(DeployAccountTransaction {
             tx: tx.tx.clone(),

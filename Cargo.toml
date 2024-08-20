@@ -8,6 +8,7 @@ members = [
   "crates/client/telemetry",
   "crates/client/metrics",
   "crates/client/mempool",
+  "crates/client/block_import",
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/convert",
@@ -15,11 +16,10 @@ members = [
   "crates/primitives/class",
   "crates/primitives/receipt",
   "crates/primitives/state_update",
+  "crates/primitives/chain_config",
   "crates/primitives/utils",
 ]
 resolver = "2"
-# All previous except for `starknet-rpc-test` and `starknet-e2e-test`
-# We don't want `cargo test` to trigger its tests
 default-members = [
   "crates/client/db",
   "crates/client/exec",
@@ -28,6 +28,8 @@ default-members = [
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
+  "crates/client/mempool",
+  "crates/client/block_import",
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/convert",
@@ -35,6 +37,7 @@ default-members = [
   "crates/primitives/class",
   "crates/primitives/receipt",
   "crates/primitives/state_update",
+  "crates/primitives/chain_config",
   "crates/primitives/utils",
 ]
 
@@ -79,6 +82,7 @@ dp-class = { path = "crates/primitives/class", default-features = false }
 dp-receipt = { path = "crates/primitives/receipt", default-features = false }
 dp-state-update = { path = "crates/primitives/state_update", default-features = false }
 dp-utils = { path = "crates/primitives/utils", default-features = false }
+dp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
 
 # Deoxys client
 dc-telemetry = { path = "crates/client/telemetry" }
@@ -89,6 +93,7 @@ dc-sync = { path = "crates/client/sync" }
 dc-eth = { path = "crates/client/eth" }
 dc-metrics = { path = "crates/client/metrics" }
 dc-mempool = { path = "crates/client/mempool" }
+dc-block-import = { path = "crates/client/block_import" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.0-rc5"

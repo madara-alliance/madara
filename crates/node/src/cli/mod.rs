@@ -12,7 +12,7 @@ pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
 
-use dp_block::chain_config::ChainConfig;
+use dp_chain_config::ChainConfig;
 use std::sync::Arc;
 use url::Url;
 
@@ -64,14 +64,14 @@ pub struct RunCmd {
 impl RunCmd {
     pub async fn node_name_or_provide(&mut self) -> &str {
         if self.name.is_none() {
-            let name = dc_sync::utility::get_random_pokemon_name().await.unwrap_or_else(|e| {
+            let name = crate::util::get_random_pokemon_name().await.unwrap_or_else(|e| {
                 log::warn!("Failed to get random pokemon name: {}", e);
                 "deoxys".to_string()
             });
 
             self.name = Some(name);
         }
-        self.name.as_ref().unwrap()
+        self.name.as_ref().expect("Name was just set")
     }
 }
 
@@ -106,10 +106,10 @@ impl NetworkType {
     }
 
     pub fn gateway(&self) -> Url {
-        format!("{}/gateway", self.uri()).parse().unwrap()
+        format!("{}/gateway", self.uri()).parse().expect("Invalid uri")
     }
 
     pub fn feeder_gateway(&self) -> Url {
-        format!("{}/feeder_gateway", self.uri()).parse().unwrap()
+        format!("{}/feeder_gateway", self.uri()).parse().expect("Invalid uri")
     }
 }

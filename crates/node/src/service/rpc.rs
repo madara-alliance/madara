@@ -5,7 +5,7 @@ use dc_rpc::{
     providers::AddTransactionProvider, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
     StarknetWriteRpcApiServer,
 };
-use dp_block::chain_config::ChainConfig;
+use dp_chain_config::ChainConfig;
 use dp_utils::service::Service;
 use jsonrpsee::server::ServerHandle;
 use jsonrpsee::RpcModule;

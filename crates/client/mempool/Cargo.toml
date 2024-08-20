@@ -23,10 +23,11 @@ blockifier = { workspace = true, features = ["testing"] }
 [dependencies]
 
 # Deoxys
+dc-block-import.workspace = true
 dc-db.workspace = true
 dc-exec.workspace = true
-dc-sync.workspace = true
 dp-block.workspace = true
+dp-chain-config.workspace = true
 dp-class.workspace = true
 dp-convert.workspace = true
 dp-receipt.workspace = true

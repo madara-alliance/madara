@@ -14,9 +14,9 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Deoxys
+dp-chain-config = { workspace = true }
 dp-class = { workspace = true }
 dp-convert = { workspace = true }
-
 
 # Starknet
 blockifier = { workspace = true }

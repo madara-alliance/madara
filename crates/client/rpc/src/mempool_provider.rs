@@ -91,7 +91,7 @@ fn add_declare_transaction(
     declare_transaction: BroadcastedDeclareTransaction,
 ) -> RpcResult<DeclareTransactionResult> {
     let (tx, classes) =
-        broadcasted_to_blockifier(BroadcastedTransaction::Declare(declare_transaction), mempool.chain_id(), None)
+        broadcasted_to_blockifier(BroadcastedTransaction::Declare(declare_transaction), mempool.chain_id())
             .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
 
     let res = DeclareTransactionResult {
@@ -108,7 +108,6 @@ fn add_deploy_account_transaction(
     let (tx, classes) = broadcasted_to_blockifier(
         BroadcastedTransaction::DeployAccount(deploy_account_transaction),
         mempool.chain_id(),
-        None,
     )
     .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
 
@@ -124,7 +123,7 @@ fn add_invoke_transaction(
     invoke_transaction: BroadcastedInvokeTransaction,
 ) -> RpcResult<InvokeTransactionResult> {
     let (tx, classes) =
-        broadcasted_to_blockifier(BroadcastedTransaction::Invoke(invoke_transaction), mempool.chain_id(), None)
+        broadcasted_to_blockifier(BroadcastedTransaction::Invoke(invoke_transaction), mempool.chain_id())
             .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
 
     let res = InvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
