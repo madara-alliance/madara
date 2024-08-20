@@ -231,7 +231,6 @@ pub async fn sync(
     // starves the tokio worker
     let block_importer = Arc::new(BlockImporter::new(Arc::clone(backend)));
     let validation = Validation { trust_transaction_hashes: false, trust_global_tries: config.verify, chain_id };
-
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(
         Arc::clone(backend),
