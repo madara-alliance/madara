@@ -34,6 +34,8 @@ alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = "1.0.75"
 async-trait = "0.1.80"
 bitvec = { workspace = true }
+blockifier = { workspace = true }
+bytes = "1.6.0"
 futures = { workspace = true, default-features = true }
 lazy_static = { workspace = true }
 log = { workspace = true }
@@ -49,6 +51,7 @@ tokio = { workspace = true, features = [
   "test-util",
   "signal",
 ] }
+tracing = "0.1.40"
 url = { workspace = true }
 
 [dev-dependencies]
@@ -58,3 +61,4 @@ tempfile = { workspace = true }
 dotenv = { workspace = true }
 prometheus = { workspace = true }
 httpmock = { workspace = true }
+tracing-test = "0.2.5"
