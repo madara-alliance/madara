@@ -9,7 +9,7 @@ Instead, we have implemented our own optimized lookup, which is implemented with
 ![schema flat_storage](./flat_storage.png)
 
 The trick here is to rely on the fact that rocksdb columns are sorted trees.
-The `get_cf` operation does not allow getting the value of (contract_1, key_1) at block 15 here, because the key has not been modified at that block.
+The rocksdb `get` operation does not allow getting the value of (contract_1, key_1) at block 15 here, because the key has not been modified at that block.
 Instead, we use rocksdb iterators.
 
 ![schema flat_storage_iterator](./flat_storage_iterator.png)
