@@ -2,6 +2,7 @@
 
 ## Next release
 
+- code docs: documented how get_storage_at is implemented 
 - feat: gas price provider added for block production
 - feat: l1 sync service
 - feat: gas price worker for l1
