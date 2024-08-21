@@ -135,16 +135,25 @@ pub mod eth_client_getter_test {
     const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
     const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
 
-    #[fixture]
-    #[once]
-    pub fn eth_client() -> EthereumClient {
-        let rpc_url: Url = "http://localhost:8545".parse().expect("issue while parsing");
+    pub fn create_ethereum_client(url: Option<&str>) -> EthereumClient {
+        let rpc_url_string = url.unwrap_or("http://localhost:8545").to_string();
+        let rpc_url: Url = rpc_url_string.parse().expect("issue while parsing URL");
+
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
         let contract = StarknetCoreContract::new(address, provider.clone());
+
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
         let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
+
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
+    }
+
+    // Then, you can use this utility function in your fixture like this:
+    #[fixture]
+    #[once]
+    pub fn eth_client() -> EthereumClient {
+        create_ethereum_client(None)
     }
 
     #[rstest]
