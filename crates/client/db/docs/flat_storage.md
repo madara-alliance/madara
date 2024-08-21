@@ -2,7 +2,7 @@
 
 We are interested in the operation `get_storage_at(block_id, contract_address, storage_key) -> value` here.
 Bonsai-trie does not have an history of the key-values, it only has a flat storage for the latest state.
-We may want to remove that flat storage from bonsai-trie as it's not used, not do we plan on.
+We may want to remove that flat storage from bonsai-trie as it's not used and we don't plan on using it.
 
 Instead, we have implemented our own optimized lookup, which is implemented with a column that looks like this:
 
