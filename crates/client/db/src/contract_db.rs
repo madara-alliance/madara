@@ -1,4 +1,4 @@
-#![doc = include_str!("doc.md")]
+#![doc = include_str!("../docs/flat_storage.md")]
 
 use std::sync::Arc;
 
