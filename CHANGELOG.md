@@ -3,6 +3,7 @@
 ## Next release
 
 - fix: fixed some readme stuff
+- feat: Added l1->l2 messaging
 - test: add unitests primitives
 - tests: add tests for the rpcs endpoints
 - fix: pending contract storage not stored properly

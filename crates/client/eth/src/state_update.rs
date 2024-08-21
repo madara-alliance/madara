@@ -102,7 +102,7 @@ mod eth_client_event_subscription_test {
     use super::*;
     use std::{sync::Arc, time::Duration};
 
-    use alloy::{providers::ProviderBuilder, sol};
+    use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
     use dc_db::DatabaseService;
     use dc_metrics::MetricsService;
     use dp_block::chain_config::ChainConfig;
@@ -141,6 +141,10 @@ mod eth_client_event_subscription_test {
     #[rstest]
     #[tokio::test]
     async fn listen_and_update_state_when_event_fired_works() {
+        // Start Anvil instance
+        let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
+        println!("Anvil started and running at `{}`", anvil.endpoint());
+
         // Set up chain info
         let chain_info = Arc::new(ChainConfig::test_config());
 
@@ -160,7 +164,7 @@ mod eth_client_event_subscription_test {
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
         let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
 
-        let rpc_url: Url = "http://localhost:8545".parse().expect("issue while parsing");
+        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url);
 
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
