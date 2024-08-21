@@ -23,5 +23,3 @@ to treat the `<contract> || <key>` part differently from the block_n part, which
 
 We also use this exact technique to store contract class hash history and contract nonce history - so that we're able to quickly get the nonce/class hash of a
 contract at a specific block.
-
-The code for flat storage is in [contract_db.rs](../src/contract_db.rs).
