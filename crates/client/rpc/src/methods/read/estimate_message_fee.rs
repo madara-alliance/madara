@@ -56,7 +56,7 @@ pub fn convert_message_into_transaction(
 ) -> blockifier::transaction::transaction_execution::Transaction {
     let l1_handler: L1HandlerTransaction = message.into();
     let tx_hash = l1_handler.compute_hash(chain_id, false, false);
-    let tx: starknet_api::transaction::L1HandlerTransaction = (&l1_handler).try_into().unwrap();
+    let tx: starknet_api::transaction::L1HandlerTransaction = l1_handler.try_into().unwrap();
 
     let tx = blockifier::transaction::transactions::L1HandlerTransaction {
         tx,
