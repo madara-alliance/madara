@@ -1,5 +1,4 @@
----
-name: Task - Rust Tests & Coverage
+name: Rust Test & Coverage
 
 on:
   workflow_dispatch:
@@ -7,7 +6,6 @@ on:
 
 jobs:
   coverage:
-    # sadly, for now we have to "rebuild" for the coverage
     runs-on: ubuntu-latest
 
     services:
@@ -32,22 +30,31 @@ jobs:
       # before the plugin, as the cache uses the current rustc version as its cache key
       - run: rustup show
 
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      - uses: taiki-e/install-action@nextest
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov & nextest
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
 
       - name: Clean workspace
         run: |
-          cargo llvm-cov clean --workspace
+          cargo clean --doc
 
-      - name: Run llvm-cov
-        run: |
-          cargo llvm-cov nextest --release --lcov --output-path lcov.info --test-threads=1
+      - name: Run tests llvm-cov
+        run: cargo llvm-cov nextest --release --lcov --output-path lcov.info --test-threads=1
 
       - name: Coveralls
         uses: coverallsapp/github-action@v2
         with:
           files: lcov.info
           debug: true
-
-      - uses: colpal/actions-clean@v1
-        if: ${{ always() }} # To ensure this step runs even when earlier steps fail
