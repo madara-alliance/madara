@@ -6,16 +6,18 @@ use httpmock::MockServer;
 use mockall::predicate::eq;
 use rstest::rstest;
 use serde_json::json;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::JsonRpcClient;
+use url::Url;
 use uuid::Uuid;
 
-use crate::config::config_force_init;
 use crate::database::MockDatabase;
 use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::types::{JobStatus, JobType};
 use crate::jobs::{Job, MockJob};
 use crate::queue::job_queue::JOB_PROCESSING_QUEUE;
 use crate::queue::MockQueueProvider;
-use crate::tests::common::init_config;
+use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
 use crate::workers::snos::SnosWorker;
 use crate::workers::Worker;
@@ -88,17 +90,18 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
     // mock block number (madara) : 5
     let rpc_response_block_number = block;
     let response = json!({ "id": 1,"jsonrpc":"2.0","result": rpc_response_block_number });
-    let config = init_config(
-        Some(format!("http://localhost:{}", server.port())),
-        Some(db),
-        Some(queue),
-        Some(da_client),
-        None,
-        None,
-        None,
-    )
-    .await;
-    config_force_init(config).await;
+
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
+    ));
+
+    TestConfigBuilder::new()
+        .mock_starknet_client(Arc::new(provider))
+        .mock_db_client(Box::new(db))
+        .mock_queue(Box::new(queue))
+        .mock_da_client(Box::new(da_client))
+        .build()
+        .await;
 
     // mocking block call
     let rpc_block_call_mock = server.mock(|when, then| {

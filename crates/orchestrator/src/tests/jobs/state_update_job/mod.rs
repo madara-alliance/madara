@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use assert_matches::assert_matches;
 use bytes::Bytes;
@@ -12,8 +13,7 @@ use settlement_client_interface::MockSettlementClient;
 use color_eyre::eyre::eyre;
 use utils::env_utils::get_env_var_or_panic;
 
-use super::super::common::init_config;
-use crate::config::{config, config_force_init};
+use crate::config::config;
 use crate::constants::{BLOB_DATA_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::data_storage::MockDataStorage;
 use crate::jobs::constants::JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO;
@@ -28,6 +28,9 @@ use crate::jobs::{Job, JobError};
 use crate::tests::common::{default_job_item, get_storage_client};
 use crate::tests::config::TestConfigBuilder;
 use lazy_static::lazy_static;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::JsonRpcClient;
+use url::Url;
 
 lazy_static! {
     pub static ref CURRENT_PATH: PathBuf = std::env::current_dir().unwrap();
@@ -120,7 +123,9 @@ async fn test_process_job_works(
 #[rstest]
 #[tokio::test]
 async fn create_job_works() {
-    let config = init_config(None, None, None, None, None, None, None).await;
+    TestConfigBuilder::new().build().await;
+
+    let config = config().await;
 
     let job = StateUpdateJob.create_job(&config, String::from("0"), HashMap::default()).await;
     assert!(job.is_ok());
@@ -138,7 +143,6 @@ async fn create_job_works() {
 #[rstest]
 #[tokio::test]
 async fn process_job_works() {
-    let server = MockServer::start();
     let mut settlement_client = MockSettlementClient::new();
     let mut storage_client = MockDataStorage::new();
 
@@ -189,17 +193,11 @@ async fn process_job_works() {
             .returning(|_, _| Ok(String::from("0x5d17fac98d9454030426606019364f6e68d915b91f6210ef1e2628cd6987442")));
     }
 
-    let config_init = init_config(
-        Some(format!("http://localhost:{}", server.port())),
-        None,
-        None,
-        None,
-        None,
-        Some(settlement_client),
-        Some(storage_client),
-    )
-    .await;
-    config_force_init(config_init).await;
+    TestConfigBuilder::new()
+        .mock_settlement_client(Box::new(settlement_client))
+        .mock_storage_client(Box::new(storage_client))
+        .build()
+        .await;
 
     let mut metadata: HashMap<String, String> = HashMap::new();
     metadata.insert(String::from(JOB_METADATA_STATE_UPDATE_FETCH_FROM_TESTS), String::from("TRUE"));
@@ -221,16 +219,17 @@ async fn process_job_works() {
 async fn process_job_invalid_inputs_errors(#[case] block_numbers_to_settle: String, #[case] expected_error: &str) {
     let server = MockServer::start();
     let settlement_client = MockSettlementClient::new();
-    let config = init_config(
-        Some(format!("http://localhost:{}", server.port())),
-        None,
-        None,
-        None,
-        None,
-        Some(settlement_client),
-        None,
-    )
-    .await;
+
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
+    ));
+
+    TestConfigBuilder::new()
+        .mock_starknet_client(Arc::new(provider))
+        .mock_settlement_client(Box::new(settlement_client))
+        .build()
+        .await;
+    let config = config().await;
 
     let mut metadata: HashMap<String, String> = HashMap::new();
     metadata.insert(String::from(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY), block_numbers_to_settle);
@@ -258,18 +257,15 @@ async fn process_job_invalid_input_gap_panics() {
 
     settlement_client.expect_get_last_settled_block().returning(|| Ok(4_u64));
 
-    let config_init = init_config(
-        Some(format!("http://localhost:{}", server.port())),
-        None,
-        None,
-        None,
-        None,
-        Some(settlement_client),
-        None,
-    )
-    .await;
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
+    ));
 
-    config_force_init(config_init).await;
+    TestConfigBuilder::new()
+        .mock_starknet_client(Arc::new(provider))
+        .mock_settlement_client(Box::new(settlement_client))
+        .build()
+        .await;
 
     let mut metadata: HashMap<String, String> = HashMap::new();
     metadata.insert(String::from(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY), String::from("6, 7, 8"));

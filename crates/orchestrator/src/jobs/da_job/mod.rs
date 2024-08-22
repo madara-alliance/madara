@@ -374,8 +374,11 @@ pub mod test {
     use std::fs;
     use std::fs::File;
     use std::io::Read;
+    use std::sync::Arc;
 
+    use crate::config::config;
     use crate::data_storage::MockDataStorage;
+    use crate::tests::config::TestConfigBuilder;
     use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
     use da_client_interface::MockDaClient;
@@ -385,9 +388,10 @@ pub mod test {
     use majin_blob_types::state_diffs::UnorderedEq;
     use rstest::rstest;
     use serde_json::json;
+    use starknet::providers::jsonrpc::HttpTransport;
+    use starknet::providers::JsonRpcClient;
     use starknet_core::types::{FieldElement, StateUpdate};
-
-    use crate::tests::common::init_config;
+    use url::Url;
 
     /// Tests `da_word` function with various inputs for class flag, new nonce, and number of changes.
     /// Verifies that `da_word` produces the correct FieldElement based on the provided parameters.
@@ -453,16 +457,19 @@ pub mod test {
         // Mocking storage client
         storage_client.expect_put_data().returning(|_, _| Result::Ok(())).times(1);
 
-        let config = init_config(
-            Some(format!("http://localhost:{}", server.port())),
-            None,
-            None,
-            Some(da_client),
-            None,
-            None,
-            Some(storage_client),
-        )
-        .await;
+        let provider = JsonRpcClient::new(HttpTransport::new(
+            Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
+        ));
+
+        // mock block number (madara) : 5
+        TestConfigBuilder::new()
+            .mock_starknet_client(Arc::new(provider))
+            .mock_da_client(Box::new(da_client))
+            .mock_storage_client(Box::new(storage_client))
+            .build()
+            .await;
+
+        let config = config().await;
 
         get_nonce_attached(&server, nonce_file_path);
 

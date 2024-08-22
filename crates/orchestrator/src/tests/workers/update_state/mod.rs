@@ -5,15 +5,17 @@ use da_client_interface::MockDaClient;
 use httpmock::MockServer;
 use mockall::predicate::eq;
 use rstest::rstest;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::JsonRpcClient;
+use url::Url;
 use uuid::Uuid;
 
-use crate::config::config_force_init;
 use crate::database::MockDatabase;
 use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::types::{JobStatus, JobType};
 use crate::jobs::{Job, MockJob};
 use crate::queue::MockQueueProvider;
-use crate::tests::common::init_config;
+use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::{get_job_by_mock_id_vector, get_job_item_mock_by_id};
 use crate::workers::update_state::UpdateStateWorker;
 use crate::workers::Worker;
@@ -100,18 +102,18 @@ async fn test_update_state_worker(
         .returning(|_, _, _| Ok(()))
         .withf(|queue, _payload, _delay| queue == JOB_PROCESSING_QUEUE);
 
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
+    ));
+
     // mock block number (madara) : 5
-    let config = init_config(
-        Some(format!("http://localhost:{}", server.port())),
-        Some(db),
-        Some(queue),
-        Some(da_client),
-        None,
-        None,
-        None,
-    )
-    .await;
-    config_force_init(config).await;
+    TestConfigBuilder::new()
+        .mock_starknet_client(Arc::new(provider))
+        .mock_db_client(Box::new(db))
+        .mock_queue(Box::new(queue))
+        .mock_da_client(Box::new(da_client))
+        .build()
+        .await;
 
     let update_state_worker = UpdateStateWorker {};
     update_state_worker.run_worker().await?;

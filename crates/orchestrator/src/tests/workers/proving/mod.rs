@@ -7,14 +7,16 @@ use mockall::predicate::eq;
 use prover_client_interface::MockProverClient;
 use rstest::rstest;
 use settlement_client_interface::MockSettlementClient;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::JsonRpcClient;
+use url::Url;
 
-use crate::config::config_force_init;
 use crate::database::MockDatabase;
 use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::types::{JobItem, JobStatus, JobType};
 use crate::jobs::{Job, MockJob};
 use crate::queue::MockQueueProvider;
-use crate::tests::common::init_config;
+use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::{db_checks_proving_worker, get_job_by_mock_id_vector};
 use crate::workers::proving::ProvingWorker;
 
@@ -85,17 +87,19 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
             .withf(|queue, _payload, _delay| queue == JOB_PROCESSING_QUEUE);
     }
 
-    let config = init_config(
-        Some(format!("http://localhost:{}", server.port())),
-        Some(db),
-        Some(queue),
-        Some(da_client),
-        Some(prover_client),
-        Some(settlement_client),
-        None,
-    )
-    .await;
-    config_force_init(config).await;
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
+    ));
+
+    TestConfigBuilder::new()
+        .mock_starknet_client(Arc::new(provider))
+        .mock_db_client(Box::new(db))
+        .mock_queue(Box::new(queue))
+        .mock_da_client(Box::new(da_client))
+        .mock_prover_client(Box::new(prover_client))
+        .mock_settlement_client(Box::new(settlement_client))
+        .build()
+        .await;
 
     let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
     let ctx = mock_factory::get_job_handler_context();

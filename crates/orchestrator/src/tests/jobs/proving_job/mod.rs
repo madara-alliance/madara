@@ -1,28 +1,34 @@
+use bytes::Bytes;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
+use std::sync::Arc;
 
-use crate::config::{config, config_force_init};
+use crate::config::config;
+use crate::data_storage::MockDataStorage;
 use httpmock::prelude::*;
+use mockall::predicate::eq;
 use prover_client_interface::{MockProverClient, TaskStatus};
 use rstest::*;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::JsonRpcClient;
+use url::Url;
 use uuid::Uuid;
 
-use super::super::common::{default_job_item, init_config};
-use crate::jobs::constants::JOB_METADATA_CAIRO_PIE_PATH_KEY;
+use super::super::common::default_job_item;
 use crate::jobs::proving_job::ProvingJob;
 use crate::jobs::types::{JobItem, JobStatus, JobType};
 use crate::jobs::Job;
+use crate::tests::config::TestConfigBuilder;
 
 #[rstest]
 #[tokio::test]
 async fn test_create_job() {
-    let config = init_config(None, None, None, None, None, None, None).await;
-    let job = ProvingJob
-        .create_job(
-            &config,
-            String::from("0"),
-            HashMap::from([(JOB_METADATA_CAIRO_PIE_PATH_KEY.into(), "pie.zip".into())]),
-        )
-        .await;
+    TestConfigBuilder::new().build().await;
+    let config = config().await;
+
+    let job = ProvingJob.create_job(&config, String::from("0"), HashMap::new()).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();
@@ -41,7 +47,9 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     let mut prover_client = MockProverClient::new();
     prover_client.expect_get_task_status().times(1).returning(|_| Ok(TaskStatus::Succeeded));
 
-    let config = init_config(None, None, None, None, Some(prover_client), None, None).await;
+    TestConfigBuilder::new().mock_prover_client(Box::new(prover_client)).build().await;
+
+    let config = config().await;
     assert!(ProvingJob.verify_job(&config, &mut job_item).await.is_ok());
 }
 
@@ -49,24 +57,28 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
 #[tokio::test]
 async fn test_process_job() {
     let server = MockServer::start();
-
     let mut prover_client = MockProverClient::new();
+
     prover_client.expect_submit_task().times(1).returning(|_| Ok("task_id".to_string()));
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
+    ));
 
-    let config_init = init_config(
-        Some(format!("http://localhost:{}", server.port())),
-        None,
-        None,
-        None,
-        Some(prover_client),
-        None,
-        None,
-    )
-    .await;
+    let mut file =
+        File::open(Path::new(&format!("{}/src/tests/artifacts/fibonacci.zip", env!("CARGO_MANIFEST_DIR")))).unwrap();
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).unwrap();
 
-    config_force_init(config_init).await;
+    let mut storage = MockDataStorage::new();
+    let buffer_bytes = Bytes::from(buffer);
+    storage.expect_get_data().with(eq("0/pie.zip")).return_once(move |_| Ok(buffer_bytes));
 
-    let cairo_pie_path = format!("{}/src/tests/artifacts/fibonacci.zip", env!("CARGO_MANIFEST_DIR"));
+    TestConfigBuilder::new()
+        .mock_starknet_client(Arc::new(provider))
+        .mock_prover_client(Box::new(prover_client))
+        .mock_storage_client(Box::new(storage))
+        .build()
+        .await;
 
     assert_eq!(
         ProvingJob
@@ -78,7 +90,7 @@ async fn test_process_job() {
                     job_type: JobType::ProofCreation,
                     status: JobStatus::Created,
                     external_id: String::new().into(),
-                    metadata: HashMap::from([(JOB_METADATA_CAIRO_PIE_PATH_KEY.into(), cairo_pie_path)]),
+                    metadata: HashMap::new(),
                     version: 0,
                 }
             )

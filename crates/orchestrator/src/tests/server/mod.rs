@@ -1,19 +1,27 @@
 use std::io::Read;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use axum::http::StatusCode;
 use hyper::body::Buf;
 use hyper::{Body, Request};
 use rstest::*;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::JsonRpcClient;
+use url::Url;
 use utils::env_utils::get_env_var_or_default;
 
-use super::common::init_config;
 use crate::queue::init_consumers;
 use crate::routes::app_router;
+use crate::tests::config::TestConfigBuilder;
 
 #[fixture]
 pub async fn setup_server() -> SocketAddr {
-    let _config = init_config(Some("http://localhost:9944".to_string()), None, None, None, None, None, None).await;
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse("http://localhost:9944".to_string().as_str()).expect("Failed to parse URL"),
+    ));
+
+    TestConfigBuilder::new().mock_starknet_client(Arc::new(provider)).build().await;
 
     let host = get_env_var_or_default("HOST", "127.0.0.1");
     let port = get_env_var_or_default("PORT", "3000").parse::<u16>().expect("PORT must be a u16");

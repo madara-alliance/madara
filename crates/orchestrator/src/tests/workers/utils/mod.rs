@@ -1,5 +1,4 @@
 use crate::database::MockDatabase;
-use crate::jobs::constants::JOB_METADATA_CAIRO_PIE_PATH_KEY;
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
 use crate::jobs::MockJob;
 use mockall::predicate::eq;
@@ -45,7 +44,7 @@ pub fn get_job_by_mock_id_vector(
             job_type: job_type.clone(),
             status: job_status.clone(),
             external_id: ExternalId::Number(0),
-            metadata: get_hashmap(),
+            metadata: HashMap::new(),
             version: 0,
         })
     }
@@ -62,7 +61,7 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabase, mock_job: &mut M
             job_type: JobType::ProofCreation,
             status: JobStatus::Created,
             external_id: ExternalId::Number(0),
-            metadata: get_hashmap(),
+            metadata: HashMap::new(),
             version: 0,
         }
     }
@@ -81,9 +80,4 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabase, mock_job: &mut M
         .times(1)
         .withf(move |item| item.internal_id == id.clone().to_string())
         .returning(move |_| Ok(job_item_cloned.clone()));
-}
-
-pub fn get_hashmap() -> HashMap<String, String> {
-    let cairo_pie_path = format!("{}/src/tests/artifacts/fibonacci.zip", env!("CARGO_MANIFEST_DIR"));
-    HashMap::from([(JOB_METADATA_CAIRO_PIE_PATH_KEY.into(), cairo_pie_path)])
 }

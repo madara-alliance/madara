@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::str::FromStr;
 
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
@@ -11,7 +9,6 @@ use tracing::log::log;
 use tracing::log::Level::Error;
 use uuid::Uuid;
 
-use super::constants::JOB_METADATA_CAIRO_PIE_PATH_KEY;
 use super::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use super::{Job, JobError, OtherError};
 use crate::config::Config;
@@ -22,7 +19,10 @@ pub enum ProvingError {
     CairoPIEWrongPath { internal_id: String },
 
     #[error("Not able to read the cairo PIE file from the zip file provided.")]
-    CairoPIENotReadable,
+    CairoPIENotReadable(String),
+
+    #[error("Not able to get the PIE file from AWS S3 bucket.")]
+    CairoPIEFileFetchFailed(String),
 
     #[error("Other error: {0}")]
     Other(#[from] OtherError),
@@ -38,10 +38,6 @@ impl Job for ProvingJob {
         internal_id: String,
         metadata: HashMap<String, String>,
     ) -> Result<JobItem, JobError> {
-        if !metadata.contains_key(JOB_METADATA_CAIRO_PIE_PATH_KEY) {
-            // TODO: validate the usage of `.clone()` here, ensure lightweight borrowing of variables
-            Err(ProvingError::CairoPIEWrongPath { internal_id: internal_id.clone() })?
-        }
         Ok(JobItem {
             id: Uuid::new_v4(),
             internal_id,
@@ -54,15 +50,15 @@ impl Job for ProvingJob {
     }
 
     async fn process_job(&self, config: &Config, job: &mut JobItem) -> Result<String, JobError> {
-        // TODO: allow to download PIE from storage
-        let cairo_pie_path = job
-            .metadata
-            .get(JOB_METADATA_CAIRO_PIE_PATH_KEY)
-            .map(|s| PathBuf::from_str(s))
-            .ok_or_else(|| ProvingError::CairoPIEWrongPath { internal_id: job.internal_id.clone() })?
-            .map_err(|_| ProvingError::CairoPIENotReadable)?;
-
-        let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).map_err(|_| ProvingError::CairoPIENotReadable)?;
+        // Cairo Pie path in s3 storage client
+        let cairo_pie_path = job.internal_id.to_string() + "/pie.zip";
+        let cairo_pie_file = config
+            .storage()
+            .get_data(&cairo_pie_path)
+            .await
+            .map_err(|e| ProvingError::CairoPIEFileFetchFailed(e.to_string()))?;
+        let cairo_pie = CairoPie::from_bytes(cairo_pie_file.to_vec().as_slice())
+            .map_err(|e| ProvingError::CairoPIENotReadable(e.to_string()))?;
 
         let external_id = config
             .prover_client()

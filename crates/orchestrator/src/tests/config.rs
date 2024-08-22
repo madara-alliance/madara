@@ -76,6 +76,26 @@ impl TestConfigBuilder {
         self
     }
 
+    pub fn mock_starknet_client(mut self, starknet_client: Arc<JsonRpcClient<HttpTransport>>) -> TestConfigBuilder {
+        self.starknet_client = Some(starknet_client);
+        self
+    }
+
+    pub fn mock_prover_client(mut self, prover_client: Box<dyn ProverClient>) -> TestConfigBuilder {
+        self.prover_client = Some(prover_client);
+        self
+    }
+
+    pub fn mock_storage_client(mut self, storage_client: Box<dyn DataStorage>) -> TestConfigBuilder {
+        self.storage = Some(storage_client);
+        self
+    }
+
+    pub fn mock_queue(mut self, queue: Box<dyn QueueProvider>) -> TestConfigBuilder {
+        self.queue = Some(queue);
+        self
+    }
+
     pub async fn build(mut self) -> MockServer {
         dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
 
