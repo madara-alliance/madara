@@ -1,7 +1,6 @@
 use blockifier::execution::contract_class::ClassInfo;
 use blockifier::transaction::transaction_execution as btx;
 use mp_block::BlockId;
-use mp_class::to_blockifier_class;
 use mp_convert::ToFelt;
 use starknet_api::transaction::{Transaction, TransactionHash};
 
@@ -29,24 +28,54 @@ pub(crate) fn to_blockifier_transactions(
         Transaction::Declare(ref declare_tx) => {
             let class_hash = declare_tx.class_hash();
 
-            let Ok(Some((class_info, compiled_class))) = starknet.backend.get_class(&block_id, &class_hash.to_felt())
-            else {
+            let Ok(Some(class_info)) = starknet.backend.get_class_info(&block_id, &class_hash.to_felt()) else {
                 log::error!("Failed to retrieve class from class_hash '{class_hash}'");
                 return Err(StarknetRpcApiError::ContractNotFound);
             };
 
-            let blockifier_contract_class = to_blockifier_class(compiled_class).map_err(|e| {
-                log::error!("Failed to convert contract class to blockifier contract class: {e}");
-                StarknetRpcApiError::InternalServerError
-            })?;
+            match class_info {
+                mp_class::ClassInfo::Sierra(info) => {
+                    let compiled_class = starknet
+                        .backend
+                        .get_sierra_compiled(&block_id, &info.compiled_class_hash)
+                        .map_err(|e| {
+                            log::error!("Failed to retrieve sierra compiled class from class_hash '{class_hash}': {e}");
+                            StarknetRpcApiError::InternalServerError
+                        })?
+                        .ok_or_else(|| {
+                            log::error!(
+                                "Inconsistent state: compiled sierra class from class_hash '{class_hash}' not found"
+                            );
+                            StarknetRpcApiError::InternalServerError
+                        })?;
 
-            let sierra_program_length = class_info.contract_class.sierra_program_length();
-            let abi_length = class_info.contract_class.abi_length();
-
-            Some(ClassInfo::new(&blockifier_contract_class, sierra_program_length, abi_length).map_err(|_| {
-                log::error!("Mismatch between the length of the sierra program and the class version");
-                StarknetRpcApiError::InternalServerError
-            })?)
+                    let blockifier_class = compiled_class.to_blockifier_class().map_err(|e| {
+                        log::error!("Failed to convert contract class to blockifier contract class: {e}");
+                        StarknetRpcApiError::InternalServerError
+                    })?;
+                    Some(
+                        ClassInfo::new(
+                            &blockifier_class,
+                            info.contract_class.program_length(),
+                            info.contract_class.abi_length(),
+                        )
+                        .map_err(|_| {
+                            log::error!("Mismatch between the length of the sierra program and the class version");
+                            StarknetRpcApiError::InternalServerError
+                        })?,
+                    )
+                }
+                mp_class::ClassInfo::Legacy(info) => {
+                    let blockifier_class = info.contract_class.to_blockifier_class().map_err(|e| {
+                        log::error!("Failed to convert contract class to blockifier contract class: {e}");
+                        StarknetRpcApiError::InternalServerError
+                    })?;
+                    Some(ClassInfo::new(&blockifier_class, 0, 0).map_err(|_| {
+                        log::error!("Mismatch between the length of the legacy program and the class version");
+                        StarknetRpcApiError::InternalServerError
+                    })?)
+                }
+            }
         }
         _ => None,
     };

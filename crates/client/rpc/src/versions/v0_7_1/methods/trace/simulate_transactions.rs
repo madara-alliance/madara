@@ -14,8 +14,9 @@ pub async fn simulate_transactions(
     simulation_flags: Vec<SimulationFlag>,
 ) -> StarknetRpcResult<Vec<SimulatedTransaction>> {
     let block_info = starknet.get_block_info(&block_id)?;
+    let starknet_version = *block_info.protocol_version();
 
-    if block_info.protocol_version() < &FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
+    if starknet_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
     let exec_context = ExecutionContext::new(Arc::clone(&starknet.backend), &block_info)?;
@@ -25,7 +26,7 @@ pub async fn simulate_transactions(
 
     let user_transactions = transactions
         .into_iter()
-        .map(|tx| broadcasted_to_blockifier(tx, starknet.chain_id()).map(|(tx, _)| tx))
+        .map(|tx| broadcasted_to_blockifier(tx, starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
         .collect::<Result<Vec<_>, _>>()
         .or_internal_server_error("Failed to convert broadcasted transaction to blockifier")?;
 

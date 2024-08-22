@@ -1,13 +1,19 @@
 use std::str::FromStr;
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct StarknetVersion([u8; 4]);
+
+impl Default for StarknetVersion {
+    fn default() -> Self {
+        StarknetVersion::VERSION_LATEST
+    }
+}
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum StarknetVersionError {
     #[error("Invalid number in version")]
     InvalidNumber(#[from] std::num::ParseIntError),
-    #[error("Too many components in version: {0}")]
+    #[error("Too many components in version: expected at most 4 but found {0}")]
     TooManyComponents(usize),
 }
 
@@ -16,12 +22,45 @@ impl StarknetVersion {
         StarknetVersion([major, minor, patch, build])
     }
 
-    pub const STARKNET_VERSION_0_11_1: StarknetVersion = StarknetVersion([0, 11, 1, 0]);
-    pub const STARKNET_VERSION_0_13_0: StarknetVersion = StarknetVersion([0, 13, 0, 0]);
-    pub const STARKNET_VERSION_0_13_1: StarknetVersion = StarknetVersion([0, 13, 1, 0]);
-    pub const STARKNET_VERSION_0_13_1_1: StarknetVersion = StarknetVersion([0, 13, 1, 1]);
-    pub const STARKNET_VERSION_0_13_2: StarknetVersion = StarknetVersion([0, 13, 2, 0]);
-    pub const STARKNET_VERSION_LATEST: StarknetVersion = Self::STARKNET_VERSION_0_13_2;
+    pub const VERSION_NONE: StarknetVersion = StarknetVersion([0, 0, 0, 0]);
+    pub const VERSION_0_7_0: StarknetVersion = StarknetVersion([0, 7, 0, 0]);
+    pub const VERSION_FIRST_BLOCK_POST_LEGACY: StarknetVersion = StarknetVersion([0, 7, 1, 0]); // block betwe
+    pub const VERSION_POST_LEGACY: StarknetVersion = StarknetVersion([0, 8, 0, 0]); // TODO: update this when we have the exact version
+    pub const VERSION_DECLARED_CLASS_IN_STATE_UPDATE: StarknetVersion = StarknetVersion([0, 8, 1, 0]); // TODO: update this when we have the exact version
+    pub const VERSION_0_9_1: StarknetVersion = StarknetVersion([0, 9, 1, 0]); // block 3799 on MAINNET, from this block version is visible
+    pub const VERSION_0_11_1: StarknetVersion = StarknetVersion([0, 11, 1, 0]);
+    pub const VERSION_0_13_0: StarknetVersion = StarknetVersion([0, 13, 0, 0]);
+    pub const VERSION_0_13_1: StarknetVersion = StarknetVersion([0, 13, 1, 0]);
+    pub const VERSION_0_13_1_1: StarknetVersion = StarknetVersion([0, 13, 1, 1]);
+    pub const VERSION_0_13_2: StarknetVersion = StarknetVersion([0, 13, 2, 0]);
+    pub const VERSION_LATEST: StarknetVersion = Self::VERSION_0_13_2;
+
+    pub fn is_pre_v0_7(&self) -> bool {
+        *self < Self::VERSION_0_7_0
+    }
+
+    pub fn is_tx_hash_inconsistent(&self) -> bool {
+        *self == Self::VERSION_FIRST_BLOCK_POST_LEGACY
+    }
+
+    pub fn is_legacy(&self) -> bool {
+        *self < Self::VERSION_POST_LEGACY
+    }
+
+    pub fn is_declared_class_in_state_update(&self) -> bool {
+        *self < Self::VERSION_DECLARED_CLASS_IN_STATE_UPDATE
+    }
+
+    pub fn try_from_mainnet_block_number(block_number: u64) -> Option<StarknetVersion> {
+        match block_number {
+            0..=832 => Some(Self::VERSION_NONE),
+            833..=1468 => Some(Self::VERSION_0_7_0),
+            1469..=1469 => Some(Self::VERSION_FIRST_BLOCK_POST_LEGACY),
+            1470..=2596 => Some(Self::VERSION_POST_LEGACY),
+            2597..=3798 => Some(Self::VERSION_DECLARED_CLASS_IN_STATE_UPDATE),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for StarknetVersion {

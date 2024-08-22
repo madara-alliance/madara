@@ -5,16 +5,8 @@ use mp_class::ConvertedClass;
 use mp_state_update::{
     ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
 };
-use starknet_core::types::ContractClass;
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
-
-#[derive(Clone, Debug)]
-pub struct DbClassUpdate {
-    pub class_hash: Felt,
-    pub contract_class: ContractClass,
-    pub compiled_class_hash: Felt,
-}
 
 impl MadaraBackend {
     /// NB: This functions needs to run on the rayon thread pool
@@ -76,15 +68,9 @@ impl MadaraBackend {
             }
         };
 
-        let task_class_db = || {
-            let (class_info_updates, compiled_class_updates): (Vec<_>, Vec<_>) = converted_classes
-                .into_iter()
-                .map(|ConvertedClass { class_infos, class_compiled }| (class_infos, class_compiled))
-                .unzip();
-            match block_n {
-                None => self.class_db_store_pending(&class_info_updates, &compiled_class_updates),
-                Some(block_n) => self.class_db_store_block(block_n, &class_info_updates, &compiled_class_updates),
-            }
+        let task_class_db = || match block_n {
+            None => self.class_db_store_pending(&converted_classes),
+            Some(block_n) => self.class_db_store_block(block_n, &converted_classes),
         };
 
         let ((r1, r2), r3) = rayon::join(|| rayon::join(task_block_db, task_contract_db), task_class_db);
