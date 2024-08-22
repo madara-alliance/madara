@@ -50,4 +50,6 @@ pub enum FactCheckerError {
     TreeStructureEndOffsetInvalid(usize, usize),
     #[error("Tree structure: root offset {0} does not match the output length {1}")]
     TreeStructureRootOffsetInvalid(usize, usize),
+    #[error("Program output doesn't match the segment size.")]
+    InvalidSegment,
 }

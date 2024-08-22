@@ -21,6 +21,8 @@ pub enum SharpError {
     TaskIdSplit,
     #[error("Failed to encode PIE")]
     PieEncode(#[source] snos::error::SnOsError),
+    #[error("Failed to get url as path segment mut. URL is cannot-be-a-base.")]
+    PathSegmentMutFailOnUrl,
 }
 
 impl From<SharpError> for ProverClientError {

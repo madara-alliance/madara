@@ -20,7 +20,7 @@ impl Default for SharpConfig {
     fn default() -> Self {
         Self {
             service_url: DEFAULT_SHARP_URL.parse().unwrap(),
-            rpc_node_url: "https://sepolia.drpc.org".parse().unwrap(),
+            rpc_node_url: "https://ethereum-sepolia-rpc.publicnode.com".parse().unwrap(),
             verifier_address: "0x07ec0D28e50322Eb0C159B9090ecF3aeA8346DFe".parse().unwrap(),
         }
     }

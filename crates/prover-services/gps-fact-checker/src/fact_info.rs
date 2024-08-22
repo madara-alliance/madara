@@ -9,7 +9,6 @@ use cairo_vm::types::relocatable::MaybeRelocatable;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
 use starknet::core::types::FieldElement;
-use utils::ensure;
 
 use super::error::FactCheckerError;
 use super::fact_node::generate_merkle_root;
@@ -45,33 +44,26 @@ pub fn get_program_output(cairo_pie: &CairoPie) -> Result<Vec<Felt252>, FactChec
         .get(&BuiltinName::output)
         .ok_or(FactCheckerError::OutputBuiltinNoSegmentInfo)?;
 
-    let segment_start = cairo_pie
-        .memory
-        .0
-        .iter()
-        .enumerate()
-        .find_map(|(ptr, ((index, _), _))| if *index == segment_info.index as usize { Some(ptr) } else { None })
-        .ok_or(FactCheckerError::OutputSegmentNotFound)?;
+    let mut output = vec![Felt252::from(0); segment_info.size];
+    let mut insertion_count = 0;
+    let cairo_program_memory = &cairo_pie.memory.0;
 
-    let mut output = Vec::with_capacity(segment_info.size);
-    let mut expected_offset = 0;
-
-    #[allow(clippy::explicit_counter_loop)]
-    for i in segment_start..segment_start + segment_info.size {
-        let ((_, offset), value) = cairo_pie.memory.0.get(i).ok_or(FactCheckerError::OutputSegmentInvalidRange)?;
-
-        ensure!(
-            *offset == expected_offset,
-            FactCheckerError::OutputSegmentInconsistentOffset(*offset, expected_offset)
-        );
-        match value {
-            MaybeRelocatable::Int(felt) => output.push(*felt),
-            MaybeRelocatable::RelocatableValue(_) => {
-                return Err(FactCheckerError::OutputSegmentUnexpectedRelocatable(*offset));
+    for ((index, offset), value) in cairo_program_memory.iter() {
+        if *index == segment_info.index as usize {
+            match value {
+                MaybeRelocatable::Int(felt) => {
+                    output[*offset] = *felt;
+                    insertion_count += 1;
+                }
+                MaybeRelocatable::RelocatableValue(_) => {
+                    return Err(FactCheckerError::OutputSegmentUnexpectedRelocatable(*offset));
+                }
             }
         }
+    }
 
-        expected_offset += 1;
+    if insertion_count != segment_info.size {
+        return Err(FactCheckerError::InvalidSegment);
     }
 
     Ok(output)

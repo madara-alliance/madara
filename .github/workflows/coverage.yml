@@ -46,6 +46,10 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 
+      - name: Getting neccesary files for testing
+        run: |
+          wget -P ./crates/prover-services/sharp-service/tests/artifacts https://madara-orchestrator-sharp-pie.s3.amazonaws.com/238996-SN.zip
+
       - name: Clean workspace
         run: |
           cargo clean --doc

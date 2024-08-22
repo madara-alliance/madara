@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Added
 
+- Tests for prover client.
 - Added Rust Cache for Coverage Test CI.
 - support for fetching PIE file from storage client in proving job.
 - added coveralls support
@@ -39,4 +40,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Fixed
 
+- Get Fact Info logic.
 - Fixed state update worker logic as per the new implementation.
