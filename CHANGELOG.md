@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Added
 
+- Worker queues to listen for trigger events.
 - Tests for prover client.
 - Added Rust Cache for Coverage Test CI.
 - support for fetching PIE file from storage client in proving job.
