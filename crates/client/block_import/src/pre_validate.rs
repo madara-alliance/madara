@@ -50,7 +50,7 @@ pub fn pre_validate_inner(
             Ok(())
         }) as Box<dyn FnOnce() -> Result<(), BlockImportError> + Send>,
         Box::new(|| {
-            converted_classes = convert_classes(&validation, classes)?;
+            converted_classes = convert_classes(classes, &validation)?;
             Ok(())
         }),
     ]
@@ -78,7 +78,7 @@ pub fn pre_validate_pending_inner(
 ) -> Result<PreValidatedPendingBlock, BlockImportError> {
     let classes = mem::take(&mut block.declared_classes);
 
-    let converted_classes = convert_classes(&validation, classes)?;
+    let converted_classes = convert_classes(classes, &validation)?;
     let _tx_hashes = transaction_hashes(&block.receipts, &block.transactions, &validation, None)?;
 
     Ok(PreValidatedPendingBlock {
@@ -129,16 +129,16 @@ fn block_commitments(
 }
 
 fn convert_classes(
-    validation: &Validation,
     declared_classes: Vec<DeclaredClass>,
+    validation: &Validation,
 ) -> Result<Vec<ConvertedClass>, BlockImportError> {
-    declared_classes.into_par_iter().map(|class| class_conversion(validation, class)).collect()
+    declared_classes.into_par_iter().map(|class| class_conversion(class, validation)).collect()
 }
 
-fn class_conversion(_validation: &Validation, class: DeclaredClass) -> Result<ConvertedClass, BlockImportError> {
+fn class_conversion(class: DeclaredClass, _validation: &Validation) -> Result<ConvertedClass, BlockImportError> {
     let DeclaredClass { class_hash, contract_class, compiled_class_hash } = class;
 
-    // TODO(class_hash): uncomment this when the class hashes are computed correctly accross the entire state
+    // TODO(class_hash, #212): uncomment this when the class hashes are computed correctly accross the entire state
     // let expected =
     //     contract_class.class_hash().map_err(|e| BlockImportError::ComputeClassHashError(e.to_string()))?;
     // if class_hash != expected {
@@ -217,10 +217,8 @@ fn transaction_commitment(block: &UnverifiedFullBlock, validation: &Validation) 
         compute_merkle_root::<Poseidon>(&tx_hashes_with_signature)
     };
 
-    if let Some(expected) = block.commitments.transaction_commitment {
-        if expected != got {
-            return Err(BlockImportError::TransactionCommitment { got, expected });
-        }
+    if let Some(expected) = block.commitments.transaction_commitment.filter(|expected| expected != got) {
+        return Err(BlockImportError::TransactionCommitment { got, expected });
     }
 
     Ok(got)

@@ -21,7 +21,8 @@ mod contracts;
 pub struct VerifyApply {
     pool: Arc<RayonPool>,
     backend: Arc<DeoxysBackend>,
-    // Only one thread at once can verify_apply.
+    // Only one thread at once can verify_apply. This is the update trie step cannot be parallelized over blocks, and in addition
+    // our database does not support concurrent write access.
     mutex: tokio::sync::Mutex<()>,
 }
 
@@ -57,6 +58,7 @@ impl VerifyApply {
 
 /// This needs to be called sequentially, it will apply the state diff to the db, verify the state root and save the block.
 /// This runs on the [`rayon`] threadpool however as it uses parallelism inside.
+// TODO(perf): Investigate what we can overlap between block storage and trie updates
 pub fn verify_apply_inner(
     backend: &DeoxysBackend,
     block: PreValidatedBlock,

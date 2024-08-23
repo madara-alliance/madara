@@ -272,7 +272,7 @@ impl BlockProductionTask {
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
-    fn update_pending_block_tick(&mut self) -> Result<(), Error> {
+    fn on_pending_time_tick(&mut self) -> Result<(), Error> {
         let current_pending_tick = self.current_pending_tick;
         self.current_pending_tick += 1;
 
@@ -319,7 +319,8 @@ impl BlockProductionTask {
         Ok(())
     }
 
-    async fn produce_block_tick(&mut self) -> Result<(), Error> {
+    /// This creates a block, continuing the current pending block state up to the full bouncer limit.
+    async fn on_block_time(&mut self) -> Result<(), Error> {
         let block_n = self.block_n();
         log::debug!("closing block #{}", block_n);
 
@@ -349,8 +350,6 @@ impl BlockProductionTask {
         .await?;
         self.block.info.header.parent_block_hash = import_result.block_hash; // fix temp parent block hash for new pending :)
 
-        // self.backend.store_block(closed_block.into(), new_state_diff, declared_classes)?;
-
         // Prepare for next block.
         self.executor =
             ExecutionContext::new(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
@@ -373,13 +372,15 @@ impl BlockProductionTask {
 
         loop {
             tokio::select! {
-                _ = interval_block_time.tick() => {
-                    if let Err(err) = self.produce_block_tick().await {
+                inst = interval_block_time.tick() => {
+                    if let Err(err) = self.on_block_time().await {
                         log::error!("Block production task has errored: {err:#}");
                     }
+                    // ensure the pending block tick and block time match up
+                    interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());
                 },
                 _ = interval_pending_block_update.tick() => {
-                    if let Err(err) = self.update_pending_block_tick() {
+                    if let Err(err) = self.on_pending_time_tick() {
                         log::error!("Pending block update task has errored: {err:#}");
                     }
                 },
