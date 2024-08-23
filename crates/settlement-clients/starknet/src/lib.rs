@@ -4,7 +4,7 @@ pub mod conversion;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, Ok};
 use color_eyre::Result;
 use lazy_static::lazy_static;
 use mockall::{automock, predicate::*};
@@ -127,12 +127,6 @@ impl SettlementClient for StarknetSettlementClient {
         Ok(format!("0x{:x}", invoke_result.transaction_hash))
     }
 
-    /// Should be used to update state on core contract when DA is in blobs/alt DA
-    #[allow(unused)]
-    async fn update_state_blobs(&self, program_output: Vec<[u8; 32]>, kzg_proof: [u8; 48]) -> Result<String> {
-        !unimplemented!("not available for starknet settlement layer")
-    }
-
     /// Should verify the inclusion of a tx in the settlement layer
     async fn verify_tx_inclusion(&self, tx_hash: &str) -> Result<SettlementVerificationStatus> {
         let tx_hash = FieldElement::from_hex_be(tx_hash)?;
@@ -156,7 +150,12 @@ impl SettlementClient for StarknetSettlementClient {
 
     /// Should be used to update state on core contract and publishing the blob simultaneously
     #[allow(unused)]
-    async fn update_state_with_blobs(&self, program_output: Vec<[u8; 32]>, state_diff: Vec<Vec<u8>>) -> Result<String> {
+    async fn update_state_with_blobs(
+        &self,
+        program_output: Vec<[u8; 32]>,
+        state_diff: Vec<Vec<u8>>,
+        nonce: u64,
+    ) -> Result<String> {
         !unimplemented!("not implemented yet.")
     }
 
@@ -200,5 +199,10 @@ impl SettlementClient for StarknetSettlementClient {
             return Err(eyre!("Could not fetch last block number from core contract."));
         }
         Ok(block_number[0].try_into()?)
+    }
+
+    /// Returns the nonce for the wallet in use.
+    async fn get_nonce(&self) -> Result<u64> {
+        todo!("Yet to impl nonce call for Starknet.")
     }
 }

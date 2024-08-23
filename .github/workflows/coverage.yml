@@ -1,8 +1,15 @@
 name: Rust Test & Coverage
 
 on:
-  workflow_dispatch:
+  pull_request_target:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+  push:
+    branches-ignore:
+      - main
   workflow_call:
+  workflow_dispatch:
 
 jobs:
   coverage:
@@ -40,6 +47,20 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Check Anvil Installation
+        run: |
+          if command -v anvil &> /dev/null
+          then
+              echo "Anvil is installed. Version information:"
+              anvil --version
+          else
+              echo "Anvil is not installed or not in PATH"
+              exit 1
+          fi
+
       - name: Install cargo-llvm-cov & nextest
         uses: taiki-e/install-action@cargo-llvm-cov
 
@@ -50,11 +71,9 @@ jobs:
         run: |
           wget -P ./crates/prover-services/sharp-service/tests/artifacts https://madara-orchestrator-sharp-pie.s3.amazonaws.com/238996-SN.zip
 
-      - name: Clean workspace
-        run: |
-          cargo clean --doc
-
-      - name: Run tests llvm-cov
+      - name: Run llvm-cov tests
+        env:
+          ETHEREUM_BLAST_RPC_URL: ${{ secrets.ETHEREUM_BLAST_RPC_URL }}
         run: cargo llvm-cov nextest --release --lcov --output-path lcov.info --test-threads=1
 
       - name: Coveralls

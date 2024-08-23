@@ -6,7 +6,7 @@ use std::sync::Arc;
 use assert_matches::assert_matches;
 use bytes::Bytes;
 use httpmock::prelude::*;
-use mockall::predicate::eq;
+use mockall::predicate::{always, eq};
 use rstest::*;
 use settlement_client_interface::MockSettlementClient;
 
@@ -83,14 +83,19 @@ async fn test_process_job_works(
     // functions while fetching the blob data from storage client.
     TestConfigBuilder::new().build().await;
 
+    // test_process_job_works uses nonce just to write expect_update_state_with_blobs for a mocked settlement client,
+    // which means that nonce ideally is never checked against, hence supplying any `u64` `nonce` works.
+    let nonce: u64 = 3;
+    settlement_client.expect_get_nonce().with().returning(move || Ok(nonce));
+
     // Adding expectations for each block number to be called by settlement client.
     for block in block_numbers.iter().skip(processing_start_index as usize) {
         let blob_data = fetch_blob_data_for_block(block.to_u64().unwrap()).await.unwrap();
         settlement_client
             .expect_update_state_with_blobs()
-            .with(eq(vec![]), eq(blob_data))
+            .with(eq(vec![]), eq(blob_data), always())
             .times(1)
-            .returning(|_, _| Ok("0xbeef".to_string()));
+            .returning(|_, _, _| Ok("0xbeef".to_string()));
     }
     settlement_client.expect_get_last_settled_block().with().returning(move || Ok(651052));
 
@@ -186,11 +191,14 @@ async fn process_job_works() {
         .expect("Failed to read the blob data txt file");
         storage_client.expect_get_data().with(eq(x_0_key)).returning(move |_| Ok(Bytes::from(x_0.clone())));
 
+        // let nonce = settlement_client.get_nonce().await.expect("Unable to fetch nonce for settlement client.");
+        settlement_client.expect_get_nonce().returning(|| Ok(1));
+
         settlement_client
             .expect_update_state_with_blobs()
             // TODO: vec![] is program_output
-            .with(eq(program_output), eq(state_diff))
-            .returning(|_, _| Ok(String::from("0x5d17fac98d9454030426606019364f6e68d915b91f6210ef1e2628cd6987442")));
+            .with(eq(program_output), eq(state_diff), always())
+            .returning(|_, _, _| Ok(String::from("0x5d17fac98d9454030426606019364f6e68d915b91f6210ef1e2628cd6987442")));
     }
 
     TestConfigBuilder::new()

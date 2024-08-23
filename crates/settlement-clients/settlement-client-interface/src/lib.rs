@@ -29,10 +29,12 @@ pub trait SettlementClient: Send + Sync {
     ) -> Result<String>;
 
     /// Should be used to update state on contract and publish the blob on ethereum.
-    async fn update_state_with_blobs(&self, program_output: Vec<[u8; 32]>, state_diff: Vec<Vec<u8>>) -> Result<String>;
-
-    /// Should be used to update state on core contract when DA is in blobs/alt DA
-    async fn update_state_blobs(&self, program_output: Vec<[u8; 32]>, kzg_proof: [u8; 48]) -> Result<String>;
+    async fn update_state_with_blobs(
+        &self,
+        program_output: Vec<[u8; 32]>,
+        state_diff: Vec<Vec<u8>>,
+        nonce: u64,
+    ) -> Result<String>;
 
     /// Should verify the inclusion of a tx in the settlement layer
     async fn verify_tx_inclusion(&self, tx_hash: &str) -> Result<SettlementVerificationStatus>;
@@ -42,6 +44,9 @@ pub trait SettlementClient: Send + Sync {
 
     /// Should retrieves the last settled block in the settlement layer
     async fn get_last_settled_block(&self) -> Result<u64>;
+
+    /// Should retrieve the latest transaction count to be used as nonce.
+    async fn get_nonce(&self) -> Result<u64>;
 }
 
 /// Trait for every new SettlementConfig to implement

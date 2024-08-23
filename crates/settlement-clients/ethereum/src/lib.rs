@@ -1,58 +1,67 @@
-pub mod clients;
-pub mod config;
-pub mod conversion;
-pub mod types;
-
-use alloy::consensus::{
-    BlobTransactionSidecar, SignableTransaction, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar, TxEnvelope,
-};
-use alloy::eips::eip2718::Encodable2718;
-use alloy::eips::eip2930::AccessList;
-use alloy::eips::eip4844::BYTES_PER_BLOB;
-use alloy::primitives::{Bytes, FixedBytes};
-use alloy::{
-    network::EthereumWallet,
-    primitives::{Address, B256, U256},
-    providers::{PendingTransactionConfig, Provider, ProviderBuilder},
-    rpc::types::TransactionReceipt,
-    signers::local::PrivateKeySigner,
-};
-use async_trait::async_trait;
-use c_kzg::{Blob, Bytes32, KzgCommitment, KzgProof, KzgSettings};
-use color_eyre::eyre::eyre;
-use color_eyre::Result;
-use mockall::{automock, lazy_static, predicate::*};
-use rstest::rstest;
-use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::clients::interfaces::validity_interface::StarknetValidityContractTrait;
+use alloy::consensus::{
+    BlobTransactionSidecar, SignableTransaction, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar, TxEnvelope,
+};
+use alloy::{
+    network::EthereumWallet,
+    primitives::{Address, B256, U256},
+    providers::{PendingTransactionConfig, Provider},
+    rpc::types::TransactionReceipt,
+    signers::local::PrivateKeySigner,
+};
+
+use alloy::eips::eip2930::AccessList;
+use alloy::eips::eip4844::BYTES_PER_BLOB;
+use alloy::hex;
+use alloy::rpc::types::TransactionRequest;
+use alloy_primitives::Bytes;
+use async_trait::async_trait;
+use c_kzg::{Blob, Bytes32, KzgCommitment, KzgProof, KzgSettings};
+use color_eyre::eyre::{eyre, Ok};
+use color_eyre::Result;
+use mockall::{automock, lazy_static, predicate::*};
+
+use alloy::providers::ProviderBuilder;
+use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
 use settlement_client_interface::{SettlementClient, SettlementVerificationStatus, SETTLEMENT_SETTINGS_NAME};
+#[cfg(test)]
+use url::Url;
 use utils::{env_utils::get_env_var_or_panic, settings::SettingsProvider};
 
+use crate::clients::interfaces::validity_interface::StarknetValidityContractTrait;
 use crate::clients::StarknetValidityContractClient;
 use crate::config::EthereumSettlementConfig;
-use crate::conversion::{slice_slice_u8_to_vec_u256, slice_u8_to_u256};
-use crate::types::EthHttpProvider;
+use crate::conversion::{slice_u8_to_u256, vec_u8_32_to_vec_u256};
+pub mod clients;
+pub mod config;
+pub mod conversion;
+
+#[cfg(test)]
+mod tests;
+pub mod types;
+
+use {alloy::providers::RootProvider, alloy::transports::http::Http, reqwest::Client};
 
 pub const ENV_PRIVATE_KEY: &str = "ETHEREUM_PRIVATE_KEY";
 
 lazy_static! {
     pub static ref CURRENT_PATH: PathBuf = std::env::current_dir().unwrap();
-    pub static ref KZG_SETTINGS: KzgSettings = KzgSettings::load_trusted_setup_file(
-        CURRENT_PATH.join("../../../orchestrator/src/jobs/state_update_job/trusted_setup.txt").as_path()
-    )
-    .expect("Error loading trusted setup file");
+    pub static ref KZG_SETTINGS: KzgSettings =
+        // TODO: set more generalized path
+        KzgSettings::load_trusted_setup_file(CURRENT_PATH.join("src/trusted_setup.txt").as_path())
+            .expect("Error loading trusted setup file");
 }
 
-#[allow(dead_code)]
 pub struct EthereumSettlementClient {
-    provider: Arc<EthHttpProvider>,
     core_contract_client: StarknetValidityContractClient,
     wallet: EthereumWallet,
     wallet_address: Address,
+    provider: Arc<RootProvider<Http<Client>>>,
+    #[cfg(test)]
+    impersonate_account: Option<Address>,
 }
 
 impl EthereumSettlementClient {
@@ -61,27 +70,64 @@ impl EthereumSettlementClient {
 
         let private_key = get_env_var_or_panic(ENV_PRIVATE_KEY);
         let signer: PrivateKeySigner = private_key.parse().expect("Failed to parse private key");
-        let wallet = EthereumWallet::from(signer.clone());
-
         let wallet_address = signer.address();
+        let wallet = EthereumWallet::from(signer);
 
-        let provider = Arc::new(
+        // provider without wallet
+        let provider = Arc::new(ProviderBuilder::new().on_http(settlement_cfg.rpc_url.clone()));
+
+        // provider with wallet
+        let filler_provider = Arc::new(
             ProviderBuilder::new().with_recommended_fillers().wallet(wallet.clone()).on_http(settlement_cfg.rpc_url),
         );
+
         let core_contract_client = StarknetValidityContractClient::new(
             Address::from_str(&settlement_cfg.core_contract_address)
                 .expect("Failed to convert the validity contract address.")
                 .0
                 .into(),
-            provider.clone(),
+            filler_provider,
         );
 
-        EthereumSettlementClient { provider, core_contract_client, wallet, wallet_address }
+        EthereumSettlementClient {
+            provider,
+            core_contract_client,
+            wallet,
+            wallet_address,
+            #[cfg(test)]
+            impersonate_account: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_test_settings(
+        provider: RootProvider<Http<Client>>,
+        core_contract_address: Address,
+        rpc_url: Url,
+        impersonate_account: Option<Address>,
+    ) -> Self {
+        let private_key = get_env_var_or_panic(ENV_PRIVATE_KEY);
+        let signer: PrivateKeySigner = private_key.parse().expect("Failed to parse private key");
+        let wallet_address = signer.address();
+        let wallet = EthereumWallet::from(signer);
+
+        let fill_provider =
+            Arc::new(ProviderBuilder::new().with_recommended_fillers().wallet(wallet.clone()).on_http(rpc_url));
+
+        let core_contract_client = StarknetValidityContractClient::new(core_contract_address, fill_provider);
+
+        EthereumSettlementClient {
+            provider: Arc::new(provider),
+            core_contract_client,
+            wallet,
+            wallet_address,
+            impersonate_account,
+        }
     }
 
     /// Build kzg proof for the x_0 point evaluation
-    async fn build_proof(blob_data: Vec<Vec<u8>>, x_0_value: Bytes32) -> Result<KzgProof> {
-        // Asserting that there is only one blob in the whole Vec<Vec<u8>> array for now.
+    pub fn build_proof(blob_data: Vec<Vec<u8>>, x_0_value: Bytes32) -> Result<KzgProof> {
+        // Assuming that there is only one blob in the whole Vec<Vec<u8>> array for now.
         // Later we will add the support for multiple blob in single blob_data vec.
         assert_eq!(blob_data.len(), 1);
 
@@ -125,8 +171,8 @@ impl SettlementClient for EthereumSettlementClient {
         onchain_data_hash: [u8; 32],
         onchain_data_size: usize,
     ) -> Result<String> {
-        let program_output: Vec<U256> = slice_slice_u8_to_vec_u256(program_output.as_slice());
-        let onchain_data_hash: U256 = slice_u8_to_u256(&onchain_data_hash);
+        let program_output: Vec<U256> = vec_u8_32_to_vec_u256(program_output.as_slice())?;
+        let onchain_data_hash: U256 = slice_u8_to_u256(&onchain_data_hash)?;
         let onchain_data_size: U256 = onchain_data_size.try_into()?;
         let tx_receipt =
             self.core_contract_client.update_state(program_output, onchain_data_hash, onchain_data_size).await?;
@@ -134,36 +180,43 @@ impl SettlementClient for EthereumSettlementClient {
     }
 
     /// Should be used to update state on core contract when DA is in blobs/alt DA
-    async fn update_state_blobs(&self, program_output: Vec<[u8; 32]>, kzg_proof: [u8; 48]) -> Result<String> {
-        let program_output: Vec<U256> = slice_slice_u8_to_vec_u256(&program_output);
-        let tx_receipt = self.core_contract_client.update_state_kzg(program_output, kzg_proof).await?;
-        Ok(format!("0x{:x}", tx_receipt.transaction_hash))
-    }
+    async fn update_state_with_blobs(
+        &self,
+        program_output: Vec<[u8; 32]>,
+        state_diff: Vec<Vec<u8>>,
+        nonce: u64,
+    ) -> Result<String> {
+        //TODO: better file management
 
-    async fn update_state_with_blobs(&self, program_output: Vec<[u8; 32]>, state_diff: Vec<Vec<u8>>) -> Result<String> {
-        let trusted_setup = KzgSettings::load_trusted_setup_file(Path::new("./trusted_setup.txt"))
-            .expect("issue while loading the trusted setup");
+        let trusted_setup_path: String = CURRENT_PATH
+            .join("src")
+            .join("trusted_setup.txt")
+            .to_str()
+            .expect("Path contains invalid Unicode")
+            .to_string();
+        let trusted_setup = KzgSettings::load_trusted_setup_file(Path::new(trusted_setup_path.as_str()))?;
         let (sidecar_blobs, sidecar_commitments, sidecar_proofs) = prepare_sidecar(&state_diff, &trusted_setup).await?;
         let sidecar = BlobTransactionSidecar::new(sidecar_blobs, sidecar_commitments, sidecar_proofs);
 
         let eip1559_est = self.provider.estimate_eip1559_fees(None).await?;
         let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
 
-        let max_fee_per_blob_gas: u128 = self.provider.get_blob_base_fee().await?.to_string().parse()?;
+        let mut max_fee_per_blob_gas: u128 = self.provider.get_blob_base_fee().await?.to_string().parse()?;
+        // TODO: need to send more than current gas price.
+        max_fee_per_blob_gas += 12;
         let max_priority_fee_per_gas: u128 = self.provider.get_max_priority_fee_per_gas().await?.to_string().parse()?;
 
-        let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
-
-        // x_0_value : program_output[6]
+        // x_0_value : program_output[8]
         let kzg_proof = Self::build_proof(
             state_diff,
-            Bytes32::from_bytes(program_output[6].as_slice()).expect("Not able to get x_0 point params."),
+            Bytes32::from_bytes(program_output[8].as_slice()).expect("Not able to get x_0 point params."),
         )
-        .await
         .expect("Unable to build KZG proof for given params.")
         .to_owned();
 
-        let tx = TxEip4844 {
+        let input_bytes = get_input_data_for_eip_4844(program_output, kzg_proof)?;
+
+        let tx: TxEip4844 = TxEip4844 {
             chain_id,
             nonce,
             gas_limit: 30_000_000,
@@ -174,20 +227,31 @@ impl SettlementClient for EthereumSettlementClient {
             access_list: AccessList(vec![]),
             blob_versioned_hashes: sidecar.versioned_hashes().collect(),
             max_fee_per_blob_gas,
-            input: get_txn_input_bytes(program_output, kzg_proof),
+            input: Bytes::from(hex::decode(input_bytes)?),
         };
-        let tx_sidecar = TxEip4844WithSidecar { tx: tx.clone(), sidecar: sidecar.clone() };
-        let mut variant = TxEip4844Variant::from(tx_sidecar);
 
-        // Sign and submit
+        let tx_sidecar = TxEip4844WithSidecar { tx: tx.clone(), sidecar: sidecar.clone() };
+
+        let mut variant = TxEip4844Variant::from(tx_sidecar);
         let signature = self.wallet.default_signer().sign_transaction(&mut variant).await?;
         let tx_signed = variant.into_signed(signature);
         let tx_envelope: TxEnvelope = tx_signed.into();
-        let encoded = tx_envelope.encoded_2718();
 
-        let pending_tx = self.provider.send_raw_transaction(&encoded).await?;
+        // IMP: this conversion strips signature from the transaction
+        #[cfg(not(test))]
+        let txn_request: TransactionRequest = tx_envelope.into();
 
-        Ok(pending_tx.tx_hash().to_string())
+        #[cfg(test)]
+        let txn_request = test_config::configure_transaction(
+            // self.provider.clone(),
+            tx_envelope,
+            self.impersonate_account,
+            nonce,
+        )
+        .await;
+
+        let pending_transaction = self.provider.send_transaction(txn_request).await?;
+        return Ok(pending_transaction.tx_hash().to_string());
     }
 
     /// Should verify the inclusion of a tx in the settlement layer
@@ -218,105 +282,39 @@ impl SettlementClient for EthereumSettlementClient {
         let block_number = self.core_contract_client.state_block_number().await?;
         Ok(block_number.try_into()?)
     }
-}
 
-/// To prepare the sidecar for EIP 4844 transaction
-async fn prepare_sidecar(
-    state_diff: &[Vec<u8>],
-    trusted_setup: &KzgSettings,
-) -> Result<(Vec<FixedBytes<131072>>, Vec<FixedBytes<48>>, Vec<FixedBytes<48>>)> {
-    let mut sidecar_blobs = vec![];
-    let mut sidecar_commitments = vec![];
-    let mut sidecar_proofs = vec![];
-
-    for blob_data in state_diff {
-        let fixed_size_blob: [u8; BYTES_PER_BLOB] = blob_data.as_slice().try_into()?;
-
-        let blob = Blob::new(fixed_size_blob);
-
-        let commitment = KzgCommitment::blob_to_kzg_commitment(&blob, trusted_setup)?;
-        let proof = KzgProof::compute_blob_kzg_proof(&blob, &commitment.to_bytes(), trusted_setup)?;
-
-        sidecar_blobs.push(FixedBytes::new(fixed_size_blob));
-        sidecar_commitments.push(FixedBytes::new(commitment.to_bytes().into_inner()));
-        sidecar_proofs.push(FixedBytes::new(proof.to_bytes().into_inner()));
+    async fn get_nonce(&self) -> Result<u64> {
+        let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
+        Ok(nonce)
     }
-
-    Ok((sidecar_blobs, sidecar_commitments, sidecar_proofs))
 }
 
-/// Function to construct the transaction for updating the state in core contract.
-fn get_txn_input_bytes(program_output: Vec<[u8; 32]>, kzg_proof: [u8; 48]) -> Bytes {
-    let program_output_hex_string = vec_u8_32_to_hex_string(program_output);
-    let kzg_proof_hex_string = u8_48_to_hex_string(kzg_proof);
-    // cast keccak "updateStateKzgDA(uint256[] calldata programOutput, bytes calldata kzgProof)" | cut -b 1-10
-    let function_selector = "0x1a790556";
+#[cfg(test)]
+mod test_config {
+    use super::*;
+    use alloy::network::TransactionBuilder;
 
-    Bytes::from(program_output_hex_string + &kzg_proof_hex_string + function_selector)
-}
+    pub async fn configure_transaction(
+        // provider: Arc<RootProvider<Http<Client>>>,
+        tx_envelope: TxEnvelope,
+        impersonate_account: Option<Address>,
+        nonce: u64,
+    ) -> TransactionRequest {
+        let mut txn_request: TransactionRequest = tx_envelope.into();
 
-fn vec_u8_32_to_hex_string(data: Vec<[u8; 32]>) -> String {
-    data.into_iter().fold(String::new(), |mut output, arr| {
-        // Convert the array to a hex string
-        let hex = arr.iter().fold(String::new(), |mut output, byte| {
-            let _ = write!(output, "{byte:02x}");
-            output
-        });
+        // IMPORTANT to understand #[cfg(test)], #[cfg(not(test))] and SHOULD_IMPERSONATE_ACCOUNT
+        // Two tests :  `update_state_blob_with_dummy_contract_works` & `update_state_blob_with_impersonation_works` use a env var `SHOULD_IMPERSONATE_ACCOUNT` to inform the function `update_state_with_blobs` about the kind of testing,
+        // `SHOULD_IMPERSONATE_ACCOUNT` can have any of "0" or "1" value :
+        //      - if "0" then : Testing via default Anvil address.
+        //      - if "1" then : Testing via impersonating `Starknet Operator Address`.
+        // Note : changing between "0" and "1" is handled automatically by each test function, `no` manual change in `env.test` is needed.
+        if let Some(impersonate_account) = impersonate_account {
+            // let nonce =
+            // provider.get_transaction_count(impersonate_account).await.unwrap().to_string().parse::<u64>().unwrap();
+            txn_request.set_nonce(nonce);
+            txn_request = txn_request.with_from(impersonate_account);
+        }
 
-        // Ensure the hex string is exactly 64 characters (32 bytes)
-        let _ = write!(output, "{hex:0>64}");
-        output
-    })
-}
-
-fn u8_48_to_hex_string(data: [u8; 48]) -> String {
-    // Split the array into two parts
-    let (first_32, last_16) = data.split_at(32);
-
-    // Convert and pad each part
-    let first_hex = to_padded_hex(first_32);
-    let second_hex = to_padded_hex(last_16);
-
-    // Concatenate the two hex strings
-    first_hex + &second_hex
-}
-
-// Function to convert a slice of u8 to a padded hex string
-fn to_padded_hex(slice: &[u8]) -> String {
-    let hex = slice.iter().fold(String::new(), |mut output, byte| {
-        let _ = write!(output, "{byte:02x}");
-        output
-    });
-    format!("{:0<64}", hex)
-}
-
-#[rstest]
-fn test_data_conversion() {
-    let data: [u8; 48] = [
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
-        31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
-    ];
-
-    let result = u8_48_to_hex_string(data);
-
-    assert_eq!(result, "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f3000000000000000000000000000000000");
-
-    let mut data_2: [u8; 32] = [
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
-        31, 32,
-    ];
-    let mut data_vec: Vec<[u8; 32]> = Vec::new();
-    data_vec.push(data_2);
-    data_2.reverse();
-    data_vec.push(data_2);
-
-    let data_3: [u8; 32] = [
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
-        0, 0,
-    ];
-    data_vec.push(data_3);
-
-    let result_2 = vec_u8_32_to_hex_string(data_vec);
-
-    assert_eq!(result_2, "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302010102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e0000");
+        txn_request
+    }
 }
