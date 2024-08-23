@@ -50,6 +50,7 @@ pub async fn sync(
         None => provider,
     };
 
+<<<<<<< HEAD
     let l1_fut = async {
         if let Some(eth_client) = eth_client {
             dc_eth::state_update::sync(backend, &eth_client, fetch_config.chain_id.to_felt()).await
@@ -61,6 +62,10 @@ pub async fn sync(
     tokio::try_join!(
         l1_fut,
         l2::sync(
+=======
+        // TODO: remove try join from here since there is only one service here
+        tokio::try_join!(l2::sync(
+>>>>>>> origin/main
             backend,
             provider,
             L2SyncConfig {
@@ -74,10 +79,16 @@ pub async fn sync(
             block_metrics,
             db_metrics,
             starting_block,
+<<<<<<< HEAD
             fetch_config.chain_id.clone(),
             telemetry,
         ),
     )?;
+=======
+            chain_id,
+            telemetry,
+        ),)?;
+>>>>>>> origin/main
 
     Ok(())
 }
