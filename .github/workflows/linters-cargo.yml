@@ -4,7 +4,6 @@ name: Task - Linters Cargo
 on:
   workflow_dispatch:
   workflow_call:
-  push:
 
 jobs:
   cargo-lint:

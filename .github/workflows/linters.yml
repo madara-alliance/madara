@@ -4,7 +4,6 @@ name: Task - Linters
 on:
   workflow_dispatch:
   workflow_call:
-  push:
 
 jobs:
   prettier:

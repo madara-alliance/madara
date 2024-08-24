@@ -37,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Removed
 
+- revert CI changes from settlement client PR.
 - `init_config` from all the tests.
 - `fetch_from_test` argument
 

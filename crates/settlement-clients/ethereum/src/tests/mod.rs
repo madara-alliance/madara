@@ -228,7 +228,7 @@ async fn update_state_blob_with_impersonation_works(#[case] fork_block_no: u64) 
     // Asserting, Expected to receive transaction hash.
     assert!(!update_state_result.is_empty(), "No transaction Hash received.");
 
-    sleep(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(5)).await;
     ethereum_settlement_client
         .wait_for_tx_finality(update_state_result.as_str())
         .await

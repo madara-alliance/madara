@@ -4,7 +4,6 @@ name: Task - Build Rust
 on:
   workflow_dispatch:
   workflow_call:
-  push:
 
 jobs:
   rust_build:
