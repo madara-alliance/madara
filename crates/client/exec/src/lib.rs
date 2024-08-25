@@ -16,6 +16,9 @@ mod call;
 mod execution;
 mod fee;
 mod trace;
+#[cfg(test)]
+mod test_utils;
+mod genesis;
 
 pub use block_context::ExecutionContext;
 pub use blockifier_state_adapter::BlockifierStateAdapter;

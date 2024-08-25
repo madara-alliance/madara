@@ -13,7 +13,7 @@ use dp_transactions::Transaction;
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct UnverifiedHeader {
     /// The hash of this block’s parent. When set to None, it will be deduced from the latest block in storage.
     pub parent_block_hash: Option<Felt>,
@@ -69,7 +69,7 @@ pub struct UnverifiedPendingFullBlock {
 }
 
 /// An unverified full block as input for the block import pipeline.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct UnverifiedFullBlock {
     /// When set to None, it will be deduced from the latest block in storage.
     pub unverified_block_number: Option<u64>,

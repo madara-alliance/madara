@@ -15,10 +15,12 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 # Deoxys
 dc-db = { workspace = true }
+dc-block-import = { workspace = true }
 dp-block = { workspace = true }
 dp-chain-config = { workspace = true }
 dp-class = { workspace = true }
 dp-convert = { workspace = true }
+dp-state-update = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
@@ -30,3 +32,11 @@ starknet_api = { workspace = true }
 # Other
 log = { workspace = true }
 thiserror = { workspace = true }
+serde_json = { workspace = true }
+lazy_static = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+
+rstest = { workspace = true }
+dc-db = { workspace = true, features = ["testing"] }

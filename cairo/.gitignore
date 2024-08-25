@@ -1,0 +1,7 @@
+target/*
+!target/dev
+target/dev/*
+!target/dev/madara_contracts_ERC20.contract_class.json
+!target/dev/madara_contracts_UniversalDeployer.contract_class.json
+!target/dev/madara_contracts_AccountUpgradeable.contract_class.json
+.snfoundry_cache/

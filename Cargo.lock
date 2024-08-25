@@ -3720,14 +3720,20 @@ dependencies = [
 name = "dc-exec"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "blockifier",
  "cairo-vm",
+ "dc-block-import",
  "dc-db",
  "dp-block",
  "dp-chain-config",
  "dp-class",
  "dp-convert",
+ "dp-state-update",
+ "lazy_static",
  "log",
+ "rstest 0.18.2",
+ "serde_json",
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
