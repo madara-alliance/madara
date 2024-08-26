@@ -31,6 +31,7 @@ impl L1SyncService {
         l1_gas_provider: GasPriceProvider,
         chain_id: ChainId,
         l1_core_address: H160,
+        authority: bool,
     ) -> anyhow::Result<Self> {
         let eth_client = if !config.sync_l1_disabled {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
@@ -50,13 +51,13 @@ impl L1SyncService {
             None
         };
 
-        let gas_price_sync_disabled = config.gas_price_sync_disabled;
+        let gas_price_sync_enabled = authority && !config.gas_price_sync_disabled;
         let gas_price_poll_ms = Duration::from_secs(config.gas_price_poll_ms);
 
-        if !gas_price_sync_disabled {
-            let eth_client = eth_client.clone().ok_or_else(|| {
-                anyhow::anyhow!("EthereumClient is required to start the l1 sync service but not provided.")
-            })?;
+        if gas_price_sync_enabled {
+            let eth_client = eth_client
+                .clone()
+                .context("EthereumClient is required to start the l1 sync service but not provided.")?;
             // running at-least once before the block production service
             dc_eth::l1_gas_price::gas_price_worker(&eth_client, l1_gas_provider.clone(), gas_price_poll_ms).await?;
         }
@@ -66,7 +67,7 @@ impl L1SyncService {
             eth_client,
             l1_gas_provider,
             chain_id,
-            gas_price_sync_disabled,
+            gas_price_sync_disabled: !gas_price_sync_enabled,
             gas_price_poll_ms,
         })
     }
@@ -75,26 +76,24 @@ impl L1SyncService {
 #[async_trait::async_trait]
 impl Service for L1SyncService {
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
-        let L1SyncService { eth_client, l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll_ms, .. } =
-            self.clone();
+        let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll_ms, .. } = self.clone();
 
-        let db_backend = Arc::clone(&self.db_backend);
+        if let Some(eth_client) = self.eth_client.take() {
+            // enabled
 
-        let eth_client = eth_client.ok_or_else(|| {
-            anyhow::anyhow!("EthereumClient is required to start the l1 sync service but not provided.")
-        })?;
-
-        join_set.spawn(async move {
-            dc_eth::sync::l1_sync_worker(
-                &db_backend,
-                &eth_client,
-                chain_id.to_felt(),
-                l1_gas_provider,
-                gas_price_sync_disabled,
-                gas_price_poll_ms,
-            )
-            .await
-        });
+            let db_backend = Arc::clone(&self.db_backend);
+            join_set.spawn(async move {
+                dc_eth::sync::l1_sync_worker(
+                    &db_backend,
+                    &eth_client,
+                    chain_id.to_felt(),
+                    l1_gas_provider,
+                    gas_price_sync_disabled,
+                    gas_price_poll_ms,
+                )
+                .await
+            });
+        }
 
         Ok(())
     }

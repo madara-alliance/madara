@@ -19,7 +19,6 @@ pub mod starknet_sync_worker {
     use dc_telemetry::TelemetryHandle;
     use dp_convert::ToFelt;
     use fetch::fetchers::FetchConfig;
-
     use starknet_providers::SequencerGatewayProvider;
     use std::{sync::Arc, time::Duration};
 

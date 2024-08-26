@@ -16,6 +16,7 @@ members = [
   "crates/primitives/receipt",
   "crates/primitives/state_update",
   "crates/primitives/utils",
+  "crates/tests",
 ]
 resolver = "2"
 # All previous except for `starknet-rpc-test` and `starknet-e2e-test`
@@ -36,6 +37,7 @@ default-members = [
   "crates/primitives/receipt",
   "crates/primitives/state_update",
   "crates/primitives/utils",
+  "crates/tests",
 ]
 
 [profile.dev]
@@ -107,11 +109,8 @@ cairo-lang-utils = "=2.7.0-rc.2"
 
 alloy = { version = "0.2.0", features = [
   "node-bindings",
-  "providers",
-  "transport-http",
-  "sol-types",
-  "json",
   "rpc-types",
+  "provider-http",
   "contract",
 ] }
 

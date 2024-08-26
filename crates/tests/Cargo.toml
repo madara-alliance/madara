@@ -1,0 +1,21 @@
+[package]
+name = "dc-e2e-tests"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+repository.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+anyhow.workspace = true
+env_logger.workspace = true
+lazy_static.workspace = true
+log.workspace = true
+reqwest.workspace = true
+rstest.workspace = true
+starknet-core.workspace = true
+starknet-providers.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }

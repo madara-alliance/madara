@@ -2,6 +2,7 @@
 
 ## Next release
 
+- tests: add e2e tests for the node
 - fix: fixed some readme stuff
 - feat: gas price provider added for block production
 - feat: l1 sync service
