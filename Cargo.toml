@@ -122,6 +122,7 @@ alloy = { version = "0.2.0", features = [
   "rpc-types",
   "provider-http",
   "contract",
+  "node-bindings"
 ] }
 
 # Other third party dependencies

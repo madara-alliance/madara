@@ -1,5 +1,7 @@
 //! End to end tests for madara.
 
+mod rpc;
+
 use anyhow::bail;
 use rstest::rstest;
 use starknet_providers::Provider;
