@@ -7,8 +7,9 @@ use aws_config::Region;
 use mongodb::Client;
 use rstest::*;
 use serde::Deserialize;
+use utils::env_utils::get_env_var_or_panic;
 
-use crate::data_storage::aws_s3::config::{AWSS3ConfigType, S3LocalStackConfig};
+use crate::data_storage::aws_s3::config::AWSS3Config;
 use crate::data_storage::aws_s3::AWSS3;
 use crate::data_storage::{DataStorage, DataStorageConfig};
 use crate::database::mongodb::config::MongoDbConfig;
@@ -84,5 +85,7 @@ pub struct MessagePayloadType {
 }
 
 pub async fn get_storage_client() -> Box<dyn DataStorage + Send + Sync> {
-    Box::new(AWSS3::new(AWSS3ConfigType::WithEndpoint(S3LocalStackConfig::new_from_env())).await)
+    let aws_config =
+        aws_config::load_from_env().await.into_builder().endpoint_url(get_env_var_or_panic("AWS_ENDPOINT_URL")).build();
+    Box::new(AWSS3::new(AWSS3Config::new_from_env(), &aws_config))
 }

@@ -19,14 +19,14 @@ pub struct EthereumDaConfig {
 impl DaConfig<EthereumDaClient> for EthereumDaConfig {
     fn new_from_env() -> Self {
         Self {
-            rpc_url: get_env_var_or_panic("ETHEREUM_RPC_URL"),
+            rpc_url: get_env_var_or_panic("SETTLEMENT_RPC_URL"),
             memory_pages_contract: get_env_var_or_panic("MEMORY_PAGES_CONTRACT_ADDRESS"),
             private_key: get_env_var_or_panic("PRIVATE_KEY"),
         }
     }
     async fn build_client(&self) -> EthereumDaClient {
         let client =
-            RpcClient::new_http(Url::from_str(self.rpc_url.as_str()).expect("Failed to parse ETHEREUM_RPC_URL"));
+            RpcClient::new_http(Url::from_str(self.rpc_url.as_str()).expect("Failed to parse SETTLEMENT_RPC_URL"));
         let provider = ProviderBuilder::<_, Ethereum>::new().on_client(client);
 
         EthereumDaClient { provider }
