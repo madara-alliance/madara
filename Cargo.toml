@@ -108,6 +108,7 @@ cairo-lang-starknet-classes = "=2.7.0-rc.2"
 cairo-lang-utils = "=2.7.0-rc.2"
 
 alloy = { version = "0.2.0", features = [
+  "node-bindings",
   "rpc-types",
   "provider-http",
   "contract",
