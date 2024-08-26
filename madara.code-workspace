@@ -1,0 +1,21 @@
+{
+    "folders": [
+        {
+            "path": ".",
+            "name": "madara",
+        },
+        {
+            "path": "crates/client",
+            "name": "client"
+        },
+        {
+            "path": "crates/node",
+            "name": "node",
+        },
+        {
+            "path": "crates/primitives",
+            "name": "primitives",
+        },
+    ],
+    "settings": {}
+}
