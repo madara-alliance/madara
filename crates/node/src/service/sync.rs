@@ -38,24 +38,6 @@ impl SyncService {
         let db_metrics = DbMetrics::register(&metrics_handle)?;
         let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), network);
 
-        let eth_client = if !config.sync_l1_disabled {
-            if let Some(l1_endpoint) = &config.l1_endpoint {
-                let core_address = Address::from_slice(chain_config.eth_core_contract_address.as_bytes());
-                let l1_metrics = L1BlockMetrics::register(&metrics_handle).context("Registering L1 metrics")?;
-                Some(
-                    EthereumClient::new(l1_endpoint.clone(), core_address, l1_metrics)
-                        .await
-                        .context("Creating ethereum client")?,
-                )
-            } else {
-                anyhow::bail!(
-                    "No Ethereum endpoint provided. You need to provide one using --l1-endpoint <RPC URL> in order to verify the synced state or disable the l1 watcher using --no-l1-sync."
-                );
-            }
-        } else {
-            None
-        };
-
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
             fetch_config,
