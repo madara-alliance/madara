@@ -19,3 +19,4 @@ starknet-core.workspace = true
 starknet-providers.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
+serde_json = {workspace = true}
