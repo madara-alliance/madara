@@ -1,9 +1,7 @@
 use crate::cli::{NetworkType, SyncParams};
-use alloy::primitives::Address;
 use anyhow::Context;
 use dc_db::db_metrics::DbMetrics;
 use dc_db::{DatabaseService, DeoxysBackend};
-use dc_eth::client::{EthereumClient, L1BlockMetrics};
 use dc_metrics::MetricsRegistry;
 use dc_sync::fetch::fetchers::FetchConfig;
 use dc_sync::metrics::block_metrics::BlockMetrics;
@@ -19,7 +17,6 @@ pub struct SyncService {
     db_backend: Arc<DeoxysBackend>,
     fetch_config: FetchConfig,
     backup_every_n_blocks: Option<u64>,
-    eth_client: Option<EthereumClient>,
     starting_block: Option<u64>,
     block_metrics: BlockMetrics,
     db_metrics: DbMetrics,
@@ -37,8 +34,8 @@ impl SyncService {
         metrics_handle: MetricsRegistry,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
-        let block_metrics = BlockMetrics::register(&metrics_handle).context("Registering block metrics")?;
-        let db_metrics = DbMetrics::register(&metrics_handle).context("Registering db metrics")?;
+        let block_metrics = BlockMetrics::register(&metrics_handle)?;
+        let db_metrics = DbMetrics::register(&metrics_handle)?;
         let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), network);
 
         let eth_client = if !config.sync_l1_disabled {
@@ -62,7 +59,6 @@ impl SyncService {
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
             fetch_config,
-            eth_client,
             starting_block: config.starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
             block_metrics,
@@ -83,7 +79,6 @@ impl Service for SyncService {
         let SyncService {
             fetch_config,
             backup_every_n_blocks,
-            eth_client,
             starting_block,
             block_metrics,
             db_metrics,
@@ -98,7 +93,6 @@ impl Service for SyncService {
             dc_sync::starknet_sync_worker::sync(
                 &db_backend,
                 fetch_config,
-                eth_client,
                 starting_block,
                 backup_every_n_blocks,
                 block_metrics,
