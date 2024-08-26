@@ -163,8 +163,8 @@ impl MadaraCmdBuilder {
         self
     }
 
-    pub fn env(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.args = args.into_iter().map(Into::into).collect();
+    pub fn env(mut self, env: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>) -> Self {
+        self.env = env.into_iter().map(|(k, v)| (k.into(), v.into())).collect();
         self
     }
 

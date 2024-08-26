@@ -50,7 +50,8 @@ jobs:
           source <(cargo llvm-cov show-env --export-prefix)
           cargo llvm-cov report --cobertura --output-path coverage.cobertura.xml
 
-      - name: Code Coverage Summary Report
-        uses: irongut/CodeCoverageSummary@v1.3.0
+      - name: Display coverage
+        uses: ewjoachim/coverage-comment-action@v1
         with:
-          filename: coverage.cobertura.xml
+          GITHUB_TOKEN: ${{ github.token }}
+          COVERAGE_FILE: coverage.cobertura.xml
