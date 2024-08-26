@@ -1,7 +1,7 @@
 use rstest::*;
 use starknet_providers::Provider;
 use crate::{MadaraCmd, MadaraCmdBuilder};
-use starknet_core::types::{BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs, ComputationResources, ContractStorageDiffItem, DataAvailabilityResources, DataResources, DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0, ExecutionResources, ExecutionResult, FeePayment, Felt, L1DataAvailabilityMode, L1HandlerTransaction, L1HandlerTransactionReceipt, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate, PriceUnit, ReceiptBlock, ResourcePrice, StateDiff, StateUpdate, StorageEntry, Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionWithReceipt};
+use starknet_core::types::{BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs, ComputationResources, ContractStorageDiffItem, DataAvailabilityResources, DataResources, DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0, EmittedEvent, EventFilter, EventsPage, ExecutionResources, ExecutionResult, FeePayment, Felt, L1DataAvailabilityMode, L1HandlerTransaction, L1HandlerTransactionReceipt, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate, PriceUnit, ReceiptBlock, ResourcePrice, StateDiff, StateUpdate, StorageEntry, Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionWithReceipt};
 
 // TODO: make this run once
 #[fixture]
@@ -395,6 +395,65 @@ async fn test_get_state_update_works(mut madara: MadaraCmd) {
 
 
     assert_eq!(state_update, expected_state_update);
+}
+
+// request:
+/*
+    curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    --header 'Content-Type: application/json' \
+    --data '{
+        "jsonrpc": "2.0",
+        "method": "starknet_getEvents",
+        "params": {
+            "filter": {
+                "from_block": {
+                    "block_number": 0
+                },
+                "to_block": {
+                    "block_number": 19
+                },
+                "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                "keys": [
+                    []
+                ],
+                "continuation_token": "",
+                "chunk_size": 2
+            }
+        },
+   "id": 1
+}'
+
+*/
+#[rstest]
+#[tokio::test]
+async fn test_get_events_works(mut madara: MadaraCmd) {
+    madara.wait_for_ready().await;
+    madara.wait_for_sync_to(19).await;
+
+    let events = madara.json_rpc().get_events(EventFilter{from_block: Some(BlockId::Number(0)), to_block: Some(BlockId::Number(19)), address: Some(Felt::from_hex_unchecked("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")), keys: Some(vec![vec![]])}, None, 2).await.unwrap();
+    let expected_events = EventsPage {
+        events: vec![
+            EmittedEvent{
+                from_address:Felt::from_hex_unchecked("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
+                keys: vec![Felt::from_hex_unchecked("0x3774b0545aabb37c45c1eddc6a7dae57de498aae6d5e3589e362d4b4323a533")],
+                data: vec![Felt::from_hex_unchecked("0x43abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8"), Felt::from_hex_unchecked("0x43abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8")],
+                block_hash: Some(Felt::from_hex_unchecked("0x5c627d4aeb51280058bed93c7889bce78114d63baad1be0f0aeb32496d5f19c")),
+                block_number: Some(0),
+                transaction_hash: Felt::from_hex_unchecked("0x1bec64a9f5ff52154b560fd489ae2aabbfcb31062f7ea70c3c674ddf14b0add")
+            },
+            EmittedEvent{
+                from_address:Felt::from_hex_unchecked("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
+                keys: vec![Felt::from_hex_unchecked("0x4595132f9b33b7077ebf2e7f3eb746a8e0a6d5c337c71cd8f9bf46cac3cfd7")],
+                data: vec![Felt::from_hex_unchecked("0x43abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8")],
+                block_hash: Some(Felt::from_hex_unchecked("0x5c627d4aeb51280058bed93c7889bce78114d63baad1be0f0aeb32496d5f19c")),
+                block_number: Some(0),
+                transaction_hash: Felt::from_hex_unchecked("0x1bec64a9f5ff52154b560fd489ae2aabbfcb31062f7ea70c3c674ddf14b0add")
+            }
+        ],
+        continuation_token: Some("4-0".to_string())
+    };
+
+    assert_eq!(events, expected_events);
 }
 
 
