@@ -76,8 +76,7 @@ impl L1SyncService {
 #[async_trait::async_trait]
 impl Service for L1SyncService {
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
-        let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll_ms, .. } =
-            self.clone();
+        let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll_ms, .. } = self.clone();
 
         if let Some(eth_client) = self.eth_client.take() {
             // enabled
