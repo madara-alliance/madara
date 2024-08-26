@@ -14,7 +14,7 @@ use dp_class::ConvertedClass;
 use header::make_pending_header;
 use inner::MempoolInner;
 pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
-pub use l1::L1DataProvider;
+pub use l1::{GasPriceProvider, L1DataProvider};
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;

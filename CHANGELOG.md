@@ -3,6 +3,10 @@
 ## Next release
 
 - fix: fixed some readme stuff
+- feat: gas price provider added for block production
+- feat: l1 sync service
+- feat: gas price worker for l1
+- test: tests added for eth client and event subscription
 - feat: Added l1->l2 messaging
 - test: add unitests primitives
 - tests: add tests for the rpcs endpoints

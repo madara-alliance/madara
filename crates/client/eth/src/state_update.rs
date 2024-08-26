@@ -9,14 +9,13 @@ use dp_transactions::MAIN_CHAIN_ID;
 use dp_utils::channel_wait_or_graceful_shutdown;
 use futures::StreamExt;
 use serde::Deserialize;
-use starknet_api::hash::StarkHash;
 use starknet_types_core::felt::Felt;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct L1StateUpdate {
     pub block_number: u64,
-    pub global_root: StarkHash,
-    pub block_hash: StarkHash,
+    pub global_root: Felt,
+    pub block_hash: Felt,
 }
 
 /// Get the last Starknet state update verified on the L1
@@ -78,13 +77,17 @@ pub fn update_l1(
     Ok(())
 }
 
-pub async fn sync(backend: &DeoxysBackend, eth_client: &EthereumClient, chain_id: Felt) -> anyhow::Result<()> {
+pub async fn state_update_worker(
+    backend: &DeoxysBackend,
+    eth_client: &EthereumClient,
+    chain_id: Felt,
+) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
     log::debug!("update_l1: cleared confirmed block number");
 
     log::info!("🚀 Subscribed to L1 state verification");
-
+    // ideally here there would be one service which will update the l1 gas prices and another one for messages and one that's already present is state update
     // Get and store the latest verified state
     let initial_state = get_initial_state(eth_client).await.context("Getting initial ethereum state")?;
     update_l1(backend, initial_state, &eth_client.l1_block_metrics, chain_id)?;
