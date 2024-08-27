@@ -47,24 +47,24 @@ impl VerifyApply {
     pub async fn verify_apply(
         &self,
         block: PreValidatedBlock,
-        context: ValidationContext,
+        validation_context: ValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
         let _exclusive = self.mutex.lock().await;
 
         let backend = Arc::clone(&self.backend);
-        self.pool.spawn_rayon_task(move || verify_apply_inner(&backend, block, context)).await
+        self.pool.spawn_rayon_task(move || verify_apply_inner(&backend, block, validation_context)).await
     }
 
     /// See [`Self::verify_apply`].
     pub async fn verify_apply_pending(
         &self,
         block: PreValidatedPendingBlock,
-        context: ValidationContext,
+        validation_context: ValidationContext,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
         let _exclusive = self.mutex.lock().await;
 
         let backend = Arc::clone(&self.backend);
-        self.pool.spawn_rayon_task(move || verify_apply_pending_inner(&backend, block, context)).await
+        self.pool.spawn_rayon_task(move || verify_apply_pending_inner(&backend, block, validation_context)).await
     }
 }
 
@@ -74,7 +74,7 @@ impl VerifyApply {
 pub fn verify_apply_inner(
     backend: &DeoxysBackend,
     block: PreValidatedBlock,
-    context: ValidationContext,
+    validation_context: ValidationContext,
 ) -> Result<BlockImportResult, BlockImportError> {
     // Check block number and block hash against db
     let (block_number, parent_block_hash) =
@@ -84,7 +84,8 @@ pub fn verify_apply_inner(
     let global_state_root = update_tries(backend, &block, &validation, block_number)?;
 
     // Block hash
-    let (block_hash, header) = block_hash(&block, &context, block_number, parent_block_hash, global_state_root)?;
+    let (block_hash, header) =
+        block_hash(&block, &validation_context, block_number, parent_block_hash, global_state_root)?;
 
     // store block, also uses rayon heavily internally
     backend
@@ -242,7 +243,7 @@ fn update_tries(
 /// Returns the block hash and header.
 fn block_hash(
     block: &PreValidatedBlock,
-    context: &ValidationContext,
+    validation_context: &ValidationContext,
     block_number: u64,
     parent_block_hash: Felt,
     global_state_root: Felt,
@@ -285,11 +286,12 @@ fn block_hash(
         l1_gas_price,
         l1_da_mode,
     };
-    let block_hash = header.compute_hash(context.chain_id.to_felt());
+    let block_hash = header.compute_hash(validation_context.chain_id.to_felt());
 
     if let Some(expected) = block.unverified_block_hash {
         // mismatched block hash is allowed for blocks 1466..=2242 on mainnet
-        let is_special_trusted_case = context.chain_id == ChainId::Mainnet && (1466..=2242).contains(&block_number);
+        let is_special_trusted_case =
+            validation_context.chain_id == ChainId::Mainnet && (1466..=2242).contains(&block_number);
         if is_special_trusted_case {
             return Ok((expected, header));
         }
