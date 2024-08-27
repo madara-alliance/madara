@@ -18,6 +18,7 @@ members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/tests",
 ]
 resolver = "2"
 default-members = [
@@ -39,6 +40,7 @@ default-members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/tests",
 ]
 
 [profile.dev]
@@ -112,11 +114,8 @@ cairo-lang-utils = "=2.7.0-rc.2"
 
 alloy = { version = "0.2.0", features = [
   "node-bindings",
-  "providers",
-  "transport-http",
-  "sol-types",
-  "json",
   "rpc-types",
+  "provider-http",
   "contract",
 ] }
 

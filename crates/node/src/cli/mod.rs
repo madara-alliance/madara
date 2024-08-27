@@ -19,6 +19,7 @@ use std::sync::Arc;
 use url::Url;
 
 #[derive(Clone, Debug, clap::Parser)]
+/// Madara: High performance Starknet sequencer/full-node.
 pub struct RunCmd {
     /// The human-readable name for this node.
     /// It is used as the network node name.
