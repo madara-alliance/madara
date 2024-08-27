@@ -13,7 +13,7 @@ use dc_db::DeoxysStorageError;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::Header;
 use dp_utils::{channel_wait_or_graceful_shutdown, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
-use dp_validation::Validation;
+use dp_validation::ValidationContext;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
 use starknet_api::core::ChainId;
@@ -50,7 +50,8 @@ async fn l2_verify_and_apply_task(
     backend: Arc<DeoxysBackend>,
     mut updates_receiver: mpsc::Receiver<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
-    validation: Validation,
+    context: ValidationContext,
+    #[allow(unused)] verify: bool, // TODO(merge): re-add verify false
     backup_every_n_blocks: Option<u64>,
     block_metrics: BlockMetrics,
     db_metrics: DbMetrics,
@@ -59,7 +60,7 @@ async fn l2_verify_and_apply_task(
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
     while let Some(block) = channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await {
-        let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
+        let BlockImportResult { header, block_hash } = block_import.verify_apply(block, context.clone()).await?;
 
         update_sync_metrics(
             header.block_number,
@@ -120,19 +121,19 @@ async fn l2_block_conversion_task(
     updates_receiver: mpsc::Receiver<UnverifiedFullBlock>,
     output: mpsc::Sender<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
-    validation: Validation,
+    context: ValidationContext,
 ) -> anyhow::Result<()> {
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
     let conversion_stream = stream::unfold(
-        (updates_receiver, block_import, validation.clone()),
-        |(mut updates_recv, block_import, validation)| async move {
+        (updates_receiver, block_import, context.clone()),
+        |(mut updates_recv, block_import, context)| async move {
             channel_wait_or_graceful_shutdown(updates_recv.recv()).await.map(|block| {
                 let block_import_ = Arc::clone(&block_import);
-                let validation_ = validation.clone();
+                let validation_ = context.clone();
                 (
                     async move { block_import_.pre_validate(block, validation_).await },
-                    (updates_recv, block_import, validation),
+                    (updates_recv, block_import, context),
                 )
             })
         },
@@ -151,7 +152,7 @@ async fn l2_block_conversion_task(
 async fn l2_pending_block_task(
     backend: Arc<DeoxysBackend>,
     block_import: Arc<BlockImporter>,
-    validation: Validation,
+    context: ValidationContext,
     sync_finished_cb: oneshot::Receiver<()>,
     provider: Arc<SequencerGatewayProvider>,
     pending_block_poll_interval: Duration,
@@ -231,7 +232,7 @@ pub async fn sync(
     // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
     // starves the tokio worker
     let block_importer = Arc::new(BlockImporter::new(Arc::clone(backend)));
-    let validation = Validation { trust_transaction_hashes: false, trust_global_tries: config.verify, chain_id };
+    let validation = ValidationContext { trust_transaction_hashes: false, trust_global_tries: config.verify, chain_id };
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(
         Arc::clone(backend),
@@ -246,13 +247,14 @@ pub async fn sync(
         fetch_stream_receiver,
         block_conv_sender,
         Arc::clone(&block_importer),
-        validation.clone(),
+        context.clone(),
     ));
     join_set.spawn(l2_verify_and_apply_task(
         Arc::clone(backend),
         block_conv_receiver,
         Arc::clone(&block_importer),
-        validation.clone(),
+        context.clone(),
+        config.verify,
         config.backup_every_n_blocks,
         block_metrics,
         db_metrics,
@@ -263,7 +265,7 @@ pub async fn sync(
     join_set.spawn(l2_pending_block_task(
         Arc::clone(backend),
         Arc::clone(&block_importer),
-        validation.clone(),
+        context.clone(),
         once_caught_up_cb_receiver,
         provider,
         config.pending_block_poll_interval,

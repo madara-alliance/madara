@@ -38,9 +38,10 @@
 //! to check for errors.
 //! A signature verification mode should be added to allow the skipping of block validation entirely if the block is signed.
 
-use dc_db::DeoxysBackend;
-use dp_validation::Validation;
 use std::sync::Arc;
+
+use dc_db::DeoxysBackend;
+use dp_validation::ValidationContext;
 
 mod error;
 mod pre_validate;
@@ -68,32 +69,32 @@ impl BlockImporter {
     pub async fn pre_validate(
         &self,
         block: UnverifiedFullBlock,
-        validation: Validation,
+        validation_context: ValidationContext,
     ) -> Result<PreValidatedBlock, BlockImportError> {
-        pre_validate(&self.pool, block, validation).await
+        pre_validate(&self.pool, block, validation_context).await
     }
 
     pub async fn verify_apply(
         &self,
         block: PreValidatedBlock,
-        validation: Validation,
+        validation_context: ValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
-        self.verify_apply.verify_apply(block, validation).await
+        self.verify_apply.verify_apply(block, validation_context).await
     }
 
     pub async fn pre_validate_pending(
         &self,
         block: UnverifiedPendingFullBlock,
-        validation: Validation,
+        validation_context: ValidationContext,
     ) -> Result<PreValidatedPendingBlock, BlockImportError> {
-        pre_validate_pending(&self.pool, block, validation).await
+        pre_validate_pending(&self.pool, block, validation_context).await
     }
 
     pub async fn verify_apply_pending(
         &self,
         block: PreValidatedPendingBlock,
-        validation: Validation,
+        validation_context: ValidationContext,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
-        self.verify_apply.verify_apply_pending(block, validation).await
+        self.verify_apply.verify_apply_pending(block, validation_context).await
     }
 }

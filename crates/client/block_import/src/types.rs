@@ -18,7 +18,7 @@ use dp_convert::ToFelt;
 use dp_receipt::TransactionReceipt;
 use dp_state_update::StateDiff;
 use dp_transactions::Transaction;
-use dp_validation::{PreValidate, Validation};
+use dp_validation::{PreValidate, ValidationContext};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 
 use crate::BlockImportError;
@@ -75,11 +75,11 @@ impl PreValidate for UnverifiedPendingFullBlock {
     type Output = PreValidatedPendingBlock;
     type ValidationError = BlockImportError;
 
-    fn pre_validate(mut self, validation: &Validation) -> Result<Self::Output, Self::ValidationError> {
+    fn pre_validate(mut self, context: &ValidationContext) -> Result<Self::Output, Self::ValidationError> {
         let classes = mem::take(&mut self.declared_classes);
 
-        let converted_classes = convert_classes(classes, validation)?;
-        let _tx_hashes = transaction_hashes(&self.receipts, &self.transactions, validation, None)?;
+        let converted_classes = convert_classes(classes, context)?;
+        let _tx_hashes = transaction_hashes(&self.receipts, &self.transactions, context, None)?;
 
         Ok(PreValidatedPendingBlock {
             header: self.header,
@@ -106,7 +106,7 @@ pub struct UnverifiedFullBlock {
 }
 
 impl UnverifiedFullBlock {
-    fn receipt_commitment(&self, _validation: &Validation) -> Result<Felt, BlockImportError> {
+    fn receipt_commitment(&self, _context: &ValidationContext) -> Result<Felt, BlockImportError> {
         let hashes = self.receipts.par_iter().map(TransactionReceipt::compute_hash).collect::<Vec<_>>();
         let got = compute_merkle_root::<Poseidon>(&hashes);
 
@@ -118,7 +118,7 @@ impl UnverifiedFullBlock {
         Ok(got)
     }
 
-    fn state_diff_commitment(&self, _validation: &Validation) -> Result<Felt, BlockImportError> {
+    fn state_diff_commitment(&self, _context: &ValidationContext) -> Result<Felt, BlockImportError> {
         let got = self.state_diff.len() as u64;
         if let Some(expected) = self.commitments.state_diff_length {
             if expected != got {
@@ -136,11 +136,11 @@ impl UnverifiedFullBlock {
     }
 
     /// Compute the transaction commitment for a block.
-    fn transaction_commitment(&self, validation: &Validation) -> Result<Felt, BlockImportError> {
+    fn transaction_commitment(&self, context: &ValidationContext) -> Result<Felt, BlockImportError> {
         let starknet_version = self.header.protocol_version;
 
         let transaction_hashes =
-            transaction_hashes(&self.receipts, &self.transactions, validation, self.unverified_block_number)?;
+            transaction_hashes(&self.receipts, &self.transactions, context, self.unverified_block_number)?;
 
         if let Some(expected) = self.commitments.transaction_count {
             if expected != self.transactions.len() as u64 {
@@ -170,7 +170,7 @@ impl UnverifiedFullBlock {
         Ok(got)
     }
 
-    fn event_commitment(&self, _validation: &Validation) -> Result<Felt, BlockImportError> {
+    fn event_commitment(&self, _context: &ValidationContext) -> Result<Felt, BlockImportError> {
         let events_with_tx_hash: Vec<_> = self
             .receipts
             .iter()
@@ -207,23 +207,23 @@ impl UnverifiedFullBlock {
     }
 
     /// Returns [`ValidatedCommitments`] from the block unverified commitments.
-    pub fn valid_commitments(&self, validation: &Validation) -> Result<ValidatedCommitments, BlockImportError> {
+    pub fn valid_commitments(&self, context: &ValidationContext) -> Result<ValidatedCommitments, BlockImportError> {
         let (mut receipt_c, mut state_diff_c, mut transaction_c, mut event_c) = Default::default();
         [
             Box::new(|| {
-                receipt_c = self.receipt_commitment(validation)?;
+                receipt_c = self.receipt_commitment(context)?;
                 Ok(())
             }) as Box<dyn FnOnce() -> Result<(), BlockImportError> + Send>,
             Box::new(|| {
-                state_diff_c = self.state_diff_commitment(validation)?;
+                state_diff_c = self.state_diff_commitment(context)?;
                 Ok(())
             }),
             Box::new(|| {
-                transaction_c = self.transaction_commitment(validation)?;
+                transaction_c = self.transaction_commitment(context)?;
                 Ok(())
             }),
             Box::new(|| {
-                event_c = self.event_commitment(validation)?;
+                event_c = self.event_commitment(context)?;
                 Ok(())
             }),
         ]
@@ -247,7 +247,7 @@ impl PreValidate for UnverifiedFullBlock {
     type Output = PreValidatedBlock;
     type ValidationError = BlockImportError;
 
-    fn pre_validate(mut self, validation: &Validation) -> Result<Self::Output, Self::ValidationError> {
+    fn pre_validate(mut self, context: &ValidationContext) -> Result<Self::Output, Self::ValidationError> {
         let classes = mem::take(&mut self.declared_classes);
 
         // unfortunately this is ugly but rayon::join does not have the fast error short circuiting behavior that
@@ -256,11 +256,11 @@ impl PreValidate for UnverifiedFullBlock {
         let (mut commitments, mut converted_classes) = Default::default();
         [
             Box::new(|| {
-                commitments = self.valid_commitments(validation)?;
+                commitments = self.valid_commitments(context)?;
                 Ok(())
             }) as Box<dyn FnOnce() -> Result<(), BlockImportError> + Send>,
             Box::new(|| {
-                converted_classes = convert_classes(classes, validation)?;
+                converted_classes = convert_classes(classes, context)?;
                 Ok(())
             }),
         ]
@@ -331,12 +331,10 @@ pub struct BlockImportResult {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingBlockImportResult {}
 
-// Utilities for computation.
-
 fn transaction_hashes(
     receipts: &[TransactionReceipt],
     transactions: &[Transaction],
-    validation: &Validation,
+    context: &ValidationContext,
     block_n: Option<u64>,
 ) -> Result<Vec<Felt>, BlockImportError> {
     if receipts.len() != transactions.len() {
@@ -348,9 +346,9 @@ fn transaction_hashes(
 
     // mismatched block hash is allowed for blocks 1466..=2242 on mainnet
     let is_special_trusted_case =
-        validation.chain_id == ChainId::Mainnet && block_n.is_some_and(|n| (1466..=2242).contains(&n));
+        context.chain_id == ChainId::Mainnet && block_n.is_some_and(|n| (1466..=2242).contains(&n));
 
-    if is_special_trusted_case || validation.trust_transaction_hashes {
+    if is_special_trusted_case || context.trust_transaction_hashes {
         Ok(receipts.iter().map(|r| r.transaction_hash()).collect())
     } else {
         transactions
@@ -359,7 +357,7 @@ fn transaction_hashes(
             .map(|(index, tx)| {
                 // Panic safety: receipt count was checked earlier
                 let got = receipts[index].transaction_hash();
-                let expected = tx.compute_hash(validation.chain_id.to_felt(), false, block_n);
+                let expected = tx.compute_hash(context.chain_id.to_felt(), false, block_n);
                 if got != expected {
                     return Err(BlockImportError::TransactionHash { index, got, expected });
                 }
@@ -371,12 +369,12 @@ fn transaction_hashes(
 
 fn convert_classes(
     declared_classes: Vec<DeclaredClass>,
-    validation: &Validation,
+    context: &ValidationContext,
 ) -> Result<Vec<ConvertedClass>, BlockImportError> {
-    declared_classes.into_par_iter().map(|class| class_conversion(class, validation)).collect()
+    declared_classes.into_par_iter().map(|class| class_conversion(class, context)).collect()
 }
 
-fn class_conversion(class: DeclaredClass, _validation: &Validation) -> Result<ConvertedClass, BlockImportError> {
+fn class_conversion(class: DeclaredClass, _context: &ValidationContext) -> Result<ConvertedClass, BlockImportError> {
     let DeclaredClass { class_hash, contract_class, compiled_class_hash } = class;
 
     // TODO(class_hash, #212): uncomment this when the class hashes are computed correctly accross the entire state
