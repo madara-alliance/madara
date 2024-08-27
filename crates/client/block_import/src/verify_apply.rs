@@ -1,6 +1,5 @@
 use std::{borrow::Cow, sync::Arc};
 
-use dp_rayon_pool::RayonPool;
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
@@ -12,6 +11,7 @@ use dp_block::{
     UnverifiedHeader, ValidatedCommitments,
 };
 use dp_convert::ToFelt;
+use dp_rayon_pool::RayonPool;
 use dp_validation::ValidationContext;
 
 use crate::BlockImportError;

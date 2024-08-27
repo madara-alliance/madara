@@ -3,27 +3,28 @@ pub mod commitments;
 pub mod deoxys_block;
 pub mod header;
 
-use bitvec::vec::BitVec;
 pub use commitments::*;
 pub use deoxys_block::*;
 pub use header::*;
 
+use std::mem;
+
+use bitvec::vec::BitVec;
 pub use primitive_types::{H160, U256};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_api::core::ChainId;
-use starknet_types_core::felt::Felt;
-
-use dp_state_update::StateDiff;
-use dp_transactions::Transaction;
-
-use std::mem;
+use starknet_types_core::{
+    felt::Felt,
+    hash::{Pedersen, Poseidon, StarkHash},
+};
 
 use dp_chain_config::StarknetVersion;
 use dp_class::{ConvertedClass, DeclaredClass, ToConvertedClasses};
 use dp_convert::ToFelt;
 use dp_receipt::TransactionReceipt;
+use dp_state_update::StateDiff;
+use dp_transactions::Transaction;
 use dp_validation::{Validate, ValidationContext};
-use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 
 /// Block tag.
 ///

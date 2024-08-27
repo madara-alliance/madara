@@ -49,7 +49,6 @@ mod error;
 mod verify_apply;
 
 pub use error::*;
-pub use rayon::*;
 pub use verify_apply::*;
 
 pub struct BlockImporter {

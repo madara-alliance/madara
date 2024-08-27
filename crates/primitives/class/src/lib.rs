@@ -4,12 +4,12 @@ use starknet_types_core::felt::Felt;
 
 mod class_hash;
 mod compile;
-mod conversion;
+mod convert;
 mod into_starknet_core;
 
 pub use class_hash::ClassHash;
 pub use compile::ToCompiledClass;
-pub use conversion::{ToConvertedClass, ToConvertedClasses};
+pub use convert::{ToConvertedClass, ToConvertedClasses};
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ConvertedClass {

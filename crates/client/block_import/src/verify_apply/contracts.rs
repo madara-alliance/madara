@@ -1,15 +1,17 @@
+use std::collections::HashMap;
+
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
+use rayon::prelude::*;
+use starknet_types_core::felt::Felt;
+use starknet_types_core::hash::{Pedersen, StarkHash};
+
 use dc_db::DeoxysBackend;
 use dc_db::{bonsai_identifier, DeoxysStorageError};
 use dp_block::{BlockId, BlockTag};
 use dp_state_update::{ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StorageEntry};
-use rayon::prelude::*;
-use starknet_types_core::felt::Felt;
-use starknet_types_core::hash::{Pedersen, StarkHash};
-use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 struct ContractLeaf {

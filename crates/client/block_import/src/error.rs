@@ -1,6 +1,8 @@
-use dc_db::DeoxysStorageError;
-use starknet_core::types::Felt;
 use std::borrow::Cow;
+
+use starknet_core::types::Felt;
+
+use dc_db::DeoxysStorageError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BlockImportError {

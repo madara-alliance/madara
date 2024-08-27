@@ -2,12 +2,13 @@ use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
-use dc_db::DeoxysBackend;
-use dc_db::{bonsai_identifier, DeoxysStorageError};
-use dp_state_update::DeclaredClassItem;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
+
+use dc_db::DeoxysBackend;
+use dc_db::{bonsai_identifier, DeoxysStorageError};
+use dp_state_update::DeclaredClassItem;
 
 // "CONTRACT_CLASS_LEAF_V0"
 const CONTRACT_CLASS_HASH_VERSION: Felt = Felt::from_hex_unchecked("0x434f4e54524143545f434c4153535f4c4541465f5630");

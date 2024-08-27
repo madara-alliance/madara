@@ -1,7 +1,8 @@
+use starknet_types_core::felt::Felt;
+
 use dp_chain_config::StarknetVersion;
 use dp_receipt::TransactionReceipt;
 use dp_transactions::Transaction;
-use starknet_types_core::felt::Felt;
 
 use crate::header::{Header, PendingHeader};
 use crate::{BlockId, BlockTag};
