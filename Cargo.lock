@@ -3634,6 +3634,7 @@ dependencies = [
  "dp-state-update",
  "dp-transactions",
  "dp-utils",
+ "dp-validation",
  "futures",
  "log",
  "rayon",
@@ -3769,6 +3770,7 @@ dependencies = [
  "dp-state-update",
  "dp-transactions",
  "dp-utils",
+ "dp-validation",
  "env_logger 0.11.3",
  "hyper 0.14.29",
  "log",
@@ -3842,6 +3844,7 @@ dependencies = [
  "dp-state-update",
  "dp-transactions",
  "dp-utils",
+ "dp-validation",
  "futures",
  "log",
  "num-traits 0.2.19",
@@ -4170,6 +4173,25 @@ dependencies = [
  "log",
  "rayon",
  "tokio",
+]
+
+[[package]]
+name = "dp-validation"
+version = "0.1.0"
+dependencies = [
+ "blockifier",
+ "dp-chain-config",
+ "dp-convert",
+ "dp-receipt",
+ "dp-transactions",
+ "lazy_static",
+ "primitive-types",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
 ]
 
 [[package]]

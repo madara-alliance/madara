@@ -5,7 +5,7 @@ use crate::metrics::block_metrics::BlockMetrics;
 use crate::utils::trim_hash;
 use anyhow::Context;
 use dc_block_import::{
-    BlockImportResult, BlockImporter, PreValidatedBlock, UnverifiedFullBlock, UnverifiedPendingFullBlock, Validation,
+    BlockImportResult, BlockImporter, PreValidatedBlock, UnverifiedFullBlock, UnverifiedPendingFullBlock,
 };
 use dc_db::db_metrics::DbMetrics;
 use dc_db::DeoxysBackend;
@@ -13,6 +13,7 @@ use dc_db::DeoxysStorageError;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::Header;
 use dp_utils::{channel_wait_or_graceful_shutdown, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
+use dp_validation::Validation;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
 use starknet_api::core::ChainId;

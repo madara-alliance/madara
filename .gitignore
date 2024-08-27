@@ -46,8 +46,9 @@ deoxys.log
 starknet-e2e-test/contracts/cache
 starknet-e2e-test/contracts/build
 
-# vscode settings
+# vscode
 .vscode/settings.json
+*.code-workspace
 
 # rpc output
 output*

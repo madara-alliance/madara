@@ -1,18 +1,20 @@
 use std::{borrow::Cow, sync::Arc};
 
+use starknet_api::core::ChainId;
+use starknet_core::types::Felt;
+use starknet_types_core::hash::{Poseidon, StarkHash};
+
 use dc_db::{DeoxysBackend, DeoxysStorageError};
 use dp_block::{
     header::PendingHeader, BlockId, BlockTag, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
     DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo, Header,
 };
 use dp_convert::ToFelt;
-use starknet_api::core::ChainId;
-use starknet_core::types::Felt;
-use starknet_types_core::hash::{Poseidon, StarkHash};
+use dp_validation::Validation;
 
 use crate::{
     BlockImportError, BlockImportResult, PendingBlockImportResult, PreValidatedBlock, PreValidatedPendingBlock,
-    RayonPool, UnverifiedHeader, ValidatedCommitments, Validation,
+    RayonPool, UnverifiedHeader, ValidatedCommitments,
 };
 
 mod classes;

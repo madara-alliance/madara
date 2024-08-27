@@ -18,6 +18,7 @@ members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/primitives/validation",
   "crates/tests",
 ]
 resolver = "2"
@@ -40,6 +41,7 @@ default-members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/primitives/validation",
   "crates/tests",
 ]
 
@@ -85,6 +87,7 @@ dp-receipt = { path = "crates/primitives/receipt", default-features = false }
 dp-state-update = { path = "crates/primitives/state_update", default-features = false }
 dp-utils = { path = "crates/primitives/utils", default-features = false }
 dp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
+dp-validation = { path = "crates/primitives/validation", default-features = false }
 
 # Deoxys client
 dc-telemetry = { path = "crates/client/telemetry" }

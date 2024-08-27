@@ -1,8 +1,7 @@
-use dc_block_import::{
-    BlockImportError, BlockImportResult, BlockImporter, UnverifiedFullBlock, UnverifiedHeader, Validation,
-};
+use dc_block_import::{BlockImportError, BlockImportResult, BlockImporter, UnverifiedFullBlock, UnverifiedHeader};
 use dp_block::{header::PendingHeader, DeoxysPendingBlock, DeoxysPendingBlockInfo};
 use dp_state_update::StateDiff;
+use dp_validation::Validation;
 use starknet_api::core::ChainId;
 
 /// Close the block (convert from pending to closed), and store to db. This is delegated to the block import module.
