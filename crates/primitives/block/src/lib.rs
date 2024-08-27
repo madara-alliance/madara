@@ -384,7 +384,6 @@ pub struct PreValidatedPendingBlock {
 
 // ===================
 // TODO(akhercha) : move those *somewhere* else... not sure yet
-// ===================
 
 /// Mismatched block hash is allowed for blocks 1466..=2242 on mainnet
 const MISMATCH_HASH_ACCEPTED_BLOCK_RANGE: RangeInclusive<u64> = 1466..=2242;

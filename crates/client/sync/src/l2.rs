@@ -51,7 +51,7 @@ async fn l2_verify_and_apply_task(
     backend: Arc<DeoxysBackend>,
     mut updates_receiver: mpsc::Receiver<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
-    context: BlockValidationContext,
+    validation_context: BlockValidationContext,
     #[allow(unused)] verify: bool, // TODO(merge): re-add verify false
     backup_every_n_blocks: Option<u64>,
     block_metrics: BlockMetrics,
@@ -61,7 +61,8 @@ async fn l2_verify_and_apply_task(
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
     while let Some(block) = channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await {
-        let BlockImportResult { header, block_hash } = block_import.verify_apply(block, context.clone()).await?;
+        let BlockImportResult { header, block_hash } =
+            block_import.verify_apply(block, validation_context.clone()).await?;
 
         update_sync_metrics(
             header.block_number,
@@ -122,19 +123,19 @@ async fn l2_block_conversion_task(
     updates_receiver: mpsc::Receiver<UnverifiedFullBlock>,
     output: mpsc::Sender<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
-    context: BlockValidationContext,
+    validation_context: BlockValidationContext,
 ) -> anyhow::Result<()> {
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
     let conversion_stream = stream::unfold(
-        (updates_receiver, block_import, context.clone()),
-        |(mut updates_recv, block_import, context)| async move {
+        (updates_receiver, block_import, validation_context.clone()),
+        |(mut updates_recv, block_import, validation_context)| async move {
             channel_wait_or_graceful_shutdown(updates_recv.recv()).await.map(|block| {
                 let block_import_ = Arc::clone(&block_import);
-                let validation_ = context.clone();
+                let validation_ = validation_context.clone();
                 (
                     async move { block_import_.pre_validate(block, validation_).await },
-                    (updates_recv, block_import, context),
+                    (updates_recv, block_import, validation_context),
                 )
             })
         },
