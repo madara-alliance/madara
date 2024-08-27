@@ -1,4 +1,3 @@
-use anyhow::Result;
 use dp_rayon_pool::RayonPool;
 use starknet_api::core::ChainId;
 
@@ -12,10 +11,15 @@ pub struct ValidationContext {
 #[async_trait::async_trait]
 pub trait Validate: Send + Sync + Sized + 'static {
     type Output: Send + 'static;
+    type ValidationError: Send;
 
-    fn validate(self, context: &ValidationContext) -> Result<Self::Output>;
+    fn validate(self, context: &ValidationContext) -> Result<Self::Output, Self::ValidationError>;
 
-    async fn spawn_validate(self, pool: &RayonPool, context: ValidationContext) -> Result<Self::Output> {
+    async fn spawn_validate(
+        self,
+        pool: &RayonPool,
+        context: ValidationContext,
+    ) -> Result<Self::Output, Self::ValidationError> {
         pool.spawn_rayon_task(move || self.validate(&context)).await
     }
 }

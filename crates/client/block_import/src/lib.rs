@@ -67,7 +67,7 @@ impl BlockImporter {
         block: UnverifiedFullBlock,
         validation_context: ValidationContext,
     ) -> Result<PreValidatedBlock, BlockImportError> {
-        block.spawn_validate(&self.pool, validation_context).await.map_err(|_| BlockImportError::TODO)
+        block.spawn_validate(&self.pool, validation_context).await.map_err(BlockImportError::BlockValidationError)
     }
 
     pub async fn verify_apply(
@@ -83,7 +83,7 @@ impl BlockImporter {
         block: UnverifiedFullPendingBlock,
         validation_context: ValidationContext,
     ) -> Result<PreValidatedPendingBlock, BlockImportError> {
-        block.spawn_validate(&self.pool, validation_context).await.map_err(|_| BlockImportError::TODO)
+        block.spawn_validate(&self.pool, validation_context).await.map_err(BlockImportError::BlockValidationError)
     }
 
     pub async fn verify_apply_pending(

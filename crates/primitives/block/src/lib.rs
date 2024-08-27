@@ -81,6 +81,29 @@ impl From<BlockId> for starknet_core::types::BlockId {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum BlockCommitmentError {
+    #[error("Receipt commitment mismatch: expected {expected:#x}, got {got:#x}")]
+    ReceiptCommitment { got: Felt, expected: Felt },
+
+    #[error("State diff length mismatch: expected {expected}, got {got}")]
+    StateDiffLength { got: u64, expected: u64 },
+    #[error("State diff commitment mismatch: expected {expected:#x}, got {got:#x}")]
+    StateDiffCommitment { got: Felt, expected: Felt },
+
+    #[error("Transaction count mismatch: expected {expected}, got {got}")]
+    TransactionCount { got: u64, expected: u64 },
+    #[error("Transaction commitment mismatch: expected {expected:#x}, got {got:#x}")]
+    TransactionCommitment { got: Felt, expected: Felt },
+    #[error("Transaction hashes: {0}")]
+    TransactionHashes(#[from] TransactionHashesError),
+
+    #[error("Event count mismatch: expected {expected}, got {got}")]
+    EventCount { got: u64, expected: u64 },
+    #[error("Event commitment mismatch: expected {expected:#x}, got {got:#x}")]
+    EventCommitment { got: Felt, expected: Felt },
+}
+
 /// An unverified full block as input for the block import pipeline.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnverifiedFullBlock {
@@ -96,40 +119,37 @@ pub struct UnverifiedFullBlock {
 }
 
 impl UnverifiedFullBlock {
-    fn receipt_commitment(&self, _validation_context: &ValidationContext) -> anyhow::Result<Felt> {
+    fn receipt_commitment(&self, _validation_context: &ValidationContext) -> Result<Felt, BlockCommitmentError> {
         let hashes = self.receipts.par_iter().map(TransactionReceipt::compute_hash).collect::<Vec<_>>();
         let got = compute_merkle_root::<Poseidon>(&hashes);
 
         if let Some(expected) = self.commitments.receipt_commitment {
             if expected != got {
-                // return Err(BlockImportError::ReceiptCommitment { got, expected });
-                anyhow::bail!("ReceiptCommitment")
+                return Err(BlockCommitmentError::ReceiptCommitment { got, expected });
             }
         }
         Ok(got)
     }
 
-    fn state_diff_commitment(&self, _validation_context: &ValidationContext) -> anyhow::Result<Felt> {
+    fn state_diff_commitment(&self, _validation_context: &ValidationContext) -> Result<Felt, BlockCommitmentError> {
         let got = self.state_diff.len() as u64;
         if let Some(expected) = self.commitments.state_diff_length {
             if expected != got {
-                // return Err(BlockImportError::StateDiffLength { got, expected });
-                anyhow::bail!("StateDiffLength")
+                return Err(BlockCommitmentError::StateDiffLength { got, expected });
             }
         }
 
         let got = self.state_diff.compute_hash();
         if let Some(expected) = self.commitments.state_diff_commitment {
             if expected != got {
-                // return Err(BlockImportError::StateDiffCommitment { got, expected });
-                anyhow::bail!("StateDiffCommitment")
+                return Err(BlockCommitmentError::StateDiffCommitment { got, expected });
             }
         }
         Ok(got)
     }
 
     /// Compute the transaction commitment for a block.
-    fn transaction_commitment(&self, validation_context: &ValidationContext) -> anyhow::Result<Felt> {
+    fn transaction_commitment(&self, validation_context: &ValidationContext) -> Result<Felt, BlockCommitmentError> {
         let starknet_version = self.header.protocol_version;
 
         let transaction_hashes =
@@ -137,8 +157,7 @@ impl UnverifiedFullBlock {
 
         if let Some(expected) = self.commitments.transaction_count {
             if expected != self.transactions.len() as u64 {
-                // return Err(BlockImportError::TransactionCount { got: self.transactions.len() as _, expected });
-                anyhow::bail!("TransactionCount")
+                return Err(BlockCommitmentError::TransactionCount { got: self.transactions.len() as _, expected });
             }
         }
 
@@ -157,15 +176,14 @@ impl UnverifiedFullBlock {
             compute_merkle_root::<Poseidon>(&tx_hashes_with_signature)
         };
 
-        if let Some(_expected) = self.commitments.transaction_commitment.filter(|expected| *expected != got) {
-            // return Err(BlockImportError::TransactionCommitment { got, expected });
-            anyhow::bail!("TransactionCommitment")
+        if let Some(expected) = self.commitments.transaction_commitment.filter(|expected| *expected != got) {
+            return Err(BlockCommitmentError::TransactionCommitment { got, expected });
         }
 
         Ok(got)
     }
 
-    fn event_commitment(&self, _validation_context: &ValidationContext) -> anyhow::Result<Felt> {
+    fn event_commitment(&self, _validation_context: &ValidationContext) -> Result<Felt, BlockCommitmentError> {
         let events_with_tx_hash: Vec<_> = self
             .receipts
             .iter()
@@ -174,8 +192,7 @@ impl UnverifiedFullBlock {
 
         if let Some(expected) = self.commitments.event_count {
             if expected != events_with_tx_hash.len() as u64 {
-                // return Err(BlockImportError::EventCount { got: events_with_tx_hash.len() as _, expected });
-                anyhow::bail!("EventCount")
+                return Err(BlockCommitmentError::EventCount { got: events_with_tx_hash.len() as _, expected });
             }
         }
 
@@ -195,8 +212,7 @@ impl UnverifiedFullBlock {
 
         if let Some(expected) = self.commitments.event_commitment {
             if expected != got {
-                // return Err(BlockImportError::EventCommitment { got, expected });
-                anyhow::bail!("EventCommitment")
+                return Err(BlockCommitmentError::EventCommitment { got, expected });
             }
         }
 
@@ -204,13 +220,16 @@ impl UnverifiedFullBlock {
     }
 
     /// Returns [`ValidatedCommitments`] from the block unverified commitments.
-    pub fn valid_commitments(&self, validation_context: &ValidationContext) -> anyhow::Result<ValidatedCommitments> {
+    pub fn valid_commitments(
+        &self,
+        validation_context: &ValidationContext,
+    ) -> Result<ValidatedCommitments, BlockCommitmentError> {
         let (mut receipt_c, mut state_diff_c, mut transaction_c, mut event_c) = Default::default();
         [
             Box::new(|| {
                 receipt_c = self.receipt_commitment(validation_context)?;
                 Ok(())
-            }) as Box<dyn FnOnce() -> anyhow::Result<()> + Send>,
+            }) as Box<dyn FnOnce() -> Result<(), BlockCommitmentError> + Send>,
             Box::new(|| {
                 state_diff_c = self.state_diff_commitment(validation_context)?;
                 Ok(())
@@ -240,10 +259,21 @@ impl UnverifiedFullBlock {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum BlockValidationError {
+    #[error("Could not convert classes: {0}")]
+    ConversionError(#[from] anyhow::Error),
+    #[error("Commitment error: {0}")]
+    CommitmentError(#[from] BlockCommitmentError),
+    #[error("Transactions hashes error: {0}")]
+    TransactionHashesError(#[from] TransactionHashesError),
+}
+
 impl Validate for UnverifiedFullBlock {
     type Output = PreValidatedBlock;
+    type ValidationError = BlockValidationError;
 
-    fn validate(mut self, context: &ValidationContext) -> anyhow::Result<Self::Output> {
+    fn validate(mut self, context: &ValidationContext) -> Result<Self::Output, Self::ValidationError> {
         let classes = mem::take(&mut self.declared_classes);
 
         // unfortunately this is ugly but rayon::join does not have the fast error short circuiting behavior that
@@ -290,8 +320,9 @@ pub struct UnverifiedFullPendingBlock {
 
 impl Validate for UnverifiedFullPendingBlock {
     type Output = PreValidatedPendingBlock;
+    type ValidationError = BlockValidationError;
 
-    fn validate(mut self, context: &ValidationContext) -> anyhow::Result<Self::Output> {
+    fn validate(mut self, context: &ValidationContext) -> Result<Self::Output, Self::ValidationError> {
         let classes = mem::take(&mut self.declared_classes);
 
         let converted_classes = classes.convert()?;
@@ -333,24 +364,31 @@ pub struct PreValidatedPendingBlock {
 }
 
 // ===================
-// TODO(akhercha) : move those utils *somewhere*
+// TODO(akhercha) : move those *somewhere* else... not sure yet
 // ===================
 
 /// Mismatched block hash is allowed for blocks 1466..=2242 on mainnet
 const MISMATCH_HASH_ACCEPTED_BLOCK_RANGE: RangeInclusive<u64> = 1466..=2242;
+
+#[derive(Debug, thiserror::Error)]
+pub enum TransactionHashesError {
+    #[error("Transaction count and receipt count do not match: {receipts} receipts != {transactions} transactions")]
+    EqualReceiptCount { receipts: usize, transactions: usize },
+    #[error("Transaction hash mismatch for index #{index}: expected {expected:#x}, got {got:#x}")]
+    Hash { index: usize, got: Felt, expected: Felt },
+}
 
 fn transaction_hashes(
     receipts: &[TransactionReceipt],
     transactions: &[Transaction],
     validation_context: &ValidationContext,
     block_n: Option<u64>,
-) -> anyhow::Result<Vec<Felt>> {
+) -> Result<Vec<Felt>, TransactionHashesError> {
     if receipts.len() != transactions.len() {
-        anyhow::bail!("TransactionEqualReceiptCount");
-        // return Err(BlockImportError::TransactionEqualReceiptCount {
-        //     receipts: receipts.len(),
-        //     transactions: transactions.len(),
-        // });
+        return Err(TransactionHashesError::EqualReceiptCount {
+            receipts: receipts.len(),
+            transactions: transactions.len(),
+        });
     }
 
     let is_special_trusted_case = validation_context.chain_id == ChainId::Mainnet
@@ -367,8 +405,7 @@ fn transaction_hashes(
                 let got = receipts[index].transaction_hash();
                 let expected = tx.compute_hash(validation_context.chain_id.to_felt(), false, block_n);
                 if got != expected {
-                    // return Err(BlockImportError::TransactionHash { index, got, expected });
-                    anyhow::bail!("TransactionHash");
+                    return Err(TransactionHashesError::Hash { index, got, expected });
                 }
                 Ok(got)
             })

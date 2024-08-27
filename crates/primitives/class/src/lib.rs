@@ -12,12 +12,6 @@ pub use compile::ToCompiledClass;
 pub use convert::{ToConvertedClass, ToConvertedClasses};
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ConvertedClass {
-    pub class_infos: (Felt, ClassInfo),
-    pub class_compiled: (Felt, CompiledClass),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ClassInfo {
     pub contract_class: ContractClass,
     pub compiled_class_hash: Felt,
@@ -222,4 +216,10 @@ pub struct DeclaredClass {
     pub class_hash: Felt,
     pub contract_class: ContractClass,
     pub compiled_class_hash: Felt,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ConvertedClass {
+    pub class_infos: (Felt, ClassInfo),
+    pub class_compiled: (Felt, CompiledClass),
 }

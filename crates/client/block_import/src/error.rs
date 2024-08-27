@@ -1,33 +1,14 @@
 use std::borrow::Cow;
 
+use dp_block::{BlockCommitmentError, BlockValidationError};
 use starknet_core::types::Felt;
 
 use dc_db::DeoxysStorageError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BlockImportError {
-    #[error("Transaction count and receipt count do not match: {receipts} receipts != {transactions} transactions")]
-    TransactionEqualReceiptCount { receipts: usize, transactions: usize },
-
-    #[error("Transaction hash mismatch for index #{index}: expected {expected:#x}, got {got:#x}")]
-    TransactionHash { index: usize, got: Felt, expected: Felt },
-    #[error("Transaction count mismatch: expected {expected}, got {got}")]
-    TransactionCount { got: u64, expected: u64 },
-    #[error("Transaction commitment mismatch: expected {expected:#x}, got {got:#x}")]
-    TransactionCommitment { got: Felt, expected: Felt },
-
-    #[error("Event count mismatch: expected {expected}, got {got}")]
-    EventCount { got: u64, expected: u64 },
-    #[error("Event commitment mismatch: expected {expected:#x}, got {got:#x}")]
-    EventCommitment { got: Felt, expected: Felt },
-
-    #[error("State diff length mismatch: expected {expected}, got {got}")]
-    StateDiffLength { got: u64, expected: u64 },
-    #[error("State diff commitment mismatch: expected {expected:#x}, got {got:#x}")]
-    StateDiffCommitment { got: Felt, expected: Felt },
-
-    #[error("Receipt commitment mismatch: expected {expected:#x}, got {got:#x}")]
-    ReceiptCommitment { got: Felt, expected: Felt },
+    #[error("Block commitment error: {0}")]
+    CommitmentError(#[from] BlockCommitmentError),
 
     #[error("Class hash mismatch: expected {expected:#x}, got {got:#x}")]
     ClassHash { got: Felt, expected: Felt },
@@ -50,6 +31,7 @@ pub enum BlockImportError {
     InternalDb { context: Cow<'static, str>, error: DeoxysStorageError },
     #[error("Internal error: {0}")]
     Internal(Cow<'static, str>),
-    #[error("Adel did not work yet!")]
-    TODO,
+
+    #[error("Invalid block: {0}")]
+    BlockValidationError(#[from] BlockValidationError),
 }
