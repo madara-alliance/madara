@@ -6,6 +6,7 @@ pub trait Validate: Send + Sync + Sized + 'static {
     type Context: Clone + Send + Sync + 'static;
     type ValidationError: Send;
 
+    // TODO: context should be optional
     fn validate(self, context: &Self::Context) -> Result<Self::Output, Self::ValidationError>;
 
     async fn spawn_validate(
