@@ -62,7 +62,8 @@ pub async fn sync(
         starting_block,
         fetch_config.chain_id.clone(),
         telemetry,
-    )?;
+    )
+    .await?;
 
     Ok(())
 }

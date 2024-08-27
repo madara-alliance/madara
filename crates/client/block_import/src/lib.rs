@@ -105,11 +105,7 @@ pub enum BlockImportError {
 impl BlockImportError {
     /// Unrecoverable errors.
     pub fn is_internal(&self) -> bool {
-        match self {
-            BlockImportError::InternalDb { .. } => true,
-            BlockImportError::Internal(_) => true,
-            _ => false,
-        }
+        matches!(self, BlockImportError::InternalDb { .. } | BlockImportError::Internal(_))
     }
 }
 

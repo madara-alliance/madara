@@ -37,7 +37,7 @@ impl VerifyApply {
         block: PreValidatedBlock,
         validation: Validation,
     ) -> Result<BlockImportResult, BlockImportError> {
-        let _exclusive = self.mutex.lock();
+        let _exclusive = self.mutex.lock().await;
 
         let backend = Arc::clone(&self.backend);
         self.pool.spawn_rayon_task(move || verify_apply_inner(&backend, block, validation)).await
@@ -49,7 +49,7 @@ impl VerifyApply {
         block: PreValidatedPendingBlock,
         validation: Validation,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
-        let _exclusive = self.mutex.lock();
+        let _exclusive = self.mutex.lock().await;
 
         let backend = Arc::clone(&self.backend);
         self.pool.spawn_rayon_task(move || verify_apply_pending_inner(&backend, block, validation)).await
