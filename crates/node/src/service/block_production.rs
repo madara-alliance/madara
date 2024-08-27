@@ -13,6 +13,8 @@ struct StartParams {
     backend: Arc<DeoxysBackend>,
     mempool: Arc<Mempool>,
     l1_data_provider: Arc<dyn L1DataProvider>,
+    // We always take transactions in batches from the mempool
+    tx_batch_size: usize,
 }
 
 pub struct BlockProductionService {
@@ -33,7 +35,12 @@ impl BlockProductionService {
         }
 
         Ok(Self {
-            start: Some(StartParams { backend: Arc::clone(db_service.backend()), l1_data_provider, mempool }),
+            start: Some(StartParams {
+                backend: Arc::clone(db_service.backend()),
+                l1_data_provider,
+                mempool,
+                tx_batch_size: config.block_production_tx_batch_size,
+            }),
             enabled: true,
         })
     }
@@ -46,10 +53,13 @@ impl Service for BlockProductionService {
         if !self.enabled {
             return Ok(());
         }
-        let StartParams { backend, l1_data_provider, mempool } = self.start.take().expect("Service already started");
+        let StartParams { backend, l1_data_provider, mempool, tx_batch_size } =
+            self.start.take().expect("Service already started");
 
         join_set.spawn(async move {
-            BlockProductionTask::new(backend, mempool, l1_data_provider)?.block_production_task().await?;
+            BlockProductionTask::new(backend, mempool, l1_data_provider, tx_batch_size)?
+                .block_production_task()
+                .await?;
             Ok(())
         });
 

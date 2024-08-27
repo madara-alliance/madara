@@ -71,6 +71,26 @@ pub struct UnverifiedPendingFullBlock {
     pub declared_classes: Vec<DeclaredClass>,
 }
 
+impl PreValidate for UnverifiedPendingFullBlock {
+    type Output = PreValidatedPendingBlock;
+    type ValidationError = BlockImportError;
+
+    fn pre_validate(mut self, validation: &Validation) -> Result<Self::Output, Self::ValidationError> {
+        let classes = mem::take(&mut self.declared_classes);
+
+        let converted_classes = convert_classes(classes, validation)?;
+        let _tx_hashes = transaction_hashes(&self.receipts, &self.transactions, validation, None)?;
+
+        Ok(PreValidatedPendingBlock {
+            header: self.header,
+            transactions: self.transactions,
+            state_diff: self.state_diff,
+            receipts: self.receipts,
+            converted_classes,
+        })
+    }
+}
+
 /// An unverified full block as input for the block import pipeline.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnverifiedFullBlock {
@@ -81,11 +101,12 @@ pub struct UnverifiedFullBlock {
     pub transactions: Vec<Transaction>,
     pub receipts: Vec<TransactionReceipt>,
     pub declared_classes: Vec<DeclaredClass>,
+    // In authority mode, all commitments will be None
     pub commitments: UnverifiedCommitments,
 }
 
 impl UnverifiedFullBlock {
-    pub fn receipt_commitment(&self, _validation: &Validation) -> Result<Felt, BlockImportError> {
+    fn receipt_commitment(&self, _validation: &Validation) -> Result<Felt, BlockImportError> {
         let hashes = self.receipts.par_iter().map(TransactionReceipt::compute_hash).collect::<Vec<_>>();
         let got = compute_merkle_root::<Poseidon>(&hashes);
 
@@ -97,7 +118,7 @@ impl UnverifiedFullBlock {
         Ok(got)
     }
 
-    pub fn state_diff_commitment(&self, _validation: &Validation) -> Result<Felt, BlockImportError> {
+    fn state_diff_commitment(&self, _validation: &Validation) -> Result<Felt, BlockImportError> {
         let got = self.state_diff.len() as u64;
         if let Some(expected) = self.commitments.state_diff_length {
             if expected != got {
@@ -185,7 +206,8 @@ impl UnverifiedFullBlock {
         Ok(got)
     }
 
-    pub fn commitments(&self, validation: &Validation) -> Result<ValidatedCommitments, BlockImportError> {
+    /// Returns [`ValidatedCommitments`] from the block unverified commitments.
+    pub fn valid_commitments(&self, validation: &Validation) -> Result<ValidatedCommitments, BlockImportError> {
         let (mut receipt_c, mut state_diff_c, mut transaction_c, mut event_c) = Default::default();
         [
             Box::new(|| {
@@ -217,6 +239,45 @@ impl UnverifiedFullBlock {
             state_diff_length: self.state_diff.len() as _,
             state_diff_commitment: state_diff_c,
             receipt_commitment: receipt_c,
+        })
+    }
+}
+
+impl PreValidate for UnverifiedFullBlock {
+    type Output = PreValidatedBlock;
+    type ValidationError = BlockImportError;
+
+    fn pre_validate(mut self, validation: &Validation) -> Result<Self::Output, Self::ValidationError> {
+        let classes = mem::take(&mut self.declared_classes);
+
+        // unfortunately this is ugly but rayon::join does not have the fast error short circuiting behavior that
+        // collecting into a Result has.
+        // little known fact this uses the impl FromIterator for () from std, nice trick
+        let (mut commitments, mut converted_classes) = Default::default();
+        [
+            Box::new(|| {
+                commitments = self.valid_commitments(validation)?;
+                Ok(())
+            }) as Box<dyn FnOnce() -> Result<(), BlockImportError> + Send>,
+            Box::new(|| {
+                converted_classes = convert_classes(classes, validation)?;
+                Ok(())
+            }),
+        ]
+        .into_par_iter()
+        .map(|f| f())
+        .collect::<Result<(), _>>()?;
+
+        Ok(PreValidatedBlock {
+            header: self.header,
+            transactions: self.transactions,
+            state_diff: self.state_diff,
+            receipts: self.receipts,
+            commitments,
+            converted_classes,
+            unverified_global_state_root: self.commitments.global_state_root,
+            unverified_block_hash: self.commitments.block_hash,
+            unverified_block_number: self.unverified_block_number,
         })
     }
 }
@@ -269,67 +330,6 @@ pub struct BlockImportResult {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingBlockImportResult {}
-
-// Validations implementations
-
-impl PreValidate for UnverifiedFullBlock {
-    type Output = PreValidatedBlock;
-    type ValidationError = BlockImportError;
-
-    fn pre_validate(mut self, validation: &Validation) -> Result<Self::Output, Self::ValidationError> {
-        let classes = mem::take(&mut self.declared_classes);
-
-        // unfortunately this is ugly but rayon::join does not have the fast error short circuiting behavior that
-        // collecting into a Result has.
-        // little known fact this uses the impl FromIterator for () from std, nice trick
-        let (mut commitments, mut converted_classes) = Default::default();
-        [
-            Box::new(|| {
-                commitments = self.commitments(validation)?;
-                Ok(())
-            }) as Box<dyn FnOnce() -> Result<(), BlockImportError> + Send>,
-            Box::new(|| {
-                converted_classes = convert_classes(classes, validation)?;
-                Ok(())
-            }),
-        ]
-        .into_par_iter()
-        .map(|f| f())
-        .collect::<Result<(), _>>()?;
-
-        Ok(PreValidatedBlock {
-            header: self.header,
-            transactions: self.transactions,
-            state_diff: self.state_diff,
-            receipts: self.receipts,
-            commitments,
-            converted_classes,
-            unverified_global_state_root: self.commitments.global_state_root,
-            unverified_block_hash: self.commitments.block_hash,
-            unverified_block_number: self.unverified_block_number,
-        })
-    }
-}
-
-impl PreValidate for UnverifiedPendingFullBlock {
-    type Output = PreValidatedPendingBlock;
-    type ValidationError = BlockImportError;
-
-    fn pre_validate(mut self, validation: &Validation) -> Result<Self::Output, Self::ValidationError> {
-        let classes = mem::take(&mut self.declared_classes);
-
-        let converted_classes = convert_classes(classes, validation)?;
-        let _tx_hashes = transaction_hashes(&self.receipts, &self.transactions, validation, None)?;
-
-        Ok(PreValidatedPendingBlock {
-            header: self.header,
-            transactions: self.transactions,
-            state_diff: self.state_diff,
-            receipts: self.receipts,
-            converted_classes,
-        })
-    }
-}
 
 // Utilities for computation.
 

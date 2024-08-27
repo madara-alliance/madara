@@ -28,9 +28,6 @@ use crate::close_block::close_block;
 use crate::header::make_pending_header;
 use crate::{clone_account_tx, L1DataProvider, Mempool, MempoolTransaction};
 
-/// We always take transactions in batches from the mempool
-const TX_BATCH_SIZE: usize = 128;
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Storage error: {0:#}")]
@@ -164,6 +161,7 @@ pub struct BlockProductionTask {
     executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     current_pending_tick: usize,
+    tx_batch_size: usize,
 }
 
 impl BlockProductionTask {
@@ -171,6 +169,7 @@ impl BlockProductionTask {
         backend: Arc<DeoxysBackend>,
         mempool: Arc<Mempool>,
         l1_data_provider: Arc<dyn L1DataProvider>,
+        tx_batch_size: usize,
     ) -> Result<Self, Error> {
         let parent_block_hash = backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
         let pending_block = DeoxysPendingBlock::new_empty(make_pending_header(
@@ -198,14 +197,15 @@ impl BlockProductionTask {
             block: pending_block,
             declared_classes: vec![],
             l1_data_provider,
+            tx_batch_size,
         })
     }
 
     fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<StateDiff, Error> {
         self.executor.bouncer.bouncer_config.block_max_capacity = bouncer_cap;
 
-        let mut txs_to_process = Vec::with_capacity(TX_BATCH_SIZE);
-        self.mempool.take_txs_chunk(&mut txs_to_process, TX_BATCH_SIZE);
+        let mut txs_to_process = Vec::with_capacity(self.tx_batch_size);
+        self.mempool.take_txs_chunk(&mut txs_to_process, self.tx_batch_size);
 
         let blockifier_txs: Vec<_> =
             txs_to_process.iter().map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))).collect();

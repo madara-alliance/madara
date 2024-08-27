@@ -2,16 +2,20 @@
 #![warn(missing_docs)]
 #![warn(clippy::unwrap_used)]
 
-use std::sync::Arc;
-
-use anyhow::Context;
-use clap::Parser;
 mod cli;
 mod service;
 mod util;
 
-use crate::service::L1SyncService;
+use std::sync::Arc;
+
+use anyhow::Context;
+use clap::Parser;
+use starknet_providers::SequencerGatewayProvider;
+
 use cli::RunCmd;
+use service::{BlockProductionService, L1SyncService, RpcService, SyncService};
+use util::{raise_fdlimit, setup_logging, setup_rayon_threadpool};
+
 use dc_db::DatabaseService;
 use dc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use dc_metrics::MetricsService;
@@ -19,17 +23,16 @@ use dc_rpc::providers::AddTransactionProvider;
 use dc_telemetry::{SysInfo, TelemetryService};
 use dp_convert::ToFelt;
 use dp_utils::service::{Service, ServiceGroup};
-use service::{BlockProductionService, RpcService, SyncService};
-use starknet_providers::SequencerGatewayProvider;
+
 const GREET_IMPL_NAME: &str = "Deoxys";
 const GREET_SUPPORT_URL: &str = "https://github.com/KasarLabs/deoxys/issues";
 const GREET_AUTHORS: &[&str] = &["KasarLabs <https://kasar.io>"];
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    crate::util::setup_logging()?;
-    crate::util::setup_rayon_threadpool()?;
-    crate::util::raise_fdlimit();
+    setup_logging()?;
+    setup_rayon_threadpool()?;
+    raise_fdlimit();
 
     let mut run_cmd: RunCmd = RunCmd::parse();
 
