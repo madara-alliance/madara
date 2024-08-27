@@ -1,7 +1,5 @@
 use dp_rayon_pool::RayonPool;
 
-pub trait ValidationContext {}
-
 #[async_trait::async_trait]
 pub trait Validate: Send + Sync + Sized + 'static {
     type Output: Send + 'static;
