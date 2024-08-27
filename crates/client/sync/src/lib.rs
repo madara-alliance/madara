@@ -41,10 +41,6 @@ pub async fn sync(
         fetch_config.feeder_gateway.clone(),
         fetch_config.chain_id.to_felt(),
     );
-    let provider = match &fetch_config.api_key {
-        Some(api_key) => provider.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
-        None => provider,
-    };
 
     l2::sync(
         backend,

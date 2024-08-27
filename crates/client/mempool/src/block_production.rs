@@ -377,7 +377,7 @@ impl BlockProductionTask {
                         log::error!("Block production task has errored: {err:#}");
                     }
                     // ensure the pending block tick and block time match up
-                    interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());
+                    interval_pending_block_update.reset_at(inst + interval_pending_block_update.period());
                 },
                 _ = interval_pending_block_update.tick() => {
                     if let Err(err) = self.on_pending_time_tick() {
