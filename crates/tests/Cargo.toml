@@ -13,11 +13,11 @@ anyhow.workspace = true
 env_logger.workspace = true
 lazy_static.workspace = true
 log.workspace = true
+once_cell = { workspace = true }
 reqwest.workspace = true
 rstest.workspace = true
+serde_json = { workspace = true }
 starknet-core.workspace = true
 starknet-providers.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
-serde_json = {workspace = true}
-once_cell = {workspace = true}
