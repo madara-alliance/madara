@@ -202,10 +202,10 @@ fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> F
 fn update_tries(
     backend: &DeoxysBackend,
     block: &PreValidatedBlock,
-    validation: &BlockValidationContext,
+    validation_context: &BlockValidationContext,
     block_number: u64,
 ) -> Result<Felt, BlockImportError> {
-    if validation.trust_global_tries {
+    if validation_context.trust_global_tries {
         let Some(global_state_root) = block.unverified_global_state_root else {
             return Err(BlockImportError::Internal("Trying to import a block without a global state root but ".into()));
         };
