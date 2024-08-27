@@ -1,5 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
+use dp_rayon_pool::RayonPool;
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
@@ -7,18 +8,27 @@ use starknet_types_core::hash::{Poseidon, StarkHash};
 use dc_db::{DeoxysBackend, DeoxysStorageError};
 use dp_block::{
     header::PendingHeader, BlockId, BlockTag, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
-    DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo, Header,
+    DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo, Header, PreValidatedBlock, PreValidatedPendingBlock,
+    UnverifiedHeader, ValidatedCommitments,
 };
 use dp_convert::ToFelt;
 use dp_validation::ValidationContext;
 
-use crate::{
-    BlockImportError, BlockImportResult, PendingBlockImportResult, PreValidatedBlock, PreValidatedPendingBlock,
-    RayonPool, UnverifiedHeader, ValidatedCommitments,
-};
+use crate::BlockImportError;
 
 mod classes;
 mod contracts;
+
+// Verify-apply output.
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BlockImportResult {
+    pub header: Header,
+    pub block_hash: Felt,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingBlockImportResult {}
 
 pub struct VerifyApply {
     pool: Arc<RayonPool>,

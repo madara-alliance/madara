@@ -1,5 +1,7 @@
-use dc_block_import::{BlockImportError, BlockImportResult, BlockImporter, UnverifiedFullBlock, UnverifiedHeader};
-use dp_block::{header::PendingHeader, DeoxysPendingBlock, DeoxysPendingBlockInfo};
+use dc_block_import::{BlockImportError, BlockImportResult, BlockImporter};
+use dp_block::{
+    header::PendingHeader, DeoxysPendingBlock, DeoxysPendingBlockInfo, UnverifiedFullBlock, UnverifiedHeader,
+};
 use dp_state_update::StateDiff;
 use dp_validation::ValidationContext;
 use starknet_api::core::ChainId;

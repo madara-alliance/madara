@@ -4,12 +4,13 @@ use core::time::Duration;
 use std::collections::HashMap;
 
 use anyhow::Context;
-use dc_block_import::{
-    DeclaredClass, UnverifiedCommitments, UnverifiedFullBlock, UnverifiedHeader, UnverifiedPendingFullBlock,
-};
 use dc_db::storage_updates::DbClassUpdate;
 use dc_db::DeoxysBackend;
-use dp_block::{header::GasPrices, BlockId, BlockTag};
+use dp_block::{
+    header::GasPrices, BlockId, BlockTag, UnverifiedCommitments, UnverifiedFullBlock, UnverifiedFullPendingBlock,
+    UnverifiedHeader,
+};
+use dp_class::DeclaredClass;
 use dp_convert::felt_to_u128;
 use dp_receipt::TransactionReceipt;
 use dp_transactions::Transaction;
@@ -93,7 +94,7 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 pub async fn fetch_pending_block_and_updates(
     backend: &DeoxysBackend,
     provider: &SequencerGatewayProvider,
-) -> Result<UnverifiedPendingFullBlock, FetchError> {
+) -> Result<UnverifiedFullPendingBlock, FetchError> {
     let block_id = FetchBlockId::Pending;
 
     let sw = PerfStopwatch::new();
@@ -113,7 +114,7 @@ pub async fn fetch_pending_block_and_updates(
     let (transactions, receipts) =
         block.transactions.into_iter().map(|t| (t.transaction.into(), t.receipt.into())).unzip();
 
-    Ok(UnverifiedPendingFullBlock {
+    Ok(UnverifiedFullPendingBlock {
         header: UnverifiedHeader {
             parent_block_hash: Some(block.parent_hash),
             sequencer_address: block.sequencer_address,

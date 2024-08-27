@@ -1,76 +1,29 @@
 //! Starknet block primitives.
-
+pub mod commitments;
+pub mod deoxys_block;
 pub mod header;
 
-use dp_chain_config::StarknetVersion;
-use dp_receipt::TransactionReceipt;
-use dp_transactions::Transaction;
-pub use header::Header;
-use header::PendingHeader;
+use bitvec::vec::BitVec;
+pub use commitments::*;
+pub use deoxys_block::*;
+pub use header::*;
+
 pub use primitive_types::{H160, U256};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[allow(clippy::large_enum_variant)]
-pub enum DeoxysMaybePendingBlockInfo {
-    Pending(DeoxysPendingBlockInfo),
-    NotPending(DeoxysBlockInfo),
-}
+use dp_state_update::StateDiff;
+use dp_transactions::Transaction;
 
-impl DeoxysMaybePendingBlockInfo {
-    pub fn as_nonpending(&self) -> Option<&DeoxysBlockInfo> {
-        match self {
-            DeoxysMaybePendingBlockInfo::Pending(_) => None,
-            DeoxysMaybePendingBlockInfo::NotPending(v) => Some(v),
-        }
-    }
-    pub fn as_pending(&self) -> Option<&DeoxysPendingBlockInfo> {
-        match self {
-            DeoxysMaybePendingBlockInfo::Pending(v) => Some(v),
-            DeoxysMaybePendingBlockInfo::NotPending(_) => None,
-        }
-    }
+use std::mem;
 
-    pub fn as_block_id(&self) -> BlockId {
-        match self {
-            DeoxysMaybePendingBlockInfo::Pending(_) => BlockId::Tag(BlockTag::Pending),
-            DeoxysMaybePendingBlockInfo::NotPending(info) => BlockId::Number(info.header.block_number),
-        }
-    }
-
-    pub fn block_n(&self) -> Option<u64> {
-        self.as_nonpending().map(|v| v.header.block_number)
-    }
-
-    pub fn block_hash(&self) -> Option<Felt> {
-        self.as_nonpending().map(|v| v.block_hash)
-    }
-
-    pub fn tx_hashes(&self) -> &[Felt] {
-        match self {
-            DeoxysMaybePendingBlockInfo::NotPending(block) => &block.tx_hashes,
-            DeoxysMaybePendingBlockInfo::Pending(block) => &block.tx_hashes,
-        }
-    }
-
-    pub fn protocol_version(&self) -> &StarknetVersion {
-        match self {
-            DeoxysMaybePendingBlockInfo::NotPending(block) => &block.header.protocol_version,
-            DeoxysMaybePendingBlockInfo::Pending(block) => &block.header.protocol_version,
-        }
-    }
-}
-
-impl From<DeoxysPendingBlockInfo> for DeoxysMaybePendingBlockInfo {
-    fn from(value: DeoxysPendingBlockInfo) -> Self {
-        Self::Pending(value)
-    }
-}
-impl From<DeoxysBlockInfo> for DeoxysMaybePendingBlockInfo {
-    fn from(value: DeoxysBlockInfo) -> Self {
-        Self::NotPending(value)
-    }
-}
+use dp_chain_config::StarknetVersion;
+use dp_class::{ConvertedClass, DeclaredClass, ToConvertedClasses};
+use dp_convert::ToFelt;
+use dp_receipt::TransactionReceipt;
+use dp_validation::{Validate, ValidationContext};
+use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 
 /// Block tag.
 ///
@@ -127,170 +80,331 @@ impl From<BlockId> for starknet_core::types::BlockId {
     }
 }
 
-// Light version of the block with block_hash
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DeoxysPendingBlockInfo {
-    pub header: PendingHeader,
-    pub tx_hashes: Vec<Felt>,
-}
-
-impl DeoxysPendingBlockInfo {
-    pub fn new(header: PendingHeader, tx_hashes: Vec<Felt>) -> Self {
-        Self { header, tx_hashes }
-    }
-}
-
-// Light version of the block with block_hash
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DeoxysBlockInfo {
-    pub header: Header,
-    pub block_hash: Felt,
-    pub tx_hashes: Vec<Felt>,
-}
-
-impl DeoxysBlockInfo {
-    pub fn new(header: Header, tx_hashes: Vec<Felt>, block_hash: Felt) -> Self {
-        Self { header, block_hash, tx_hashes }
-    }
-}
-
-/// Starknet block inner.
-///
-/// Contains the block transactions and receipts.
-/// The transactions and receipts are in the same order.
-/// The i-th transaction corresponds to the i-th receipt.
-/// The length of the transactions and receipts must be the same.
-///
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DeoxysBlockInner {
-    /// The block transactions.
+/// An unverified full block as input for the block import pipeline.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnverifiedFullBlock {
+    /// When set to None, it will be deduced from the latest block in storage.
+    pub unverified_block_number: Option<u64>,
+    pub header: UnverifiedHeader,
+    pub state_diff: StateDiff,
     pub transactions: Vec<Transaction>,
-    /// The block transactions receipts.
     pub receipts: Vec<TransactionReceipt>,
+    pub declared_classes: Vec<DeclaredClass>,
+    // In authority mode, all commitments will be None
+    pub commitments: UnverifiedCommitments,
 }
 
-impl DeoxysBlockInner {
-    pub fn new(transactions: Vec<Transaction>, receipts: Vec<TransactionReceipt>) -> Self {
-        Self { transactions, receipts }
-    }
-}
+impl UnverifiedFullBlock {
+    fn receipt_commitment(&self, _context: &ValidationContext) -> anyhow::Result<Felt> {
+        let hashes = self.receipts.par_iter().map(TransactionReceipt::compute_hash).collect::<Vec<_>>();
+        let got = compute_merkle_root::<Poseidon>(&hashes);
 
-/// Starknet block definition.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DeoxysMaybePendingBlock {
-    pub info: DeoxysMaybePendingBlockInfo,
-    pub inner: DeoxysBlockInner,
-}
-
-/// Starknet block definition.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct DeoxysBlock {
-    pub info: DeoxysBlockInfo,
-    pub inner: DeoxysBlockInner,
-}
-
-impl DeoxysBlock {
-    /// Creates a new block.
-    pub fn new(info: DeoxysBlockInfo, inner: DeoxysBlockInner) -> Self {
-        Self { info, inner }
-    }
-}
-
-/// Starknet block definition.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct DeoxysPendingBlock {
-    pub info: DeoxysPendingBlockInfo,
-    pub inner: DeoxysBlockInner,
-}
-
-impl DeoxysPendingBlock {
-    /// Creates a new block.
-    pub fn new(info: DeoxysPendingBlockInfo, inner: DeoxysBlockInner) -> Self {
-        Self { info, inner }
-    }
-
-    pub fn new_empty(header: PendingHeader) -> Self {
-        Self {
-            info: DeoxysPendingBlockInfo { header, tx_hashes: vec![] },
-            inner: DeoxysBlockInner { receipts: vec![], transactions: vec![] },
+        if let Some(expected) = self.commitments.receipt_commitment {
+            if expected != got {
+                // return Err(BlockImportError::ReceiptCommitment { got, expected });
+                anyhow::bail!("ReceiptCommitment")
+            }
         }
+        Ok(got)
     }
-}
 
-#[derive(Debug, thiserror::Error)]
-#[error("Block is pending")]
-pub struct BlockIsPendingError(());
-
-impl TryFrom<DeoxysMaybePendingBlock> for DeoxysBlock {
-    type Error = BlockIsPendingError;
-    fn try_from(value: DeoxysMaybePendingBlock) -> Result<Self, Self::Error> {
-        match value.info {
-            DeoxysMaybePendingBlockInfo::Pending(_) => Err(BlockIsPendingError(())),
-            DeoxysMaybePendingBlockInfo::NotPending(info) => Ok(DeoxysBlock { info, inner: value.inner }),
+    fn state_diff_commitment(&self, _context: &ValidationContext) -> anyhow::Result<Felt> {
+        let got = self.state_diff.len() as u64;
+        if let Some(expected) = self.commitments.state_diff_length {
+            if expected != got {
+                // return Err(BlockImportError::StateDiffLength { got, expected });
+                anyhow::bail!("StateDiffLength")
+            }
         }
-    }
-}
 
-#[derive(Debug, thiserror::Error)]
-#[error("Block is not pending")]
-pub struct BlockIsNotPendingError(());
-
-impl TryFrom<DeoxysMaybePendingBlock> for DeoxysPendingBlock {
-    type Error = BlockIsNotPendingError;
-    fn try_from(value: DeoxysMaybePendingBlock) -> Result<Self, Self::Error> {
-        match value.info {
-            DeoxysMaybePendingBlockInfo::NotPending(_) => Err(BlockIsNotPendingError(())),
-            DeoxysMaybePendingBlockInfo::Pending(info) => Ok(DeoxysPendingBlock { info, inner: value.inner }),
+        let got = self.state_diff.compute_hash();
+        if let Some(expected) = self.commitments.state_diff_commitment {
+            if expected != got {
+                // return Err(BlockImportError::StateDiffCommitment { got, expected });
+                anyhow::bail!("StateDiffCommitment")
+            }
         }
+        Ok(got)
+    }
+
+    /// Compute the transaction commitment for a block.
+    fn transaction_commitment(&self, context: &ValidationContext) -> anyhow::Result<Felt> {
+        let starknet_version = self.header.protocol_version;
+
+        let transaction_hashes =
+            transaction_hashes(&self.receipts, &self.transactions, context, self.unverified_block_number)?;
+
+        if let Some(expected) = self.commitments.transaction_count {
+            if expected != self.transactions.len() as u64 {
+                // return Err(BlockImportError::TransactionCount { got: self.transactions.len() as _, expected });
+                anyhow::bail!("TransactionCount")
+            }
+        }
+
+        // Compute transaction hashes
+        let tx_hashes_with_signature: Vec<_> = self
+            .transactions
+            .par_iter()
+            .zip(transaction_hashes)
+            .map(|(tx, tx_hash)| tx.compute_hash_with_signature(tx_hash, starknet_version))
+            .collect();
+
+        // Transaction commitment
+        let got = if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+            compute_merkle_root::<Pedersen>(&tx_hashes_with_signature)
+        } else {
+            compute_merkle_root::<Poseidon>(&tx_hashes_with_signature)
+        };
+
+        if let Some(_expected) = self.commitments.transaction_commitment.filter(|expected| *expected != got) {
+            // return Err(BlockImportError::TransactionCommitment { got, expected });
+            anyhow::bail!("TransactionCommitment")
+        }
+
+        Ok(got)
+    }
+
+    fn event_commitment(&self, _context: &ValidationContext) -> anyhow::Result<Felt> {
+        let events_with_tx_hash: Vec<_> = self
+            .receipts
+            .iter()
+            .flat_map(|receipt| receipt.events().iter().map(move |event| (receipt.transaction_hash(), event.clone())))
+            .collect();
+
+        if let Some(expected) = self.commitments.event_count {
+            if expected != events_with_tx_hash.len() as u64 {
+                // return Err(BlockImportError::EventCount { got: events_with_tx_hash.len() as _, expected });
+                anyhow::bail!("EventCount")
+            }
+        }
+
+        let got = if events_with_tx_hash.is_empty() {
+            Felt::ZERO
+        } else if self.header.protocol_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+            let events_hash =
+                events_with_tx_hash.into_par_iter().map(|(_, event)| event.compute_hash_pedersen()).collect::<Vec<_>>();
+            compute_merkle_root::<Pedersen>(&events_hash)
+        } else {
+            let events_hash = events_with_tx_hash
+                .into_par_iter()
+                .map(|(hash, event)| event.compute_hash_poseidon(&hash))
+                .collect::<Vec<_>>();
+            compute_merkle_root::<Poseidon>(&events_hash)
+        };
+
+        if let Some(expected) = self.commitments.event_commitment {
+            if expected != got {
+                // return Err(BlockImportError::EventCommitment { got, expected });
+                anyhow::bail!("EventCommitment")
+            }
+        }
+
+        Ok(got)
+    }
+
+    /// Returns [`ValidatedCommitments`] from the block unverified commitments.
+    pub fn valid_commitments(&self, context: &ValidationContext) -> anyhow::Result<ValidatedCommitments> {
+        let (mut receipt_c, mut state_diff_c, mut transaction_c, mut event_c) = Default::default();
+        [
+            Box::new(|| {
+                receipt_c = self.receipt_commitment(context)?;
+                Ok(())
+            }) as Box<dyn FnOnce() -> anyhow::Result<()> + Send>,
+            Box::new(|| {
+                state_diff_c = self.state_diff_commitment(context)?;
+                Ok(())
+            }),
+            Box::new(|| {
+                transaction_c = self.transaction_commitment(context)?;
+                Ok(())
+            }),
+            Box::new(|| {
+                event_c = self.event_commitment(context)?;
+                Ok(())
+            }),
+        ]
+        .into_par_iter()
+        .map(|f| f())
+        .collect::<Result<(), _>>()?;
+
+        Ok(ValidatedCommitments {
+            transaction_count: self.transactions.len() as _,
+            transaction_commitment: transaction_c,
+            event_count: self.receipts.iter().map(|r| r.events().len()).sum::<usize>() as _,
+            event_commitment: event_c,
+            state_diff_length: self.state_diff.len() as _,
+            state_diff_commitment: state_diff_c,
+            receipt_commitment: receipt_c,
+        })
     }
 }
 
-impl From<DeoxysPendingBlock> for DeoxysMaybePendingBlock {
-    fn from(value: DeoxysPendingBlock) -> Self {
-        Self { info: value.info.into(), inner: value.inner }
+impl Validate for UnverifiedFullBlock {
+    type Output = PreValidatedBlock;
+
+    fn validate(mut self, context: &ValidationContext) -> anyhow::Result<Self::Output> {
+        let classes = mem::take(&mut self.declared_classes);
+
+        // unfortunately this is ugly but rayon::join does not have the fast error short circuiting behavior that
+        // collecting into a Result has.
+        // little known fact this uses the impl FromIterator for () from std, nice trick
+        let (mut commitments, mut converted_classes) = Default::default();
+        [
+            Box::new(|| {
+                commitments = self.valid_commitments(context)?;
+                Ok(())
+            }) as Box<dyn FnOnce() -> anyhow::Result<()> + Send>,
+            Box::new(|| {
+                converted_classes = classes.convert()?;
+                Ok(())
+            }),
+        ]
+        .into_par_iter()
+        .map(|f| f())
+        .collect::<Result<(), _>>()?;
+
+        Ok(PreValidatedBlock {
+            header: self.header,
+            transactions: self.transactions,
+            state_diff: self.state_diff,
+            receipts: self.receipts,
+            commitments,
+            converted_classes,
+            unverified_global_state_root: self.commitments.global_state_root,
+            unverified_block_hash: self.commitments.block_hash,
+            unverified_block_number: self.unverified_block_number,
+        })
     }
 }
-impl From<DeoxysBlock> for DeoxysMaybePendingBlock {
-    fn from(value: DeoxysBlock) -> Self {
-        Self { info: value.info.into(), inner: value.inner }
+
+/// An unverified pending full block as input for the block import pipeline.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnverifiedFullPendingBlock {
+    pub header: UnverifiedHeader,
+    pub state_diff: StateDiff,
+    pub transactions: Vec<Transaction>,
+    pub receipts: Vec<TransactionReceipt>,
+    pub declared_classes: Vec<DeclaredClass>,
+}
+
+impl Validate for UnverifiedFullPendingBlock {
+    type Output = PreValidatedPendingBlock;
+
+    fn validate(mut self, context: &ValidationContext) -> anyhow::Result<Self::Output> {
+        let classes = mem::take(&mut self.declared_classes);
+
+        let converted_classes = classes.convert()?;
+        let _tx_hashes = transaction_hashes(&self.receipts, &self.transactions, context, None)?;
+
+        Ok(PreValidatedPendingBlock {
+            header: self.header,
+            transactions: self.transactions,
+            state_diff: self.state_diff,
+            receipts: self.receipts,
+            converted_classes,
+        })
     }
+}
+
+/// Output of the [`crate::pre_validate`] step.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreValidatedBlock {
+    pub header: UnverifiedHeader,
+    pub transactions: Vec<Transaction>,
+    pub state_diff: StateDiff,
+    pub receipts: Vec<TransactionReceipt>,
+    pub commitments: ValidatedCommitments,
+    pub converted_classes: Vec<ConvertedClass>,
+
+    pub unverified_global_state_root: Option<Felt>,
+    pub unverified_block_hash: Option<Felt>,
+    pub unverified_block_number: Option<u64>,
+}
+
+/// Output of the [`crate::pre_validate`] step.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreValidatedPendingBlock {
+    pub header: UnverifiedHeader,
+    pub transactions: Vec<Transaction>,
+    pub state_diff: StateDiff,
+    pub receipts: Vec<TransactionReceipt>,
+    pub converted_classes: Vec<ConvertedClass>,
+}
+
+// ===================
+// TODO(akhercha) : move those utils *somewhere*
+// ===================
+
+fn transaction_hashes(
+    receipts: &[TransactionReceipt],
+    transactions: &[Transaction],
+    context: &ValidationContext,
+    block_n: Option<u64>,
+) -> anyhow::Result<Vec<Felt>> {
+    if receipts.len() != transactions.len() {
+        anyhow::bail!("TransactionEqualReceiptCount");
+        // return Err(BlockImportError::TransactionEqualReceiptCount {
+        //     receipts: receipts.len(),
+        //     transactions: transactions.len(),
+        // });
+    }
+
+    // mismatched block hash is allowed for blocks 1466..=2242 on mainnet
+    let is_special_trusted_case =
+        context.chain_id == ChainId::Mainnet && block_n.is_some_and(|n| (1466..=2242).contains(&n));
+
+    if is_special_trusted_case || context.trust_transaction_hashes {
+        Ok(receipts.iter().map(|r| r.transaction_hash()).collect())
+    } else {
+        transactions
+            .par_iter()
+            .enumerate()
+            .map(|(index, tx)| {
+                // Panic safety: receipt count was checked earlier
+                let got = receipts[index].transaction_hash();
+                let expected = tx.compute_hash(context.chain_id.to_felt(), false, block_n);
+                if got != expected {
+                    // return Err(BlockImportError::TransactionHash { index, got, expected });
+                    anyhow::bail!("TransactionHash");
+                }
+                Ok(got)
+            })
+            .collect()
+    }
+}
+
+/// Compute the root hash of a list of values.
+// The `HashMapDb` can't fail, so we can safely unwrap the results.
+//
+// perf: Note that committing changes still has the greatest performance hit
+// as this is where the root hash is calculated. Due to the Merkle structure
+// of Bonsai Tries, this results in a trie size that grows very rapidly with
+// each new insertion. It seems that the only vector of optimization here
+// would be to parallelize the tree traversal on insertion and optimize hash computation.
+// It seems lambdaclass' crypto lib does not do simd hashing, we may want to look into that.
+fn compute_merkle_root<H: StarkHash + Send + Sync>(values: &[Felt]) -> Felt {
+    //TODO: replace the identifier by an empty slice when bonsai supports it
+    const IDENTIFIER: &[u8] = b"0xinmemory";
+    let config = bonsai_trie::BonsaiStorageConfig::default();
+    let bonsai_db = bonsai_trie::databases::HashMapDb::<bonsai_trie::id::BasicId>::default();
+    let mut bonsai_storage =
+        bonsai_trie::BonsaiStorage::<_, _, H>::new(bonsai_db, config).expect("Failed to create bonsai storage");
+
+    values.iter().enumerate().for_each(|(id, value)| {
+        let key = BitVec::from_vec(id.to_be_bytes().to_vec());
+        bonsai_storage.insert(IDENTIFIER, key.as_bitslice(), value).expect("Failed to insert into bonsai storage");
+    });
+
+    let id = bonsai_trie::id::BasicIdBuilder::new().new_id();
+
+    bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
+    bonsai_storage.root_hash(IDENTIFIER).expect("Failed to get root hash")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_maybe_pending_block_info() {
-        let tx_hashes_pending = vec![Felt::from(1), Felt::from(2)];
-        let pending = DeoxysPendingBlockInfo::new(PendingHeader::default(), tx_hashes_pending.clone());
-        let pending_as_maybe_pending: DeoxysMaybePendingBlockInfo = pending.clone().into();
-        let tx_hashes_not_pending = vec![Felt::from(3), Felt::from(4)];
-        let not_pending = DeoxysBlockInfo::new(Header::default(), tx_hashes_not_pending.clone(), Felt::from(5));
-        let not_pending_as_maybe_pending: DeoxysMaybePendingBlockInfo = not_pending.clone().into();
-
-        assert_eq!(not_pending_as_maybe_pending.as_nonpending(), Some(&not_pending));
-        assert!(pending_as_maybe_pending.as_nonpending().is_none());
-
-        assert_eq!(pending_as_maybe_pending.as_pending(), Some(&pending));
-        assert!(not_pending_as_maybe_pending.as_pending().is_none());
-
-        assert_eq!(pending_as_maybe_pending.as_block_id(), BlockId::Tag(BlockTag::Pending));
-        assert_eq!(not_pending_as_maybe_pending.as_block_id(), BlockId::Number(0));
-
-        assert_eq!(pending_as_maybe_pending.block_n(), None);
-        assert_eq!(not_pending_as_maybe_pending.block_n(), Some(0));
-
-        assert_eq!(pending_as_maybe_pending.tx_hashes(), &tx_hashes_pending);
-        assert_eq!(not_pending_as_maybe_pending.tx_hashes(), &tx_hashes_not_pending);
-
-        assert_eq!(pending_as_maybe_pending.protocol_version(), &StarknetVersion::default());
-        assert_eq!(not_pending_as_maybe_pending.protocol_version(), &StarknetVersion::default());
-
-        let maybe_pending: DeoxysMaybePendingBlock = DeoxysPendingBlock::new_empty(PendingHeader::default()).into();
-        assert!(DeoxysBlock::try_from(maybe_pending.clone()).is_err());
-        assert!(DeoxysPendingBlock::try_from(maybe_pending.clone()).is_ok());
-    }
+    use starknet_types_core::hash::Poseidon;
 
     #[test]
     fn test_block_tag() {
@@ -326,5 +440,13 @@ mod tests {
         assert_eq!(tag_converted, starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Latest));
         let tag_back: BlockId = tag_converted.into();
         assert_eq!(tag_back, BlockId::Tag(BlockTag::Latest));
+    }
+
+    #[test]
+    fn test_compute_root() {
+        let values = vec![Felt::ONE, Felt::TWO, Felt::THREE];
+        let root = compute_merkle_root::<Poseidon>(&values);
+
+        assert_eq!(root, Felt::from_hex_unchecked("0x3b5cc7f1292eb3847c3f902d048a7e5dc7702d1c191ccd17c2d33f797e6fc32"));
     }
 }

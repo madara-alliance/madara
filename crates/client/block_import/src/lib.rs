@@ -41,18 +41,15 @@
 use std::sync::Arc;
 
 use dc_db::DeoxysBackend;
-use dp_validation::ValidationContext;
+use dp_block::{PreValidatedBlock, PreValidatedPendingBlock, UnverifiedFullBlock, UnverifiedFullPendingBlock};
+use dp_rayon_pool::RayonPool;
+use dp_validation::{Validate, ValidationContext};
 
 mod error;
-mod pre_validate;
-mod rayon;
-mod types;
 mod verify_apply;
 
 pub use error::*;
-pub use pre_validate::*;
 pub use rayon::*;
-pub use types::*;
 pub use verify_apply::*;
 
 pub struct BlockImporter {
@@ -71,7 +68,7 @@ impl BlockImporter {
         block: UnverifiedFullBlock,
         validation_context: ValidationContext,
     ) -> Result<PreValidatedBlock, BlockImportError> {
-        pre_validate(&self.pool, block, validation_context).await
+        block.spawn_validate(&self.pool, validation_context).await.map_err(|_| BlockImportError::TODO)
     }
 
     pub async fn verify_apply(
@@ -84,10 +81,10 @@ impl BlockImporter {
 
     pub async fn pre_validate_pending(
         &self,
-        block: UnverifiedPendingFullBlock,
+        block: UnverifiedFullPendingBlock,
         validation_context: ValidationContext,
     ) -> Result<PreValidatedPendingBlock, BlockImportError> {
-        pre_validate_pending(&self.pool, block, validation_context).await
+        block.spawn_validate(&self.pool, validation_context).await.map_err(|_| BlockImportError::TODO)
     }
 
     pub async fn verify_apply_pending(

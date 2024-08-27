@@ -18,6 +18,7 @@ dp-chain-config = { workspace = true }
 dp-convert = { workspace = true }
 dp-receipt = { workspace = true }
 dp-transactions = { workspace = true }
+dp-rayon-pool = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
@@ -26,6 +27,9 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+rayon = { workspace = true }
 lazy_static = { workspace = true }
 primitive-types.workspace = true
 serde = { workspace = true, features = ["derive"] }

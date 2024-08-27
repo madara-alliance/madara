@@ -3630,6 +3630,7 @@ dependencies = [
  "dp-chain-config",
  "dp-class",
  "dp-convert",
+ "dp-rayon-pool",
  "dp-receipt",
  "dp-state-update",
  "dp-transactions",
@@ -4044,13 +4045,20 @@ checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 name = "dp-block"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "bitvec",
  "blockifier",
+ "bonsai-trie",
  "dp-chain-config",
+ "dp-class",
  "dp-convert",
  "dp-receipt",
+ "dp-state-update",
  "dp-transactions",
+ "dp-validation",
  "lazy_static",
  "primitive-types",
+ "rayon",
  "serde",
  "serde_json",
  "starknet-core",
@@ -4092,6 +4100,7 @@ dependencies = [
  "dp-convert",
  "flate2",
  "num-bigint",
+ "rayon",
  "serde",
  "serde_json",
  "sha3",
@@ -4112,6 +4121,14 @@ dependencies = [
  "starknet-types-core",
  "starknet_api",
  "thiserror",
+]
+
+[[package]]
+name = "dp-rayon-pool"
+version = "0.1.0"
+dependencies = [
+ "rayon",
+ "tokio",
 ]
 
 [[package]]
@@ -4179,13 +4196,17 @@ dependencies = [
 name = "dp-validation"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
  "blockifier",
  "dp-chain-config",
  "dp-convert",
+ "dp-rayon-pool",
  "dp-receipt",
  "dp-transactions",
  "lazy_static",
  "primitive-types",
+ "rayon",
  "serde",
  "serde_json",
  "starknet-core",

@@ -1,0 +1,13 @@
+[package]
+description = "Deoxys primitives for rayon"
+name = "dp-rayon-pool"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[dependencies]
+tokio.workspace = true
+rayon.workspace = true

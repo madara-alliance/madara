@@ -48,4 +48,6 @@ pub enum BlockImportError {
     InternalDb { context: Cow<'static, str>, error: DeoxysStorageError },
     #[error("Internal error: {0}")]
     Internal(Cow<'static, str>),
+    #[error("Adel did not work yet!")]
+    TODO,
 }

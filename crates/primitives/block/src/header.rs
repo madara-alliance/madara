@@ -47,6 +47,22 @@ pub struct PendingHeader {
     pub l1_da_mode: L1DataAvailabilityMode,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnverifiedHeader {
+    /// The hash of this block’s parent. When set to None, it will be deduced from the latest block in storage.
+    pub parent_block_hash: Option<Felt>,
+    /// The Starknet address of the sequencer that created this block.
+    pub sequencer_address: Felt,
+    /// The time the sequencer created this block before executing transactions
+    pub block_timestamp: u64,
+    /// The version of the Starknet protocol used when creating this block
+    pub protocol_version: StarknetVersion,
+    /// Gas prices for this block
+    pub l1_gas_price: GasPrices,
+    /// The mode of data availability for this block
+    pub l1_da_mode: L1DataAvailabilityMode,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// Starknet header definition.
 pub struct Header {

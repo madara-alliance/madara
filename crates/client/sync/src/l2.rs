@@ -4,14 +4,15 @@ use crate::fetch::l2_fetch_task;
 use crate::metrics::block_metrics::BlockMetrics;
 use crate::utils::trim_hash;
 use anyhow::Context;
-use dc_block_import::{
-    BlockImportResult, BlockImporter, PreValidatedBlock, UnverifiedFullBlock, UnverifiedPendingFullBlock,
-};
+use dc_block_import::{BlockImportResult, BlockImporter};
 use dc_db::db_metrics::DbMetrics;
 use dc_db::DeoxysBackend;
 use dc_db::DeoxysStorageError;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
 use dp_block::Header;
+use dp_block::PreValidatedBlock;
+use dp_block::UnverifiedFullBlock;
+use dp_block::UnverifiedFullPendingBlock;
 use dp_utils::{channel_wait_or_graceful_shutdown, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use dp_validation::ValidationContext;
 use futures::{stream, StreamExt};
@@ -176,7 +177,7 @@ async fn l2_pending_block_task(
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
         log::debug!("getting pending block...");
 
-        let block: UnverifiedPendingFullBlock =
+        let block: UnverifiedFullPendingBlock =
             fetch_pending_block_and_updates(&backend, &provider).await.context("Getting pending block from FGW")?;
 
         // HACK(see issue #239): The latest block in db may not match the pending parent block hash

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use dc_block_import::UnverifiedFullBlock;
 use dc_db::DeoxysBackend;
+use dp_block::UnverifiedFullBlock;
 use dp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use futures::prelude::*;
 use starknet_core::types::StarknetError;

@@ -4,10 +4,12 @@ use starknet_types_core::felt::Felt;
 
 mod class_hash;
 mod compile;
+mod conversion;
 mod into_starknet_core;
 
 pub use class_hash::ClassHash;
 pub use compile::ToCompiledClass;
+pub use conversion::{ToConvertedClass, ToConvertedClasses};
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ConvertedClass {
@@ -213,4 +215,11 @@ pub fn to_blockifier_class(
             )?,
         )),
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclaredClass {
+    pub class_hash: Felt,
+    pub contract_class: ContractClass,
+    pub compiled_class_hash: Felt,
 }

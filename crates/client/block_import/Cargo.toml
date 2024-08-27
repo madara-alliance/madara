@@ -10,6 +10,7 @@ license.workspace = true
 
 [dependencies]
 bitvec.workspace = true
+bonsai-trie.workspace = true
 futures.workspace = true
 log.workspace = true
 rayon.workspace = true
@@ -26,8 +27,8 @@ dp-state-update = { workspace = true }
 dp-transactions = { workspace = true }
 dp-utils = { workspace = true }
 dp-validation = { workspace = true }
+dp-rayon-pool = { workspace = true }
 
-bonsai-trie = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
