@@ -7,7 +7,7 @@ pub use commitments::*;
 pub use deoxys_block::*;
 pub use header::*;
 
-use std::mem;
+use std::{mem, ops::RangeInclusive};
 
 use bitvec::vec::BitVec;
 pub use primitive_types::{H160, U256};
@@ -96,7 +96,7 @@ pub struct UnverifiedFullBlock {
 }
 
 impl UnverifiedFullBlock {
-    fn receipt_commitment(&self, _context: &ValidationContext) -> anyhow::Result<Felt> {
+    fn receipt_commitment(&self, _validation_context: &ValidationContext) -> anyhow::Result<Felt> {
         let hashes = self.receipts.par_iter().map(TransactionReceipt::compute_hash).collect::<Vec<_>>();
         let got = compute_merkle_root::<Poseidon>(&hashes);
 
@@ -109,7 +109,7 @@ impl UnverifiedFullBlock {
         Ok(got)
     }
 
-    fn state_diff_commitment(&self, _context: &ValidationContext) -> anyhow::Result<Felt> {
+    fn state_diff_commitment(&self, _validation_context: &ValidationContext) -> anyhow::Result<Felt> {
         let got = self.state_diff.len() as u64;
         if let Some(expected) = self.commitments.state_diff_length {
             if expected != got {
@@ -129,11 +129,11 @@ impl UnverifiedFullBlock {
     }
 
     /// Compute the transaction commitment for a block.
-    fn transaction_commitment(&self, context: &ValidationContext) -> anyhow::Result<Felt> {
+    fn transaction_commitment(&self, validation_context: &ValidationContext) -> anyhow::Result<Felt> {
         let starknet_version = self.header.protocol_version;
 
         let transaction_hashes =
-            transaction_hashes(&self.receipts, &self.transactions, context, self.unverified_block_number)?;
+            transaction_hashes(&self.receipts, &self.transactions, validation_context, self.unverified_block_number)?;
 
         if let Some(expected) = self.commitments.transaction_count {
             if expected != self.transactions.len() as u64 {
@@ -165,7 +165,7 @@ impl UnverifiedFullBlock {
         Ok(got)
     }
 
-    fn event_commitment(&self, _context: &ValidationContext) -> anyhow::Result<Felt> {
+    fn event_commitment(&self, _validation_context: &ValidationContext) -> anyhow::Result<Felt> {
         let events_with_tx_hash: Vec<_> = self
             .receipts
             .iter()
@@ -204,23 +204,23 @@ impl UnverifiedFullBlock {
     }
 
     /// Returns [`ValidatedCommitments`] from the block unverified commitments.
-    pub fn valid_commitments(&self, context: &ValidationContext) -> anyhow::Result<ValidatedCommitments> {
+    pub fn valid_commitments(&self, validation_context: &ValidationContext) -> anyhow::Result<ValidatedCommitments> {
         let (mut receipt_c, mut state_diff_c, mut transaction_c, mut event_c) = Default::default();
         [
             Box::new(|| {
-                receipt_c = self.receipt_commitment(context)?;
+                receipt_c = self.receipt_commitment(validation_context)?;
                 Ok(())
             }) as Box<dyn FnOnce() -> anyhow::Result<()> + Send>,
             Box::new(|| {
-                state_diff_c = self.state_diff_commitment(context)?;
+                state_diff_c = self.state_diff_commitment(validation_context)?;
                 Ok(())
             }),
             Box::new(|| {
-                transaction_c = self.transaction_commitment(context)?;
+                transaction_c = self.transaction_commitment(validation_context)?;
                 Ok(())
             }),
             Box::new(|| {
-                event_c = self.event_commitment(context)?;
+                event_c = self.event_commitment(validation_context)?;
                 Ok(())
             }),
         ]
@@ -336,10 +336,13 @@ pub struct PreValidatedPendingBlock {
 // TODO(akhercha) : move those utils *somewhere*
 // ===================
 
+/// Mismatched block hash is allowed for blocks 1466..=2242 on mainnet
+const MISMATCH_HASH_ACCEPTED_BLOCK_RANGE: RangeInclusive<u64> = 1466..=2242;
+
 fn transaction_hashes(
     receipts: &[TransactionReceipt],
     transactions: &[Transaction],
-    context: &ValidationContext,
+    validation_context: &ValidationContext,
     block_n: Option<u64>,
 ) -> anyhow::Result<Vec<Felt>> {
     if receipts.len() != transactions.len() {
@@ -350,11 +353,10 @@ fn transaction_hashes(
         // });
     }
 
-    // mismatched block hash is allowed for blocks 1466..=2242 on mainnet
-    let is_special_trusted_case =
-        context.chain_id == ChainId::Mainnet && block_n.is_some_and(|n| (1466..=2242).contains(&n));
+    let is_special_trusted_case = validation_context.chain_id == ChainId::Mainnet
+        && block_n.is_some_and(|n| (MISMATCH_HASH_ACCEPTED_BLOCK_RANGE).contains(&n));
 
-    if is_special_trusted_case || context.trust_transaction_hashes {
+    if is_special_trusted_case || validation_context.trust_transaction_hashes {
         Ok(receipts.iter().map(|r| r.transaction_hash()).collect())
     } else {
         transactions
@@ -363,7 +365,7 @@ fn transaction_hashes(
             .map(|(index, tx)| {
                 // Panic safety: receipt count was checked earlier
                 let got = receipts[index].transaction_hash();
-                let expected = tx.compute_hash(context.chain_id.to_felt(), false, block_n);
+                let expected = tx.compute_hash(validation_context.chain_id.to_felt(), false, block_n);
                 if got != expected {
                     // return Err(BlockImportError::TransactionHash { index, got, expected });
                     anyhow::bail!("TransactionHash");
@@ -384,7 +386,7 @@ fn transaction_hashes(
 // would be to parallelize the tree traversal on insertion and optimize hash computation.
 // It seems lambdaclass' crypto lib does not do simd hashing, we may want to look into that.
 fn compute_merkle_root<H: StarkHash + Send + Sync>(values: &[Felt]) -> Felt {
-    //TODO: replace the identifier by an empty slice when bonsai supports it
+    // TODO: replace the identifier by an empty slice when bonsai supports it
     const IDENTIFIER: &[u8] = b"0xinmemory";
     let config = bonsai_trie::BonsaiStorageConfig::default();
     let bonsai_db = bonsai_trie::databases::HashMapDb::<bonsai_trie::id::BasicId>::default();
