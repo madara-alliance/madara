@@ -1,12 +1,12 @@
 use dp_rayon_pool::RayonPool;
 
-pub trait ValidationContext: Clone + Send + Sync + 'static {}
+pub trait ValidationContext {}
 
 #[async_trait::async_trait]
 pub trait Validate: Send + Sync + Sized + 'static {
     type Output: Send + 'static;
+    type Context: Clone + Send + Sync + 'static;
     type ValidationError: Send;
-    type Context: ValidationContext;
 
     fn validate(self, context: &Self::Context) -> Result<Self::Output, Self::ValidationError>;
 
