@@ -195,6 +195,14 @@ Here are more advanced command-line options, organized by namespace, for running
 
 </details>
 
+<details>
+<summary>Block Production</summary>
+
+- **`--no-block-production`**: Disable the block production service,
+- **`--block-production-tx-batch-size`**: Size of the batch of TX processed from the mempool (default: `128`).
+
+</details>
+
 > ℹ️ **Info:** Note that not all parameters may be referenced here.
 > Please refer to the `cargo run -- --help` command for the full list of parameters.
 
