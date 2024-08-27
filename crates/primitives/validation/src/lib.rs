@@ -1,6 +1,8 @@
 use dp_rayon_pool::RayonPool;
 use starknet_api::core::ChainId;
 
+// TODO: We should be able to pass any Context to the Validate trait - not only the one
+// related to block validation context.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidationContext {
     /// Use the transaction hashes from the transaction receipts instead of computing them.
