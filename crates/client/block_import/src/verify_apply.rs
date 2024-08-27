@@ -69,7 +69,7 @@ pub fn verify_apply_inner(
         check_parent_hash_and_num(backend, block.header.parent_block_hash, block.unverified_block_number)?;
 
     // Update contract and its storage tries
-    let global_state_root = update_tries(backend, &block, block_number)?;
+    let global_state_root = update_tries(backend, &block, &validation, block_number)?;
 
     // Block hash
     let (block_hash, header) = block_hash(&block, &validation, block_number, parent_block_hash, global_state_root)?;
@@ -190,8 +190,16 @@ fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> F
 fn update_tries(
     backend: &DeoxysBackend,
     block: &PreValidatedBlock,
+    validation: &Validation,
     block_number: u64,
 ) -> Result<Felt, BlockImportError> {
+    if validation.trust_global_tries {
+        let Some(global_state_root) = block.unverified_global_state_root else {
+            return Err(BlockImportError::Internal("Trying to import a block without a global state root but ".into()));
+        };
+        return Ok(global_state_root);
+    }
+
     let (contract_trie_root, class_trie_root) = rayon::join(
         || {
             contracts::contract_trie_root(

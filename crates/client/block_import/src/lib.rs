@@ -94,10 +94,23 @@ pub enum BlockImportError {
     #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
     GlobalStateRoot { got: Felt, expected: Felt },
 
+    /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal database error while {context}: {error:#}")]
     InternalDb { context: Cow<'static, str>, error: DeoxysStorageError },
+    /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal error: {0}")]
     Internal(Cow<'static, str>),
+}
+
+impl BlockImportError {
+    /// Unrecoverable errors.
+    pub fn is_internal(&self) -> bool {
+        match self {
+            BlockImportError::InternalDb { .. } => true,
+            BlockImportError::Internal(_) => true,
+            _ => false,
+        }
+    }
 }
 
 pub struct BlockImporter {

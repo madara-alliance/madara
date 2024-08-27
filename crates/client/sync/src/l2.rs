@@ -50,7 +50,6 @@ async fn l2_verify_and_apply_task(
     mut updates_receiver: mpsc::Receiver<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
     validation: Validation,
-    verify: bool, // TODO(merge): re-add verify false
     backup_every_n_blocks: Option<u64>,
     block_metrics: BlockMetrics,
     db_metrics: DbMetrics,
@@ -222,7 +221,7 @@ pub async fn sync(
     // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
     // starves the tokio worker
     let block_importer = Arc::new(BlockImporter::new(Arc::clone(backend)));
-    let validation = Validation { trust_transaction_hashes: false, chain_id };
+    let validation = Validation { trust_transaction_hashes: false, trust_global_tries: config.verify, chain_id };
 
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(
@@ -245,7 +244,6 @@ pub async fn sync(
         block_conv_receiver,
         Arc::clone(&block_importer),
         validation.clone(),
-        config.verify,
         config.backup_every_n_blocks,
         block_metrics,
         db_metrics,

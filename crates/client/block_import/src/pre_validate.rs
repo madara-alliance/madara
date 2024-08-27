@@ -217,7 +217,7 @@ fn transaction_commitment(block: &UnverifiedFullBlock, validation: &Validation) 
         compute_merkle_root::<Poseidon>(&tx_hashes_with_signature)
     };
 
-    if let Some(expected) = block.commitments.transaction_commitment.filter(|expected| expected != got) {
+    if let Some(expected) = block.commitments.transaction_commitment.filter(|&expected| expected != got) {
         return Err(BlockImportError::TransactionCommitment { got, expected });
     }
 

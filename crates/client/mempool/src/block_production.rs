@@ -372,7 +372,7 @@ impl BlockProductionTask {
 
         loop {
             tokio::select! {
-                inst = interval_block_time.tick() => {
+                instant = interval_block_time.tick() => {
                     if let Err(err) = self.on_block_time().await {
                         log::error!("Block production task has errored: {err:#}");
                     }

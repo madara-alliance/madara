@@ -34,6 +34,10 @@ pub struct Validation {
     /// Use the transaction hashes from the transaction receipts instead of computing them.
     pub trust_transaction_hashes: bool,
     pub chain_id: ChainId,
+    /// Do not recomppute the trie commitments, trust them instead.
+    /// If the global state root commitment is missing during import, this will error.
+    /// This is only intended for full-node syncing without storing the global trie.
+    pub trust_global_tries: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

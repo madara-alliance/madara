@@ -2,7 +2,6 @@ use crate::l2::L2SyncConfig;
 use crate::metrics::block_metrics::BlockMetrics;
 use anyhow::Context;
 use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
-use dc_eth::client::EthereumClient;
 use dc_telemetry::TelemetryHandle;
 use dp_convert::ToFelt;
 use fetch::fetchers::FetchConfig;
@@ -18,7 +17,6 @@ pub mod utils;
 pub async fn sync(
     backend: &Arc<DeoxysBackend>,
     fetch_config: FetchConfig,
-    eth_client: Option<EthereumClient>,
     starting_block: Option<u64>,
     backup_every_n_blocks: Option<u64>,
     block_metrics: BlockMetrics,
@@ -46,14 +44,6 @@ pub async fn sync(
     let provider = match &fetch_config.api_key {
         Some(api_key) => provider.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
         None => provider,
-    };
-
-    let l1_fut = async {
-        if let Some(eth_client) = eth_client {
-            dc_eth::state_update::sync(backend, &eth_client, fetch_config.chain_id.to_felt()).await
-        } else {
-            Ok(())
-        }
     };
 
     l2::sync(
