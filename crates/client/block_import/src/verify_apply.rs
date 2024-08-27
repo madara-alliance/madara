@@ -6,13 +6,12 @@ use starknet_types_core::hash::{Poseidon, StarkHash};
 
 use dc_db::{DeoxysBackend, DeoxysStorageError};
 use dp_block::{
-    header::PendingHeader, BlockId, BlockTag, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
-    DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo, Header, PreValidatedBlock, PreValidatedPendingBlock,
-    UnverifiedHeader, ValidatedCommitments,
+    header::PendingHeader, BlockId, BlockTag, BlockValidationContext, DeoxysBlockInfo, DeoxysBlockInner,
+    DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo, Header, PreValidatedBlock,
+    PreValidatedPendingBlock, UnverifiedHeader, ValidatedCommitments,
 };
 use dp_convert::ToFelt;
 use dp_rayon_pool::RayonPool;
-use dp_validation::ValidationContext;
 
 use crate::BlockImportError;
 
@@ -47,7 +46,7 @@ impl VerifyApply {
     pub async fn verify_apply(
         &self,
         block: PreValidatedBlock,
-        validation_context: ValidationContext,
+        validation_context: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
         let _exclusive = self.mutex.lock().await;
 
@@ -59,7 +58,7 @@ impl VerifyApply {
     pub async fn verify_apply_pending(
         &self,
         block: PreValidatedPendingBlock,
-        validation_context: ValidationContext,
+        validation_context: BlockValidationContext,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
         let _exclusive = self.mutex.lock().await;
 
@@ -74,14 +73,14 @@ impl VerifyApply {
 pub fn verify_apply_inner(
     backend: &DeoxysBackend,
     block: PreValidatedBlock,
-    validation_context: ValidationContext,
+    validation_context: BlockValidationContext,
 ) -> Result<BlockImportResult, BlockImportError> {
     // Check block number and block hash against db
     let (block_number, parent_block_hash) =
         check_parent_hash_and_num(backend, block.header.parent_block_hash, block.unverified_block_number)?;
 
     // Update contract and its storage tries
-    let global_state_root = update_tries(backend, &block, &validation, block_number)?;
+    let global_state_root = update_tries(backend, &block, &validation_context, block_number)?;
 
     // Block hash
     let (block_hash, header) =
@@ -111,7 +110,7 @@ pub fn verify_apply_inner(
 pub fn verify_apply_pending_inner(
     backend: &DeoxysBackend,
     block: PreValidatedPendingBlock,
-    _context: ValidationContext,
+    _context: BlockValidationContext,
 ) -> Result<PendingBlockImportResult, BlockImportError> {
     let (_block_number, parent_block_hash) = check_parent_hash_and_num(backend, block.header.parent_block_hash, None)?;
 
@@ -203,7 +202,7 @@ fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> F
 fn update_tries(
     backend: &DeoxysBackend,
     block: &PreValidatedBlock,
-    validation: &Validation,
+    validation: &BlockValidationContext,
     block_number: u64,
 ) -> Result<Felt, BlockImportError> {
     if validation.trust_global_tries {
@@ -243,7 +242,7 @@ fn update_tries(
 /// Returns the block hash and header.
 fn block_hash(
     block: &PreValidatedBlock,
-    validation_context: &ValidationContext,
+    validation_context: &BlockValidationContext,
     block_number: u64,
     parent_block_hash: Felt,
     global_state_root: Felt,

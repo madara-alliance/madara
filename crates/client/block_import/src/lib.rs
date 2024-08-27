@@ -41,9 +41,12 @@
 use std::sync::Arc;
 
 use dc_db::DeoxysBackend;
-use dp_block::{PreValidatedBlock, PreValidatedPendingBlock, UnverifiedFullBlock, UnverifiedFullPendingBlock};
+use dp_block::{
+    BlockValidationContext, PreValidatedBlock, PreValidatedPendingBlock, UnverifiedFullBlock,
+    UnverifiedFullPendingBlock,
+};
 use dp_rayon_pool::RayonPool;
-use dp_validation::{Validate, ValidationContext};
+use dp_validation::Validate;
 
 mod error;
 mod verify_apply;
@@ -65,7 +68,7 @@ impl BlockImporter {
     pub async fn pre_validate(
         &self,
         block: UnverifiedFullBlock,
-        validation_context: ValidationContext,
+        validation_context: BlockValidationContext,
     ) -> Result<PreValidatedBlock, BlockImportError> {
         block.spawn_validate(&self.pool, validation_context).await.map_err(BlockImportError::BlockValidationError)
     }
@@ -73,7 +76,7 @@ impl BlockImporter {
     pub async fn verify_apply(
         &self,
         block: PreValidatedBlock,
-        validation_context: ValidationContext,
+        validation_context: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
         self.verify_apply.verify_apply(block, validation_context).await
     }
@@ -81,7 +84,7 @@ impl BlockImporter {
     pub async fn pre_validate_pending(
         &self,
         block: UnverifiedFullPendingBlock,
-        validation_context: ValidationContext,
+        validation_context: BlockValidationContext,
     ) -> Result<PreValidatedPendingBlock, BlockImportError> {
         block.spawn_validate(&self.pool, validation_context).await.map_err(BlockImportError::BlockValidationError)
     }
@@ -89,7 +92,7 @@ impl BlockImporter {
     pub async fn verify_apply_pending(
         &self,
         block: PreValidatedPendingBlock,
-        validation_context: ValidationContext,
+        validation_context: BlockValidationContext,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
         self.verify_apply.verify_apply_pending(block, validation_context).await
     }

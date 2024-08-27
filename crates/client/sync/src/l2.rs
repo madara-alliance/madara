@@ -9,12 +9,12 @@ use dc_db::db_metrics::DbMetrics;
 use dc_db::DeoxysBackend;
 use dc_db::DeoxysStorageError;
 use dc_telemetry::{TelemetryHandle, VerbosityLevel};
+use dp_block::BlockValidationContext;
 use dp_block::Header;
 use dp_block::PreValidatedBlock;
 use dp_block::UnverifiedFullBlock;
 use dp_block::UnverifiedFullPendingBlock;
 use dp_utils::{channel_wait_or_graceful_shutdown, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
-use dp_validation::ValidationContext;
 use futures::{stream, StreamExt};
 use num_traits::FromPrimitive;
 use starknet_api::core::ChainId;
@@ -51,7 +51,7 @@ async fn l2_verify_and_apply_task(
     backend: Arc<DeoxysBackend>,
     mut updates_receiver: mpsc::Receiver<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
-    context: ValidationContext,
+    context: BlockValidationContext,
     #[allow(unused)] verify: bool, // TODO(merge): re-add verify false
     backup_every_n_blocks: Option<u64>,
     block_metrics: BlockMetrics,
@@ -122,7 +122,7 @@ async fn l2_block_conversion_task(
     updates_receiver: mpsc::Receiver<UnverifiedFullBlock>,
     output: mpsc::Sender<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
-    context: ValidationContext,
+    context: BlockValidationContext,
 ) -> anyhow::Result<()> {
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
@@ -153,7 +153,7 @@ async fn l2_block_conversion_task(
 async fn l2_pending_block_task(
     backend: Arc<DeoxysBackend>,
     block_import: Arc<BlockImporter>,
-    context: ValidationContext,
+    validation_context: BlockValidationContext,
     sync_finished_cb: oneshot::Receiver<()>,
     provider: Arc<SequencerGatewayProvider>,
     pending_block_poll_interval: Duration,
@@ -183,8 +183,8 @@ async fn l2_pending_block_task(
         // HACK(see issue #239): The latest block in db may not match the pending parent block hash
         // Just silently ignore it for now and move along.
         let import_block = || async {
-            let block = block_import.pre_validate_pending(block, validation.clone()).await?;
-            block_import.verify_apply_pending(block, validation.clone()).await?;
+            let block = block_import.pre_validate_pending(block, validation_context.clone()).await?;
+            block_import.verify_apply_pending(block, validation_context.clone()).await?;
             anyhow::Ok(())
         };
 
@@ -233,7 +233,8 @@ pub async fn sync(
     // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
     // starves the tokio worker
     let block_importer = Arc::new(BlockImporter::new(Arc::clone(backend)));
-    let validation = ValidationContext { trust_transaction_hashes: false, trust_global_tries: config.verify, chain_id };
+    let validation_context =
+        BlockValidationContext { trust_transaction_hashes: false, trust_global_tries: config.verify, chain_id };
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(
         Arc::clone(backend),
@@ -248,13 +249,13 @@ pub async fn sync(
         fetch_stream_receiver,
         block_conv_sender,
         Arc::clone(&block_importer),
-        context.clone(),
+        validation_context.clone(),
     ));
     join_set.spawn(l2_verify_and_apply_task(
         Arc::clone(backend),
         block_conv_receiver,
         Arc::clone(&block_importer),
-        context.clone(),
+        validation_context.clone(),
         config.verify,
         config.backup_every_n_blocks,
         block_metrics,
@@ -266,7 +267,7 @@ pub async fn sync(
     join_set.spawn(l2_pending_block_task(
         Arc::clone(backend),
         Arc::clone(&block_importer),
-        context.clone(),
+        validation_context.clone(),
         once_caught_up_cb_receiver,
         provider,
         config.pending_block_poll_interval,

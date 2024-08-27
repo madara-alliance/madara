@@ -1,26 +1,19 @@
 use dp_rayon_pool::RayonPool;
-use starknet_api::core::ChainId;
 
-// TODO: We should be able to pass any Context to the Validate trait - not only the one
-// related to block validation context.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ValidationContext {
-    /// Use the transaction hashes from the transaction receipts instead of computing them.
-    pub trust_transaction_hashes: bool,
-    pub chain_id: ChainId,
-}
+pub trait ValidationContext: Clone + Send + Sync + 'static {}
 
 #[async_trait::async_trait]
 pub trait Validate: Send + Sync + Sized + 'static {
     type Output: Send + 'static;
     type ValidationError: Send;
+    type Context: ValidationContext;
 
-    fn validate(self, context: &ValidationContext) -> Result<Self::Output, Self::ValidationError>;
+    fn validate(self, context: &Self::Context) -> Result<Self::Output, Self::ValidationError>;
 
     async fn spawn_validate(
         self,
         pool: &RayonPool,
-        context: ValidationContext,
+        context: Self::Context,
     ) -> Result<Self::Output, Self::ValidationError> {
         pool.spawn_rayon_task(move || self.validate(&context)).await
     }

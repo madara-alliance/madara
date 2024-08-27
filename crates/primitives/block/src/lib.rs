@@ -24,7 +24,7 @@ use dp_convert::ToFelt;
 use dp_receipt::TransactionReceipt;
 use dp_state_update::StateDiff;
 use dp_transactions::Transaction;
-use dp_validation::{Validate, ValidationContext};
+use dp_validation::Validate;
 
 /// Block tag.
 ///
@@ -119,7 +119,7 @@ pub struct UnverifiedFullBlock {
 }
 
 impl UnverifiedFullBlock {
-    fn receipt_commitment(&self, _validation_context: &ValidationContext) -> Result<Felt, BlockCommitmentError> {
+    fn receipt_commitment(&self, _validation_context: &BlockValidationContext) -> Result<Felt, BlockCommitmentError> {
         let hashes = self.receipts.par_iter().map(TransactionReceipt::compute_hash).collect::<Vec<_>>();
         let got = compute_merkle_root::<Poseidon>(&hashes);
 
@@ -131,7 +131,10 @@ impl UnverifiedFullBlock {
         Ok(got)
     }
 
-    fn state_diff_commitment(&self, _validation_context: &ValidationContext) -> Result<Felt, BlockCommitmentError> {
+    fn state_diff_commitment(
+        &self,
+        _validation_context: &BlockValidationContext,
+    ) -> Result<Felt, BlockCommitmentError> {
         let got = self.state_diff.len() as u64;
         if let Some(expected) = self.commitments.state_diff_length {
             if expected != got {
@@ -149,7 +152,10 @@ impl UnverifiedFullBlock {
     }
 
     /// Compute the transaction commitment for a block.
-    fn transaction_commitment(&self, validation_context: &ValidationContext) -> Result<Felt, BlockCommitmentError> {
+    fn transaction_commitment(
+        &self,
+        validation_context: &BlockValidationContext,
+    ) -> Result<Felt, BlockCommitmentError> {
         let starknet_version = self.header.protocol_version;
 
         let transaction_hashes =
@@ -183,7 +189,7 @@ impl UnverifiedFullBlock {
         Ok(got)
     }
 
-    fn event_commitment(&self, _validation_context: &ValidationContext) -> Result<Felt, BlockCommitmentError> {
+    fn event_commitment(&self, _validation_context: &BlockValidationContext) -> Result<Felt, BlockCommitmentError> {
         let events_with_tx_hash: Vec<_> = self
             .receipts
             .iter()
@@ -222,7 +228,7 @@ impl UnverifiedFullBlock {
     /// Returns [`ValidatedCommitments`] from the block unverified commitments.
     pub fn valid_commitments(
         &self,
-        validation_context: &ValidationContext,
+        validation_context: &BlockValidationContext,
     ) -> Result<ValidatedCommitments, BlockCommitmentError> {
         let (mut receipt_c, mut state_diff_c, mut transaction_c, mut event_c) = Default::default();
         [
@@ -259,6 +265,17 @@ impl UnverifiedFullBlock {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BlockValidationContext {
+    /// Use the transaction hashes from the transaction receipts instead of computing them.
+    pub trust_transaction_hashes: bool,
+    pub chain_id: ChainId,
+    /// Do not recomppute the trie commitments, trust them instead.
+    /// If the global state root commitment is missing during import, this will error.
+    /// This is only intended for full-node syncing without storing the global trie.
+    pub trust_global_tries: bool,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum BlockValidationError {
     #[error("Could not convert classes: {0}")]
@@ -272,8 +289,9 @@ pub enum BlockValidationError {
 impl Validate for UnverifiedFullBlock {
     type Output = PreValidatedBlock;
     type ValidationError = BlockValidationError;
+    type Context = BlockValidationContext;
 
-    fn validate(mut self, context: &ValidationContext) -> Result<Self::Output, Self::ValidationError> {
+    fn validate(mut self, context: &Self::Context) -> Result<Self::Output, Self::ValidationError> {
         let classes = mem::take(&mut self.declared_classes);
 
         // unfortunately this is ugly but rayon::join does not have the fast error short circuiting behavior that
@@ -321,8 +339,9 @@ pub struct UnverifiedFullPendingBlock {
 impl Validate for UnverifiedFullPendingBlock {
     type Output = PreValidatedPendingBlock;
     type ValidationError = BlockValidationError;
+    type Context = BlockValidationContext;
 
-    fn validate(mut self, context: &ValidationContext) -> Result<Self::Output, Self::ValidationError> {
+    fn validate(mut self, context: &Self::Context) -> Result<Self::Output, Self::ValidationError> {
         let classes = mem::take(&mut self.declared_classes);
 
         let converted_classes = classes.convert()?;
@@ -381,7 +400,7 @@ pub enum TransactionHashesError {
 fn transaction_hashes(
     receipts: &[TransactionReceipt],
     transactions: &[Transaction],
-    validation_context: &ValidationContext,
+    validation_context: &BlockValidationContext,
     block_n: Option<u64>,
 ) -> Result<Vec<Felt>, TransactionHashesError> {
     if receipts.len() != transactions.len() {

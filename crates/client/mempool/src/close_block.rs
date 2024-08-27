@@ -1,9 +1,9 @@
 use dc_block_import::{BlockImportError, BlockImportResult, BlockImporter};
 use dp_block::{
-    header::PendingHeader, DeoxysPendingBlock, DeoxysPendingBlockInfo, UnverifiedFullBlock, UnverifiedHeader,
+    header::PendingHeader, BlockValidationContext, DeoxysPendingBlock, DeoxysPendingBlockInfo, UnverifiedFullBlock,
+    UnverifiedHeader,
 };
 use dp_state_update::StateDiff;
-use dp_validation::ValidationContext;
 use starknet_api::core::ChainId;
 
 /// Close the block (convert from pending to closed), and store to db. This is delegated to the block import module.
@@ -14,7 +14,7 @@ pub async fn close_block(
     chain_id: ChainId,
     block_number: u64,
 ) -> Result<BlockImportResult, BlockImportError> {
-    let validation_context = ValidationContext {
+    let validation_context = BlockValidationContext {
         trust_transaction_hashes: true, // no need to recompute tx hashes
         chain_id,
         trust_global_tries: false,
