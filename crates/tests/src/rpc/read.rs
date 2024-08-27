@@ -1,63 +1,62 @@
 use crate::{MadaraCmd, MadaraCmdBuilder};
-use rstest::*;
 use starknet_core::types::{
-    BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs,
-    CompressedLegacyContractClass, ComputationResources, ContractClass, ContractStorageDiffItem,
-    DataAvailabilityResources, DataResources, DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0,
-    EmittedEvent, EventFilter, EventsPage, ExecutionResources, ExecutionResult, FeePayment, Felt, FunctionCall,
-    L1DataAvailabilityMode, L1HandlerTransaction, L1HandlerTransactionReceipt, LegacyEntryPointsByType,
+    BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs, ComputationResources,
+    ContractClass, ContractStorageDiffItem, DataAvailabilityResources, DataResources, DeclareTransaction,
+    DeclareTransactionReceipt, DeclareTransactionV0, EmittedEvent, EventFilter, EventsPage, ExecutionResources,
+    ExecutionResult, FeePayment, Felt, FunctionCall, L1DataAvailabilityMode, L1HandlerTransaction,
     MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
     PriceUnit, ReceiptBlock, ResourcePrice, StateDiff, StateUpdate, StorageEntry, Transaction,
     TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt, TransactionReceiptWithBlockInfo,
     TransactionStatus, TransactionWithReceipt,
 };
 use starknet_providers::Provider;
-use std::env;
-use std::fs::{read_dir, File};
+use std::fs::File;
 use std::io::BufReader;
 
 #[cfg(test)]
 mod test_rpc_read_calls {
     use once_cell::sync::Lazy;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     use super::*;
-    use rstest::fixture;
     use starknet_core::types::Felt;
     use tokio::sync::OnceCell;
 
-    static MADARA: Lazy<OnceCell<Mutex<MadaraCmd>>> = Lazy::new(|| OnceCell::new());
+    static MADARA: Lazy<OnceCell<Arc<Mutex<MadaraCmd>>>> = Lazy::new(OnceCell::new);
 
-    async fn setup_madara() -> MadaraCmd {
-        let mut madara = MadaraCmdBuilder::new()
+    async fn setup_madara() -> Arc<Mutex<MadaraCmd>> {
+        let madara = MadaraCmdBuilder::new()
             .args(["--network", "sepolia", "--no-sync-polling", "--n-blocks-to-sync", "20", "--no-l1-sync"])
             .run();
 
-        madara.wait_for_ready().await;
-        madara.wait_for_sync_to(19).await;
+        let madara = Arc::new(Mutex::new(madara));
+
+        // Use clone() to get a new Arc, so we can move it into the async block
+        let madara_clone = madara.clone();
+
+        // Acquire the lock within an async block
+        let mut guard = madara_clone.lock().unwrap();
+        guard.wait_for_ready().await;
+        guard.wait_for_sync_to(19).await;
+
+        // The lock is released when guard goes out of scope
+
         madara
     }
 
-    async fn get_madara() -> &'static Mutex<MadaraCmd> {
-        MADARA.get_or_init(|| async { Mutex::new(setup_madara().await) }).await
+    async fn get_shared_state() -> Arc<Mutex<MadaraCmd>> {
+        MADARA.get_or_init(setup_madara).await.clone()
     }
-    // TODO: make this run once
-    // #[fixture]
-    // async fn madara() -> MadaraCmd {
-    //     let mut madara = MadaraCmdBuilder::new()
-    //         .args(["--network", "sepolia", "--no-sync-polling", "--n-blocks-to-sync", "20", "--no-l1-sync"])
-    //         .run();
-    //
-    //     madara.wait_for_ready().await;
-    //     madara.wait_for_sync_to(19).await;
-    // }
 
     #[tokio::test]
     async fn test_block_hash_and_number_works() {
-        let madara = get_madara().await;
-
+        let madara = get_shared_state().await;
+        let result = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard.json_rpc().block_hash_and_number().await.unwrap()
+        };
         assert_eq!(
-            madara.lock().unwrap().json_rpc().block_hash_and_number().await.unwrap(),
+            result,
             BlockHashAndNumber {
                 // https://sepolia.voyager.online/block/19
                 block_hash: Felt::from_hex_unchecked(
@@ -70,15 +69,21 @@ mod test_rpc_read_calls {
 
     #[tokio::test]
     async fn test_get_block_txn_count_works() {
-        let madara = get_madara().await;
-        assert_eq!(madara.lock().unwrap().json_rpc().get_block_transaction_count(BlockId::Number(2)).await.unwrap(), 1);
+        let madara = get_shared_state().await;
+        let result = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard.json_rpc().get_block_transaction_count(BlockId::Number(2)).await.unwrap()
+        };
+        assert_eq!(result, 1);
     }
 
     #[tokio::test]
     async fn test_get_block_txn_with_receipts_works() {
-        let madara = get_madara().await;
-
-        let block = madara.lock().unwrap().json_rpc().get_block_with_receipts(BlockId::Number(2)).await.unwrap();
+        let madara = get_shared_state().await;
+        let block = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard.json_rpc().get_block_with_receipts(BlockId::Number(2)).await.unwrap()
+        };
 
         let expected_block = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
             status: BlockStatus::AcceptedOnL2,
@@ -145,12 +150,14 @@ mod test_rpc_read_calls {
         });
         assert_eq!(block, expected_block);
     }
-
+    //
     #[tokio::test]
     async fn test_get_block_txn_with_tx_hashes_works() {
-        let madara = get_madara().await;
-
-        let block = madara.lock().unwrap().json_rpc().get_block_with_tx_hashes(BlockId::Number(2)).await.unwrap();
+        let madara = get_shared_state().await;
+        let block = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard.json_rpc().get_block_with_tx_hashes(BlockId::Number(2)).await.unwrap()
+        };
 
         let expected_block = MaybePendingBlockWithTxHashes::Block(BlockWithTxHashes {
             status: BlockStatus::AcceptedOnL2,
@@ -181,9 +188,11 @@ mod test_rpc_read_calls {
 
     #[tokio::test]
     async fn test_get_block_txn_with_tx_works() {
-        let madara = get_madara().await;
-
-        let block = madara.lock().unwrap().json_rpc().get_block_with_txs(BlockId::Number(2)).await.unwrap();
+        let madara = get_shared_state().await;
+        let block = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard.json_rpc().get_block_with_txs(BlockId::Number(2)).await.unwrap()
+        };
 
         let expected_block = MaybePendingBlockWithTxs::Block(BlockWithTxs {
             status: BlockStatus::AcceptedOnL2,
@@ -222,18 +231,18 @@ mod test_rpc_read_calls {
 
     #[tokio::test]
     async fn test_get_class_hash_at_works() {
-        let madara = get_madara().await;
-
-        let class_hash = madara
-            .lock()
-            .unwrap()
-            .json_rpc()
-            .get_class_hash_at(
-                BlockId::Number(15),
-                Felt::from_hex_unchecked("0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"),
-            )
-            .await
-            .unwrap();
+        let madara = get_shared_state().await;
+        let class_hash = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .get_class_hash_at(
+                    BlockId::Number(15),
+                    Felt::from_hex_unchecked("0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"),
+                )
+                .await
+                .unwrap()
+        };
         let expected_class_hash =
             Felt::from_hex_unchecked("0xd0e183745e9dae3e4e78a8ffedcce0903fc4900beace4e0abf192d4c202da3");
 
@@ -242,18 +251,18 @@ mod test_rpc_read_calls {
 
     #[tokio::test]
     async fn test_get_nonce_works() {
-        let madara = get_madara().await;
-
-        let nonce = madara
-            .lock()
-            .unwrap()
-            .json_rpc()
-            .get_nonce(
-                BlockId::Number(19),
-                Felt::from_hex_unchecked("0x0535ca4e1d1be7ec4a88d51a2962cd6c5aea1be96cb2c0b60eb1721dc34f800d"),
-            )
-            .await
-            .unwrap();
+        let madara = get_shared_state().await;
+        let nonce = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .get_nonce(
+                    BlockId::Number(19),
+                    Felt::from_hex_unchecked("0x0535ca4e1d1be7ec4a88d51a2962cd6c5aea1be96cb2c0b60eb1721dc34f800d"),
+                )
+                .await
+                .unwrap()
+        };
         let expected_nonce = Felt::from_hex_unchecked("0x2");
 
         assert_eq!(nonce, expected_nonce);
@@ -261,15 +270,11 @@ mod test_rpc_read_calls {
 
     #[tokio::test]
     async fn test_get_txn_by_block_id_and_index_works() {
-        let madara = get_madara().await;
-
-        let txn = madara
-            .lock()
-            .unwrap()
-            .json_rpc()
-            .get_transaction_by_block_id_and_index(BlockId::Number(16), 1)
-            .await
-            .unwrap();
+        let madara = get_shared_state().await;
+        let txn = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard.json_rpc().get_transaction_by_block_id_and_index(BlockId::Number(16), 1).await.unwrap()
+        };
         let expected_txn = Transaction::L1Handler(L1HandlerTransaction {
             transaction_hash: Felt::from_hex_unchecked(
                 "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a",
@@ -295,17 +300,17 @@ mod test_rpc_read_calls {
 
     #[tokio::test]
     async fn test_get_txn_by_hash_works() {
-        let madara = get_madara().await;
-
-        let txn = madara
-            .lock()
-            .unwrap()
-            .json_rpc()
-            .get_transaction_by_hash(Felt::from_hex_unchecked(
-                "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a",
-            ))
-            .await
-            .unwrap();
+        let madara = get_shared_state().await;
+        let txn = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .get_transaction_by_hash(Felt::from_hex_unchecked(
+                    "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a",
+                ))
+                .await
+                .unwrap()
+        };
         let expected_txn = Transaction::L1Handler(L1HandlerTransaction {
             transaction_hash: Felt::from_hex_unchecked(
                 "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a",
@@ -331,16 +336,17 @@ mod test_rpc_read_calls {
 
     #[tokio::test]
     async fn test_get_txn_receipt_works() {
-        let madara = get_madara().await;
-        let txn_receipt = madara
-            .lock()
-            .unwrap()
-            .json_rpc()
-            .get_transaction_receipt(Felt::from_hex_unchecked(
-                "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772",
-            ))
-            .await
-            .unwrap();
+        let madara = get_shared_state().await;
+        let txn_receipt = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .get_transaction_receipt(Felt::from_hex_unchecked(
+                    "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772",
+                ))
+                .await
+                .unwrap()
+        };
         let expected_txn_receipt = TransactionReceiptWithBlockInfo {
             receipt: TransactionReceipt::Declare(DeclareTransactionReceipt {
                 transaction_hash: Felt::from_hex_unchecked(
@@ -382,17 +388,17 @@ mod test_rpc_read_calls {
 
     #[tokio::test]
     async fn test_get_txn_status_works() {
-        let madara = get_madara().await;
-
-        let txn_status = madara
-            .lock()
-            .unwrap()
-            .json_rpc()
-            .get_transaction_status(Felt::from_hex_unchecked(
-                "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a",
-            ))
-            .await
-            .unwrap();
+        let madara = get_shared_state().await;
+        let txn_status = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .get_transaction_status(Felt::from_hex_unchecked(
+                    "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a",
+                ))
+                .await
+                .unwrap()
+        };
         let expected_txn_status = TransactionStatus::AcceptedOnL2(TransactionExecutionStatus::Succeeded);
 
         assert_eq!(txn_status, expected_txn_status);
@@ -400,36 +406,47 @@ mod test_rpc_read_calls {
 
     #[tokio::test]
     async fn test_get_storage_at_works() {
-        let madara = get_madara().await;
-
-        let storage_response = madara
-            .lock()
-            .unwrap()
-            .json_rpc()
-            .get_storage_at(
-                Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
-                Felt::from_hex_unchecked("0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1"),
-                BlockId::Number(12),
-            )
-            .await
-            .unwrap();
+        let madara = get_shared_state().await;
+        let storage_response = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .get_storage_at(
+                    Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
+                    Felt::from_hex_unchecked("0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1"),
+                    BlockId::Number(12),
+                )
+                .await
+                .unwrap()
+        };
         let expected_storage_response = Felt::from_hex_unchecked("0x4574686572");
 
         assert_eq!(storage_response, expected_storage_response);
     }
 
-    #[ignore]
     #[tokio::test]
     async fn test_get_state_update_works() {
-        let madara = get_madara().await;
+        let madara = get_shared_state().await;
+        let state_update = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard.json_rpc().get_state_update(BlockId::Number(13)).await.unwrap()
+        };
 
-        let state_update = madara.lock().unwrap().json_rpc().get_state_update(BlockId::Number(13)).await.unwrap();
         let expected_state_update = MaybePendingStateUpdate::Update(StateUpdate {
             block_hash: Felt::from_hex_unchecked("0x12e2fe9e5273b777341a372edc56ca0327dc2237232cf2fed6cecc7398ffe9d"),
             old_root: Felt::from_hex_unchecked("0x7b6d0a312a1304bc1f99396c227a3bf062ff390258d2341309b4f60e6520bc9"),
             new_root: Felt::from_hex_unchecked("0x73ef61c78f5bda0bd3ef54d360484d06d32032e3b9287a71e0798526654a733"),
             state_diff: StateDiff {
                 storage_diffs: vec![
+                    ContractStorageDiffItem {
+                        address: Felt::from_hex_unchecked("0x1"),
+                        storage_entries: vec![StorageEntry {
+                            key: Felt::from_hex_unchecked("0x3"),
+                            value: Felt::from_hex_unchecked(
+                                "0x37644818236ee05b7e3b180bed64ea70ee3dd1553ca334a5c2a290ee276f380",
+                            ),
+                        }],
+                    },
                     ContractStorageDiffItem {
                         address: Felt::from_hex_unchecked(
                             "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
@@ -449,15 +466,6 @@ mod test_rpc_read_calls {
                             },
                         ],
                     },
-                    ContractStorageDiffItem {
-                        address: Felt::from_hex_unchecked("0x1"),
-                        storage_entries: vec![StorageEntry {
-                            key: Felt::from_hex_unchecked("0x3"),
-                            value: Felt::from_hex_unchecked(
-                                "0x37644818236ee05b7e3b180bed64ea70ee3dd1553ca334a5c2a290ee276f380",
-                            ),
-                        }],
-                    },
                 ],
                 deprecated_declared_classes: vec![],
                 declared_classes: vec![],
@@ -470,56 +478,57 @@ mod test_rpc_read_calls {
         assert_eq!(state_update, expected_state_update);
     }
 
-    // request:
-    /*
-        curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-        --header 'Content-Type: application/json' \
-        --data '{
-            "jsonrpc": "2.0",
-            "method": "starknet_getEvents",
-            "params": {
-                "filter": {
-                    "from_block": {
-                        "block_number": 0
-                    },
-                    "to_block": {
-                        "block_number": 19
-                    },
-                    "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-                    "keys": [
-                        []
-                    ],
-                    "continuation_token": "",
-                    "chunk_size": 2
-                }
-            },
-       "id": 1
-    }'
-
-    */
+    // // request:
+    // /*
+    //     curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    //     --header 'Content-Type: application/json' \
+    //     --data '{
+    //         "jsonrpc": "2.0",
+    //         "method": "starknet_getEvents",
+    //         "params": {
+    //             "filter": {
+    //                 "from_block": {
+    //                     "block_number": 0
+    //                 },
+    //                 "to_block": {
+    //                     "block_number": 19
+    //                 },
+    //                 "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+    //                 "keys": [
+    //                     []
+    //                 ],
+    //                 "continuation_token": "",
+    //                 "chunk_size": 2
+    //             }
+    //         },
+    //    "id": 1
+    // }'
+    //
+    // */
     #[ignore]
     #[tokio::test]
     async fn test_get_events_works() {
-        let madara = get_madara().await;
+        let madara = get_shared_state().await;
+        let events = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .get_events(
+                    EventFilter {
+                        from_block: Some(BlockId::Number(0)),
+                        to_block: Some(BlockId::Number(19)),
+                        address: Some(Felt::from_hex_unchecked(
+                            "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                        )),
+                        keys: Some(vec![vec![]]),
+                    },
+                    None,
+                    2,
+                )
+                .await
+                .unwrap()
+        };
 
-        let events = madara
-            .lock()
-            .unwrap()
-            .json_rpc()
-            .get_events(
-                EventFilter {
-                    from_block: Some(BlockId::Number(0)),
-                    to_block: Some(BlockId::Number(19)),
-                    address: Some(Felt::from_hex_unchecked(
-                        "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-                    )),
-                    keys: Some(vec![vec![]]),
-                },
-                None,
-                2,
-            )
-            .await
-            .unwrap();
         let expected_events = EventsPage {
             events: vec![
                 EmittedEvent {
@@ -569,26 +578,27 @@ mod test_rpc_read_calls {
     #[ignore]
     #[tokio::test]
     async fn test_call_works() {
-        let madara = get_madara().await;
+        let madara = get_shared_state().await;
+        let call_response = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .call(
+                    FunctionCall {
+                        contract_address: Felt::from_hex_unchecked(
+                            "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                        ),
+                        entry_point_selector: Felt::from_hex_unchecked(
+                            "0x361458367e696363fbcc70777d07ebbd2394e89fd0adcaf147faccd1d294d60",
+                        ),
+                        calldata: vec![],
+                    },
+                    BlockId::Number(19),
+                )
+                .await
+                .unwrap()
+        };
 
-        let call_response = madara
-            .lock()
-            .unwrap()
-            .json_rpc()
-            .call(
-                FunctionCall {
-                    contract_address: Felt::from_hex_unchecked(
-                        "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-                    ),
-                    entry_point_selector: Felt::from_hex_unchecked(
-                        "0x361458367e696363fbcc70777d07ebbd2394e89fd0adcaf147faccd1d294d60",
-                    ),
-                    calldata: vec![],
-                },
-                BlockId::Number(19),
-            )
-            .await
-            .unwrap();
         let expected_call_response = vec![Felt::from_hex_unchecked("0x4574686572")];
 
         assert_eq!(call_response, expected_call_response);
@@ -597,46 +607,48 @@ mod test_rpc_read_calls {
     #[ignore]
     #[tokio::test]
     async fn test_get_class_works() {
-        let madara = get_madara().await;
+        let madara = get_shared_state().await;
+        let contract_class = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .get_class(
+                    BlockId::Number(12),
+                    Felt::from_hex_unchecked("0x3131fa018d520a037686ce3efddeab8f28895662f019ca3ca18a626650f7d1e"),
+                )
+                .await
+                .unwrap()
+        };
 
-        let call_response = madara
-            .lock()
-            .unwrap()
-            .json_rpc()
-            .get_class(
-                BlockId::Number(12),
-                Felt::from_hex_unchecked("0x3131fa018d520a037686ce3efddeab8f28895662f019ca3ca18a626650f7d1e"),
-            )
-            .await
-            .unwrap();
         let file = File::open("src/rpc/class_hash.json").unwrap();
         let reader = BufReader::new(file);
 
-        let expected_call_response: ContractClass = serde_json::from_reader(reader).unwrap();
+        let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();
 
-        assert_eq!(call_response, expected_call_response);
+        assert_eq!(contract_class, expected_contract_class);
     }
 
     #[ignore]
     #[tokio::test]
     async fn test_get_class_at_works() {
-        let madara = get_madara().await;
+        let madara = get_shared_state().await;
+        let contract_class = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .get_class_at(
+                    BlockId::Number(12),
+                    Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
+                )
+                .await
+                .unwrap()
+        };
 
-        let call_response = madara
-            .lock()
-            .unwrap()
-            .json_rpc()
-            .get_class_at(
-                BlockId::Number(12),
-                Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
-            )
-            .await
-            .unwrap();
         let file = File::open("src/rpc/class_at.json").unwrap();
         let reader = BufReader::new(file);
 
-        let expected_call_response: ContractClass = serde_json::from_reader(reader).unwrap();
+        let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();
 
-        assert_eq!(call_response, expected_call_response);
+        assert_eq!(contract_class, expected_contract_class);
     }
 }
