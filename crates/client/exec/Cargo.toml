@@ -35,8 +35,11 @@ thiserror = { workspace = true }
 serde_json = { workspace = true }
 lazy_static = { workspace = true }
 anyhow = { workspace = true }
+rand = { workspace = true }
+starknet-signers = { workspace = true }
 
 [dev-dependencies]
 
 rstest = { workspace = true }
 dc-db = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["rt-multi-thread"]}

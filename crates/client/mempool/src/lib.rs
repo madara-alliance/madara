@@ -1,5 +1,6 @@
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
+use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::DeclareTransaction;
 use blockifier::transaction::transactions::DeployAccountTransaction;
 use blockifier::transaction::transactions::InvokeTransaction;
@@ -11,18 +12,27 @@ use dp_block::BlockId;
 use dp_block::BlockTag;
 use dp_block::DeoxysPendingBlockInfo;
 use dp_class::ConvertedClass;
+use dp_transactions::{broadcasted_to_blockifier, BroadcastedToBlockifierError};
 use header::make_pending_header;
 use inner::MempoolInner;
 pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 pub use l1::{GasPriceProvider, L1DataProvider};
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
+use starknet_core::types::BroadcastedDeclareTransaction;
+use starknet_core::types::BroadcastedDeployAccountTransaction;
+use starknet_core::types::BroadcastedInvokeTransaction;
+use starknet_core::types::BroadcastedTransaction;
+use starknet_core::types::DeclareTransactionResult;
+use starknet_core::types::DeployAccountTransactionResult;
+use starknet_core::types::InvokeTransactionResult;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use std::sync::RwLock;
 
 pub mod block_production;
 mod close_block;
+mod genesis;
 pub mod header;
 mod inner;
 mod l1;
@@ -39,6 +49,22 @@ pub enum Error {
     InnerMempool(#[from] inner::TxInsersionError),
     #[error(transparent)]
     Exec(#[from] dc_exec::Error),
+    #[error("Preprocessing transaction: {0:#}")]
+    BroadcastedToBlockifier(#[from] BroadcastedToBlockifierError),
+}
+
+#[cfg_attr(test, mockall::automock)]
+pub trait MempoolProvider {
+    fn accept_invoke_tx(&self, tx: BroadcastedInvokeTransaction) -> Result<InvokeTransactionResult, Error>;
+    fn accept_declare_tx(&self, tx: BroadcastedDeclareTransaction) -> Result<DeclareTransactionResult, Error>;
+    fn accept_deploy_account_tx(
+        &self,
+        tx: BroadcastedDeployAccountTransaction,
+    ) -> Result<DeployAccountTransactionResult, Error>;
+    fn take_txs_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize);
+    fn take_tx(&self) -> Option<MempoolTransaction>;
+    fn re_add_txs(&self, txs: Vec<MempoolTransaction>);
+    fn chain_id(&self) -> Felt;
 }
 
 pub struct Mempool {
@@ -52,11 +78,9 @@ impl Mempool {
         Mempool { backend, l1_data_provider, inner: Default::default() }
     }
 
-    pub fn accept_account_tx(
-        &self,
-        tx: AccountTransaction,
-        converted_class: Option<ConvertedClass>,
-    ) -> Result<(), Error> {
+    fn accept_tx(&self, tx: Transaction, converted_class: Option<ConvertedClass>) -> Result<(), Error> {
+        let Transaction::AccountTransaction(tx) = tx else { panic!("L1HandlerTransaction not supported yet") };
+
         // The timestamp *does not* take the transaction validation time into account.
         let arrived_at = ArrivedAtTimestamp::now();
 
@@ -104,23 +128,83 @@ impl Mempool {
 
         Ok(())
     }
+}
 
-    pub fn take_txs_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize) {
+fn transaction_hash(tx: &Transaction) -> Felt {
+    match tx {
+        Transaction::AccountTransaction(tx) => match tx {
+            AccountTransaction::Declare(tx) => *tx.tx_hash,
+            AccountTransaction::DeployAccount(tx) => *tx.tx_hash,
+            AccountTransaction::Invoke(tx) => *tx.tx_hash,
+        },
+        Transaction::L1HandlerTransaction(tx) => *tx.tx_hash,
+    }
+}
+
+fn declare_class_hash(tx: &Transaction) -> Option<Felt> {
+    match tx {
+        Transaction::AccountTransaction(AccountTransaction::Declare(tx)) => Some(*tx.class_hash()),
+        _ => None,
+    }
+}
+
+fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
+    match tx {
+        Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) => Some(**tx.contract_address),
+        _ => None,
+    }
+}
+
+impl MempoolProvider for Mempool {
+    fn accept_invoke_tx(&self, tx: BroadcastedInvokeTransaction) -> Result<InvokeTransactionResult, Error> {
+        let (tx, classes) = broadcasted_to_blockifier(BroadcastedTransaction::Invoke(tx), self.chain_id())?;
+
+        let res = InvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
+        self.accept_tx(tx, classes)?;
+        Ok(res)
+    }
+
+    fn accept_declare_tx(&self, tx: BroadcastedDeclareTransaction) -> Result<DeclareTransactionResult, Error> {
+        let (tx, classes) = broadcasted_to_blockifier(BroadcastedTransaction::Declare(tx), self.chain_id())?;
+
+        let res = DeclareTransactionResult {
+            transaction_hash: transaction_hash(&tx),
+            class_hash: declare_class_hash(&tx).expect("Created transaction should be declare"),
+        };
+        self.accept_tx(tx, classes)?;
+        Ok(res)
+    }
+
+    fn accept_deploy_account_tx(
+        &self,
+        tx: BroadcastedDeployAccountTransaction,
+    ) -> Result<DeployAccountTransactionResult, Error> {
+        let (tx, classes) = broadcasted_to_blockifier(BroadcastedTransaction::DeployAccount(tx), self.chain_id())?;
+
+        let res = DeployAccountTransactionResult {
+            transaction_hash: transaction_hash(&tx),
+            contract_address: deployed_contract_address(&tx).expect("Created transaction should be deploy account"),
+        };
+        self.accept_tx(tx, classes)?;
+        Ok(res)
+    }
+
+    fn take_txs_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.pop_next_chunk(dest, n)
     }
 
-    pub fn take_tx(&self) -> Option<MempoolTransaction> {
+    fn take_tx(&self) -> Option<MempoolTransaction> {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.pop_next()
     }
 
-    pub fn re_add_txs(&self, txs: Vec<MempoolTransaction>) {
+    fn re_add_txs(&self, txs: Vec<MempoolTransaction>) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.re_add_txs(txs)
     }
 
-    pub fn chain_id(&self) -> Felt {
+    fn chain_id(&self) -> Felt {
         Felt::from_bytes_be_slice(format!("{}", self.backend.chain_config().chain_id).as_bytes())
     }
 }

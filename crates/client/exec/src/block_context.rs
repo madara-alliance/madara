@@ -48,6 +48,8 @@ impl ExecutionContext {
             }
         };
 
+        log::debug!("Init cached state on top of {:?}, block number {:?}", on_top_of, self.block_context.block_info().block_number.0);
+
         CachedState::new(BlockifierStateAdapter::new(
             Arc::clone(&self.backend),
             self.block_context.block_info().block_number.0,

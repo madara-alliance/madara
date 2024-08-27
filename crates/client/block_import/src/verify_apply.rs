@@ -74,6 +74,8 @@ pub fn verify_apply_inner(
     // Block hash
     let (block_hash, header) = block_hash(&block, &validation, block_number, parent_block_hash, global_state_root)?;
 
+    log::debug!("verify_apply_inner store block {}", header.block_number);
+
     // store block, also uses rayon heavily internally
     backend
         .store_block(

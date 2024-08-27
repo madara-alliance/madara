@@ -140,6 +140,22 @@ impl StateReader for BlockifierStateAdapter {
 
         Ok(CompiledClassHash(class_info.compiled_class_hash))
     }
+    
+    fn get_fee_token_balance(
+        &mut self,
+        contract_address: ContractAddress,
+        fee_token_address: ContractAddress,
+    ) -> Result<(Felt, Felt), StateError> {
+        let low_key = blockifier::abi::abi_utils::get_fee_token_var_address(contract_address);
+        let high_key = blockifier::abi::sierra_types::next_storage_key(&low_key)?;
+        let low = self.get_storage_at(fee_token_address, low_key)?;
+        let high = self.get_storage_at(fee_token_address, high_key)?;
+
+    
+        Ok((low, high))
+    }
+
+    
 }
 
 fn block_hash_storage_check_range(chain_id: &ChainId, current_block: u64, to_check: u64) -> bool {

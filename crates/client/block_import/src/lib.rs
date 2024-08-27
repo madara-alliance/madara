@@ -111,6 +111,16 @@ impl BlockImporter {
         Self { verify_apply: VerifyApply::new(Arc::clone(&backend), Arc::clone(&pool)), pool }
     }
 
+    /// Perform [`BlockImporter::pre_validate`] followed by [`BlockImporter::verify_apply`] to import a block. 
+    pub async fn add_block(
+        &self,
+        block: UnverifiedFullBlock,
+        validation: Validation,
+    ) -> Result<BlockImportResult, BlockImportError> {
+        let block = self.pre_validate(block, validation.clone()).await?;
+        self.verify_apply(block, validation).await
+    }
+
     pub async fn pre_validate(
         &self,
         block: UnverifiedFullBlock,

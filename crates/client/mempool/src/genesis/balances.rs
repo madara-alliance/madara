@@ -7,21 +7,21 @@ use starknet_api::core::ContractAddress;
 use super::StorageDiffs;
 
 #[derive(Clone, Debug, Default)]
-pub struct InitialBalance {
+pub struct ContractBalance {
     pub fri: Felt,
     pub wei: Felt,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct InitialBalances(pub HashMap<ContractAddress, InitialBalance>);
+pub struct InitialBalances(pub HashMap<ContractAddress, ContractBalance>);
 
 impl InitialBalances {
-    pub fn with(mut self, contract_address: ContractAddress, bal: InitialBalance) -> Self {
+    pub fn with(mut self, contract_address: ContractAddress, bal: ContractBalance) -> Self {
         self.insert(contract_address, bal);
         self
     }
 
-    pub fn insert(&mut self, contract_address: ContractAddress, bal: InitialBalance) {
+    pub fn insert(&mut self, contract_address: ContractAddress, bal: ContractBalance) {
         self.0.insert(contract_address, bal);
     }
 

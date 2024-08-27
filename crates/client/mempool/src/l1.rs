@@ -54,6 +54,7 @@ impl Default for GasPriceProvider {
     }
 }
 
+#[cfg_attr(test, mockall::automock)]
 pub trait L1DataProvider: Send + Sync {
     fn get_gas_prices(&self) -> GasPrices;
     fn get_gas_prices_last_update(&self) -> SystemTime;

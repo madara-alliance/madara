@@ -2,6 +2,7 @@ use anyhow::Context;
 use dc_block_import::DeclaredClass;
 use dp_class::ContractClass;
 use dp_state_update::DeclaredClassItem;
+use starknet_core::types::{BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV3, BroadcastedTransaction};
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
 

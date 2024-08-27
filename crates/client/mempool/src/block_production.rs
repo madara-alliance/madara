@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
-use crate::{clone_account_tx, L1DataProvider, Mempool, MempoolTransaction};
+use crate::{clone_account_tx, L1DataProvider, Mempool, MempoolProvider, MempoolTransaction};
 
 /// We always take transactions in batches from the mempool
 const TX_BATCH_SIZE: usize = 128;
@@ -158,10 +158,10 @@ fn finalize_execution_state<S: StateReader>(
 pub struct BlockProductionTask {
     importer: Arc<BlockImporter>,
     backend: Arc<DeoxysBackend>,
-    mempool: Arc<Mempool>,
+    mempool: Arc<dyn MempoolProvider>,
     block: DeoxysPendingBlock,
     declared_classes: Vec<ConvertedClass>,
-    executor: TransactionExecutor<BlockifierStateAdapter>,
+    pub(crate) executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     current_pending_tick: usize,
 }
@@ -372,7 +372,7 @@ impl BlockProductionTask {
 
         loop {
             tokio::select! {
-                inst = interval_block_time.tick() => {
+                instant = interval_block_time.tick() => {
                     if let Err(err) = self.on_block_time().await {
                         log::error!("Block production task has errored: {err:#}");
                     }

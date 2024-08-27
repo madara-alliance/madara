@@ -8,7 +8,7 @@ mod into_starknet_api;
 mod to_starknet_core;
 pub mod utils;
 
-pub use broadcasted_to_blockifier::broadcasted_to_blockifier;
+pub use broadcasted_to_blockifier::{broadcasted_to_blockifier, BroadcastedToBlockifierError};
 use dp_convert::ToFelt;
 // pub use from_starknet_provider::TransactionTypeError;
 use starknet_api::transaction::TransactionVersion;
