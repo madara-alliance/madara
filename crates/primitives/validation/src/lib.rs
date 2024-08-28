@@ -3,7 +3,7 @@ use dp_rayon_pool::RayonPool;
 #[async_trait::async_trait]
 pub trait Validate: Send + Sync + Sized + 'static {
     type Output: Send + 'static;
-    type Context: Clone + Send + Sync + 'static;
+    type Context: Send + 'static;
     type ValidationError: Send;
 
     // TODO: context should be optional
