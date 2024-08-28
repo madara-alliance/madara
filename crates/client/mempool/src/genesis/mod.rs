@@ -1,5 +1,5 @@
 use self::{
-    balances::{ContractBalance, InitialBalances},
+    balances::{InitialBalance, InitialBalances},
     classes::{InitiallyDeclaredClass, InitiallyDeclaredClasses},
     contracts::InitiallyDeployedContracts,
 };
@@ -10,7 +10,6 @@ use dp_chain_config::ChainConfig;
 use dp_convert::ToFelt;
 use dp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
 use starknet_api::{core::ContractAddress, state::StorageKey};
-use starknet_core::types::BroadcastedTransaction;
 use starknet_signers::SigningKey;
 use starknet_types_core::felt::Felt;
 use std::{collections::HashMap, fmt, time::SystemTime};
@@ -81,7 +80,7 @@ pub struct DevnetPredeployedContract {
     pub address: Felt,
     pub secret: SigningKey,
     pub pubkey: Felt,
-    pub balance: ContractBalance,
+    pub balance: InitialBalance,
 }
 
 pub struct DevnetKeys(Vec<DevnetPredeployedContract>);
@@ -89,7 +88,7 @@ pub struct DevnetKeys(Vec<DevnetPredeployedContract>);
 impl fmt::Display for DevnetKeys {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "==== DEVNET PREDEPLOYED CONTRACTS ====")?;
-        writeln!(f, "")?;
+        writeln!(f)?;
         for (i, keypair) in self.0.iter().enumerate() {
             writeln!(
                 f,
@@ -139,7 +138,7 @@ impl ChainGenesisDescription {
 
                     let address = pubkey.scalar().double(); // let's just lie and make it up here for now
 
-                    let balance = ContractBalance {
+                    let balance = InitialBalance {
                         fri: (10_000 * ETH_WEI_DECIMALS).into(),
                         wei: (10_000 * STRK_FRI_DECIMALS).into(),
                     };
@@ -157,7 +156,7 @@ impl ChainGenesisDescription {
     }
 
     pub fn build(mut self, chain_config: &ChainConfig) -> anyhow::Result<UnverifiedFullBlock> {
-        self.initial_balances.to_storage_diffs(&chain_config, &mut self.initial_storage);
+        self.initial_balances.to_storage_diffs(chain_config, &mut self.initial_storage);
 
         Ok(UnverifiedFullBlock {
             header: UnverifiedHeader {
@@ -195,29 +194,32 @@ mod tests {
     use super::*;
     use crate::l1::MockL1DataProvider;
     use crate::{block_production::BlockProductionTask, Mempool, MempoolProvider};
-    use crate::{transaction_hash, L1DataProvider, MockMempoolProvider};
+    use crate::{transaction_hash, L1DataProvider};
+    
     use blockifier::abi::abi_utils::get_fee_token_var_address;
     use blockifier::abi::sierra_types::next_storage_key;
-    use blockifier::state::state_api::StateReader;
-    use blockifier::transaction::account_transaction::AccountTransaction;
-    use blockifier::transaction::transaction_execution::Transaction;
-    use blockifier::transaction::transactions::InvokeTransaction;
+    
+    
+    
+    
     use dc_block_import::{BlockImporter, Validation};
-    use dc_db::db_block_id::DbBlockId;
+    
     use dc_db::DeoxysBackend;
-    use dc_exec::ExecutionContext;
-    use dp_block::header::{L1DataAvailabilityMode, PendingHeader};
-    use dp_block::{BlockId, BlockTag, DeoxysPendingBlockInfo};
+    use dp_block::header::{L1DataAvailabilityMode};
+    use dp_block::{BlockId, BlockTag};
+    use dp_convert::felt_to_u128;
+    use dp_receipt::{
+        DataAvailabilityResources, Event, ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt,
+        PriceUnit, TransactionReceipt,
+    };
     use dp_transactions::broadcasted_to_blockifier;
     use entrypoint::*;
     use rstest::{fixture, rstest};
     use starknet_core::types::{
-        BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV1, BroadcastedDeployAccountTransaction,
-        BroadcastedInvokeTransaction, BroadcastedInvokeTransactionV3, DeclareTransactionResult,
-        DeployAccountTransactionResult, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping,
+        BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedInvokeTransactionV3, BroadcastedTransaction, DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping
     };
-    use std::iter;
-    use std::num::NonZeroU128;
+    
+    
     use std::sync::Arc;
 
     struct PreparedDevnet {
@@ -245,6 +247,8 @@ mod tests {
                 BroadcastedInvokeTransaction::V3(tx) => &mut tx.signature,
             };
             *tx_signature = vec![signature.r, signature.s];
+
+            log::debug!("tx: {:?}", tx);
 
             self.mempool.accept_invoke_tx(tx).unwrap()
         }
@@ -292,8 +296,8 @@ mod tests {
             self.mempool.accept_deploy_account_tx(tx).unwrap()
         }
 
-        /// (low, high)
-        pub fn get_fee_token_balance(&self, contract_address: Felt, fee_token_address: Felt) -> (Felt, Felt) {
+        /// Returns an `u128`. This is for tests only as an ERC20 contract may have a higher balance than an u128.
+        pub fn get_bal_contract(&self, contract_address: Felt, fee_token_address: Felt) -> u128 {
             let low_key = get_fee_token_var_address(contract_address.try_into().unwrap());
             let high_key = next_storage_key(&low_key).unwrap();
             let low = self
@@ -308,7 +312,18 @@ mod tests {
                 .unwrap_or(Felt::ZERO);
             log::debug!("get_fee_token_balance contract_address={contract_address:#x} fee_token_address={fee_token_address:#x} low_key={low_key:?}, got {low:#x} {high:#x}");
 
-            (low, high)
+            assert_eq!(high, Felt::ZERO); // for now we never use high let's keep it out of the api
+                                          // (blockifier does not even support it fully I believe, as the total supply of STRK/ETH would not reach the high bits.)
+
+            felt_to_u128(&low).unwrap()
+        }
+
+        /// (STRK in FRI, ETH in WEI)
+        pub fn get_bal_strk_eth(&self, contract_address: Felt) -> (u128, u128) {
+            (
+                self.get_bal_contract(contract_address, ERC20_STRK_CONTRACT_ADDRESS),
+                self.get_bal_contract(contract_address, ERC20_ETH_CONTRACT_ADDRESS),
+            )
         }
     }
 
@@ -356,25 +371,15 @@ mod tests {
     fn test_basic_transfer(mut chain: PreparedDevnet) {
         println!("{}", chain.contracts);
 
+        let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();
         let contract_0 = &chain.contracts.0[0];
         let contract_1 = &chain.contracts.0[1];
 
-        assert_eq!(
-            chain.get_fee_token_balance(contract_0.address, ERC20_STRK_CONTRACT_ADDRESS),
-            ((10_000 * STRK_FRI_DECIMALS).into(), Felt::ZERO)
-        );
-        assert_eq!(
-            chain.get_fee_token_balance(contract_0.address, ERC20_ETH_CONTRACT_ADDRESS),
-            ((10_000 * ETH_WEI_DECIMALS).into(), Felt::ZERO)
-        );
-        assert_eq!(
-            chain.get_fee_token_balance(contract_1.address, ERC20_STRK_CONTRACT_ADDRESS),
-            ((10_000 * STRK_FRI_DECIMALS).into(), Felt::ZERO)
-        );
-        assert_eq!(
-            chain.get_fee_token_balance(contract_1.address, ERC20_ETH_CONTRACT_ADDRESS),
-            ((10_000 * ETH_WEI_DECIMALS).into(), Felt::ZERO)
-        );
+        assert_eq!(chain.get_bal_strk_eth(sequencer_address), (0, 0));
+        assert_eq!(chain.get_bal_strk_eth(contract_0.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
+        assert_eq!(chain.get_bal_strk_eth(contract_1.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
+
+        let transfer_amount = 24235u128;
 
         let result = chain.sign_and_add_invoke_tx(
             BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
@@ -382,8 +387,8 @@ mod tests {
                 calldata: Multicall::default()
                     .with(Call {
                         to: ERC20_STRK_CONTRACT_ADDRESS,
-                        selector: Selector::from("transfer"), // transfer
-                        calldata: vec![contract_1.address, 128.into()],
+                        selector: Selector::from("transfer"),
+                        calldata: vec![contract_1.address, transfer_amount.into(), Felt::ZERO],
                     })
                     .flatten()
                     .collect(),
@@ -405,31 +410,147 @@ mod tests {
 
         log::info!("tx hash: {:#x}", result.transaction_hash);
 
-        chain.block_production.current_pending_tick = 1; //grr
+        chain.block_production.current_pending_tick = 1;
         chain.block_production.on_pending_time_tick().unwrap();
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
         assert_eq!(block.inner.transactions.len(), 1);
         assert_eq!(block.inner.receipts.len(), 1);
-        // assert_eq!(block.inner.receipts[0]);
         log::info!("receipt: {:?}", block.inner.receipts[0]);
 
         assert_eq!(
-            chain.get_fee_token_balance(contract_0.address, ERC20_STRK_CONTRACT_ADDRESS),
-            ((10_000 * STRK_FRI_DECIMALS).into(), Felt::ZERO)
+            block.inner.receipts[0],
+            TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                transaction_hash: result.transaction_hash,
+                actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x6b00"), unit: PriceUnit::Fri },
+                messages_sent: vec![],
+                events: vec![Event {
+                    from_address: ERC20_STRK_CONTRACT_ADDRESS,
+                    keys: block.inner.receipts[0].events()[0].keys.clone(), // do not match keys yet (unsure)
+                    data: vec![transfer_amount.into(), Felt::ZERO],
+                }],
+                execution_resources: ExecutionResources {
+                    steps: 4347,
+                    memory_holes: Some(90),
+                    range_check_builtin_applications: Some(139),
+                    pedersen_builtin_applications: None,
+                    poseidon_builtin_applications: None,
+                    ec_op_builtin_applications: None,
+                    ecdsa_builtin_applications: None,
+                    bitwise_builtin_applications: None,
+                    keccak_builtin_applications: None,
+                    segment_arena_builtin: None,
+                    data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 192 },
+                    total_gas_consumed: DataAvailabilityResources { l1_gas: 22, l1_data_gas: 192 },
+                },
+                execution_result: ExecutionResult::Succeeded,
+            })
+        );
+
+        let fees_fri = felt_to_u128(&block.inner.receipts[0].actual_fee().amount).unwrap();
+        assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
+        assert_eq!(
+            chain.get_bal_strk_eth(contract_0.address),
+            (10_000 * STRK_FRI_DECIMALS - fees_fri - transfer_amount, 10_000 * ETH_WEI_DECIMALS)
         );
         assert_eq!(
-            chain.get_fee_token_balance(contract_0.address, ERC20_ETH_CONTRACT_ADDRESS),
-            ((10_000 * ETH_WEI_DECIMALS).into(), Felt::ZERO)
+            chain.get_bal_strk_eth(contract_1.address),
+            (10_000 * STRK_FRI_DECIMALS + transfer_amount, 10_000 * ETH_WEI_DECIMALS)
         );
+    }
+
+    #[rstest]
+    fn test_transfer_reverted(mut chain: PreparedDevnet) {
+        println!("{}", chain.contracts);
+
+        let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();
+        let contract_0 = &chain.contracts.0[0];
+        let contract_1 = &chain.contracts.0[1];
+
+        assert_eq!(chain.get_bal_strk_eth(sequencer_address), (0, 0));
+        assert_eq!(chain.get_bal_strk_eth(contract_0.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
+        assert_eq!(chain.get_bal_strk_eth(contract_1.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
+
+        let transfer_amount = 10_002u128 * STRK_FRI_DECIMALS; // amount > balance
+
+        let result = chain.sign_and_add_invoke_tx(
+            BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+                sender_address: contract_0.address,
+                calldata: Multicall::default()
+                    .with(Call {
+                        to: ERC20_STRK_CONTRACT_ADDRESS,
+                        selector: Selector::from("transfer"),
+                        calldata: vec![contract_1.address, transfer_amount.into(), Felt::ZERO],
+                    })
+                    .flatten()
+                    .collect(),
+                signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
+                nonce: Felt::ZERO,
+                resource_bounds: ResourceBoundsMapping {
+                    l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                },
+                tip: 0,
+                paymaster_data: vec![],
+                account_deployment_data: vec![],
+                nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                is_query: false,
+            }),
+            contract_0,
+        );
+
+        log::info!("tx hash: {:#x}", result.transaction_hash);
+
+        chain.block_production.current_pending_tick = 1;
+        chain.block_production.on_pending_time_tick().unwrap();
+
+        let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
+
+        assert_eq!(block.inner.transactions.len(), 1);
+        assert_eq!(block.inner.receipts.len(), 1);
+        log::info!("receipt: {:?}", block.inner.receipts[0]);
+
+        let TransactionReceipt::Invoke(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
         assert_eq!(
-            chain.get_fee_token_balance(contract_1.address, ERC20_STRK_CONTRACT_ADDRESS),
-            ((10_000 * STRK_FRI_DECIMALS).into(), Felt::ZERO)
+            receipt,
+            InvokeTransactionReceipt {
+                transaction_hash: result.transaction_hash,
+                actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x4780"), unit: PriceUnit::Fri },
+                messages_sent: vec![],
+                events: vec![Event {
+                    from_address: ERC20_STRK_CONTRACT_ADDRESS,
+                    keys: receipt.events[0].keys.clone(), // do not match keys yet (unsure)
+                    data: receipt.events[0].data.clone(),
+                }],
+                execution_resources: ExecutionResources {
+                    steps: 1782,
+                    memory_holes: Some(43),
+                    range_check_builtin_applications: Some(61),
+                    pedersen_builtin_applications: None,
+                    poseidon_builtin_applications: None,
+                    ec_op_builtin_applications: None,
+                    ecdsa_builtin_applications: None,
+                    bitwise_builtin_applications: None,
+                    keccak_builtin_applications: None,
+                    segment_arena_builtin: None,
+                    data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 128 },
+                    total_gas_consumed: DataAvailabilityResources { l1_gas: 15, l1_data_gas: 128 }
+                },
+                execution_result: receipt.execution_result.clone(),
+            }
         );
+
+        let ExecutionResult::Reverted { reason } = receipt.execution_result else { unreachable!() };
+        assert!(reason.contains("ERC20: insufficient balance"));
+
+        let fees_fri = felt_to_u128(&block.inner.receipts[0].actual_fee().amount).unwrap();
+        assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
         assert_eq!(
-            chain.get_fee_token_balance(contract_1.address, ERC20_ETH_CONTRACT_ADDRESS),
-            ((10_000 * ETH_WEI_DECIMALS).into(), Felt::ZERO)
+            chain.get_bal_strk_eth(contract_0.address),
+            (10_000 * STRK_FRI_DECIMALS - fees_fri, 10_000 * ETH_WEI_DECIMALS)
         );
+        assert_eq!(chain.get_bal_strk_eth(contract_1.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
     }
 }

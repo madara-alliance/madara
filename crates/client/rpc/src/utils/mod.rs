@@ -5,18 +5,23 @@ use std::fmt;
 
 use crate::StarknetRpcApiError;
 
+pub fn display_internal_server_error(err: impl fmt::Display) {
+    log::error!(target: "rpc_errors", "{:#}", err);
+}
+
 #[macro_export]
 macro_rules! bail_internal_server_error {
     ($msg:literal $(,)?) => {{
+        $crate::utils::display_internal_server_error(anyhow::anyhow!($msg));
         log::error!(target: "rpc_errors", "{:#}", anyhow::anyhow!($msg));
         return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     }};
     ($err:expr $(,)?) => {
-        log::error!(target: "rpc_errors", "{:#}", anyhow::anyhow!($err));
+        $crate::utils::display_internal_server_error(anyhow::anyhow!($err));
         return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     };
     ($fmt:expr, $($arg:tt)*) => {
-        log::error!(target: "rpc_errors", "{:#}", anyhow::anyhow!($fmt, $($arg)*));
+        $crate::utils::display_internal_server_error(anyhow::anyhow!($fmt, $($arg)*));
         return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     };
 }

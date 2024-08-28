@@ -175,6 +175,8 @@ impl ChainConfig {
         Self {
             chain_name: "Test".into(),
             chain_id: ChainId::Other("MADARA_TEST".into()),
+            // We need a sequencer address for fee transfers to work in block production.
+            sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
             ..ChainConfig::starknet_sepolia()
         }
     }

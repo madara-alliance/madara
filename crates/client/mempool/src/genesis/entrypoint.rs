@@ -46,6 +46,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_selector() {
+        assert_eq!(
+            Felt::from(Selector::from("transfer")),
+            Felt::from_hex_unchecked("0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e")
+        );
+        assert_eq!(Felt::from(Selector::from("__default__")), Felt::ZERO);
+    }
+
+    #[test]
     fn test_multicall_flatten() {
         let to = Felt::from_hex_unchecked("0x879");
         let calldata: Vec<Felt> = Multicall::default()

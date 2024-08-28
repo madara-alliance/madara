@@ -59,7 +59,7 @@ pub enum StarknetRpcApiError {
     #[error("Account balance is smaller than the transaction's max_fee")]
     InsufficientAccountBalance,
     #[error("Account validation failed")]
-    ValidationFailure,
+    ValidationFailure { error: String },
     #[error("Compilation failed")]
     CompilationFailed,
     #[error("Contract class size is too large")]
@@ -107,7 +107,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::InvalidTxnNonce => 52,
             StarknetRpcApiError::InsufficientMaxFee => 53,
             StarknetRpcApiError::InsufficientAccountBalance => 54,
-            StarknetRpcApiError::ValidationFailure => 55,
+            StarknetRpcApiError::ValidationFailure { .. } => 55,
             StarknetRpcApiError::CompilationFailed => 56,
             StarknetRpcApiError::ContractClassSizeTooLarge => 57,
             StarknetRpcApiError::NonAccount => 58,
@@ -178,7 +178,7 @@ impl From<StarknetError> for StarknetRpcApiError {
             StarknetError::InvalidTransactionNonce => StarknetRpcApiError::InvalidTxnNonce,
             StarknetError::InsufficientMaxFee => StarknetRpcApiError::InsufficientMaxFee,
             StarknetError::InsufficientAccountBalance => StarknetRpcApiError::InsufficientAccountBalance,
-            StarknetError::ValidationFailure(_) => StarknetRpcApiError::ValidationFailure,
+            StarknetError::ValidationFailure(error) => StarknetRpcApiError::ValidationFailure { error },
             StarknetError::CompilationFailed => StarknetRpcApiError::CompilationFailed,
             StarknetError::ContractClassSizeIsTooLarge => StarknetRpcApiError::ContractClassSizeTooLarge,
             StarknetError::NonAccount => StarknetRpcApiError::NonAccount,

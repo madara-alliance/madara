@@ -22,6 +22,7 @@ bitvec.workspace = true
 env_logger.workspace = true
 blockifier = { workspace = true, features = ["testing"] }
 mockall.workspace = true
+assert_matches.workspace = true
 
 [dependencies]
 
@@ -40,10 +41,10 @@ dp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true
+starknet-core.workspace = true
+starknet-signers.workspace = true
 starknet-types-core.workspace = true
 starknet_api.workspace = true
-starknet-signers.workspace = true
-starknet-core.workspace = true
 
 # Other
 anyhow.workspace = true
@@ -51,6 +52,6 @@ async-trait.workspace = true
 hyper.workspace = true
 log.workspace = true
 rayon.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-serde_json.workspace = true

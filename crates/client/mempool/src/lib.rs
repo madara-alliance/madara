@@ -52,9 +52,14 @@ pub enum Error {
     #[error("Preprocessing transaction: {0:#}")]
     BroadcastedToBlockifier(#[from] BroadcastedToBlockifierError),
 }
+impl Error {
+    pub fn is_internal(&self) -> bool {
+        !matches!(self, Error::Validation(_))
+    }
+}
 
 #[cfg_attr(test, mockall::automock)]
-pub trait MempoolProvider {
+pub trait MempoolProvider: Send + Sync {
     fn accept_invoke_tx(&self, tx: BroadcastedInvokeTransaction) -> Result<InvokeTransactionResult, Error>;
     fn accept_declare_tx(&self, tx: BroadcastedDeclareTransaction) -> Result<DeclareTransactionResult, Error>;
     fn accept_deploy_account_tx(

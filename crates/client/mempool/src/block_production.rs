@@ -232,10 +232,11 @@ impl BlockProductionTask {
         let n_executed_txs = executed_txs.len();
 
         for (exec_result, mempool_tx) in Iterator::zip(all_results.into_iter(), executed_txs) {
+            log::debug!("res for {:?}", mempool_tx);
             match exec_result {
                 Ok(execution_info) => {
-                    // Note: reverted txs also appear as Ok here.
-                    log::debug!("Successful execution of transaction {:?}", mempool_tx.tx_hash());
+                    // Reverted transactions appear here as Ok too.
+                    log::debug!("Successful execution of transaction {}", mempool_tx.tx_hash());
 
                     if let Some(class) = mempool_tx.converted_class {
                         self.declared_classes.push(class);
@@ -250,8 +251,10 @@ impl BlockProductionTask {
                     self.block.inner.transactions.push(converted_tx.transaction);
                 }
                 Err(err) => {
-                    // TODO: revert handling
-                    log::error!("Unsuccessful execution of transaction {:?}: {err:#}", mempool_tx.tx_hash());
+                    // These are the transactions that have errored but we can't revert them. It's either because of an internal error
+                    // Errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
+                    // We reject them.
+                    log::error!("Unsuccessful execution of transaction {}: {err:#}", mempool_tx.tx_hash());
                 }
             }
         }
