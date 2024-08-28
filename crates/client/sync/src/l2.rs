@@ -52,7 +52,6 @@ async fn l2_verify_and_apply_task(
     mut updates_receiver: mpsc::Receiver<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
     validation_context: BlockValidationContext,
-    #[allow(unused)] verify: bool, // TODO(merge): re-add verify false
     backup_every_n_blocks: Option<u64>,
     block_metrics: BlockMetrics,
     db_metrics: DbMetrics,
@@ -132,9 +131,9 @@ async fn l2_block_conversion_task(
         |(mut updates_recv, block_import, validation_context)| async move {
             channel_wait_or_graceful_shutdown(updates_recv.recv()).await.map(|block| {
                 let block_import_ = Arc::clone(&block_import);
-                let validation_ = validation_context.clone();
+                let validation_context_ = validation_context.clone();
                 (
-                    async move { block_import_.pre_validate(block, validation_).await },
+                    async move { block_import_.pre_validate(block, validation_context_).await },
                     (updates_recv, block_import, validation_context),
                 )
             })
@@ -257,7 +256,6 @@ pub async fn sync(
         block_conv_receiver,
         Arc::clone(&block_importer),
         validation_context.clone(),
-        config.verify,
         config.backup_every_n_blocks,
         block_metrics,
         db_metrics,

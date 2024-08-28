@@ -110,7 +110,7 @@ pub fn verify_apply_inner(
 pub fn verify_apply_pending_inner(
     backend: &DeoxysBackend,
     block: PreValidatedPendingBlock,
-    _context: BlockValidationContext,
+    _validation_context: BlockValidationContext,
 ) -> Result<PendingBlockImportResult, BlockImportError> {
     let (_block_number, parent_block_hash) = check_parent_hash_and_num(backend, block.header.parent_block_hash, None)?;
 
