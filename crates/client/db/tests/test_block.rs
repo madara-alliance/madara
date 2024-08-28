@@ -4,9 +4,9 @@ use dc_db::db_block_id::DbBlockIdResolvable;
 use dc_db::{block_db::TxIndex, db_block_id::DbBlockId};
 use dp_block::BlockId;
 use dp_block::{
-    chain_config::ChainConfig, header::PendingHeader, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
-    DeoxysPendingBlockInfo, Header,
+    header::PendingHeader, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysPendingBlockInfo, Header,
 };
+use dp_chain_config::ChainConfig;
 use dp_receipt::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, InvokeTransactionReceipt,
     L1HandlerTransactionReceipt,

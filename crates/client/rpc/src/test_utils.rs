@@ -1,10 +1,10 @@
 use dc_db::DeoxysBackend;
 use dp_block::{
-    chain_config::ChainConfig,
     header::{GasPrices, L1DataAvailabilityMode, PendingHeader},
     DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo,
-    Header, StarknetVersion,
+    Header,
 };
+use dp_chain_config::{ChainConfig, StarknetVersion};
 use dp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };

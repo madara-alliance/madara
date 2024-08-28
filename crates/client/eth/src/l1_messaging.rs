@@ -230,7 +230,7 @@ mod tests {
     };
     use dc_db::DatabaseService;
     use dc_metrics::MetricsService;
-    use dp_block::chain_config::ChainConfig;
+    use dp_chain_config::ChainConfig;
     use rstest::*;
     use starknet_api::core::Nonce;
     use tempfile::TempDir;

@@ -3,17 +3,29 @@ use core::fmt;
 use core::time::Duration;
 use std::collections::HashMap;
 
+use anyhow::Context;
+use dc_block_import::{
+    DeclaredClass, UnverifiedCommitments, UnverifiedFullBlock, UnverifiedHeader, UnverifiedPendingFullBlock,
+};
 use dc_db::storage_updates::DbClassUpdate;
 use dc_db::DeoxysBackend;
-use dp_block::{BlockId, BlockTag};
+use dp_block::{header::GasPrices, BlockId, BlockTag};
+use dp_convert::felt_to_u128;
+use dp_receipt::TransactionReceipt;
+use dp_transactions::Transaction;
 use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
-use starknet_core::types::{ContractClass, StarknetError};
+use starknet_core::types::{ContractClass, MaybePendingBlockWithReceipts, StarknetError};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
 use url::Url;
 
 use crate::l2::L2SyncError;
+
+use super::FetchError;
+
+const MAX_RETRY: u32 = 15;
+const BASE_DELAY: Duration = Duration::from_secs(1);
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
 /// feeder.
@@ -78,28 +90,138 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
     }
 }
 
-pub struct L2BlockAndUpdates {
-    pub block_id: FetchBlockId,
-    pub block: starknet_providers::sequencer::models::Block,
-    pub state_diff: starknet_providers::sequencer::models::state_update::StateDiff,
-    pub class_update: Vec<DbClassUpdate>,
+pub async fn fetch_pending_block_and_updates(
+    backend: &DeoxysBackend,
+    provider: &SequencerGatewayProvider,
+) -> Result<UnverifiedPendingFullBlock, FetchError> {
+    let block_id = FetchBlockId::Pending;
+
+    let sw = PerfStopwatch::new();
+    let (state_update, block) =
+        retry(|| fetch_state_update_with_block(provider, block_id), MAX_RETRY, BASE_DELAY).await?;
+    let class_update = fetch_class_updates(backend, &state_update, block_id, provider).await?;
+
+    stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
+
+    let block = starknet_core::types::MaybePendingBlockWithReceipts::try_from(block)
+        .context("Converting the FGW format to starknet_types_core")?;
+
+    let MaybePendingBlockWithReceipts::PendingBlock(block) = block else {
+        return Err(anyhow::anyhow!("Fetched a pending block, got a closed one").into());
+    };
+
+    let (transactions, receipts) =
+        block.transactions.into_iter().map(|t| (t.transaction.into(), t.receipt.into())).unzip();
+
+    Ok(UnverifiedPendingFullBlock {
+        header: UnverifiedHeader {
+            parent_block_hash: Some(block.parent_hash),
+            sequencer_address: block.sequencer_address,
+            block_timestamp: block.timestamp,
+            protocol_version: block.starknet_version.parse().context("Invalid starknet version")?,
+            l1_gas_price: GasPrices {
+                eth_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_wei).context("Converting prices")?,
+                strk_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_fri).context("Converting prices")?,
+                eth_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_wei)
+                    .context("Converting prices")?,
+                strk_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_fri)
+                    .context("Converting prices")?,
+            },
+            l1_da_mode: block.l1_da_mode.into(),
+        },
+        state_diff: state_update.state_diff.into(),
+        transactions,
+        receipts,
+        declared_classes: class_update
+            .into_iter()
+            .map(|c| DeclaredClass {
+                class_hash: c.class_hash,
+                contract_class: c.contract_class.into(),
+                compiled_class_hash: c.compiled_class_hash,
+            })
+            .collect(),
+    })
 }
 
 pub async fn fetch_block_and_updates(
     backend: &DeoxysBackend,
-    block_id: FetchBlockId,
+    block_n: u64,
     provider: &SequencerGatewayProvider,
-) -> Result<L2BlockAndUpdates, L2SyncError> {
-    const MAX_RETRY: u32 = 15;
-    let base_delay = Duration::from_secs(1);
+) -> Result<UnverifiedFullBlock, FetchError> {
+    let block_id = FetchBlockId::BlockN(block_n);
 
     let sw = PerfStopwatch::new();
     let (state_update, block) =
-        retry(|| fetch_state_update_with_block(provider, block_id), MAX_RETRY, base_delay).await?;
+        retry(|| fetch_state_update_with_block(provider, block_id), MAX_RETRY, BASE_DELAY).await?;
     let class_update = fetch_class_updates(backend, &state_update, block_id, provider).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
-    Ok(L2BlockAndUpdates { block_id, block, state_diff: state_update.state_diff, class_update })
+
+    // Verify against these commitments.
+    let commitments = UnverifiedCommitments {
+        // TODO: these commitments are wrong for mainnet from block 0 to unknown. We need to figure out
+        // which blocks and handle the case directly in the block import crate.
+        // transaction_commitment: Some(block.transaction_commitment.context("No transaction commitment")?),
+        // event_commitment: Some(block.event_commitment.context("No event commitment")?),
+        state_diff_commitment: None,
+        receipt_commitment: None,
+        global_state_root: Some(block.state_root.context("No state root")?),
+        block_hash: Some(block.block_hash.context("No block hash")?),
+        ..Default::default()
+    };
+
+    // let block = starknet_core::types::MaybePendingBlockWithReceipts::try_from(block)
+    //     .context("Converting the FGW format to starknet_types_core")?;
+
+    // let MaybePendingBlockWithReceipts::Block(block) = block else {
+    //     return Err(anyhow::anyhow!("Fetched a closed block, got a pending one").into());
+    // };
+
+    Ok(UnverifiedFullBlock {
+        unverified_block_number: Some(block.block_number.context("FGW should have a block number for closed blocks")?),
+        header: UnverifiedHeader {
+            parent_block_hash: Some(block.parent_block_hash),
+            sequencer_address: block.sequencer_address.unwrap_or_default(),
+            block_timestamp: block.timestamp,
+            protocol_version: block
+                .starknet_version
+                .as_deref()
+                .unwrap_or("0.0.0")
+                .parse()
+                .context("Invalid starknet version")?,
+            l1_gas_price: GasPrices {
+                eth_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_wei).context("Converting prices")?,
+                strk_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_fri).context("Converting prices")?,
+                eth_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_wei)
+                    .context("Converting prices")?,
+                strk_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_fri)
+                    .context("Converting prices")?,
+            },
+            l1_da_mode: block.l1_da_mode.into(),
+        },
+        state_diff: state_update.state_diff.into(),
+        receipts: block
+            .transaction_receipts
+            .into_iter()
+            .zip(&block.transactions)
+            .map(|(receipt, tx)| TransactionReceipt::from_provider(receipt, tx))
+            .collect(),
+        transactions: block
+            .transactions
+            .into_iter()
+            .map(Transaction::try_from)
+            .collect::<Result<_, _>>()
+            .context("Converting the FGW format")?,
+        declared_classes: class_update
+            .into_iter()
+            .map(|c| DeclaredClass {
+                class_hash: c.class_hash,
+                contract_class: c.contract_class.into(),
+                compiled_class_hash: c.compiled_class_hash,
+            })
+            .collect(),
+        commitments,
+    })
 }
 
 async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, ProviderError>
@@ -155,7 +277,7 @@ async fn fetch_class_updates(
     state_update: &starknet_providers::sequencer::models::StateUpdate,
     block_id: FetchBlockId,
     provider: &SequencerGatewayProvider,
-) -> Result<Vec<DbClassUpdate>, L2SyncError> {
+) -> anyhow::Result<Vec<DbClassUpdate>> {
     let missing_classes: Vec<_> = std::iter::empty()
         .chain(
             state_update
@@ -187,7 +309,7 @@ async fn fetch_class_updates(
         |(class_hash, &compiled_class_hash)| async move {
             // TODO(correctness): Skip what appears to be a broken Sierra class definition (quick fix)
             if class_hash
-                != Felt::from_hex("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698").unwrap()
+                != Felt::from_hex_unchecked("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698")
             {
                 // Fetch the class definition in parallel, retrying up to 15 times for each class
                 let (class_hash, contract_class) =

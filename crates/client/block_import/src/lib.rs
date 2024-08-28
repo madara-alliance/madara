@@ -1,0 +1,154 @@
+//! Block verification/import pipeline.
+//!
+//! ## Architecture
+//!
+//! Block validation works in 4 steps:
+//!
+//! ### Step 0: Fetching.
+//!
+//! Step 0 is handled by the consumers of this crate. It can use FGW / peer-to-peer / sync from rpc or any other fetching mechanism.
+//! The fetching process is expected to be parallel using [`tokio`] and to put its [`UnverifiedFullBlock`]s in the input channel.
+//!
+//! ### Step 1: Block pre-validate.
+//!
+//! This step is parallelized over [`PRE_VALIDATE_PIPELINE_LEN`] blocks. It also uses [`rayon`] for intra-block parallelization.
+//! This step checks all of the commitments of a block except the global state root and the block hash .
+//! This is also where classes are compiled.
+//! This does not read nor update the database.
+//!
+//! ### Step 2: Apply block to global tries.
+//!
+//! This step is necessarily sequencial over blocks, but parallelization is done internally using [`rayon`].
+//! This is where the final `state_root` and `block_hash` are computed.
+//!
+//! ### Step 2.5: Store block and classes.
+//!
+//! This step is also sequencial but ises internal parallelization using [`rayon`].
+//!
+//! ## Error handling
+//!
+//! When using p2p, validating a block could fail but that shouldn't close the whole app. This requires a retrying mechanism
+//! to get a different block from another peer, and you want to lower the peer score of the offending peer. The plumbery to
+//! get that done is not supported yet but it has been incorporated in the design of this pipeline.
+//!
+//! ## Future plans
+//!
+//! An optional sequencial step just before step 2 could be addded that executes the block to validate it: this will
+//! be useful for tendermint validator nodes in the future, and it should also be useful to test-execute a whole blockchain
+//! to check for errors.
+//! A signature verification mode should be added to allow the skipping of block validation entirely if the block is signed.
+
+use dc_db::{DeoxysBackend, DeoxysStorageError};
+use starknet_core::types::Felt;
+use std::{borrow::Cow, sync::Arc};
+
+mod pre_validate;
+mod rayon;
+mod types;
+mod verify_apply;
+
+pub use pre_validate::*;
+pub use rayon::*;
+pub use types::*;
+pub use verify_apply::*;
+
+#[derive(Debug, thiserror::Error)]
+pub enum BlockImportError {
+    #[error("Transaction count and receipt count do not match: {receipts} receipts != {transactions} transactions")]
+    TransactionEqualReceiptCount { receipts: usize, transactions: usize },
+
+    #[error("Transaction hash mismatch for index #{index}: expected {expected:#x}, got {got:#x}")]
+    TransactionHash { index: usize, got: Felt, expected: Felt },
+    #[error("Transaction count mismatch: expected {expected}, got {got}")]
+    TransactionCount { got: u64, expected: u64 },
+    #[error("Transaction commitment mismatch: expected {expected:#x}, got {got:#x}")]
+    TransactionCommitment { got: Felt, expected: Felt },
+
+    #[error("Event count mismatch: expected {expected}, got {got}")]
+    EventCount { got: u64, expected: u64 },
+    #[error("Event commitment mismatch: expected {expected:#x}, got {got:#x}")]
+    EventCommitment { got: Felt, expected: Felt },
+
+    #[error("State diff length mismatch: expected {expected}, got {got}")]
+    StateDiffLength { got: u64, expected: u64 },
+    #[error("State diff commitment mismatch: expected {expected:#x}, got {got:#x}")]
+    StateDiffCommitment { got: Felt, expected: Felt },
+
+    #[error("Receipt commitment mismatch: expected {expected:#x}, got {got:#x}")]
+    ReceiptCommitment { got: Felt, expected: Felt },
+
+    #[error("Class hash mismatch: expected {expected:#x}, got {got:#x}")]
+    ClassHash { got: Felt, expected: Felt },
+    #[error("Compiled class hash mismatch for class hash {class_hash:#x}: expected {expected:#x}, got {got:#x}")]
+    CompiledClassHash { class_hash: Felt, got: Felt, expected: Felt },
+    #[error("Class with hash {class_hash:#x} failed to compile: {error}")]
+    CompilationClassError { class_hash: Felt, error: String },
+
+    #[error("Block hash mismatch: expected {expected:#x}, got {got:#x}")]
+    BlockHash { got: Felt, expected: Felt },
+
+    #[error("Block order mismatch: database expects to import block #{expected}, trying to import #{got}")]
+    LatestBlockN { expected: u64, got: u64 },
+    #[error("Parent hash mismatch: expected {expected:#x}, got {got:#x}")]
+    ParentHash { got: Felt, expected: Felt },
+    #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
+    GlobalStateRoot { got: Felt, expected: Felt },
+
+    /// Internal error, see [`BlockImportError::is_internal`].
+    #[error("Internal database error while {context}: {error:#}")]
+    InternalDb { context: Cow<'static, str>, error: DeoxysStorageError },
+    /// Internal error, see [`BlockImportError::is_internal`].
+    #[error("Internal error: {0}")]
+    Internal(Cow<'static, str>),
+}
+
+impl BlockImportError {
+    /// Unrecoverable errors.
+    pub fn is_internal(&self) -> bool {
+        matches!(self, BlockImportError::InternalDb { .. } | BlockImportError::Internal(_))
+    }
+}
+
+pub struct BlockImporter {
+    pool: Arc<RayonPool>,
+    verify_apply: VerifyApply,
+}
+
+impl BlockImporter {
+    pub fn new(backend: Arc<DeoxysBackend>) -> Self {
+        let pool = Arc::new(RayonPool::new());
+        Self { verify_apply: VerifyApply::new(Arc::clone(&backend), Arc::clone(&pool)), pool }
+    }
+
+    pub async fn pre_validate(
+        &self,
+        block: UnverifiedFullBlock,
+        validation: Validation,
+    ) -> Result<PreValidatedBlock, BlockImportError> {
+        pre_validate(&self.pool, block, validation).await
+    }
+
+    pub async fn verify_apply(
+        &self,
+        block: PreValidatedBlock,
+        validation: Validation,
+    ) -> Result<BlockImportResult, BlockImportError> {
+        self.verify_apply.verify_apply(block, validation).await
+    }
+
+    pub async fn pre_validate_pending(
+        &self,
+        block: UnverifiedPendingFullBlock,
+        validation: Validation,
+    ) -> Result<PreValidatedPendingBlock, BlockImportError> {
+        pre_validate_pending(&self.pool, block, validation).await
+    }
+
+    pub async fn verify_apply_pending(
+        &self,
+        block: PreValidatedPendingBlock,
+        validation: Validation,
+    ) -> Result<PendingBlockImportResult, BlockImportError> {
+        self.verify_apply.verify_apply_pending(block, validation).await
+    }
+}

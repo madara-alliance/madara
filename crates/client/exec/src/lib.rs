@@ -24,7 +24,7 @@ pub use trace::execution_result_to_tx_trace;
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error(transparent)]
-    UnsupportedProtocolVersion(#[from] dp_block::chain_config::UnsupportedProtocolVersion),
+    UnsupportedProtocolVersion(#[from] dp_chain_config::UnsupportedProtocolVersion),
     #[error(transparent)]
     Reexecution(#[from] TxReexecError),
     #[error(transparent)]

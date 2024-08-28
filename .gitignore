@@ -55,3 +55,4 @@ output*
 tmp/
 
 *.info
+*.profraw

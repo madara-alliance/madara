@@ -3620,6 +3620,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
+name = "dc-block-import"
+version = "0.1.0"
+dependencies = [
+ "bitvec",
+ "bonsai-trie",
+ "dc-db",
+ "dp-block",
+ "dp-chain-config",
+ "dp-class",
+ "dp-convert",
+ "dp-receipt",
+ "dp-state-update",
+ "dp-transactions",
+ "dp-utils",
+ "futures",
+ "log",
+ "rayon",
+ "starknet-core",
+ "starknet-providers",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "dc-db"
 version = "0.1.0"
 dependencies = [
@@ -3628,6 +3654,7 @@ dependencies = [
  "bonsai-trie",
  "dc-metrics",
  "dp-block",
+ "dp-chain-config",
  "dp-class",
  "dp-receipt",
  "dp-state-update",
@@ -3679,6 +3706,7 @@ dependencies = [
  "dc-telemetry",
  "dotenv",
  "dp-block",
+ "dp-chain-config",
  "dp-convert",
  "dp-transactions",
  "dp-utils",
@@ -3712,6 +3740,7 @@ dependencies = [
  "cairo-vm",
  "dc-db",
  "dp-block",
+ "dp-chain-config",
  "dp-class",
  "dp-convert",
  "log",
@@ -3729,10 +3758,11 @@ dependencies = [
  "async-trait",
  "bitvec",
  "blockifier",
+ "dc-block-import",
  "dc-db",
  "dc-exec",
- "dc-sync",
  "dp-block",
+ "dp-chain-config",
  "dp-class",
  "dp-convert",
  "dp-receipt",
@@ -3775,6 +3805,7 @@ dependencies = [
  "dc-exec",
  "dc-mempool",
  "dp-block",
+ "dp-chain-config",
  "dp-class",
  "dp-convert",
  "dp-receipt",
@@ -3799,10 +3830,12 @@ dependencies = [
  "anyhow",
  "bitvec",
  "bonsai-trie",
+ "dc-block-import",
  "dc-db",
  "dc-metrics",
  "dc-telemetry",
  "dp-block",
+ "dp-chain-config",
  "dp-class",
  "dp-convert",
  "dp-receipt",
@@ -3860,6 +3893,7 @@ dependencies = [
  "dc-sync",
  "dc-telemetry",
  "dp-block",
+ "dp-chain-config",
  "dp-convert",
  "dp-utils",
  "env_logger 0.11.3",
@@ -3872,7 +3906,9 @@ dependencies = [
  "jsonrpsee",
  "log",
  "primitive-types",
+ "rand",
  "rayon",
+ "reqwest 0.12.5",
  "serde_json",
  "starknet-providers",
  "starknet_api",
@@ -4006,9 +4042,25 @@ name = "dp-block"
 version = "0.1.0"
 dependencies = [
  "blockifier",
+ "dp-chain-config",
  "dp-convert",
  "dp-receipt",
  "dp-transactions",
+ "lazy_static",
+ "primitive-types",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+]
+
+[[package]]
+name = "dp-chain-config"
+version = "0.1.0"
+dependencies = [
+ "blockifier",
  "lazy_static",
  "primitive-types",
  "serde",
@@ -4096,6 +4148,7 @@ dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.7.0-rc.2",
  "cairo-vm",
+ "dp-chain-config",
  "dp-class",
  "dp-convert",
  "num-bigint",

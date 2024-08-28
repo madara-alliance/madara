@@ -1,5 +1,6 @@
 //! Deoxys node command line.
 #![warn(missing_docs)]
+#![warn(clippy::unwrap_used)]
 
 use std::sync::Arc;
 

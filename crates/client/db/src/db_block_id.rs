@@ -4,7 +4,7 @@ use dp_block::BlockId;
 
 use crate::{DeoxysBackend, DeoxysStorageError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DbBlockId {
     Pending,
     BlockN(u64),

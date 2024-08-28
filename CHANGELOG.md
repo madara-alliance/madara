@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor: block import is now centrally done in a single crate
 - tests: add e2e tests for the node
 - fix: fixed some readme stuff
 - feat: gas price provider added for block production

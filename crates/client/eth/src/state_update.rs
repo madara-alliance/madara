@@ -108,7 +108,7 @@ mod eth_client_event_subscription_test {
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
     use dc_db::DatabaseService;
     use dc_metrics::MetricsService;
-    use dp_block::chain_config::ChainConfig;
+    use dp_chain_config::ChainConfig;
     use dp_convert::ToFelt;
     use rstest::*;
     use tempfile::TempDir;

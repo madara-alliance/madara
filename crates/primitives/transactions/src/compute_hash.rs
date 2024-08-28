@@ -1,3 +1,4 @@
+use dp_chain_config::StarknetVersion;
 use starknet_core::utils::starknet_keccak;
 
 use starknet_types_core::felt::Felt;
@@ -7,7 +8,7 @@ use crate::{
     DataAvailabilityMode, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2,
     DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3,
     DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3,
-    L1HandlerTransaction, ResourceBoundsMapping, Transaction,
+    L1HandlerTransaction, ResourceBoundsMapping, Transaction, LEGACY_BLOCK_NUMBER, MAIN_CHAIN_ID, V0_7_BLOCK_NUMBER,
 };
 
 use super::SIMULATE_TX_VERSION_OFFSET;
@@ -23,7 +24,20 @@ const L1_GAS: &[u8] = b"L1_GAS";
 const L2_GAS: &[u8] = b"L2_GAS";
 
 impl Transaction {
-    pub fn compute_hash(&self, chain_id: Felt, offset_version: bool, legacy: bool) -> Felt {
+    pub fn compute_hash(&self, chain_id: Felt, offset_version: bool, block_number: Option<u64>) -> Felt {
+        let legacy =
+            block_number.is_some_and(|block_number| block_number < LEGACY_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID);
+        let is_pre_v0_7 =
+            block_number.is_some_and(|block_number| block_number < V0_7_BLOCK_NUMBER && chain_id == MAIN_CHAIN_ID);
+
+        if is_pre_v0_7 {
+            self.compute_hash_pre_v0_7(chain_id, offset_version)
+        } else {
+            self.compute_hash_inner(chain_id, offset_version, legacy)
+        }
+    }
+
+    fn compute_hash_inner(&self, chain_id: Felt, offset_version: bool, legacy: bool) -> Felt {
         match self {
             crate::Transaction::Invoke(tx) => tx.compute_hash(chain_id, offset_version, legacy),
             crate::Transaction::L1Handler(tx) => tx.compute_hash(chain_id, offset_version, legacy),
@@ -36,8 +50,70 @@ impl Transaction {
     pub fn compute_hash_pre_v0_7(&self, chain_id: Felt, offset_version: bool) -> Felt {
         match self {
             crate::Transaction::L1Handler(tx) => tx.compute_hash_pre_v0_7(chain_id),
-            _ => self.compute_hash(chain_id, offset_version, true),
+            _ => self.compute_hash_inner(chain_id, offset_version, true),
         }
+    }
+
+    /// Compute the combined hash of the transaction hash and the signature.
+    ///
+    /// Since the transaction hash doesn't take the signature values as its input
+    /// computing the transaction commitent uses a hash value that combines
+    /// the transaction hash with the array of signature values.
+    pub fn compute_hash_with_signature(&self, tx_hash: Felt, starknet_version: StarknetVersion) -> Felt {
+        let include_signature = starknet_version >= StarknetVersion::STARKNET_VERSION_0_11_1;
+
+        let leaf = match self {
+            Transaction::Invoke(tx) => {
+                // Include signatures for Invoke transactions or for all transactions
+                if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                    let signature_hash = tx.compute_hash_signature::<Pedersen>();
+                    Pedersen::hash(&tx_hash, &signature_hash)
+                } else {
+                    let elements: Vec<Felt> = std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
+                    Poseidon::hash_array(&elements)
+                }
+            }
+            Transaction::Declare(tx) => {
+                if include_signature {
+                    if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                        let signature_hash = tx.compute_hash_signature::<Pedersen>();
+                        Pedersen::hash(&tx_hash, &signature_hash)
+                    } else {
+                        let elements: Vec<Felt> =
+                            std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
+                        Poseidon::hash_array(&elements)
+                    }
+                } else {
+                    let signature_hash = Pedersen::hash_array(&[]);
+                    Pedersen::hash(&tx_hash, &signature_hash)
+                }
+            }
+            Transaction::DeployAccount(tx) => {
+                if include_signature {
+                    if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                        let signature_hash = tx.compute_hash_signature::<Pedersen>();
+                        Pedersen::hash(&tx_hash, &signature_hash)
+                    } else {
+                        let elements: Vec<Felt> =
+                            std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
+                        Poseidon::hash_array(&elements)
+                    }
+                } else {
+                    let signature_hash = Pedersen::hash_array(&[]);
+                    Pedersen::hash(&tx_hash, &signature_hash)
+                }
+            }
+            _ => {
+                if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+                    let signature_hash = Pedersen::hash_array(&[]);
+                    Pedersen::hash(&tx_hash, &signature_hash)
+                } else {
+                    Poseidon::hash_array(&[tx_hash, Felt::ZERO])
+                }
+            }
+        };
+
+        leaf
     }
 }
 
@@ -523,67 +599,67 @@ mod tests {
     #[test]
     fn test_compute_hash() {
         let tx: Transaction = dummy_tx_invoke_v0().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        let hash = tx.compute_hash(CHAIN_ID, false, None);
         let expected_hash =
             Felt::from_hex_unchecked("0x2c6a2c329bf38089c34f4450d758f256535093b4cf29c599fee65f85ba74d0c");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_tx_invoke_v1().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        let hash = tx.compute_hash(CHAIN_ID, false, None);
         let expected_hash =
             Felt::from_hex_unchecked("0x701d05ab63a0193750f12fc7afd8014739aba9352d029af92987bc5232b2409");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_tx_invoke_v3().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        let hash = tx.compute_hash(CHAIN_ID, false, None);
         let expected_hash =
             Felt::from_hex_unchecked("0x604e0c6f351d1239d6774822b91c7e4ad61acec8ae78ad39a9f836ec9539931");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_l1_handler().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        let hash = tx.compute_hash(CHAIN_ID, false, None);
         let expected_hash =
             Felt::from_hex_unchecked("0x12825a135d7176b302387a1efcc96ac55b6cb4e02fdac523c68b99f4c0cb805");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_tx_declare_v0().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        let hash = tx.compute_hash(CHAIN_ID, false, None);
         let expected_hash =
             Felt::from_hex_unchecked("0x40eff03273b068d46b1679c300da89a9ad7280301c09cafcac7ac6c96de6676");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_tx_declare_v1().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        let hash = tx.compute_hash(CHAIN_ID, false, None);
         let expected_hash =
             Felt::from_hex_unchecked("0x6bdfc70a0c9423c885ca5d7f748fee466ca2c7ea8df8becea74b171a7261e02");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_tx_declare_v2().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        let hash = tx.compute_hash(CHAIN_ID, false, None);
         let expected_hash =
             Felt::from_hex_unchecked("0x24cd4f8249b10d43ba13a60ebab01bf3c3f2c02fca8c7645cb5aba677e5d633");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_tx_declare_v3().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        let hash = tx.compute_hash(CHAIN_ID, false, None);
         let expected_hash =
             Felt::from_hex_unchecked("0x3bb257dccec1e998d332813478ad734a55b3574855b818f92f58f24a6874bfe");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_tx_deploy().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        let hash = tx.compute_hash(CHAIN_ID, false, None);
         let expected_hash =
             Felt::from_hex_unchecked("0x69ec1564562e52d5399e3faa244b9c5fdf379f0857f5ec51bd824d551f7b39b");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_tx_deploy_account_v1().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        let hash = tx.compute_hash(CHAIN_ID, false, None);
         let expected_hash =
             Felt::from_hex_unchecked("0x4b94fa32600f1e6a27ab6e3d3a42bd86cfab87842bb64a1d06a0f3daed19505");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_tx_deploy_account_v3().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, false);
+        let hash = tx.compute_hash(CHAIN_ID, false, None);
         let expected_hash =
             Felt::from_hex_unchecked("0x415b215091384f58219c9c9d75a31383723e4590f8480058c3902c2d92bc042");
         assert_eq!(hash, expected_hash);
@@ -592,21 +668,21 @@ mod tests {
     #[test]
     fn compute_hash_legacy() {
         let tx: Transaction = dummy_tx_invoke_v0().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, true);
+        let hash = tx.compute_hash(MAIN_CHAIN_ID, false, Some(1300));
         let expected_hash =
-            Felt::from_hex_unchecked("0x4136a44fdeb38f0d879b3402dc5365785f0cf2f85fee787873ae207f0ef1171");
+            Felt::from_hex_unchecked("0x5f428bbfe0174b4b4a3faa6b970de936a60c5425e7133c1f81eaf6bc278f519");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_l1_handler().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, true);
+        let hash = tx.compute_hash(MAIN_CHAIN_ID, false, Some(1300));
         let expected_hash =
-            Felt::from_hex_unchecked("0x51054194b846935ec55c71a52344a0adba474fc075136b31ea8dd15b48ccfb0");
+            Felt::from_hex_unchecked("0x66dbc5cbe7eeb28d41745850632345be2c69799beb991d52d97582a6ec1ca30");
         assert_eq!(hash, expected_hash);
 
         let tx: Transaction = dummy_tx_deploy().into();
-        let hash = tx.compute_hash(CHAIN_ID, false, true);
+        let hash = tx.compute_hash(MAIN_CHAIN_ID, false, Some(1300));
         let expected_hash =
-            Felt::from_hex_unchecked("0x55714434a4cf43cdfb19af13c6f8fc0fc06f694da96566c90d3e07d32233eb5");
+            Felt::from_hex_unchecked("0x6e1fba17e05e56ad24c0c4533e62bfc9036a3d419b052b935d3a0243cadab3e");
         assert_eq!(hash, expected_hash);
     }
 

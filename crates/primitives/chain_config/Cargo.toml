@@ -1,23 +1,13 @@
 [package]
-description = "Deoxys primitives for starknet blocks"
-name = "dp-block"
+name = "dp-chain-config"
 authors.workspace = true
+homepage.workspace = true
 edition.workspace = true
-license.workspace = true
 repository.workspace = true
 version.workspace = true
-homepage.workspace = true
-
-[package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
+license.workspace = true
 
 [dependencies]
-
-# Deoxys
-dp-chain-config = { workspace = true }
-dp-convert = { workspace = true }
-dp-receipt = { workspace = true }
-dp-transactions = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
@@ -30,4 +20,4 @@ lazy_static = { workspace = true }
 primitive-types.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
+thiserror.workspace = true

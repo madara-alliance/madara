@@ -1,0 +1,33 @@
+[package]
+name = "dc-block-import"
+description = "Block import validation pipeline for Madara"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+repository.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+bitvec.workspace = true
+futures.workspace = true
+log.workspace = true
+rayon.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+dc-db = { workspace = true }
+dp-block = { workspace = true }
+dp-chain-config = { workspace = true }
+dp-class = { workspace = true }
+dp-convert = { workspace = true }
+dp-receipt = { workspace = true }
+dp-state-update = { workspace = true }
+dp-transactions = { workspace = true }
+dp-utils = { workspace = true }
+
+bonsai-trie = { workspace = true }
+starknet-core = { workspace = true }
+starknet-providers = { workspace = true }
+starknet-types-core = { workspace = true }
+starknet_api = { workspace = true }

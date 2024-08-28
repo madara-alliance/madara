@@ -5,7 +5,7 @@ use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
 use dc_exec::execution_result_to_tx_trace;
 use dc_exec::ExecutionContext;
-use dp_block::StarknetVersion;
+use dp_chain_config::StarknetVersion;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::TransactionTraceWithHash;
 use starknet_types_core::felt::Felt;
