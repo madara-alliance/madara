@@ -19,7 +19,9 @@ mod test_rpc_read_calls {
     use std::sync::{Arc, Mutex};
 
     use super::*;
+    use flate2::read::GzDecoder;
     use starknet_core::types::Felt;
+    use std::io::Read;
     use tokio::sync::OnceCell;
 
     static MADARA: Lazy<OnceCell<Arc<Mutex<MadaraCmd>>>> = Lazy::new(OnceCell::new);
@@ -604,7 +606,42 @@ mod test_rpc_read_calls {
         assert_eq!(call_response, expected_call_response);
     }
 
-    #[ignore]
+    /*
+    Note: In this test case we are comparing the decompressed program output that we get from this js script
+    with the decompressed program we get from the madara response.
+
+    Along with that we are also checking for abi and the entry points.
+
+        const starknet = require('starknet');
+        const contract = require('./juno.json');
+
+        async function main() {
+            let contract_class_parsed = starknet.stark.decompressProgram(
+                contract.program
+            );
+            console.log((contract_class_parsed));
+        }
+
+        main();
+
+    In the above code, juno.json can be obtained by:
+
+        curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+        --header 'Content-Type: application/json' \
+        --data '{
+            "jsonrpc": "2.0",
+            "method": "starknet_getClass",
+            "params": {
+                "block_id": {
+                    "block_number": 12
+                },
+                "class_hash": "0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"
+            },
+            "id": 1
+        }'
+
+    In the test case, contract_class.json is same as juno.json used in the js script above.
+    */
     #[tokio::test]
     async fn test_get_class_works() {
         let madara = get_shared_state().await;
@@ -614,21 +651,54 @@ mod test_rpc_read_calls {
                 .json_rpc()
                 .get_class(
                     BlockId::Number(12),
-                    Felt::from_hex_unchecked("0x3131fa018d520a037686ce3efddeab8f28895662f019ca3ca18a626650f7d1e"),
+                    Felt::from_hex_unchecked("0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"),
                 )
                 .await
                 .unwrap()
         };
 
-        let file = File::open("src/rpc/class_hash.json").unwrap();
-        let reader = BufReader::new(file);
+        let contract_program = match contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.program),
+            _ => None,
+        };
+
+        let contract_entry_points = match contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
+            _ => None,
+        };
+
+        let contract_abi = match contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.abi),
+            _ => None,
+        };
+
+        let decompressed_program = decompress_to_string(contract_program.unwrap());
+
+        let mut class_program_file = File::open("src/rpc/test_utils/class_program.txt").unwrap();
+
+        let mut original_program = String::new();
+        class_program_file.read_to_string(&mut original_program).expect("issue while reading the file");
+
+        let contract_class_file = File::open("src/rpc/test_utils/contract_class.json").unwrap();
+        let reader = BufReader::new(contract_class_file);
 
         let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();
 
-        assert_eq!(contract_class, expected_contract_class);
+        let expected_contract_entry_points = match expected_contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
+            _ => None,
+        };
+
+        let expected_contract_abi = match expected_contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.abi),
+            _ => None,
+        };
+
+        assert_eq!(decompressed_program, original_program);
+        assert_eq!(contract_entry_points, expected_contract_entry_points);
+        assert_eq!(contract_abi, expected_contract_abi);
     }
 
-    #[ignore]
     #[tokio::test]
     async fn test_get_class_at_works() {
         let madara = get_shared_state().await;
@@ -638,17 +708,73 @@ mod test_rpc_read_calls {
                 .json_rpc()
                 .get_class_at(
                     BlockId::Number(12),
-                    Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
+                    Felt::from_hex_unchecked("0x043abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8"),
                 )
                 .await
                 .unwrap()
         };
 
-        let file = File::open("src/rpc/class_at.json").unwrap();
-        let reader = BufReader::new(file);
+        let contract_program = match contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.program),
+            _ => None,
+        };
+
+        let contract_entry_points = match contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
+            _ => None,
+        };
+
+        let contract_abi = match contract_class {
+            ContractClass::Legacy(compressed) => Some(compressed.abi),
+            _ => None,
+        };
+
+        let decompressed_program = decompress_to_string(contract_program.unwrap());
+
+        let mut class_program_file = File::open("src/rpc/test_utils/class_program.txt").unwrap();
+
+        let mut original_program = String::new();
+        class_program_file.read_to_string(&mut original_program).expect("issue while reading the file");
+
+        let contract_class_file = File::open("src/rpc/test_utils/contract_class.json").unwrap();
+        let reader = BufReader::new(contract_class_file);
 
         let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();
 
-        assert_eq!(contract_class, expected_contract_class);
+        let expected_contract_entry_points = match expected_contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
+            _ => None,
+        };
+
+        let expected_contract_abi = match expected_contract_class {
+            ContractClass::Legacy(compressed) => Some(compressed.abi),
+            _ => None,
+        };
+
+        assert_eq!(decompressed_program, original_program);
+        assert_eq!(contract_entry_points, expected_contract_entry_points);
+        assert_eq!(contract_abi, expected_contract_abi);
+    }
+
+    fn decompress_to_string(data: Vec<u8>) -> String {
+        let mut decoder = GzDecoder::new(&data[..]);
+        let mut decompressed = String::new();
+
+        match decoder.read_to_string(&mut decompressed) {
+            Ok(_) => decompressed,
+            Err(e) => {
+                // If decompression fails, try to interpret as UTF-8
+                match String::from_utf8(data.clone()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        // If both fail, return the data as a hexadecimal string
+                        format!(
+                            "Error: Unable to decompress or decode data. Hexadecimal representation: {}",
+                            data.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+                        )
+                    }
+                }
+            }
+        }
     }
 }
