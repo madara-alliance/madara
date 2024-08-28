@@ -19,7 +19,7 @@ pub async fn trace_block_transactions(
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let exec_context = ExecutionContext::new(Arc::clone(&starknet.backend), &block.info)?;
+    let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block.info)?;
 
     let transactions: Vec<_> = block
         .inner

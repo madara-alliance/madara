@@ -163,7 +163,7 @@ pub struct BlockProductionTask {
     declared_classes: Vec<ConvertedClass>,
     pub(crate) executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
-    current_pending_tick: usize,
+    pub(crate) current_pending_tick: usize,
 }
 
 impl BlockProductionTask {
@@ -184,7 +184,7 @@ impl BlockProductionTask {
         //     l1_da_mode: l1_data_provider.get_da_mode(),
         // })?;
         let mut executor =
-            ExecutionContext::new(Arc::clone(&backend), &pending_block.info.clone().into())?.tx_executor();
+            ExecutionContext::new_in_block(Arc::clone(&backend), &pending_block.info.clone().into())?.tx_executor();
 
         let bouncer_config = backend.chain_config().bouncer_config.clone();
         executor.bouncer = Bouncer::new(bouncer_config);
@@ -272,17 +272,12 @@ impl BlockProductionTask {
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
-    fn on_pending_time_tick(&mut self) -> Result<(), Error> {
+    pub(crate) fn on_pending_time_tick(&mut self) -> Result<(), Error> {
         let current_pending_tick = self.current_pending_tick;
         self.current_pending_tick += 1;
 
         let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
 
-        if current_pending_tick == 0 || current_pending_tick >= n_pending_ticks_per_block {
-            // first tick is ignored.
-            // out of range ticks are also ignored.
-            return Ok(());
-        }
         log::debug!("begin pending tick {}/{}", current_pending_tick, n_pending_ticks_per_block);
 
         // Reduced bouncer capacity for the current pending tick
@@ -320,7 +315,7 @@ impl BlockProductionTask {
     }
 
     /// This creates a block, continuing the current pending block state up to the full bouncer limit.
-    async fn on_block_time(&mut self) -> Result<(), Error> {
+    pub(crate) async fn on_block_time(&mut self) -> Result<(), Error> {
         let block_n = self.block_n();
         log::debug!("closing block #{}", block_n);
 
@@ -352,7 +347,7 @@ impl BlockProductionTask {
 
         // Prepare for next block.
         self.executor =
-            ExecutionContext::new(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
+            ExecutionContext::new_in_block(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
         self.current_pending_tick = 0;
 
         Ok(())
@@ -380,6 +375,14 @@ impl BlockProductionTask {
                     interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());
                 },
                 _ = interval_pending_block_update.tick() => {
+                    let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
+
+                    if self.current_pending_tick == 0 || self.current_pending_tick >= n_pending_ticks_per_block {
+                        // first tick is ignored.
+                        // out of range ticks are also ignored.
+                        continue
+                    }
+
                     if let Err(err) = self.on_pending_time_tick() {
                         log::error!("Pending block update task has errored: {err:#}");
                     }

@@ -3,6 +3,7 @@ use self::{
     classes::{InitiallyDeclaredClass, InitiallyDeclaredClasses},
     contracts::InitiallyDeployedContracts,
 };
+use blockifier::abi::abi_utils::get_storage_var_address;
 use dc_block_import::{UnverifiedFullBlock, UnverifiedHeader};
 use dp_block::header::GasPrices;
 use dp_chain_config::ChainConfig;
@@ -17,6 +18,7 @@ use std::{collections::HashMap, fmt, time::SystemTime};
 mod balances;
 mod classes;
 mod contracts;
+mod entrypoint;
 
 // 1 ETH = 1e18 WEI
 const ETH_WEI_DECIMALS: u128 = 1_000_000_000_000_000_000;
@@ -71,6 +73,8 @@ pub struct ChainGenesisDescription {
     pub initial_balances: InitialBalances,
     pub declared_classes: InitiallyDeclaredClasses,
     pub deployed_contracts: InitiallyDeployedContracts,
+    /// This is filled in with the initial_balances too when building.
+    pub initial_storage: StorageDiffs,
 }
 
 pub struct DevnetPredeployedContract {
@@ -112,6 +116,7 @@ impl ChainGenesisDescription {
                 .with(UDC_CONTRACT_ADDRESS, UDC_CLASS_HASH)
                 .with(ERC20_ETH_CONTRACT_ADDRESS, ERC20_CLASS_HASH)
                 .with(ERC20_STRK_CONTRACT_ADDRESS, ERC20_CLASS_HASH),
+            initial_storage: StorageDiffs::default(),
         }
     }
 
@@ -121,6 +126,10 @@ impl ChainGenesisDescription {
             Felt::ONE,
             ACCOUNT_CLASS_DEFINITION,
         ));
+
+        fn get_contract_pubkey_storage_address() -> StorageKey {
+            get_storage_var_address("Account_public_key", &[])
+        }
 
         DevnetKeys(
             (0..n_addr)
@@ -137,6 +146,9 @@ impl ChainGenesisDescription {
 
                     self.deployed_contracts.insert(address, ACCOUNT_CLASS_HASH);
                     self.initial_balances.insert(ContractAddress::try_from(address).unwrap(), balance.clone());
+                    self.initial_storage
+                        .contract_mut(address.try_into().unwrap())
+                        .insert(get_contract_pubkey_storage_address(), pubkey.scalar());
 
                     DevnetPredeployedContract { secret: key, pubkey: pubkey.scalar(), balance, address }
                 })
@@ -144,9 +156,8 @@ impl ChainGenesisDescription {
         )
     }
 
-    pub fn build(self, chain_config: &ChainConfig) -> anyhow::Result<UnverifiedFullBlock> {
-        let mut storage_diffs = Default::default();
-        self.initial_balances.to_storage_diffs(&chain_config, &mut storage_diffs);
+    pub fn build(mut self, chain_config: &ChainConfig) -> anyhow::Result<UnverifiedFullBlock> {
+        self.initial_balances.to_storage_diffs(&chain_config, &mut self.initial_storage);
 
         Ok(UnverifiedFullBlock {
             header: UnverifiedHeader {
@@ -166,7 +177,7 @@ impl ChainGenesisDescription {
                 l1_da_mode: dp_block::header::L1DataAvailabilityMode::Blob,
             },
             state_diff: StateDiff {
-                storage_diffs: storage_diffs.as_state_diff(),
+                storage_diffs: self.initial_storage.as_state_diff(),
                 deprecated_declared_classes: self.declared_classes.as_legacy_state_diff(),
                 declared_classes: self.declared_classes.as_state_diff(),
                 deployed_contracts: self.deployed_contracts.as_state_diff(),
@@ -195,9 +206,10 @@ mod tests {
     use dc_db::db_block_id::DbBlockId;
     use dc_db::DeoxysBackend;
     use dc_exec::ExecutionContext;
-    use dp_block::header::L1DataAvailabilityMode;
-    use dp_block::{BlockId, BlockTag};
+    use dp_block::header::{L1DataAvailabilityMode, PendingHeader};
+    use dp_block::{BlockId, BlockTag, DeoxysPendingBlockInfo};
     use dp_transactions::broadcasted_to_blockifier;
+    use entrypoint::*;
     use rstest::{fixture, rstest};
     use starknet_core::types::{
         BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV1, BroadcastedDeployAccountTransaction,
@@ -282,46 +294,21 @@ mod tests {
 
         /// (low, high)
         pub fn get_fee_token_balance(&self, contract_address: Felt, fee_token_address: Felt) -> (Felt, Felt) {
-            let (contract_address, fee_token_address) =
-                (contract_address.try_into().unwrap(), fee_token_address.try_into().unwrap());
-            let ctx = ExecutionContext::new(
-                self.backend.clone(),
-                &self.backend.get_block_info(&BlockId::Tag(BlockTag::Latest)).unwrap().unwrap(),
-            )
-            .unwrap()
-            .init_cached_state();
-
-            let low_key = get_fee_token_var_address(contract_address);
+            let low_key = get_fee_token_var_address(contract_address.try_into().unwrap());
             let high_key = next_storage_key(&low_key).unwrap();
-            let low = ctx.get_storage_at(fee_token_address, low_key).unwrap();
-            let high = ctx.get_storage_at(fee_token_address, high_key).unwrap();
-            log::debug!("get_fee_token_balance contract_address={contract_address} fee_token_address={fee_token_address} low_key={low_key:?}, got {low:#x} {high:#x}");
+            let low = self
+                .backend
+                .get_contract_storage_at(&BlockId::Tag(BlockTag::Pending), &fee_token_address, &low_key)
+                .unwrap()
+                .unwrap_or(Felt::ZERO);
+            let high = self
+                .backend
+                .get_contract_storage_at(&BlockId::Tag(BlockTag::Pending), &fee_token_address, &high_key)
+                .unwrap()
+                .unwrap_or(Felt::ZERO);
+            log::debug!("get_fee_token_balance contract_address={contract_address:#x} fee_token_address={fee_token_address:#x} low_key={low_key:?}, got {low:#x} {high:#x}");
 
             (low, high)
-        }
-    }
-
-    pub struct Call {
-        pub to: Felt,
-        pub selector: Felt,
-        pub calldata: Vec<Felt>,
-    }
-    impl Call {
-        fn flatten(&self) -> impl Iterator<Item = Felt> + '_ {
-            [self.to, self.selector, self.calldata.len().into()].into_iter().chain(self.calldata.iter().copied())
-        }
-    }
-
-    #[derive(Default)]
-    struct Multicall(Vec<Call>);
-    impl Multicall {
-        pub fn with(mut self, call: Call) -> Self {
-            self.0.push(call);
-            self
-        }
-
-        fn flatten(&self) -> impl Iterator<Item = Felt> + '_ {
-            [self.0.len().into()].into_iter().chain(self.0.iter().flat_map(|c| c.flatten()))
         }
     }
 
@@ -366,26 +353,36 @@ mod tests {
     }
 
     #[rstest]
-    fn test_basic_transfer(chain: PreparedDevnet) {
+    fn test_basic_transfer(mut chain: PreparedDevnet) {
         println!("{}", chain.contracts);
 
         let contract_0 = &chain.contracts.0[0];
         let contract_1 = &chain.contracts.0[1];
 
-        log::debug!("Bal: {:?}", chain.get_fee_token_balance(contract_0.address, ERC20_STRK_CONTRACT_ADDRESS),);
-        log::debug!("Bal: {:?}", chain.get_fee_token_balance(contract_0.address, ERC20_ETH_CONTRACT_ADDRESS),);
-        log::debug!("Bal: {:?}", chain.get_fee_token_balance(contract_1.address, ERC20_STRK_CONTRACT_ADDRESS),);
-        log::debug!("Bal: {:?}", chain.get_fee_token_balance(contract_1.address, ERC20_ETH_CONTRACT_ADDRESS),);
+        assert_eq!(
+            chain.get_fee_token_balance(contract_0.address, ERC20_STRK_CONTRACT_ADDRESS),
+            ((10_000 * STRK_FRI_DECIMALS).into(), Felt::ZERO)
+        );
+        assert_eq!(
+            chain.get_fee_token_balance(contract_0.address, ERC20_ETH_CONTRACT_ADDRESS),
+            ((10_000 * ETH_WEI_DECIMALS).into(), Felt::ZERO)
+        );
+        assert_eq!(
+            chain.get_fee_token_balance(contract_1.address, ERC20_STRK_CONTRACT_ADDRESS),
+            ((10_000 * STRK_FRI_DECIMALS).into(), Felt::ZERO)
+        );
+        assert_eq!(
+            chain.get_fee_token_balance(contract_1.address, ERC20_ETH_CONTRACT_ADDRESS),
+            ((10_000 * ETH_WEI_DECIMALS).into(), Felt::ZERO)
+        );
 
         let result = chain.sign_and_add_invoke_tx(
             BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
-                sender_address: contract_0.pubkey,
+                sender_address: contract_0.address,
                 calldata: Multicall::default()
                     .with(Call {
                         to: ERC20_STRK_CONTRACT_ADDRESS,
-                        selector: Felt::from_hex_unchecked(
-                            "0x0083afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e",
-                        ), // transfer
+                        selector: Selector::from("transfer"), // transfer
                         calldata: vec![contract_1.address, 128.into()],
                     })
                     .flatten()
@@ -406,6 +403,33 @@ mod tests {
             contract_0,
         );
 
-        println!("{:#x}", result.transaction_hash);
+        log::info!("tx hash: {:#x}", result.transaction_hash);
+
+        chain.block_production.current_pending_tick = 1; //grr
+        chain.block_production.on_pending_time_tick().unwrap();
+
+        let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
+
+        assert_eq!(block.inner.transactions.len(), 1);
+        assert_eq!(block.inner.receipts.len(), 1);
+        // assert_eq!(block.inner.receipts[0]);
+        log::info!("receipt: {:?}", block.inner.receipts[0]);
+
+        assert_eq!(
+            chain.get_fee_token_balance(contract_0.address, ERC20_STRK_CONTRACT_ADDRESS),
+            ((10_000 * STRK_FRI_DECIMALS).into(), Felt::ZERO)
+        );
+        assert_eq!(
+            chain.get_fee_token_balance(contract_0.address, ERC20_ETH_CONTRACT_ADDRESS),
+            ((10_000 * ETH_WEI_DECIMALS).into(), Felt::ZERO)
+        );
+        assert_eq!(
+            chain.get_fee_token_balance(contract_1.address, ERC20_STRK_CONTRACT_ADDRESS),
+            ((10_000 * STRK_FRI_DECIMALS).into(), Felt::ZERO)
+        );
+        assert_eq!(
+            chain.get_fee_token_balance(contract_1.address, ERC20_ETH_CONTRACT_ADDRESS),
+            ((10_000 * ETH_WEI_DECIMALS).into(), Felt::ZERO)
+        );
     }
 }

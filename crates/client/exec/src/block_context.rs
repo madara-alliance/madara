@@ -57,7 +57,8 @@ impl ExecutionContext {
         ))
     }
 
-    pub fn new(backend: Arc<DeoxysBackend>, block_info: &DeoxysMaybePendingBlockInfo) -> Result<Self, Error> {
+    /// Create an execution context for executing transactions **within** that block.
+    pub fn new_in_block(backend: Arc<DeoxysBackend>, block_info: &DeoxysMaybePendingBlockInfo) -> Result<Self, Error> {
         let (db_id, protocol_version, block_number, block_timestamp, sequencer_address, l1_gas_price, l1_da_mode) =
             match block_info {
                 DeoxysMaybePendingBlockInfo::Pending(block) => (

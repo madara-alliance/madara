@@ -29,6 +29,7 @@ impl BlockifierStateAdapter {
 
 impl StateReader for BlockifierStateAdapter {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
+
         // The `0x1` address is reserved for block hashes: https://docs.starknet.io/architecture-and-concepts/network-architecture/starknet-state/#address_0x1
         if *contract_address.key() == Felt::ONE {
             let requested_block_number = felt_to_u64(key.0.key()).map_err(|_| StateError::OldBlockHashNotProvided)?;
@@ -56,7 +57,7 @@ impl StateReader for BlockifierStateAdapter {
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(Felt::ZERO) };
 
-        Ok(self
+        let res = self
             .backend
             .get_contract_storage_at(&on_top_of_block_id, &contract_address.to_felt(), &key.to_felt())
             .map_err(|err| {
@@ -67,7 +68,11 @@ impl StateReader for BlockifierStateAdapter {
                     "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}",
                 ))
             })?
-            .unwrap_or(Felt::ZERO))
+            .unwrap_or(Felt::ZERO);
+
+        log::debug!("get_storage_at: on={:?}, contract={:?} key={:?} => {:#x}", self.on_top_of_block_id, contract_address, key, res);
+
+        Ok(res)
     }
 
     fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
@@ -140,30 +145,17 @@ impl StateReader for BlockifierStateAdapter {
 
         Ok(CompiledClassHash(class_info.compiled_class_hash))
     }
-    
-    fn get_fee_token_balance(
-        &mut self,
-        contract_address: ContractAddress,
-        fee_token_address: ContractAddress,
-    ) -> Result<(Felt, Felt), StateError> {
-        let low_key = blockifier::abi::abi_utils::get_fee_token_var_address(contract_address);
-        let high_key = blockifier::abi::sierra_types::next_storage_key(&low_key)?;
-        let low = self.get_storage_at(fee_token_address, low_key)?;
-        let high = self.get_storage_at(fee_token_address, high_key)?;
-
-    
-        Ok((low, high))
-    }
-
-    
 }
 
 fn block_hash_storage_check_range(chain_id: &ChainId, current_block: u64, to_check: u64) -> bool {
     // Allowed range is first_v0_12_0_block..=(current_block - 10).
     let first_block = if chain_id == &ChainId::Mainnet { 103_129 } else { 0 };
 
-    #[allow(clippy::reversed_empty_ranges)]
-    current_block.checked_sub(10).map(|end| first_block..=end).unwrap_or(1..=0).contains(&to_check)
+    if let Some(end) = current_block.checked_sub(10) {
+        (first_block..=end).contains(&to_check)
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]

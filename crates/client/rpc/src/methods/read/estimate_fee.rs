@@ -29,7 +29,7 @@ pub async fn estimate_fee(
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let exec_context = ExecutionContext::new(Arc::clone(&starknet.backend), &block_info)?;
+    let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block_info)?;
 
     let transactions = request
         .into_iter()

@@ -37,7 +37,7 @@ pub async fn estimate_message_fee(
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let exec_context = ExecutionContext::new(Arc::clone(&starknet.backend), &block_info)?;
+    let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block_info)?;
 
     let transaction = convert_message_into_transaction(message, starknet.chain_id());
     let execution_result = exec_context
