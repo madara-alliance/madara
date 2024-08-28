@@ -177,8 +177,17 @@ async fn l2_pending_block_task(
         let block: UnverifiedPendingFullBlock =
             fetch_pending_block_and_updates(&backend, &provider).await.context("Getting pending block from FGW")?;
 
-        let block = block_import.pre_validate_pending(block, validation.clone()).await?;
-        block_import.verify_apply_pending(block, validation.clone()).await?;
+        // HACK(see issue #239): The latest block in db may not match the pending parent block hash
+        // Just silently ignore it for now and move along.
+        let import_block = || async {
+            let block = block_import.pre_validate_pending(block, validation.clone()).await?;
+            block_import.verify_apply_pending(block, validation.clone()).await?;
+            anyhow::Ok(())
+        };
+
+        if let Err(err) = import_block().await {
+            log::debug!("Error while importing pending block: {err:#}");
+        }
     }
 
     Ok(())
