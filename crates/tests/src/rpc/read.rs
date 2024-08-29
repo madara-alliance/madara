@@ -16,11 +16,15 @@ use std::io::BufReader;
 #[cfg(test)]
 mod test_rpc_read_calls {
     use once_cell::sync::Lazy;
+    use std::any::Any;
     use std::sync::{Arc, Mutex};
 
     use super::*;
     use flate2::read::GzDecoder;
-    use starknet_core::types::Felt;
+    use starknet_core::types::{
+        BroadcastedDeployAccountTransaction, BroadcastedDeployAccountTransactionV1, BroadcastedTransaction, EthAddress,
+        FeeEstimate, Felt, MsgFromL1, SimulationFlag, SimulationFlagForEstimateFee,
+    };
     use std::io::Read;
     use tokio::sync::OnceCell;
 
@@ -507,7 +511,6 @@ mod test_rpc_read_calls {
     // }'
     //
     // */
-    #[ignore]
     #[tokio::test]
     async fn test_get_events_works() {
         let madara = get_shared_state().await;
@@ -574,7 +577,90 @@ mod test_rpc_read_calls {
             continuation_token: Some("4-0".to_string()),
         };
 
-        assert_eq!(events, expected_events);
+        assert_eq!(events.events, expected_events.events);
+        assert_type_equality(&events.continuation_token, &expected_events.continuation_token);
+    }
+
+    #[tokio::test]
+    async fn test_get_events_with_continuation_token_works() {
+        let madara = get_shared_state().await;
+        let events = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .get_events(
+                    EventFilter {
+                        from_block: Some(BlockId::Number(0)),
+                        to_block: Some(BlockId::Number(19)),
+                        address: Some(Felt::from_hex_unchecked(
+                            "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                        )),
+                        keys: Some(vec![vec![]]),
+                    },
+                    Some("0-2".to_string()),
+                    2,
+                )
+                .await
+                .unwrap()
+        };
+
+        let expected_events = EventsPage {
+            events: vec![
+                EmittedEvent {
+                    from_address: Felt::from_hex_unchecked(
+                        "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                    ),
+                    keys: vec![Felt::from_hex_unchecked(
+                        "0x2e8a4ec40a36a027111fafdb6a46746ff1b0125d5067fbaebd8b5f227185a1e",
+                    )],
+                    data: vec![
+                        Felt::from_hex_unchecked("0x23be95f90bf41685e18a4356e57b0cfdc1da22bf382ead8b64108353915c1e5"),
+                        Felt::from_hex_unchecked("0x0"),
+                        Felt::from_hex_unchecked("0x4"),
+                        Felt::from_hex_unchecked("0x4574686572"),
+                        Felt::from_hex_unchecked("0x455448"),
+                        Felt::from_hex_unchecked("0x12"),
+                        Felt::from_hex_unchecked("0x4c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"),
+                        Felt::from_hex_unchecked("0x0"),
+                    ],
+                    block_hash: Some(Felt::from_hex_unchecked(
+                        "0x445152a69e628774b0f78a952e6f9ba0ffcda1374724b314140928fd2f31f4c",
+                    )),
+                    block_number: Some(4),
+                    transaction_hash: Felt::from_hex_unchecked(
+                        "0x3c9dfcd3fe66be18b661ee4ebb62520bb4f13d4182b040b3c2be9a12dbcc09b",
+                    ),
+                },
+                EmittedEvent {
+                    from_address: Felt::from_hex_unchecked(
+                        "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                    ),
+                    keys: vec![Felt::from_hex_unchecked(
+                        "0x1205ec81562fc65c367136bd2fe1c0fff2d1986f70e4ba365e5dd747bd08753",
+                    )],
+                    data: vec![
+                        Felt::from_hex_unchecked("0x23be95f90bf41685e18a4356e57b0cfdc1da22bf382ead8b64108353915c1e5"),
+                        Felt::from_hex_unchecked("0x0"),
+                        Felt::from_hex_unchecked("0x4"),
+                        Felt::from_hex_unchecked("0x4574686572"),
+                        Felt::from_hex_unchecked("0x455448"),
+                        Felt::from_hex_unchecked("0x12"),
+                        Felt::from_hex_unchecked("0x4c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"),
+                    ],
+                    block_hash: Some(Felt::from_hex_unchecked(
+                        "0x445152a69e628774b0f78a952e6f9ba0ffcda1374724b314140928fd2f31f4c",
+                    )),
+                    block_number: Some(4),
+                    transaction_hash: Felt::from_hex_unchecked(
+                        "0x24ae8900d238a120e927d6a5f2e4ddf85419e97020d92c1fadc615bff666ab1",
+                    ),
+                },
+            ],
+            continuation_token: Some("6-0".to_string()),
+        };
+
+        assert_eq!(events.events, expected_events.events);
+        assert_type_equality(&events.continuation_token, &expected_events.continuation_token);
     }
 
     #[ignore]
@@ -756,6 +842,166 @@ mod test_rpc_read_calls {
         assert_eq!(contract_abi, expected_contract_abi);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_estimateFee",
+           "params": {
+               "request": [
+                   {
+                       "type": "DEPLOY_ACCOUNT",
+                       "version": "0x1",
+                       "max_fee": "0x0",
+                       "signature": [
+                           "0x73d0a8a69f0ebf44b1c2bb2a9e85bf998883eb2008ca7b9c57b6f28dacb6dd8",
+                           "0x4a43711cd08f55ef73603f1e7b880c7f438fb68934f0823a736f9f577ab040a",
+                           "0x0",
+                           "0x0",
+                           "0x0",
+                           "0x0",
+                           "0x0",
+                           "0x0",
+                           "0x0",
+                           "0x0"
+                       ],
+                       "nonce": "0x0",
+                       "contract_address_salt": "0x0",
+                       "constructor_calldata": ["0x2e23f1647b018bfb3fe107e2ebd4412f0a0ed41bd60c10d842a76f8cdbbe1ba"],
+                       "class_hash": "0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"
+                   }
+               ],
+               "simulation_flags": [ "SKIP_VALIDATE"],
+               "block_id": {
+                   "block_number": 1
+               }
+           },
+           "id": 1
+       }'
+
+       {"jsonrpc":"2.0","result":[{"gas_consumed":"0xcfc","gas_price":"0x3b9ada0f","data_gas_consumed":"0x0","data_gas_price":"0x1","overall_fee":"0x305eea75ac4","unit":"WEI"}],"id":1}%
+    */
+    #[ignore]
+    #[tokio::test]
+    async fn test_estimate_fee_works() {
+        let madara = get_shared_state().await;
+        let call_response = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .estimate_fee(
+                    vec![BroadcastedTransaction::DeployAccount(BroadcastedDeployAccountTransaction::V1(
+                        BroadcastedDeployAccountTransactionV1 {
+                            max_fee: Felt::from_hex_unchecked("0x0"),
+                            signature: vec![
+                                Felt::from_hex_unchecked(
+                                    "0x73d0a8a69f0ebf44b1c2bb2a9e85bf998883eb2008ca7b9c57b6f28dacb6dd8",
+                                ),
+                                Felt::from_hex_unchecked(
+                                    "0x4a43711cd08f55ef73603f1e7b880c7f438fb68934f0823a736f9f577ab040a",
+                                ),
+                                Felt::from_hex_unchecked("0x0"),
+                                Felt::from_hex_unchecked("0x0"),
+                                Felt::from_hex_unchecked("0x0"),
+                                Felt::from_hex_unchecked("0x0"),
+                                Felt::from_hex_unchecked("0x0"),
+                                Felt::from_hex_unchecked("0x0"),
+                                Felt::from_hex_unchecked("0x0"),
+                                Felt::from_hex_unchecked("0x0"),
+                            ],
+                            nonce: Felt::from_hex_unchecked("0x0"),
+                            contract_address_salt: Felt::from_hex_unchecked("0x0"),
+                            constructor_calldata: vec![Felt::from_hex_unchecked(
+                                "0x2e23f1647b018bfb3fe107e2ebd4412f0a0ed41bd60c10d842a76f8cdbbe1ba",
+                            )],
+                            class_hash: Felt::from_hex_unchecked(
+                                "0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6",
+                            ),
+                            is_query: true,
+                        },
+                    ))],
+                    vec![SimulationFlagForEstimateFee::SkipValidate],
+                    BlockId::Number(1),
+                )
+                .await
+                .unwrap()
+        };
+
+        let expected_call_response: Vec<FeeEstimate> = vec![FeeEstimate {
+            gas_consumed: Felt::from_hex_unchecked("0xcfc"),
+            gas_price: Felt::from_hex_unchecked("0x3b9ada0f"),
+            data_gas_consumed: Felt::from_hex_unchecked("0x0"),
+            data_gas_price: Felt::from_hex_unchecked("0x1"),
+            overall_fee: Felt::from_hex_unchecked("0x305eea75ac4"),
+            unit: PriceUnit::Wei,
+        }];
+        assert_eq!(call_response, expected_call_response);
+    }
+
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_estimateMessageFee",
+           "params": {
+               "message": {
+                   "from_address": "0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc",
+                   "to_address": "0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f",
+                   "entry_point_selector": "0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5",
+                   "payload": ["755459732925565255818828693099006464755347258332","0","0"]
+               },
+               "block_id": {
+                   "block_number": 8
+               }
+           },
+           "id": 1
+       }'
+
+       {"jsonrpc":"2.0","result":{"gas_consumed":"0x4424","gas_price":"0x33dda9da0","data_gas_consumed":"0x0","data_gas_price":"0x1","overall_fee":"0xdce2c49caa80","unit":"WEI"},"id":1}%
+    */
+
+    #[ignore]
+    #[tokio::test]
+    async fn test_estimate_message_fee_works() {
+        let madara = get_shared_state().await;
+        let call_response = {
+            let mut madara_guard = madara.lock().unwrap();
+            madara_guard
+                .json_rpc()
+                .estimate_message_fee(
+                    MsgFromL1 {
+                        from_address: EthAddress::from_hex("0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc").unwrap(),
+                        to_address: Felt::from_hex_unchecked(
+                            "0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f",
+                        ),
+                        entry_point_selector: Felt::from_hex_unchecked(
+                            "0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5",
+                        ),
+                        payload: vec![
+                            Felt::from_hex_unchecked("0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc"),
+                            Felt::from_hex_unchecked("0x0"),
+                            Felt::from_hex_unchecked("0x0"),
+                        ],
+                    },
+                    BlockId::Number(8),
+                )
+                .await
+                .unwrap()
+        };
+
+        let expected_call_response: FeeEstimate = FeeEstimate {
+            gas_consumed: Felt::from_hex_unchecked("0x4424"),
+            gas_price: Felt::from_hex_unchecked("0x33dda9da0"),
+            data_gas_consumed: Felt::from_hex_unchecked("0x0"),
+            data_gas_price: Felt::from_hex_unchecked("0x1"),
+            overall_fee: Felt::from_hex_unchecked("0xdce2c49caa80"),
+            unit: PriceUnit::Wei,
+        };
+        assert_eq!(call_response, expected_call_response);
+    }
+
     fn decompress_to_string(data: Vec<u8>) -> String {
         let mut decoder = GzDecoder::new(&data[..]);
         let mut decompressed = String::new();
@@ -776,5 +1022,15 @@ mod test_rpc_read_calls {
                 }
             }
         }
+    }
+
+    fn assert_type_equality<T: Any, U: Any>(t: &T, u: &U) {
+        assert_eq!(
+            std::any::TypeId::of::<T>(),
+            std::any::TypeId::of::<U>(),
+            "Types are not equal: {:?} != {:?}",
+            std::any::TypeId::of::<T>(),
+            std::any::TypeId::of::<U>()
+        );
     }
 }
