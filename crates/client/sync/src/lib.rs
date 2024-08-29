@@ -13,16 +13,6 @@ pub mod l2;
 pub mod metrics;
 pub mod utils;
 
-use crate::metrics::block_metrics::BlockMetrics;
-use anyhow::Context;
-use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
-use dc_telemetry::TelemetryHandle;
-use dp_convert::ToFelt;
-use fetch::fetchers::FetchConfig;
-
-use starknet_providers::SequencerGatewayProvider;
-use std::{sync::Arc, time::Duration};
-
 #[allow(clippy::too_many_arguments)]
 pub async fn sync(
     backend: &Arc<DeoxysBackend>,

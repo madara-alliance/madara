@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use super::providers::AddTransactionProvider;
+use crate::errors::StarknetRpcApiError;
 use crate::utils::display_internal_server_error;
-use crate::{errors::StarknetRpcApiError};
 use dc_mempool::Mempool;
 use dc_mempool::MempoolProvider;
 use jsonrpsee::core::{async_trait, RpcResult};
 use starknet_core::types::{
-    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
+    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
+    DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
 };
 
 /// This [`AddTransactionProvider`] adds the received transactions to a mempool.

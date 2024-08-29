@@ -29,7 +29,6 @@ impl BlockifierStateAdapter {
 
 impl StateReader for BlockifierStateAdapter {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
-
         // The `0x1` address is reserved for block hashes: https://docs.starknet.io/architecture-and-concepts/network-architecture/starknet-state/#address_0x1
         if *contract_address.key() == Felt::ONE {
             let requested_block_number = felt_to_u64(key.0.key()).map_err(|_| StateError::OldBlockHashNotProvided)?;
@@ -70,7 +69,13 @@ impl StateReader for BlockifierStateAdapter {
             })?
             .unwrap_or(Felt::ZERO);
 
-        log::debug!("get_storage_at: on={:?}, contract={:?} key={:?} => {:#x}", self.on_top_of_block_id, contract_address, key, res);
+        log::debug!(
+            "get_storage_at: on={:?}, contract={:?} key={:?} => {:#x}",
+            self.on_top_of_block_id,
+            contract_address,
+            key,
+            res
+        );
 
         Ok(res)
     }

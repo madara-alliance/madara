@@ -195,17 +195,14 @@ mod tests {
     use crate::l1::MockL1DataProvider;
     use crate::{block_production::BlockProductionTask, Mempool, MempoolProvider};
     use crate::{transaction_hash, L1DataProvider};
-    
+
     use blockifier::abi::abi_utils::get_fee_token_var_address;
     use blockifier::abi::sierra_types::next_storage_key;
-    
-    
-    
-    
+
     use dc_block_import::{BlockImporter, Validation};
-    
+
     use dc_db::DeoxysBackend;
-    use dp_block::header::{L1DataAvailabilityMode};
+    use dp_block::header::L1DataAvailabilityMode;
     use dp_block::{BlockId, BlockTag};
     use dp_convert::felt_to_u128;
     use dp_receipt::{
@@ -216,10 +213,11 @@ mod tests {
     use entrypoint::*;
     use rstest::{fixture, rstest};
     use starknet_core::types::{
-        BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedInvokeTransactionV3, BroadcastedTransaction, DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping
+        BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
+        BroadcastedInvokeTransactionV3, BroadcastedTransaction, DeclareTransactionResult,
+        DeployAccountTransactionResult, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping,
     };
-    
-    
+
     use std::sync::Arc;
 
     struct PreparedDevnet {
@@ -344,7 +342,11 @@ mod tests {
             .unwrap()
             .block_on(importer.add_block(
                 block,
-                Validation { trust_transaction_hashes: false, chain_id: chain_config.chain_id.clone() },
+                Validation {
+                    trust_transaction_hashes: false,
+                    trust_global_tries: false,
+                    chain_id: chain_config.chain_id.clone(),
+                },
             ))
             .unwrap();
 

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use dp_chain_config::ChainConfig;
-use starknet_types_core::felt::Felt;
 use starknet_api::core::ContractAddress;
+use starknet_types_core::felt::Felt;
 
 use super::StorageDiffs;
 
