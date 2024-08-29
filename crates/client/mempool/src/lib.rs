@@ -32,7 +32,7 @@ use std::sync::RwLock;
 
 pub mod block_production;
 mod close_block;
-mod genesis;
+pub mod genesis;
 pub mod header;
 mod inner;
 mod l1;

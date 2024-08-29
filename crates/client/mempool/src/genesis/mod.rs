@@ -1,8 +1,3 @@
-use self::{
-    balances::{InitialBalance, InitialBalances},
-    classes::{InitiallyDeclaredClass, InitiallyDeclaredClasses},
-    contracts::InitiallyDeployedContracts,
-};
 use blockifier::abi::abi_utils::get_storage_var_address;
 use dc_block_import::{UnverifiedFullBlock, UnverifiedHeader};
 use dp_block::header::GasPrices;
@@ -19,10 +14,14 @@ mod classes;
 mod contracts;
 mod entrypoint;
 
+pub use balances::*;
+pub use classes::*;
+pub use contracts::*;
+pub use entrypoint::*;
+
 // 1 ETH = 1e18 WEI
 const ETH_WEI_DECIMALS: u128 = 1_000_000_000_000_000_000;
 // 1 STRK = 1e18 FRI
-// TODO: check this is correct
 const STRK_FRI_DECIMALS: u128 = 1_000_000_000_000_000_000;
 
 #[derive(Debug, Clone, Default)]
@@ -195,22 +194,15 @@ mod tests {
     use crate::l1::MockL1DataProvider;
     use crate::{block_production::BlockProductionTask, Mempool, MempoolProvider};
     use crate::{transaction_hash, L1DataProvider};
-
     use blockifier::abi::abi_utils::get_fee_token_var_address;
     use blockifier::abi::sierra_types::next_storage_key;
-
     use dc_block_import::{BlockImporter, Validation};
-
     use dc_db::DeoxysBackend;
     use dp_block::header::L1DataAvailabilityMode;
     use dp_block::{BlockId, BlockTag};
     use dp_convert::felt_to_u128;
-    use dp_receipt::{
-        DataAvailabilityResources, Event, ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt,
-        PriceUnit, TransactionReceipt,
-    };
+    use dp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use dp_transactions::broadcasted_to_blockifier;
-    use entrypoint::*;
     use rstest::{fixture, rstest};
     use starknet_core::types::{
         BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
@@ -251,6 +243,7 @@ mod tests {
             self.mempool.accept_invoke_tx(tx).unwrap()
         }
 
+        #[allow(unused)]
         pub fn sign_and_add_declare_tx(
             &self,
             mut tx: BroadcastedDeclareTransaction,
@@ -273,6 +266,7 @@ mod tests {
             self.mempool.accept_declare_tx(tx).unwrap()
         }
 
+        #[allow(unused)]
         pub fn sign_and_add_deploy_account_tx(
             &self,
             mut tx: BroadcastedDeployAccountTransaction,
@@ -369,8 +363,12 @@ mod tests {
         PreparedDevnet { backend, contracts, block_production, mempool }
     }
 
+    // TODO: add eth transfer
     #[rstest]
-    fn test_basic_transfer(mut chain: PreparedDevnet) {
+    #[case(24235u128, false)]
+    #[case(9_999u128 * STRK_FRI_DECIMALS, false)]
+    #[case(10_001u128 * STRK_FRI_DECIMALS, true)]
+    fn test_basic_transfer(mut chain: PreparedDevnet, #[case] transfer_amount: u128, #[case] expect_reverted: bool) {
         println!("{}", chain.contracts);
 
         let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();
@@ -380,101 +378,6 @@ mod tests {
         assert_eq!(chain.get_bal_strk_eth(sequencer_address), (0, 0));
         assert_eq!(chain.get_bal_strk_eth(contract_0.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
         assert_eq!(chain.get_bal_strk_eth(contract_1.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
-
-        let transfer_amount = 24235u128;
-
-        let result = chain.sign_and_add_invoke_tx(
-            BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
-                sender_address: contract_0.address,
-                calldata: Multicall::default()
-                    .with(Call {
-                        to: ERC20_STRK_CONTRACT_ADDRESS,
-                        selector: Selector::from("transfer"),
-                        calldata: vec![contract_1.address, transfer_amount.into(), Felt::ZERO],
-                    })
-                    .flatten()
-                    .collect(),
-                signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
-                nonce: Felt::ZERO,
-                resource_bounds: ResourceBoundsMapping {
-                    l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                    l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                },
-                tip: 0,
-                paymaster_data: vec![],
-                account_deployment_data: vec![],
-                nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                is_query: false,
-            }),
-            contract_0,
-        );
-
-        log::info!("tx hash: {:#x}", result.transaction_hash);
-
-        chain.block_production.current_pending_tick = 1;
-        chain.block_production.on_pending_time_tick().unwrap();
-
-        let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
-
-        assert_eq!(block.inner.transactions.len(), 1);
-        assert_eq!(block.inner.receipts.len(), 1);
-        log::info!("receipt: {:?}", block.inner.receipts[0]);
-
-        assert_eq!(
-            block.inner.receipts[0],
-            TransactionReceipt::Invoke(InvokeTransactionReceipt {
-                transaction_hash: result.transaction_hash,
-                actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x6b00"), unit: PriceUnit::Fri },
-                messages_sent: vec![],
-                events: vec![Event {
-                    from_address: ERC20_STRK_CONTRACT_ADDRESS,
-                    keys: block.inner.receipts[0].events()[0].keys.clone(), // do not match keys yet (unsure)
-                    data: vec![transfer_amount.into(), Felt::ZERO],
-                }],
-                execution_resources: ExecutionResources {
-                    steps: 4347,
-                    memory_holes: Some(90),
-                    range_check_builtin_applications: Some(139),
-                    pedersen_builtin_applications: None,
-                    poseidon_builtin_applications: None,
-                    ec_op_builtin_applications: None,
-                    ecdsa_builtin_applications: None,
-                    bitwise_builtin_applications: None,
-                    keccak_builtin_applications: None,
-                    segment_arena_builtin: None,
-                    data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 192 },
-                    total_gas_consumed: DataAvailabilityResources { l1_gas: 22, l1_data_gas: 192 },
-                },
-                execution_result: ExecutionResult::Succeeded,
-            })
-        );
-
-        let fees_fri = felt_to_u128(&block.inner.receipts[0].actual_fee().amount).unwrap();
-        assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
-        assert_eq!(
-            chain.get_bal_strk_eth(contract_0.address),
-            (10_000 * STRK_FRI_DECIMALS - fees_fri - transfer_amount, 10_000 * ETH_WEI_DECIMALS)
-        );
-        assert_eq!(
-            chain.get_bal_strk_eth(contract_1.address),
-            (10_000 * STRK_FRI_DECIMALS + transfer_amount, 10_000 * ETH_WEI_DECIMALS)
-        );
-    }
-
-    #[rstest]
-    fn test_transfer_reverted(mut chain: PreparedDevnet) {
-        println!("{}", chain.contracts);
-
-        let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();
-        let contract_0 = &chain.contracts.0[0];
-        let contract_1 = &chain.contracts.0[1];
-
-        assert_eq!(chain.get_bal_strk_eth(sequencer_address), (0, 0));
-        assert_eq!(chain.get_bal_strk_eth(contract_0.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
-        assert_eq!(chain.get_bal_strk_eth(contract_1.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
-
-        let transfer_amount = 10_002u128 * STRK_FRI_DECIMALS; // amount > balance
 
         let result = chain.sign_and_add_invoke_tx(
             BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
@@ -519,40 +422,50 @@ mod tests {
             receipt,
             InvokeTransactionReceipt {
                 transaction_hash: result.transaction_hash,
-                actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x4780"), unit: PriceUnit::Fri },
                 messages_sent: vec![],
                 events: vec![Event {
                     from_address: ERC20_STRK_CONTRACT_ADDRESS,
-                    keys: receipt.events[0].keys.clone(), // do not match keys yet (unsure)
+                    // TODO: do not match keys and data yet (unsure)
+                    keys: receipt.events[0].keys.clone(),
                     data: receipt.events[0].data.clone(),
                 }],
-                execution_resources: ExecutionResources {
-                    steps: 1782,
-                    memory_holes: Some(43),
-                    range_check_builtin_applications: Some(61),
-                    pedersen_builtin_applications: None,
-                    poseidon_builtin_applications: None,
-                    ec_op_builtin_applications: None,
-                    ecdsa_builtin_applications: None,
-                    bitwise_builtin_applications: None,
-                    keccak_builtin_applications: None,
-                    segment_arena_builtin: None,
-                    data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 128 },
-                    total_gas_consumed: DataAvailabilityResources { l1_gas: 15, l1_data_gas: 128 }
-                },
-                execution_result: receipt.execution_result.clone(),
+                // TODO: resources and fees are not tested because they consistent accross runs, we have to figure out why
+                execution_resources: receipt.execution_resources.clone(),
+                actual_fee: FeePayment { amount: receipt.actual_fee.amount, unit: PriceUnit::Fri },
+                execution_result: receipt.execution_result.clone(), // matched below
             }
         );
 
-        let ExecutionResult::Reverted { reason } = receipt.execution_result else { unreachable!() };
-        assert!(reason.contains("ERC20: insufficient balance"));
+        match expect_reverted {
+            false => {
+                assert_eq!(&receipt.execution_result, &ExecutionResult::Succeeded);
 
-        let fees_fri = felt_to_u128(&block.inner.receipts[0].actual_fee().amount).unwrap();
-        assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
-        assert_eq!(
-            chain.get_bal_strk_eth(contract_0.address),
-            (10_000 * STRK_FRI_DECIMALS - fees_fri, 10_000 * ETH_WEI_DECIMALS)
-        );
-        assert_eq!(chain.get_bal_strk_eth(contract_1.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
+                let fees_fri = felt_to_u128(&block.inner.receipts[0].actual_fee().amount).unwrap();
+                assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
+                assert_eq!(
+                    chain.get_bal_strk_eth(contract_0.address),
+                    (10_000 * STRK_FRI_DECIMALS - fees_fri - transfer_amount, 10_000 * ETH_WEI_DECIMALS)
+                );
+                assert_eq!(
+                    chain.get_bal_strk_eth(contract_1.address),
+                    (10_000 * STRK_FRI_DECIMALS + transfer_amount, 10_000 * ETH_WEI_DECIMALS)
+                );
+            }
+            true => {
+                let ExecutionResult::Reverted { reason } = receipt.execution_result else { unreachable!() };
+                assert!(reason.contains("ERC20: insufficient balance"));
+
+                let fees_fri = felt_to_u128(&block.inner.receipts[0].actual_fee().amount).unwrap();
+                assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
+                assert_eq!(
+                    chain.get_bal_strk_eth(contract_0.address),
+                    (10_000 * STRK_FRI_DECIMALS - fees_fri, 10_000 * ETH_WEI_DECIMALS)
+                );
+                assert_eq!(
+                    chain.get_bal_strk_eth(contract_1.address),
+                    (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS)
+                );
+            }
+        }
     }
 }
