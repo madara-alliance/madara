@@ -1,32 +1,31 @@
-use crate::{MadaraCmd, MadaraCmdBuilder};
-use starknet_core::types::{
-    BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs, ComputationResources,
-    ContractClass, ContractStorageDiffItem, DataAvailabilityResources, DataResources, DeclareTransaction,
-    DeclareTransactionReceipt, DeclareTransactionV0, EmittedEvent, EventFilter, EventsPage, ExecutionResources,
-    ExecutionResult, FeePayment, Felt, FunctionCall, L1DataAvailabilityMode, L1HandlerTransaction,
-    MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    PriceUnit, ReceiptBlock, ResourcePrice, StateDiff, StateUpdate, StorageEntry, Transaction,
-    TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt, TransactionReceiptWithBlockInfo,
-    TransactionStatus, TransactionWithReceipt,
-};
-use starknet_providers::Provider;
-use std::fs::File;
-use std::io::BufReader;
-
 #[cfg(test)]
 mod test_rpc_read_calls {
     use once_cell::sync::Lazy;
     use std::any::Any;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
-    use super::*;
+    use crate::{MadaraCmd, MadaraCmdBuilder};
     use flate2::read::GzDecoder;
     use starknet_core::types::{
-        BroadcastedDeployAccountTransaction, BroadcastedDeployAccountTransactionV1, BroadcastedTransaction, EthAddress,
-        FeeEstimate, Felt, MsgFromL1, SimulationFlag, SimulationFlagForEstimateFee,
+        BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs,
+        ComputationResources, ContractClass, ContractStorageDiffItem, DataAvailabilityResources, DataResources,
+        DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0, EmittedEvent, EventFilter, EventsPage,
+        ExecutionResources, ExecutionResult, FeePayment, FunctionCall, L1DataAvailabilityMode, L1HandlerTransaction,
+        MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+        MaybePendingStateUpdate, PriceUnit, ReceiptBlock, ResourcePrice, StateDiff, StateUpdate, StorageEntry,
+        Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
+        TransactionReceiptWithBlockInfo, TransactionStatus, TransactionWithReceipt,
     };
+    use starknet_core::types::{
+        BroadcastedDeployAccountTransaction, BroadcastedDeployAccountTransactionV1, BroadcastedTransaction, EthAddress,
+        FeeEstimate, Felt, MsgFromL1, SimulationFlagForEstimateFee,
+    };
+    use starknet_providers::Provider;
+    use std::fmt::Write;
+    use std::fs::File;
+    use std::io::BufReader;
     use std::io::Read;
-    use tokio::sync::OnceCell;
+    use tokio::sync::{Mutex, OnceCell};
 
     static MADARA: Lazy<OnceCell<Arc<Mutex<MadaraCmd>>>> = Lazy::new(OnceCell::new);
 
@@ -41,7 +40,7 @@ mod test_rpc_read_calls {
         let madara_clone = madara.clone();
 
         // Acquire the lock within an async block
-        let mut guard = madara_clone.lock().unwrap();
+        let mut guard = madara_clone.lock().await;
         guard.wait_for_ready().await;
         guard.wait_for_sync_to(19).await;
 
@@ -58,7 +57,7 @@ mod test_rpc_read_calls {
     async fn test_block_hash_and_number_works() {
         let madara = get_shared_state().await;
         let result = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard.json_rpc().block_hash_and_number().await.unwrap()
         };
         assert_eq!(
@@ -77,7 +76,7 @@ mod test_rpc_read_calls {
     async fn test_get_block_txn_count_works() {
         let madara = get_shared_state().await;
         let result = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard.json_rpc().get_block_transaction_count(BlockId::Number(2)).await.unwrap()
         };
         assert_eq!(result, 1);
@@ -87,7 +86,7 @@ mod test_rpc_read_calls {
     async fn test_get_block_txn_with_receipts_works() {
         let madara = get_shared_state().await;
         let block = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard.json_rpc().get_block_with_receipts(BlockId::Number(2)).await.unwrap()
         };
 
@@ -161,7 +160,7 @@ mod test_rpc_read_calls {
     async fn test_get_block_txn_with_tx_hashes_works() {
         let madara = get_shared_state().await;
         let block = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard.json_rpc().get_block_with_tx_hashes(BlockId::Number(2)).await.unwrap()
         };
 
@@ -196,7 +195,7 @@ mod test_rpc_read_calls {
     async fn test_get_block_txn_with_tx_works() {
         let madara = get_shared_state().await;
         let block = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard.json_rpc().get_block_with_txs(BlockId::Number(2)).await.unwrap()
         };
 
@@ -239,7 +238,7 @@ mod test_rpc_read_calls {
     async fn test_get_class_hash_at_works() {
         let madara = get_shared_state().await;
         let class_hash = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .get_class_hash_at(
@@ -259,7 +258,7 @@ mod test_rpc_read_calls {
     async fn test_get_nonce_works() {
         let madara = get_shared_state().await;
         let nonce = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .get_nonce(
@@ -278,7 +277,7 @@ mod test_rpc_read_calls {
     async fn test_get_txn_by_block_id_and_index_works() {
         let madara = get_shared_state().await;
         let txn = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard.json_rpc().get_transaction_by_block_id_and_index(BlockId::Number(16), 1).await.unwrap()
         };
         let expected_txn = Transaction::L1Handler(L1HandlerTransaction {
@@ -308,7 +307,7 @@ mod test_rpc_read_calls {
     async fn test_get_txn_by_hash_works() {
         let madara = get_shared_state().await;
         let txn = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .get_transaction_by_hash(Felt::from_hex_unchecked(
@@ -344,7 +343,7 @@ mod test_rpc_read_calls {
     async fn test_get_txn_receipt_works() {
         let madara = get_shared_state().await;
         let txn_receipt = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .get_transaction_receipt(Felt::from_hex_unchecked(
@@ -396,7 +395,7 @@ mod test_rpc_read_calls {
     async fn test_get_txn_status_works() {
         let madara = get_shared_state().await;
         let txn_status = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .get_transaction_status(Felt::from_hex_unchecked(
@@ -414,7 +413,7 @@ mod test_rpc_read_calls {
     async fn test_get_storage_at_works() {
         let madara = get_shared_state().await;
         let storage_response = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .get_storage_at(
@@ -434,7 +433,7 @@ mod test_rpc_read_calls {
     async fn test_get_state_update_works() {
         let madara = get_shared_state().await;
         let state_update = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard.json_rpc().get_state_update(BlockId::Number(13)).await.unwrap()
         };
 
@@ -515,7 +514,7 @@ mod test_rpc_read_calls {
     async fn test_get_events_works() {
         let madara = get_shared_state().await;
         let events = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .get_events(
@@ -585,7 +584,7 @@ mod test_rpc_read_calls {
     async fn test_get_events_with_continuation_token_works() {
         let madara = get_shared_state().await;
         let events = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .get_events(
@@ -668,7 +667,7 @@ mod test_rpc_read_calls {
     async fn test_call_works() {
         let madara = get_shared_state().await;
         let call_response = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .call(
@@ -732,7 +731,7 @@ mod test_rpc_read_calls {
     async fn test_get_class_works() {
         let madara = get_shared_state().await;
         let contract_class = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .get_class(
@@ -789,7 +788,7 @@ mod test_rpc_read_calls {
     async fn test_get_class_at_works() {
         let madara = get_shared_state().await;
         let contract_class = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .get_class_at(
@@ -887,7 +886,7 @@ mod test_rpc_read_calls {
     async fn test_estimate_fee_works() {
         let madara = get_shared_state().await;
         let call_response = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .estimate_fee(
@@ -967,7 +966,7 @@ mod test_rpc_read_calls {
     async fn test_estimate_message_fee_works() {
         let madara = get_shared_state().await;
         let call_response = {
-            let mut madara_guard = madara.lock().unwrap();
+            let mut madara_guard = madara.lock().await;
             madara_guard
                 .json_rpc()
                 .estimate_message_fee(
@@ -1008,7 +1007,7 @@ mod test_rpc_read_calls {
 
         match decoder.read_to_string(&mut decompressed) {
             Ok(_) => decompressed,
-            Err(e) => {
+            Err(_e) => {
                 // If decompression fails, try to interpret as UTF-8
                 match String::from_utf8(data.clone()) {
                     Ok(s) => s,
@@ -1016,7 +1015,10 @@ mod test_rpc_read_calls {
                         // If both fail, return the data as a hexadecimal string
                         format!(
                             "Error: Unable to decompress or decode data. Hexadecimal representation: {}",
-                            data.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+                            data.iter().fold(String::new(), |mut acc, b| {
+                                write!(&mut acc, "{:02x}", b).unwrap();
+                                acc
+                            })
                         )
                     }
                 }
@@ -1024,7 +1026,7 @@ mod test_rpc_read_calls {
         }
     }
 
-    fn assert_type_equality<T: Any, U: Any>(t: &T, u: &U) {
+    fn assert_type_equality<T: Any, U: Any>(_t: &T, _u: &U) {
         assert_eq!(
             std::any::TypeId::of::<T>(),
             std::any::TypeId::of::<U>(),
