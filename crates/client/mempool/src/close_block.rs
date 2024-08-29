@@ -16,6 +16,7 @@ pub async fn close_block(
     let validation = Validation {
         trust_transaction_hashes: true, // no need to recompute tx hashes
         chain_id,
+        trust_global_tries: false,
     };
 
     let DeoxysPendingBlock { info, inner } = block;

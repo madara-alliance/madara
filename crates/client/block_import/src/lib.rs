@@ -94,12 +94,20 @@ pub enum BlockImportError {
     #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
     GlobalStateRoot { got: Felt, expected: Felt },
 
+    /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal database error while {context}: {error:#}")]
     InternalDb { context: Cow<'static, str>, error: DeoxysStorageError },
+    /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal error: {0}")]
     Internal(Cow<'static, str>),
 }
 
+impl BlockImportError {
+    /// Unrecoverable errors.
+    pub fn is_internal(&self) -> bool {
+        matches!(self, BlockImportError::InternalDb { .. } | BlockImportError::Internal(_))
+    }
+}
 pub struct BlockImporter {
     pool: Arc<RayonPool>,
     verify_apply: VerifyApply,
@@ -111,7 +119,7 @@ impl BlockImporter {
         Self { verify_apply: VerifyApply::new(Arc::clone(&backend), Arc::clone(&pool)), pool }
     }
 
-    /// Perform [`BlockImporter::pre_validate`] followed by [`BlockImporter::verify_apply`] to import a block. 
+    /// Perform [`BlockImporter::pre_validate`] followed by [`BlockImporter::verify_apply`] to import a block.
     pub async fn add_block(
         &self,
         block: UnverifiedFullBlock,

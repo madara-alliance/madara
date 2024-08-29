@@ -50,7 +50,7 @@ async fn l2_verify_and_apply_task(
     mut updates_receiver: mpsc::Receiver<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
     validation: Validation,
-    verify: bool, // TODO(merge): re-add verify false
+    verify: bool,
     backup_every_n_blocks: Option<u64>,
     block_metrics: BlockMetrics,
     db_metrics: DbMetrics,
@@ -178,8 +178,17 @@ async fn l2_pending_block_task(
         let block: UnverifiedPendingFullBlock =
             fetch_pending_block_and_updates(&backend, &provider).await.context("Getting pending block from FGW")?;
 
-        let block = block_import.pre_validate_pending(block, validation.clone()).await?;
-        block_import.verify_apply_pending(block, validation.clone()).await?;
+        // HACK(see issue #239): The latest block in db may not match the pending parent block hash
+        // Just silently ignore it for now and move along.
+        let import_block = || async {
+            let block = block_import.pre_validate_pending(block, validation.clone()).await?;
+            block_import.verify_apply_pending(block, validation.clone()).await?;
+            anyhow::Ok(())
+        };
+
+        if let Err(err) = import_block().await {
+            log::debug!("Error while importing pending block: {err:#}");
+        }
     }
 
     Ok(())
@@ -222,7 +231,7 @@ pub async fn sync(
     // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
     // starves the tokio worker
     let block_importer = Arc::new(BlockImporter::new(Arc::clone(backend)));
-    let validation = Validation { trust_transaction_hashes: false, chain_id };
+    let validation = Validation { trust_transaction_hashes: false, trust_global_tries: config.verify, chain_id };
 
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(
@@ -245,7 +254,10 @@ pub async fn sync(
         block_conv_receiver,
         Arc::clone(&block_importer),
         validation.clone(),
+<<<<<<< HEAD
         config.verify,
+=======
+>>>>>>> origin/main
         config.backup_every_n_blocks,
         block_metrics,
         db_metrics,

@@ -7,24 +7,52 @@ on:
 
 jobs:
   coverage:
-    # sadly, for now we have to "rebuild" for the coverage
+    permissions:
+      pull-requests: write
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2 # use a different cache key as coverae uses custom rustc args
+      - uses: dtolnay/rust-toolchain@master
         with:
-          shared-key: "cache"
-          save-if: false
+          toolchain: 1.78
       - name: Setup build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm libudev-dev protobuf-compiler
+      - uses: rui314/setup-mold@v1
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Coverage
-        run: cargo llvm-cov --codecov --output-path codecov.json
-      - name: Upload coverage to codecov.io
-        uses: codecov/codecov-action@v3
+
+      - uses: foundry-rs/foundry-toolchain@v1
         with:
-          files: codecov.json
-          fail_ci_if_error: false
+          version: nightly
+      - name: Launch Anvil
+        run: anvil --fork-url $ANVIL_FORK_URL --fork-block-number $ANVIL_BLOCK_NUMBER &
+        env:
+          ANVIL_FORK_URL: "https://eth.merkle.io"
+          ANVIL_BLOCK_NUMBER: 20395662
+      - name: Wait for Anvil to be ready
+        run: |
+          while ! nc -z localhost 8545; do
+            sleep 1
+          done
+
+      - name: Build and run tests
+        run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo build --bin deoxys --profile dev
+          export COVERAGE_BIN=$(realpath target/debug/deoxys)
+          rm -f target/madara-* lcov.info
+          cargo test --profile dev
+
+      - name: Generate coverage info
+        run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo llvm-cov report --cobertura --output-path coverage.cobertura.xml
+
+      - name: Display coverage
+        uses: ewjoachim/coverage-comment-action@v1
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          COVERAGE_FILE: coverage.cobertura.xml
