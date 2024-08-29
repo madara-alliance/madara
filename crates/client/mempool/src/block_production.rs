@@ -251,9 +251,10 @@ impl BlockProductionTask {
                     self.block.inner.transactions.push(converted_tx.transaction);
                 }
                 Err(err) => {
-                    // These are the transactions that have errored but we can't revert them. It's either because of an internal error
-                    // Errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
+                    // These are the transactions that have errored but we can't revert them. It can be because of an internal server error, but
+                    // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
                     // We reject them.
+                    // Note that this is a big DoS vector.
                     log::error!("Unsuccessful execution of transaction {}: {err:#}", mempool_tx.tx_hash());
                 }
             }
