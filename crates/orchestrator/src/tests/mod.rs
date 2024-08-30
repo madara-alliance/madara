@@ -7,6 +7,7 @@ pub mod server;
 
 pub mod queue;
 
+pub mod alerts;
 pub mod common;
 mod data_storage;
 pub mod workers;

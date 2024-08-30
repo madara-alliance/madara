@@ -139,7 +139,8 @@ pub async fn create_job(
     }
 
     let job_handler = factory::get_job_handler(&job_type).await;
-    let job_item = job_handler.create_job(config.as_ref(), internal_id, metadata).await?;
+    let job_item = job_handler.create_job(config.as_ref(), internal_id.clone(), metadata.clone()).await?;
+
     config.database().create_job(job_item.clone()).await.map_err(|e| JobError::Other(OtherError(e)))?;
 
     add_job_to_process_queue(job_item.id).await.map_err(|e| JobError::Other(OtherError(e)))?;
@@ -173,6 +174,7 @@ pub async fn process_job(id: Uuid) -> Result<(), JobError> {
 
     let job_handler = factory::get_job_handler(&job.job_type).await;
     let external_id = job_handler.process_job(config.as_ref(), &mut job).await?;
+
     let metadata = increment_key_in_metadata(&job.metadata, JOB_PROCESS_ATTEMPT_METADATA_KEY)?;
 
     // Fetching the job again because update status above will update the job version
@@ -239,8 +241,6 @@ pub async fn verify_job(id: Uuid) -> Result<(), JobError> {
                 );
                 add_job_to_process_queue(job.id).await.map_err(|e| JobError::Other(OtherError(e)))?;
                 return Ok(());
-            } else {
-                // TODO: send alert
             }
         }
         JobVerificationStatus::Pending => {
@@ -248,7 +248,6 @@ pub async fn verify_job(id: Uuid) -> Result<(), JobError> {
             let verify_attempts = get_u64_from_metadata(&job.metadata, JOB_VERIFICATION_ATTEMPT_METADATA_KEY)
                 .map_err(|e| JobError::Other(OtherError(e)))?;
             if verify_attempts >= job_handler.max_verification_attempts() {
-                // TODO: send alert
                 log::info!("Verification attempts exceeded for job {}. Marking as timed out.", job.id);
                 config
                     .database()

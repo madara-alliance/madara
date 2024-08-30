@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::alerts::aws_sns::AWSSNS;
+use crate::alerts::Alerts;
 use crate::data_storage::aws_s3::config::AWSS3Config;
 use crate::data_storage::aws_s3::AWSS3;
 use crate::data_storage::{DataStorage, DataStorageConfig};
@@ -43,6 +45,8 @@ pub struct Config {
     queue: Box<dyn QueueProvider>,
     /// Storage client
     storage: Box<dyn DataStorage>,
+    /// Alerts client
+    alerts: Box<dyn Alerts>,
 }
 
 /// Initializes the app config
@@ -74,11 +78,23 @@ pub async fn init_config() -> Config {
 
     let storage_client = build_storage_client(&aws_config).await;
 
-    Config::new(Arc::new(provider), da_client, prover_client, settlement_client, database, queue, storage_client)
+    let alerts_client = build_alert_client().await;
+
+    Config::new(
+        Arc::new(provider),
+        da_client,
+        prover_client,
+        settlement_client,
+        database,
+        queue,
+        storage_client,
+        alerts_client,
+    )
 }
 
 impl Config {
     /// Create a new config
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         starknet_client: Arc<JsonRpcClient<HttpTransport>>,
         da_client: Box<dyn DaClient>,
@@ -87,8 +103,9 @@ impl Config {
         database: Box<dyn Database>,
         queue: Box<dyn QueueProvider>,
         storage: Box<dyn DataStorage>,
+        alerts: Box<dyn Alerts>,
     ) -> Self {
-        Self { starknet_client, da_client, prover_client, settlement_client, database, queue, storage }
+        Self { starknet_client, da_client, prover_client, settlement_client, database, queue, storage, alerts }
     }
 
     /// Returns the starknet client
@@ -124,6 +141,11 @@ impl Config {
     /// Returns the storage provider
     pub fn storage(&self) -> &dyn DataStorage {
         self.storage.as_ref()
+    }
+
+    /// Returns the alerts client
+    pub fn alerts(&self) -> &dyn Alerts {
+        self.alerts.as_ref()
     }
 }
 
@@ -191,6 +213,12 @@ pub async fn build_storage_client(aws_config: &SdkConfig) -> Box<dyn DataStorage
     }
 }
 
+pub async fn build_alert_client() -> Box<dyn Alerts + Send + Sync> {
+    match get_env_var_or_panic("ALERTS").as_str() {
+        "sns" => Box::new(AWSSNS::new().await),
+        _ => panic!("Unsupported Alert Client"),
+    }
+}
 pub fn build_queue_client(_aws_config: &SdkConfig) -> Box<dyn QueueProvider + Send + Sync> {
     match get_env_var_or_panic("QUEUE_PROVIDER").as_str() {
         "sqs" => Box::new(SqsQueue {}),

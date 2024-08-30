@@ -1,3 +1,5 @@
+/// Contains the trait implementations for alerts
+pub mod alerts;
 /// Config of the service. Contains configurations for DB, Queues and other services.
 pub mod config;
 pub mod constants;

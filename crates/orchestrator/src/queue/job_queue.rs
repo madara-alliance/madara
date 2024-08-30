@@ -163,6 +163,13 @@ where
         }
         Err(e) => {
             log::error!("Failed to handle job with id {:?}. Error: {:?}", job_message.id, e);
+            config()
+                .await
+                .alerts()
+                .send_alert_message(e.to_string())
+                .await
+                .map_err(|e| ConsumptionError::Other(OtherError::from(e)))?;
+
             match message.nack().await {
                 Ok(_) => Err(ConsumptionError::FailedToHandleJob {
                     job_id: job_message.id,
@@ -201,6 +208,13 @@ where
         }
         Err(e) => {
             log::error!("Failed to handle worker trigger {:?}. Error: {:?}", job_message.worker, e);
+            config()
+                .await
+                .alerts()
+                .send_alert_message(e.to_string())
+                .await
+                .map_err(|e| ConsumptionError::Other(OtherError::from(e)))?;
+
             message.nack().await.map_err(|(e, _)| ConsumptionError::Other(OtherError::from(e.to_string())))?;
             Err(ConsumptionError::FailedToSpawnWorker {
                 worker_trigger_type: job_message.worker,

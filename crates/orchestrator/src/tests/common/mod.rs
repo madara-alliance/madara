@@ -4,6 +4,8 @@ use std::collections::HashMap;
 
 use ::uuid::Uuid;
 use aws_config::Region;
+use aws_sdk_sns::error::SdkError;
+use aws_sdk_sns::operation::create_topic::CreateTopicError;
 use mongodb::Client;
 use rstest::*;
 use serde::Deserialize;
@@ -41,6 +43,18 @@ pub fn custom_job_item(default_job_item: JobItem, #[default(String::from("0"))] 
     job_item
 }
 
+pub async fn create_sns_arn() -> Result<(), SdkError<CreateTopicError>> {
+    let sns_client = get_sns_client().await;
+    sns_client.create_topic().name(get_env_var_or_panic("AWS_SNS_ARN_NAME")).send().await?;
+    Ok(())
+}
+
+pub async fn get_sns_client() -> aws_sdk_sns::client::Client {
+    let sns_region = get_env_var_or_panic("AWS_SNS_REGION");
+    let config = aws_config::from_env().region(Region::new(sns_region)).load().await;
+    aws_sdk_sns::Client::new(&config)
+}
+
 pub async fn drop_database() -> color_eyre::Result<()> {
     let db_client: Client = MongoDb::new(MongoDbConfig::new_from_env()).await.client();
     // dropping all the collection.
@@ -72,7 +86,7 @@ pub async fn create_sqs_queues() -> color_eyre::Result<()> {
     Ok(())
 }
 
-async fn get_sqs_client() -> aws_sdk_sqs::Client {
+pub async fn get_sqs_client() -> aws_sdk_sqs::Client {
     // This function is for localstack. So we can hardcode the region for this as of now.
     let region_provider = Region::new("us-east-1");
     let config = aws_config::from_env().region(region_provider).load().await;
