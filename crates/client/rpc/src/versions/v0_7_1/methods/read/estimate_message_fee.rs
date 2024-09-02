@@ -1,14 +1,17 @@
-use crate::errors::StarknetRpcApiError;
-use crate::errors::StarknetRpcResult;
-use crate::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
-use crate::utils::OptionExt;
-use crate::Starknet;
-use dc_exec::ExecutionContext;
-use dp_transactions::L1HandlerTransaction;
+use std::sync::Arc;
+
 use starknet_api::transaction::{Fee, TransactionHash};
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
+
+use dc_exec::ExecutionContext;
+use dp_transactions::L1HandlerTransaction;
+
+use crate::errors::StarknetRpcApiError;
+use crate::errors::StarknetRpcResult;
+use crate::utils::OptionExt;
+use crate::versions::v0_7_1::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
+use crate::Starknet;
 
 /// Estimate the L2 fee of a message sent on L1
 ///

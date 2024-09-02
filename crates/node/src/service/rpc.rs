@@ -1,18 +1,20 @@
-use crate::cli::{RpcMethods, RpcParams};
-use dc_db::DatabaseService;
-use dc_metrics::MetricsRegistry;
-use dc_rpc::{
-    providers::AddTransactionProvider, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
-    StarknetWriteRpcApiServer,
-};
-use dp_chain_config::ChainConfig;
-use dp_utils::service::Service;
+use std::sync::Arc;
+
+use anyhow::bail;
 use jsonrpsee::server::ServerHandle;
 use jsonrpsee::RpcModule;
+use tokio::task::JoinSet;
+
+use dc_db::DatabaseService;
+use dc_metrics::MetricsRegistry;
+use dc_rpc::{providers::AddTransactionProvider, versions::v0_7_1, Starknet};
+use dp_chain_config::{ChainConfig, RpcVersion};
+use dp_utils::service::Service;
+
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
-use std::sync::Arc;
-use tokio::task::JoinSet;
+
+use crate::cli::{RpcMethods, RpcParams};
 
 mod metrics;
 mod middleware;
@@ -34,8 +36,6 @@ impl RpcService {
             return Ok(Self { server_config: None, server_handle: None });
         }
 
-        let mut rpc_api = RpcModule::new(());
-
         let (rpcs, _node_operator) = match (config.rpc_methods, config.rpc_external) {
             (RpcMethods::Safe, _) => (true, false),
             (RpcMethods::Unsafe, _) => (true, true),
@@ -52,15 +52,8 @@ impl RpcService {
 
         let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider);
 
-        if read {
-            rpc_api.merge(StarknetReadRpcApiServer::into_rpc(starknet.clone()))?;
-        }
-        if write {
-            rpc_api.merge(StarknetWriteRpcApiServer::into_rpc(starknet.clone()))?;
-        }
-        if trace {
-            rpc_api.merge(StarknetTraceRpcApiServer::into_rpc(starknet.clone()))?;
-        }
+        let mut rpc_api = RpcModule::new(());
+        configure_with_supported_apis(&mut rpc_api, &starknet, read, write, trace)?;
 
         let metrics = RpcMetrics::register(&metrics_handle)?;
 
@@ -83,6 +76,34 @@ impl RpcService {
             server_handle: None,
         })
     }
+}
+
+fn configure_with_supported_apis(
+    rpc_api: &mut jsonrpsee::RpcModule<()>,
+    starknet: &Starknet,
+    read: bool,
+    write: bool,
+    trace: bool,
+) -> anyhow::Result<()> {
+    for rpc_version in dp_chain_config::SUPPORTED_RPC_VERSIONS.iter() {
+        match *rpc_version {
+            RpcVersion::RPC_VERSION_0_6_0 => todo!(),
+            RpcVersion::RPC_VERSION_0_7_0 => todo!(),
+            RpcVersion::RPC_VERSION_0_7_1 => {
+                if read {
+                    rpc_api.merge(v0_7_1::StarknetReadRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+                }
+                if write {
+                    rpc_api.merge(v0_7_1::StarknetWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+                }
+                if trace {
+                    rpc_api.merge(v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+                }
+            }
+            _ => bail!("Unrecognized RPC spec version: {}", rpc_version),
+        }
+    }
+    Ok(())
 }
 
 #[async_trait::async_trait]

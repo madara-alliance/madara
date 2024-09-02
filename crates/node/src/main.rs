@@ -109,7 +109,7 @@ async fn main() -> anyhow::Result<()> {
 
                 (
                     ServiceGroup::default().with(block_production_service),
-                    Arc::new(dc_rpc::mempool_provider::MempoolProvider::new(mempool)),
+                    Arc::new(dc_rpc::providers::mempool::MempoolProvider::new(mempool)),
                 )
             }
             // Block sync service. (full node)

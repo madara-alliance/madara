@@ -13,11 +13,41 @@ use dp_state_update::{
     StorageEntry,
 };
 use dp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
+use jsonrpsee::core::{async_trait, RpcResult};
 use rstest::fixture;
-use starknet_core::types::Felt;
+use starknet_core::types::{
+    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
+    DeclareTransactionResult, DeployAccountTransactionResult, Felt, InvokeTransactionResult,
+};
 use std::sync::Arc;
 
-use crate::{providers::TestTransactionProvider, Starknet};
+use crate::{providers::AddTransactionProvider, Starknet};
+
+#[cfg(test)]
+pub struct TestTransactionProvider;
+
+#[cfg(test)]
+#[async_trait]
+impl AddTransactionProvider for TestTransactionProvider {
+    async fn add_declare_transaction(
+        &self,
+        _declare_transaction: BroadcastedDeclareTransaction,
+    ) -> RpcResult<DeclareTransactionResult> {
+        unimplemented!()
+    }
+    async fn add_deploy_account_transaction(
+        &self,
+        _deploy_account_transaction: BroadcastedDeployAccountTransaction,
+    ) -> RpcResult<DeployAccountTransactionResult> {
+        unimplemented!()
+    }
+    async fn add_invoke_transaction(
+        &self,
+        _invoke_transaction: BroadcastedInvokeTransaction,
+    ) -> RpcResult<InvokeTransactionResult> {
+        unimplemented!()
+    }
+}
 
 #[fixture]
 pub fn rpc_test_setup() -> (Arc<DeoxysBackend>, Starknet) {

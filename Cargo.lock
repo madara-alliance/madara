@@ -3808,6 +3808,7 @@ dependencies = [
  "dp-chain-config",
  "dp-class",
  "dp-convert",
+ "dp-proc-macros",
  "dp-receipt",
  "dp-state-update",
  "dp-transactions",
@@ -4109,6 +4110,14 @@ dependencies = [
  "starknet-types-core",
  "starknet_api",
  "thiserror",
+]
+
+[[package]]
+name = "dp-proc-macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn 2.0.66",
 ]
 
 [[package]]
