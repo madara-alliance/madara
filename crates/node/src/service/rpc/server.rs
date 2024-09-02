@@ -213,7 +213,7 @@ pub(crate) fn host_filtering(enabled: bool, addr: Option<SocketAddr>) -> Option<
     if enabled {
         // NOTE: The listening addresses are whitelisted by default.
         let hosts = [format!("localhost:{port}"), format!("127.0.0.1:{port}"), format!("[::1]:{port}")];
-        Some(HostFilterLayer::new(hosts).unwrap())
+        Some(HostFilterLayer::new(hosts).expect("Invalid host filter"))
     } else {
         None
     }
@@ -231,7 +231,7 @@ pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: RpcModule<M>)
                 "methods": available_methods,
             })
         })
-        .unwrap();
+        .expect("Cannot register method");
 
     rpc_api
 }

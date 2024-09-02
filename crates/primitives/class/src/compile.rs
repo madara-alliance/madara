@@ -11,6 +11,12 @@ pub trait ToCompiledClass {
     fn compile(&self) -> anyhow::Result<CompiledClass>;
 }
 
+impl ToCompiledClass for crate::ContractClass {
+    fn compile(&self) -> anyhow::Result<CompiledClass> {
+        starknet_core::types::ContractClass::from(self.clone()).compile()
+    }
+}
+
 impl ToCompiledClass for starknet_core::types::ContractClass {
     fn compile(&self) -> anyhow::Result<CompiledClass> {
         match self {

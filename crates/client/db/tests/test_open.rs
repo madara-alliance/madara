@@ -2,7 +2,7 @@ mod common;
 
 use common::temp_db;
 use dc_db::DatabaseService;
-use dp_block::chain_config::ChainConfig;
+use dp_chain_config::ChainConfig;
 
 #[tokio::test]
 async fn test_open_db() {

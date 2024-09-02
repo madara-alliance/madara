@@ -20,6 +20,7 @@ dc-metrics = { workspace = true }
 dc-sync = { workspace = true }
 dc-telemetry = { workspace = true }
 dp-block = { workspace = true }
+dp-chain-config = { workspace = true }
 dp-convert = { workspace = true }
 dp-transactions = { workspace = true }
 dp-utils = { workspace = true }
@@ -30,7 +31,7 @@ starknet_api = { workspace = true }
 
 
 # Other
-alloy = { workspace = true, features = ["node-bindings"] }
+alloy = { workspace = true }
 anyhow = "1.0.75"
 async-trait = "0.1.80"
 bitvec = { workspace = true }

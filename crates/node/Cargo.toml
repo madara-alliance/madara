@@ -26,6 +26,7 @@ dc-rpc = { workspace = true }
 dc-sync = { workspace = true }
 dc-telemetry = { workspace = true }
 dp-block = { workspace = true }
+dp-chain-config = { workspace = true }
 dp-convert = { workspace = true }
 dp-utils = { workspace = true }
 
@@ -49,7 +50,9 @@ ip_network.workspace = true
 jsonrpsee.workspace = true
 log = { workspace = true }
 primitive-types = { workspace = true }
+rand = { workspace = true }
 rayon.workspace = true
+reqwest = { workspace = true }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true }

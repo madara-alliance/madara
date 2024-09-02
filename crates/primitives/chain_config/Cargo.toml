@@ -1,0 +1,23 @@
+[package]
+name = "dp-chain-config"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+repository.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+# Starknet
+blockifier = { workspace = true }
+starknet-core = { workspace = true }
+starknet-types-core = { workspace = true }
+starknet_api = { workspace = true }
+
+# Other
+lazy_static = { workspace = true }
+primitive-types.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror.workspace = true

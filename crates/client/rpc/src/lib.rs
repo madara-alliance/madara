@@ -15,8 +15,8 @@ pub mod providers;
 
 use dc_db::db_block_id::DbBlockIdResolvable;
 use dc_db::DeoxysBackend;
-use dp_block::chain_config::ChainConfig;
 use dp_block::{DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo};
+use dp_chain_config::ChainConfig;
 use dp_convert::ToFelt;
 use errors::{StarknetRpcApiError, StarknetRpcResult};
 use jsonrpsee::core::RpcResult;

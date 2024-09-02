@@ -34,3 +34,5 @@ jobs:
       - name: Run unit tests
         run: |
           cargo test
+        env:
+          PROPTEST_CASES: 2

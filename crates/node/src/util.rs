@@ -1,3 +1,4 @@
+use anyhow::Context;
 use chrono::Local;
 use clap::builder::styling::{AnsiColor, Color, Style};
 use log::{kv::Key, Level};
@@ -45,16 +46,16 @@ pub fn setup_logging() -> anyhow::Result<()> {
 
             match record.level() {
                 Level::Info if record.target() == "rpc_calls" => {
-                    let status = record.key_values().get(Key::from("status")).unwrap().to_i64().unwrap();
-                    let method = record.key_values().get(Key::from("method")).unwrap();
-                    let res_len = record.key_values().get(Key::from("res_len")).unwrap();
+                    let status = record.key_values().get(Key::from("status")).expect("Mo status in record").to_i64().expect("Status is not an int");
+                    let method = record.key_values().get(Key::from("method")).expect("Mo method in record");
+                    let res_len = record.key_values().get(Key::from("res_len")).expect("No res_len in record");
                     let rpc_style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Magenta)));
                     let status_color = if status == 200 {
                         Style::new().fg_color(Some(Color::Ansi(AnsiColor::Green)))
                     } else {
                         Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red)))
                     };
-                    let response_time = Duration::from_micros(record.key_values().get(Key::from("response_time")).unwrap().to_u64().unwrap());
+                    let response_time = Duration::from_micros(record.key_values().get(Key::from("response_time")).expect("No response time in record").to_u64().expect("Response time is not an int"));
                     let time_color = match response_time {
                         time if time <= Duration::from_millis(5) => {
                             Style::new()
@@ -125,4 +126,18 @@ pub fn setup_logging() -> anyhow::Result<()> {
         .init();
 
     Ok(())
+}
+
+/// Returns a random Pokémon name.
+pub async fn get_random_pokemon_name() -> anyhow::Result<String> {
+    use rand::{seq::SliceRandom, thread_rng};
+    let res = reqwest::get("https://pokeapi.co/api/v2/pokemon/?limit=1000").await?;
+    let body = res.text().await?;
+    let json: serde_json::Value = serde_json::from_str(&body)?;
+
+    let pokemon_array = json["results"].as_array().context("Getting result from returned json")?;
+    let mut rng = thread_rng();
+    let random_pokemon = pokemon_array.choose(&mut rng).context("Choosing a name")?;
+
+    Ok(random_pokemon["name"].as_str().context("Getting name from pokemon object")?.to_string())
 }

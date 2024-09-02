@@ -1,5 +1,6 @@
 //! Deoxys node command line.
 #![warn(missing_docs)]
+#![warn(clippy::unwrap_used)]
 
 use std::sync::Arc;
 
@@ -84,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
         l1_gas_setter,
         chain_config.chain_id.clone(),
         chain_config.eth_core_contract_address,
+        run_cmd.authority,
     )
     .await
     .context("Initializing the l1 sync service")?;

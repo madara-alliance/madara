@@ -1,5 +1,5 @@
 use dc_db::DatabaseService;
-use dp_block::chain_config::ChainConfig;
+use dp_chain_config::ChainConfig;
 use tempfile::TempDir;
 
 pub async fn temp_db() -> DatabaseService {
