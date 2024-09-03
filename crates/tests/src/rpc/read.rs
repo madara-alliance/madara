@@ -1,8 +1,10 @@
+// source of truth for the data here is the juno rpc. for each method tested here, same call was
+// made to the juno rpc.
+
 #[cfg(test)]
 mod test_rpc_read_calls {
     use once_cell::sync::Lazy;
     use std::any::Any;
-    use std::sync::Arc;
 
     use crate::{MadaraCmd, MadaraCmdBuilder};
     use flate2::read::GzDecoder;
@@ -20,46 +22,39 @@ mod test_rpc_read_calls {
         BroadcastedDeployAccountTransaction, BroadcastedDeployAccountTransactionV1, BroadcastedTransaction, EthAddress,
         FeeEstimate, Felt, MsgFromL1, SimulationFlagForEstimateFee,
     };
-    use starknet_providers::Provider;
+    use starknet_providers::jsonrpc::HttpTransport;
+    use starknet_providers::{JsonRpcClient, Provider};
     use std::fmt::Write;
     use std::fs::File;
     use std::io::BufReader;
     use std::io::Read;
-    use tokio::sync::{Mutex, OnceCell};
+    use tokio::sync::OnceCell;
 
-    static MADARA: Lazy<OnceCell<Arc<Mutex<MadaraCmd>>>> = Lazy::new(OnceCell::new);
+    static MADARA: Lazy<OnceCell<MadaraCmd>> = Lazy::new(|| OnceCell::new());
 
-    async fn setup_madara() -> Arc<Mutex<MadaraCmd>> {
-        let madara = MadaraCmdBuilder::new()
+    async fn setup_madara() -> MadaraCmd {
+        let mut madara = MadaraCmdBuilder::new()
             .args(["--network", "sepolia", "--no-sync-polling", "--n-blocks-to-sync", "20", "--no-l1-sync"])
             .run();
 
-        let madara = Arc::new(Mutex::new(madara));
-
-        // Use clone() to get a new Arc, so we can move it into the async block
-        let madara_clone = madara.clone();
-
-        // Acquire the lock within an async block
-        let mut guard = madara_clone.lock().await;
-        guard.wait_for_ready().await;
-        guard.wait_for_sync_to(19).await;
+        madara.wait_for_ready().await;
+        madara.wait_for_sync_to(19).await;
 
         // The lock is released when guard goes out of scope
 
         madara
     }
 
-    async fn get_shared_state() -> Arc<Mutex<MadaraCmd>> {
-        MADARA.get_or_init(setup_madara).await.clone()
+    async fn get_shared_state<'a>() -> &'a MadaraCmd {
+        MADARA.get_or_init(setup_madara).await
     }
 
+    // here, the provider will fetch the latest block that's been synced, hence testing it with block 19
     #[tokio::test]
     async fn test_block_hash_and_number_works() {
         let madara = get_shared_state().await;
-        let result = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard.json_rpc().block_hash_and_number().await.unwrap()
-        };
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
+        let result = { json_client.block_hash_and_number().await.unwrap() };
         assert_eq!(
             result,
             BlockHashAndNumber {
@@ -72,23 +67,47 @@ mod test_rpc_read_calls {
         );
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getBlockTransactionCount",
+           "params": {
+               "block_id": {
+                   "block_number": 2
+               }
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_block_txn_count_works() {
         let madara = get_shared_state().await;
-        let result = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard.json_rpc().get_block_transaction_count(BlockId::Number(2)).await.unwrap()
-        };
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
+        let result = { json_client.get_block_transaction_count(BlockId::Number(2)).await.unwrap() };
         assert_eq!(result, 1);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getBlockWithReceipts",
+           "params": {
+               "block_id": {
+                   "block_number": 2
+               }
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_block_txn_with_receipts_works() {
         let madara = get_shared_state().await;
-        let block = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard.json_rpc().get_block_with_receipts(BlockId::Number(2)).await.unwrap()
-        };
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
+        let block = { json_client.get_block_with_receipts(BlockId::Number(2)).await.unwrap() };
 
         let expected_block = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
             status: BlockStatus::AcceptedOnL2,
@@ -155,14 +174,24 @@ mod test_rpc_read_calls {
         });
         assert_eq!(block, expected_block);
     }
-    //
+
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getBlockWithTxHashes",
+           "params": {
+               "block_id": "latest"
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_block_txn_with_tx_hashes_works() {
         let madara = get_shared_state().await;
-        let block = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard.json_rpc().get_block_with_tx_hashes(BlockId::Number(2)).await.unwrap()
-        };
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
+        let block = { json_client.get_block_with_tx_hashes(BlockId::Number(2)).await.unwrap() };
 
         let expected_block = MaybePendingBlockWithTxHashes::Block(BlockWithTxHashes {
             status: BlockStatus::AcceptedOnL2,
@@ -191,13 +220,23 @@ mod test_rpc_read_calls {
         assert_eq!(block, expected_block);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getBlockWithTxs",
+           "params": {
+               "block_id": "latest"
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_block_txn_with_tx_works() {
         let madara = get_shared_state().await;
-        let block = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard.json_rpc().get_block_with_txs(BlockId::Number(2)).await.unwrap()
-        };
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
+        let block = { json_client.get_block_with_txs(BlockId::Number(2)).await.unwrap() };
 
         let expected_block = MaybePendingBlockWithTxs::Block(BlockWithTxs {
             status: BlockStatus::AcceptedOnL2,
@@ -234,13 +273,27 @@ mod test_rpc_read_calls {
         assert_eq!(block, expected_block);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getClassHashAt",
+           "params": {
+               "block_id": {
+                   "block_number": 15
+               },
+               "contract_address": "0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_class_hash_at_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let class_hash = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .get_class_hash_at(
                     BlockId::Number(15),
                     Felt::from_hex_unchecked("0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"),
@@ -254,13 +307,27 @@ mod test_rpc_read_calls {
         assert_eq!(class_hash, expected_class_hash);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getNonce",
+           "params": {
+               "block_id": {
+                   "block_number": 15
+               },
+               "contract_address": "0x0535ca4e1d1be7ec4a88d51a2962cd6c5aea1be96cb2c0b60eb1721dc34f800d"
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_nonce_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let nonce = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .get_nonce(
                     BlockId::Number(19),
                     Felt::from_hex_unchecked("0x0535ca4e1d1be7ec4a88d51a2962cd6c5aea1be96cb2c0b60eb1721dc34f800d"),
@@ -273,13 +340,26 @@ mod test_rpc_read_calls {
         assert_eq!(nonce, expected_nonce);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getTransactionByBlockIdAndIndex",
+           "params": {
+               "block_id": {
+                   "block_number": 16
+               },
+               "index": 1
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_txn_by_block_id_and_index_works() {
         let madara = get_shared_state().await;
-        let txn = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard.json_rpc().get_transaction_by_block_id_and_index(BlockId::Number(16), 1).await.unwrap()
-        };
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
+        let txn = { json_client.get_transaction_by_block_id_and_index(BlockId::Number(16), 1).await.unwrap() };
         let expected_txn = Transaction::L1Handler(L1HandlerTransaction {
             transaction_hash: Felt::from_hex_unchecked(
                 "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a",
@@ -303,13 +383,24 @@ mod test_rpc_read_calls {
         assert_eq!(txn, expected_txn);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getTransactionByHash",
+           "params": {
+               "transaction_hash": "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a"
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_txn_by_hash_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let txn = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .get_transaction_by_hash(Felt::from_hex_unchecked(
                     "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a",
                 ))
@@ -339,13 +430,24 @@ mod test_rpc_read_calls {
         assert_eq!(txn, expected_txn);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getTransactionReceipt",
+           "params": {
+               "transaction_hash": "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772"
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_txn_receipt_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let txn_receipt = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .get_transaction_receipt(Felt::from_hex_unchecked(
                     "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772",
                 ))
@@ -391,13 +493,31 @@ mod test_rpc_read_calls {
         assert_eq!(txn_receipt, expected_txn_receipt);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getTransactionStatus",
+           "params": {
+               "transaction_hash": "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a"
+           },
+           "id": 1
+       }'
+
+       Note: Juno endpoint will provide response with AcceptedOnL1, in the current case, we are not
+       running madara in sync with L1. And only way to check whether what madara is storing is right
+       as per the L1 is to sync all the nodes of the L2 and make a call to the core contract on L1 to
+       verify the state root.
+
+       Hence, all the txn would be marked as AcceptedOnL2.
+    */
     #[tokio::test]
     async fn test_get_txn_status_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let txn_status = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .get_transaction_status(Felt::from_hex_unchecked(
                     "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a",
                 ))
@@ -409,13 +529,28 @@ mod test_rpc_read_calls {
         assert_eq!(txn_status, expected_txn_status);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getStorageAt",
+           "params": {
+               "contract_address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+               "key": "0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1",
+               "block_id": {
+                   "block_number": 15
+               }
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_storage_at_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let storage_response = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .get_storage_at(
                     Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
                     Felt::from_hex_unchecked("0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1"),
@@ -429,13 +564,25 @@ mod test_rpc_read_calls {
         assert_eq!(storage_response, expected_storage_response);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getStateUpdate",
+           "params": {
+               "block_id": {
+                   "block_number": 13
+               }
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_state_update_works() {
         let madara = get_shared_state().await;
-        let state_update = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard.json_rpc().get_state_update(BlockId::Number(13)).await.unwrap()
-        };
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
+        let state_update = { json_client.get_state_update(BlockId::Number(13)).await.unwrap() };
 
         let expected_state_update = MaybePendingStateUpdate::Update(StateUpdate {
             block_hash: Felt::from_hex_unchecked("0x12e2fe9e5273b777341a372edc56ca0327dc2237232cf2fed6cecc7398ffe9d"),
@@ -483,40 +630,43 @@ mod test_rpc_read_calls {
         assert_eq!(state_update, expected_state_update);
     }
 
-    // // request:
-    // /*
-    //     curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-    //     --header 'Content-Type: application/json' \
-    //     --data '{
-    //         "jsonrpc": "2.0",
-    //         "method": "starknet_getEvents",
-    //         "params": {
-    //             "filter": {
-    //                 "from_block": {
-    //                     "block_number": 0
-    //                 },
-    //                 "to_block": {
-    //                     "block_number": 19
-    //                 },
-    //                 "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-    //                 "keys": [
-    //                     []
-    //                 ],
-    //                 "continuation_token": "",
-    //                 "chunk_size": 2
-    //             }
-    //         },
-    //    "id": 1
-    // }'
-    //
-    // */
+    /*
+        curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+        --header 'Content-Type: application/json' \
+        --data '{
+            "jsonrpc": "2.0",
+            "method": "starknet_getEvents",
+            "params": {
+                "filter": {
+                    "from_block": {
+                        "block_number": 0
+                    },
+                    "to_block": {
+                        "block_number": 19
+                    },
+                    "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                    "keys": [
+                        []
+                    ],
+                    "continuation_token": "",
+                    "chunk_size": 2
+                }
+            },
+            "id": 1
+        }'
+
+        Note: The response from juno contains different continuation token from madara. Only spec we
+        need to follow is that the continuation token should be of type string.
+
+        In here we are testing the event data apart from continuation token and checking type for
+        the continuation token.
+    */
     #[tokio::test]
     async fn test_get_events_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let events = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .get_events(
                     EventFilter {
                         from_block: Some(BlockId::Number(0)),
@@ -580,13 +730,37 @@ mod test_rpc_read_calls {
         assert_type_equality(&events.continuation_token, &expected_events.continuation_token);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getEvents",
+           "params": {
+               "filter": {
+                   "from_block": {
+                       "block_number": 0
+                   },
+                   "to_block": {
+                       "block_number": 19
+                   },
+                   "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                   "keys": [
+                       []
+                   ],
+                   "continuation_token": "0-2",
+                   "chunk_size": 2
+               }
+           },
+           "id": 1
+       }'
+    */
     #[tokio::test]
     async fn test_get_events_with_continuation_token_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let events = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .get_events(
                     EventFilter {
                         from_block: Some(BlockId::Number(0)),
@@ -662,14 +836,34 @@ mod test_rpc_read_calls {
         assert_type_equality(&events.continuation_token, &expected_events.continuation_token);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_call",
+           "params": {
+               "request": {
+                   "contract_address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                   "entry_point_selector": "0x361458367e696363fbcc70777d07ebbd2394e89fd0adcaf147faccd1d294d60",
+                   "calldata": []
+               },
+               "block_id": {
+                   "block_number": 19
+               }
+           },
+           "id": 1
+       }'
+
+       Note: The test is ignored as of now because madara doesn't support historical data retrieval.
+    */
     #[ignore]
     #[tokio::test]
     async fn test_call_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let call_response = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .call(
                     FunctionCall {
                         contract_address: Felt::from_hex_unchecked(
@@ -730,10 +924,9 @@ mod test_rpc_read_calls {
     #[tokio::test]
     async fn test_get_class_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let contract_class = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .get_class(
                     BlockId::Number(12),
                     Felt::from_hex_unchecked("0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"),
@@ -742,55 +935,32 @@ mod test_rpc_read_calls {
                 .unwrap()
         };
 
-        let contract_program = match contract_class.clone() {
-            ContractClass::Legacy(compressed) => Some(compressed.program),
-            _ => None,
-        };
-
-        let contract_entry_points = match contract_class.clone() {
-            ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
-            _ => None,
-        };
-
-        let contract_abi = match contract_class.clone() {
-            ContractClass::Legacy(compressed) => Some(compressed.abi),
-            _ => None,
-        };
-
-        let decompressed_program = decompress_to_string(contract_program.unwrap());
-
-        let mut class_program_file = File::open("src/rpc/test_utils/class_program.txt").unwrap();
-
-        let mut original_program = String::new();
-        class_program_file.read_to_string(&mut original_program).expect("issue while reading the file");
-
-        let contract_class_file = File::open("src/rpc/test_utils/contract_class.json").unwrap();
-        let reader = BufReader::new(contract_class_file);
-
-        let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();
-
-        let expected_contract_entry_points = match expected_contract_class.clone() {
-            ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
-            _ => None,
-        };
-
-        let expected_contract_abi = match expected_contract_class.clone() {
-            ContractClass::Legacy(compressed) => Some(compressed.abi),
-            _ => None,
-        };
-
-        assert_eq!(decompressed_program, original_program);
-        assert_eq!(contract_entry_points, expected_contract_entry_points);
-        assert_eq!(contract_abi, expected_contract_abi);
+        compare_contract_class(contract_class);
     }
 
+    /*
+       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+       --header 'Content-Type: application/json' \
+       --data '{
+           "jsonrpc": "2.0",
+           "method": "starknet_getClassAt",
+           "params": {
+               "block_id": {
+                   "block_number": 12
+               },
+               "contract_address": "0x043abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8"
+           },
+           "id": 1
+       }'
+
+       Note: The program has been compressed using the same script mentioned in the above test case.
+    */
     #[tokio::test]
     async fn test_get_class_at_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let contract_class = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .get_class_at(
                     BlockId::Number(12),
                     Felt::from_hex_unchecked("0x043abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8"),
@@ -799,46 +969,7 @@ mod test_rpc_read_calls {
                 .unwrap()
         };
 
-        let contract_program = match contract_class.clone() {
-            ContractClass::Legacy(compressed) => Some(compressed.program),
-            _ => None,
-        };
-
-        let contract_entry_points = match contract_class.clone() {
-            ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
-            _ => None,
-        };
-
-        let contract_abi = match contract_class {
-            ContractClass::Legacy(compressed) => Some(compressed.abi),
-            _ => None,
-        };
-
-        let decompressed_program = decompress_to_string(contract_program.unwrap());
-
-        let mut class_program_file = File::open("src/rpc/test_utils/class_program.txt").unwrap();
-
-        let mut original_program = String::new();
-        class_program_file.read_to_string(&mut original_program).expect("issue while reading the file");
-
-        let contract_class_file = File::open("src/rpc/test_utils/contract_class.json").unwrap();
-        let reader = BufReader::new(contract_class_file);
-
-        let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();
-
-        let expected_contract_entry_points = match expected_contract_class.clone() {
-            ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
-            _ => None,
-        };
-
-        let expected_contract_abi = match expected_contract_class {
-            ContractClass::Legacy(compressed) => Some(compressed.abi),
-            _ => None,
-        };
-
-        assert_eq!(decompressed_program, original_program);
-        assert_eq!(contract_entry_points, expected_contract_entry_points);
-        assert_eq!(contract_abi, expected_contract_abi);
+        compare_contract_class(contract_class);
     }
 
     /*
@@ -879,16 +1010,15 @@ mod test_rpc_read_calls {
            "id": 1
        }'
 
-       {"jsonrpc":"2.0","result":[{"gas_consumed":"0xcfc","gas_price":"0x3b9ada0f","data_gas_consumed":"0x0","data_gas_price":"0x1","overall_fee":"0x305eea75ac4","unit":"WEI"}],"id":1}%
+       Note: The test is ignored as of now because madara doesn't support historical data retrieval.
     */
     #[ignore]
     #[tokio::test]
     async fn test_estimate_fee_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let call_response = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .estimate_fee(
                     vec![BroadcastedTransaction::DeployAccount(BroadcastedDeployAccountTransaction::V1(
                         BroadcastedDeployAccountTransactionV1 {
@@ -958,17 +1088,15 @@ mod test_rpc_read_calls {
            "id": 1
        }'
 
-       {"jsonrpc":"2.0","result":{"gas_consumed":"0x4424","gas_price":"0x33dda9da0","data_gas_consumed":"0x0","data_gas_price":"0x1","overall_fee":"0xdce2c49caa80","unit":"WEI"},"id":1}%
+       Note: The test is ignored as of now because madara doesn't support historical data retrieval.
     */
-
     #[ignore]
     #[tokio::test]
     async fn test_estimate_message_fee_works() {
         let madara = get_shared_state().await;
+        let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let call_response = {
-            let mut madara_guard = madara.lock().await;
-            madara_guard
-                .json_rpc()
+            json_client
                 .estimate_message_fee(
                     MsgFromL1 {
                         from_address: EthAddress::from_hex("0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc").unwrap(),
@@ -999,6 +1127,49 @@ mod test_rpc_read_calls {
             unit: PriceUnit::Wei,
         };
         assert_eq!(call_response, expected_call_response);
+    }
+
+    fn compare_contract_class(contract_class: ContractClass) {
+        let contract_program = match contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.program),
+            _ => None,
+        };
+
+        let contract_entry_points = match contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
+            _ => None,
+        };
+
+        let contract_abi = match contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.abi),
+            _ => None,
+        };
+
+        let decompressed_program = decompress_to_string(contract_program.unwrap());
+
+        let mut class_program_file = File::open("src/rpc/test_utils/class_program.txt").unwrap();
+
+        let mut original_program = String::new();
+        class_program_file.read_to_string(&mut original_program).expect("issue while reading the file");
+
+        let contract_class_file = File::open("src/rpc/test_utils/contract_class.json").unwrap();
+        let reader = BufReader::new(contract_class_file);
+
+        let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();
+
+        let expected_contract_entry_points = match expected_contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
+            _ => None,
+        };
+
+        let expected_contract_abi = match expected_contract_class.clone() {
+            ContractClass::Legacy(compressed) => Some(compressed.abi),
+            _ => None,
+        };
+
+        assert_eq!(decompressed_program, original_program);
+        assert_eq!(contract_entry_points, expected_contract_entry_points);
+        assert_eq!(contract_abi, expected_contract_abi);
     }
 
     fn decompress_to_string(data: Vec<u8>) -> String {

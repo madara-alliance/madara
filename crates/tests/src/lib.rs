@@ -95,7 +95,6 @@ impl MadaraCmd {
 impl Drop for MadaraCmd {
     fn drop(&mut self) {
         let Some(mut child) = self.process.take() else { return };
-
         let kill = || {
             let mut kill = Command::new("kill").args(["-s", "TERM", &child.id().to_string()]).spawn()?;
             kill.wait()?;
