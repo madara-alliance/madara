@@ -223,7 +223,11 @@ pub(crate) fn host_filtering(enabled: bool, addr: Option<SocketAddr>) -> Option<
 
 pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: RpcModule<M>) -> RpcModule<M> {
     let mut available_methods = rpc_api.method_names().collect::<Vec<_>>();
+
     // The "rpc_methods" is defined below and we want it to be part of the reported methods.
+    // The available methods will be prefixed by their version, example:
+    // * starknet_V0_7_1_blockNumber,
+    // * starknet_V0_8_0_blockNumber (...)
     available_methods.push("rpc_methods");
     available_methods.sort();
 
