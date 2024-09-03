@@ -10,7 +10,7 @@ use starknet_core::types::{
 };
 use starknet_types_core::felt::Felt;
 
-use dp_proc_macros::versioned_starknet_rpc;
+use m_proc_macros::versioned_starknet_rpc;
 
 // Starknet RPC API trait and types
 //

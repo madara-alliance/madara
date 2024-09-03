@@ -19,7 +19,8 @@ use std::sync::Arc;
 use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::MadaraBackend;
 use mp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
-use mp_chain_config::ChainConfig;
+use mp_chain_config::{ChainConfig, RpcVersion};
+use mp_convert::ToFelt;
 
 use errors::{StarknetRpcApiError, StarknetRpcResult};
 use providers::AddTransactionProvider;

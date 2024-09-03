@@ -5421,6 +5421,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "m-proc-macros"
+version = "0.7.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "regex",
+ "syn 2.0.66",
+]
+
+[[package]]
 name = "mach2"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5675,6 +5685,7 @@ dependencies = [
  "env_logger 0.11.3",
  "jsonrpsee",
  "log",
+ "m-proc-macros",
  "mc-db",
  "mc-exec",
  "mc-mempool",
@@ -5685,6 +5696,7 @@ dependencies = [
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
+ "paste",
  "rstest 0.18.2",
  "serde_json",
  "starknet-core",

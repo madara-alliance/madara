@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use dp_chain_config::{RpcVersion, RpcVersionError};
 use futures::future::{BoxFuture, FutureExt};
 use governor::clock::{Clock, DefaultClock, QuantaClock};
 use governor::middleware::NoOpMiddleware;
@@ -19,6 +18,8 @@ use jsonrpsee::types::{ErrorObject, Request};
 use jsonrpsee::MethodResponse;
 use serde_json::{json, Value};
 use tower::{Layer, Service};
+
+use mp_chain_config::{RpcVersion, RpcVersionError};
 
 pub use super::metrics::{Metrics, RpcMetrics};
 
