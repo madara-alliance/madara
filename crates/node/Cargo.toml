@@ -1,6 +1,6 @@
 [package]
-name = "deoxys"
-description = "Deoxys node"
+name = "madara"
+description = "Madara node"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,22 +13,22 @@ build = "build.rs"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [[bin]]
-name = "deoxys"
+name = "madara"
 
 [dependencies]
 
-# Deoxys
-dc-db = { workspace = true }
-dc-eth = { workspace = true }
-dc-mempool = { workspace = true }
-dc-metrics = { workspace = true }
-dc-rpc = { workspace = true }
-dc-sync = { workspace = true }
-dc-telemetry = { workspace = true }
-dp-block = { workspace = true }
-dp-chain-config = { workspace = true }
-dp-convert = { workspace = true }
-dp-utils = { workspace = true }
+# Madara
+mc-db = { workspace = true }
+mc-eth = { workspace = true }
+mc-mempool = { workspace = true }
+mc-metrics = { workspace = true }
+mc-rpc = { workspace = true }
+mc-sync = { workspace = true }
+mc-telemetry = { workspace = true }
+mp-block = { workspace = true }
+mp-chain-config = { workspace = true }
+mp-convert = { workspace = true }
+mp-utils = { workspace = true }
 
 # Starknet
 starknet-providers = { workspace = true }
@@ -62,4 +62,4 @@ url = { workspace = true }
 
 [features]
 default = []
-sound = ["dc-sync/m"]
+sound = ["mc-sync/m"]

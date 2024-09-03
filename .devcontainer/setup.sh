@@ -3,15 +3,15 @@
 echo ">> Starting setup.sh script execution."
 
 # Uncomment this if you want to remove the db on each container start
-# rm -rf /tmp/deoxys
+# rm -rf /tmp/madara
 
-# Sets up Deoxys environment
-cargo run -- setup --chain starknet --from-remote --base-path /tmp/deoxys \
+# Sets up Madara environment
+cargo run -- setup --chain starknet --from-remote --base-path /tmp/madara \
 && cargo fmt
 
-# Uncomment this if you want to run deoxys on container start
+# Uncomment this if you want to run madara on container start
 # cargo run -- \
-#     --deoxys \
+#     --madara \
 #     --rpc-port 9944 \ 
 #     --network main \
 #     --pruning archive \

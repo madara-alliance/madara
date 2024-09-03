@@ -413,7 +413,7 @@ mod tests {
         LegacyEventAbiType, LegacyFunctionAbiEntry, LegacyFunctionAbiType, LegacyStructAbiEntry, LegacyStructAbiType,
         LegacyStructMember, LegacyTypedParameter, SierraEntryPoint,
     };
-    use dp_convert::test::assert_consistent_conversion;
+    use mp_convert::test::assert_consistent_conversion;
     use starknet_core::types::ContractClass as StarknetContractClass;
     use starknet_types_core::felt::Felt;
 

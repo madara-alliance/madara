@@ -1,6 +1,6 @@
 [package]
-name = "dc-rpc"
-description = "Deoxys client rpc service"
+name = "mc-rpc"
+description = "Madara client rpc service"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,22 +14,22 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dev-dependencies]
 
 rstest = { workspace = true }
-dc-db = { workspace = true, features = ["testing"] }
+mc-db = { workspace = true, features = ["testing"] }
 env_logger = { workspace = true }
 
 [dependencies]
 
-# Deoxys
-dc-db = { workspace = true }
-dc-exec = { workspace = true }
-dc-mempool = { workspace = true }
-dp-block = { workspace = true, default-features = true }
-dp-chain-config = { workspace = true }
-dp-class = { workspace = true }
-dp-convert = { workspace = true, default-features = true }
-dp-receipt = { workspace = true }
-dp-state-update = { workspace = true }
-dp-transactions = { workspace = true }
+# Madara
+mc-db = { workspace = true }
+mc-exec = { workspace = true }
+mc-mempool = { workspace = true }
+mp-block = { workspace = true, default-features = true }
+mp-chain-config = { workspace = true }
+mp-class = { workspace = true }
+mp-convert = { workspace = true, default-features = true }
+mp-receipt = { workspace = true }
+mp-state-update = { workspace = true }
+mp-transactions = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true, default-features = true }

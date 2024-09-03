@@ -1,20 +1,20 @@
 use crate::cli::{NetworkType, SyncParams};
 use anyhow::Context;
-use dc_db::db_metrics::DbMetrics;
-use dc_db::{DatabaseService, DeoxysBackend};
-use dc_metrics::MetricsRegistry;
-use dc_sync::fetch::fetchers::FetchConfig;
-use dc_sync::metrics::block_metrics::BlockMetrics;
-use dc_telemetry::TelemetryHandle;
-use dp_chain_config::ChainConfig;
-use dp_utils::service::Service;
+use mc_db::db_metrics::DbMetrics;
+use mc_db::{DatabaseService, MadaraBackend};
+use mc_metrics::MetricsRegistry;
+use mc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::metrics::block_metrics::BlockMetrics;
+use mc_telemetry::TelemetryHandle;
+use mp_chain_config::ChainConfig;
+use mp_utils::service::Service;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
 
 #[derive(Clone)]
 pub struct SyncService {
-    db_backend: Arc<DeoxysBackend>,
+    db_backend: Arc<MadaraBackend>,
     fetch_config: FetchConfig,
     backup_every_n_blocks: Option<u64>,
     starting_block: Option<u64>,
@@ -72,7 +72,7 @@ impl Service for SyncService {
         let db_backend = Arc::clone(&self.db_backend);
 
         join_set.spawn(async move {
-            dc_sync::sync(
+            mc_sync::sync(
                 &db_backend,
                 fetch_config,
                 starting_block,

@@ -2,10 +2,10 @@ use crate::client::EthereumClient;
 use alloy::eips::BlockNumberOrTag;
 use alloy::providers::Provider;
 use anyhow::Context;
-use dc_mempool::{GasPriceProvider, L1DataProvider};
+use mc_mempool::{GasPriceProvider, L1DataProvider};
 use std::time::{Duration, UNIX_EPOCH};
 
-use dp_utils::wait_or_graceful_shutdown;
+use mp_utils::wait_or_graceful_shutdown;
 use std::time::SystemTime;
 
 pub async fn gas_price_worker_once(
@@ -93,8 +93,8 @@ mod eth_client_gas_price_worker_test {
     use super::*;
     use crate::client::eth_client_getter_test::create_ethereum_client;
     use alloy::node_bindings::Anvil;
-    use dc_mempool::GasPriceProvider;
     use httpmock::{MockServer, Regex};
+    use mc_mempool::GasPriceProvider;
     use rstest::*;
     use std::time::SystemTime;
     use tokio::task::JoinHandle;

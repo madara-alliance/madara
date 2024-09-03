@@ -10,6 +10,6 @@ do
     kill -9 $PROCESS_PID
     wait $PROCESS_PID
 
-    killall -9 deoxys
+    killall -9 madara
     sleep 2
 done
