@@ -269,13 +269,7 @@ async fn add_rpc_version_to_method(req: &mut hyper::Request<Body>) -> Result<(),
     let mut json: Value = serde_json::from_slice(&whole_body)?;
 
     if let Some(method) = json.get_mut("method").as_deref().and_then(Value::as_str) {
-        let new_method = format!(
-            "starknet_V{}_{}_{}_{}",
-            version.0[0],
-            version.0[1],
-            version.0[2],
-            method.strip_prefix("starknet_").unwrap_or(method)
-        );
+        let new_method = format!("starknet_{}_{}", version.name(), method.strip_prefix("starknet_").unwrap_or(method));
 
         json["method"] = Value::String(new_method);
     } else {

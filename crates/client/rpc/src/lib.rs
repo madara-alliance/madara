@@ -4,6 +4,7 @@
 
 mod constants;
 mod errors;
+mod macros;
 pub mod providers;
 #[cfg(test)]
 pub mod test_utils;
@@ -11,7 +12,6 @@ mod types;
 pub mod utils;
 pub mod versions;
 
-use anyhow::bail;
 use jsonrpsee::RpcModule;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -25,7 +25,6 @@ use dp_convert::ToFelt;
 use errors::{StarknetRpcApiError, StarknetRpcResult};
 use providers::AddTransactionProvider;
 use utils::ResultExt;
-use versions::v0_7_1;
 
 /// A Starknet RPC server for Deoxys
 #[derive(Clone)]
@@ -93,25 +92,15 @@ impl Starknet {
     }
 }
 
+/// Returns the RpcModule merged with all the supported RPC versions.
 pub fn versioned_rpc_api(starknet: &Starknet, read: bool, write: bool, trace: bool) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
 
-    // TODO: Any better way to do that?
-    for rpc_version in dp_chain_config::SUPPORTED_RPC_VERSIONS.iter() {
-        match *rpc_version {
-            RpcVersion::RPC_VERSION_0_7_1 => {
-                if read {
-                    rpc_api.merge(v0_7_1::StarknetReadRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-                }
-                if write {
-                    rpc_api.merge(v0_7_1::StarknetWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-                }
-                if trace {
-                    rpc_api.merge(v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-                }
-            }
-            _ => bail!("Unrecognized RPC spec version: {} - check the [SUPPORTED_RPC_VERSIONS] constant.", rpc_version),
-        }
-    }
+    merge_rpc_versions!(
+        rpc_api, starknet, read, write, trace,
+        v0_7_1, // We can add new versions by adding the version module below
+                // , v0_8_0 (for example)
+    );
+
     Ok(rpc_api)
 }

@@ -8,7 +8,7 @@ lazy_static::lazy_static! {
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize, Hash)]
-pub struct RpcVersion(pub [u8; 3]);
+pub struct RpcVersion([u8; 3]);
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum RpcVersionError {
@@ -57,6 +57,14 @@ impl RpcVersion {
 
     pub fn endpoint_prefix(&self) -> String {
         format!("/rpc/v{}", self)
+    }
+
+    pub fn module(&self) -> String {
+        format!("v{}_{}_{}", self.0[0], self.0[1], self.0[2])
+    }
+
+    pub fn name(&self) -> String {
+        format!("V{}_{}_{}", self.0[0], self.0[1], self.0[2])
     }
 
     pub const RPC_VERSION_0_7_1: RpcVersion = RpcVersion([0, 7, 1]);

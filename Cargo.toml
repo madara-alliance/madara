@@ -125,6 +125,7 @@ alloy = { version = "0.2.0", features = [
 ] }
 
 # Other third party dependencies
+paste = "1.0.15"
 anyhow = "1.0"
 assert_matches = "1.5"
 async-trait = "0.1"
