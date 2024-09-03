@@ -1,13 +1,12 @@
 [package]
-authors.workspace = true
-description = "This crate is responsible to sync data"
-edition = "2021"
-homepage = "https://github.com/madara-alliance/madara"
-license = "MIT"
 name = "mc-sync"
-publish = false
-repository = "https://github.com/madara-alliance/madara"
-version = "0.7.0"
+description = "This crate is responsible to sync data"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
 
 [features]
 default = []
