@@ -1,4 +1,4 @@
-use dp_convert::felt_to_u64;
+use mp_convert::felt_to_u64;
 use starknet_types_core::felt::Felt;
 
 use crate::{

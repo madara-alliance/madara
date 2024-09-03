@@ -1,4 +1,4 @@
-use dp_block::DeoxysMaybePendingBlockInfo;
+use mp_block::MadaraMaybePendingBlockInfo;
 use starknet_core::types::BlockId;
 
 use crate::{errors::StarknetRpcResult, Starknet};
@@ -22,8 +22,8 @@ pub fn get_block_transaction_count(starknet: &Starknet, block_id: BlockId) -> St
     let block = starknet.get_block_info(&block_id)?;
 
     let tx_count = match block {
-        DeoxysMaybePendingBlockInfo::Pending(block) => block.tx_hashes.len(),
-        DeoxysMaybePendingBlockInfo::NotPending(block) => block.header.transaction_count as _,
+        MadaraMaybePendingBlockInfo::Pending(block) => block.tx_hashes.len(),
+        MadaraMaybePendingBlockInfo::NotPending(block) => block.header.transaction_count as _,
     };
 
     Ok(tx_count as _)

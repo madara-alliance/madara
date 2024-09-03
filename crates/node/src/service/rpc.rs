@@ -3,11 +3,14 @@ use std::sync::Arc;
 use jsonrpsee::server::ServerHandle;
 use tokio::task::JoinSet;
 
-use dc_db::DatabaseService;
-use dc_metrics::MetricsRegistry;
-use dc_rpc::{providers::AddTransactionProvider, versioned_rpc_api, Starknet};
-use dp_chain_config::ChainConfig;
-use dp_utils::service::Service;
+use mc_db::DatabaseService;
+use mc_metrics::MetricsRegistry;
+use mc_rpc::{
+    providers::AddTransactionProvider, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
+    StarknetWriteRpcApiServer,
+};
+use mp_chain_config::ChainConfig;
+use mp_utils::service::Service;
 
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};

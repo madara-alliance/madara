@@ -1,8 +1,8 @@
 use blockifier::execution::contract_class::ClassInfo;
 use blockifier::transaction::transaction_execution as btx;
-use dp_block::BlockId;
-use dp_class::to_blockifier_class;
-use dp_convert::ToFelt;
+use mp_block::BlockId;
+use mp_class::to_blockifier_class;
+use mp_convert::ToFelt;
 use starknet_api::transaction::{Transaction, TransactionHash};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
@@ -15,7 +15,7 @@ use crate::Starknet;
 pub(crate) fn to_blockifier_transactions(
     starknet: &Starknet,
     block_id: BlockId,
-    transaction: dp_transactions::Transaction,
+    transaction: mp_transactions::Transaction,
     tx_hash: &TransactionHash,
 ) -> StarknetRpcResult<btx::Transaction> {
     let transaction: Transaction = transaction.try_into().map_err(|_| StarknetRpcApiError::InternalServerError)?;

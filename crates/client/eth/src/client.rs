@@ -10,7 +10,7 @@ use alloy::{
 };
 use anyhow::{bail, Context};
 use bitvec::macros::internal::funty::Fundamental;
-use dc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
+use mc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
@@ -28,11 +28,11 @@ impl L1BlockMetrics {
     pub fn register(registry: &MetricsRegistry) -> Result<Self, PrometheusError> {
         Ok(Self {
             l1_block_number: registry
-                .register(Gauge::new("deoxys_l1_block_number", "Gauge for deoxys L1 block number")?)?,
+                .register(Gauge::new("madara_l1_block_number", "Gauge for madara L1 block number")?)?,
 
-            l1_gas_price_wei: registry.register(Gauge::new("deoxys_l1_gas_price", "Gauge for deoxys L1 gas price")?)?,
+            l1_gas_price_wei: registry.register(Gauge::new("madara_l1_gas_price", "Gauge for madara L1 gas price")?)?,
             l1_gas_price_strk: registry
-                .register(Gauge::new("deoxys_l1_gas_price_strk", "Gauge for deoxys L1 gas price in strk")?)?,
+                .register(Gauge::new("madara_l1_gas_price_strk", "Gauge for madara L1 gas price in strk")?)?,
         })
     }
 }
@@ -123,7 +123,7 @@ impl EthereumClient {
 pub mod eth_client_getter_test {
     use super::*;
     use alloy::primitives::U256;
-    use dc_metrics::MetricsService;
+    use mc_metrics::MetricsService;
     use rstest::*;
     use tokio;
 

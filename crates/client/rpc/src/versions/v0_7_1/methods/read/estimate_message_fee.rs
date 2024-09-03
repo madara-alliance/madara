@@ -4,8 +4,8 @@ use starknet_api::transaction::{Fee, TransactionHash};
 use starknet_core::types::{BlockId, FeeEstimate, MsgFromL1};
 use starknet_types_core::felt::Felt;
 
-use dc_exec::ExecutionContext;
-use dp_transactions::L1HandlerTransaction;
+use mc_exec::ExecutionContext;
+use mp_transactions::L1HandlerTransaction;
 
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;

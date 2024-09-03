@@ -38,7 +38,7 @@ cairo_venv
 run.sh
 password.txt
 nohup.out
-deoxys.log
+madara.log
 # pyenv
 .python-version
 

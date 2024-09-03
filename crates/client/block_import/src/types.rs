@@ -1,15 +1,15 @@
 //! Step 1. pre-validate: [`UnverifiedFullBlock`] ====[`crate::pre_validate`]===> [`PreValidatedBlock`]
 //! Step 2. verify_apply: [`PreValidatedBlock`] ====[`crate::verify_apply`]===> [`BlockImportResult`]
 
-use dp_block::{
+use mp_block::{
     header::{GasPrices, L1DataAvailabilityMode},
     Header,
 };
-use dp_chain_config::StarknetVersion;
-use dp_class::{ContractClass, ConvertedClass};
-use dp_receipt::TransactionReceipt;
-use dp_state_update::StateDiff;
-use dp_transactions::Transaction;
+use mp_chain_config::StarknetVersion;
+use mp_class::{ContractClass, ConvertedClass};
+use mp_receipt::TransactionReceipt;
+use mp_state_update::StateDiff;
+use mp_transactions::Transaction;
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 

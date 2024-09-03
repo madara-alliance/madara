@@ -1,10 +1,10 @@
 use crate::l2::L2SyncConfig;
 use crate::metrics::block_metrics::BlockMetrics;
 use anyhow::Context;
-use dc_db::{db_metrics::DbMetrics, DeoxysBackend};
-use dc_telemetry::TelemetryHandle;
-use dp_convert::ToFelt;
 use fetch::fetchers::FetchConfig;
+use mc_db::{db_metrics::DbMetrics, MadaraBackend};
+use mc_telemetry::TelemetryHandle;
+use mp_convert::ToFelt;
 use starknet_providers::SequencerGatewayProvider;
 use std::{sync::Arc, time::Duration};
 
@@ -15,7 +15,7 @@ pub mod utils;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn sync(
-    backend: &Arc<DeoxysBackend>,
+    backend: &Arc<MadaraBackend>,
     fetch_config: FetchConfig,
     starting_block: Option<u64>,
     backup_every_n_blocks: Option<u64>,
@@ -28,7 +28,7 @@ pub async fn sync(
         starting_block
     } else {
         backend
-                .get_block_n(&dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
+                .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
                 .context("getting sync tip")?
                 .map(|block_id| block_id + 1) // next block after the tip
                 .unwrap_or_default() as _ // or genesis

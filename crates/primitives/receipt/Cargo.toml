@@ -1,6 +1,6 @@
 [package]
-description = "Deoxys primitive for transaction receipt"
-name = "dp-receipt"
+description = "Madara primitive for transaction receipt"
+name = "mp-receipt"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,8 +13,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
-# Deoxys
-dp-convert = { workspace = true }
+# Madara
+mp-convert = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }

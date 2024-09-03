@@ -1,6 +1,6 @@
 [package]
-name = "dp-proc-macros"
-description = "Procedural macros"
+name = "m-proc-macros"
+description = "Madara procedural macros"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -61,11 +61,11 @@ rpath = false        # Disables adding rpath to the binary
 strip = "symbols"    # Removes debug info and symbold from final binary
 
 [workspace.package]
-authors = ["KasarLabs <https://github.com/KasarLabs>"]
-homepage = "https://kasar.io"
+authors = ["Madara <https://github.com/madara-alliance>"]
+homepage = "https://madara.build"
 edition = "2021"
-repository = "https://github.com/KasarLabs/deoxys/"
-version = "0.1.0"
+repository = "https://github.com/madara-alliance/madara/"
+version = "0.7.0"
 license = "Apache-2.0"
 
 [workspace.dependencies]
@@ -78,29 +78,29 @@ bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bon
   "std",
 ] }
 
-# Deoxys primtitives
-dp-block = { path = "crates/primitives/block", default-features = false }
-dp-convert = { path = "crates/primitives/convert", default-features = false }
-dp-transactions = { path = "crates/primitives/transactions", default-features = false }
-dp-class = { path = "crates/primitives/class", default-features = false }
-dp-receipt = { path = "crates/primitives/receipt", default-features = false }
-dp-state-update = { path = "crates/primitives/state_update", default-features = false }
-dp-utils = { path = "crates/primitives/utils", default-features = false }
-dp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
+# Madara proc macros
+m-proc-macros = { path = "crates/proc-macros", default-features = false }
 
-# Deoxys proc macros
-dp-proc-macros = { path = "crates/proc-macros", default-features = false }
+# Madara primtitives
+mp-block = { path = "crates/primitives/block", default-features = false }
+mp-convert = { path = "crates/primitives/convert", default-features = false }
+mp-transactions = { path = "crates/primitives/transactions", default-features = false }
+mp-class = { path = "crates/primitives/class", default-features = false }
+mp-receipt = { path = "crates/primitives/receipt", default-features = false }
+mp-state-update = { path = "crates/primitives/state_update", default-features = false }
+mp-utils = { path = "crates/primitives/utils", default-features = false }
+mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
 
-# Deoxys client
-dc-telemetry = { path = "crates/client/telemetry" }
-dc-db = { path = "crates/client/db" }
-dc-exec = { path = "crates/client/exec" }
-dc-rpc = { path = "crates/client/rpc" }
-dc-sync = { path = "crates/client/sync" }
-dc-eth = { path = "crates/client/eth" }
-dc-metrics = { path = "crates/client/metrics" }
-dc-mempool = { path = "crates/client/mempool" }
-dc-block-import = { path = "crates/client/block_import" }
+# Madara client
+mc-telemetry = { path = "crates/client/telemetry" }
+mc-db = { path = "crates/client/db" }
+mc-exec = { path = "crates/client/exec" }
+mc-rpc = { path = "crates/client/rpc" }
+mc-sync = { path = "crates/client/sync" }
+mc-eth = { path = "crates/client/eth" }
+mc-metrics = { path = "crates/client/metrics" }
+mc-mempool = { path = "crates/client/mempool" }
+mc-block-import = { path = "crates/client/block_import" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.0-rc5"

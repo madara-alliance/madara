@@ -85,8 +85,8 @@ echo -e "${RED}
 # Welcome message
 clear
 ascii_art
-echo -e "${GREEN}${BOLD}Welcome to Deoxys launcher!${NC}"
-echo -e "${GREEN}This script allows you to easily launch a Deoxys instance with your desired parameters.${NC}"
+echo -e "${GREEN}${BOLD}Welcome to Madara launcher!${NC}"
+echo -e "${GREEN}This script allows you to easily launch a Madara instance with your desired parameters.${NC}"
 echo -e "${GREEN}For more information, please refer to our documentation:${NC}"
 echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://kasar.io${NC}"
 # Save cursor position
@@ -203,7 +203,7 @@ fi
 
 
 echo -e "\n${GREEN}We will now proceed with the download and installation of the binary from GitHub:${NC}"
-echo -e "${CYAN}${GITHUB_ICON}${UNDERLINE}https://github.com/kasarlabs/deoxys${NC}"
+echo -e "${CYAN}${GITHUB_ICON}${UNDERLINE}https://github.com/madara-alliance/madara${NC}"
 
 echo -e "\n${YELLOW}${BOLD}Do you want to proceed? (yes/no)${NC}"
 read -p "> " PROCEED
@@ -242,7 +242,7 @@ fi
 
 # Install the binary from a given URL
 BIN_URL="https://example.com/path/to/your/binary"  # Replace with actual URL
-BIN_NAME="deoxys"  # Replace with the actual name of the binary
+BIN_NAME="madara"  # Replace with the actual name of the binary
 
 echo -e "\n${GREEN}Downloading the binary...${NC}"
 curl -L $BIN_URL -o /usr/local/bin/$BIN_NAME
@@ -284,9 +284,9 @@ tput rc
 tput ed
 
 # Ask for the database path
-echo -e "\n💾 ${YELLOW}${BOLD}Where would you like to store your database? (default: /tmp/deoxys)${NC}"
+echo -e "\n💾 ${YELLOW}${BOLD}Where would you like to store your database? (default: /tmp/madara)${NC}"
 read -p "> " BASE_PATH
-BASE_PATH=${BASE_PATH:-/tmp/deoxys}
+BASE_PATH=${BASE_PATH:-/tmp/madara}
 
 tput rc
 tput ed

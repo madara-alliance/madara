@@ -1,5 +1,5 @@
 use crate::cli::NetworkType;
-use dc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::fetch::fetchers::FetchConfig;
 use starknet_api::core::ChainId;
 use std::time::Duration;
 

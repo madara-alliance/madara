@@ -11,9 +11,9 @@ subshell() {
 
     source <(cargo llvm-cov show-env --export-prefix)
 
-    cargo build --bin deoxys --profile dev
+    cargo build --bin madara --profile dev
 
-    export COVERAGE_BIN=$(realpath target/debug/deoxys)
+    export COVERAGE_BIN=$(realpath target/debug/madara)
     cargo test --profile dev
 
     cargo llvm-cov report --lcov --output-path lcov.info

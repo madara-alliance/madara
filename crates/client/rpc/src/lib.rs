@@ -1,6 +1,6 @@
 //! Starknet RPC server API implementation
 //!
-//! It uses the deoxys client and backend in order to answer queries.
+//! It uses the madara client and backend in order to answer queries.
 
 mod constants;
 mod errors;
@@ -16,11 +16,10 @@ use jsonrpsee::RpcModule;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
-use dc_db::db_block_id::DbBlockIdResolvable;
-use dc_db::DeoxysBackend;
-use dp_block::{DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo};
-use dp_chain_config::{ChainConfig, RpcVersion};
-use dp_convert::ToFelt;
+use mc_db::db_block_id::DbBlockIdResolvable;
+use mc_db::MadaraBackend;
+use mp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
+use mp_chain_config::ChainConfig;
 
 use errors::{StarknetRpcApiError, StarknetRpcResult};
 use providers::AddTransactionProvider;
@@ -29,28 +28,28 @@ use utils::ResultExt;
 /// A Starknet RPC server for Deoxys
 #[derive(Clone)]
 pub struct Starknet {
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     chain_config: Arc<ChainConfig>,
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
 }
 
 impl Starknet {
     pub fn new(
-        backend: Arc<DeoxysBackend>,
+        backend: Arc<MadaraBackend>,
         chain_config: Arc<ChainConfig>,
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
     ) -> Self {
         Self { backend, add_transaction_provider, chain_config }
     }
 
-    pub fn clone_backend(&self) -> Arc<DeoxysBackend> {
+    pub fn clone_backend(&self) -> Arc<MadaraBackend> {
         Arc::clone(&self.backend)
     }
 
     pub fn get_block_info(
         &self,
         block_id: &impl DbBlockIdResolvable,
-    ) -> StarknetRpcResult<DeoxysMaybePendingBlockInfo> {
+    ) -> StarknetRpcResult<MadaraMaybePendingBlockInfo> {
         self.backend
             .get_block_info(block_id)
             .or_internal_server_error("Error getting block from storage")?
@@ -64,7 +63,7 @@ impl Starknet {
             .ok_or(StarknetRpcApiError::BlockNotFound)
     }
 
-    pub fn get_block(&self, block_id: &impl DbBlockIdResolvable) -> StarknetRpcResult<DeoxysMaybePendingBlock> {
+    pub fn get_block(&self, block_id: &impl DbBlockIdResolvable) -> StarknetRpcResult<MadaraMaybePendingBlock> {
         self.backend
             .get_block(block_id)
             .or_internal_server_error("Error getting block from storage")?
@@ -76,7 +75,7 @@ impl Starknet {
     }
 
     pub fn current_block_number(&self) -> StarknetRpcResult<u64> {
-        self.get_block_n(&dp_block::BlockId::Tag(dp_block::BlockTag::Latest))
+        self.get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
     }
 
     pub fn current_spec_version(&self) -> RpcVersion {

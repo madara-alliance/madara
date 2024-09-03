@@ -1,5 +1,10 @@
 use std::sync::Arc;
 
+use crate::errors::StarknetRpcApiError;
+use crate::errors::StarknetRpcResult;
+use crate::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
+use crate::Starknet;
+use mc_exec::ExecutionContext;
 use starknet_core::types::{BlockId, FunctionCall};
 use starknet_types_core::felt::Felt;
 

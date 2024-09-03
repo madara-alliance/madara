@@ -1,4 +1,4 @@
-use dp_block::{BlockId, BlockTag};
+use mp_block::{BlockId, BlockTag};
 use starknet_core::types::BlockHashAndNumber;
 
 use crate::errors::StarknetRpcResult;
@@ -27,28 +27,28 @@ mod tests {
 
     use super::*;
     use crate::{errors::StarknetRpcApiError, test_utils::rpc_test_setup};
-    use dc_db::DeoxysBackend;
-    use dp_block::{
-        header::PendingHeader, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo,
-        DeoxysPendingBlockInfo, Header,
+    use mc_db::MadaraBackend;
+    use mp_block::{
+        header::PendingHeader, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
+        MadaraMaybePendingBlockInfo, MadaraPendingBlockInfo,
     };
-    use dp_state_update::StateDiff;
+    use mp_state_update::StateDiff;
     use rstest::rstest;
     use starknet_core::types::Felt;
 
     #[rstest]
-    fn test_block_hash_and_number(rpc_test_setup: (Arc<DeoxysBackend>, Starknet)) {
+    fn test_block_hash_and_number(rpc_test_setup: (Arc<MadaraBackend>, Starknet)) {
         let (backend, rpc) = rpc_test_setup;
 
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::NotPending(DeoxysBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
                         header: Header { parent_block_hash: Felt::ZERO, block_number: 0, ..Default::default() },
                         block_hash: Felt::ONE,
                         tx_hashes: vec![],
                     }),
-                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
                 },
                 StateDiff::default(),
                 vec![],
@@ -59,13 +59,13 @@ mod tests {
 
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::NotPending(DeoxysBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
                         header: Header { parent_block_hash: Felt::ONE, block_number: 1, ..Default::default() },
                         block_hash: Felt::from_hex_unchecked("0x12345"),
                         tx_hashes: vec![],
                     }),
-                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
                 },
                 StateDiff::default(),
                 vec![],
@@ -80,12 +80,12 @@ mod tests {
         // pending block should not be taken into account
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::Pending(DeoxysPendingBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
                         header: PendingHeader { parent_block_hash: Felt::ZERO, ..Default::default() },
                         tx_hashes: vec![],
                     }),
-                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
                 },
                 StateDiff::default(),
                 vec![],
@@ -99,7 +99,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_no_block_hash_and_number(rpc_test_setup: (Arc<DeoxysBackend>, Starknet)) {
+    fn test_no_block_hash_and_number(rpc_test_setup: (Arc<MadaraBackend>, Starknet)) {
         let (backend, rpc) = rpc_test_setup;
 
         assert_eq!(block_hash_and_number(&rpc), Err(StarknetRpcApiError::BlockNotFound));
@@ -107,12 +107,12 @@ mod tests {
         // pending block should not be taken into account
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::Pending(DeoxysPendingBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
                         header: PendingHeader { parent_block_hash: Felt::ZERO, ..Default::default() },
                         tx_hashes: vec![],
                     }),
-                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
                 },
                 StateDiff::default(),
                 vec![],

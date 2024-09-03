@@ -9,8 +9,8 @@ use crate::utils::u256_to_felt;
 use alloy::primitives::{keccak256, FixedBytes, U256};
 use alloy::sol_types::SolValue;
 use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
-use dc_db::{l1_db::LastSyncedEventBlock, DeoxysBackend};
-use dp_utils::channel_wait_or_graceful_shutdown;
+use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
+use mp_utils::channel_wait_or_graceful_shutdown;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{
     Calldata, Fee, L1HandlerTransaction, Transaction, TransactionHash, TransactionVersion,
@@ -39,7 +39,7 @@ impl EthereumClient {
     }
 }
 
-pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &ChainId) -> anyhow::Result<()> {
+pub async fn sync(backend: &MadaraBackend, client: &EthereumClient, chain_id: &ChainId) -> anyhow::Result<()> {
     tracing::info!("⟠ Starting L1 Messages Syncing...");
 
     let last_synced_event_block = match backend.messaging_last_synced_l1_block_with_event() {
@@ -122,7 +122,7 @@ pub async fn sync(backend: &DeoxysBackend, client: &EthereumClient, chain_id: &C
 }
 
 async fn process_l1_message(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     event: &LogMessageToL2,
     l1_block_number: &Option<u64>,
     event_index: &Option<u64>,
@@ -228,9 +228,9 @@ mod tests {
         sol,
         transports::http::{Client, Http},
     };
-    use dc_db::DatabaseService;
-    use dc_metrics::MetricsService;
-    use dp_chain_config::ChainConfig;
+    use mc_db::DatabaseService;
+    use mc_metrics::MetricsService;
+    use mp_chain_config::ChainConfig;
     use rstest::*;
     use starknet_api::core::Nonce;
     use tempfile::TempDir;

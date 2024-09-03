@@ -14,4 +14,4 @@ COPY . .
 
 RUN cargo build --profile=production
 
-ENTRYPOINT ["./target/production/deoxys"]
+ENTRYPOINT ["./target/production/madara"]

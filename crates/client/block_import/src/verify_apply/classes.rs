@@ -2,9 +2,9 @@ use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
-use dc_db::DeoxysBackend;
-use dc_db::{bonsai_identifier, DeoxysStorageError};
-use dp_state_update::DeclaredClassItem;
+use mc_db::MadaraBackend;
+use mc_db::{bonsai_identifier, MadaraStorageError};
+use mp_state_update::DeclaredClassItem;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
@@ -13,10 +13,10 @@ use starknet_types_core::hash::{Poseidon, StarkHash};
 const CONTRACT_CLASS_HASH_VERSION: Felt = Felt::from_hex_unchecked("0x434f4e54524143545f434c4153535f4c4541465f5630");
 
 pub fn class_trie_root(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     declared_classes: &[DeclaredClassItem],
     block_number: u64,
-) -> Result<Felt, DeoxysStorageError> {
+) -> Result<Felt, MadaraStorageError> {
     let mut class_trie = backend.class_trie();
 
     let updates: Vec<_> = declared_classes
