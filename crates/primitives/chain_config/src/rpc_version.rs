@@ -3,7 +3,6 @@ use std::str::FromStr;
 
 lazy_static::lazy_static! {
     pub static ref SUPPORTED_RPC_VERSIONS: Vec<RpcVersion> = vec![
-        RpcVersion::RPC_VERSION_0_7_0,
         RpcVersion::RPC_VERSION_0_7_1,
     ];
 }
@@ -33,14 +32,15 @@ impl RpcVersion {
     pub fn from_request_path(path: &str) -> Result<Self, RpcVersionError> {
         let parts: Vec<&str> = path.split('/').collect();
 
-        // If we have an empty path or just "/" - fallback to latest rpc version
+        // If we have an empty path or just "/", fallback to latest rpc version
         if parts.len() == 1 || (parts.len() == 2 && parts[1].is_empty()) {
             return Ok(Self::RPC_VERSION_LATEST);
         }
 
-        // Check if the path follows the correct format, i.e. /rpc/v[version]
+        // Check if the path follows the correct format, i.e. /rpc/v[version].
+        // If not, fallback to the latest version
         if parts.len() != 3 || parts[1] != "rpc" || !parts[2].starts_with('v') {
-            return Err(RpcVersionError::InvalidPathSupplied);
+            return Ok(Self::RPC_VERSION_LATEST);
         }
 
         let version_str = &parts[2][1..]; // without the 'v' prefix
@@ -59,7 +59,6 @@ impl RpcVersion {
         format!("/rpc/v{}", self)
     }
 
-    pub const RPC_VERSION_0_7_0: RpcVersion = RpcVersion([0, 7, 0]);
     pub const RPC_VERSION_0_7_1: RpcVersion = RpcVersion([0, 7, 1]);
     pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_7_1;
 }

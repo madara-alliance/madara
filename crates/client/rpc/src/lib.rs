@@ -99,9 +99,6 @@ pub fn versioned_rpc_api(starknet: &Starknet, read: bool, write: bool, trace: bo
     // TODO: Any better way to do that?
     for rpc_version in dp_chain_config::SUPPORTED_RPC_VERSIONS.iter() {
         match *rpc_version {
-            RpcVersion::RPC_VERSION_0_7_0 => {
-                // TODO: Implement version 0.7.0 & expose it
-            }
             RpcVersion::RPC_VERSION_0_7_1 => {
                 if read {
                     rpc_api.merge(v0_7_1::StarknetReadRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;

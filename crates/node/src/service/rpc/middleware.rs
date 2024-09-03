@@ -1,6 +1,8 @@
 //! JSON-RPC specific middleware.
 
+use std::future::Future;
 use std::num::NonZeroU32;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -11,11 +13,11 @@ use governor::clock::{Clock, DefaultClock, QuantaClock};
 use governor::middleware::NoOpMiddleware;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Jitter, Quota, RateLimiter};
-use hyper::{Body, Response, StatusCode};
+use hyper::{Body, Response};
 use jsonrpsee::server::middleware::rpc::RpcServiceT;
 use jsonrpsee::types::{ErrorObject, Request};
 use jsonrpsee::MethodResponse;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tower::{Layer, Service};
 
 pub use super::metrics::{Metrics, RpcMetrics};
@@ -213,7 +215,7 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
@@ -226,22 +228,33 @@ where
             match add_rpc_version_to_method(&mut req).await {
                 Ok(()) => inner.call(req).await,
                 Err(e) => {
-                    let (status, message) = match e {
+                    let error = match e {
                         VersionMiddlewareError::InvalidUrlFormat => {
-                            (StatusCode::BAD_REQUEST, "Invalid URL format. Use /rpc/v{version}")
+                            ErrorObject::owned(-32600, "Invalid URL format. Use /rpc/v{version}", None::<()>)
                         }
                         VersionMiddlewareError::InvalidVersion => {
-                            (StatusCode::BAD_REQUEST, "Invalid or unsupported RPC version specified")
+                            ErrorObject::owned(-32600, "Invalid RPC version specified", None::<()>)
                         }
                         VersionMiddlewareError::InvalidRequestFormat => {
-                            (StatusCode::BAD_REQUEST, "Invalid JSON-RPC request format")
+                            ErrorObject::owned(-32600, "Invalid JSON-RPC request format", None::<()>)
                         }
-                        _ => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+                        VersionMiddlewareError::UnsupportedVersion => {
+                            ErrorObject::owned(-32601, "Unsupported RPC version specified", None::<()>)
+                        }
+                        _ => ErrorObject::owned(-32603, "Internal error", None::<()>),
                     };
+
+                    let body = json!({
+                        "jsonrpc": "2.0",
+                        "error": error,
+                        "id": 0
+                    })
+                    .to_string();
+
                     Ok(Response::builder()
-                        .status(status)
-                        .body(Body::from(message))
-                        .expect("Failed to create error response"))
+                        .header("Content-Type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap_or_else(|_| Response::new(Body::from("Internal server error"))))
                 }
             }
         })
