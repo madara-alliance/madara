@@ -11,17 +11,21 @@ mod types;
 pub mod utils;
 pub mod versions;
 
+use anyhow::bail;
+use jsonrpsee::RpcModule;
+use starknet_types_core::felt::Felt;
+use std::sync::Arc;
+
 use dc_db::db_block_id::DbBlockIdResolvable;
 use dc_db::DeoxysBackend;
 use dp_block::{DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo};
 use dp_chain_config::{ChainConfig, RpcVersion};
 use dp_convert::ToFelt;
+
 use errors::{StarknetRpcApiError, StarknetRpcResult};
 use providers::AddTransactionProvider;
-
-use starknet_types_core::felt::Felt;
-use std::sync::Arc;
 use utils::ResultExt;
+use versions::v0_7_1;
 
 /// A Starknet RPC server for Deoxys
 #[derive(Clone)]
@@ -87,4 +91,30 @@ impl Starknet {
             .or_internal_server_error("Error getting L1 last confirmed block")?
             .unwrap_or_default())
     }
+}
+
+pub fn versioned_rpc_api(starknet: &Starknet, read: bool, write: bool, trace: bool) -> anyhow::Result<RpcModule<()>> {
+    let mut rpc_api = RpcModule::new(());
+
+    // TODO: Any better way to do that?
+    for rpc_version in dp_chain_config::SUPPORTED_RPC_VERSIONS.iter() {
+        match *rpc_version {
+            RpcVersion::RPC_VERSION_0_7_0 => {
+                // TODO: Implement version 0.7.0 & expose it
+            }
+            RpcVersion::RPC_VERSION_0_7_1 => {
+                if read {
+                    rpc_api.merge(v0_7_1::StarknetReadRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+                }
+                if write {
+                    rpc_api.merge(v0_7_1::StarknetWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+                }
+                if trace {
+                    rpc_api.merge(v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+                }
+            }
+            _ => bail!("Unrecognized RPC spec version: {} - check the [SUPPORTED_RPC_VERSIONS] constant.", rpc_version),
+        }
+    }
+    Ok(rpc_api)
 }

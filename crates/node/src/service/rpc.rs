@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
-use anyhow::bail;
 use jsonrpsee::server::ServerHandle;
-use jsonrpsee::RpcModule;
 use tokio::task::JoinSet;
 
 use dc_db::DatabaseService;
 use dc_metrics::MetricsRegistry;
-use dc_rpc::{providers::AddTransactionProvider, versions::v0_7_1, Starknet};
-use dp_chain_config::{ChainConfig, RpcVersion};
+use dc_rpc::{providers::AddTransactionProvider, versioned_rpc_api, Starknet};
+use dp_chain_config::ChainConfig;
 use dp_utils::service::Service;
 
 use metrics::RpcMetrics;
@@ -49,12 +47,7 @@ impl RpcService {
             }
         };
         let (read, write, trace) = (rpcs, rpcs, rpcs);
-
         let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider);
-
-        let mut rpc_api = RpcModule::new(());
-        configure_with_supported_apis(&mut rpc_api, &starknet, read, write, trace)?;
-
         let metrics = RpcMetrics::register(&metrics_handle)?;
 
         Ok(Self {
@@ -66,7 +59,7 @@ impl RpcService {
                 max_payload_out_mb: config.rpc_max_response_size,
                 max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
                 message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
-                rpc_api,
+                rpc_api: versioned_rpc_api(&starknet, read, write, trace)?,
                 metrics,
                 cors: config.cors(),
                 rate_limit: config.rpc_rate_limit,
@@ -76,34 +69,6 @@ impl RpcService {
             server_handle: None,
         })
     }
-}
-
-fn configure_with_supported_apis(
-    rpc_api: &mut jsonrpsee::RpcModule<()>,
-    starknet: &Starknet,
-    read: bool,
-    write: bool,
-    trace: bool,
-) -> anyhow::Result<()> {
-    for rpc_version in dp_chain_config::SUPPORTED_RPC_VERSIONS.iter() {
-        match *rpc_version {
-            RpcVersion::RPC_VERSION_0_6_0 => todo!(),
-            RpcVersion::RPC_VERSION_0_7_0 => todo!(),
-            RpcVersion::RPC_VERSION_0_7_1 => {
-                if read {
-                    rpc_api.merge(v0_7_1::StarknetReadRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-                }
-                if write {
-                    rpc_api.merge(v0_7_1::StarknetWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-                }
-                if trace {
-                    rpc_api.merge(v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-                }
-            }
-            _ => bail!("Unrecognized RPC spec version: {}", rpc_version),
-        }
-    }
-    Ok(())
 }
 
 #[async_trait::async_trait]

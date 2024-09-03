@@ -3,14 +3,13 @@ use std::str::FromStr;
 
 lazy_static::lazy_static! {
     pub static ref SUPPORTED_RPC_VERSIONS: Vec<RpcVersion> = vec![
-        RpcVersion::RPC_VERSION_0_6_0,
         RpcVersion::RPC_VERSION_0_7_0,
         RpcVersion::RPC_VERSION_0_7_1,
     ];
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize, Hash)]
-pub struct RpcVersion([u8; 3]);
+pub struct RpcVersion(pub [u8; 3]);
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum RpcVersionError {
@@ -18,6 +17,12 @@ pub enum RpcVersionError {
     InvalidNumber(#[from] std::num::ParseIntError),
     #[error("Too many components in version: {0}")]
     TooManyComponents(usize),
+    #[error("Invalid request path specified, could not extract a version")]
+    InvalidPathSupplied,
+    #[error("Invalid version specified")]
+    InvalidVersion,
+    #[error("Unsupported version specified")]
+    UnsupportedVersion,
 }
 
 impl RpcVersion {
@@ -25,11 +30,35 @@ impl RpcVersion {
         RpcVersion([major, minor, patch])
     }
 
+    pub fn from_request_path(path: &str) -> Result<Self, RpcVersionError> {
+        let parts: Vec<&str> = path.split('/').collect();
+
+        // If we have an empty path or just "/" - fallback to latest rpc version
+        if parts.len() == 1 || (parts.len() == 2 && parts[1].is_empty()) {
+            return Ok(Self::RPC_VERSION_LATEST);
+        }
+
+        // Check if the path follows the correct format, i.e. /rpc/v[version]
+        if parts.len() != 3 || parts[1] != "rpc" || !parts[2].starts_with('v') {
+            return Err(RpcVersionError::InvalidPathSupplied);
+        }
+
+        let version_str = &parts[2][1..]; // without the 'v' prefix
+        if let Ok(version) = RpcVersion::from_str(version_str) {
+            if SUPPORTED_RPC_VERSIONS.contains(&version) {
+                Ok(version)
+            } else {
+                Err(RpcVersionError::UnsupportedVersion)
+            }
+        } else {
+            Err(RpcVersionError::InvalidVersion)
+        }
+    }
+
     pub fn endpoint_prefix(&self) -> String {
         format!("/rpc/v{}", self)
     }
 
-    pub const RPC_VERSION_0_6_0: RpcVersion = RpcVersion([0, 6, 0]);
     pub const RPC_VERSION_0_7_0: RpcVersion = RpcVersion([0, 7, 0]);
     pub const RPC_VERSION_0_7_1: RpcVersion = RpcVersion([0, 7, 1]);
     pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_7_1;
@@ -107,9 +136,11 @@ mod tests {
         let version_2 = RpcVersion::new(1, 2, 4);
         let version_3 = RpcVersion::new(1, 3, 0);
         let version_4 = RpcVersion::new(2, 0, 0);
+        let version_5 = RpcVersion::new(2, 0, 0);
 
         assert!(version_1 < version_2);
         assert!(version_2 < version_3);
         assert!(version_3 < version_4);
+        assert!(version_4 == version_5);
     }
 }
