@@ -1,7 +1,7 @@
 use starknet_core::types::{BlockId, MaybePendingBlockWithTxHashes};
 
 use crate::errors::StarknetRpcResult;
-use dp_block::DeoxysMaybePendingBlockInfo;
+use mp_block::MadaraMaybePendingBlockInfo;
 use starknet_core::types::{BlockStatus, BlockWithTxHashes, PendingBlockWithTxHashes};
 
 use crate::Starknet;
@@ -28,7 +28,7 @@ pub fn get_block_with_tx_hashes(
     let block_txs_hashes = block.tx_hashes().to_vec();
 
     match block {
-        DeoxysMaybePendingBlockInfo::Pending(block) => {
+        MadaraMaybePendingBlockInfo::Pending(block) => {
             Ok(MaybePendingBlockWithTxHashes::PendingBlock(PendingBlockWithTxHashes {
                 transactions: block_txs_hashes,
                 parent_hash: block.header.parent_block_hash,
@@ -40,7 +40,7 @@ pub fn get_block_with_tx_hashes(
                 starknet_version: block.header.protocol_version.to_string(),
             }))
         }
-        DeoxysMaybePendingBlockInfo::NotPending(block) => {
+        MadaraMaybePendingBlockInfo::NotPending(block) => {
             let status = if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
                 BlockStatus::AcceptedOnL1
             } else {

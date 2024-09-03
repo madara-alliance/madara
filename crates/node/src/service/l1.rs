@@ -1,12 +1,12 @@
 use crate::cli::l1::L1SyncParams;
 use alloy::primitives::Address;
 use anyhow::Context;
-use dc_db::{DatabaseService, DeoxysBackend};
-use dc_eth::client::{EthereumClient, L1BlockMetrics};
-use dc_mempool::GasPriceProvider;
-use dc_metrics::MetricsRegistry;
-use dp_convert::ToFelt;
-use dp_utils::service::Service;
+use mc_db::{DatabaseService, MadaraBackend};
+use mc_eth::client::{EthereumClient, L1BlockMetrics};
+use mc_mempool::GasPriceProvider;
+use mc_metrics::MetricsRegistry;
+use mp_convert::ToFelt;
+use mp_utils::service::Service;
 use primitive_types::H160;
 use starknet_api::core::ChainId;
 use std::sync::Arc;
@@ -15,7 +15,7 @@ use tokio::task::JoinSet;
 
 #[derive(Clone)]
 pub struct L1SyncService {
-    db_backend: Arc<DeoxysBackend>,
+    db_backend: Arc<MadaraBackend>,
     eth_client: Option<EthereumClient>,
     l1_gas_provider: GasPriceProvider,
     chain_id: ChainId,
@@ -60,7 +60,7 @@ impl L1SyncService {
                 .clone()
                 .context("EthereumClient is required to start the l1 sync service but not provided.")?;
             // running at-least once before the block production service
-            dc_eth::l1_gas_price::gas_price_worker(&eth_client, l1_gas_provider.clone(), gas_price_poll_ms).await?;
+            mc_eth::l1_gas_price::gas_price_worker(&eth_client, l1_gas_provider.clone(), gas_price_poll_ms).await?;
         }
 
         Ok(Self {
@@ -84,7 +84,7 @@ impl Service for L1SyncService {
 
             let db_backend = Arc::clone(&self.db_backend);
             join_set.spawn(async move {
-                dc_eth::sync::l1_sync_worker(
+                mc_eth::sync::l1_sync_worker(
                     &db_backend,
                     &eth_client,
                     chain_id.to_felt(),

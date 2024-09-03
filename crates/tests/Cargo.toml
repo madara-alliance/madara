@@ -1,5 +1,5 @@
 [package]
-name = "dc-e2e-tests"
+name = "mc-e2e-tests"
 authors.workspace = true
 homepage.workspace = true
 edition.workspace = true

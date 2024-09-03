@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 
-use dp_class::{ClassInfo, CompiledClass};
+use mp_class::{ClassInfo, CompiledClass};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use rocksdb::WriteOptions;
 use starknet_types_core::felt::Felt;
 
 use crate::{
     db_block_id::{DbBlockId, DbBlockIdResolvable},
-    Column, DatabaseExt, DeoxysBackend, DeoxysStorageError, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE,
+    Column, DatabaseExt, MadaraBackend, MadaraStorageError, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE,
 };
 
 const LAST_KEY: &[u8] = &[0xFF; 64];
@@ -18,14 +18,14 @@ struct ClassInfoWithBlockNumber {
     block_id: DbBlockId,
 }
 
-impl DeoxysBackend {
+impl MadaraBackend {
     fn class_db_get_encoded_kv<V: serde::de::DeserializeOwned>(
         &self,
         is_pending: bool,
         key: &Felt,
         pending_col: Column,
         nonpending_col: Column,
-    ) -> Result<Option<V>, DeoxysStorageError> {
+    ) -> Result<Option<V>, MadaraStorageError> {
         // todo: smallint here to avoid alloc
         log::debug!("get encoded {key:#x}");
         let key_encoded = bincode::serialize(key)?;
@@ -50,7 +50,7 @@ impl DeoxysBackend {
         &self,
         id: &impl DbBlockIdResolvable,
         class_hash: &Felt,
-    ) -> Result<Option<ClassInfo>, DeoxysStorageError> {
+    ) -> Result<Option<ClassInfo>, MadaraStorageError> {
         let Some(requested_id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
         log::debug!("class info {requested_id:?} {class_hash:#x}");
@@ -80,7 +80,7 @@ impl DeoxysBackend {
         Ok(Some(info.class_info))
     }
 
-    pub fn contains_class(&self, id: &impl DbBlockIdResolvable, class_hash: &Felt) -> Result<bool, DeoxysStorageError> {
+    pub fn contains_class(&self, id: &impl DbBlockIdResolvable, class_hash: &Felt) -> Result<bool, MadaraStorageError> {
         // TODO(perf): make fast path, this only needs one db contains() call and no deserialization in most cases (block id pending/latest)
         Ok(self.get_class_info(id, class_hash)?.is_some())
     }
@@ -89,7 +89,7 @@ impl DeoxysBackend {
         &self,
         id: &impl DbBlockIdResolvable,
         class_hash: &Felt,
-    ) -> Result<Option<(ClassInfo, CompiledClass)>, DeoxysStorageError> {
+    ) -> Result<Option<(ClassInfo, CompiledClass)>, MadaraStorageError> {
         let Some(id) = id.resolve_db_block_id(self)? else { return Ok(None) };
         let Some(info) = self.get_class_info(&id, class_hash)? else { return Ok(None) };
 
@@ -101,7 +101,7 @@ impl DeoxysBackend {
                 Column::PendingClassCompiled,
                 Column::ClassCompiled,
             )?
-            .ok_or(DeoxysStorageError::InconsistentStorage("Class compiled not found while class info is".into()))?;
+            .ok_or(MadaraStorageError::InconsistentStorage("Class compiled not found while class info is".into()))?;
 
         Ok(Some((info, compiled_class)))
     }
@@ -114,7 +114,7 @@ impl DeoxysBackend {
         class_compiled: &[(Felt, CompiledClass)],
         col_info: Column,
         col_compiled: Column,
-    ) -> Result<(), DeoxysStorageError> {
+    ) -> Result<(), MadaraStorageError> {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 
@@ -150,7 +150,7 @@ impl DeoxysBackend {
                     );
                 }
                 self.db.write_opt(batch, &writeopts)?;
-                Ok::<_, DeoxysStorageError>(())
+                Ok::<_, MadaraStorageError>(())
             },
         )?;
 
@@ -167,7 +167,7 @@ impl DeoxysBackend {
                     batch.put_cf(col, &key_bin, bincode::serialize(&value)?);
                 }
                 self.db.write_opt(batch, &writeopts)?;
-                Ok::<_, DeoxysStorageError>(())
+                Ok::<_, MadaraStorageError>(())
             },
         )?;
 
@@ -180,7 +180,7 @@ impl DeoxysBackend {
         block_number: u64,
         class_infos: &[(Felt, ClassInfo)],
         class_compiled: &[(Felt, CompiledClass)],
-    ) -> Result<(), DeoxysStorageError> {
+    ) -> Result<(), MadaraStorageError> {
         self.store_classes(
             DbBlockId::BlockN(block_number),
             class_infos,
@@ -195,7 +195,7 @@ impl DeoxysBackend {
         &self,
         class_infos: &[(Felt, ClassInfo)],
         class_compiled: &[(Felt, CompiledClass)],
-    ) -> Result<(), DeoxysStorageError> {
+    ) -> Result<(), MadaraStorageError> {
         self.store_classes(
             DbBlockId::Pending,
             class_infos,
@@ -205,7 +205,7 @@ impl DeoxysBackend {
         )
     }
 
-    pub(crate) fn class_db_clear_pending(&self) -> Result<(), DeoxysStorageError> {
+    pub(crate) fn class_db_clear_pending(&self) -> Result<(), MadaraStorageError> {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 

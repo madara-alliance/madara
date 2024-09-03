@@ -1,4 +1,4 @@
-use dp_block::{BlockId, BlockTag};
+use mp_block::{BlockId, BlockTag};
 use starknet_core::types::{SyncStatus, SyncStatusType};
 
 use crate::errors::StarknetRpcResult;
@@ -13,7 +13,7 @@ use crate::Starknet;
 ///
 /// ### Returns
 ///
-/// * `Syncing` - An Enum that can either be a `dc_rpc_core::SyncStatus` struct representing the
+/// * `Syncing` - An Enum that can either be a `mc_rpc_core::SyncStatus` struct representing the
 ///   sync status, or a `Boolean` (`false`) indicating that the node is not currently synchronizing.
 pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncStatusType> {
     // obtain best seen (highest) block number

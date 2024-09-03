@@ -2,7 +2,7 @@ use crate::Column;
 use std::borrow::Cow;
 
 #[derive(thiserror::Error, Debug)]
-pub enum DeoxysStorageError {
+pub enum MadaraStorageError {
     #[error("Bonsai error: {0}")]
     BonsaiStorageError(bonsai_trie::BonsaiStorageError<DbError>),
     #[error("Rocksdb error: {0:#}")]
@@ -23,9 +23,9 @@ pub enum DeoxysStorageError {
     PendingCreationNoGenesis,
 }
 
-impl From<bonsai_trie::BonsaiStorageError<DbError>> for DeoxysStorageError {
+impl From<bonsai_trie::BonsaiStorageError<DbError>> for MadaraStorageError {
     fn from(e: bonsai_trie::BonsaiStorageError<DbError>) -> Self {
-        DeoxysStorageError::BonsaiStorageError(e)
+        MadaraStorageError::BonsaiStorageError(e)
     }
 }
 

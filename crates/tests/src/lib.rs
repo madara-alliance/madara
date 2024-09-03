@@ -169,7 +169,7 @@ impl MadaraCmdBuilder {
     }
 
     pub fn run(self) -> MadaraCmd {
-        let target_bin = option_env!("COVERAGE_BIN").unwrap_or("../../target/debug/deoxys");
+        let target_bin = option_env!("COVERAGE_BIN").unwrap_or("../../target/debug/madara");
         let target_bin = PathBuf::from_str(target_bin).expect("target bin is not a path");
         if !target_bin.exists() {
             panic!("No binary to run: {:?}", target_bin)

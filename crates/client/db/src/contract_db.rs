@@ -15,7 +15,7 @@ use starknet_core::types::Felt;
 
 use crate::{
     db_block_id::{DbBlockId, DbBlockIdResolvable},
-    Column, DatabaseExt, DeoxysBackend, DeoxysStorageError, WriteBatchWithTransaction, DB, DB_UPDATES_BATCH_SIZE,
+    Column, DatabaseExt, MadaraBackend, MadaraStorageError, WriteBatchWithTransaction, DB, DB_UPDATES_BATCH_SIZE,
 };
 
 // NB: Columns cf needs prefix extractor of these length during creation
@@ -32,7 +32,7 @@ fn make_storage_key_prefix(contract_address: Felt, storage_key: Felt) -> [u8; 64
     key
 }
 
-impl DeoxysBackend {
+impl MadaraBackend {
     fn resolve_history_kv<K: serde::Serialize, V: serde::de::DeserializeOwned, B: AsRef<[u8]>>(
         &self,
         id: &impl DbBlockIdResolvable,
@@ -40,7 +40,7 @@ impl DeoxysBackend {
         nonpending_col: Column,
         k: &K,
         make_bin_prefix: impl FnOnce(&K) -> B,
-    ) -> Result<Option<V>, DeoxysStorageError> {
+    ) -> Result<Option<V>, MadaraStorageError> {
         let Some(id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
         let block_n = match id {
@@ -62,7 +62,7 @@ impl DeoxysBackend {
 
         // We try to find history values.
 
-        let block_n = u32::try_from(block_n).map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
+        let block_n = u32::try_from(block_n).map_err(|_| MadaraStorageError::InvalidBlockNumber)?;
         let bin_prefix = make_bin_prefix(k);
         let start_at = [bin_prefix.as_ref(), &block_n.to_be_bytes() as &[u8]].concat();
 
@@ -92,7 +92,7 @@ impl DeoxysBackend {
         &self,
         id: &impl DbBlockIdResolvable,
         contract_addr: &Felt,
-    ) -> Result<bool, DeoxysStorageError> {
+    ) -> Result<bool, MadaraStorageError> {
         // TODO(perf): use rocksdb key_may_exists bloom filters
         Ok(self.get_contract_class_hash_at(id, contract_addr)?.is_some())
     }
@@ -101,7 +101,7 @@ impl DeoxysBackend {
         &self,
         id: &impl DbBlockIdResolvable,
         contract_addr: &Felt,
-    ) -> Result<Option<Felt>, DeoxysStorageError> {
+    ) -> Result<Option<Felt>, MadaraStorageError> {
         self.resolve_history_kv(
             id,
             Column::PendingContractToClassHashes,
@@ -115,7 +115,7 @@ impl DeoxysBackend {
         &self,
         id: &impl DbBlockIdResolvable,
         contract_addr: &Felt,
-    ) -> Result<Option<Felt>, DeoxysStorageError> {
+    ) -> Result<Option<Felt>, MadaraStorageError> {
         self.resolve_history_kv(id, Column::PendingContractToNonces, Column::ContractToNonces, contract_addr, |k| {
             k.to_bytes_be()
         })
@@ -126,7 +126,7 @@ impl DeoxysBackend {
         id: &impl DbBlockIdResolvable,
         contract_addr: &Felt,
         key: &Felt,
-    ) -> Result<Option<Felt>, DeoxysStorageError> {
+    ) -> Result<Option<Felt>, MadaraStorageError> {
         self.resolve_history_kv(
             id,
             Column::PendingContractStorage,
@@ -143,8 +143,8 @@ impl DeoxysBackend {
         contract_class_updates: &[(Felt, Felt)],
         contract_nonces_updates: &[(Felt, Felt)],
         contract_kv_updates: &[((Felt, Felt), Felt)],
-    ) -> Result<(), DeoxysStorageError> {
-        let block_number = u32::try_from(block_number).map_err(|_| DeoxysStorageError::InvalidBlockNumber)?;
+    ) -> Result<(), MadaraStorageError> {
+        let block_number = u32::try_from(block_number).map_err(|_| MadaraStorageError::InvalidBlockNumber)?;
 
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
@@ -155,7 +155,7 @@ impl DeoxysBackend {
             col: &Arc<BoundColumnFamily>,
             block_number: u32,
             chunk: impl IntoIterator<Item = (impl AsRef<[u8]>, Felt)>,
-        ) -> Result<(), DeoxysStorageError> {
+        ) -> Result<(), MadaraStorageError> {
             let mut batch = WriteBatchWithTransaction::default();
             for (key, value) in chunk {
                 // TODO: find a way to avoid this allocation
@@ -205,7 +205,7 @@ impl DeoxysBackend {
         contract_class_updates: &[(Felt, Felt)],
         contract_nonces_updates: &[(Felt, Felt)],
         contract_kv_updates: &[((Felt, Felt), Felt)],
-    ) -> Result<(), DeoxysStorageError> {
+    ) -> Result<(), MadaraStorageError> {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 
@@ -216,7 +216,7 @@ impl DeoxysBackend {
             writeopts: &WriteOptions,
             col: &Arc<BoundColumnFamily>,
             chunk: impl IntoIterator<Item = (impl Serialize, Felt)>,
-        ) -> Result<(), DeoxysStorageError> {
+        ) -> Result<(), MadaraStorageError> {
             let mut batch = WriteBatchWithTransaction::default();
             for (key, value) in chunk {
                 // TODO: find a way to avoid this allocation
@@ -242,7 +242,7 @@ impl DeoxysBackend {
         Ok(())
     }
 
-    pub(crate) fn contract_db_clear_pending(&self) -> Result<(), DeoxysStorageError> {
+    pub(crate) fn contract_db_clear_pending(&self) -> Result<(), MadaraStorageError> {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 
