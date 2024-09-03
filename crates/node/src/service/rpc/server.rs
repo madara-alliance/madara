@@ -221,7 +221,6 @@ pub(crate) fn host_filtering(enabled: bool, addr: Option<SocketAddr>) -> Option<
     }
 }
 
-// TODO(akhercha): Not so valid anymore with versioning.
 pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: RpcModule<M>) -> RpcModule<M> {
     let mut available_methods = rpc_api.method_names().collect::<Vec<_>>();
     // The "rpc_methods" is defined below and we want it to be part of the reported methods.
