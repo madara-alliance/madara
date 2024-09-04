@@ -1,4 +1,5 @@
 use assert_matches::assert_matches;
+use mp_receipt::{ExecutionResources, FeePayment, TransactionReceipt};
 use mp_transactions::Transaction;
 use std::sync::Arc;
 
@@ -171,7 +172,16 @@ async fn import_block_with_txs() {
                 nonce: Felt::ZERO,
             },
         ))],
-        receipts: vec![],
+        receipts: vec![TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+            transaction_hash: Felt::from_hex_unchecked(
+                "0x4cab3e98facc3c319e88dc594e3b16324106609179275c14d499d95d96f666e",
+            ),
+            actual_fee: FeePayment::default(),
+            messages_sent: vec![],
+            events: vec![],
+            execution_resources: ExecutionResources::default(),
+            execution_result: mp_receipt::ExecutionResult::default(),
+        })],
         declared_classes: vec![],
         commitments: Default::default(),
     };
@@ -186,4 +196,43 @@ async fn import_block_with_txs() {
         block_importer.pre_validate(block, validation.clone()).await.expect("pre_validate failed");
     let block_import_result =
         block_importer.verify_apply(pre_validated_block, validation).await.expect("verify_apply failed");
+
+    let expected_header = Header {
+        parent_block_hash: Felt::ZERO,
+        block_number: 0,
+        global_state_root: Felt::ZERO,
+        sequencer_address: Felt::ONE,
+        block_timestamp: 12345,
+        transaction_count: 1,
+        transaction_commitment: Felt::from_hex_unchecked(
+            "0x1e8a951b99c806a8e7873eab2583e786424bd6a4d9ad614be1f03e21d48a0e8",
+        ),
+        event_count: 0,
+        event_commitment: Felt::ZERO,
+        state_diff_length: 0,
+        state_diff_commitment: Felt::from_hex_unchecked(
+            "0x49973925542c74a9d9ff0efaa98c61e1225d0aedb708092433cbbb20836d30a",
+        ),
+        receipt_commitment: Felt::from_hex_unchecked(
+            "0x2879fdc4d9521339b5015d67494aa183352f76d4a441f64bbde534f14c8be3a",
+        ),
+        protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+        l1_gas_price: GasPrices::default(),
+        l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
+    };
+
+    // TODO: check values
+    let expected_block_import_result = BlockImportResult {
+        header: expected_header.clone(),
+        block_hash: Felt::from_hex_unchecked("0x103d1b1c094127c8a82756f912877dae9df868df1a8a96f40b975a6281b3fac"),
+    };
+
+    // Check backend update
+    let block = backend.get_block(&DbBlockId::BlockN(0)).expect("get_block failed");
+    assert!(block.is_some());
+    assert_matches!(block.clone().unwrap().info, MadaraMaybePendingBlockInfo::NotPending(_));
+    assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 1);
+    assert_eq!(block.unwrap().info.as_nonpending().unwrap().header, expected_header);
+
+    assert_eq!(block_import_result, expected_block_import_result);
 }
