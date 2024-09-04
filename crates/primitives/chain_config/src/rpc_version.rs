@@ -30,6 +30,7 @@ impl RpcVersion {
     }
 
     pub fn from_request_path(path: &str) -> Result<Self, RpcVersionError> {
+        let path = path.to_ascii_lowercase();
         let parts: Vec<&str> = path.split('/').collect();
 
         // If we have an empty path or just "/", fallback to latest rpc version
@@ -44,6 +45,7 @@ impl RpcVersion {
         }
 
         let version_str = &parts[2][1..]; // without the 'v' prefix
+        println!("Version: {}", version_str);
         if let Ok(version) = RpcVersion::from_str(version_str) {
             if SUPPORTED_RPC_VERSIONS.contains(&version) {
                 Ok(version)
@@ -73,7 +75,7 @@ impl RpcVersion {
 
 impl std::fmt::Display for RpcVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}.{}", self.0[0], self.0[1], self.0[2])?;
+        write!(f, "{}_{}_{}", self.0[0], self.0[1], self.0[2])?;
         Ok(())
     }
 }
@@ -89,7 +91,7 @@ impl FromStr for RpcVersion {
     type Err = RpcVersionError;
 
     fn from_str(version_str: &str) -> Result<Self, Self::Err> {
-        let mut parts = version_str.split('.');
+        let mut parts = version_str.split('_');
 
         let mut version = [0u8; 3];
         for (i, part) in parts.by_ref().take(3).enumerate() {
@@ -110,29 +112,29 @@ mod tests {
 
     #[test]
     fn test_rpc_version_string_2() {
-        let version = RpcVersion::from_str("0.11").unwrap();
+        let version = RpcVersion::from_str("0_11").unwrap();
         assert_eq!(version, RpcVersion::new(0, 11, 0));
-        assert_eq!(version.to_string(), "0.11.0");
+        assert_eq!(version.to_string(), "0_11_0");
     }
 
     #[test]
     fn test_rpc_version_string_3() {
-        let version = RpcVersion::from_str("0.11.3").unwrap();
+        let version = RpcVersion::from_str("0_11_3").unwrap();
         assert_eq!(version, RpcVersion::new(0, 11, 3));
-        assert_eq!(version.to_string(), "0.11.3");
+        assert_eq!(version.to_string(), "0_11_3");
     }
 
     #[test]
     fn test_rpc_version_string_invalid() {
-        assert_eq!(RpcVersion::from_str("1.1.1.1.1"), Err(RpcVersionError::TooManyComponents(5)));
+        assert_eq!(RpcVersion::from_str("1_1_1_1_1"), Err(RpcVersionError::TooManyComponents(5)));
 
         assert!(
-            matches!(RpcVersion::from_str("definitely.not.a.version"), Err(RpcVersionError::InvalidNumber(_))),
+            matches!(RpcVersion::from_str("definitely_not_a_version"), Err(RpcVersionError::InvalidNumber(_))),
             "Expected InvalidNumber error"
         );
 
         assert!(
-            matches!(RpcVersion::from_str("0.256.0"), Err(RpcVersionError::InvalidNumber(_))),
+            matches!(RpcVersion::from_str("0_256_0"), Err(RpcVersionError::InvalidNumber(_))),
             "Expected InvalidNumber error"
         );
     }
@@ -149,5 +151,35 @@ mod tests {
         assert!(version_2 < version_3);
         assert!(version_3 < version_4);
         assert!(version_4 == version_5);
+    }
+
+    #[test]
+    fn test_from_request_path_valid() {
+        assert_eq!(RpcVersion::from_request_path("/rpc/v0_7_1").unwrap(), RpcVersion::RPC_VERSION_0_7_1);
+    }
+
+    #[test]
+    fn test_from_request_path_empty() {
+        assert_eq!(RpcVersion::from_request_path("").unwrap(), RpcVersion::RPC_VERSION_LATEST);
+    }
+
+    #[test]
+    fn test_from_request_path_root() {
+        assert_eq!(RpcVersion::from_request_path("/").unwrap(), RpcVersion::RPC_VERSION_LATEST);
+    }
+
+    #[test]
+    fn test_from_request_path_invalid_format() {
+        assert_eq!(RpcVersion::from_request_path("/invalid/path").unwrap(), RpcVersion::RPC_VERSION_LATEST);
+    }
+
+    #[test]
+    fn test_from_request_path_unsupported_version() {
+        assert_eq!(RpcVersion::from_request_path("/rpc/v9_9_9"), Err(RpcVersionError::UnsupportedVersion));
+    }
+
+    #[test]
+    fn test_from_request_path_invalid_version() {
+        assert_eq!(RpcVersion::from_request_path("/rpc/vx_y_z"), Err(RpcVersionError::InvalidVersion));
     }
 }
