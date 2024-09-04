@@ -18,7 +18,7 @@ members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
-  "crates/tests",
+  "crates/tests", "crates/client/devnet",
 ]
 resolver = "2"
 default-members = [

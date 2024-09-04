@@ -46,14 +46,14 @@ impl StorageDiffs {
 
 /// Universal Deployer Contract.
 const UDC_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../../cairo/target/dev/madara_contracts_UniversalDeployer.contract_class.json");
+    include_bytes!("../../../../cairo/target/dev/madara_contracts_UniversalDeployer.contract_class.json");
 const UDC_CLASS_HASH: Felt =
     Felt::from_hex_unchecked("0x07b3e05f48f0c69e4a65ce5e076a66271a527aff2c34ce1083ec6e1526997a69");
 const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
 
 const ERC20_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json");
+    include_bytes!("../../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json");
 const ERC20_CLASS_HASH: Felt =
     Felt::from_hex_unchecked("0x04ad3c1dc8413453db314497945b6903e1c766495a1e60492d44da9c2a986e4b");
 const ERC20_STRK_CONTRACT_ADDRESS: Felt =
@@ -62,7 +62,7 @@ const ERC20_ETH_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7");
 
 const ACCOUNT_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../../cairo/target/dev/madara_contracts_AccountUpgradeable.contract_class.json");
+    include_bytes!("../../../../cairo/target/dev/madara_contracts_AccountUpgradeable.contract_class.json");
 const ACCOUNT_CLASS_HASH: Felt = Felt::from_hex_unchecked("0xFFFFFFAFAFAFAFAFAFA9b9b9b");
 
 /// High level description of the genesis block.
@@ -191,13 +191,13 @@ impl ChainGenesisDescription {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::l1::MockL1DataProvider;
-    use crate::{block_production::BlockProductionTask, Mempool, MempoolProvider};
-    use crate::{transaction_hash, L1DataProvider};
     use blockifier::abi::abi_utils::get_fee_token_var_address;
     use blockifier::abi::sierra_types::next_storage_key;
     use dc_block_import::{BlockImporter, Validation};
     use dc_db::DeoxysBackend;
+    use dc_mempool::block_production::BlockProductionTask;
+    use dc_mempool::MempoolProvider;
+    use dc_mempool::{transaction_hash, L1DataProvider, MockL1DataProvider, Mempool};
     use dp_block::header::L1DataAvailabilityMode;
     use dp_block::{BlockId, BlockTag};
     use dp_convert::felt_to_u128;
@@ -209,17 +209,16 @@ mod tests {
         BroadcastedInvokeTransactionV3, BroadcastedTransaction, DeclareTransactionResult,
         DeployAccountTransactionResult, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping,
     };
-
     use std::sync::Arc;
 
-    struct PreparedDevnet {
+    struct DevnetForTesting {
         backend: Arc<DeoxysBackend>,
         contracts: DevnetKeys,
         block_production: BlockProductionTask,
         mempool: Arc<Mempool>,
     }
 
-    impl PreparedDevnet {
+    impl DevnetForTesting {
         pub fn sign_and_add_invoke_tx(
             &self,
             mut tx: BroadcastedInvokeTransaction,
@@ -320,7 +319,7 @@ mod tests {
     }
 
     #[fixture]
-    fn chain() -> PreparedDevnet {
+    fn chain() -> DevnetForTesting {
         let _ = env_logger::builder().is_test(true).try_init();
 
         let mut g = ChainGenesisDescription::base_config();
@@ -360,7 +359,7 @@ mod tests {
             BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), Arc::clone(&l1_data_provider))
                 .unwrap();
 
-        PreparedDevnet { backend, contracts, block_production, mempool }
+        DevnetForTesting { backend, contracts, block_production, mempool }
     }
 
     // TODO: add eth transfer
@@ -368,7 +367,7 @@ mod tests {
     #[case(24235u128, false)]
     #[case(9_999u128 * STRK_FRI_DECIMALS, false)]
     #[case(10_001u128 * STRK_FRI_DECIMALS, true)]
-    fn test_basic_transfer(mut chain: PreparedDevnet, #[case] transfer_amount: u128, #[case] expect_reverted: bool) {
+    fn test_basic_transfer(mut chain: DevnetForTesting, #[case] transfer_amount: u128, #[case] expect_reverted: bool) {
         println!("{}", chain.contracts);
 
         let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();
@@ -408,7 +407,7 @@ mod tests {
 
         log::info!("tx hash: {:#x}", result.transaction_hash);
 
-        chain.block_production.current_pending_tick = 1;
+        chain.block_production.set_current_pending_tick(1);
         chain.block_production.on_pending_time_tick().unwrap();
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();

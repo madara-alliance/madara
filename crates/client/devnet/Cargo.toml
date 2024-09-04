@@ -1,6 +1,6 @@
 [package]
-name = "dc-mempool"
-description = "Deoxys client mempool service"
+name = "dc-devnet"
+description = "Deoxys client devnet creation"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -15,21 +15,19 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 rstest = { workspace = true }
 dc-db = { workspace = true, features = ["testing"] }
+dc-mempool = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 proptest.workspace = true
 proptest-derive.workspace = true
-bitvec.workspace = true
 env_logger.workspace = true
 blockifier = { workspace = true, features = ["testing"] }
 mockall.workspace = true
 assert_matches.workspace = true
 
-[features]
-testing = ["blockifier/testing", "dc-db/testing", "mockall"]
-
 [dependencies]
 
 # Deoxys
+dc-mempool.workspace = true
 dc-block-import.workspace = true
 dc-db.workspace = true
 dc-exec.workspace = true
@@ -58,5 +56,3 @@ rayon.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-
-mockall = { workspace = true, optional = true }

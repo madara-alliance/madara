@@ -3683,6 +3683,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "dc-devnet"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "async-trait",
+ "blockifier",
+ "dc-block-import",
+ "dc-db",
+ "dc-exec",
+ "dc-mempool",
+ "dp-block",
+ "dp-chain-config",
+ "dp-class",
+ "dp-convert",
+ "dp-receipt",
+ "dp-state-update",
+ "dp-transactions",
+ "dp-utils",
+ "env_logger 0.11.3",
+ "hyper 0.14.29",
+ "log",
+ "mockall",
+ "proptest",
+ "proptest-derive",
+ "rayon",
+ "rstest 0.18.2",
+ "serde_json",
+ "starknet-core",
+ "starknet-signers",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "dc-e2e-tests"
 version = "0.1.0"
 dependencies = [

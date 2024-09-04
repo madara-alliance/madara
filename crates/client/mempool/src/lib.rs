@@ -15,8 +15,6 @@ use dp_class::ConvertedClass;
 use dp_transactions::{broadcasted_to_blockifier, BroadcastedToBlockifierError};
 use header::make_pending_header;
 use inner::MempoolInner;
-pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
-pub use l1::{GasPriceProvider, L1DataProvider};
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::BroadcastedDeclareTransaction;
@@ -30,9 +28,13 @@ use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use std::sync::RwLock;
 
+pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
+#[cfg(any(test, feature = "testing"))]
+pub use l1::MockL1DataProvider;
+pub use l1::{GasPriceProvider, L1DataProvider};
+
 pub mod block_production;
 mod close_block;
-pub mod genesis;
 pub mod header;
 mod inner;
 mod l1;
@@ -41,8 +43,6 @@ mod l1;
 pub enum Error {
     #[error("Storage error: {0:#}")]
     StorageError(#[from] DeoxysStorageError),
-    #[error("No genesis block in storage")]
-    NoGenesis,
     #[error("Validation error: {0:#}")]
     Validation(#[from] StatefulValidatorError),
     #[error(transparent)]
@@ -94,8 +94,10 @@ impl Mempool {
             block
         } else {
             // No current pending block, we'll make an unsaved empty one for the sake of validating this tx.
-            let parent_block_hash =
-                self.backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
+            let parent_block_hash = self
+                .backend
+                .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
+                .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
             DeoxysPendingBlockInfo::new(
                 make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref()),
                 vec![],
@@ -135,7 +137,7 @@ impl Mempool {
     }
 }
 
-fn transaction_hash(tx: &Transaction) -> Felt {
+pub fn transaction_hash(tx: &Transaction) -> Felt {
     match tx {
         Transaction::AccountTransaction(tx) => match tx {
             AccountTransaction::Declare(tx) => *tx.tx_hash,

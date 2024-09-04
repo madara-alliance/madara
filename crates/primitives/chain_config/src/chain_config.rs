@@ -30,7 +30,7 @@ lazy_static::lazy_static! {
 
 #[derive(Debug)]
 pub struct ChainConfig {
-    /// Internal chain name.
+    /// Human readable chain name, for displaying to the console.
     pub chain_name: String,
     pub chain_id: ChainId,
 

@@ -39,8 +39,6 @@ pub enum Error {
     Execution(#[from] TransactionExecutionError),
     #[error(transparent)]
     ExecutionContext(#[from] dc_exec::Error),
-    #[error("No genesis block in storage")]
-    NoGenesis,
     #[error("Import error: {0:#}")]
     Import(#[from] dc_block_import::BlockImportError),
 }
@@ -163,16 +161,23 @@ pub struct BlockProductionTask {
     declared_classes: Vec<ConvertedClass>,
     pub(crate) executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
-    pub(crate) current_pending_tick: usize,
+    current_pending_tick: usize,
 }
 
 impl BlockProductionTask {
+    #[cfg(any(test, feature = "testing"))]
+    pub fn set_current_pending_tick(&mut self, n: usize) {
+        self.current_pending_tick = n;
+    }
+
     pub fn new(
         backend: Arc<DeoxysBackend>,
         mempool: Arc<Mempool>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
-        let parent_block_hash = backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
+        let parent_block_hash = backend
+            .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
+            .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
         let pending_block = DeoxysPendingBlock::new_empty(make_pending_header(
             parent_block_hash,
             backend.chain_config(),
@@ -276,7 +281,7 @@ impl BlockProductionTask {
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
-    pub(crate) fn on_pending_time_tick(&mut self) -> Result<(), Error> {
+    pub fn on_pending_time_tick(&mut self) -> Result<(), Error> {
         let current_pending_tick = self.current_pending_tick;
         self.current_pending_tick += 1;
 
@@ -338,6 +343,8 @@ impl BlockProductionTask {
         let block_to_close = mem::replace(&mut self.block, new_empty_block);
         let _declared_classes = mem::take(&mut self.declared_classes);
 
+        let n_txs = block_to_close.inner.transactions.len();
+
         // This is compute heavy as it does the commitments and trie computations.
         let import_result = close_block(
             &self.importer,
@@ -354,6 +361,8 @@ impl BlockProductionTask {
             ExecutionContext::new_in_block(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
         self.current_pending_tick = 0;
 
+        log::info!("⛏️  Closed block #{} with {} transactions", block_n, n_txs);
+
         Ok(())
     }
 
@@ -367,7 +376,7 @@ impl BlockProductionTask {
             tokio::time::interval_at(start, self.backend.chain_config().pending_block_update_time);
         interval_pending_block_update.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-        log::info!("⛏️  Starting block production on top of block {}", self.block_n());
+        log::info!("⛏️  Starting block production at block #{}", self.block_n());
 
         loop {
             tokio::select! {
