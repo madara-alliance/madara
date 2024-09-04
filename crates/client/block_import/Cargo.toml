@@ -16,7 +16,7 @@ rayon.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
-mc-db = { workspace = true }
+mc-db = { workspace = true, features = ["testing"]}
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
@@ -31,3 +31,6 @@ starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }

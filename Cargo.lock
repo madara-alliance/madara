@@ -5494,6 +5494,7 @@ dependencies = [
 name = "mc-block-import"
 version = "0.7.0"
 dependencies = [
+ "assert_matches",
  "bitvec",
  "bonsai-trie",
  "futures",
