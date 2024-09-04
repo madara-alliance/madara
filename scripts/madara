@@ -5,14 +5,14 @@ if [ "$#" -lt 1 ]; then
     exit 1
 fi
 
-start_deoxys(){
+start_madara(){
     local key=$1
     local key_gateway=$2
-    echo "🚀 start deoxys..."
+    echo "🚀 start madara..."
     cargo run \
         --release \
         -- \
-        --deoxys \
+        --madara \
         --rpc-port 9944 \
         --network main \
         --rpc-cors all \
@@ -29,7 +29,7 @@ clear_db(){
     then
         exit 1
     fi
-    rm -rf /tmp/deoxys
+    rm -rf /tmp/madara
 }
 
 lint(){
@@ -59,7 +59,7 @@ case $ACTION in
             echo "Usage for start: $0 start [KEY]"
             exit 1
         fi
-        start_deoxys "$2" "$3"
+        start_madara "$2" "$3"
         ;;
     reset)
         if [ "$#" -lt 1 ]; then
@@ -75,7 +75,7 @@ case $ACTION in
         fi
         clear_db
         echo
-        start_deoxys "$2" "$3"
+        start_madara "$2" "$3"
         ;;
     lint)
         lint
@@ -89,9 +89,9 @@ case $ACTION in
         ;;
     help)
         echo "Usage: $0 [start|reset|reboot|lint|help] [KEY for start/reboot]"
-        echo "start: start deoxys with KEY"
+        echo "start: start madara with KEY"
         echo "reset: clear and rebuild DB"
-        echo "reboot: clear and rebuild DB, then start deoxys with KEY"
+        echo "reboot: clear and rebuild DB, then start madara with KEY"
         echo "lint: run CI linter on project"
         ;;
     *)

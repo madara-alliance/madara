@@ -4,16 +4,16 @@ use core::time::Duration;
 use std::collections::HashMap;
 
 use anyhow::Context;
-use dc_block_import::{
+use mc_block_import::{
     DeclaredClass, UnverifiedCommitments, UnverifiedFullBlock, UnverifiedHeader, UnverifiedPendingFullBlock,
 };
-use dc_db::storage_updates::DbClassUpdate;
-use dc_db::DeoxysBackend;
-use dp_block::{header::GasPrices, BlockId, BlockTag};
-use dp_convert::felt_to_u128;
-use dp_receipt::TransactionReceipt;
-use dp_transactions::Transaction;
-use dp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
+use mc_db::storage_updates::DbClassUpdate;
+use mc_db::MadaraBackend;
+use mp_block::{header::GasPrices, BlockId, BlockTag};
+use mp_convert::felt_to_u128;
+use mp_receipt::TransactionReceipt;
+use mp_transactions::Transaction;
+use mp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
 use starknet_core::types::{ContractClass, MaybePendingBlockWithReceipts, StarknetError};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
@@ -91,7 +91,7 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 }
 
 pub async fn fetch_pending_block_and_updates(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     provider: &SequencerGatewayProvider,
 ) -> Result<UnverifiedPendingFullBlock, FetchError> {
     let block_id = FetchBlockId::Pending;
@@ -144,7 +144,7 @@ pub async fn fetch_pending_block_and_updates(
 }
 
 pub async fn fetch_block_and_updates(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     block_n: u64,
     provider: &SequencerGatewayProvider,
 ) -> Result<UnverifiedFullBlock, FetchError> {
@@ -273,7 +273,7 @@ async fn fetch_state_update_with_block(
 
 /// retrieves class updates from Starknet sequencer
 async fn fetch_class_updates(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     state_update: &starknet_providers::sequencer::models::StateUpdate,
     block_id: FetchBlockId,
     provider: &SequencerGatewayProvider,

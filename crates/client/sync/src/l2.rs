@@ -4,16 +4,16 @@ use crate::fetch::l2_fetch_task;
 use crate::metrics::block_metrics::BlockMetrics;
 use crate::utils::trim_hash;
 use anyhow::Context;
-use dc_block_import::{
+use futures::{stream, StreamExt};
+use mc_block_import::{
     BlockImportResult, BlockImporter, PreValidatedBlock, UnverifiedFullBlock, UnverifiedPendingFullBlock, Validation,
 };
-use dc_db::db_metrics::DbMetrics;
-use dc_db::DeoxysBackend;
-use dc_db::DeoxysStorageError;
-use dc_telemetry::{TelemetryHandle, VerbosityLevel};
-use dp_block::Header;
-use dp_utils::{channel_wait_or_graceful_shutdown, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
-use futures::{stream, StreamExt};
+use mc_db::db_metrics::DbMetrics;
+use mc_db::MadaraBackend;
+use mc_db::MadaraStorageError;
+use mc_telemetry::{TelemetryHandle, VerbosityLevel};
+use mp_block::Header;
+use mp_utils::{channel_wait_or_graceful_shutdown, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use num_traits::FromPrimitive;
 use starknet_api::core::ChainId;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
@@ -31,9 +31,9 @@ pub enum L2SyncError {
     #[error("Provider error: {0:#}")]
     Provider(#[from] ProviderError),
     #[error("Database error: {0:#}")]
-    Db(#[from] DeoxysStorageError),
+    Db(#[from] MadaraStorageError),
     #[error(transparent)]
-    BlockImport(#[from] dc_block_import::BlockImportError),
+    BlockImport(#[from] mc_block_import::BlockImportError),
 }
 
 /// Contains the latest Starknet verified state on L2
@@ -46,7 +46,7 @@ pub struct L2StateUpdate {
 
 #[allow(clippy::too_many_arguments)]
 async fn l2_verify_and_apply_task(
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     mut updates_receiver: mpsc::Receiver<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
     validation: Validation,
@@ -148,7 +148,7 @@ async fn l2_block_conversion_task(
 }
 
 async fn l2_pending_block_task(
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     block_import: Arc<BlockImporter>,
     validation: Validation,
     sync_finished_cb: oneshot::Receiver<()>,
@@ -205,7 +205,7 @@ pub struct L2SyncConfig {
 /// Spawns workers to fetch blocks and state updates from the feeder.
 #[allow(clippy::too_many_arguments)]
 pub async fn sync(
-    backend: &Arc<DeoxysBackend>,
+    backend: &Arc<MadaraBackend>,
     provider: SequencerGatewayProvider,
     config: L2SyncConfig,
     block_metrics: BlockMetrics,
@@ -283,7 +283,7 @@ async fn update_sync_metrics(
     block_metrics: &BlockMetrics,
     db_metrics: &DbMetrics,
     sync_timer: Arc<Mutex<Option<Instant>>>,
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
 ) -> anyhow::Result<()> {
     // Update Block sync time metrics
     let elapsed_time = {

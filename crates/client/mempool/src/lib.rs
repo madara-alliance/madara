@@ -3,18 +3,18 @@ use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transactions::DeclareTransaction;
 use blockifier::transaction::transactions::DeployAccountTransaction;
 use blockifier::transaction::transactions::InvokeTransaction;
-use dc_db::db_block_id::DbBlockId;
-use dc_db::DeoxysBackend;
-use dc_db::DeoxysStorageError;
-use dc_exec::ExecutionContext;
-use dp_block::BlockId;
-use dp_block::BlockTag;
-use dp_block::DeoxysPendingBlockInfo;
-use dp_class::ConvertedClass;
 use header::make_pending_header;
 use inner::MempoolInner;
 pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 pub use l1::{GasPriceProvider, L1DataProvider};
+use mc_db::db_block_id::DbBlockId;
+use mc_db::MadaraBackend;
+use mc_db::MadaraStorageError;
+use mc_exec::ExecutionContext;
+use mp_block::BlockId;
+use mp_block::BlockTag;
+use mp_block::MadaraPendingBlockInfo;
+use mp_class::ConvertedClass;
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
@@ -30,7 +30,7 @@ mod l1;
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Storage error: {0:#}")]
-    StorageError(#[from] DeoxysStorageError),
+    StorageError(#[from] MadaraStorageError),
     #[error("No genesis block in storage")]
     NoGenesis,
     #[error("Validation error: {0:#}")]
@@ -38,17 +38,17 @@ pub enum Error {
     #[error(transparent)]
     InnerMempool(#[from] inner::TxInsersionError),
     #[error(transparent)]
-    Exec(#[from] dc_exec::Error),
+    Exec(#[from] mc_exec::Error),
 }
 
 pub struct Mempool {
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     inner: RwLock<MempoolInner>,
 }
 
 impl Mempool {
-    pub fn new(backend: Arc<DeoxysBackend>, l1_data_provider: Arc<dyn L1DataProvider>) -> Self {
+    pub fn new(backend: Arc<MadaraBackend>, l1_data_provider: Arc<dyn L1DataProvider>) -> Self {
         Mempool { backend, l1_data_provider, inner: Default::default() }
     }
 
@@ -67,7 +67,7 @@ impl Mempool {
             // No current pending block, we'll make an unsaved empty one for the sake of validating this tx.
             let parent_block_hash =
                 self.backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
-            DeoxysPendingBlockInfo::new(
+            MadaraPendingBlockInfo::new(
                 make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref()),
                 vec![],
             )

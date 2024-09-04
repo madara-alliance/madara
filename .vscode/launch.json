@@ -8,7 +8,7 @@
   "version": "0.1.0",
   "configurations": [
     {
-      "name": "Debug Deoxys",
+      "name": "Debug Madara",
       "type": "lldb",
       "request": "launch",
       // The following configuration option, 'program', may in some cases need to be modified.
@@ -16,7 +16,7 @@
       // For example, on non-Windows systems, the ".exe" suffix must be removed.
       // Alternatively, the directory that rustc/cargo outputs debug builds may change in future
       // As such, this path would have to change accordingly.
-      "program": "${workspaceFolder}/target/debug/deoxys",
+      "program": "${workspaceFolder}/target/debug/madara",
       // If you wish to supply arguments/parameters to the program, supply them below:
       "args": ["--network=test"],
       // Working folder for execution. Change as necessary if program requires a different value:

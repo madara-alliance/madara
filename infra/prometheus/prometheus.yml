@@ -15,7 +15,7 @@ scrape_configs:
   - job_name: "substrate_node"
     scrape_interval: 5s
     static_configs:
-      - targets: ["deoxys:9615"]
+      - targets: ["madara:9615"]
 
   - job_name: "cadvisor"
     static_configs:

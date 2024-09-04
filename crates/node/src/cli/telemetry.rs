@@ -3,7 +3,7 @@ use clap::Args;
 /// Parameters used to config telemetry.
 #[derive(Debug, Clone, Args)]
 pub struct TelemetryParams {
-    /// Disable connecting to the Deoxys telemetry server.
+    /// Disable connecting to the Madara telemetry server.
     /// Telemetry is enabled by default.
     #[arg(long, alias = "no-telemetry")]
     pub telemetry_disabled: bool,
