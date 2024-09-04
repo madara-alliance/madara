@@ -9,11 +9,7 @@ use blockifier::{
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mp_block::{header::L1DataAvailabilityMode, MadaraMaybePendingBlockInfo};
-use starknet_api::{
-    block::{BlockNumber, BlockTimestamp},
-    core::Nonce,
-};
-use starknet_types_core::felt::Felt;
+use starknet_api::block::{BlockNumber, BlockTimestamp};
 use std::sync::Arc;
 
 pub struct ExecutionContext {
