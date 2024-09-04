@@ -1,14 +1,14 @@
-use dc_block_import::{
+use mc_block_import::{
     BlockImportError, BlockImportResult, BlockImporter, UnverifiedFullBlock, UnverifiedHeader, Validation,
 };
-use dp_block::{header::PendingHeader, DeoxysPendingBlock, DeoxysPendingBlockInfo};
-use dp_state_update::StateDiff;
+use mp_block::{header::PendingHeader, MadaraPendingBlock, MadaraPendingBlockInfo};
+use mp_state_update::StateDiff;
 use starknet_api::core::ChainId;
 
 /// Close the block (convert from pending to closed), and store to db. This is delegated to the block import module.
 pub async fn close_block(
     importer: &BlockImporter,
-    block: DeoxysPendingBlock,
+    block: MadaraPendingBlock,
     state_diff: &StateDiff,
     chain_id: ChainId,
     block_number: u64,
@@ -19,8 +19,8 @@ pub async fn close_block(
         trust_global_tries: false,
     };
 
-    let DeoxysPendingBlock { info, inner } = block;
-    let DeoxysPendingBlockInfo { header, tx_hashes: _tx_hashes } = info;
+    let MadaraPendingBlock { info, inner } = block;
+    let MadaraPendingBlockInfo { header, tx_hashes: _tx_hashes } = info;
 
     // Header
     let PendingHeader {

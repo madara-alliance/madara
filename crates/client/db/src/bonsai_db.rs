@@ -149,7 +149,7 @@ impl BonsaiDatabase for BonsaiDb<'_> {
 
 // impl<'db> BonsaiDatabase for BonsaiTransaction<'db> {
 //     type Batch = WriteBatchWithTransaction<true>;
-//     type DatabaseError = DeoxysStorageError;
+//     type DatabaseError = MadaraStorageError;
 
 //     fn create_batch(&self) -> Self::Batch {
 //         self.txn.get_writebatch()

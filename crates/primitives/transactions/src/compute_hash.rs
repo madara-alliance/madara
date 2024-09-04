@@ -1,4 +1,4 @@
-use dp_chain_config::StarknetVersion;
+use mp_chain_config::StarknetVersion;
 use starknet_core::utils::starknet_keccak;
 
 use starknet_types_core::felt::Felt;

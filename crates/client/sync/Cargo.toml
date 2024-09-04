@@ -1,13 +1,12 @@
 [package]
-authors.workspace = true
+name = "mc-sync"
 description = "This crate is responsible to sync data"
-edition = "2021"
-homepage = "https://github.com/KasarLabs/deoxys"
-license = "MIT"
-name = "dc-sync"
-publish = false
-repository = "https://github.com/KasarLabs/deoxys"
-version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
 
 [features]
 default = []
@@ -18,20 +17,20 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
-# Deoxys
-dc-block-import = { workspace = true }
-dc-db = { workspace = true }
-#dc-eth = { workspace = true }
-dc-metrics = { workspace = true }
-dc-telemetry = { workspace = true }
-dp-block = { workspace = true }
-dp-chain-config = { workspace = true }
-dp-class = { workspace = true }
-dp-convert = { workspace = true }
-dp-receipt = { workspace = true }
-dp-state-update = { workspace = true }
-dp-transactions = { workspace = true }
-dp-utils = { workspace = true }
+# Madara
+mc-block-import = { workspace = true }
+mc-db = { workspace = true }
+#mc-eth = { workspace = true }
+mc-metrics = { workspace = true }
+mc-telemetry = { workspace = true }
+mp-block = { workspace = true }
+mp-chain-config = { workspace = true }
+mp-class = { workspace = true }
+mp-convert = { workspace = true }
+mp-receipt = { workspace = true }
+mp-state-update = { workspace = true }
+mp-transactions = { workspace = true }
+mp-utils = { workspace = true }
 
 # Starknet
 bonsai-trie = { workspace = true }

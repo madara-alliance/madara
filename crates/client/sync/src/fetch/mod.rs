@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use dc_block_import::UnverifiedFullBlock;
-use dc_db::DeoxysBackend;
-use dp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use futures::prelude::*;
+use mc_block_import::UnverifiedFullBlock;
+use mc_db::MadaraBackend;
+use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use starknet_core::types::StarknetError;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::{mpsc, oneshot};
@@ -15,7 +15,7 @@ pub mod fetchers;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn l2_fetch_task(
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     first_block: u64,
     n_blocks_to_sync: Option<u64>,
     fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,

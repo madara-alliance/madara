@@ -1,4 +1,4 @@
-# Deoxys docker ignore file
+# Madara docker ignore file
 .devcontainer
 .github
 .vscode

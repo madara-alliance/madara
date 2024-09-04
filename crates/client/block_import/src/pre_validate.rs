@@ -3,11 +3,11 @@ use crate::{
     UnverifiedPendingFullBlock, ValidatedCommitments, Validation,
 };
 use bitvec::vec::BitVec;
-use dp_chain_config::StarknetVersion;
-use dp_class::{ClassInfo, ConvertedClass, ToCompiledClass};
-use dp_convert::ToFelt;
-use dp_receipt::TransactionReceipt;
-use dp_transactions::Transaction;
+use mp_chain_config::StarknetVersion;
+use mp_class::{ClassInfo, ConvertedClass, ToCompiledClass};
+use mp_convert::ToFelt;
+use mp_receipt::TransactionReceipt;
+use mp_transactions::Transaction;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator};
 use rayon::prelude::*;
 use starknet_api::core::ChainId;

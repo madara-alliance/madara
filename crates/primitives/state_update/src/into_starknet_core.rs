@@ -175,7 +175,7 @@ impl From<NonceUpdate> for starknet_core::types::NonceUpdate {
 mod test {
     use super::*;
 
-    use dp_convert::test::assert_consistent_conversion;
+    use mp_convert::test::assert_consistent_conversion;
     use starknet_types_core::felt::Felt;
 
     use crate::tests::dummy_state_diff;

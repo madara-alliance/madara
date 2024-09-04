@@ -1,6 +1,6 @@
 [package]
-name = "dc-metrics"
-description = "Deoxys client prometheus service"
+name = "mc-metrics"
+description = "Madara client prometheus service"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,8 +13,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
-# Deoxys
-dp-utils.workspace = true
+# Madara
+mp-utils.workspace = true
 
 # Other
 anyhow.workspace = true

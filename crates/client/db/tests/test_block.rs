@@ -1,18 +1,18 @@
 mod common;
 use common::temp_db;
-use dc_db::db_block_id::DbBlockIdResolvable;
-use dc_db::{block_db::TxIndex, db_block_id::DbBlockId};
-use dp_block::BlockId;
-use dp_block::{
-    header::PendingHeader, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysPendingBlockInfo, Header,
+use mc_db::db_block_id::DbBlockIdResolvable;
+use mc_db::{block_db::TxIndex, db_block_id::DbBlockId};
+use mp_block::BlockId;
+use mp_block::{
+    header::PendingHeader, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraPendingBlockInfo,
 };
-use dp_chain_config::ChainConfig;
-use dp_receipt::{
+use mp_chain_config::ChainConfig;
+use mp_receipt::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, InvokeTransactionReceipt,
     L1HandlerTransactionReceipt,
 };
-use dp_state_update::StateDiff;
-use dp_transactions::{
+use mp_state_update::StateDiff;
+use mp_transactions::{
     DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeployAccountTransactionV1,
     DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3,
     L1HandlerTransaction,
@@ -176,7 +176,7 @@ async fn test_store_block_transactions_pending() {
     assert_eq!(backend.find_tx_hash_block(&tx_hash_1).unwrap().unwrap(), (block_pending, TxIndex(1)));
 }
 
-fn finalized_block_zero() -> DeoxysMaybePendingBlock {
+fn finalized_block_zero() -> MadaraMaybePendingBlock {
     let transactions = vec![
         InvokeTransactionV0::default().into(),
         L1HandlerTransaction::default().into(),
@@ -193,19 +193,19 @@ fn finalized_block_zero() -> DeoxysMaybePendingBlock {
         DeployAccountTransactionReceipt::default().into(),
     ];
 
-    let block_inner = DeoxysBlockInner::new(transactions, transaction_receipts);
+    let block_inner = MadaraBlockInner::new(transactions, transaction_receipts);
 
     let tx_hashes = vec![Felt::from(0), Felt::from(1), Felt::from(2), Felt::from(3), Felt::from(4)];
-    let block_info = DeoxysBlockInfo::new(Header::default(), tx_hashes, Felt::from(0));
+    let block_info = MadaraBlockInfo::new(Header::default(), tx_hashes, Felt::from(0));
 
-    DeoxysMaybePendingBlock { info: block_info.into(), inner: block_inner }
+    MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
 
 fn finalized_state_diff_zero() -> StateDiff {
     StateDiff::default()
 }
 
-fn finalized_block_one() -> DeoxysMaybePendingBlock {
+fn finalized_block_one() -> MadaraMaybePendingBlock {
     let transactions = vec![
         InvokeTransactionV1::default().into(),
         L1HandlerTransaction::default().into(),
@@ -222,20 +222,20 @@ fn finalized_block_one() -> DeoxysMaybePendingBlock {
         DeployAccountTransactionReceipt::default().into(),
     ];
 
-    let block_inner = DeoxysBlockInner::new(transactions, transaction_receipts);
+    let block_inner = MadaraBlockInner::new(transactions, transaction_receipts);
 
     let tx_hashes = vec![Felt::from(10), Felt::from(11), Felt::from(12), Felt::from(13), Felt::from(14)];
     let header = Header { block_number: 1, ..Default::default() };
-    let block_info = DeoxysBlockInfo::new(header, tx_hashes, Felt::from(1));
+    let block_info = MadaraBlockInfo::new(header, tx_hashes, Felt::from(1));
 
-    DeoxysMaybePendingBlock { info: block_info.into(), inner: block_inner }
+    MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
 
 fn finalized_state_diff_one() -> StateDiff {
     StateDiff::default()
 }
 
-fn pending_block_one() -> DeoxysMaybePendingBlock {
+fn pending_block_one() -> MadaraMaybePendingBlock {
     let transactions = vec![
         InvokeTransactionV3::default().into(),
         L1HandlerTransaction::default().into(),
@@ -252,19 +252,19 @@ fn pending_block_one() -> DeoxysMaybePendingBlock {
         DeployAccountTransactionReceipt::default().into(),
     ];
 
-    let block_inner = DeoxysBlockInner::new(transactions, transaction_receipts);
+    let block_inner = MadaraBlockInner::new(transactions, transaction_receipts);
 
     let tx_hashes = vec![Felt::from(20), Felt::from(21), Felt::from(22), Felt::from(23), Felt::from(24)];
-    let block_info = DeoxysPendingBlockInfo::new(PendingHeader::default(), tx_hashes);
+    let block_info = MadaraPendingBlockInfo::new(PendingHeader::default(), tx_hashes);
 
-    DeoxysMaybePendingBlock { info: block_info.into(), inner: block_inner }
+    MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
 
 fn pending_state_diff_one() -> StateDiff {
     StateDiff::default()
 }
 
-fn pending_block_two() -> DeoxysMaybePendingBlock {
+fn pending_block_two() -> MadaraMaybePendingBlock {
     let transactions = vec![
         InvokeTransactionV3::default().into(),
         L1HandlerTransaction::default().into(),
@@ -281,13 +281,13 @@ fn pending_block_two() -> DeoxysMaybePendingBlock {
         DeployAccountTransactionReceipt::default().into(),
     ];
 
-    let block_inner = DeoxysBlockInner::new(transactions, transaction_receipts);
+    let block_inner = MadaraBlockInner::new(transactions, transaction_receipts);
 
     let tx_hashes = vec![Felt::from(20), Felt::from(21), Felt::from(22), Felt::from(23), Felt::from(24)];
     let header = PendingHeader { parent_block_hash: Felt::from(1), ..Default::default() };
-    let block_info = DeoxysPendingBlockInfo::new(header, tx_hashes);
+    let block_info = MadaraPendingBlockInfo::new(header, tx_hashes);
 
-    DeoxysMaybePendingBlock { info: block_info.into(), inner: block_inner }
+    MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
 
 fn pending_state_diff_two() -> StateDiff {

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 help() {
-    echo "Usage: [--deoxys=\"http://127.0.0.1:9944\"] [--pathfinder...] command args..."
+    echo "Usage: [--madara=\"http://127.0.0.1:9944\"] [--pathfinder...] command args..."
 }
 
 # ================= #
@@ -13,7 +13,7 @@ if [ $# -lt 2 ]; then
     exit 1
 fi
 
-OPTIONS=$(getopt -o '' -l deoxys:,pathfinder: -- "$@")
+OPTIONS=$(getopt -o '' -l madara:,pathfinder: -- "$@")
 if [ $? != 0 ]; then
     help
     exit 1
@@ -26,7 +26,7 @@ PROVIDER_PATHFINDER=""
 
 while true; do
     case "$1" in
-        --deoxys)
+        --madara)
             PROVIDER_DEOXYS="$2"
             shift 2
             ;;
@@ -152,7 +152,7 @@ get_block_with_tx_hashes(){
 #      PROGRAM      #
 # ================= #
 
-OUTPUT_DEOXYS="output_deoxys.json"
+OUTPUT_DEOXYS="output_madara.json"
 OUTPUT_PATHFINDER="output_pathfinder.json"
 
 COMMAND=$1
@@ -217,7 +217,7 @@ case $COMMAND in
         ;;
 esac
 
-diff output_deoxys.json output_pathfinder.json
+diff output_madara.json output_pathfinder.json
 
 if [ $? -eq 0 ]; then
     if [ -s "$OUTPUT_DEOXYS" ]; then

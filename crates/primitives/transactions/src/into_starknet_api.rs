@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dp_convert::{felt_to_u128, felt_to_u64};
+use mp_convert::{felt_to_u128, felt_to_u64};
 use starknet_types_core::felt::Felt;
 
 use crate::{
@@ -500,7 +500,7 @@ mod test {
         dummy_tx_deploy, dummy_tx_deploy_account_v1, dummy_tx_deploy_account_v3, dummy_tx_invoke_v0,
         dummy_tx_invoke_v1, dummy_tx_invoke_v3,
     };
-    use dp_convert::test::assert_consistent_conversion;
+    use mp_convert::test::assert_consistent_conversion;
 
     #[test]
     fn test_into_api_transaction() {

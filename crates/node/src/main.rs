@@ -1,4 +1,4 @@
-//! Deoxys node command line.
+//! Madara node command line.
 #![warn(missing_docs)]
 #![warn(clippy::unwrap_used)]
 
@@ -12,18 +12,17 @@ mod util;
 
 use crate::service::L1SyncService;
 use cli::RunCmd;
-use dc_db::DatabaseService;
-use dc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
-use dc_metrics::MetricsService;
-use dc_rpc::providers::AddTransactionProvider;
-use dc_telemetry::{SysInfo, TelemetryService};
-use dp_convert::ToFelt;
-use dp_utils::service::{Service, ServiceGroup};
+use mc_db::DatabaseService;
+use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
+use mc_metrics::MetricsService;
+use mc_rpc::providers::AddTransactionProvider;
+use mc_telemetry::{SysInfo, TelemetryService};
+use mp_convert::ToFelt;
+use mp_utils::service::{Service, ServiceGroup};
 use service::{BlockProductionService, RpcService, SyncService};
 use starknet_providers::SequencerGatewayProvider;
-const GREET_IMPL_NAME: &str = "Deoxys";
-const GREET_SUPPORT_URL: &str = "https://github.com/KasarLabs/deoxys/issues";
-const GREET_AUTHORS: &[&str] = &["KasarLabs <https://kasar.io>"];
+const GREET_IMPL_NAME: &str = "Madara";
+const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -38,11 +37,8 @@ async fn main() -> anyhow::Result<()> {
     let node_name = run_cmd.node_name_or_provide().await.to_string();
     let node_version = env!("DEOXYS_BUILD_VERSION");
 
-    log::info!("👽 {} Node", GREET_IMPL_NAME);
+    log::info!("🥷  {} Node", GREET_IMPL_NAME);
     log::info!("✌️  Version {}", node_version);
-    for author in GREET_AUTHORS {
-        log::info!("❤️  By {}", author);
-    }
     log::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
     log::info!("🏷  Node Name: {}", node_name);
     let role = if run_cmd.authority { "authority" } else { "full node" };
@@ -109,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
 
                 (
                     ServiceGroup::default().with(block_production_service),
-                    Arc::new(dc_rpc::mempool_provider::MempoolProvider::new(mempool)),
+                    Arc::new(mc_rpc::mempool_provider::MempoolProvider::new(mempool)),
                 )
             }
             // Block sync service. (full node)
@@ -129,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
                 (
                     ServiceGroup::default().with(sync_service),
                     // TODO(rate-limit): we may get rate limited with this unconfigured provider?
-                    Arc::new(dc_rpc::providers::ForwardToProvider::new(SequencerGatewayProvider::new(
+                    Arc::new(mc_rpc::providers::ForwardToProvider::new(SequencerGatewayProvider::new(
                         run_cmd.network.gateway(),
                         run_cmd.network.feeder_gateway(),
                         chain_config.chain_id.to_felt(),

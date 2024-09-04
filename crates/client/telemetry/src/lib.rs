@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use anyhow::Context;
-use dp_utils::channel_wait_or_graceful_shutdown;
-use dp_utils::service::Service;
 use futures::SinkExt;
+use mp_utils::channel_wait_or_graceful_shutdown;
+use mp_utils::service::Service;
 use reqwest_websocket::{Message, RequestBuilderExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -68,7 +68,7 @@ impl TelemetryService {
             "authority": false,
             "config": "",
             "genesis_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "implementation": "Deoxys Node",
+            "implementation": "Madara Node",
             "msg": "system.connected",
             "name": name,
             "network_id": network_id,

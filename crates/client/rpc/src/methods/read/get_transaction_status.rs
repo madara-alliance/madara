@@ -1,5 +1,5 @@
-use dp_block::DeoxysMaybePendingBlockInfo;
-use dp_receipt::ExecutionResult;
+use mp_block::MadaraMaybePendingBlockInfo;
+use mp_receipt::ExecutionResult;
 use starknet_core::types::{Felt, TransactionExecutionStatus, TransactionStatus};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
@@ -41,8 +41,8 @@ pub fn get_transaction_status(starknet: &Starknet, transaction_hash: Felt) -> St
     };
 
     match block.info {
-        DeoxysMaybePendingBlockInfo::Pending(_) => Ok(TransactionStatus::AcceptedOnL2(tx_execution_status)),
-        DeoxysMaybePendingBlockInfo::NotPending(block) => {
+        MadaraMaybePendingBlockInfo::Pending(_) => Ok(TransactionStatus::AcceptedOnL2(tx_execution_status)),
+        MadaraMaybePendingBlockInfo::NotPending(block) => {
             if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
                 Ok(TransactionStatus::AcceptedOnL1(tx_execution_status))
             } else {

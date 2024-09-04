@@ -1,4 +1,4 @@
-use dc_metrics::{IntGaugeVec, MetricsRegistry, Opts, PrometheusError};
+use mc_metrics::{IntGaugeVec, MetricsRegistry, Opts, PrometheusError};
 
 #[derive(Clone, Debug)]
 pub struct DbMetrics {
