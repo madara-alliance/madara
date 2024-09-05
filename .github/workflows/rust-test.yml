@@ -23,7 +23,7 @@ jobs:
       - name: Launch Anvil
         run: anvil --fork-url $ANVIL_FORK_URL --fork-block-number $ANVIL_BLOCK_NUMBER &
         env:
-          ANVIL_FORK_URL: "https://eth.merkle.io"
+          ANVIL_FORK_URL: "https://ethereum-rpc.publicnode.com"
           ANVIL_BLOCK_NUMBER: 20395662
       - name: Wait for Anvil to be ready
         run: |
