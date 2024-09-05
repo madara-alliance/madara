@@ -39,14 +39,16 @@ pub struct FetchConfig {
     pub chain_id: ChainId,
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
-    /// Whether to check the root of the state update
+    /// Whether to check the root of the state update.
     pub verify: bool,
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.
     pub api_key: Option<String>,
-    /// Polling interval
+    /// Polling interval.
     pub sync_polling_interval: Option<Duration>,
-    /// Number of blocks to sync (for testing purposes)
+    /// Number of blocks to sync (for testing purposes).
     pub n_blocks_to_sync: Option<u64>,
+    /// Ignore the order of the blocks to allow starting at some height.
+    pub ignore_block_order: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

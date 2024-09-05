@@ -17,6 +17,7 @@ pub async fn close_block(
         trust_transaction_hashes: true, // no need to recompute tx hashes
         chain_id,
         trust_global_tries: false,
+        ignore_block_order: false,
     };
 
     let MadaraPendingBlock { info, inner } = block;

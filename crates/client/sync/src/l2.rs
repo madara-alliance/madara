@@ -200,6 +200,7 @@ pub struct L2SyncConfig {
     pub sync_polling_interval: Option<Duration>,
     pub backup_every_n_blocks: Option<u64>,
     pub pending_block_poll_interval: Duration,
+    pub ignore_block_order: bool,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
@@ -230,7 +231,12 @@ pub async fn sync(
     // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
     // starves the tokio worker
     let block_importer = Arc::new(BlockImporter::new(Arc::clone(backend)));
-    let validation = Validation { trust_transaction_hashes: false, trust_global_tries: config.verify, chain_id };
+    let validation = Validation {
+        trust_transaction_hashes: false,
+        trust_global_tries: config.verify,
+        chain_id,
+        ignore_block_order: config.ignore_block_order,
+    };
 
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(

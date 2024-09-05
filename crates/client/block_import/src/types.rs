@@ -38,6 +38,8 @@ pub struct Validation {
     /// If the global state root commitment is missing during import, this will error.
     /// This is only intended for full-node syncing without storing the global trie.
     pub trust_global_tries: bool,
+    /// Ignore the order of the blocks to allow starting at some height.
+    pub ignore_block_order: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

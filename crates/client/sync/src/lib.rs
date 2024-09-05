@@ -56,6 +56,7 @@ pub async fn sync(
             sync_polling_interval: fetch_config.sync_polling_interval,
             backup_every_n_blocks,
             pending_block_poll_interval,
+            ignore_block_order: fetch_config.ignore_block_order,
         },
         block_metrics,
         db_metrics,

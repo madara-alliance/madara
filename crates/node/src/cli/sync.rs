@@ -71,6 +71,7 @@ impl SyncParams {
             api_key: self.gateway_key.clone(),
             sync_polling_interval: polling,
             n_blocks_to_sync: self.n_blocks_to_sync,
+            ignore_block_order: false,
         }
     }
 }
