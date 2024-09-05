@@ -1,10 +1,11 @@
-use crate::config::config;
+use std::sync::Arc;
+
+use crate::config::Config;
 use crate::constants::BLOB_DATA_FILE_NAME;
 use color_eyre::eyre::eyre;
 
 /// Fetching the blob data (stored in remote storage during DA job) for a particular block
-pub async fn fetch_blob_data_for_block(block_number: u64) -> color_eyre::Result<Vec<Vec<u8>>> {
-    let config = config().await;
+pub async fn fetch_blob_data_for_block(block_number: u64, config: Arc<Config>) -> color_eyre::Result<Vec<Vec<u8>>> {
     let storage_client = config.storage();
     let key = block_number.to_string() + "/" + BLOB_DATA_FILE_NAME;
     let blob_data = storage_client.get_data(&key).await?;

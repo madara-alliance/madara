@@ -1,6 +1,7 @@
 pub mod utils;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use ::utils::collections::{has_dup, is_sorted};
 use async_trait::async_trait;
@@ -18,7 +19,7 @@ use super::constants::{
 };
 use super::{JobError, OtherError};
 
-use crate::config::{config, Config};
+use crate::config::Config;
 use crate::constants::SNOS_OUTPUT_FILE_NAME;
 use crate::jobs::constants::JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY;
 use crate::jobs::state_update_job::utils::fetch_blob_data_for_block;
@@ -72,7 +73,7 @@ pub struct StateUpdateJob;
 impl Job for StateUpdateJob {
     async fn create_job(
         &self,
-        _config: &Config,
+        _config: Arc<Config>,
         internal_id: String,
         metadata: HashMap<String, String>,
     ) -> Result<JobItem, JobError> {
@@ -89,7 +90,7 @@ impl Job for StateUpdateJob {
         })
     }
 
-    async fn process_job(&self, config: &Config, job: &mut JobItem) -> Result<String, JobError> {
+    async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let attempt_no = job
             .metadata
             .get(JOB_PROCESS_ATTEMPT_METADATA_KEY)
@@ -99,7 +100,7 @@ impl Job for StateUpdateJob {
         // Read the metadata to get the blocks for which state update will be performed.
         // We assume that blocks nbrs are formatted as follow: "2,3,4,5,6".
         let mut block_numbers = self.get_block_numbers_from_metadata(job)?;
-        self.validate_block_numbers(config, &block_numbers).await?;
+        self.validate_block_numbers(config.clone(), &block_numbers).await?;
 
         // If we had a block state update failing last run, we recover from this block
         if let Some(last_failed_block) = job.metadata.get(JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO) {
@@ -113,8 +114,8 @@ impl Job for StateUpdateJob {
 
         let mut sent_tx_hashes: Vec<String> = Vec::with_capacity(block_numbers.len());
         for block_no in block_numbers.iter() {
-            let snos = self.fetch_snos_for_block(*block_no).await;
-            let tx_hash = self.update_state_for_block(config, *block_no, snos, nonce).await.map_err(|e| {
+            let snos = self.fetch_snos_for_block(*block_no, config.clone()).await;
+            let tx_hash = self.update_state_for_block(config.clone(), *block_no, snos, nonce).await.map_err(|e| {
                 job.metadata.insert(JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO.into(), block_no.to_string());
 
                 self.insert_attempts_into_metadata(job, &attempt_no, &sent_tx_hashes);
@@ -139,7 +140,7 @@ impl Job for StateUpdateJob {
     /// Status will be verified if:
     /// 1. the last settlement tx hash is successful,
     /// 2. the expected last settled block from our configuration is indeed the one found in the provider.
-    async fn verify_job(&self, config: &Config, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
+    async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         let attempt_no = job
             .metadata
             .get(JOB_PROCESS_ATTEMPT_METADATA_KEY)
@@ -242,7 +243,7 @@ impl StateUpdateJob {
     }
 
     /// Validate that the list of block numbers to process is valid.
-    async fn validate_block_numbers(&self, config: &Config, block_numbers: &[u64]) -> Result<(), JobError> {
+    async fn validate_block_numbers(&self, config: Arc<Config>, block_numbers: &[u64]) -> Result<(), JobError> {
         if block_numbers.is_empty() {
             Err(StateUpdateError::BlockNumberNotFound)?;
         }
@@ -264,7 +265,7 @@ impl StateUpdateJob {
     /// Update the state for the corresponding block using the settlement layer.
     async fn update_state_for_block(
         &self,
-        config: &Config,
+        config: Arc<Config>,
         block_no: u64,
         snos: StarknetOsOutput,
         nonce: u64,
@@ -273,7 +274,9 @@ impl StateUpdateJob {
         let last_tx_hash_executed = if snos.use_kzg_da == Felt252::ZERO {
             unimplemented!("update_state_for_block not implemented as of now for calldata DA.")
         } else if snos.use_kzg_da == Felt252::ONE {
-            let blob_data = fetch_blob_data_for_block(block_no).await.map_err(|e| JobError::Other(OtherError(e)))?;
+            let blob_data = fetch_blob_data_for_block(block_no, config.clone())
+                .await
+                .map_err(|e| JobError::Other(OtherError(e)))?;
 
             // Fetching nonce before the transaction is run
             // Sending update_state transaction from the settlement client
@@ -288,8 +291,7 @@ impl StateUpdateJob {
     }
 
     /// Retrieves the SNOS output for the corresponding block.
-    async fn fetch_snos_for_block(&self, block_no: u64) -> StarknetOsOutput {
-        let config = config().await;
+    async fn fetch_snos_for_block(&self, block_no: u64, config: Arc<Config>) -> StarknetOsOutput {
         let storage_client = config.storage();
         let key = block_no.to_string() + "/" + SNOS_OUTPUT_FILE_NAME;
         let snos_output_bytes = storage_client.get_data(&key).await.expect("Unable to fetch snos output for block");

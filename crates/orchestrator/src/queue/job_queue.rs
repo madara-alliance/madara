@@ -1,16 +1,24 @@
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::eyre::Context;
 use color_eyre::Result as EyreResult;
 use omniqueue::{Delivery, QueueError};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use tokio::time::sleep;
 use tracing::log;
 use uuid::Uuid;
 
-use crate::config::config;
+use crate::config::Config;
 use crate::jobs::{handle_job_failure, process_job, verify_job, JobError, OtherError};
+use crate::workers::data_submission_worker::DataSubmissionWorker;
+use crate::workers::proof_registration::ProofRegistrationWorker;
+use crate::workers::proving::ProvingWorker;
+use crate::workers::snos::SnosWorker;
+use crate::workers::update_state::UpdateStateWorker;
+use crate::workers::Worker;
 
 pub const JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_job_processing_queue";
 pub const JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_job_verification_queue";
@@ -19,14 +27,6 @@ pub const JOB_HANDLE_FAILURE_QUEUE: &str = "madara_orchestrator_job_handle_failu
 
 // Queues for SNOS worker trigger listening
 pub const WORKER_TRIGGER_QUEUE: &str = "madara_orchestrator_worker_trigger_queue";
-
-use crate::workers::data_submission_worker::DataSubmissionWorker;
-use crate::workers::proof_registration::ProofRegistrationWorker;
-use crate::workers::proving::ProvingWorker;
-use crate::workers::snos::SnosWorker;
-use crate::workers::update_state::UpdateStateWorker;
-use crate::workers::Worker;
-use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ConsumptionError {
@@ -67,23 +67,28 @@ enum DeliveryReturnType {
     NoMessage,
 }
 
-pub async fn add_job_to_process_queue(id: Uuid) -> EyreResult<()> {
+pub async fn add_job_to_process_queue(id: Uuid, config: Arc<Config>) -> EyreResult<()> {
     log::info!("Adding job with id {:?} to processing queue", id);
-    add_job_to_queue(id, JOB_PROCESSING_QUEUE.to_string(), None).await
+    add_job_to_queue(id, JOB_PROCESSING_QUEUE.to_string(), None, config).await
 }
 
-pub async fn add_job_to_verification_queue(id: Uuid, delay: Duration) -> EyreResult<()> {
+pub async fn add_job_to_verification_queue(id: Uuid, delay: Duration, config: Arc<Config>) -> EyreResult<()> {
     log::info!("Adding job with id {:?} to verification queue", id);
-    add_job_to_queue(id, JOB_VERIFICATION_QUEUE.to_string(), Some(delay)).await
+    add_job_to_queue(id, JOB_VERIFICATION_QUEUE.to_string(), Some(delay), config).await
 }
 
-pub async fn consume_job_from_queue<F, Fut>(queue: String, handler: F) -> Result<(), ConsumptionError>
+pub async fn consume_job_from_queue<F, Fut>(
+    queue: String,
+    handler: F,
+    config: Arc<Config>,
+) -> Result<(), ConsumptionError>
 where
-    F: FnOnce(Uuid) -> Fut,
+    F: FnOnce(Uuid, Arc<Config>) -> Fut,
     Fut: Future<Output = Result<(), JobError>>,
 {
     log::info!("Consuming from queue {:?}", queue);
-    let delivery = get_delivery_from_queue(&queue).await?;
+
+    let delivery = get_delivery_from_queue(&queue, config.clone()).await?;
 
     let message = match delivery {
         DeliveryReturnType::Message(message) => message,
@@ -93,7 +98,7 @@ where
     let job_message = parse_job_message(&message)?;
 
     if let Some(job_message) = job_message {
-        handle_job_message(job_message, message, handler).await?;
+        handle_job_message(job_message, message, handler, config).await?;
     }
 
     Ok(())
@@ -104,13 +109,14 @@ where
 pub async fn consume_worker_trigger_messages_from_queue<F, Fut>(
     queue: String,
     handler: F,
+    config: Arc<Config>,
 ) -> Result<(), ConsumptionError>
 where
-    F: FnOnce(Box<dyn Worker>) -> Fut,
+    F: FnOnce(Box<dyn Worker>, Arc<Config>) -> Fut,
     Fut: Future<Output = color_eyre::Result<()>>,
 {
     log::info!("Consuming from queue {:?}", queue);
-    let delivery = get_delivery_from_queue(&queue).await?;
+    let delivery = get_delivery_from_queue(&queue, config.clone()).await?;
 
     let message = match delivery {
         DeliveryReturnType::Message(message) => message,
@@ -120,7 +126,7 @@ where
     let job_message = parse_worker_message(&message)?;
 
     if let Some(job_message) = job_message {
-        handle_worker_message(job_message, message, handler).await?;
+        handle_worker_message(job_message, message, handler, config).await?;
     }
 
     Ok(())
@@ -144,14 +150,15 @@ async fn handle_job_message<F, Fut>(
     job_message: JobQueueMessage,
     message: Delivery,
     handler: F,
+    config: Arc<Config>,
 ) -> Result<(), ConsumptionError>
 where
-    F: FnOnce(Uuid) -> Fut,
+    F: FnOnce(Uuid, Arc<Config>) -> Fut,
     Fut: Future<Output = Result<(), JobError>>,
 {
     log::info!("Handling job with id {:?}", job_message.id);
 
-    match handler(job_message.id).await {
+    match handler(job_message.id, config.clone()).await {
         Ok(_) => {
             message
                 .ack()
@@ -163,8 +170,7 @@ where
         }
         Err(e) => {
             log::error!("Failed to handle job with id {:?}. Error: {:?}", job_message.id, e);
-            config()
-                .await
+            config
                 .alerts()
                 .send_alert_message(e.to_string())
                 .await
@@ -188,15 +194,16 @@ async fn handle_worker_message<F, Fut>(
     job_message: WorkerTriggerMessage,
     message: Delivery,
     handler: F,
+    config: Arc<Config>,
 ) -> Result<(), ConsumptionError>
 where
-    F: FnOnce(Box<dyn Worker>) -> Fut,
+    F: FnOnce(Box<dyn Worker>, Arc<Config>) -> Fut,
     Fut: Future<Output = color_eyre::Result<()>>,
 {
     log::info!("Handling worker trigger for worker type : {:?}", job_message.worker);
     let worker_handler = get_worker_handler_from_worker_trigger_type(job_message.worker.clone());
 
-    match handler(worker_handler).await {
+    match handler(worker_handler, config.clone()).await {
         Ok(_) => {
             message
                 .ack()
@@ -208,8 +215,7 @@ where
         }
         Err(e) => {
             log::error!("Failed to handle worker trigger {:?}. Error: {:?}", job_message.worker, e);
-            config()
-                .await
+            config
                 .alerts()
                 .send_alert_message(e.to_string())
                 .await
@@ -236,8 +242,8 @@ fn get_worker_handler_from_worker_trigger_type(worker_trigger_type: WorkerTrigge
 }
 
 /// To get the delivery from the message queue using the queue name
-async fn get_delivery_from_queue(queue: &str) -> Result<DeliveryReturnType, ConsumptionError> {
-    match config().await.queue().consume_message_from_queue(queue.to_string()).await {
+async fn get_delivery_from_queue(queue: &str, config: Arc<Config>) -> Result<DeliveryReturnType, ConsumptionError> {
+    match config.queue().consume_message_from_queue(queue.to_string()).await {
         Ok(d) => Ok(DeliveryReturnType::Message(d)),
         Err(QueueError::NoData) => Ok(DeliveryReturnType::NoMessage),
         Err(e) => Err(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() }),
@@ -245,10 +251,11 @@ async fn get_delivery_from_queue(queue: &str) -> Result<DeliveryReturnType, Cons
 }
 
 macro_rules! spawn_consumer {
-    ($queue_type :expr, $handler : expr, $consume_function: expr) => {
+    ($queue_type :expr, $handler : expr, $consume_function: expr, $config :expr) => {
+        let config_clone = $config.clone();
         tokio::spawn(async move {
             loop {
-                match $consume_function($queue_type, $handler).await {
+                match $consume_function($queue_type, $handler, config_clone.clone()).await {
                     Ok(_) => {}
                     Err(e) => log::error!("Failed to consume from queue {:?}. Error: {:?}", $queue_type, e),
                 }
@@ -258,22 +265,21 @@ macro_rules! spawn_consumer {
     };
 }
 
-pub async fn init_consumers() -> Result<(), JobError> {
-    spawn_consumer!(JOB_PROCESSING_QUEUE.to_string(), process_job, consume_job_from_queue);
-    spawn_consumer!(JOB_VERIFICATION_QUEUE.to_string(), verify_job, consume_job_from_queue);
-    spawn_consumer!(JOB_HANDLE_FAILURE_QUEUE.to_string(), handle_job_failure, consume_job_from_queue);
-    spawn_consumer!(WORKER_TRIGGER_QUEUE.to_string(), spawn_worker, consume_worker_trigger_messages_from_queue);
+pub async fn init_consumers(config: Arc<Config>) -> Result<(), JobError> {
+    spawn_consumer!(JOB_PROCESSING_QUEUE.to_string(), process_job, consume_job_from_queue, config.clone());
+    spawn_consumer!(JOB_VERIFICATION_QUEUE.to_string(), verify_job, consume_job_from_queue, config.clone());
+    spawn_consumer!(JOB_HANDLE_FAILURE_QUEUE.to_string(), handle_job_failure, consume_job_from_queue, config.clone());
+    spawn_consumer!(WORKER_TRIGGER_QUEUE.to_string(), spawn_worker, consume_worker_trigger_messages_from_queue, config);
     Ok(())
 }
 
 /// To spawn the worker by passing the worker struct
-async fn spawn_worker(worker: Box<dyn Worker>) -> color_eyre::Result<()> {
-    worker.run_worker_if_enabled().await.expect("Error in running the worker.");
+async fn spawn_worker(worker: Box<dyn Worker>, config: Arc<Config>) -> color_eyre::Result<()> {
+    worker.run_worker_if_enabled(config).await.expect("Error in running the worker.");
     Ok(())
 }
 
-async fn add_job_to_queue(id: Uuid, queue: String, delay: Option<Duration>) -> EyreResult<()> {
-    let config = config().await;
+async fn add_job_to_queue(id: Uuid, queue: String, delay: Option<Duration>, config: Arc<Config>) -> EyreResult<()> {
     let message = JobQueueMessage { id };
     config.queue().send_message_to_queue(queue, serde_json::to_string(&message)?, delay).await?;
     Ok(())

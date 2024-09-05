@@ -1,8 +1,9 @@
 use std::error::Error;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::config::config;
+use crate::config::Config;
 use crate::jobs::constants::JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY;
 use crate::jobs::create_job;
 use crate::jobs::types::{JobItem, JobStatus, JobType};
@@ -15,8 +16,7 @@ impl Worker for UpdateStateWorker {
     /// 1. Fetch the last successful state update job
     /// 2. Fetch all successful proving jobs covering blocks after the last state update
     /// 3. Create state updates for all the blocks that don't have a state update job
-    async fn run_worker(&self) -> Result<(), Box<dyn Error>> {
-        let config = config().await;
+    async fn run_worker(&self, config: Arc<Config>) -> Result<(), Box<dyn Error>> {
         let latest_successful_job =
             config.database().get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await?;
 
@@ -40,7 +40,13 @@ impl Worker for UpdateStateWorker {
                 );
 
                 // Creating a single job for all the pending blocks.
-                create_job(JobType::StateTransition, successful_proving_jobs[0].internal_id.clone(), metadata).await?;
+                create_job(
+                    JobType::StateTransition,
+                    successful_proving_jobs[0].internal_id.clone(),
+                    metadata,
+                    config.clone(),
+                )
+                .await?;
 
                 Ok(())
             }

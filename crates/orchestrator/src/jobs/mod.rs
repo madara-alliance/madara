@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
-use crate::config::{config, Config};
+use crate::config::Config;
 use crate::jobs::constants::{JOB_PROCESS_ATTEMPT_METADATA_KEY, JOB_VERIFICATION_ATTEMPT_METADATA_KEY};
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use crate::queue::job_queue::{add_job_to_process_queue, add_job_to_verification_queue, ConsumptionError};
@@ -100,18 +101,18 @@ pub trait Job: Send + Sync {
     /// Should build a new job item and return it
     async fn create_job(
         &self,
-        config: &Config,
+        config: Arc<Config>,
         internal_id: String,
         metadata: HashMap<String, String>,
     ) -> Result<JobItem, JobError>;
     /// Should process the job and return the external_id which can be used to
     /// track the status of the job. For example, a DA job will submit the state diff
     /// to the DA layer and return the txn hash.
-    async fn process_job(&self, config: &Config, job: &mut JobItem) -> Result<String, JobError>;
+    async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError>;
     /// Should verify the job and return the status of the verification. For example,
     /// a DA job will verify the inclusion of the state diff in the DA layer and return
     /// the status of the verification.
-    async fn verify_job(&self, config: &Config, job: &mut JobItem) -> Result<JobVerificationStatus, JobError>;
+    async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError>;
     /// Should return the maximum number of attempts to process the job. A new attempt is made
     /// every time the verification returns `JobVerificationStatus::Rejected`
     fn max_process_attempts(&self) -> u64;
@@ -127,8 +128,8 @@ pub async fn create_job(
     job_type: JobType,
     internal_id: String,
     metadata: HashMap<String, String>,
+    config: Arc<Config>,
 ) -> Result<(), JobError> {
-    let config = config().await;
     let existing_job = config
         .database()
         .get_job_by_internal_id_and_type(internal_id.as_str(), &job_type)
@@ -139,19 +140,17 @@ pub async fn create_job(
     }
 
     let job_handler = factory::get_job_handler(&job_type).await;
-    let job_item = job_handler.create_job(config.as_ref(), internal_id.clone(), metadata.clone()).await?;
-
+    let job_item = job_handler.create_job(config.clone(), internal_id, metadata).await?;
     config.database().create_job(job_item.clone()).await.map_err(|e| JobError::Other(OtherError(e)))?;
 
-    add_job_to_process_queue(job_item.id).await.map_err(|e| JobError::Other(OtherError(e)))?;
+    add_job_to_process_queue(job_item.id, config.clone()).await.map_err(|e| JobError::Other(OtherError(e)))?;
     Ok(())
 }
 
 /// Processes the job, increments the process attempt count and updates the status of the job in the
 /// DB. It then adds the job to the verification queue.
-pub async fn process_job(id: Uuid) -> Result<(), JobError> {
-    let config = config().await;
-    let mut job = get_job(id).await?;
+pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+    let mut job = get_job(id, config.clone()).await?;
 
     match job.status {
         // we only want to process jobs that are in the created or verification failed state.
@@ -173,12 +172,11 @@ pub async fn process_job(id: Uuid) -> Result<(), JobError> {
         .map_err(|e| JobError::Other(OtherError(e)))?;
 
     let job_handler = factory::get_job_handler(&job.job_type).await;
-    let external_id = job_handler.process_job(config.as_ref(), &mut job).await?;
-
+    let external_id = job_handler.process_job(config.clone(), &mut job).await?;
     let metadata = increment_key_in_metadata(&job.metadata, JOB_PROCESS_ATTEMPT_METADATA_KEY)?;
 
     // Fetching the job again because update status above will update the job version
-    let mut job_updated = get_job(id).await?;
+    let mut job_updated = get_job(id, config.clone()).await?;
 
     job_updated.external_id = external_id.into();
     job_updated.status = JobStatus::PendingVerification;
@@ -186,9 +184,13 @@ pub async fn process_job(id: Uuid) -> Result<(), JobError> {
 
     config.database().update_job(&job_updated).await.map_err(|e| JobError::Other(OtherError(e)))?;
 
-    add_job_to_verification_queue(job.id, Duration::from_secs(job_handler.verification_polling_delay_seconds()))
-        .await
-        .map_err(|e| JobError::Other(OtherError(e)))?;
+    add_job_to_verification_queue(
+        job.id,
+        Duration::from_secs(job_handler.verification_polling_delay_seconds()),
+        config.clone(),
+    )
+    .await
+    .map_err(|e| JobError::Other(OtherError(e)))?;
 
     Ok(())
 }
@@ -197,9 +199,8 @@ pub async fn process_job(id: Uuid) -> Result<(), JobError> {
 /// retries processing the job if the max attempts have not been exceeded. If the max attempts have
 /// been exceeded, it marks the job as timed out. If the verification is still pending, it pushes the
 /// job back to the queue.
-pub async fn verify_job(id: Uuid) -> Result<(), JobError> {
-    let config = config().await;
-    let mut job = get_job(id).await?;
+pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+    let mut job = get_job(id, config.clone()).await?;
 
     match job.status {
         JobStatus::PendingVerification => {
@@ -211,7 +212,7 @@ pub async fn verify_job(id: Uuid) -> Result<(), JobError> {
     }
 
     let job_handler = factory::get_job_handler(&job.job_type).await;
-    let verification_status = job_handler.verify_job(config.as_ref(), &mut job).await?;
+    let verification_status = job_handler.verify_job(config.clone(), &mut job).await?;
 
     match verification_status {
         JobVerificationStatus::Verified => {
@@ -239,7 +240,7 @@ pub async fn verify_job(id: Uuid) -> Result<(), JobError> {
                     job.id,
                     process_attempts + 1
                 );
-                add_job_to_process_queue(job.id).await.map_err(|e| JobError::Other(OtherError(e)))?;
+                add_job_to_process_queue(job.id, config.clone()).await.map_err(|e| JobError::Other(OtherError(e)))?;
                 return Ok(());
             }
         }
@@ -261,6 +262,7 @@ pub async fn verify_job(id: Uuid) -> Result<(), JobError> {
             add_job_to_verification_queue(
                 job.id,
                 Duration::from_secs(job_handler.verification_polling_delay_seconds()),
+                config.clone(),
             )
             .await
             .map_err(|e| JobError::Other(OtherError(e)))?;
@@ -272,10 +274,8 @@ pub async fn verify_job(id: Uuid) -> Result<(), JobError> {
 
 /// Terminates the job and updates the status of the job in the DB.
 /// Logs error if the job status `Completed` is existing on DL queue.
-pub async fn handle_job_failure(id: Uuid) -> Result<(), JobError> {
-    let config = config().await;
-
-    let mut job = get_job(id).await?.clone();
+pub async fn handle_job_failure(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+    let mut job = get_job(id, config.clone()).await?.clone();
     let mut metadata = job.metadata.clone();
 
     if job.status == JobStatus::Completed {
@@ -297,8 +297,7 @@ pub async fn handle_job_failure(id: Uuid) -> Result<(), JobError> {
     Ok(())
 }
 
-async fn get_job(id: Uuid) -> Result<JobItem, JobError> {
-    let config = config().await;
+async fn get_job(id: Uuid, config: Arc<Config>) -> Result<JobItem, JobError> {
     let job = config.database().get_job_by_id(id).await.map_err(|e| JobError::Other(OtherError(e)))?;
     match job {
         Some(job) => Ok(job),

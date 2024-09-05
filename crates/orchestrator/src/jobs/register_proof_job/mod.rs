@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use color_eyre::Result;
@@ -16,7 +17,7 @@ pub struct RegisterProofJob;
 impl Job for RegisterProofJob {
     async fn create_job(
         &self,
-        _config: &Config,
+        _config: Arc<Config>,
         internal_id: String,
         metadata: HashMap<String, String>,
     ) -> Result<JobItem, JobError> {
@@ -33,14 +34,14 @@ impl Job for RegisterProofJob {
         })
     }
 
-    async fn process_job(&self, _config: &Config, _job: &mut JobItem) -> Result<String, JobError> {
+    async fn process_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<String, JobError> {
         // Get proof from storage and submit on chain for verification
         // We need to implement a generic trait for this to support multiple
         // base layers
         todo!()
     }
 
-    async fn verify_job(&self, _config: &Config, _job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
+    async fn verify_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         // verify that the proof transaction has been included on chain
         todo!()
     }

@@ -1,10 +1,8 @@
-use crate::data_storage::aws_s3::config::AWSS3Config;
-use crate::data_storage::aws_s3::AWSS3;
-use crate::data_storage::{DataStorage, DataStorageConfig};
 use bytes::Bytes;
 use rstest::rstest;
 use serde_json::json;
-use utils::env_utils::get_env_var_or_panic;
+
+use crate::tests::config::{ConfigType, TestConfigBuilder};
 
 /// This test checks the ability to put and get data from AWS S3 using `AWSS3`.
 /// It puts JSON data into a test bucket and retrieves it, verifying the data
@@ -13,13 +11,11 @@ use utils::env_utils::get_env_var_or_panic;
 #[rstest]
 #[tokio::test]
 async fn test_put_and_get_data_s3() -> color_eyre::Result<()> {
+    let services = TestConfigBuilder::new().configure_storage_client(ConfigType::Actual).build().await;
+
     dotenvy::from_filename("../.env.test")?;
 
-    let config = AWSS3Config::new_from_env();
-    let aws_config =
-        aws_config::load_from_env().await.into_builder().endpoint_url(get_env_var_or_panic("AWS_ENDPOINT_URL")).build();
-    let s3_client = AWSS3::new(config, &aws_config);
-    s3_client.build_test_bucket(&get_env_var_or_panic("AWS_S3_BUCKET_NAME")).await.unwrap();
+    let s3_client = services.config.storage();
 
     let mock_data = json!(
         {
