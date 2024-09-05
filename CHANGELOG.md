@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: rpc versioning
 - fix: replaced old namings with adapted namings
 - refactor: block import is now centrally done in a single crate
 - tests: add e2e tests for the node
