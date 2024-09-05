@@ -25,6 +25,7 @@ pub mod class_db;
 pub mod contract_db;
 pub mod db_block_id;
 pub mod db_metrics;
+pub mod devnet_db;
 pub mod l1_db;
 pub mod storage_updates;
 
@@ -166,6 +167,9 @@ pub enum Column {
 
     L1Messaging,
     L1MessagingNonce,
+
+    /// Devnet: stores the private keys for the devnet predeployed contracts
+    Devnet,
 }
 
 impl fmt::Debug for Column {
@@ -213,6 +217,7 @@ impl Column {
             PendingContractToClassHashes,
             PendingContractToNonces,
             PendingContractStorage,
+            Devnet,
         ]
     };
     pub const NUM_COLUMNS: usize = Self::ALL.len();
@@ -249,6 +254,7 @@ impl Column {
             PendingContractToClassHashes => "pending_contract_to_class_hashes",
             PendingContractToNonces => "pending_contract_to_nonces",
             PendingContractStorage => "pending_contract_storage",
+            Devnet => "devnet",
         }
     }
 

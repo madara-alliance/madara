@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
+use dc_block_import::BlockImporter;
 mod cli;
 mod service;
 mod util;
@@ -45,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
     }
     log::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
     log::info!("🏷  Node Name: {}", node_name);
-    let role = if run_cmd.authority { "authority" } else { "full node" };
+    let role = if run_cmd.is_authority() { "authority" } else { "full node" };
     log::info!("👤 Role: {}", role);
     log::info!("🌐 Network: {}", chain_config.chain_name);
 
@@ -75,6 +76,8 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing db service")?;
 
+    let importer = Arc::new(BlockImporter::new(Arc::clone(&db_service.backend())));
+
     let l1_gas_setter = GasPriceProvider::new();
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
@@ -85,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
         l1_gas_setter,
         chain_config.chain_id.clone(),
         chain_config.eth_core_contract_address,
-        run_cmd.authority,
+        run_cmd.is_authority(),
     )
     .await
     .context("Initializing the l1 sync service")?;
@@ -93,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
     let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) =
-        match run_cmd.authority {
+        match run_cmd.is_authority() {
             // Block production service. (authority)
             true => {
                 let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
@@ -102,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
                     &run_cmd.block_production_params,
                     &db_service,
                     Arc::clone(&mempool),
+                    importer,
                     Arc::clone(&l1_data_provider),
                     prometheus_service.registry(),
                     telemetry_service.new_handle(),

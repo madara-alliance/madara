@@ -172,6 +172,7 @@ impl BlockProductionTask {
 
     pub fn new(
         backend: Arc<DeoxysBackend>,
+        importer: Arc<BlockImporter>,
         mempool: Arc<Mempool>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
@@ -195,7 +196,7 @@ impl BlockProductionTask {
         executor.bouncer = Bouncer::new(bouncer_config);
 
         Ok(Self {
-            importer: BlockImporter::new(Arc::clone(&backend)).into(),
+            importer,
             backend,
             mempool,
             executor,

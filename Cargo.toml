@@ -7,6 +7,7 @@ members = [
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
+  "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
   "crates/node",
@@ -18,7 +19,7 @@ members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
-  "crates/tests", "crates/client/devnet",
+  "crates/tests",
 ]
 resolver = "2"
 default-members = [
@@ -29,6 +30,7 @@ default-members = [
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
+  "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
   "crates/node",
@@ -96,6 +98,7 @@ dc-eth = { path = "crates/client/eth" }
 dc-metrics = { path = "crates/client/metrics" }
 dc-mempool = { path = "crates/client/mempool" }
 dc-block-import = { path = "crates/client/block_import" }
+dc-devnet = { path = "crates/client/devnet" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.0-rc5"

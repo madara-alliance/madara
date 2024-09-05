@@ -7,17 +7,19 @@ use dp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
 use starknet_api::{core::ContractAddress, state::StorageKey};
 use starknet_signers::SigningKey;
 use starknet_types_core::felt::Felt;
-use std::{collections::HashMap, fmt, time::SystemTime};
+use std::{collections::HashMap, time::SystemTime};
 
 mod balances;
 mod classes;
 mod contracts;
 mod entrypoint;
+mod predeployed_contracts;
 
 pub use balances::*;
 pub use classes::*;
 pub use contracts::*;
 pub use entrypoint::*;
+pub use predeployed_contracts::*;
 
 // 1 ETH = 1e18 WEI
 const ETH_WEI_DECIMALS: u128 = 1_000_000_000_000_000_000;
@@ -75,34 +77,6 @@ pub struct ChainGenesisDescription {
     pub initial_storage: StorageDiffs,
 }
 
-pub struct DevnetPredeployedContract {
-    pub address: Felt,
-    pub secret: SigningKey,
-    pub pubkey: Felt,
-    pub balance: InitialBalance,
-}
-
-pub struct DevnetKeys(Vec<DevnetPredeployedContract>);
-
-impl fmt::Display for DevnetKeys {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "==== DEVNET PREDEPLOYED CONTRACTS ====")?;
-        writeln!(f)?;
-        for (i, keypair) in self.0.iter().enumerate() {
-            writeln!(
-                f,
-                "#{} - Address: {:#x}, Private key: {:#x}",
-                i,
-                keypair.address,
-                keypair.secret.secret_scalar()
-            )?;
-            // writeln!(f, "Balance: 10000 ETH, 10000 STRK")?;
-            // writeln!(f, "")?;
-        }
-        Ok(())
-    }
-}
-
 impl ChainGenesisDescription {
     pub fn base_config() -> Self {
         Self {
@@ -137,7 +111,7 @@ impl ChainGenesisDescription {
 
                     let address = pubkey.scalar().double(); // let's just lie and make it up here for now
 
-                    let balance = InitialBalance {
+                    let balance = ContractFeeTokensBalance {
                         fri: (10_000 * ETH_WEI_DECIMALS).into(),
                         wei: (10_000 * STRK_FRI_DECIMALS).into(),
                     };
@@ -191,13 +165,11 @@ impl ChainGenesisDescription {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blockifier::abi::abi_utils::get_fee_token_var_address;
-    use blockifier::abi::sierra_types::next_storage_key;
     use dc_block_import::{BlockImporter, Validation};
     use dc_db::DeoxysBackend;
     use dc_mempool::block_production::BlockProductionTask;
     use dc_mempool::MempoolProvider;
-    use dc_mempool::{transaction_hash, L1DataProvider, MockL1DataProvider, Mempool};
+    use dc_mempool::{transaction_hash, L1DataProvider, Mempool, MockL1DataProvider};
     use dp_block::header::L1DataAvailabilityMode;
     use dp_block::{BlockId, BlockTag};
     use dp_convert::felt_to_u128;
@@ -287,34 +259,9 @@ mod tests {
             self.mempool.accept_deploy_account_tx(tx).unwrap()
         }
 
-        /// Returns an `u128`. This is for tests only as an ERC20 contract may have a higher balance than an u128.
-        pub fn get_bal_contract(&self, contract_address: Felt, fee_token_address: Felt) -> u128 {
-            let low_key = get_fee_token_var_address(contract_address.try_into().unwrap());
-            let high_key = next_storage_key(&low_key).unwrap();
-            let low = self
-                .backend
-                .get_contract_storage_at(&BlockId::Tag(BlockTag::Pending), &fee_token_address, &low_key)
-                .unwrap()
-                .unwrap_or(Felt::ZERO);
-            let high = self
-                .backend
-                .get_contract_storage_at(&BlockId::Tag(BlockTag::Pending), &fee_token_address, &high_key)
-                .unwrap()
-                .unwrap_or(Felt::ZERO);
-            log::debug!("get_fee_token_balance contract_address={contract_address:#x} fee_token_address={fee_token_address:#x} low_key={low_key:?}, got {low:#x} {high:#x}");
-
-            assert_eq!(high, Felt::ZERO); // for now we never use high let's keep it out of the api
-                                          // (blockifier does not even support it fully I believe, as the total supply of STRK/ETH would not reach the high bits.)
-
-            felt_to_u128(&low).unwrap()
-        }
-
         /// (STRK in FRI, ETH in WEI)
         pub fn get_bal_strk_eth(&self, contract_address: Felt) -> (u128, u128) {
-            (
-                self.get_bal_contract(contract_address, ERC20_STRK_CONTRACT_ADDRESS),
-                self.get_bal_contract(contract_address, ERC20_ETH_CONTRACT_ADDRESS),
-            )
+            get_fee_tokens_balance(&self.backend, contract_address).unwrap().as_u128_fri_wei().unwrap()
         }
     }
 
@@ -328,7 +275,7 @@ mod tests {
         let chain_config = Arc::new(ChainConfig::test_config());
         let block = g.build(&chain_config).unwrap();
         let backend = DeoxysBackend::open_for_testing(Arc::clone(&chain_config));
-        let importer = BlockImporter::new(Arc::clone(&backend));
+        let importer = Arc::new(BlockImporter::new(Arc::clone(&backend)));
 
         println!("{:?}", block.state_diff);
         tokio::runtime::Runtime::new()
@@ -355,9 +302,13 @@ mod tests {
         });
         let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), Arc::clone(&l1_data_provider)));
-        let block_production =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), Arc::clone(&l1_data_provider))
-                .unwrap();
+        let block_production = BlockProductionTask::new(
+            Arc::clone(&backend),
+            Arc::clone(&importer),
+            Arc::clone(&mempool),
+            Arc::clone(&l1_data_provider),
+        )
+        .unwrap();
 
         DevnetForTesting { backend, contracts, block_production, mempool }
     }

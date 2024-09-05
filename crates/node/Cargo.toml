@@ -20,6 +20,8 @@ name = "deoxys"
 # Deoxys
 dc-db = { workspace = true }
 dc-eth = { workspace = true }
+dc-block-import = { workspace = true }
+dc-devnet = { workspace = true }
 dc-mempool = { workspace = true }
 dc-metrics = { workspace = true }
 dc-rpc = { workspace = true }
