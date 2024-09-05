@@ -9,10 +9,10 @@ version.workspace = true
 homepage.workspace = true
 
 [dependencies]
-syn = { version = "2.0.39", features = ["full"] }
-quote = "1.0.26"
 proc-macro2 = "1.0.86"
+quote = "1.0.26"
 regex = "1.10.6"
+syn = { version = "2.0.39", features = ["full"] }
 
 [lib]
 proc-macro = true
