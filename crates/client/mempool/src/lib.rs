@@ -91,7 +91,7 @@ impl Mempool {
         // Perform validations
         let exec_context = ExecutionContext::new(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
-        validator.perform_validations(clone_account_tx(&tx), deploy_account_tx_hash)?;
+        validator.perform_validations(clone_account_tx(&tx), deploy_account_tx_hash.is_some())?;
 
         if !is_only_query(&tx) {
             // Finally, add it to the nonce chain for the account nonce
