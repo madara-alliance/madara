@@ -1,14 +1,14 @@
 pub mod job_queue;
 pub mod sqs;
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use color_eyre::Result as EyreResult;
 use mockall::automock;
 use omniqueue::{Delivery, QueueError};
 
-use crate::{config::Config, jobs::JobError};
+use crate::jobs::JobError;
 
 /// The QueueProvider trait is used to define the methods that a queue
 /// should implement to be used as a queue for the orchestrator. The
@@ -20,6 +20,6 @@ pub trait QueueProvider: Send + Sync {
     async fn consume_message_from_queue(&self, queue: String) -> std::result::Result<Delivery, QueueError>;
 }
 
-pub async fn init_consumers(config: Arc<Config>) -> Result<(), JobError> {
-    job_queue::init_consumers(config).await
+pub async fn init_consumers() -> Result<(), JobError> {
+    job_queue::init_consumers().await
 }

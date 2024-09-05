@@ -1,26 +1,27 @@
 use std::sync::Arc;
 
-use aws_config::SdkConfig;
-use dotenvy::dotenv;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::{JsonRpcClient, Url};
-
-use da_client_interface::{DaClient, DaConfig};
-use ethereum_da_client::config::EthereumDaConfig;
-use ethereum_settlement_client::EthereumSettlementClient;
-use prover_client_interface::ProverClient;
-use settlement_client_interface::SettlementClient;
-use sharp_service::SharpProverService;
-use starknet_settlement_client::StarknetSettlementClient;
-use utils::env_utils::get_env_var_or_panic;
-use utils::settings::default::DefaultSettingsProvider;
-use utils::settings::SettingsProvider;
-
 use crate::alerts::aws_sns::AWSSNS;
 use crate::alerts::Alerts;
 use crate::data_storage::aws_s3::config::AWSS3Config;
 use crate::data_storage::aws_s3::AWSS3;
 use crate::data_storage::{DataStorage, DataStorageConfig};
+use arc_swap::{ArcSwap, Guard};
+use aws_config::SdkConfig;
+use da_client_interface::{DaClient, DaConfig};
+use dotenvy::dotenv;
+use ethereum_da_client::config::EthereumDaConfig;
+use ethereum_settlement_client::EthereumSettlementClient;
+use prover_client_interface::ProverClient;
+use settlement_client_interface::SettlementClient;
+use sharp_service::SharpProverService;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::{JsonRpcClient, Url};
+use starknet_settlement_client::StarknetSettlementClient;
+use tokio::sync::OnceCell;
+use utils::env_utils::get_env_var_or_panic;
+use utils::settings::default::DefaultSettingsProvider;
+use utils::settings::SettingsProvider;
+
 use crate::database::mongodb::config::MongoDbConfig;
 use crate::database::mongodb::MongoDb;
 use crate::database::{Database, DatabaseConfig};
@@ -49,7 +50,7 @@ pub struct Config {
 }
 
 /// Initializes the app config
-pub async fn init_config() -> Arc<Config> {
+pub async fn init_config() -> Config {
     dotenv().ok();
 
     // init starknet client
@@ -67,7 +68,7 @@ pub async fn init_config() -> Arc<Config> {
     // TODO: we use omniqueue for now which doesn't support loading AWS config
     // from `SdkConfig`. We can later move to using `aws_sdk_sqs`. This would require
     // us stop using the generic omniqueue abstractions for message ack/nack
-    let queue = build_queue_client();
+    let queue = build_queue_client(&aws_config);
 
     let da_client = build_da_client().await;
 
@@ -76,9 +77,10 @@ pub async fn init_config() -> Arc<Config> {
     let prover_client = build_prover_service(&settings_provider);
 
     let storage_client = build_storage_client(&aws_config).await;
-    let alerts_client = build_alert_client(&aws_config).await;
 
-    Arc::new(Config::new(
+    let alerts_client = build_alert_client().await;
+
+    Config::new(
         Arc::new(provider),
         da_client,
         prover_client,
@@ -87,7 +89,7 @@ pub async fn init_config() -> Arc<Config> {
         queue,
         storage_client,
         alerts_client,
-    ))
+    )
 }
 
 impl Config {
@@ -147,6 +149,33 @@ impl Config {
     }
 }
 
+/// The app config. It can be accessed from anywhere inside the service.
+/// It's initialized only once.
+/// We are using `ArcSwap` as it allow us to replace the new `Config` with
+/// a new one which is required when running test cases. This approach was
+/// inspired from here - https://github.com/matklad/once_cell/issues/127
+pub static CONFIG: OnceCell<ArcSwap<Config>> = OnceCell::const_new();
+
+/// Returns the app config. Initializes if not already done.
+pub async fn config() -> Guard<Arc<Config>> {
+    let cfg = CONFIG.get_or_init(|| async { ArcSwap::from_pointee(init_config().await) }).await;
+    cfg.load()
+}
+
+/// OnceCell only allows us to initialize the config once and that's how it should be on production.
+/// However, when running tests, we often want to reinitialize because we want to clear the DB and
+/// set it up again for reuse in new tests. By calling `config_force_init` we replace the already
+/// stored config inside `ArcSwap` with the new configuration and pool settings.
+#[cfg(test)]
+pub async fn config_force_init(config: Config) {
+    match CONFIG.get() {
+        Some(arc) => arc.store(Arc::new(config)),
+        None => {
+            CONFIG.get_or_init(|| async { ArcSwap::from_pointee(config) }).await;
+        }
+    }
+}
+
 /// Builds the DA client based on the environment variable DA_LAYER
 pub async fn build_da_client() -> Box<dyn DaClient + Send + Sync> {
     match get_env_var_or_panic("DA_LAYER").as_str() {
@@ -184,13 +213,13 @@ pub async fn build_storage_client(aws_config: &SdkConfig) -> Box<dyn DataStorage
     }
 }
 
-pub async fn build_alert_client(aws_config: &SdkConfig) -> Box<dyn Alerts + Send + Sync> {
+pub async fn build_alert_client() -> Box<dyn Alerts + Send + Sync> {
     match get_env_var_or_panic("ALERTS").as_str() {
-        "sns" => Box::new(AWSSNS::new(aws_config).await),
+        "sns" => Box::new(AWSSNS::new().await),
         _ => panic!("Unsupported Alert Client"),
     }
 }
-pub fn build_queue_client() -> Box<dyn QueueProvider + Send + Sync> {
+pub fn build_queue_client(_aws_config: &SdkConfig) -> Box<dyn QueueProvider + Send + Sync> {
     match get_env_var_or_panic("QUEUE_PROVIDER").as_str() {
         "sqs" => Box::new(SqsQueue {}),
         _ => panic!("Unsupported Queue Client"),

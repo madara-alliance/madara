@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
@@ -35,7 +34,7 @@ pub struct ProvingJob;
 impl Job for ProvingJob {
     async fn create_job(
         &self,
-        _config: Arc<Config>,
+        _config: &Config,
         internal_id: String,
         metadata: HashMap<String, String>,
     ) -> Result<JobItem, JobError> {
@@ -50,7 +49,7 @@ impl Job for ProvingJob {
         })
     }
 
-    async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
+    async fn process_job(&self, config: &Config, job: &mut JobItem) -> Result<String, JobError> {
         // Cairo Pie path in s3 storage client
         let cairo_pie_path = job.internal_id.to_string() + "/pie.zip";
         let cairo_pie_file = config
@@ -71,7 +70,7 @@ impl Job for ProvingJob {
         Ok(external_id)
     }
 
-    async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
+    async fn verify_job(&self, config: &Config, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         let task_id: String = job.external_id.unwrap_string().map_err(|e| JobError::Other(OtherError(e)))?.into();
         let task_status = config
             .prover_client()

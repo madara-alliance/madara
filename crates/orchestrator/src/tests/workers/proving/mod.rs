@@ -29,7 +29,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
     let da_client = MockDaClient::new();
     let mut db = MockDatabase::new();
     let mut queue = MockQueueProvider::new();
-    let prover_client = MockProverClient::new();
+    let mut prover_client = MockProverClient::new();
     let settlement_client = MockSettlementClient::new();
 
     const JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_job_processing_queue";
@@ -58,6 +58,8 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
             db_checks_proving_worker(i, &mut db, &mut job_handler);
         }
 
+        prover_client.expect_submit_task().times(4).returning(|_| Ok("task_id".to_string()));
+
         // Queue function call simulations
         queue
             .expect_send_message_to_queue()
@@ -75,6 +77,8 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
             .withf(|_, _, _| true)
             .returning(move |_, _, _| Ok(get_job_by_mock_id_vector(JobType::ProofCreation, JobStatus::Created, 5, 1)));
 
+        prover_client.expect_submit_task().times(5).returning(|_| Ok("task_id".to_string()));
+
         // Queue function call simulations
         queue
             .expect_send_message_to_queue()
@@ -87,13 +91,13 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
     ));
 
-    let services = TestConfigBuilder::new()
-        .configure_starknet_client(provider.into())
-        .configure_database(db.into())
-        .configure_queue_client(queue.into())
-        .configure_da_client(da_client.into())
-        .configure_prover_client(prover_client.into())
-        .configure_settlement_client(settlement_client.into())
+    TestConfigBuilder::new()
+        .mock_starknet_client(Arc::new(provider))
+        .mock_db_client(Box::new(db))
+        .mock_queue(Box::new(queue))
+        .mock_da_client(Box::new(da_client))
+        .mock_prover_client(Box::new(prover_client))
+        .mock_settlement_client(Box::new(settlement_client))
         .build()
         .await;
 
@@ -107,7 +111,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
     }
 
     let proving_worker = ProvingWorker {};
-    proving_worker.run_worker(services.config).await?;
+    proving_worker.run_worker().await?;
 
     Ok(())
 }

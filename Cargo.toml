@@ -50,6 +50,7 @@ url = { version = "2.5.0", features = ["serde"] }
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
 httpmock = { version = "0.7.0", features = ["remote"] }
 num-bigint = { version = "0.4.4" }
+arc-swap = { version = "1.7.1" }
 num-traits = "0.2"
 lazy_static = "1.4.0"
 stark_evm_adapter = "0.1.1"
