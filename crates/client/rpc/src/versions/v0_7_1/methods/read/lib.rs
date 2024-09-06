@@ -27,16 +27,18 @@ use super::get_transaction_by_hash::*;
 use super::get_transaction_receipt::*;
 use super::get_transaction_status::*;
 use super::syncing::*;
-use crate::{Starknet, StarknetReadRpcApiServer};
+
+use crate::versions::v0_7_1::StarknetReadRpcApiV0_7_1Server;
+use crate::Starknet;
 
 #[async_trait]
-impl StarknetReadRpcApiServer for Starknet {
-    fn block_number(&self) -> RpcResult<u64> {
-        Ok(self.current_block_number()?)
+impl StarknetReadRpcApiV0_7_1Server for Starknet {
+    fn spec_version(&self) -> RpcResult<String> {
+        Ok(self.current_spec_version().to_string())
     }
 
-    fn spec_version(&self) -> RpcResult<String> {
-        Ok(self.current_spec_version())
+    fn block_number(&self) -> RpcResult<u64> {
+        Ok(self.current_block_number()?)
     }
 
     fn block_hash_and_number(&self) -> RpcResult<BlockHashAndNumber> {

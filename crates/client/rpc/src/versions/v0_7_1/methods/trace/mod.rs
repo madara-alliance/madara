@@ -1,15 +1,20 @@
+pub(crate) mod simulate_transactions;
+pub(crate) mod trace_block_transactions;
+pub(crate) mod trace_transaction;
+
 use jsonrpsee::core::{async_trait, RpcResult};
 use starknet_core::types::{
     BlockId, BroadcastedTransaction, Felt, SimulatedTransaction, SimulationFlag, TransactionTraceWithHash,
 };
 
-use super::simulate_transactions::simulate_transactions;
-use super::trace_block_transactions::trace_block_transactions;
-use super::trace_transaction::trace_transaction;
-use crate::{Starknet, StarknetTraceRpcApiServer};
+use simulate_transactions::simulate_transactions;
+use trace_block_transactions::trace_block_transactions;
+use trace_transaction::trace_transaction;
+
+use crate::{versions::v0_7_1::StarknetTraceRpcApiV0_7_1Server, Starknet};
 
 #[async_trait]
-impl StarknetTraceRpcApiServer for Starknet {
+impl StarknetTraceRpcApiV0_7_1Server for Starknet {
     async fn simulate_transactions(
         &self,
         block_id: BlockId,

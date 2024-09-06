@@ -18,6 +18,7 @@ members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/proc-macros",
   "crates/tests",
 ]
 resolver = "2"
@@ -40,6 +41,7 @@ default-members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/proc-macros",
   "crates/tests",
 ]
 
@@ -76,6 +78,9 @@ bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bon
   "std",
 ] }
 
+# Madara proc macros
+m-proc-macros = { path = "crates/proc-macros", default-features = false }
+
 # Madara primtitives
 mp-block = { path = "crates/primitives/block", default-features = false }
 mp-convert = { path = "crates/primitives/convert", default-features = false }
@@ -98,7 +103,7 @@ mc-mempool = { path = "crates/client/mempool" }
 mc-block-import = { path = "crates/client/block_import" }
 
 # Starknet dependencies
-cairo-vm = "=1.0.0-rc5"
+cairo-vm = "=1.0.1"
 starknet-core = "0.11"
 starknet-crypto = "0.7"
 starknet-providers = "0.11"
@@ -107,10 +112,10 @@ starknet-types-core = { version = "0.1.5", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = "=0.8.0-rc.0"
-starknet_api = "=0.13.0-rc.0"
-cairo-lang-starknet-classes = "=2.7.0-rc.2"
-cairo-lang-utils = "=2.7.0-rc.2"
+blockifier = "=0.8.0-rc.3"
+starknet_api = "=0.13.0-rc.1"
+cairo-lang-starknet-classes = "=2.7.0"
+cairo-lang-utils = "=2.7.0"
 
 alloy = { version = "0.2.0", features = [
   "node-bindings",
@@ -120,6 +125,7 @@ alloy = { version = "0.2.0", features = [
 ] }
 
 # Other third party dependencies
+paste = "1.0.15"
 anyhow = "1.0"
 assert_matches = "1.5"
 async-trait = "0.1"
@@ -167,5 +173,3 @@ starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", bra
 
 # wait for PR https://github.com/starknet-io/types-rs/pull/76 to be merged
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.5" }
-
-blockifier = { git = "https://github.com/starkware-libs/blockifier", tag = "v0.8.0-rc.0" }

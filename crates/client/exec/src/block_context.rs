@@ -9,11 +9,7 @@ use blockifier::{
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mp_block::{header::L1DataAvailabilityMode, MadaraMaybePendingBlockInfo};
-use starknet_api::{
-    block::{BlockNumber, BlockTimestamp},
-    core::Nonce,
-};
-use starknet_types_core::felt::Felt;
+use starknet_api::block::{BlockNumber, BlockTimestamp};
 use std::sync::Arc;
 
 pub struct ExecutionContext {
@@ -33,10 +29,7 @@ impl ExecutionContext {
     }
 
     pub fn tx_validator(&self) -> StatefulValidator<BlockifierStateAdapter> {
-        // See [`ChainConfig`].
-        let max_nonce_for_validation_skip =
-            Nonce(Felt::from(self.backend.chain_config().max_nonce_for_validation_skip));
-        StatefulValidator::create(self.init_cached_state(), self.block_context.clone(), max_nonce_for_validation_skip)
+        StatefulValidator::create(self.init_cached_state(), self.block_context.clone())
     }
 
     pub fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter> {
