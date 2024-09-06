@@ -29,7 +29,7 @@ where
 static CTRL_C: AtomicBool = AtomicBool::new(false);
 
 async fn graceful_shutdown_inner() {
-    let sigint = async {
+    let sigterm = async {
         match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
             Ok(mut signal) => signal.recv().await,
             // SIGTERM not supported
@@ -38,7 +38,7 @@ async fn graceful_shutdown_inner() {
     };
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {},
-        _ = sigint => {},
+        _ = sigterm => {},
     };
     CTRL_C.store(true, Ordering::SeqCst);
 }

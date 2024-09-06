@@ -12,6 +12,7 @@ use anyhow::Context;
 use clap::Parser;
 use mc_block_import::BlockImporter;
 
+use cli::{NetworkType, RunCmd};
 use mc_db::DatabaseService;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_metrics::MetricsService;
@@ -19,12 +20,9 @@ use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxP
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_convert::ToFelt;
 use mp_utils::service::{Service, ServiceGroup};
-
-use starknet_providers::SequencerGatewayProvider;
-
-use cli::{NetworkType, RunCmd};
 use service::L1SyncService;
-use service::{BlockProductionService, RpcService, SyncService};
+use service::{BlockProductionService, GatewayService, RpcService, SyncService};
+use starknet_providers::SequencerGatewayProvider;
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
@@ -179,9 +177,13 @@ async fn main() -> anyhow::Result<()> {
         &db_service,
         Arc::clone(&chain_config),
         prometheus_service.registry(),
-        rpc_add_txs_method_provider,
+        Arc::clone(&rpc_add_txs_method_provider),
     )
     .context("Initializing rpc service")?;
+
+    let gateway_service = GatewayService::new(&run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
+        .await
+        .context("Initializing gateway service")?;
 
     telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
@@ -190,6 +192,7 @@ async fn main() -> anyhow::Result<()> {
         .with(l1_service)
         .with(block_provider_service)
         .with(rpc_service)
+        .with(gateway_service)
         .with(telemetry_service)
         .with(prometheus_service);
 

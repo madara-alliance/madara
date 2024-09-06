@@ -1,6 +1,6 @@
 [package]
-description = "Madara primitive for starknet blocks"
-name = "mp-transactions"
+description = "Madara client rpc service"
+name = "mc-gateway"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,28 +14,27 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-mp-chain-config = { workspace = true }
+mc-db = { workspace = true }
+mc-rpc = { workspace = true }
+mp-block = { workspace = true }
 mp-class = { workspace = true }
-mp-convert = { workspace = true }
+mp-gateway = { workspace = true }
+mp-utils = { workspace = true }
 
 # Starknet
-blockifier = { workspace = true }
-cairo-lang-starknet-classes = { workspace = true }
-cairo-lang-utils = { workspace = true }
-cairo-vm = { workspace = true }
 starknet-core = { workspace = true }
-starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
-starknet_api = { workspace = true }
 
 # Other
 anyhow = { workspace = true }
+hyper = { workspace = true }
 log = { workspace = true }
-num-bigint = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_with = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
-
+tokio = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
+tokio = { workspace = true }

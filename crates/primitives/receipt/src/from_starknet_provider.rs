@@ -2,9 +2,9 @@ use mp_convert::{felt_to_u64, ToFelt};
 use starknet_types_core::felt::Felt;
 
 use crate::{
-    DataAvailabilityResources, DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt,
-    Event, ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, L1HandlerTransactionReceipt,
-    MsgToL1, PriceUnit, TransactionReceipt,
+    DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, Event, ExecutionResources,
+    ExecutionResult, FeePayment, InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit,
+    TransactionReceipt,
 };
 
 impl TransactionReceipt {
@@ -154,8 +154,8 @@ impl From<starknet_providers::sequencer::models::ExecutionResources> for Executi
             bitwise_builtin_applications: builtin_instance_counter.bitwise_builtin,
             keccak_builtin_applications: builtin_instance_counter.keccak_builtin,
             segment_arena_builtin: builtin_instance_counter.segment_arena_builtin,
-            data_availability: resources.data_availability.map(DataAvailabilityResources::from).unwrap_or_default(),
-            total_gas_consumed: resources.total_gas_consumed.map(DataAvailabilityResources::from).unwrap_or_default(),
+            data_availability: resources.data_availability.map(L1Gas::from).unwrap_or_default(),
+            total_gas_consumed: resources.total_gas_consumed.map(L1Gas::from).unwrap_or_default(),
         }
     }
 }

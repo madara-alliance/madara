@@ -5507,6 +5507,7 @@ dependencies = [
  "mc-db",
  "mc-devnet",
  "mc-eth",
+ "mc-gateway",
  "mc-mempool",
  "mc-metrics",
  "mc-rpc",
@@ -5721,6 +5722,29 @@ dependencies = [
  "starknet_api",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "mc-gateway"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "hyper 0.14.29",
+ "log",
+ "mc-db",
+ "mc-rpc",
+ "mp-block",
+ "mp-class",
+ "mp-gateway",
+ "mp-utils",
+ "reqwest 0.12.5",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-types-core",
+ "thiserror",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -5998,10 +6022,29 @@ version = "0.7.0"
 dependencies = [
  "assert_matches",
  "primitive-types",
+ "serde",
+ "serde_with 3.9.0",
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
  "thiserror",
+]
+
+[[package]]
+name = "mp-gateway"
+version = "0.7.0"
+dependencies = [
+ "mp-block",
+ "mp-chain-config",
+ "mp-class",
+ "mp-convert",
+ "mp-receipt",
+ "mp-state-update",
+ "mp-transactions",
+ "serde",
+ "serde_json",
+ "serde_with 3.9.0",
+ "starknet-types-core",
 ]
 
 [[package]]
@@ -6050,6 +6093,7 @@ dependencies = [
  "mp-convert",
  "num-bigint",
  "serde",
+ "serde_with 3.9.0",
  "starknet-core",
  "starknet-providers",
  "starknet-types-core",
@@ -7798,7 +7842,25 @@ dependencies = [
  "indexmap 1.9.3",
  "serde",
  "serde_json",
- "serde_with_macros",
+ "serde_with_macros 2.3.3",
+ "time",
+]
+
+[[package]]
+name = "serde_with"
+version = "3.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69cecfa94848272156ea67b2b1a53f20fc7bc638c4a46d2f8abde08f05f4b857"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "hex",
+ "indexmap 1.9.3",
+ "indexmap 2.2.6",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serde_with_macros 3.9.0",
  "time",
 ]
 
@@ -7807,6 +7869,18 @@ name = "serde_with_macros"
 version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "881b6f881b17d13214e5d494c939ebab463d01264ce1811e9d4ac3a882e7695f"
+dependencies = [
+ "darling 0.20.9",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.66",
+]
+
+[[package]]
+name = "serde_with_macros"
+version = "3.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8fee4991ef4f274617a51ad4af30519438dacb2f56ac773b08a1922ff743350"
 dependencies = [
  "darling 0.20.9",
  "proc-macro2",
@@ -8111,7 +8185,7 @@ checksum = "a5f91344f1e0b81873b6dc235c50ae4d084c6ea4dd4a1e3e27ad895803adb610"
 dependencies = [
  "serde",
  "serde_json",
- "serde_with",
+ "serde_with 2.3.3",
  "starknet-accounts",
  "starknet-core",
  "starknet-providers",
@@ -8130,7 +8204,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_json_pythonic",
- "serde_with",
+ "serde_with 2.3.3",
  "sha3",
  "starknet-crypto 0.7.0",
  "starknet-types-core",
@@ -8318,7 +8392,7 @@ dependencies = [
  "reqwest 0.11.27",
  "serde",
  "serde_json",
- "serde_with",
+ "serde_with 2.3.3",
  "starknet-core",
  "thiserror",
  "url",

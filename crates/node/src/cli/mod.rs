@@ -1,6 +1,7 @@
 pub mod block_production;
 pub mod chain_config_overrides;
 pub mod db;
+pub mod gateway;
 pub mod l1;
 pub mod prometheus;
 pub mod rpc;
@@ -11,6 +12,7 @@ use crate::cli::l1::L1SyncParams;
 pub use block_production::*;
 pub use chain_config_overrides::*;
 pub use db::*;
+pub use gateway::*;
 pub use prometheus::*;
 pub use rpc::*;
 use starknet_api::core::ChainId;
@@ -70,6 +72,10 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub prometheus_params: PrometheusParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub gateway_params: GatewayParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]

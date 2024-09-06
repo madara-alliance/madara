@@ -182,6 +182,12 @@ pub struct MadaraMaybePendingBlock {
     pub inner: MadaraBlockInner,
 }
 
+impl MadaraMaybePendingBlock {
+    pub fn is_pending(&self) -> bool {
+        matches!(self.info, MadaraMaybePendingBlockInfo::Pending(_))
+    }
+}
+
 /// Starknet block definition.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MadaraBlock {
