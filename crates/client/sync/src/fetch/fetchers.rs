@@ -93,27 +93,37 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 pub async fn fetch_pending_block_and_updates(
     backend: &MadaraBackend,
     provider: &SequencerGatewayProvider,
-) -> Result<UnverifiedPendingFullBlock, FetchError> {
+) -> Result<Option<UnverifiedPendingFullBlock>, FetchError> {
     let block_id = FetchBlockId::Pending;
 
     let sw = PerfStopwatch::new();
     let (state_update, block) =
         retry(|| fetch_state_update_with_block(provider, block_id), MAX_RETRY, BASE_DELAY).await?;
-    let class_update = fetch_class_updates(backend, &state_update, block_id, provider).await?;
-
-    stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
     let block = starknet_core::types::MaybePendingBlockWithReceipts::try_from(block)
         .context("Converting the FGW format to starknet_types_core")?;
 
-    let MaybePendingBlockWithReceipts::PendingBlock(block) = block else {
-        return Err(anyhow::anyhow!("Fetched a pending block, got a closed one").into());
+    let block = match block {
+        MaybePendingBlockWithReceipts::Block(block) => {
+            // HACK: Apparently the FGW sometimes returns a closed block when fetching the pending block. Interesting..?
+            log::debug!(
+                "Fetched a pending block, got a closed one: block_number={:?} block_hash={:#x}",
+                block.block_number,
+                block.block_hash
+            );
+            return Ok(None);
+        }
+        MaybePendingBlockWithReceipts::PendingBlock(block) => block,
     };
+
+    let class_update = fetch_class_updates(backend, &state_update, block_id, provider).await?;
+
+    stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
     let (transactions, receipts) =
         block.transactions.into_iter().map(|t| (t.transaction.into(), t.receipt.into())).unzip();
 
-    Ok(UnverifiedPendingFullBlock {
+    Ok(Some(UnverifiedPendingFullBlock {
         header: UnverifiedHeader {
             parent_block_hash: Some(block.parent_hash),
             sequencer_address: block.sequencer_address,
@@ -140,7 +150,7 @@ pub async fn fetch_pending_block_and_updates(
                 compiled_class_hash: c.compiled_class_hash,
             })
             .collect(),
-    })
+    }))
 }
 
 pub async fn fetch_block_and_updates(

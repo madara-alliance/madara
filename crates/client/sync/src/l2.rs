@@ -5,9 +5,7 @@ use crate::metrics::block_metrics::BlockMetrics;
 use crate::utils::trim_hash;
 use anyhow::Context;
 use futures::{stream, StreamExt};
-use mc_block_import::{
-    BlockImportResult, BlockImporter, PreValidatedBlock, UnverifiedFullBlock, UnverifiedPendingFullBlock, Validation,
-};
+use mc_block_import::{BlockImportResult, BlockImporter, PreValidatedBlock, UnverifiedFullBlock, Validation};
 use mc_db::db_metrics::DbMetrics;
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
@@ -174,8 +172,13 @@ async fn l2_pending_block_task(
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
         log::debug!("getting pending block...");
 
-        let block: UnverifiedPendingFullBlock =
+        let block =
             fetch_pending_block_and_updates(&backend, &provider).await.context("Getting pending block from FGW")?;
+
+        let Some(block) = block else {
+            // No pending block.
+            continue;
+        };
 
         // HACK(see issue #239): The latest block in db may not match the pending parent block hash
         // Just silently ignore it for now and move along.
