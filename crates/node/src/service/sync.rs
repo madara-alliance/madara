@@ -1,24 +1,22 @@
-use crate::cli::SyncParams;
-use alloy::primitives::Address;
+use crate::cli::{NetworkType, SyncParams};
 use anyhow::Context;
-use dc_db::db_metrics::DbMetrics;
-use dc_db::{DatabaseService, DeoxysBackend};
-use dc_eth::client::EthereumClient;
-use dc_metrics::MetricsRegistry;
-use dc_sync::fetch::fetchers::FetchConfig;
-use dc_sync::metrics::block_metrics::BlockMetrics;
-use dc_telemetry::TelemetryHandle;
-use dp_utils::service::Service;
+use mc_db::db_metrics::DbMetrics;
+use mc_db::{DatabaseService, MadaraBackend};
+use mc_metrics::MetricsRegistry;
+use mc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::metrics::block_metrics::BlockMetrics;
+use mc_telemetry::TelemetryHandle;
+use mp_chain_config::ChainConfig;
+use mp_utils::service::Service;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
 
 #[derive(Clone)]
 pub struct SyncService {
-    db_backend: Arc<DeoxysBackend>,
+    db_backend: Arc<MadaraBackend>,
     fetch_config: FetchConfig,
     backup_every_n_blocks: Option<u64>,
-    eth_client: EthereumClient,
     starting_block: Option<u64>,
     block_metrics: BlockMetrics,
     db_metrics: DbMetrics,
@@ -30,36 +28,19 @@ pub struct SyncService {
 impl SyncService {
     pub async fn new(
         config: &SyncParams,
+        chain_config: Arc<ChainConfig>,
+        network: NetworkType,
         db: &DatabaseService,
         metrics_handle: MetricsRegistry,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
-        // TODO: create l1 metrics here
         let block_metrics = BlockMetrics::register(&metrics_handle)?;
         let db_metrics = DbMetrics::register(&metrics_handle)?;
-        let fetch_config = config.block_fetch_config();
-
-        let l1_endpoint = if !config.sync_l1_disabled {
-            if let Some(l1_rpc_url) = &config.l1_endpoint {
-                Some(l1_rpc_url.clone())
-            } else {
-                return Err(anyhow::anyhow!(
-                    "❗ No L1 endpoint provided. You must provide one in order to verify the synced state."
-                ));
-            }
-        } else {
-            None
-        };
-
-        let core_address = Address::from_slice(config.network.l1_core_address().as_bytes());
-        let eth_client = EthereumClient::new(l1_endpoint.unwrap(), core_address, metrics_handle)
-            .await
-            .context("Creating ethereum client")?;
+        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), network);
 
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
             fetch_config,
-            eth_client,
             starting_block: config.starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
             block_metrics,
@@ -80,7 +61,6 @@ impl Service for SyncService {
         let SyncService {
             fetch_config,
             backup_every_n_blocks,
-            eth_client,
             starting_block,
             block_metrics,
             db_metrics,
@@ -92,10 +72,9 @@ impl Service for SyncService {
         let db_backend = Arc::clone(&self.db_backend);
 
         join_set.spawn(async move {
-            dc_sync::starknet_sync_worker::sync(
+            mc_sync::sync(
                 &db_backend,
                 fetch_config,
-                eth_client,
                 starting_block,
                 backup_every_n_blocks,
                 block_metrics,

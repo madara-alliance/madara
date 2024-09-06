@@ -1,6 +1,6 @@
 [package]
-name = "deoxys"
-description = "Deoxys node"
+name = "madara"
+description = "Madara node"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,25 +13,25 @@ build = "build.rs"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [[bin]]
-name = "deoxys"
+name = "madara"
 
 [dependencies]
 
-# Deoxys
-dc-db = { workspace = true }
-dc-eth = { workspace = true }
-dc-mempool = { workspace = true }
-dc-metrics = { workspace = true }
-dc-rpc = { workspace = true }
-dc-sync = { workspace = true }
-dc-telemetry = { workspace = true }
-dp-block = { workspace = true }
-dp-convert = { workspace = true }
-dp-utils = { workspace = true }
+# Madara
+mc-db = { workspace = true }
+mc-eth = { workspace = true }
+mc-mempool = { workspace = true }
+mc-metrics = { workspace = true }
+mc-rpc = { workspace = true }
+mc-sync = { workspace = true }
+mc-telemetry = { workspace = true }
+mp-block = { workspace = true }
+mp-chain-config = { workspace = true }
+mp-convert = { workspace = true }
+mp-utils = { workspace = true }
 
 # Starknet
 starknet-providers = { workspace = true }
-starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
@@ -40,8 +40,8 @@ anyhow.workspace = true
 async-trait = { workspace = true }
 chrono = "0.4.38"
 clap = { workspace = true, features = ["derive"] }
-env_logger = { workspace = true }
-fdlimit = { workspace = true }
+env_logger.workspace = true
+fdlimit.workspace = true
 forwarded-header-value = "0.1.1"
 futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true
@@ -50,7 +50,9 @@ ip_network.workspace = true
 jsonrpsee.workspace = true
 log = { workspace = true }
 primitive-types = { workspace = true }
+rand = { workspace = true }
 rayon.workspace = true
+reqwest = { workspace = true }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true }
@@ -60,4 +62,4 @@ url = { workspace = true }
 
 [features]
 default = []
-sound = ["dc-sync/m"]
+sound = ["mc-sync/m"]

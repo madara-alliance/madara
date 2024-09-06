@@ -1,0 +1,103 @@
+#!/bin/bash
+
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 [start|reset|reboot|lint|help] [KEY for start/reboot]"
+    exit 1
+fi
+
+start_madara(){
+    local key=$1
+    local key_gateway=$2
+    echo "🚀 start madara..."
+    cargo run \
+        --release \
+        -- \
+        --madara \
+        --rpc-port 9944 \
+        --network main \
+        --rpc-cors all \
+        --pruning archive \
+        --cache \
+        --l1-endpoint="$key" \
+        --gateway-key="$key_gateway"
+}
+
+clear_db(){
+    echo "🛠️ clear end rebuild DB..."
+    read -p "Are you sure? [y/N] " -n 1 -r
+    if [[ ! $REPLY =~ ^[Yy]$ ]]
+    then
+        exit 1
+    fi
+    rm -rf /tmp/madara
+}
+
+lint(){
+    echo "📝 Running linters..."
+    read -p "Are you sure? [y/N] " -n 1 -r
+    if [[ ! $REPLY =~ ^[Yy]$ ]]
+    then
+        exit 1
+    fi
+    echo
+    cargo fmt
+    npx @taplo/cli@0.5.2 fmt --config ./taplo/taplo.toml
+    npx prettier --write .
+}
+
+check(){
+    echo "🔒 Checking code..."
+    cargo fmt -- --check
+    cargo clippy --workspace --tests --no-deps -- -D warnings
+}
+
+ACTION=$1
+
+case $ACTION in
+    start)
+        if [ "$#" -lt 2 ]; then
+            echo "Usage for start: $0 start [KEY]"
+            exit 1
+        fi
+        start_madara "$2" "$3"
+        ;;
+    reset)
+        if [ "$#" -lt 1 ]; then
+            echo "Usage for reset: $0 reset"
+            exit 1
+        fi
+        clear_db
+        ;;
+    reboot)
+        if [ "$#" -lt 2 ]; then
+            echo "Usage for reboot: $0 reboot [KEY]"
+            exit 1
+        fi
+        clear_db
+        echo
+        start_madara "$2" "$3"
+        ;;
+    lint)
+        lint
+        ;;
+    check)
+        check
+        ;;
+    ready)
+        lint
+        check
+        ;;
+    help)
+        echo "Usage: $0 [start|reset|reboot|lint|help] [KEY for start/reboot]"
+        echo "start: start madara with KEY"
+        echo "reset: clear and rebuild DB"
+        echo "reboot: clear and rebuild DB, then start madara with KEY"
+        echo "lint: run CI linter on project"
+        ;;
+    *)
+        echo "Invalid argument: $ACTION"
+        exit 1
+        ;;
+esac
+
+exit 0

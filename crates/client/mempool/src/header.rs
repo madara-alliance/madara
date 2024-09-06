@@ -1,6 +1,7 @@
 use crate::L1DataProvider;
-use dp_block::{chain_config::ChainConfig, header::PendingHeader};
-use starknet_core::types::Felt;
+use mp_block::header::PendingHeader;
+use mp_chain_config::ChainConfig;
+use starknet_types_core::felt::Felt;
 use std::time::SystemTime;
 
 pub fn make_pending_header(

@@ -1,6 +1,6 @@
 [package]
-description = "Deoxys utilities"
-name = "dp-utils"
+description = "Madara utilities"
+name = "mp-utils"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -19,4 +19,4 @@ async-trait.workspace = true
 futures.workspace = true
 log.workspace = true
 rayon.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }

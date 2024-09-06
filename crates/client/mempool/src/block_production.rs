@@ -6,20 +6,21 @@ use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::transaction_execution::Transaction;
-use dc_db::db_block_id::DbBlockId;
-use dc_db::{DeoxysBackend, DeoxysStorageError};
-use dc_exec::{BlockifierStateAdapter, ExecutionContext};
-use dp_block::{BlockId, BlockTag, DeoxysPendingBlock};
-use dp_class::ConvertedClass;
-use dp_convert::ToFelt;
-use dp_receipt::from_blockifier_execution_info;
-use dp_state_update::{
+use mc_block_import::BlockImporter;
+use mc_db::db_block_id::DbBlockId;
+use mc_db::{MadaraBackend, MadaraStorageError};
+use mc_exec::{BlockifierStateAdapter, ExecutionContext};
+use mp_block::{BlockId, BlockTag, MadaraPendingBlock};
+use mp_class::ConvertedClass;
+use mp_convert::ToFelt;
+use mp_receipt::from_blockifier_execution_info;
+use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use dp_transactions::TransactionWithHash;
-use dp_utils::graceful_shutdown;
-use starknet_core::types::Felt;
+use mp_transactions::TransactionWithHash;
+use mp_utils::graceful_shutdown;
+use starknet_types_core::felt::Felt;
 use std::mem;
 use std::sync::Arc;
 
@@ -33,17 +34,19 @@ const TX_BATCH_SIZE: usize = 128;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Storage error: {0:#}")]
-    StorageError(#[from] DeoxysStorageError),
+    StorageError(#[from] MadaraStorageError),
     #[error("Execution error: {0:#}")]
     Execution(#[from] TransactionExecutionError),
     #[error(transparent)]
-    ExecutionContext(#[from] dc_exec::Error),
+    ExecutionContext(#[from] mc_exec::Error),
     #[error("No genesis block in storage")]
     NoGenesis,
+    #[error("Import error: {0:#}")]
+    Import(#[from] mc_block_import::BlockImportError),
 }
 
 fn csd_to_state_diff(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
     csd: &CommitmentStateDiff,
 ) -> Result<StateDiff, Error> {
@@ -133,7 +136,7 @@ fn get_visited_segments<S: StateReader>(
 fn finalize_execution_state<S: StateReader>(
     _executed_txs: &[MempoolTransaction],
     tx_executor: &mut TransactionExecutor<S>,
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
 ) -> Result<(StateDiff, VisitedSegmentsMapping, BouncerWeights), Error> {
     let csd = tx_executor
@@ -153,9 +156,10 @@ fn finalize_execution_state<S: StateReader>(
 /// This is to allow optimistic concurrency. However, the block may get full during batch execution,
 /// and we need to re-add the transactions back into the mempool.
 pub struct BlockProductionTask {
-    backend: Arc<DeoxysBackend>,
+    importer: Arc<BlockImporter>,
+    backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
-    block: DeoxysPendingBlock,
+    block: MadaraPendingBlock,
     declared_classes: Vec<ConvertedClass>,
     executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
@@ -164,12 +168,12 @@ pub struct BlockProductionTask {
 
 impl BlockProductionTask {
     pub fn new(
-        backend: Arc<DeoxysBackend>,
+        backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
         let parent_block_hash = backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
-        let pending_block = DeoxysPendingBlock::new_empty(make_pending_header(
+        let pending_block = MadaraPendingBlock::new_empty(make_pending_header(
             parent_block_hash,
             backend.chain_config(),
             l1_data_provider.as_ref(),
@@ -186,6 +190,7 @@ impl BlockProductionTask {
         executor.bouncer = Bouncer::new(bouncer_config);
 
         Ok(Self {
+            importer: BlockImporter::new(Arc::clone(&backend)).into(),
             backend,
             mempool,
             executor,
@@ -213,7 +218,13 @@ impl BlockProductionTask {
         // This iterator will consume the first part of `to_process_iter`.
         let consumed_txs_to_process = to_process_iter.by_ref().take(all_results.len());
 
-        let on_top_of = self.executor.block_state.as_ref().unwrap().state.on_top_of_block_id;
+        let on_top_of = self
+            .executor
+            .block_state
+            .as_ref()
+            .expect("Block state can not be None unless we take ownership of it")
+            .state
+            .on_top_of_block_id;
         let executed_txs: Vec<_> = consumed_txs_to_process.collect();
         let (state_diff, _visited_segments, _weights) =
             finalize_execution_state(&executed_txs, &mut self.executor, &self.backend, &on_top_of)?;
@@ -261,7 +272,7 @@ impl BlockProductionTask {
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
-    fn update_pending_block_tick(&mut self) -> Result<(), Error> {
+    fn on_pending_time_tick(&mut self) -> Result<(), Error> {
         let current_pending_tick = self.current_pending_tick;
         self.current_pending_tick += 1;
 
@@ -308,7 +319,8 @@ impl BlockProductionTask {
         Ok(())
     }
 
-    fn produce_block_tick(&mut self) -> Result<(), Error> {
+    /// This creates a block, continuing the current pending block state up to the full bouncer limit.
+    async fn on_block_time(&mut self) -> Result<(), Error> {
         let block_n = self.block_n();
         log::debug!("closing block #{}", block_n);
 
@@ -318,21 +330,25 @@ impl BlockProductionTask {
         // Convert the pending block to a closed block and save to db.
 
         let parent_block_hash = Felt::ZERO; // temp parent block hash
-        let new_empty_block = DeoxysPendingBlock::new_empty(make_pending_header(
+        let new_empty_block = MadaraPendingBlock::new_empty(make_pending_header(
             parent_block_hash,
             self.backend.chain_config(),
             self.l1_data_provider.as_ref(),
         ));
 
         let block_to_close = mem::replace(&mut self.block, new_empty_block);
-        let declared_classes = mem::take(&mut self.declared_classes);
+        let _declared_classes = mem::take(&mut self.declared_classes);
 
         // This is compute heavy as it does the commitments and trie computations.
-        let chain_id = self.backend.chain_config().chain_id.clone().to_felt();
-        let closed_block = close_block(&self.backend, block_to_close, &new_state_diff, chain_id, block_n);
-        self.block.info.header.parent_block_hash = closed_block.info.block_hash; // fix temp parent block hash for new pending :)
-
-        self.backend.store_block(closed_block.into(), new_state_diff, declared_classes)?;
+        let import_result = close_block(
+            &self.importer,
+            block_to_close,
+            &new_state_diff,
+            self.backend.chain_config().chain_id.clone(),
+            block_n,
+        )
+        .await?;
+        self.block.info.header.parent_block_hash = import_result.block_hash; // fix temp parent block hash for new pending :)
 
         // Prepare for next block.
         self.executor =
@@ -356,13 +372,15 @@ impl BlockProductionTask {
 
         loop {
             tokio::select! {
-                _ = interval_block_time.tick() => {
-                    if let Err(err) = self.produce_block_tick() {
+                instant = interval_block_time.tick() => {
+                    if let Err(err) = self.on_block_time().await {
                         log::error!("Block production task has errored: {err:#}");
                     }
+                    // ensure the pending block tick and block time match up
+                    interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());
                 },
                 _ = interval_pending_block_update.tick() => {
-                    if let Err(err) = self.update_pending_block_tick() {
+                    if let Err(err) = self.on_pending_time_tick() {
                         log::error!("Pending block update task has errored: {err:#}");
                     }
                 },

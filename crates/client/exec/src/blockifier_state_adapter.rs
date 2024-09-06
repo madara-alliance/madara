@@ -1,28 +1,28 @@
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{StateReader, StateResult};
-use dc_db::db_block_id::DbBlockId;
-use dc_db::DeoxysBackend;
-use dp_block::BlockId;
-use dp_class::to_blockifier_class;
-use dp_convert::{felt_to_u64, ToFelt};
+use mc_db::db_block_id::DbBlockId;
+use mc_db::MadaraBackend;
+use mp_block::BlockId;
+use mp_class::to_blockifier_class;
+use mp_convert::{felt_to_u64, ToFelt};
 use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
 /// Adapter for the db queries made by blockifier.
 /// There is no actual mutable logic here - when using block production, the actual key value
 /// changes in db are evaluated at the end only from the produced state diff.
 pub struct BlockifierStateAdapter {
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     /// When this value is None, we are executing the genesis block.
     pub on_top_of_block_id: Option<DbBlockId>,
     pub block_number: u64,
 }
 
 impl BlockifierStateAdapter {
-    pub fn new(backend: Arc<DeoxysBackend>, block_number: u64, on_top_of_block_id: Option<DbBlockId>) -> Self {
+    pub fn new(backend: Arc<MadaraBackend>, block_number: u64, on_top_of_block_id: Option<DbBlockId>) -> Self {
         Self { backend, on_top_of_block_id, block_number }
     }
 }

@@ -1,26 +1,24 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use dc_db::DeoxysBackend;
-use dp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
-use fetchers::FetchBlockId;
 use futures::prelude::*;
+use mc_block_import::UnverifiedFullBlock;
+use mc_db::MadaraBackend;
+use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use starknet_core::types::StarknetError;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::{mpsc, oneshot};
 
-use self::fetchers::L2BlockAndUpdates;
 use crate::fetch::fetchers::fetch_block_and_updates;
-use crate::l2::L2SyncError;
 
 pub mod fetchers;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn l2_fetch_task(
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     first_block: u64,
     n_blocks_to_sync: Option<u64>,
-    fetch_stream_sender: mpsc::Sender<L2BlockAndUpdates>,
+    fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
     provider: Arc<SequencerGatewayProvider>,
     sync_polling_interval: Option<Duration>,
     once_caught_up_callback: oneshot::Sender<()>,
@@ -34,7 +32,7 @@ pub async fn l2_fetch_task(
         // Fetch blocks and updates in parallel one time before looping
         let fetch_stream = (first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
             let provider = Arc::clone(&provider);
-            async move { (block_n, fetch_block_and_updates(backend, FetchBlockId::BlockN(block_n), &provider).await) }
+            async move { (block_n, fetch_block_and_updates(backend, block_n, &provider).await) }
         });
 
         // Have 10 fetches in parallel at once, using futures Buffered
@@ -43,7 +41,7 @@ pub async fn l2_fetch_task(
             log::debug!("got {:?}", block_n);
 
             match val {
-                Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
+                Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
                     log::info!("🥳 The sync process has caught up with the tip of the chain");
                     break;
                 }
@@ -69,8 +67,8 @@ pub async fn l2_fetch_task(
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
             loop {
-                match fetch_block_and_updates(backend, FetchBlockId::BlockN(next_block), &provider).await {
-                    Err(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
+                match fetch_block_and_updates(backend, next_block, &provider).await {
+                    Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
                         break;
                     }
                     val => {
@@ -86,4 +84,12 @@ pub async fn l2_fetch_task(
         }
     }
     Ok(())
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum FetchError {
+    #[error(transparent)]
+    Provider(#[from] ProviderError),
+    #[error(transparent)]
+    Internal(#[from] anyhow::Error),
 }

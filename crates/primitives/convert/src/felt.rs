@@ -1,4 +1,4 @@
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 #[derive(Debug, thiserror::Error)]
 #[error("Felt is too big to convert to u64.")]
@@ -27,6 +27,7 @@ pub fn felt_to_u128(felt: &Felt) -> Result<u128, FeltToU128Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
 
     #[test]
     fn test_felt_to_u64() {
@@ -36,8 +37,8 @@ mod tests {
         assert_eq!(felt_to_u64(&Felt::THREE).unwrap(), 3);
         assert_eq!(felt_to_u64(&Felt::from(u32::MAX)).unwrap(), u32::MAX as u64);
         assert_eq!(felt_to_u64(&Felt::from(u64::MAX)).unwrap(), u64::MAX);
-        assert!(felt_to_u64(&(Felt::from(u64::MAX) + Felt::ONE)).is_err());
-        assert!(felt_to_u64(&Felt::MAX).is_err());
+        assert_matches!(felt_to_u64(&(Felt::from(u64::MAX) + Felt::ONE)), Err(FeltToU64Error));
+        assert_matches!(felt_to_u64(&Felt::MAX), Err(FeltToU64Error));
     }
 
     #[test]
@@ -48,7 +49,7 @@ mod tests {
         assert_eq!(felt_to_u128(&Felt::THREE).unwrap(), 3);
         assert_eq!(felt_to_u128(&Felt::from(u64::MAX)).unwrap(), u64::MAX as u128);
         assert_eq!(felt_to_u128(&Felt::from(u128::MAX)).unwrap(), u128::MAX);
-        assert!(felt_to_u128(&(Felt::from(u128::MAX) + Felt::ONE)).is_err());
-        assert!(felt_to_u128(&Felt::MAX).is_err());
+        assert_matches!(felt_to_u128(&(Felt::from(u128::MAX) + Felt::ONE)), Err(FeltToU128Error));
+        assert_matches!(felt_to_u128(&Felt::MAX), Err(FeltToU128Error));
     }
 }

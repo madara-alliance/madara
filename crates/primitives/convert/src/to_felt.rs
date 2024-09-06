@@ -56,9 +56,9 @@ impl ToFelt for H160 {
     }
 }
 
-impl ToFelt for ChainId {
+impl ToFelt for &ChainId {
     fn to_felt(self) -> Felt {
-        let bytes: &[u8] = match &self {
+        let bytes: &[u8] = match self {
             ChainId::Mainnet => b"SN_MAIN",
             ChainId::Sepolia => b"SN_SEPOLIA",
             ChainId::IntegrationSepolia => b"SN_INTEGRATION_SEPOLIA",
@@ -92,3 +92,62 @@ impl_for_wrapper!(Nonce);
 impl_for_wrapper!(EntryPointSelector);
 impl_for_wrapper!(CompiledClassHash);
 impl_for_wrapper!(ContractAddressSalt);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use starknet_core::types::EthAddress;
+
+    #[test]
+    fn test_eth_address_to_felt() {
+        let hex = "0x123456789abcdef0123456789abcdef012345678";
+        let eth_address = EthAddress::from_hex(hex).unwrap();
+        assert_eq!((&eth_address).to_felt(), Felt::from_hex_unchecked(hex));
+        assert_eq!(eth_address.to_felt(), Felt::from_hex_unchecked(hex));
+    }
+
+    #[test]
+    fn test_patricia_key_to_felt() {
+        let key: u128 = 0x123456789abcdef0123456789abcdef;
+        let patricia_key: PatriciaKey = key.into();
+        assert_eq!((&patricia_key).to_felt(), Felt::from(key));
+        assert_eq!(patricia_key.to_felt(), Felt::from(key));
+    }
+
+    #[test]
+    fn test_contract_address_to_felt() {
+        let address: u128 = 0x123456789abcdef0123456789abcdef;
+        let contract_address: ContractAddress = address.into();
+        assert_eq!((&contract_address).to_felt(), Felt::from(address));
+        assert_eq!(contract_address.to_felt(), Felt::from(address));
+    }
+
+    #[test]
+    fn test_h160_to_felt() {
+        let value: [u8; 20] = [
+            0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34,
+            0x56, 0x78,
+        ];
+        let h160 = H160::from_slice(&value);
+        assert_eq!(h160.to_felt(), Felt::from_bytes_be_slice(&value));
+    }
+
+    #[test]
+    fn test_chain_id_to_felt() {
+        let main_chain_id = ChainId::Mainnet;
+        let expected_chain_id = Felt::from_hex_unchecked("0x534e5f4d41494e");
+        assert_eq!(main_chain_id.to_felt(), expected_chain_id);
+
+        let sepolia_chain_id = ChainId::Sepolia;
+        let expected_chain_id = Felt::from_hex_unchecked("0x534e5f5345504f4c4941");
+        assert_eq!(sepolia_chain_id.to_felt(), expected_chain_id);
+
+        let integration_sepolia_chain_id = ChainId::IntegrationSepolia;
+        let expected_chain_id = Felt::from_hex_unchecked("0x534e5f494e544547524154494f4e5f5345504f4c4941");
+        assert_eq!(integration_sepolia_chain_id.to_felt(), expected_chain_id);
+
+        let other_chain_id = ChainId::Other("SN_OTHER".to_string());
+        let expected_chain_id = Felt::from_hex_unchecked("0x534e5f4f54484552");
+        assert_eq!(other_chain_id.to_felt(), expected_chain_id);
+    }
+}

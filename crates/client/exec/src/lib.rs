@@ -6,9 +6,9 @@ use blockifier::{
         transaction_types::TransactionType,
     },
 };
-use dc_db::{db_block_id::DbBlockId, DeoxysStorageError};
+use mc_db::{db_block_id::DbBlockId, MadaraStorageError};
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 mod block_context;
 mod blockifier_state_adapter;
@@ -24,7 +24,7 @@ pub use trace::execution_result_to_tx_trace;
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error(transparent)]
-    UnsupportedProtocolVersion(#[from] dp_block::chain_config::UnsupportedProtocolVersion),
+    UnsupportedProtocolVersion(#[from] mp_chain_config::UnsupportedProtocolVersion),
     #[error(transparent)]
     Reexecution(#[from] TxReexecError),
     #[error(transparent)]
@@ -34,7 +34,7 @@ pub enum Error {
     #[error(transparent)]
     CallContract(#[from] CallContractError),
     #[error("Storage error: {0:#}")]
-    Storage(#[from] DeoxysStorageError),
+    Storage(#[from] MadaraStorageError),
     #[error("Invalid sequencer address: {0:#x}")]
     InvalidSequencerAddress(Felt),
 }

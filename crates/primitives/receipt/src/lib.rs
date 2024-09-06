@@ -1,7 +1,6 @@
 mod from_blockifier;
-mod from_starknet_core;
 mod from_starknet_provider;
-mod to_starknet_core;
+mod into_starknet_core;
 pub use from_blockifier::from_blockifier_execution_info;
 
 use serde::{Deserialize, Serialize};
@@ -18,6 +17,36 @@ pub enum TransactionReceipt {
     Declare(DeclareTransactionReceipt),
     Deploy(DeployTransactionReceipt),
     DeployAccount(DeployAccountTransactionReceipt),
+}
+
+impl From<InvokeTransactionReceipt> for TransactionReceipt {
+    fn from(receipt: InvokeTransactionReceipt) -> Self {
+        TransactionReceipt::Invoke(receipt)
+    }
+}
+
+impl From<L1HandlerTransactionReceipt> for TransactionReceipt {
+    fn from(receipt: L1HandlerTransactionReceipt) -> Self {
+        TransactionReceipt::L1Handler(receipt)
+    }
+}
+
+impl From<DeclareTransactionReceipt> for TransactionReceipt {
+    fn from(receipt: DeclareTransactionReceipt) -> Self {
+        TransactionReceipt::Declare(receipt)
+    }
+}
+
+impl From<DeployTransactionReceipt> for TransactionReceipt {
+    fn from(receipt: DeployTransactionReceipt) -> Self {
+        TransactionReceipt::Deploy(receipt)
+    }
+}
+
+impl From<DeployAccountTransactionReceipt> for TransactionReceipt {
+    fn from(receipt: DeployAccountTransactionReceipt) -> Self {
+        TransactionReceipt::DeployAccount(receipt)
+    }
 }
 
 impl TransactionReceipt {
@@ -120,7 +149,7 @@ fn compute_messages_sent_hash(messages: &[MsgToL1]) -> Felt {
     Poseidon::hash_array(&elements)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvokeTransactionReceipt {
     pub transaction_hash: Felt, // This can be retrieved from the transaction itself.
     pub actual_fee: FeePayment,
@@ -130,7 +159,7 @@ pub struct InvokeTransactionReceipt {
     pub execution_result: ExecutionResult,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct L1HandlerTransactionReceipt {
     // normally this would be a Hash256, but the serde implementation doesn't work with bincode.
     pub message_hash: Felt,
@@ -142,7 +171,7 @@ pub struct L1HandlerTransactionReceipt {
     pub execution_result: ExecutionResult,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeclareTransactionReceipt {
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
@@ -152,7 +181,7 @@ pub struct DeclareTransactionReceipt {
     pub execution_result: ExecutionResult,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeployTransactionReceipt {
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
@@ -163,7 +192,7 @@ pub struct DeployTransactionReceipt {
     pub contract_address: Felt,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeployAccountTransactionReceipt {
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
@@ -174,14 +203,15 @@ pub struct DeployAccountTransactionReceipt {
     pub contract_address: Felt,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeePayment {
     pub amount: Felt,
     pub unit: PriceUnit,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PriceUnit {
+    #[default]
     Wei,
     Fri,
 }
@@ -244,10 +274,13 @@ pub struct DataAvailabilityResources {
     pub l1_data_gas: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExecutionResult {
+    #[default]
     Succeeded,
-    Reverted { reason: String },
+    Reverted {
+        reason: String,
+    },
 }
 
 impl ExecutionResult {
@@ -303,62 +336,184 @@ mod tests {
             MsgToL1 { from_address: Felt::ONE, to_address: Felt::TWO, payload: vec![Felt::THREE, Felt::from(4)] };
 
         let hash = compute_messages_sent_hash(&[msg1, msg2]);
+        let expected_hash =
+            Felt::from_hex_unchecked("0x00c89474a9007dc060aed76caf8b30b927cfea1ebce2d134b943b8d7121004e4");
 
-        assert_eq!(
-            hash,
-            Felt::from_hex_unchecked("0x00c89474a9007dc060aed76caf8b30b927cfea1ebce2d134b943b8d7121004e4")
-        );
+        assert_eq!(hash, expected_hash,);
     }
 
     #[test]
     fn test_execution_result_compute_hash() {
         let succeeded = ExecutionResult::Succeeded;
         let reverted = ExecutionResult::Reverted { reason: "reason".to_string() };
+        let expected_hash =
+            Felt::from_hex_unchecked("0x3da776b48d37b131aef5221e52de092c5693df8fdf02fd7acf293a075aa3be4");
 
         assert_eq!(succeeded.compute_hash(), Felt::ZERO);
-        assert_eq!(
-            reverted.compute_hash(),
-            Felt::from_hex_unchecked("0x3da776b48d37b131aef5221e52de092c5693df8fdf02fd7acf293a075aa3be4")
-        );
+        assert_eq!(reverted.compute_hash(), expected_hash,);
+    }
+
+    #[test]
+    fn test_event_compute_hash_pedersen() {
+        let event = Event {
+            from_address: Felt::from(1),
+            keys: vec![Felt::from(2), Felt::from(3)],
+            data: vec![Felt::from(4), Felt::from(5)],
+        };
+
+        let hash = event.compute_hash_pedersen();
+        let expected_hash =
+            Felt::from_hex_unchecked("0x770591674368ef723f40ddef92ee7cf2fcf3e244afa15cd0a703fce83a415c1");
+
+        assert_eq!(hash, expected_hash);
+    }
+
+    #[test]
+    fn test_event_compute_hash_poseidon() {
+        let event = Event {
+            from_address: Felt::from(1),
+            keys: vec![Felt::from(2), Felt::from(3)],
+            data: vec![Felt::from(4), Felt::from(5)],
+        };
+        let transaction_hash = Felt::from(6);
+
+        let hash = event.compute_hash_poseidon(&transaction_hash);
+        let expected_hash =
+            Felt::from_hex_unchecked("0x38be6cfe9175d3f260d1886bf932e1b67415c6c0e8b8a6de565326493c5524f");
+
+        assert_eq!(hash, expected_hash);
     }
 
     #[test]
     fn test_transaction_receipt_compute_hash() {
-        let receipt = TransactionReceipt::Invoke(InvokeTransactionReceipt {
+        let receipt: TransactionReceipt = dummy_invoke_receipt().into();
+        let hash = receipt.compute_hash();
+        let expected_hash =
+            Felt::from_hex_unchecked("0x4ec732a8832cee7ed43a5fb10c20077e8b6d84196ea455ce4b06d27472176e2");
+        assert_eq!(hash, expected_hash);
+
+        let receipt: TransactionReceipt = dummy_declare_receipt().into();
+        let hash = receipt.compute_hash();
+        assert_eq!(hash, expected_hash);
+
+        let receipt: TransactionReceipt = dummy_deploy_receipt().into();
+        let hash = receipt.compute_hash();
+        assert_eq!(hash, expected_hash);
+
+        let receipt: TransactionReceipt = dummy_deploy_account_receipt().into();
+        let hash = receipt.compute_hash();
+        assert_eq!(hash, expected_hash);
+
+        let receipt: TransactionReceipt = dummy_l1_handler_receipt().into();
+        let hash = receipt.compute_hash();
+        let expected_hash =
+            Felt::from_hex_unchecked("0x4e34009fa7c50a33edcba2912c8f8195bcebc65d73002b712d0e87e4d9c4425");
+        assert_eq!(hash, expected_hash);
+    }
+
+    fn dummy_messages() -> Vec<MsgToL1> {
+        vec![
+            MsgToL1 {
+                from_address: Felt::from(1),
+                to_address: Felt::from(2),
+                payload: vec![Felt::from(3), Felt::from(4)],
+            },
+            MsgToL1 {
+                from_address: Felt::from(5),
+                to_address: Felt::from(6),
+                payload: vec![Felt::from(7), Felt::from(8)],
+            },
+        ]
+    }
+
+    fn dummy_events() -> Vec<Event> {
+        vec![
+            Event {
+                from_address: Felt::from(1),
+                keys: vec![Felt::from(2), Felt::from(3)],
+                data: vec![Felt::from(4), Felt::from(5)],
+            },
+            Event {
+                from_address: Felt::from(6),
+                keys: vec![Felt::from(7), Felt::from(8)],
+                data: vec![Felt::from(9), Felt::from(10)],
+            },
+        ]
+    }
+
+    fn dummy_execution_ressources() -> ExecutionResources {
+        ExecutionResources {
+            steps: 1,
+            memory_holes: Some(2),
+            range_check_builtin_applications: Some(3),
+            pedersen_builtin_applications: Some(4),
+            poseidon_builtin_applications: Some(5),
+            ec_op_builtin_applications: Some(6),
+            ecdsa_builtin_applications: Some(7),
+            bitwise_builtin_applications: Some(8),
+            keccak_builtin_applications: Some(9),
+            segment_arena_builtin: Some(10),
+            data_availability: DataAvailabilityResources { l1_gas: 11, l1_data_gas: 12 },
+            // TODO: Change with non-default values when starknet-rs supports it.
+            total_gas_consumed: Default::default(),
+        }
+    }
+
+    pub(crate) fn dummy_invoke_receipt() -> InvokeTransactionReceipt {
+        InvokeTransactionReceipt {
             transaction_hash: Felt::from(1),
             actual_fee: FeePayment { amount: Felt::from(2), unit: PriceUnit::Wei },
-            messages_sent: vec![
-                MsgToL1 {
-                    from_address: Felt::from(3),
-                    to_address: Felt::from(4),
-                    payload: vec![Felt::from(5), Felt::from(6)],
-                },
-                MsgToL1 {
-                    from_address: Felt::from(7),
-                    to_address: Felt::from(8),
-                    payload: vec![Felt::from(9), Felt::from(10)],
-                },
-            ],
-            events: vec![],
-            execution_resources: ExecutionResources {
-                steps: 0,
-                memory_holes: None,
-                range_check_builtin_applications: None,
-                pedersen_builtin_applications: None,
-                poseidon_builtin_applications: None,
-                ec_op_builtin_applications: None,
-                ecdsa_builtin_applications: None,
-                bitwise_builtin_applications: None,
-                keccak_builtin_applications: None,
-                segment_arena_builtin: None,
-                data_availability: DataAvailabilityResources { l1_gas: 11, l1_data_gas: 12 },
-                total_gas_consumed: DataAvailabilityResources { l1_gas: 13, l1_data_gas: 14 },
-            },
+            messages_sent: dummy_messages(),
+            events: dummy_events(),
+            execution_resources: dummy_execution_ressources(),
             execution_result: ExecutionResult::Reverted { reason: "aborted".to_string() },
-        });
+        }
+    }
 
-        let hash = receipt.compute_hash();
+    pub(crate) fn dummy_l1_handler_receipt() -> L1HandlerTransactionReceipt {
+        L1HandlerTransactionReceipt {
+            message_hash: Felt::from(1),
+            transaction_hash: Felt::from(2),
+            actual_fee: FeePayment { amount: Felt::from(3), unit: PriceUnit::Wei },
+            messages_sent: dummy_messages(),
+            events: dummy_events(),
+            execution_resources: dummy_execution_ressources(),
+            execution_result: ExecutionResult::Reverted { reason: "aborted".to_string() },
+        }
+    }
 
-        assert_eq!(hash, Felt::from_hex_unchecked("0x26feec2eb76b63633bc4c1af780813b52a0809a1dae192f53397385da95b8"));
+    pub(crate) fn dummy_declare_receipt() -> DeclareTransactionReceipt {
+        DeclareTransactionReceipt {
+            transaction_hash: Felt::from(1),
+            actual_fee: FeePayment { amount: Felt::from(2), unit: PriceUnit::Wei },
+            messages_sent: dummy_messages(),
+            events: dummy_events(),
+            execution_resources: dummy_execution_ressources(),
+            execution_result: ExecutionResult::Reverted { reason: "aborted".to_string() },
+        }
+    }
+
+    pub(crate) fn dummy_deploy_receipt() -> DeployTransactionReceipt {
+        DeployTransactionReceipt {
+            transaction_hash: Felt::from(1),
+            actual_fee: FeePayment { amount: Felt::from(2), unit: PriceUnit::Wei },
+            messages_sent: dummy_messages(),
+            events: dummy_events(),
+            execution_resources: dummy_execution_ressources(),
+            execution_result: ExecutionResult::Reverted { reason: "aborted".to_string() },
+            contract_address: Felt::from(3),
+        }
+    }
+
+    pub(crate) fn dummy_deploy_account_receipt() -> DeployAccountTransactionReceipt {
+        DeployAccountTransactionReceipt {
+            transaction_hash: Felt::from(1),
+            actual_fee: FeePayment { amount: Felt::from(2), unit: PriceUnit::Wei },
+            messages_sent: dummy_messages(),
+            events: dummy_events(),
+            execution_resources: dummy_execution_ressources(),
+            execution_result: ExecutionResult::Reverted { reason: "aborted".to_string() },
+            contract_address: Felt::from(3),
+        }
     }
 }

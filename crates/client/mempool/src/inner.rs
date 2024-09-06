@@ -8,7 +8,7 @@
 
 use crate::{clone_account_tx, contract_addr, nonce, tx_hash};
 use blockifier::transaction::account_transaction::AccountTransaction;
-use dp_class::ConvertedClass;
+use mp_class::ConvertedClass;
 use starknet_api::{
     core::{ContractAddress, Nonce},
     transaction::TransactionHash,
@@ -130,7 +130,7 @@ impl NonceChain {
         };
 
         #[cfg(debug_assertions)] // unknown field `front_tx_hash` in release if debug_assert_eq is used
-        assert_eq!(self.transactions.first().unwrap().0.tx_hash(), self.front_tx_hash);
+        assert_eq!(self.transactions.first().expect("Getting the first tx").0.tx_hash(), self.front_tx_hash);
 
         if force {
             self.transactions.replace(OrderMempoolTransactionByNonce(mempool_tx));
@@ -349,16 +349,13 @@ mod tests {
         test_utils::{contracts::FeatureContract, CairoVersion},
         transaction::transactions::{DeclareTransaction, InvokeTransaction},
     };
-    use proptest::{
-        arbitrary::{any, Arbitrary},
-        strategy::{BoxedStrategy, Strategy},
-    };
+    use proptest::prelude::*;
     use proptest_derive::Arbitrary;
     use starknet_api::{
         data_availability::DataAvailabilityMode,
         transaction::{DeclareTransactionV3, InvokeTransactionV3},
     };
-    use starknet_core::types::Felt;
+    use starknet_types_core::felt::Felt;
 
     use super::*;
     use std::fmt;
@@ -531,6 +528,7 @@ mod tests {
     }
 
     proptest::proptest! {
+        #![proptest_config(ProptestConfig::with_cases(5))] // comment this when developing, this is mostly for faster ci & whole workspace `cargo test`
         #[test]
         fn proptest_mempool(pb in any::<MempoolInvariantsProblem>()) {
             let _ = env_logger::builder().is_test(true).try_init();

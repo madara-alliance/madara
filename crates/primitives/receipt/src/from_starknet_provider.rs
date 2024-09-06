@@ -1,5 +1,5 @@
-use dp_convert::ToFelt;
-use starknet_core::types::Felt;
+use mp_convert::{felt_to_u64, ToFelt};
+use starknet_types_core::felt::Felt;
 
 use crate::{
     DataAvailabilityResources, DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt,
@@ -30,8 +30,7 @@ impl TransactionReceipt {
             }
             starknet_providers::sequencer::models::TransactionType::L1Handler(tx) => {
                 let (from_address, payload) = tx.calldata.split_first().unwrap_or((&Felt::ZERO, &[]));
-                let nonce_bytes = tx.nonce.unwrap_or_default().to_bytes_le();
-                let nonce = u64::from_le_bytes(nonce_bytes[..8].try_into().unwrap());
+                let nonce = felt_to_u64(&tx.nonce.unwrap_or_default()).unwrap_or_default();
                 let msg_to_l2 = starknet_core::types::MsgToL2 {
                     from_address: (*from_address).try_into().unwrap_or(Felt::ZERO.try_into().unwrap()),
                     to_address: tx.contract_address,

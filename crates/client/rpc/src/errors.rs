@@ -1,4 +1,4 @@
-use dc_db::DeoxysStorageError;
+use mc_db::MadaraStorageError;
 use serde_json::json;
 use starknet_api::StarknetApiError;
 use starknet_core::types::StarknetError;
@@ -15,6 +15,7 @@ pub enum StarknetTransactionExecutionError {
 
 // Comes from the RPC Spec:
 // https://github.com/starkware-libs/starknet-specs/blob/0e859ff905795f789f1dfd6f7340cdaf5015acc8/api/starknet_write_api.json#L227
+#[cfg_attr(test, derive(PartialEq, Eq))]
 #[derive(thiserror::Error, Debug)]
 pub enum StarknetRpcApiError {
     #[error("Failed to write transaction")]
@@ -135,8 +136,8 @@ impl StarknetRpcApiError {
     }
 }
 
-impl From<dc_exec::Error> for StarknetRpcApiError {
-    fn from(err: dc_exec::Error) -> Self {
+impl From<mc_exec::Error> for StarknetRpcApiError {
+    fn from(err: mc_exec::Error) -> Self {
         Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err) }
     }
 }
@@ -195,8 +196,8 @@ impl From<StarknetError> for StarknetRpcApiError {
     }
 }
 
-impl From<DeoxysStorageError> for StarknetRpcApiError {
-    fn from(_: DeoxysStorageError) -> Self {
+impl From<MadaraStorageError> for StarknetRpcApiError {
+    fn from(_: MadaraStorageError) -> Self {
         StarknetRpcApiError::ErrUnexpectedError { data: "DB error".to_string() }
     }
 }

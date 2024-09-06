@@ -404,3 +404,75 @@ impl From<FunctionStateMutability> for starknet_core::types::FunctionStateMutabi
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        CompressedLegacyContractClass, ContractClass, EntryPointsByType, FlattenedSierraClass, FunctionStateMutability,
+        LegacyContractAbiEntry, LegacyContractEntryPoint, LegacyEntryPointsByType, LegacyEventAbiEntry,
+        LegacyEventAbiType, LegacyFunctionAbiEntry, LegacyFunctionAbiType, LegacyStructAbiEntry, LegacyStructAbiType,
+        LegacyStructMember, LegacyTypedParameter, SierraEntryPoint,
+    };
+    use mp_convert::test::assert_consistent_conversion;
+    use starknet_core::types::ContractClass as StarknetContractClass;
+    use starknet_types_core::felt::Felt;
+
+    #[test]
+    fn test_legacy_contract_class_conversion() {
+        let legacy_contract_class = CompressedLegacyContractClass {
+            program: vec![1, 2, 3],
+            entry_points_by_type: LegacyEntryPointsByType {
+                constructor: vec![LegacyContractEntryPoint { offset: 0, selector: Felt::from(1) }],
+                external: vec![LegacyContractEntryPoint { offset: 1, selector: Felt::from(2) }],
+                l1_handler: vec![LegacyContractEntryPoint { offset: 2, selector: Felt::from(3) }],
+            },
+            abi: Some(vec![
+                LegacyContractAbiEntry::Function(LegacyFunctionAbiEntry {
+                    r#type: LegacyFunctionAbiType::Function,
+                    name: "function".to_string(),
+                    inputs: vec![LegacyTypedParameter { r#type: "type".to_string(), name: "name".to_string() }],
+                    outputs: vec![LegacyTypedParameter { r#type: "type".to_string(), name: "name".to_string() }],
+                    state_mutability: Some(FunctionStateMutability::View),
+                }),
+                LegacyContractAbiEntry::Event(LegacyEventAbiEntry {
+                    r#type: LegacyEventAbiType::Event,
+                    name: "event".to_string(),
+                    keys: vec![LegacyTypedParameter { r#type: "type".to_string(), name: "name".to_string() }],
+                    data: vec![LegacyTypedParameter { r#type: "type".to_string(), name: "name".to_string() }],
+                }),
+                LegacyContractAbiEntry::Struct(LegacyStructAbiEntry {
+                    r#type: LegacyStructAbiType::Struct,
+                    name: "struct".to_string(),
+                    size: 1,
+                    members: vec![LegacyStructMember {
+                        name: "name".to_string(),
+                        r#type: "type".to_string(),
+                        offset: 1,
+                    }],
+                }),
+            ]),
+        };
+
+        let contract_class: ContractClass = legacy_contract_class.clone().into();
+
+        assert_consistent_conversion::<_, StarknetContractClass>(contract_class);
+    }
+
+    #[test]
+    fn test_sierra_contract_class_conversion() {
+        let sierra_contract_class = FlattenedSierraClass {
+            sierra_program: vec![Felt::from(1), Felt::from(2), Felt::from(3)],
+            contract_class_version: "1.2.3".to_string(),
+            entry_points_by_type: EntryPointsByType {
+                constructor: vec![SierraEntryPoint { selector: Felt::from(1), function_idx: 1 }],
+                external: vec![SierraEntryPoint { selector: Felt::from(2), function_idx: 2 }],
+                l1_handler: vec![SierraEntryPoint { selector: Felt::from(3), function_idx: 3 }],
+            },
+            abi: "abi definition".to_string(),
+        };
+
+        let contract_class: ContractClass = sierra_contract_class.into();
+
+        assert_consistent_conversion::<_, StarknetContractClass>(contract_class);
+    }
+}

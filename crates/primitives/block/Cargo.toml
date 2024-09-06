@@ -1,6 +1,6 @@
 [package]
-description = "Deoxys primitives for starknet blocks"
-name = "dp-block"
+description = "Madara primitives for starknet blocks"
+name = "mp-block"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,10 +13,11 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
-# Deoxys
-dp-convert = { workspace = true }
-dp-receipt = { workspace = true }
-dp-transactions = { workspace = true }
+# Madara
+mp-chain-config = { workspace = true }
+mp-convert = { workspace = true }
+mp-receipt = { workspace = true }
+mp-transactions = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }

@@ -8,6 +8,7 @@ members = [
   "crates/client/telemetry",
   "crates/client/metrics",
   "crates/client/mempool",
+  "crates/client/block_import",
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/convert",
@@ -15,11 +16,12 @@ members = [
   "crates/primitives/class",
   "crates/primitives/receipt",
   "crates/primitives/state_update",
+  "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/proc-macros",
+  "crates/tests",
 ]
 resolver = "2"
-# All previous except for `starknet-rpc-test` and `starknet-e2e-test`
-# We don't want `cargo test` to trigger its tests
 default-members = [
   "crates/client/db",
   "crates/client/exec",
@@ -28,13 +30,19 @@ default-members = [
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
+  "crates/client/mempool",
+  "crates/client/block_import",
   "crates/node",
   "crates/primitives/block",
+  "crates/primitives/convert",
   "crates/primitives/transactions",
   "crates/primitives/class",
   "crates/primitives/receipt",
   "crates/primitives/state_update",
+  "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/proc-macros",
+  "crates/tests",
 ]
 
 [profile.dev]
@@ -53,11 +61,11 @@ rpath = false        # Disables adding rpath to the binary
 strip = "symbols"    # Removes debug info and symbold from final binary
 
 [workspace.package]
-authors = ["KasarLabs <https://github.com/KasarLabs>"]
-homepage = "https://kasar.io"
+authors = ["Madara <https://github.com/madara-alliance>"]
+homepage = "https://madara.build"
 edition = "2021"
-repository = "https://github.com/KasarLabs/deoxys/"
-version = "0.1.0"
+repository = "https://github.com/madara-alliance/madara/"
+version = "0.7.0"
 license = "Apache-2.0"
 
 [workspace.dependencies]
@@ -70,27 +78,32 @@ bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bon
   "std",
 ] }
 
-# Deoxys primtitives
-dp-block = { path = "crates/primitives/block", default-features = false }
-dp-convert = { path = "crates/primitives/convert", default-features = false }
-dp-transactions = { path = "crates/primitives/transactions", default-features = false }
-dp-class = { path = "crates/primitives/class", default-features = false }
-dp-receipt = { path = "crates/primitives/receipt", default-features = false }
-dp-state-update = { path = "crates/primitives/state_update", default-features = false }
-dp-utils = { path = "crates/primitives/utils", default-features = false }
+# Madara proc macros
+m-proc-macros = { path = "crates/proc-macros", default-features = false }
 
-# Deoxys client
-dc-telemetry = { path = "crates/client/telemetry" }
-dc-db = { path = "crates/client/db" }
-dc-exec = { path = "crates/client/exec" }
-dc-rpc = { path = "crates/client/rpc" }
-dc-sync = { path = "crates/client/sync" }
-dc-eth = { path = "crates/client/eth" }
-dc-metrics = { path = "crates/client/metrics" }
-dc-mempool = { path = "crates/client/mempool" }
+# Madara primtitives
+mp-block = { path = "crates/primitives/block", default-features = false }
+mp-convert = { path = "crates/primitives/convert", default-features = false }
+mp-transactions = { path = "crates/primitives/transactions", default-features = false }
+mp-class = { path = "crates/primitives/class", default-features = false }
+mp-receipt = { path = "crates/primitives/receipt", default-features = false }
+mp-state-update = { path = "crates/primitives/state_update", default-features = false }
+mp-utils = { path = "crates/primitives/utils", default-features = false }
+mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
+
+# Madara client
+mc-telemetry = { path = "crates/client/telemetry" }
+mc-db = { path = "crates/client/db" }
+mc-exec = { path = "crates/client/exec" }
+mc-rpc = { path = "crates/client/rpc" }
+mc-sync = { path = "crates/client/sync" }
+mc-eth = { path = "crates/client/eth" }
+mc-metrics = { path = "crates/client/metrics" }
+mc-mempool = { path = "crates/client/mempool" }
+mc-block-import = { path = "crates/client/block_import" }
 
 # Starknet dependencies
-cairo-vm = "=1.0.0-rc5"
+cairo-vm = "=1.0.1"
 starknet-core = "0.11"
 starknet-crypto = "0.7"
 starknet-providers = "0.11"
@@ -99,38 +112,28 @@ starknet-types-core = { version = "0.1.5", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = "=0.8.0-rc.0"
-starknet_api = "=0.13.0-rc.0"
-cairo-lang-starknet-classes = "=2.7.0-rc.2"
-cairo-lang-utils = "=2.7.0-rc.2"
+blockifier = "=0.8.0-rc.3"
+starknet_api = "=0.13.0-rc.1"
+cairo-lang-starknet-classes = "=2.7.0"
+cairo-lang-utils = "=2.7.0"
 
 alloy = { version = "0.2.0", features = [
   "node-bindings",
-  "providers",
-  "transport-http",
-  "sol-types",
-  "json",
   "rpc-types",
+  "provider-http",
   "contract",
 ] }
 
-# Ethers: using the same versions as in Anvil
-ethers = { git = "https://github.com/gakonst/ethers-rs" }
-
 # Other third party dependencies
+paste = "1.0.15"
 anyhow = "1.0"
 assert_matches = "1.5"
 async-trait = "0.1"
 sha3 = "0.10"
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
-base64 = "0.13"
 clap = { version = "4.4" }
-derive_more = { version = "0.99", default-features = false }
 flate2 = "1.0"
 futures = { version = "0.3", default-features = false, features = ["std"] }
-hex = { version = "0.4", default-features = false, features = ["std"] }
-indexmap = { version = "2.2", features = ["std", "rayon", "serde"] }
-itertools = "0.12"
 jsonrpsee = { version = "0.22", default-features = false, features = [
   "server",
 ] }
@@ -150,21 +153,19 @@ reqwest = { version = "0.12", features = ["json"] }
 rstest = "0.18"
 serde = { version = "1.0", default-features = false, features = ["std"] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
-serde_with = { version = "2.3", default-features = false }
 thiserror = "1.0"
-thiserror-no-std = "2.0"
 tokio = { version = "1.34", features = ["signal"] }
 url = "2.4"
 rayon = "1.10"
-crossbeam-skiplist = "0.1"
 bincode = "1.3"
 prometheus = "0.13.4"
 fdlimit = "0.3.0"
 proptest = "1.5.0"
 proptest-derive = "0.5.0"
-env_logger = "0.11.3"
-tempfile = "3.5.0"
 dotenv = "0.15.0"
+httpmock = "0.7.0"
+tempfile = "3.10.1"
+env_logger = "0.11.3"
 
 [patch.crates-io]
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
@@ -172,5 +173,3 @@ starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", bra
 
 # wait for PR https://github.com/starknet-io/types-rs/pull/76 to be merged
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.5" }
-
-blockifier = { git = "https://github.com/starkware-libs/blockifier", tag = "v0.8.0-rc.0" }

@@ -1,19 +1,25 @@
 pub mod block_production;
 pub mod db;
+pub mod l1;
 pub mod prometheus;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;
 
+use crate::cli::l1::L1SyncParams;
+pub use block_production::*;
 pub use db::*;
 pub use prometheus::*;
 pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
 
-use self::block_production::BlockProductionParams;
+use mp_chain_config::ChainConfig;
+use std::sync::Arc;
+use url::Url;
 
 #[derive(Clone, Debug, clap::Parser)]
+/// Madara: High performance Starknet sequencer/full-node.
 pub struct RunCmd {
     /// The human-readable name for this node.
     /// It is used as the network node name.
@@ -27,6 +33,10 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub sync_params: SyncParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub l1_sync_params: L1SyncParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
@@ -48,6 +58,10 @@ pub struct RunCmd {
     #[arg(long)]
     pub authority: bool,
 
+    /// The network chain configuration.
+    #[clap(long, short, default_value = "main")]
+    pub network: NetworkType,
+
     /// Run the TUI dashboard
     #[cfg(feature = "tui")]
     #[clap(long)]
@@ -57,23 +71,52 @@ pub struct RunCmd {
 impl RunCmd {
     pub async fn node_name_or_provide(&mut self) -> &str {
         if self.name.is_none() {
-            let name = dc_sync::utility::get_random_pokemon_name().await.unwrap_or_else(|e| {
+            let name = crate::util::get_random_pokemon_name().await.unwrap_or_else(|e| {
                 log::warn!("Failed to get random pokemon name: {}", e);
-                "deoxys".to_string()
+                "madara".to_string()
             });
 
             self.name = Some(name);
         }
-        self.name.as_ref().unwrap()
+        self.name.as_ref().expect("Name was just set")
+    }
+}
+
+/// Starknet network types.
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq)]
+pub enum NetworkType {
+    /// The main network (mainnet). Alias: mainnet
+    #[value(alias("mainnet"))]
+    Main,
+    /// The test network (testnet). Alias: sepolia
+    #[value(alias("sepolia"))]
+    Test,
+    /// The integration network.
+    Integration,
+}
+
+impl NetworkType {
+    pub fn uri(&self) -> &'static str {
+        match self {
+            NetworkType::Main => "https://alpha-mainnet.starknet.io",
+            NetworkType::Test => "https://alpha-sepolia.starknet.io",
+            NetworkType::Integration => "https://integration-sepolia.starknet.io",
+        }
     }
 
-    pub async fn network(&mut self) -> &str {
-        if self.sync_params.network == NetworkType::Integration {
-            "Integration"
-        } else if self.sync_params.network == NetworkType::Test {
-            "Testnet"
-        } else {
-            "Mainnet"
+    pub fn chain_config(&self) -> Arc<ChainConfig> {
+        match self {
+            NetworkType::Main => Arc::new(ChainConfig::starknet_mainnet()),
+            NetworkType::Test => Arc::new(ChainConfig::starknet_sepolia()),
+            NetworkType::Integration => Arc::new(ChainConfig::starknet_integration()),
         }
+    }
+
+    pub fn gateway(&self) -> Url {
+        format!("{}/gateway", self.uri()).parse().expect("Invalid uri")
+    }
+
+    pub fn feeder_gateway(&self) -> Url {
+        format!("{}/feeder_gateway", self.uri()).parse().expect("Invalid uri")
     }
 }

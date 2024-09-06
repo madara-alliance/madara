@@ -4,19 +4,18 @@ use crate::{
     utils::{convert_log_state_update, trim_hash},
 };
 use anyhow::Context;
-use dc_db::DeoxysBackend;
-use dp_transactions::MAIN_CHAIN_ID;
-use dp_utils::channel_wait_or_graceful_shutdown;
 use futures::StreamExt;
+use mc_db::MadaraBackend;
+use mp_transactions::MAIN_CHAIN_ID;
+use mp_utils::channel_wait_or_graceful_shutdown;
 use serde::Deserialize;
-use starknet_api::hash::StarkHash;
 use starknet_types_core::felt::Felt;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct L1StateUpdate {
     pub block_number: u64,
-    pub global_root: StarkHash,
-    pub block_hash: StarkHash,
+    pub global_root: Felt,
+    pub block_hash: Felt,
 }
 
 /// Get the last Starknet state update verified on the L1
@@ -32,7 +31,7 @@ pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1Stat
 /// verified state
 pub async fn listen_and_update_state(
     eth_client: &EthereumClient,
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     block_metrics: &L1BlockMetrics,
     chain_id: Felt,
 ) -> anyhow::Result<()> {
@@ -51,7 +50,7 @@ pub async fn listen_and_update_state(
 }
 
 pub fn update_l1(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     state_update: L1StateUpdate,
     block_metrics: &L1BlockMetrics,
     chain_id: Felt,
@@ -78,13 +77,17 @@ pub fn update_l1(
     Ok(())
 }
 
-pub async fn sync(backend: &DeoxysBackend, eth_client: &EthereumClient, chain_id: Felt) -> anyhow::Result<()> {
+pub async fn state_update_worker(
+    backend: &MadaraBackend,
+    eth_client: &EthereumClient,
+    chain_id: Felt,
+) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
     log::debug!("update_l1: cleared confirmed block number");
 
     log::info!("🚀 Subscribed to L1 state verification");
-
+    // ideally here there would be one service which will update the l1 gas prices and another one for messages and one that's already present is state update
     // Get and store the latest verified state
     let initial_state = get_initial_state(eth_client).await.context("Getting initial ethereum state")?;
     update_l1(backend, initial_state, &eth_client.l1_block_metrics, chain_id)?;
@@ -102,11 +105,11 @@ mod eth_client_event_subscription_test {
     use super::*;
     use std::{sync::Arc, time::Duration};
 
-    use alloy::{providers::ProviderBuilder, sol};
-    use dc_db::DatabaseService;
-    use dc_metrics::MetricsService;
-    use dp_block::chain_config::ChainConfig;
-    use dp_convert::ToFelt;
+    use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
+    use mc_db::DatabaseService;
+    use mc_metrics::MetricsService;
+    use mp_chain_config::ChainConfig;
+    use mp_convert::ToFelt;
     use rstest::*;
     use tempfile::TempDir;
     use url::Url;
@@ -141,6 +144,10 @@ mod eth_client_event_subscription_test {
     #[rstest]
     #[tokio::test]
     async fn listen_and_update_state_when_event_fired_works() {
+        // Start Anvil instance
+        let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
+        println!("Anvil started and running at `{}`", anvil.endpoint());
+
         // Set up chain info
         let chain_info = Arc::new(ChainConfig::test_config());
 
@@ -160,7 +167,7 @@ mod eth_client_event_subscription_test {
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
         let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
 
-        let rpc_url: Url = "http://localhost:8545".parse().expect("issue while parsing");
+        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url);
 
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();

@@ -7,17 +7,13 @@ use blockifier::{
     context::{BlockContext, ChainInfo, FeeTokenAddresses},
     state::cached_state::CachedState,
 };
-use dc_db::{db_block_id::DbBlockId, DeoxysBackend};
-use dp_block::{header::L1DataAvailabilityMode, DeoxysMaybePendingBlockInfo};
-use starknet_api::{
-    block::{BlockNumber, BlockTimestamp},
-    core::Nonce,
-};
-use starknet_types_core::felt::Felt;
+use mc_db::{db_block_id::DbBlockId, MadaraBackend};
+use mp_block::{header::L1DataAvailabilityMode, MadaraMaybePendingBlockInfo};
+use starknet_api::block::{BlockNumber, BlockTimestamp};
 use std::sync::Arc;
 
 pub struct ExecutionContext {
-    pub(crate) backend: Arc<DeoxysBackend>,
+    pub(crate) backend: Arc<MadaraBackend>,
     pub(crate) block_context: BlockContext,
     pub(crate) db_id: DbBlockId,
 }
@@ -33,10 +29,7 @@ impl ExecutionContext {
     }
 
     pub fn tx_validator(&self) -> StatefulValidator<BlockifierStateAdapter> {
-        // See [`ChainConfig`].
-        let max_nonce_for_validation_skip =
-            Nonce(Felt::from(self.backend.chain_config().max_nonce_for_validation_skip));
-        StatefulValidator::create(self.init_cached_state(), self.block_context.clone(), max_nonce_for_validation_skip)
+        StatefulValidator::create(self.init_cached_state(), self.block_context.clone())
     }
 
     pub fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter> {
@@ -55,10 +48,10 @@ impl ExecutionContext {
         ))
     }
 
-    pub fn new(backend: Arc<DeoxysBackend>, block_info: &DeoxysMaybePendingBlockInfo) -> Result<Self, Error> {
+    pub fn new(backend: Arc<MadaraBackend>, block_info: &MadaraMaybePendingBlockInfo) -> Result<Self, Error> {
         let (db_id, protocol_version, block_number, block_timestamp, sequencer_address, l1_gas_price, l1_da_mode) =
             match block_info {
-                DeoxysMaybePendingBlockInfo::Pending(block) => (
+                MadaraMaybePendingBlockInfo::Pending(block) => (
                     DbBlockId::Pending,
                     block.header.protocol_version,
                     // when the block is pending, we use the latest block n + 1
@@ -69,7 +62,7 @@ impl ExecutionContext {
                     block.header.l1_gas_price.clone(),
                     block.header.l1_da_mode,
                 ),
-                DeoxysMaybePendingBlockInfo::NotPending(block) => (
+                MadaraMaybePendingBlockInfo::NotPending(block) => (
                     DbBlockId::BlockN(block.header.block_number),
                     block.header.protocol_version,
                     block.header.block_number,

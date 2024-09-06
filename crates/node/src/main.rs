@@ -1,30 +1,28 @@
-//! Deoxys node command line.
+//! Madara node command line.
 #![warn(missing_docs)]
+#![warn(clippy::unwrap_used)]
 
 use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
-
 mod cli;
 mod service;
 mod util;
 
+use crate::service::L1SyncService;
 use cli::RunCmd;
-use dc_db::DatabaseService;
-use dc_mempool::{L1DataProvider, Mempool};
-use dc_metrics::MetricsService;
-use dc_rpc::providers::AddTransactionProvider;
-use dc_telemetry::{SysInfo, TelemetryService};
-use dp_block::header::{GasPrices, L1DataAvailabilityMode};
-use dp_convert::ToFelt;
-use dp_utils::service::{Service, ServiceGroup};
+use mc_db::DatabaseService;
+use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
+use mc_metrics::MetricsService;
+use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolProvider};
+use mc_telemetry::{SysInfo, TelemetryService};
+use mp_convert::ToFelt;
+use mp_utils::service::{Service, ServiceGroup};
 use service::{BlockProductionService, RpcService, SyncService};
 use starknet_providers::SequencerGatewayProvider;
-
-const GREET_IMPL_NAME: &str = "Deoxys";
-const GREET_SUPPORT_URL: &str = "https://github.com/KasarLabs/deoxys/issues";
-const GREET_AUTHORS: &[&str] = &["KasarLabs <https://kasar.io>"];
+const GREET_IMPL_NAME: &str = "Madara";
+const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -33,20 +31,19 @@ async fn main() -> anyhow::Result<()> {
     crate::util::raise_fdlimit();
 
     let mut run_cmd: RunCmd = RunCmd::parse();
+
+    let chain_config = run_cmd.network.chain_config();
+
     let node_name = run_cmd.node_name_or_provide().await.to_string();
-    let network_name = run_cmd.network().await.to_string();
     let node_version = env!("DEOXYS_BUILD_VERSION");
 
-    log::info!("👽 {} Node", GREET_IMPL_NAME);
+    log::info!("🥷  {} Node", GREET_IMPL_NAME);
     log::info!("✌️  Version {}", node_version);
-    for author in GREET_AUTHORS {
-        log::info!("❤️  By {}", author);
-    }
     log::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
     log::info!("🏷  Node Name: {}", node_name);
     let role = if run_cmd.authority { "authority" } else { "full node" };
     log::info!("👤 Role: {}", role);
-    log::info!("🌐 Network: {}", network_name);
+    log::info!("🌐 Network: {}", chain_config.chain_name);
 
     let sys_info = SysInfo::probe();
     sys_info.show();
@@ -69,10 +66,25 @@ async fn main() -> anyhow::Result<()> {
         &run_cmd.db_params.base_path,
         run_cmd.db_params.backup_dir.clone(),
         run_cmd.db_params.restore_from_latest_backup,
-        run_cmd.sync_params.network.db_chain_info(),
+        Arc::clone(&chain_config),
     )
     .await
     .context("Initializing db service")?;
+
+    let l1_gas_setter = GasPriceProvider::new();
+    let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
+
+    let l1_service = L1SyncService::new(
+        &run_cmd.l1_sync_params,
+        &db_service,
+        prometheus_service.registry(),
+        l1_gas_setter,
+        chain_config.chain_id.clone(),
+        chain_config.eth_core_contract_address,
+        run_cmd.authority,
+    )
+    .await
+    .context("Initializing the l1 sync service")?;
 
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
@@ -80,23 +92,6 @@ async fn main() -> anyhow::Result<()> {
         match run_cmd.authority {
             // Block production service. (authority)
             true => {
-                struct DummyProvider;
-                impl L1DataProvider for DummyProvider {
-                    fn get_gas_prices(&self) -> GasPrices {
-                        GasPrices {
-                            eth_l1_gas_price: 100,
-                            strk_l1_gas_price: 90,
-                            eth_l1_data_gas_price: 10,
-                            strk_l1_data_gas_price: 9,
-                        }
-                    }
-                    fn get_da_mode(&self) -> L1DataAvailabilityMode {
-                        L1DataAvailabilityMode::Blob
-                    }
-                }
-
-                let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(DummyProvider);
-
                 let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
 
                 let block_production_service = BlockProductionService::new(
@@ -108,16 +103,15 @@ async fn main() -> anyhow::Result<()> {
                     telemetry_service.new_handle(),
                 )?;
 
-                (
-                    ServiceGroup::default().with(block_production_service),
-                    Arc::new(dc_rpc::mempool_provider::MempoolProvider::new(mempool)),
-                )
+                (ServiceGroup::default().with(block_production_service), Arc::new(MempoolProvider::new(mempool)))
             }
             // Block sync service. (full node)
             false => {
                 // Feeder gateway sync service.
                 let sync_service = SyncService::new(
                     &run_cmd.sync_params,
+                    Arc::clone(&chain_config),
+                    run_cmd.network,
                     &db_service,
                     prometheus_service.registry(),
                     telemetry_service.new_handle(),
@@ -128,10 +122,10 @@ async fn main() -> anyhow::Result<()> {
                 (
                     ServiceGroup::default().with(sync_service),
                     // TODO(rate-limit): we may get rate limited with this unconfigured provider?
-                    Arc::new(dc_rpc::providers::ForwardToProvider::new(SequencerGatewayProvider::new(
-                        run_cmd.sync_params.network.gateway(),
-                        run_cmd.sync_params.network.feeder_gateway(),
-                        run_cmd.sync_params.network.chain_id().to_felt(),
+                    Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
+                        run_cmd.network.gateway(),
+                        run_cmd.network.feeder_gateway(),
+                        chain_config.chain_id.to_felt(),
                     ))),
                 )
             }
@@ -140,21 +134,17 @@ async fn main() -> anyhow::Result<()> {
     let rpc_service = RpcService::new(
         &run_cmd.rpc_params,
         &db_service,
-        run_cmd.sync_params.network,
+        Arc::clone(&chain_config),
         prometheus_service.registry(),
         rpc_add_txs_method_provider,
     )
     .context("Initializing rpc service")?;
 
-    telemetry_service.send_connected(
-        &node_name,
-        node_version,
-        &run_cmd.sync_params.network.db_chain_info().chain_name,
-        &sys_info,
-    );
+    telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
     let app = ServiceGroup::default()
         .with(db_service)
+        .with(l1_service)
         .with(block_provider_service)
         .with(rpc_service)
         .with(telemetry_service)

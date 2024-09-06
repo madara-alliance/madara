@@ -1,6 +1,6 @@
 [package]
-description = "Deoxys primitive for type conversion"
-name = "dp-convert"
+description = "Madara primitive for type conversion"
+name = "mp-convert"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -19,3 +19,6 @@ starknet_api = { workspace = true }
 # Other
 primitive-types = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }

@@ -21,7 +21,7 @@ impl TransactionWithHash {
             }
             starknet_core::types::BroadcastedTransaction::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
         };
-        let hash = transaction.compute_hash(chain_id, is_query, false);
+        let hash = transaction.compute_hash(chain_id, is_query, None);
         Self { hash, transaction }
     }
 }

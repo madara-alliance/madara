@@ -10,7 +10,7 @@ use alloy::{
 };
 use anyhow::{bail, Context};
 use bitvec::macros::internal::funty::Fundamental;
-use dc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
+use mc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
@@ -28,11 +28,11 @@ impl L1BlockMetrics {
     pub fn register(registry: &MetricsRegistry) -> Result<Self, PrometheusError> {
         Ok(Self {
             l1_block_number: registry
-                .register(Gauge::new("deoxys_l1_block_number", "Gauge for deoxys L1 block number")?)?,
+                .register(Gauge::new("madara_l1_block_number", "Gauge for madara L1 block number")?)?,
 
-            l1_gas_price_wei: registry.register(Gauge::new("deoxys_l1_gas_price", "Gauge for deoxys L1 gas price")?)?,
+            l1_gas_price_wei: registry.register(Gauge::new("madara_l1_gas_price", "Gauge for madara L1 gas price")?)?,
             l1_gas_price_strk: registry
-                .register(Gauge::new("deoxys_l1_gas_price_strk", "Gauge for deoxys L1 gas price in strk")?)?,
+                .register(Gauge::new("madara_l1_gas_price_strk", "Gauge for madara L1 gas price in strk")?)?,
         })
     }
 }
@@ -41,6 +41,7 @@ impl L1BlockMetrics {
 // The official starknet core contract ^
 sol!(
     #[sol(rpc)]
+    #[derive(Debug)]
     StarknetCoreContract,
     "src/abis/starknet_core.json"
 );
@@ -63,12 +64,26 @@ impl Clone for EthereumClient {
 
 impl EthereumClient {
     /// Create a new EthereumClient instance with the given RPC URL
-    pub async fn new(url: Url, l1_core_address: Address, metrics_handle: MetricsRegistry) -> anyhow::Result<Self> {
+    pub async fn new(url: Url, l1_core_address: Address, l1_block_metrics: L1BlockMetrics) -> anyhow::Result<Self> {
         let provider = ProviderBuilder::new().on_http(url);
+
+        EthereumClient::assert_core_contract_exists(&provider, l1_core_address).await?;
+
         let core_contract = StarknetCoreContract::new(l1_core_address, provider.clone());
-        let l1_block_metrics = L1BlockMetrics::register(&metrics_handle)?;
 
         Ok(Self { provider: Arc::new(provider), l1_core_contract: core_contract, l1_block_metrics })
+    }
+
+    /// Assert that L1 Core contract exists by checking its bytecode.
+    async fn assert_core_contract_exists(
+        provider: &RootProvider<Http<Client>>,
+        l1_core_address: Address,
+    ) -> anyhow::Result<()> {
+        let l1_core_contract_bytecode = provider.get_code_at(l1_core_address).await?;
+        if l1_core_contract_bytecode.is_empty() {
+            bail!("The L1 Core Contract could not be found. Check that the L2 chain matches the L1 RPC endpoint.");
+        }
+        Ok(())
     }
 
     /// Retrieves the latest Ethereum block number
@@ -123,7 +138,7 @@ impl EthereumClient {
 pub mod eth_client_getter_test {
     use super::*;
     use alloy::primitives::U256;
-    use dc_metrics::MetricsService;
+    use mc_metrics::MetricsService;
     use rstest::*;
     use tokio;
 
@@ -135,16 +150,41 @@ pub mod eth_client_getter_test {
     const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
     const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
 
-    #[fixture]
-    #[once]
-    pub fn eth_client() -> EthereumClient {
-        let rpc_url: Url = "http://localhost:8545".parse().expect("issue while parsing");
+    #[rstest]
+    #[tokio::test]
+    async fn fail_create_new_client_invalid_core_contract() {
+        // Sepolia core contract instead of mainnet
+        const INVALID_CORE_CONTRACT_ADDRESS: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
+
+        let rpc_url_string = String::from("http://localhost:8545");
+        let rpc_url: Url = rpc_url_string.parse().expect("issue while parsing URL");
+
+        let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None).unwrap();
+        let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
+
+        let new_client_result = EthereumClient::new(rpc_url, core_contract_address, l1_block_metrics).await;
+        assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
+    }
+
+    pub fn create_ethereum_client(url: Option<&str>) -> EthereumClient {
+        let rpc_url_string = url.unwrap_or("http://localhost:8545").to_string();
+        let rpc_url: Url = rpc_url_string.parse().expect("issue while parsing URL");
+
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
         let contract = StarknetCoreContract::new(address, provider.clone());
+
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
         let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
+
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
+    }
+
+    #[fixture]
+    #[once]
+    pub fn eth_client() -> EthereumClient {
+        create_ethereum_client(None)
     }
 
     #[rstest]

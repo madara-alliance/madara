@@ -1,3 +1,4 @@
+mod from_provider;
 mod into_starknet_core;
 
 use starknet_types_core::{
@@ -5,7 +6,7 @@ use starknet_types_core::{
     hash::{Poseidon, StarkHash},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateUpdate {
     pub block_hash: Felt,
     pub old_root: Felt,
@@ -13,13 +14,13 @@ pub struct StateUpdate {
     pub state_diff: StateDiff,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PendingStateUpdate {
     pub old_root: Felt,
     pub state_diff: StateDiff,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateDiff {
     pub storage_diffs: Vec<ContractStorageDiffItem>,
     pub deprecated_declared_classes: Vec<Felt>,
@@ -170,4 +171,74 @@ pub struct ReplacedClassItem {
 pub struct NonceUpdate {
     pub contract_address: Felt,
     pub nonce: Felt,
+}
+
+#[cfg(test)]
+mod tests {
+    use starknet_types_core::felt::Felt;
+
+    use super::*;
+
+    #[test]
+    fn test_is_empty() {
+        let state_diff = StateDiff::default();
+        assert!(state_diff.is_empty());
+
+        let state_diff = StateDiff { deprecated_declared_classes: vec![Felt::ONE], ..Default::default() };
+        assert!(!state_diff.is_empty());
+    }
+
+    #[test]
+    fn test_len() {
+        let state_diff = StateDiff::default();
+        assert_eq!(state_diff.len(), 0);
+
+        let state_diff = dummy_state_diff();
+        assert_eq!(state_diff.len(), 14);
+    }
+
+    #[test]
+    fn test_compute_hash() {
+        let state_diff = dummy_state_diff();
+        let hash = state_diff.compute_hash();
+        assert_eq!(hash, Felt::from_hex_unchecked("0x3bda8176c564f07b91627f95e1c6249c0d19ba00e47edfc17ae52ccf946ea20"));
+    }
+
+    pub(crate) fn dummy_state_diff() -> StateDiff {
+        StateDiff {
+            storage_diffs: vec![
+                ContractStorageDiffItem {
+                    address: Felt::from(1),
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::from(2), value: Felt::from(3) },
+                        StorageEntry { key: Felt::from(4), value: Felt::from(5) },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::from(6),
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::from(7), value: Felt::from(8) },
+                        StorageEntry { key: Felt::from(9), value: Felt::from(10) },
+                    ],
+                },
+            ],
+            deprecated_declared_classes: vec![Felt::from(11), Felt::from(12)],
+            declared_classes: vec![
+                DeclaredClassItem { class_hash: Felt::from(13), compiled_class_hash: Felt::from(14) },
+                DeclaredClassItem { class_hash: Felt::from(15), compiled_class_hash: Felt::from(16) },
+            ],
+            deployed_contracts: vec![
+                DeployedContractItem { address: Felt::from(17), class_hash: Felt::from(18) },
+                DeployedContractItem { address: Felt::from(19), class_hash: Felt::from(20) },
+            ],
+            replaced_classes: vec![
+                ReplacedClassItem { contract_address: Felt::from(21), class_hash: Felt::from(22) },
+                ReplacedClassItem { contract_address: Felt::from(23), class_hash: Felt::from(24) },
+            ],
+            nonces: vec![
+                NonceUpdate { contract_address: Felt::from(25), nonce: Felt::from(26) },
+                NonceUpdate { contract_address: Felt::from(27), nonce: Felt::from(28) },
+            ],
+        }
+    }
 }

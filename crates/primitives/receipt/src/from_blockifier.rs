@@ -4,8 +4,7 @@ use blockifier::transaction::{
     transaction_execution::Transaction,
 };
 use cairo_vm::types::builtin_name::BuiltinName;
-use dp_convert::ToFelt;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 use crate::{
     DataAvailabilityResources, DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources,
@@ -21,11 +20,11 @@ fn blockifier_tx_fee_type(tx: &Transaction) -> FeeType {
 fn blockifier_tx_hash(tx: &Transaction) -> Felt {
     match tx {
         Transaction::AccountTransaction(tx) => match tx {
-            AccountTransaction::Declare(tx) => tx.tx_hash.to_felt(),
-            AccountTransaction::DeployAccount(tx) => tx.tx_hash.to_felt(),
-            AccountTransaction::Invoke(tx) => tx.tx_hash.to_felt(),
+            AccountTransaction::Declare(tx) => tx.tx_hash.0,
+            AccountTransaction::DeployAccount(tx) => tx.tx_hash.0,
+            AccountTransaction::Invoke(tx) => tx.tx_hash.0,
         },
-        Transaction::L1HandlerTransaction(tx) => tx.tx_hash.to_felt(),
+        Transaction::L1HandlerTransaction(tx) => tx.tx_hash.0,
     }
 }
 
@@ -44,7 +43,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
         .non_optional_call_infos()
         .flat_map(|call| {
             call.execution.events.iter().map(|event| Event {
-                from_address: call.call.storage_address.to_felt(),
+                from_address: call.call.storage_address.into(),
                 keys: event.event.keys.iter().map(|k| k.0).collect(),
                 data: event.event.data.0.clone(),
             })
@@ -54,7 +53,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
         .non_optional_call_infos()
         .flat_map(|call| {
             call.execution.l2_to_l1_messages.iter().map(|message| MsgToL1 {
-                from_address: call.call.storage_address.to_felt(),
+                from_address: call.call.storage_address.into(),
                 to_address: message.message.to_address.into(),
                 payload: message.message.payload.0.clone(),
             })
@@ -109,7 +108,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
                 events,
                 execution_resources,
                 execution_result,
-                contract_address: tx.contract_address.to_felt(),
+                contract_address: tx.contract_address.into(),
             })
         }
         Transaction::AccountTransaction(AccountTransaction::Invoke(_)) => {

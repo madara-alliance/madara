@@ -1,4 +1,4 @@
-//! Deoxys database
+//! Madara database
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -10,8 +10,8 @@ use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
-use dp_block::chain_config::ChainConfig;
-use dp_utils::service::Service;
+use mp_chain_config::ChainConfig;
+use mp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
 pub mod block_db;
@@ -25,9 +25,10 @@ pub mod class_db;
 pub mod contract_db;
 pub mod db_block_id;
 pub mod db_metrics;
+pub mod l1_db;
 pub mod storage_updates;
 
-pub use error::{DeoxysStorageError, TrieType};
+pub use error::{MadaraStorageError, TrieType};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use tokio::sync::{mpsc, oneshot};
 
@@ -38,12 +39,7 @@ pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
-pub(crate) async fn open_rocksdb(
-    path: &Path,
-    create: bool,
-    backup_dir: Option<PathBuf>,
-    restore_from_latest_backup: bool,
-) -> Result<(Arc<DB>, Option<mpsc::Sender<BackupRequest>>)> {
+pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
     let mut opts = Options::default();
     opts.set_report_bg_io_stats(true);
     opts.set_use_fsync(false);
@@ -66,25 +62,6 @@ pub(crate) async fn open_rocksdb(
 
     opts.set_env(&env);
 
-    let backup_hande = if let Some(backup_dir) = backup_dir {
-        let (restored_cb_sender, restored_cb_recv) = oneshot::channel();
-
-        let (sender, receiver) = mpsc::channel(1);
-        let db_path = path.to_owned();
-        std::thread::spawn(move || {
-            spawn_backup_db_task(&backup_dir, restore_from_latest_backup, &db_path, restored_cb_sender, receiver)
-                .expect("Database backup thread")
-        });
-
-        log::debug!("blocking on db restoration");
-        restored_cb_recv.await.context("Restoring database")?;
-        log::debug!("done blocking on db restoration");
-
-        Some(sender)
-    } else {
-        None
-    };
-
     log::debug!("opening db at {:?}", path.display());
     let db = DB::open_cf_descriptors(
         &opts,
@@ -92,7 +69,7 @@ pub(crate) async fn open_rocksdb(
         Column::ALL.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name(), col.rocksdb_options())),
     )?;
 
-    Ok((Arc::new(db), backup_hande))
+    Ok(Arc::new(db))
 }
 
 /// This runs in anothr thread as the backup engine is not thread safe
@@ -132,8 +109,6 @@ fn spawn_backup_db_task(
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Column {
-    Meta,
-
     // Blocks storage
     // block_n => Block info
     BlockNToBlockInfo,
@@ -188,6 +163,9 @@ pub enum Column {
     BonsaiClassesTrie,
     BonsaiClassesFlat,
     BonsaiClassesLog,
+
+    L1Messaging,
+    L1MessagingNonce,
 }
 
 impl fmt::Debug for Column {
@@ -206,7 +184,6 @@ impl Column {
     pub const ALL: &'static [Self] = {
         use Column::*;
         &[
-            Meta,
             BlockNToBlockInfo,
             BlockNToBlockInner,
             TxHashToBlockN,
@@ -231,6 +208,8 @@ impl Column {
             BonsaiClassesTrie,
             BonsaiClassesFlat,
             BonsaiClassesLog,
+            L1Messaging,
+            L1MessagingNonce,
             PendingContractToClassHashes,
             PendingContractToNonces,
             PendingContractStorage,
@@ -241,7 +220,6 @@ impl Column {
     pub(crate) fn rocksdb_name(&self) -> &'static str {
         use Column::*;
         match self {
-            Meta => "meta",
             BlockNToBlockInfo => "block_n_to_block_info",
             BlockNToBlockInner => "block_n_to_block_inner",
             TxHashToBlockN => "tx_hash_to_block_n",
@@ -266,6 +244,8 @@ impl Column {
             ContractToNonces => "contract_to_nonces",
             ContractClassHashes => "contract_class_hashes",
             ContractStorage => "contract_storage",
+            L1Messaging => "l1_messaging",
+            L1MessagingNonce => "l1_messaging_nonce",
             PendingContractToClassHashes => "pending_contract_to_class_hashes",
             PendingContractToNonces => "pending_contract_to_nonces",
             PendingContractStorage => "pending_contract_storage",
@@ -312,20 +292,35 @@ impl DatabaseExt for DB {
     }
 }
 
-/// Deoxys client database backend singleton.
+/// Madara client database backend singleton.
 #[derive(Debug)]
-pub struct DeoxysBackend {
+pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
     last_flush_time: Mutex<Option<Instant>>,
     chain_config: Arc<ChainConfig>,
+    #[cfg(feature = "testing")]
+    _temp_dir: Option<tempfile::TempDir>,
 }
 
 pub struct DatabaseService {
-    handle: Arc<DeoxysBackend>,
+    handle: Arc<MadaraBackend>,
 }
 
 impl DatabaseService {
+    /// Create a new database service.
+    ///
+    /// # Arguments
+    ///
+    /// * `base_path` - The path to the database directory.
+    /// * `backup_dir` - Optional path to the backup directory.
+    /// * `restore_from_latest_backup` - Whether to restore the database from the latest backup.
+    /// * `chain_config` - The chain configuration.
+    ///
+    /// # Returns
+    ///
+    /// A new database service.
+    ///
     pub async fn new(
         base_path: &Path,
         backup_dir: Option<PathBuf>,
@@ -335,13 +330,13 @@ impl DatabaseService {
         log::info!("💾 Opening database at: {}", base_path.display());
 
         let handle =
-            DeoxysBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_config)
+            MadaraBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_config)
                 .await?;
 
         Ok(Self { handle })
     }
 
-    pub fn backend(&self) -> &Arc<DeoxysBackend> {
+    pub fn backend(&self) -> &Arc<MadaraBackend> {
         &self.handle
     }
 }
@@ -353,33 +348,68 @@ struct BackupRequest {
     db: Arc<DB>,
 }
 
-impl Drop for DeoxysBackend {
+impl Drop for MadaraBackend {
     fn drop(&mut self) {
         log::info!("⏳ Gracefully closing the database...");
     }
 }
 
-impl DeoxysBackend {
+impl MadaraBackend {
     pub fn chain_config(&self) -> &Arc<ChainConfig> {
         &self.chain_config
     }
 
+    #[cfg(feature = "testing")]
+    pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
+        let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
+        Arc::new(Self {
+            backup_handle: None,
+            db: open_rocksdb(temp_dir.as_ref(), true).unwrap(),
+            last_flush_time: Default::default(),
+            chain_config,
+            _temp_dir: Some(temp_dir),
+        })
+    }
+
     /// Open the db.
-    async fn open(
+    pub async fn open(
         db_config_dir: PathBuf,
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
-    ) -> Result<Arc<DeoxysBackend>> {
+    ) -> Result<Arc<MadaraBackend>> {
         let db_path = db_config_dir.join("db");
 
-        let (db, backup_handle) = open_rocksdb(&db_path, true, backup_dir, restore_from_latest_backup).await?;
+        // when backups are enabled, a thread is spawned that owns the rocksdb BackupEngine (it is not thread safe) and it receives backup requests using a mpsc channel
+        // There is also another oneshot channel involved: when restoring the db at startup, we want to wait for the backupengine to finish restoration before returning from open()
+        let backup_handle = if let Some(backup_dir) = backup_dir {
+            let (restored_cb_sender, restored_cb_recv) = oneshot::channel();
+
+            let (sender, receiver) = mpsc::channel(1);
+            let db_path = db_path.clone();
+            std::thread::spawn(move || {
+                spawn_backup_db_task(&backup_dir, restore_from_latest_backup, &db_path, restored_cb_sender, receiver)
+                    .expect("Database backup thread")
+            });
+
+            log::debug!("blocking on db restoration");
+            restored_cb_recv.await.context("Restoring database")?;
+            log::debug!("done blocking on db restoration");
+
+            Some(sender)
+        } else {
+            None
+        };
+
+        let db = open_rocksdb(&db_path, true)?;
 
         let backend = Arc::new(Self {
             backup_handle,
             db,
             last_flush_time: Default::default(),
             chain_config: Arc::clone(&chain_config),
+            #[cfg(feature = "testing")]
+            _temp_dir: None,
         });
         backend.check_configuration()?;
         Ok(backend)
@@ -432,8 +462,8 @@ impl DeoxysBackend {
                 snapshot_interval: u64::MAX,
             },
         )
-        // UNWRAP: function actually cannot panic
-        .unwrap();
+        // TODO(bonsai-trie): change upstream to reflect that.
+        .expect("New bonsai storage can never error");
 
         bonsai
     }

@@ -23,8 +23,6 @@ rustc-ice-*.txt
 # Javascript dependencies
 **/node_modules/
 
-data
-
 # Artillery reports
 benchmarking/reports/*.json
 
@@ -42,7 +40,7 @@ cairo_venv
 run.sh
 password.txt
 nohup.out
-deoxys.log
+madara.log
 # pyenv
 .python-version
 
@@ -53,7 +51,13 @@ starknet-e2e-test/contracts/build
 # vscode settings
 .vscode/settings.json
 
+# vscode workspaces
+*.code-workspace
+
 # rpc output
 output*
 
 tmp/
+
+*.info
+*.profraw

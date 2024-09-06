@@ -9,7 +9,7 @@ mod into_starknet_core;
 pub use class_hash::ClassHash;
 pub use compile::ToCompiledClass;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ConvertedClass {
     pub class_infos: (Felt, ClassInfo),
     pub class_compiled: (Felt, CompiledClass),
@@ -19,14 +19,24 @@ pub struct ConvertedClass {
 pub struct ClassInfo {
     pub contract_class: ContractClass,
     pub compiled_class_hash: Felt,
-    /// None means it is in the pending block
-    pub block_number: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ContractClass {
     Sierra(FlattenedSierraClass),
     Legacy(CompressedLegacyContractClass),
+}
+
+impl From<FlattenedSierraClass> for ContractClass {
+    fn from(flattened_sierra_class: FlattenedSierraClass) -> Self {
+        ContractClass::Sierra(flattened_sierra_class)
+    }
+}
+
+impl From<CompressedLegacyContractClass> for ContractClass {
+    fn from(compressed_legacy_contract_class: CompressedLegacyContractClass) -> Self {
+        ContractClass::Legacy(compressed_legacy_contract_class)
+    }
 }
 
 impl ContractClass {

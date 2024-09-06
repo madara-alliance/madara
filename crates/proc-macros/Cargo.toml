@@ -1,0 +1,18 @@
+[package]
+name = "m-proc-macros"
+description = "Madara procedural macros"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[dependencies]
+proc-macro2 = "1.0.86"
+quote = "1.0.26"
+regex = "1.10.6"
+syn = { version = "2.0.39", features = ["full"] }
+
+[lib]
+proc-macro = true
