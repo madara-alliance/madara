@@ -18,6 +18,7 @@ members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/proc-macros",
   "crates/tests",
 ]
 resolver = "2"
@@ -40,6 +41,7 @@ default-members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/proc-macros",
   "crates/tests",
 ]
 
@@ -75,6 +77,9 @@ rocksdb = { version = "0.22", features = [
 bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "fix_inserts_remove_leaks", features = [
   "std",
 ] }
+
+# Madara proc macros
+m-proc-macros = { path = "crates/proc-macros", default-features = false }
 
 # Madara primtitives
 mp-block = { path = "crates/primitives/block", default-features = false }
@@ -120,6 +125,7 @@ alloy = { version = "0.2.0", features = [
 ] }
 
 # Other third party dependencies
+paste = "1.0.15"
 anyhow = "1.0"
 assert_matches = "1.5"
 async-trait = "0.1"

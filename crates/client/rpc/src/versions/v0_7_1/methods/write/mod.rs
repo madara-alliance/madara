@@ -4,10 +4,10 @@ use starknet_core::types::{
     DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
 };
 
-use crate::{Starknet, StarknetWriteRpcApiServer};
+use crate::{versions::v0_7_1::StarknetWriteRpcApiV0_7_1Server, Starknet};
 
 #[async_trait]
-impl StarknetWriteRpcApiServer for Starknet {
+impl StarknetWriteRpcApiV0_7_1Server for Starknet {
     /// Submit a new declare transaction to be added to the chain
     ///
     /// # Arguments

@@ -1,18 +1,18 @@
-use crate::cli::{RpcMethods, RpcParams};
+use std::sync::Arc;
+
 use jsonrpsee::server::ServerHandle;
-use jsonrpsee::RpcModule;
+use tokio::task::JoinSet;
+
 use mc_db::DatabaseService;
 use mc_metrics::MetricsRegistry;
-use mc_rpc::{
-    providers::AddTransactionProvider, Starknet, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
-    StarknetWriteRpcApiServer,
-};
-use metrics::RpcMetrics;
+use mc_rpc::{providers::AddTransactionProvider, versioned_rpc_api, Starknet};
 use mp_chain_config::ChainConfig;
 use mp_utils::service::Service;
+
+use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
-use std::sync::Arc;
-use tokio::task::JoinSet;
+
+use crate::cli::{RpcMethods, RpcParams};
 
 mod metrics;
 mod middleware;
@@ -34,8 +34,6 @@ impl RpcService {
             return Ok(Self { server_config: None, server_handle: None });
         }
 
-        let mut rpc_api = RpcModule::new(());
-
         let (rpcs, _node_operator) = match (config.rpc_methods, config.rpc_external) {
             (RpcMethods::Safe, _) => (true, false),
             (RpcMethods::Unsafe, _) => (true, true),
@@ -49,19 +47,7 @@ impl RpcService {
             }
         };
         let (read, write, trace) = (rpcs, rpcs, rpcs);
-
         let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider);
-
-        if read {
-            rpc_api.merge(StarknetReadRpcApiServer::into_rpc(starknet.clone()))?;
-        }
-        if write {
-            rpc_api.merge(StarknetWriteRpcApiServer::into_rpc(starknet.clone()))?;
-        }
-        if trace {
-            rpc_api.merge(StarknetTraceRpcApiServer::into_rpc(starknet.clone()))?;
-        }
-
         let metrics = RpcMetrics::register(&metrics_handle)?;
 
         Ok(Self {
@@ -73,7 +59,7 @@ impl RpcService {
                 max_payload_out_mb: config.rpc_max_response_size,
                 max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
                 message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
-                rpc_api,
+                rpc_api: versioned_rpc_api(&starknet, read, write, trace)?,
                 metrics,
                 cors: config.cors(),
                 rate_limit: config.rpc_rate_limit,

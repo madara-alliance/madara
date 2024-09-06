@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::providers::AddTransactionProvider;
+use super::AddTransactionProvider;
 use crate::{bail_internal_server_error, errors::StarknetRpcApiError};
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;

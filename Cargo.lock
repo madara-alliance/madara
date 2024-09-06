@@ -5423,6 +5423,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "m-proc-macros"
+version = "0.7.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "regex",
+ "syn 2.0.66",
+]
+
+[[package]]
 name = "mach2"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5677,6 +5687,7 @@ dependencies = [
  "env_logger 0.11.3",
  "jsonrpsee",
  "log",
+ "m-proc-macros",
  "mc-db",
  "mc-exec",
  "mc-mempool",
@@ -5687,6 +5698,7 @@ dependencies = [
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
+ "paste",
  "rstest 0.18.2",
  "serde_json",
  "starknet-core",
@@ -6676,9 +6688,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.85"
+version = "1.0.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22244ce15aa966053a896d1accb3a6e68469b97c7f33f284b99f0d576879fc23"
+checksum = "5e719e8df665df0d1c8fbfd238015744736151d4445ec0836b8e628aae103b77"
 dependencies = [
  "unicode-ident",
 ]
@@ -6876,9 +6888,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.10.5"
+version = "1.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b91213439dad192326a0d7c6ee3955910425f441d7038e0d6933b0aec5c4517f"
+checksum = "4219d74c6b67a3654a9fbebc4b419e22126d13d2f3c4a07ee0cb61ff79a79619"
 dependencies = [
  "aho-corasick",
  "memchr",
