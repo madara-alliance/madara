@@ -22,7 +22,8 @@ use async_trait::async_trait;
 use c_kzg::{Blob, Bytes32, KzgCommitment, KzgProof, KzgSettings};
 use color_eyre::eyre::{eyre, Ok};
 use color_eyre::Result;
-use mockall::{automock, lazy_static, predicate::*};
+use lazy_static::lazy_static;
+use mockall::{automock, predicate::*};
 
 use alloy::providers::ProviderBuilder;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};

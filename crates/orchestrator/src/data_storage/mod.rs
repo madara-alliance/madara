@@ -25,6 +25,6 @@ pub trait DataStorage: Send + Sync {
 /// initialisation of data storage client
 pub trait DataStorageConfig {
     /// Get a config file from environment vars in system or
-    /// dotenv file.
+    /// env file.
     fn new_from_env() -> Self;
 }

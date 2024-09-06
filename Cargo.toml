@@ -34,9 +34,13 @@ dotenvy = "0.15.7"
 futures = "0.3.30"
 mongodb = { version = "2.8.1" }
 omniqueue = { version = "0.2.0" }
-reqwest = { version = "0.11.24", features = ["rustls-tls", "native-tls"] }
+reqwest = { version = "0.12.7", features = [
+  "rustls-tls",
+  "native-tls",
+  "json",
+] }
 rstest = "0.18.2"
-serde = { version = "1.0.197" }
+serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.114"
 starknet = "0.9.0"
 tempfile = "3.8.1"
@@ -50,13 +54,13 @@ url = { version = "2.5.0", features = ["serde"] }
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
 httpmock = { version = "0.7.0", features = ["remote"] }
 num-bigint = { version = "0.4.4" }
-arc-swap = { version = "1.7.1" }
+arc-swap = { version = "1.7.0" }
 num-traits = "0.2"
 lazy_static = "1.4.0"
 stark_evm_adapter = "0.1.1"
 hex = "0.4"
 itertools = "0.13.0"
-mockall = "0.12.1"
+mockall = "0.13.0"
 testcontainers = "0.18.0"
 
 # Cairo VM

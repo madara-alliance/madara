@@ -38,7 +38,7 @@ lazy_static = { workspace = true }
 log = "0.4.21"
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-mockall = { version = "0.13.0" }
+mockall = { workspace = true }
 mockall_double = "0.3.1"
 mongodb = { workspace = true, features = ["bson-uuid-1"], optional = true }
 num = { workspace = true }
@@ -71,7 +71,6 @@ with_mongodb = ["mongodb"]
 with_sqs = ["omniqueue"]
 
 [dev-dependencies]
-assert_matches = "1.5.0"
 hyper = { version = "0.14", features = ["full"] }
 rstest = { workspace = true }
 httpmock = { workspace = true, features = ["remote"] }
