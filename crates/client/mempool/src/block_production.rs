@@ -6,20 +6,20 @@ use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::transaction_execution::Transaction;
-use dc_block_import::BlockImporter;
-use dc_db::db_block_id::DbBlockId;
-use dc_db::{DeoxysBackend, DeoxysStorageError};
-use dc_exec::{BlockifierStateAdapter, ExecutionContext};
-use dp_block::{BlockId, BlockTag, DeoxysPendingBlock};
-use dp_class::ConvertedClass;
-use dp_convert::ToFelt;
-use dp_receipt::from_blockifier_execution_info;
-use dp_state_update::{
+use mc_block_import::BlockImporter;
+use mc_db::db_block_id::DbBlockId;
+use mc_db::{MadaraBackend, MadaraStorageError};
+use mc_exec::{BlockifierStateAdapter, ExecutionContext};
+use mp_block::{BlockId, BlockTag, MadaraPendingBlock};
+use mp_class::ConvertedClass;
+use mp_convert::ToFelt;
+use mp_receipt::from_blockifier_execution_info;
+use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use dp_transactions::TransactionWithHash;
-use dp_utils::graceful_shutdown;
+use mp_transactions::TransactionWithHash;
+use mp_utils::graceful_shutdown;
 use starknet_types_core::felt::Felt;
 use std::mem;
 use std::sync::Arc;
@@ -34,17 +34,17 @@ const TX_BATCH_SIZE: usize = 128;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Storage error: {0:#}")]
-    StorageError(#[from] DeoxysStorageError),
+    StorageError(#[from] MadaraStorageError),
     #[error("Execution error: {0:#}")]
     Execution(#[from] TransactionExecutionError),
     #[error(transparent)]
-    ExecutionContext(#[from] dc_exec::Error),
+    ExecutionContext(#[from] mc_exec::Error),
     #[error("Import error: {0:#}")]
-    Import(#[from] dc_block_import::BlockImportError),
+    Import(#[from] mc_block_import::BlockImportError),
 }
 
 fn csd_to_state_diff(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
     csd: &CommitmentStateDiff,
 ) -> Result<StateDiff, Error> {
@@ -134,7 +134,7 @@ fn get_visited_segments<S: StateReader>(
 fn finalize_execution_state<S: StateReader>(
     _executed_txs: &[MempoolTransaction],
     tx_executor: &mut TransactionExecutor<S>,
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
 ) -> Result<(StateDiff, VisitedSegmentsMapping, BouncerWeights), Error> {
     let csd = tx_executor
@@ -155,9 +155,9 @@ fn finalize_execution_state<S: StateReader>(
 /// and we need to re-add the transactions back into the mempool.
 pub struct BlockProductionTask {
     importer: Arc<BlockImporter>,
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     mempool: Arc<dyn MempoolProvider>,
-    block: DeoxysPendingBlock,
+    block: MadaraPendingBlock,
     declared_classes: Vec<ConvertedClass>,
     pub(crate) executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
@@ -171,7 +171,7 @@ impl BlockProductionTask {
     }
 
     pub fn new(
-        backend: Arc<DeoxysBackend>,
+        backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
         mempool: Arc<Mempool>,
         l1_data_provider: Arc<dyn L1DataProvider>,
@@ -179,7 +179,7 @@ impl BlockProductionTask {
         let parent_block_hash = backend
             .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
             .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
-        let pending_block = DeoxysPendingBlock::new_empty(make_pending_header(
+        let pending_block = MadaraPendingBlock::new_empty(make_pending_header(
             parent_block_hash,
             backend.chain_config(),
             l1_data_provider.as_ref(),
@@ -335,7 +335,7 @@ impl BlockProductionTask {
         // Convert the pending block to a closed block and save to db.
 
         let parent_block_hash = Felt::ZERO; // temp parent block hash
-        let new_empty_block = DeoxysPendingBlock::new_empty(make_pending_header(
+        let new_empty_block = MadaraPendingBlock::new_empty(make_pending_header(
             parent_block_hash,
             self.backend.chain_config(),
             self.l1_data_provider.as_ref(),

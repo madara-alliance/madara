@@ -1,6 +1,6 @@
 [package]
-description = "Deoxys primitive for block state update"
-name = "dp-state-update"
+description = "Madara primitive for block state update"
+name = "mp-state-update"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -24,4 +24,4 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 bincode = { workspace = true }
-dp-convert = { workspace = true }
+mp-convert = { workspace = true }

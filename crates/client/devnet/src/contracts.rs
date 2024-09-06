@@ -1,4 +1,4 @@
-use dp_state_update::DeployedContractItem;
+use mp_state_update::DeployedContractItem;
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
 

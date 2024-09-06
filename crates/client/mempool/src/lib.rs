@@ -4,17 +4,18 @@ use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::DeclareTransaction;
 use blockifier::transaction::transactions::DeployAccountTransaction;
 use blockifier::transaction::transactions::InvokeTransaction;
-use dc_db::db_block_id::DbBlockId;
-use dc_db::DeoxysBackend;
-use dc_db::DeoxysStorageError;
-use dc_exec::ExecutionContext;
-use dp_block::BlockId;
-use dp_block::BlockTag;
-use dp_block::DeoxysPendingBlockInfo;
-use dp_class::ConvertedClass;
-use dp_transactions::{broadcasted_to_blockifier, BroadcastedToBlockifierError};
 use header::make_pending_header;
 use inner::MempoolInner;
+use mc_db::db_block_id::DbBlockId;
+use mc_db::MadaraBackend;
+use mc_db::MadaraStorageError;
+use mc_exec::ExecutionContext;
+use mp_block::BlockId;
+use mp_block::BlockTag;
+use mp_block::MadaraPendingBlockInfo;
+use mp_class::ConvertedClass;
+use mp_transactions::broadcasted_to_blockifier;
+use mp_transactions::BroadcastedToBlockifierError;
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::BroadcastedDeclareTransaction;
@@ -42,13 +43,13 @@ mod l1;
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Storage error: {0:#}")]
-    StorageError(#[from] DeoxysStorageError),
+    StorageError(#[from] MadaraStorageError),
     #[error("Validation error: {0:#}")]
     Validation(#[from] StatefulValidatorError),
     #[error(transparent)]
     InnerMempool(#[from] inner::TxInsersionError),
     #[error(transparent)]
-    Exec(#[from] dc_exec::Error),
+    Exec(#[from] mc_exec::Error),
     #[error("Preprocessing transaction: {0:#}")]
     BroadcastedToBlockifier(#[from] BroadcastedToBlockifierError),
 }
@@ -73,13 +74,13 @@ pub trait MempoolProvider: Send + Sync {
 }
 
 pub struct Mempool {
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     inner: RwLock<MempoolInner>,
 }
 
 impl Mempool {
-    pub fn new(backend: Arc<DeoxysBackend>, l1_data_provider: Arc<dyn L1DataProvider>) -> Self {
+    pub fn new(backend: Arc<MadaraBackend>, l1_data_provider: Arc<dyn L1DataProvider>) -> Self {
         Mempool { backend, l1_data_provider, inner: Default::default() }
     }
 
@@ -98,7 +99,7 @@ impl Mempool {
                 .backend
                 .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
                 .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
-            DeoxysPendingBlockInfo::new(
+            MadaraPendingBlockInfo::new(
                 make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref()),
                 vec![],
             )
@@ -122,7 +123,7 @@ impl Mempool {
         // Perform validations
         let exec_context = ExecutionContext::new_in_block(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
-        validator.perform_validations(clone_account_tx(&tx), deploy_account_tx_hash)?;
+        validator.perform_validations(clone_account_tx(&tx), deploy_account_tx_hash.is_some())?;
 
         if !is_only_query(&tx) {
             // Finally, add it to the nonce chain for the account nonce

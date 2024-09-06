@@ -1,6 +1,6 @@
 [package]
-name = "dc-mempool"
-description = "Deoxys client mempool service"
+name = "mc-mempool"
+description = "Madara client mempool service"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,7 +14,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dev-dependencies]
 
 rstest = { workspace = true }
-dc-db = { workspace = true, features = ["testing"] }
+mc-db = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 proptest.workspace = true
 proptest-derive.workspace = true
@@ -25,22 +25,22 @@ mockall.workspace = true
 assert_matches.workspace = true
 
 [features]
-testing = ["blockifier/testing", "dc-db/testing", "mockall"]
+testing = ["blockifier/testing", "mc-db/testing", "mockall"]
 
 [dependencies]
 
-# Deoxys
-dc-block-import.workspace = true
-dc-db.workspace = true
-dc-exec.workspace = true
-dp-block.workspace = true
-dp-chain-config.workspace = true
-dp-class.workspace = true
-dp-convert.workspace = true
-dp-receipt.workspace = true
-dp-state-update.workspace = true
-dp-transactions.workspace = true
-dp-utils.workspace = true
+# Madara
+mc-block-import.workspace = true
+mc-db.workspace = true
+mc-exec.workspace = true
+mp-block.workspace = true
+mp-chain-config.workspace = true
+mp-class.workspace = true
+mp-convert.workspace = true
+mp-receipt.workspace = true
+mp-state-update.workspace = true
+mp-transactions.workspace = true
+mp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true

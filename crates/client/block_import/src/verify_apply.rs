@@ -1,11 +1,11 @@
 use std::{borrow::Cow, sync::Arc};
 
-use dc_db::{DeoxysBackend, DeoxysStorageError};
-use dp_block::{
-    header::PendingHeader, BlockId, BlockTag, DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock,
-    DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo, Header,
+use mc_db::{MadaraBackend, MadaraStorageError};
+use mp_block::{
+    header::PendingHeader, BlockId, BlockTag, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
+    MadaraMaybePendingBlockInfo, MadaraPendingBlockInfo,
 };
-use dp_convert::ToFelt;
+use mp_convert::ToFelt;
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
@@ -20,14 +20,14 @@ mod contracts;
 
 pub struct VerifyApply {
     pool: Arc<RayonPool>,
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     // Only one thread at once can verify_apply. This is the update trie step cannot be parallelized over blocks, and in addition
     // our database does not support concurrent write access.
     mutex: tokio::sync::Mutex<()>,
 }
 
 impl VerifyApply {
-    pub fn new(backend: Arc<DeoxysBackend>, pool: Arc<RayonPool>) -> Self {
+    pub fn new(backend: Arc<MadaraBackend>, pool: Arc<RayonPool>) -> Self {
         Self { pool, backend, mutex: Default::default() }
     }
 
@@ -60,7 +60,7 @@ impl VerifyApply {
 /// This runs on the [`rayon`] threadpool however as it uses parallelism inside.
 // TODO(perf): Investigate what we can overlap between block storage and trie updates
 pub fn verify_apply_inner(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     block: PreValidatedBlock,
     validation: Validation,
 ) -> Result<BlockImportResult, BlockImportError> {
@@ -79,14 +79,14 @@ pub fn verify_apply_inner(
     // store block, also uses rayon heavily internally
     backend
         .store_block(
-            DeoxysMaybePendingBlock {
-                info: DeoxysMaybePendingBlockInfo::NotPending(DeoxysBlockInfo {
+            MadaraMaybePendingBlock {
+                info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
                     header: header.clone(),
                     block_hash,
                     // get tx hashes from receipts, they have been validated in pre_validate.
                     tx_hashes: block.receipts.iter().map(|tx| tx.transaction_hash()).collect(),
                 }),
-                inner: DeoxysBlockInner { transactions: block.transactions, receipts: block.receipts },
+                inner: MadaraBlockInner { transactions: block.transactions, receipts: block.receipts },
             },
             block.state_diff,
             block.converted_classes,
@@ -98,7 +98,7 @@ pub fn verify_apply_inner(
 
 /// See [`verify_apply_inner`].
 pub fn verify_apply_pending_inner(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     block: PreValidatedPendingBlock,
     _validation: Validation,
 ) -> Result<PendingBlockImportResult, BlockImportError> {
@@ -123,12 +123,12 @@ pub fn verify_apply_pending_inner(
 
     backend
         .store_block(
-            DeoxysMaybePendingBlock {
-                info: DeoxysMaybePendingBlockInfo::Pending(DeoxysPendingBlockInfo {
+            MadaraMaybePendingBlock {
+                info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
                     header: header.clone(),
                     tx_hashes: block.receipts.iter().map(|tx| tx.transaction_hash()).collect(),
                 }),
-                inner: DeoxysBlockInner { transactions: block.transactions, receipts: block.receipts },
+                inner: MadaraBlockInner { transactions: block.transactions, receipts: block.receipts },
             },
             block.state_diff,
             block.converted_classes,
@@ -138,13 +138,13 @@ pub fn verify_apply_pending_inner(
     Ok(PendingBlockImportResult {})
 }
 
-fn make_db_error(context: impl Into<Cow<'static, str>>) -> impl FnOnce(DeoxysStorageError) -> BlockImportError {
+fn make_db_error(context: impl Into<Cow<'static, str>>) -> impl FnOnce(MadaraStorageError) -> BlockImportError {
     move |error| BlockImportError::InternalDb { context: context.into(), error }
 }
 
 /// Returns the current block number and parent block hash.
 fn check_parent_hash_and_num(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     parent_block_hash: Option<Felt>,
     unverified_block_number: Option<u64>,
 ) -> Result<(u64, Felt), BlockImportError> {
@@ -190,7 +190,7 @@ fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> F
 
 /// Returns the new global state root.
 fn update_tries(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     block: &PreValidatedBlock,
     validation: &Validation,
     block_number: u64,

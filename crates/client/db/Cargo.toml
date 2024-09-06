@@ -1,6 +1,6 @@
 [package]
-name = "dc-db"
-description = "Deoxys client database service"
+name = "mc-db"
+description = "Madara client database service"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,14 +13,14 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
-# Deoxys
-dc-metrics = { workspace = true }
-dp-block = { workspace = true }
-dp-chain-config = { workspace = true }
-dp-class = { workspace = true }
-dp-state-update = { workspace = true }
-dp-transactions = { workspace = true }
-dp-utils = { workspace = true }
+# Madara
+mc-metrics = { workspace = true }
+mp-block = { workspace = true }
+mp-chain-config = { workspace = true }
+mp-class = { workspace = true }
+mp-state-update = { workspace = true }
+mp-transactions = { workspace = true }
+mp-utils = { workspace = true }
 
 # Starknet
 bonsai-trie = { workspace = true }
@@ -47,8 +47,8 @@ tokio = { workspace = true, features = [
 [dev-dependencies]
 tempfile = "3.10"
 lazy_static = { workspace = true }
-dp-transactions = { workspace = true }
-dp-receipt = { workspace = true }
+mp-transactions = { workspace = true }
+mp-receipt = { workspace = true }
 
 [features]
 default = []

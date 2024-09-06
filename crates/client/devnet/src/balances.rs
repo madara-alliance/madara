@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use anyhow::Context;
-use dp_chain_config::ChainConfig;
-use dp_convert::felt_to_u128;
+use mp_chain_config::ChainConfig;
+use mp_convert::felt_to_u128;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 

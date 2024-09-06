@@ -1,12 +1,12 @@
 use crate::DatabaseExt;
-use crate::{Column, DeoxysBackend, DeoxysStorageError};
+use crate::{Column, MadaraBackend, MadaraStorageError};
 use rocksdb::WriteOptions;
 use serde::{Deserialize, Serialize};
 use starknet_core::types::Felt;
 
 pub const DEVNET_KEYS: &[u8] = b"DEVNET_KEYS";
 
-type Result<T, E = DeoxysStorageError> = std::result::Result<T, E>;
+type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DevnetPredeployedContractKey {
@@ -18,7 +18,7 @@ pub struct DevnetPredeployedContractKey {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DevnetPredeployedKeys(pub Vec<DevnetPredeployedContractKey>);
 
-impl DeoxysBackend {
+impl MadaraBackend {
     /// Get the devnet predeployed contracts keys.
     pub fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
         let col = self.db.get_column(Column::Devnet);

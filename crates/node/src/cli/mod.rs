@@ -14,7 +14,7 @@ pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
 
-use dp_chain_config::ChainConfig;
+use mp_chain_config::ChainConfig;
 use std::sync::Arc;
 use url::Url;
 
@@ -73,7 +73,7 @@ impl RunCmd {
         if self.name.is_none() {
             let name = crate::util::get_random_pokemon_name().await.unwrap_or_else(|e| {
                 log::warn!("Failed to get random pokemon name: {}", e);
-                "deoxys".to_string()
+                "madara".to_string()
             });
 
             self.name = Some(name);

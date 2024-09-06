@@ -1,8 +1,8 @@
 use anyhow::Context;
 use blockifier::abi::{abi_utils::get_fee_token_var_address, sierra_types::next_storage_key};
 use core::fmt;
-use dc_db::DeoxysBackend;
-use dp_block::{BlockId, BlockTag};
+use mc_db::MadaraBackend;
+use mp_block::{BlockId, BlockTag};
 use starknet_core::types::Felt;
 use starknet_signers::SigningKey;
 
@@ -26,22 +26,13 @@ impl fmt::Display for DevnetKeys {
         writeln!(f, "==== DEVNET PREDEPLOYED CONTRACTS ====")?;
         writeln!(f)?;
         for (i, contract) in self.0.iter().enumerate() {
-            writeln!(
-                f,
-                "(#{}) Address: {:#x}",
-                i + 1,
-                contract.address,
-            )?;
-            writeln!(
-                f,
-                "  Private key: {:#x}",
-                contract.secret.secret_scalar()
-            )?;
+            writeln!(f, "(#{}) Address: {:#x}", i + 1, contract.address,)?;
+            writeln!(f, "  Private key: {:#x}", contract.secret.secret_scalar())?;
             match contract.balance.as_u128_fri_wei() {
                 Ok((fri, wei)) => {
                     let (strk, eth) = (fri / STRK_FRI_DECIMALS, wei / ETH_WEI_DECIMALS);
                     writeln!(f, "  Balance: {strk} STRK, {eth} ETH")?;
-                    writeln!(f, "")?;
+                    writeln!(f)?;
                 }
                 Err(err) => writeln!(f, "Error getting balance: {err:#}\n")?,
             }
@@ -52,7 +43,7 @@ impl fmt::Display for DevnetKeys {
 
 /// Returns an `u128`. This is for tests only as an ERC20 contract may have a higher balance than an u128.
 pub fn get_bal_contract(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     contract_address: Felt,
     fee_token_address: Felt,
 ) -> anyhow::Result<Felt> {
@@ -80,7 +71,7 @@ pub fn get_bal_contract(
 
 /// (STRK in FRI, ETH in WEI)
 pub fn get_fee_tokens_balance(
-    backend: &DeoxysBackend,
+    backend: &MadaraBackend,
     contract_address: Felt,
 ) -> anyhow::Result<ContractFeeTokensBalance> {
     Ok(ContractFeeTokensBalance {
@@ -90,7 +81,7 @@ pub fn get_fee_tokens_balance(
 }
 
 impl DevnetKeys {
-    pub fn from_db(backend: &DeoxysBackend) -> anyhow::Result<Self> {
+    pub fn from_db(backend: &MadaraBackend) -> anyhow::Result<Self> {
         let keys = backend
             .get_devnet_predeployed_keys()
             .context("Getting the devnet predeployed keys from db")?
@@ -112,21 +103,19 @@ impl DevnetKeys {
         Ok(Self(keys))
     }
 
-    pub fn save_to_db(&self, backend: &DeoxysBackend) -> anyhow::Result<()> {
-        let keys = dc_db::devnet_db::DevnetPredeployedKeys(
+    pub fn save_to_db(&self, backend: &MadaraBackend) -> anyhow::Result<()> {
+        let keys = mc_db::devnet_db::DevnetPredeployedKeys(
             self.0
                 .iter()
-                .map(|k| dc_db::devnet_db::DevnetPredeployedContractKey {
+                .map(|k| mc_db::devnet_db::DevnetPredeployedContractKey {
                     address: k.address,
                     secret: k.secret.secret_scalar(),
                     pubkey: k.pubkey,
                 })
                 .collect(),
         );
-        let keys = backend
-            .set_devnet_predeployed_keys(keys)
-            .context("Saving devnet predeployed contracts keys to database")?;
+        backend.set_devnet_predeployed_keys(keys).context("Saving devnet predeployed contracts keys to database")?;
 
-        Ok(keys)
+        Ok(())
     }
 }

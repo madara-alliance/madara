@@ -1,28 +1,58 @@
-use dc_db::DeoxysBackend;
-use dp_block::{
+use jsonrpsee::core::{async_trait, RpcResult};
+use mc_db::MadaraBackend;
+use mp_block::{
     header::{GasPrices, L1DataAvailabilityMode, PendingHeader},
-    DeoxysBlockInfo, DeoxysBlockInner, DeoxysMaybePendingBlock, DeoxysMaybePendingBlockInfo, DeoxysPendingBlockInfo,
-    Header,
+    Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
+    MadaraPendingBlockInfo,
 };
-use dp_chain_config::{ChainConfig, StarknetVersion};
-use dp_receipt::{
+use mp_chain_config::{ChainConfig, StarknetVersion};
+use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
-use dp_state_update::{
+use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use dp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
+use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
 use rstest::fixture;
-use starknet_core::types::Felt;
+use starknet_core::types::{
+    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
+    DeclareTransactionResult, DeployAccountTransactionResult, Felt, InvokeTransactionResult,
+};
 use std::sync::Arc;
 
-use crate::{providers::TestTransactionProvider, Starknet};
+use crate::{providers::AddTransactionProvider, Starknet};
+
+#[cfg(test)]
+pub struct TestTransactionProvider;
+
+#[cfg(test)]
+#[async_trait]
+impl AddTransactionProvider for TestTransactionProvider {
+    async fn add_declare_transaction(
+        &self,
+        _declare_transaction: BroadcastedDeclareTransaction,
+    ) -> RpcResult<DeclareTransactionResult> {
+        unimplemented!()
+    }
+    async fn add_deploy_account_transaction(
+        &self,
+        _deploy_account_transaction: BroadcastedDeployAccountTransaction,
+    ) -> RpcResult<DeployAccountTransactionResult> {
+        unimplemented!()
+    }
+    async fn add_invoke_transaction(
+        &self,
+        _invoke_transaction: BroadcastedInvokeTransaction,
+    ) -> RpcResult<InvokeTransactionResult> {
+        unimplemented!()
+    }
+}
 
 #[fixture]
-pub fn rpc_test_setup() -> (Arc<DeoxysBackend>, Starknet) {
+pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
     let chain_config = Arc::new(ChainConfig::test_config());
-    let backend = DeoxysBackend::open_for_testing(chain_config.clone());
+    let backend = MadaraBackend::open_for_testing(chain_config.clone());
     let rpc = Starknet::new(backend.clone(), chain_config.clone(), Arc::new(TestTransactionProvider));
     (backend, rpc)
 }
@@ -37,14 +67,14 @@ pub struct SampleChainForBlockGetters {
 
 #[fixture]
 pub fn sample_chain_for_block_getters(
-    rpc_test_setup: (Arc<DeoxysBackend>, Starknet),
+    rpc_test_setup: (Arc<MadaraBackend>, Starknet),
 ) -> (SampleChainForBlockGetters, Starknet) {
     let (backend, rpc) = rpc_test_setup;
     (make_sample_chain_for_block_getters(&backend), rpc)
 }
 
 /// Transactions and blocks testing, no state diff, no converted class
-pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleChainForBlockGetters {
+pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleChainForBlockGetters {
     let block_hashes = vec![Felt::ONE, Felt::from_hex_unchecked("0xff"), Felt::from_hex_unchecked("0xffabab")];
     let tx_hashes = vec![
         Felt::from_hex_unchecked("0x8888888"),
@@ -100,7 +130,7 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
                 actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x9"), unit: PriceUnit::Wei },
                 messages_sent: vec![],
                 events: vec![],
-                execution_resources: dp_receipt::ExecutionResources::default().into(),
+                execution_resources: mp_receipt::ExecutionResources::default().into(),
                 execution_result: ExecutionResult::Succeeded,
                 finality_status: TransactionFinalityStatus::AcceptedOnL1,
             }),
@@ -109,7 +139,7 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
                 actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
                 messages_sent: vec![],
                 events: vec![],
-                execution_resources: dp_receipt::ExecutionResources::default().into(),
+                execution_resources: mp_receipt::ExecutionResources::default().into(),
                 execution_result: ExecutionResult::Succeeded,
                 finality_status: TransactionFinalityStatus::AcceptedOnL2,
             }),
@@ -118,7 +148,7 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
                 actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94dd"), unit: PriceUnit::Fri },
                 messages_sent: vec![],
                 events: vec![],
-                execution_resources: dp_receipt::ExecutionResources::default().into(),
+                execution_resources: mp_receipt::ExecutionResources::default().into(),
                 execution_result: ExecutionResult::Reverted { reason: "too bad".into() },
                 finality_status: TransactionFinalityStatus::AcceptedOnL2,
             }),
@@ -127,7 +157,7 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
                 actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
                 messages_sent: vec![],
                 events: vec![],
-                execution_resources: dp_receipt::ExecutionResources::default().into(),
+                execution_resources: mp_receipt::ExecutionResources::default().into(),
                 execution_result: ExecutionResult::Succeeded,
                 finality_status: TransactionFinalityStatus::AcceptedOnL2,
             }),
@@ -138,8 +168,8 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
         // Block 0
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::NotPending(DeoxysBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: Felt::ZERO,
                             block_number: 0,
@@ -165,7 +195,7 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
                         block_hash: block_hashes[0],
                         tx_hashes: vec![Felt::from_hex_unchecked("0x8888888")],
                     }),
-                    inner: DeoxysBlockInner {
+                    inner: MadaraBlockInner {
                         transactions: vec![Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                             max_fee: Felt::from_hex_unchecked("0x12"),
                             signature: vec![],
@@ -191,8 +221,8 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
         // Block 1
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::NotPending(DeoxysBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[0],
                             block_number: 1,
@@ -204,7 +234,7 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
                         block_hash: block_hashes[1],
                         tx_hashes: vec![],
                     }),
-                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
                 },
                 StateDiff::default(),
                 vec![],
@@ -214,8 +244,8 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
         // Block 2
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::NotPending(DeoxysBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[1],
                             block_number: 2,
@@ -230,7 +260,7 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
                             Felt::from_hex_unchecked("0xdd84848407"),
                         ],
                     }),
-                    inner: DeoxysBlockInner {
+                    inner: MadaraBlockInner {
                         transactions: vec![
                             Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                                 max_fee: Felt::from_hex_unchecked("0xb12"),
@@ -281,8 +311,8 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
         // Pending
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::Pending(DeoxysPendingBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
                         header: PendingHeader {
                             parent_block_hash: block_hashes[2],
                             protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
@@ -291,7 +321,7 @@ pub fn make_sample_chain_for_block_getters(backend: &DeoxysBackend) -> SampleCha
                         },
                         tx_hashes: vec![Felt::from_hex_unchecked("0xdd84847784")],
                     }),
-                    inner: DeoxysBlockInner {
+                    inner: MadaraBlockInner {
                         transactions: vec![Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                             max_fee: Felt::from_hex_unchecked("0xb12"),
                             signature: vec![],
@@ -332,14 +362,14 @@ pub struct SampleChainForStateUpdates {
 
 #[fixture]
 pub fn sample_chain_for_state_updates(
-    rpc_test_setup: (Arc<DeoxysBackend>, Starknet),
+    rpc_test_setup: (Arc<MadaraBackend>, Starknet),
 ) -> (SampleChainForStateUpdates, Starknet) {
     let (backend, rpc) = rpc_test_setup;
     (make_sample_chain_for_state_updates(&backend), rpc)
 }
 
 /// State diff
-pub fn make_sample_chain_for_state_updates(backend: &DeoxysBackend) -> SampleChainForStateUpdates {
+pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleChainForStateUpdates {
     let block_hashes = vec![
         Felt::from_hex_unchecked("0x9999999eee"),
         Felt::from_hex_unchecked("0x9999"),
@@ -460,8 +490,8 @@ pub fn make_sample_chain_for_state_updates(backend: &DeoxysBackend) -> SampleCha
         // Block 0
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::NotPending(DeoxysBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: Felt::ZERO,
                             global_state_root: state_roots[0],
@@ -472,7 +502,7 @@ pub fn make_sample_chain_for_state_updates(backend: &DeoxysBackend) -> SampleCha
                         block_hash: block_hashes[0],
                         tx_hashes: vec![],
                     }),
-                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
                 },
                 state_diffs[0].clone(),
                 vec![],
@@ -482,8 +512,8 @@ pub fn make_sample_chain_for_state_updates(backend: &DeoxysBackend) -> SampleCha
         // Block 1
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::NotPending(DeoxysBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[0],
                             global_state_root: state_roots[1],
@@ -494,7 +524,7 @@ pub fn make_sample_chain_for_state_updates(backend: &DeoxysBackend) -> SampleCha
                         block_hash: block_hashes[1],
                         tx_hashes: vec![],
                     }),
-                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
                 },
                 state_diffs[1].clone(),
                 vec![],
@@ -504,8 +534,8 @@ pub fn make_sample_chain_for_state_updates(backend: &DeoxysBackend) -> SampleCha
         // Block 2
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::NotPending(DeoxysBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[1],
                             global_state_root: state_roots[2],
@@ -516,7 +546,7 @@ pub fn make_sample_chain_for_state_updates(backend: &DeoxysBackend) -> SampleCha
                         block_hash: block_hashes[2],
                         tx_hashes: vec![],
                     }),
-                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
                 },
                 state_diffs[2].clone(),
                 vec![],
@@ -526,8 +556,8 @@ pub fn make_sample_chain_for_state_updates(backend: &DeoxysBackend) -> SampleCha
         // Pending
         backend
             .store_block(
-                DeoxysMaybePendingBlock {
-                    info: DeoxysMaybePendingBlockInfo::Pending(DeoxysPendingBlockInfo {
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
                         header: PendingHeader {
                             parent_block_hash: block_hashes[2],
                             protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
@@ -535,7 +565,7 @@ pub fn make_sample_chain_for_state_updates(backend: &DeoxysBackend) -> SampleCha
                         },
                         tx_hashes: vec![],
                     }),
-                    inner: DeoxysBlockInner { transactions: vec![], receipts: vec![] },
+                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
                 },
                 state_diffs[3].clone(),
                 vec![],

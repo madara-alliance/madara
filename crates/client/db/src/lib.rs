@@ -1,4 +1,4 @@
-//! Deoxys database
+//! Madara database
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -10,8 +10,8 @@ use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
-use dp_chain_config::ChainConfig;
-use dp_utils::service::Service;
+use mp_chain_config::ChainConfig;
+use mp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
 pub mod block_db;
@@ -29,7 +29,7 @@ pub mod devnet_db;
 pub mod l1_db;
 pub mod storage_updates;
 
-pub use error::{DeoxysStorageError, TrieType};
+pub use error::{MadaraStorageError, TrieType};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use tokio::sync::{mpsc, oneshot};
 
@@ -298,9 +298,9 @@ impl DatabaseExt for DB {
     }
 }
 
-/// Deoxys client database backend singleton.
+/// Madara client database backend singleton.
 #[derive(Debug)]
-pub struct DeoxysBackend {
+pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
     last_flush_time: Mutex<Option<Instant>>,
@@ -310,7 +310,7 @@ pub struct DeoxysBackend {
 }
 
 pub struct DatabaseService {
-    handle: Arc<DeoxysBackend>,
+    handle: Arc<MadaraBackend>,
 }
 
 impl DatabaseService {
@@ -336,13 +336,13 @@ impl DatabaseService {
         log::info!("💾 Opening database at: {}", base_path.display());
 
         let handle =
-            DeoxysBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_config)
+            MadaraBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_config)
                 .await?;
 
         Ok(Self { handle })
     }
 
-    pub fn backend(&self) -> &Arc<DeoxysBackend> {
+    pub fn backend(&self) -> &Arc<MadaraBackend> {
         &self.handle
     }
 }
@@ -354,19 +354,19 @@ struct BackupRequest {
     db: Arc<DB>,
 }
 
-impl Drop for DeoxysBackend {
+impl Drop for MadaraBackend {
     fn drop(&mut self) {
         log::info!("⏳ Gracefully closing the database...");
     }
 }
 
-impl DeoxysBackend {
+impl MadaraBackend {
     pub fn chain_config(&self) -> &Arc<ChainConfig> {
         &self.chain_config
     }
 
     #[cfg(feature = "testing")]
-    pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<DeoxysBackend> {
+    pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         Arc::new(Self {
             backup_handle: None,
@@ -383,7 +383,7 @@ impl DeoxysBackend {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
-    ) -> Result<Arc<DeoxysBackend>> {
+    ) -> Result<Arc<MadaraBackend>> {
         let db_path = db_config_dir.join("db");
 
         // when backups are enabled, a thread is spawned that owns the rocksdb BackupEngine (it is not thread safe) and it receives backup requests using a mpsc channel

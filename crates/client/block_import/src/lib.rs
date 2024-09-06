@@ -38,7 +38,7 @@
 //! to check for errors.
 //! A signature verification mode should be added to allow the skipping of block validation entirely if the block is signed.
 
-use dc_db::{DeoxysBackend, DeoxysStorageError};
+use mc_db::{MadaraBackend, MadaraStorageError};
 use starknet_core::types::Felt;
 use std::{borrow::Cow, sync::Arc};
 
@@ -96,7 +96,7 @@ pub enum BlockImportError {
 
     /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal database error while {context}: {error:#}")]
-    InternalDb { context: Cow<'static, str>, error: DeoxysStorageError },
+    InternalDb { context: Cow<'static, str>, error: MadaraStorageError },
     /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal error: {0}")]
     Internal(Cow<'static, str>),
@@ -114,7 +114,7 @@ pub struct BlockImporter {
 }
 
 impl BlockImporter {
-    pub fn new(backend: Arc<DeoxysBackend>) -> Self {
+    pub fn new(backend: Arc<MadaraBackend>) -> Self {
         let pool = Arc::new(RayonPool::new());
         Self { verify_apply: VerifyApply::new(Arc::clone(&backend), Arc::clone(&pool)), pool }
     }

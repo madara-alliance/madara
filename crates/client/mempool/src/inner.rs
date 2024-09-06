@@ -8,7 +8,7 @@
 
 use crate::{clone_account_tx, contract_addr, nonce, tx_hash};
 use blockifier::transaction::account_transaction::AccountTransaction;
-use dp_class::ConvertedClass;
+use mp_class::ConvertedClass;
 use starknet_api::{
     core::{ContractAddress, Nonce},
     transaction::TransactionHash,

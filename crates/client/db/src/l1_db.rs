@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use starknet_api::core::Nonce;
 
 use crate::error::DbError;
-use crate::{Column, DatabaseExt, DeoxysBackend, DeoxysStorageError};
+use crate::{Column, DatabaseExt, MadaraBackend, MadaraStorageError};
 
-type Result<T, E = DeoxysStorageError> = std::result::Result<T, E>;
+type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
 pub const LAST_SYNCED_L1_EVENT_BLOCK: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
 
@@ -23,8 +23,8 @@ impl LastSyncedEventBlock {
     }
 }
 
-/// We add method in DeoxysBackend to be able to handle L1->L2 messaging related data
-impl DeoxysBackend {
+/// We add method in MadaraBackend to be able to handle L1->L2 messaging related data
+impl MadaraBackend {
     /// Retrieves the last stored L1 block data that contains a message from the database.
     ///
     /// This function attempts to fetch the data of the last messaging-related block from the database.

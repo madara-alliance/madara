@@ -1,5 +1,5 @@
 [package]
-name = "dp-chain-config"
+name = "mp-chain-config"
 authors.workspace = true
 homepage.workspace = true
 edition.workspace = true

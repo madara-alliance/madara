@@ -1,4 +1,4 @@
-use dp_block::header::{GasPrices, L1DataAvailabilityMode};
+use mp_block::header::{GasPrices, L1DataAvailabilityMode};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 

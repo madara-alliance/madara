@@ -32,22 +32,22 @@ impl SysInfo {
 
     pub fn show(&self) {
         if let Some(val) = &self.linux_distro {
-            log::info!(target: "deoxys", "💻 Operating system: {}", val)
+            log::info!(target: "madara", "💻 Operating system: {}", val)
         }
         if let Some(val) = &self.cpu_arch {
-            log::info!(target: "deoxys", "💻 CPU architecture: {}", val)
+            log::info!(target: "madara", "💻 CPU architecture: {}", val)
         }
         if let Some(val) = &self.cpu {
-            log::info!(target: "deoxys", "💻 CPU: {}", val)
+            log::info!(target: "madara", "💻 CPU: {}", val)
         }
         if let Some(val) = &self.core_count {
-            log::info!(target: "deoxys", "💻 CPU cores: {}", val)
+            log::info!(target: "madara", "💻 CPU cores: {}", val)
         }
         if let Some(val) = &self.memory {
-            log::info!(target: "deoxys", "💻 Memory: {}MB", val / 1024 / 1024)
+            log::info!(target: "madara", "💻 Memory: {}MB", val / 1024 / 1024)
         }
         if let Some(val) = &self.linux_kernel {
-            log::info!(target: "deoxys", "💻 Kernel: {}", val)
+            log::info!(target: "madara", "💻 Kernel: {}", val)
         }
     }
 }

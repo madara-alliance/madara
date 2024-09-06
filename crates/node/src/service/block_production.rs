@@ -1,19 +1,19 @@
 use std::{io::Write, sync::Arc};
 
 use anyhow::Context;
-use dc_block_import::{BlockImporter, Validation};
-use dc_db::{DatabaseService, DeoxysBackend};
-use dc_devnet::{ChainGenesisDescription, DevnetKeys};
-use dc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
-use dc_metrics::MetricsRegistry;
-use dc_telemetry::TelemetryHandle;
-use dp_utils::service::Service;
+use mc_block_import::{BlockImporter, Validation};
+use mc_db::{DatabaseService, MadaraBackend};
+use mc_devnet::{ChainGenesisDescription, DevnetKeys};
+use mc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
+use mc_metrics::MetricsRegistry;
+use mc_telemetry::TelemetryHandle;
+use mp_utils::service::Service;
 use tokio::task::JoinSet;
 
 use crate::cli::block_production::BlockProductionParams;
 
 struct StartParams {
-    backend: Arc<DeoxysBackend>,
+    backend: Arc<MadaraBackend>,
     block_import: Arc<BlockImporter>,
     mempool: Arc<Mempool>,
     l1_data_provider: Arc<dyn L1DataProvider>,
@@ -29,7 +29,7 @@ impl BlockProductionService {
     pub fn new(
         config: &BlockProductionParams,
         db_service: &DatabaseService,
-        mempool: Arc<dc_mempool::Mempool>,
+        mempool: Arc<mc_mempool::Mempool>,
         block_import: Arc<BlockImporter>,
         l1_data_provider: Arc<dyn L1DataProvider>,
         _metrics_handle: MetricsRegistry,
@@ -66,7 +66,7 @@ impl Service for BlockProductionService {
         if is_devnet {
             // DEVNET: we the genesis block for the devnet if not deployed, otherwise we only print the devnet keys.
 
-            let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")? == None {
+            let keys = if (backend.get_latest_block_n().context("Getting the latest block number in db")?).is_none() {
                 // deploy devnet genesis
 
                 log::info!("⛏️  Deploying devnet genesis block");
@@ -75,7 +75,7 @@ impl Service for BlockProductionService {
                 let contracts = genesis_config.add_devnet_contracts(n_devnet_contracts);
 
                 let genesis_block = genesis_config
-                    .build(&backend.chain_config())
+                    .build(backend.chain_config())
                     .context("Building genesis block from devnet config")?;
 
                 block_import

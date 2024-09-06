@@ -8,9 +8,9 @@ pub struct BlockProductionParams {
 
     /// Launch in block production mode, with devnet contracts.
     #[arg(long)]
-    pub devnet: bool, 
+    pub devnet: bool,
 
     /// Create this number of contracts in the genesis block for the devnet configuration.
     #[arg(long, default_value_t = 10)]
-    pub devnet_contracts: u64, 
+    pub devnet_contracts: u64,
 }

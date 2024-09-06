@@ -1,9 +1,9 @@
 use blockifier::abi::abi_utils::get_storage_var_address;
-use dc_block_import::{UnverifiedFullBlock, UnverifiedHeader};
-use dp_block::header::GasPrices;
-use dp_chain_config::ChainConfig;
-use dp_convert::ToFelt;
-use dp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+use mc_block_import::{UnverifiedFullBlock, UnverifiedHeader};
+use mp_block::header::GasPrices;
+use mp_chain_config::ChainConfig;
+use mp_convert::ToFelt;
+use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
 use starknet_api::{core::ContractAddress, state::StorageKey};
 use starknet_signers::SigningKey;
 use starknet_types_core::felt::Felt;
@@ -146,7 +146,7 @@ impl ChainGenesisDescription {
                     eth_l1_data_gas_price: 5,
                     strk_l1_data_gas_price: 5,
                 },
-                l1_da_mode: dp_block::header::L1DataAvailabilityMode::Blob,
+                l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
             },
             state_diff: StateDiff {
                 storage_diffs: self.initial_storage.as_state_diff(),
@@ -165,16 +165,16 @@ impl ChainGenesisDescription {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dc_block_import::{BlockImporter, Validation};
-    use dc_db::DeoxysBackend;
-    use dc_mempool::block_production::BlockProductionTask;
-    use dc_mempool::MempoolProvider;
-    use dc_mempool::{transaction_hash, L1DataProvider, Mempool, MockL1DataProvider};
-    use dp_block::header::L1DataAvailabilityMode;
-    use dp_block::{BlockId, BlockTag};
-    use dp_convert::felt_to_u128;
-    use dp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
-    use dp_transactions::broadcasted_to_blockifier;
+    use mc_block_import::{BlockImporter, Validation};
+    use mc_db::MadaraBackend;
+    use mc_mempool::block_production::BlockProductionTask;
+    use mc_mempool::MempoolProvider;
+    use mc_mempool::{transaction_hash, L1DataProvider, Mempool, MockL1DataProvider};
+    use mp_block::header::L1DataAvailabilityMode;
+    use mp_block::{BlockId, BlockTag};
+    use mp_convert::felt_to_u128;
+    use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
+    use mp_transactions::broadcasted_to_blockifier;
     use rstest::{fixture, rstest};
     use starknet_core::types::{
         BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
@@ -184,7 +184,7 @@ mod tests {
     use std::sync::Arc;
 
     struct DevnetForTesting {
-        backend: Arc<DeoxysBackend>,
+        backend: Arc<MadaraBackend>,
         contracts: DevnetKeys,
         block_production: BlockProductionTask,
         mempool: Arc<Mempool>,
@@ -274,7 +274,7 @@ mod tests {
 
         let chain_config = Arc::new(ChainConfig::test_config());
         let block = g.build(&chain_config).unwrap();
-        let backend = DeoxysBackend::open_for_testing(Arc::clone(&chain_config));
+        let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
         let importer = Arc::new(BlockImporter::new(Arc::clone(&backend)));
 
         println!("{:?}", block.state_diff);
