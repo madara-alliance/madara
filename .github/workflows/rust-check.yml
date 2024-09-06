@@ -17,8 +17,9 @@ jobs:
         with:
           toolchain: 1.78
 
-      - name: Install scarb
-        run: curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.8.1"
 
       - name: Check the project
         run: |
