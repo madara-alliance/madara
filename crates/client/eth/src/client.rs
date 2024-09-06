@@ -150,6 +150,23 @@ pub mod eth_client_getter_test {
     const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
     const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
 
+    #[rstest]
+    #[tokio::test]
+    async fn fail_create_new_client_invalid_core_contract() {
+        // Sepolia core contract instead of mainnet
+        const INVALID_CORE_CONTRACT_ADDRESS: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
+
+        let rpc_url_string = String::from("http://localhost:8545");
+        let rpc_url: Url = rpc_url_string.parse().expect("issue while parsing URL");
+
+        let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None).unwrap();
+        let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
+
+        let new_client_result = EthereumClient::new(rpc_url, core_contract_address, l1_block_metrics).await;
+        assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
+    }
+
     pub fn create_ethereum_client(url: Option<&str>) -> EthereumClient {
         let rpc_url_string = url.unwrap_or("http://localhost:8545").to_string();
         let rpc_url: Url = rpc_url_string.parse().expect("issue while parsing URL");
@@ -164,7 +181,6 @@ pub mod eth_client_getter_test {
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
     }
 
-    // Then, you can use this utility function in your fixture like this:
     #[fixture]
     #[once]
     pub fn eth_client() -> EthereumClient {

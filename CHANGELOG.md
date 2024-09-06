@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: L1 rpc <=> network mismatch
 - feat: rpc versioning
 - feat: bumping Starknet version from v0.13.2 to Starknet v0.13.2.1
 - fix: replaced old namings with adapted namings
