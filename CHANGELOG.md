@@ -2,6 +2,7 @@
 
 ## Next release
 
+- docs: fixed Docker Compose instructions
 - feat: experimental block production and mempool
 - refactor: L1BlockMetric is intialized inside the EthereumClient new function
 - refactor: BlockMetrics divided in L1BlockMetrics and BlockMetrics
