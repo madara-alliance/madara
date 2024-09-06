@@ -45,6 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Fixed
 
+- Calculate root hash logic and added a simple test for it.
 - Cargo.toml dependency reorg.
 - Get Fact Info logic.
 - Fixed state update worker logic as per the new implementation.

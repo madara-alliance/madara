@@ -24,6 +24,8 @@
 use alloy::primitives::{keccak256, B256};
 use cairo_vm::Felt252;
 use itertools::Itertools;
+use num_bigint::BigUint;
+use std::ops::Add;
 use utils::ensure;
 
 use super::error::FactCheckerError;
@@ -86,32 +88,74 @@ pub fn generate_merkle_root(
             let mut child_end_offset = 0;
 
             for node in children.iter() {
-                node_data.copy_from_slice(node.node_hash.as_slice());
-                node_data.copy_from_slice(&[0; 32 - (usize::BITS / 8) as usize]); // pad usize to 32 bytes
-                node_data.copy_from_slice(&node.page_size.to_be_bytes());
+                node_data.extend_from_slice(node.node_hash.as_slice());
+                node_data.extend_from_slice(&[0; 32 - (usize::BITS / 8) as usize]); // pad usize to 32 bytes
+                node_data.extend_from_slice(&node.end_offset.to_be_bytes());
                 total_page_size += node.page_size;
                 child_end_offset = node.end_offset;
             }
 
             node_stack.push(FactNode {
-                node_hash: keccak256(&node_data),
+                node_hash: calculate_node_hash(node_data.as_slice()),
                 end_offset: child_end_offset,
                 page_size: total_page_size,
                 children,
             })
         }
-
-        ensure!(node_stack.len() == 1, FactCheckerError::TreeStructureRootInvalid);
-        ensure!(page_sizes.is_empty(), FactCheckerError::TreeStructurePagesNotProcessed(page_sizes.len()));
-        ensure!(
-            end_offset == program_output.len(),
-            FactCheckerError::TreeStructureEndOffsetInvalid(end_offset, program_output.len())
-        );
-        ensure!(
-            node_stack[0].end_offset == program_output.len(),
-            FactCheckerError::TreeStructureRootOffsetInvalid(node_stack[0].end_offset, program_output.len(),)
-        );
     }
 
+    ensure!(node_stack.len() == 1, FactCheckerError::TreeStructureRootInvalid);
+    ensure!(page_sizes.is_empty(), FactCheckerError::TreeStructurePagesNotProcessed(page_sizes.len()));
+    ensure!(
+        end_offset == program_output.len(),
+        FactCheckerError::TreeStructureEndOffsetInvalid(end_offset, program_output.len())
+    );
+    ensure!(
+        node_stack[0].end_offset == program_output.len(),
+        FactCheckerError::TreeStructureRootOffsetInvalid(node_stack[0].end_offset, program_output.len(),)
+    );
+
     Ok(node_stack.remove(0))
+}
+
+/// Calculates the keccak hash and adds 1 to it.
+fn calculate_node_hash(node_data: &[u8]) -> B256 {
+    let hash = keccak256(node_data);
+    let hash_biguint = BigUint::from_bytes_be(hash.as_slice());
+    let incremented_hash = hash_biguint.add(BigUint::from(1u8));
+    let mut hash_bytes = incremented_hash.to_bytes_be();
+    let mut padded_bytes = vec![0; 32 - hash_bytes.len()];
+    padded_bytes.append(&mut hash_bytes);
+    B256::from_slice(&padded_bytes[..32])
+}
+
+#[cfg(test)]
+mod test {
+    use crate::fact_node::generate_merkle_root;
+    use crate::fact_topology::FactTopology;
+    use alloy::primitives::B256;
+    use cairo_vm::Felt252;
+    use std::str::FromStr;
+
+    /// Here we are comparing our output with the same function run in the
+    /// `generate_output_root` function in cairo-lang repo.
+    /// We are comparing the output hash of the `generate_merkle_root` function
+    /// with our python output.
+    ///
+    /// Function link : https://github.com/starkware-libs/cairo-lang/blob/a86e92bfde9c171c0856d7b46580c66e004922f3/src/starkware/cairo/bootloaders/compute_fact.py#L47
+    ///
+    /// This will ensure that our logic here is correct.
+    #[test]
+    fn test_generate_merkle_root() {
+        let program_output_vec: Vec<Felt252> = (1..=12).map(|i| i.into()).collect();
+
+        let fact_topology =
+            FactTopology { tree_structure: vec![1, 0, 1, 0, 0, 2, 1, 1, 0, 2], page_sizes: vec![4, 4, 4] };
+
+        let merkle_root = generate_merkle_root(program_output_vec.as_slice(), &fact_topology).unwrap().node_hash;
+        let python_program_output =
+            B256::from_str("0x17F41BA1DB11E3A164B23B72B52190FB0DA6184B4B80CF74E0882FDE7438E47F").unwrap();
+
+        assert_eq!(merkle_root, python_program_output);
+    }
 }
