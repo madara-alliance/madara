@@ -3,6 +3,7 @@
 ## Next release
 
 - feat: add devnet via `--devnet` cli argument
+- code docs: documented how get_storage_at is implemented
 - fix: L1 rpc <=> network mismatch
 - feat: rpc versioning
 - feat: bumping Starknet version from v0.13.2 to Starknet v0.13.2.1

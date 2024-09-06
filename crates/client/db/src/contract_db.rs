@@ -1,10 +1,4 @@
-//! Contract history values are stored using a fixed prefix extractor in rocksdb.
-//!
-//! This means that we can access the last value of a history column (e.g. the last class hash of a contract)
-//! from a any block in the blockchain by seeking to it using a rocksdb iterator, setting iteration to reverse mode,
-//! and getting the next value.
-//!
-//! Insertion is batched and done in parallel using rayon: this is not intended for use in the RPCs.
+#![doc = include_str!("../docs/flat_storage.md")]
 
 use std::sync::Arc;
 
