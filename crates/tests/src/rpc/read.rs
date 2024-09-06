@@ -30,7 +30,7 @@ mod test_rpc_read_calls {
     use std::io::Read;
     use tokio::sync::OnceCell;
 
-    static MADARA: Lazy<OnceCell<MadaraCmd>> = Lazy::new(|| OnceCell::new());
+    static MADARA: Lazy<OnceCell<MadaraCmd>> = Lazy::new(OnceCell::new);
 
     async fn setup_madara() -> MadaraCmd {
         let mut madara = MadaraCmdBuilder::new()
@@ -39,8 +39,6 @@ mod test_rpc_read_calls {
 
         madara.wait_for_ready().await;
         madara.wait_for_sync_to(19).await;
-
-        // The lock is released when guard goes out of scope
 
         madara
     }
@@ -236,7 +234,7 @@ mod test_rpc_read_calls {
     async fn test_get_block_txn_with_tx_works() {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
-        let block = { json_client.get_block_with_txs(BlockId::Number(2)).await.unwrap() };
+        let block = json_client.get_block_with_txs(BlockId::Number(2)).await.unwrap();
 
         let expected_block = MaybePendingBlockWithTxs::Block(BlockWithTxs {
             status: BlockStatus::AcceptedOnL2,
