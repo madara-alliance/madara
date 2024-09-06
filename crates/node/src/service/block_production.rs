@@ -69,6 +69,8 @@ impl Service for BlockProductionService {
             let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")? == None {
                 // deploy devnet genesis
 
+                log::info!("⛏️  Deploying devnet genesis block");
+
                 let mut genesis_config = ChainGenesisDescription::base_config();
                 let contracts = genesis_config.add_devnet_contracts(n_devnet_contracts);
 

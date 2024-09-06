@@ -2,7 +2,7 @@
 
 ## Next release
 
-- feat: add genesis block creation
+- feat: add devnet via `--devnet` cli argument
 - refactor: block import is now centrally done in a single crate
 - tests: add e2e tests for the node
 - fix: fixed some readme stuff
