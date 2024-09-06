@@ -66,9 +66,24 @@ impl EthereumClient {
     /// Create a new EthereumClient instance with the given RPC URL
     pub async fn new(url: Url, l1_core_address: Address, l1_block_metrics: L1BlockMetrics) -> anyhow::Result<Self> {
         let provider = ProviderBuilder::new().on_http(url);
+
+        EthereumClient::assert_core_contract_exists(&provider, l1_core_address).await?;
+
         let core_contract = StarknetCoreContract::new(l1_core_address, provider.clone());
 
         Ok(Self { provider: Arc::new(provider), l1_core_contract: core_contract, l1_block_metrics })
+    }
+
+    /// Assert that L1 Core contract exists by checking its bytecode.
+    async fn assert_core_contract_exists(
+        provider: &RootProvider<Http<Client>>,
+        l1_core_address: Address,
+    ) -> anyhow::Result<()> {
+        let l1_core_contract_bytecode = provider.get_code_at(l1_core_address).await?;
+        if l1_core_contract_bytecode.is_empty() {
+            bail!("The L1 Core Contract could not be found. Check that the L2 chain matches the L1 RPC endpoint.");
+        }
+        Ok(())
     }
 
     /// Retrieves the latest Ethereum block number
