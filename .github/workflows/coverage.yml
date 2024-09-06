@@ -24,6 +24,9 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      - name: Install scarb
+        run: curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh
+
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: nightly
