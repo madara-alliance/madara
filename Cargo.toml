@@ -107,6 +107,7 @@ cairo-vm = "=1.0.1"
 starknet-core = "0.11"
 starknet-crypto = "0.7"
 starknet-providers = "0.11"
+starknet = "0.11.0"
 
 starknet-types-core = { version = "0.1.5", default-features = false, features = [
   "hash",
