@@ -15,7 +15,7 @@ pub use sync::*;
 pub use telemetry::*;
 
 use mp_chain_config::ChainConfig;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use url::Url;
 
 #[derive(Clone, Debug, clap::Parser)]
@@ -61,6 +61,14 @@ pub struct RunCmd {
     /// The network chain configuration.
     #[clap(long, short, default_value = "main")]
     pub network: NetworkType,
+
+    /// Configuration file path.
+    #[clap(long, default_value = "config.yaml", value_name = "CHAIN CONFIG FILE PATH")]
+    pub config_path: Option<PathBuf>,
+
+    /// Enable authority mode: the node will run as a sequencer and try and produce its own blocks.
+    #[clap(long, action = clap::ArgAction::SetTrue, value_name = "OVERRIDE CONFIG FLAG")]
+    pub chain_config_override: bool,
 
     /// Run the TUI dashboard
     #[cfg(feature = "tui")]
