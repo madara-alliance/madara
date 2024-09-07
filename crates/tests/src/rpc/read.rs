@@ -48,7 +48,20 @@ mod test_rpc_read_calls {
         MADARA.get_or_init(setup_madara).await
     }
 
-    // here, the provider will fetch the latest block that's been synced, hence testing it with block 19
+    /// Fetches the latest block hash and number.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_blockHashAndNumber",
+    ///     "params": {},
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_block_hash_and_number_works() {
         let madara = get_shared_state().await;
@@ -64,20 +77,24 @@ mod test_rpc_read_calls {
         );
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getBlockTransactionCount",
-           "params": {
-               "block_id": {
-                   "block_number": 2
-               }
-           },
-           "id": 1
-       }'
-    */
+    /// Retrieves the number of transactions in a specific block.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getBlockTransactionCount",
+    ///     "params": {
+    ///         "block_id": {
+    ///             "block_number": 2
+    ///         }
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_block_txn_count_works() {
         let madara = get_shared_state().await;
@@ -86,20 +103,24 @@ mod test_rpc_read_calls {
         assert_eq!(result, 1);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getBlockWithReceipts",
-           "params": {
-               "block_id": {
-                   "block_number": 2
-               }
-           },
-           "id": 1
-       }'
-    */
+    /// Fetches a block with its transactions and receipts.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getBlockWithReceipts",
+    ///     "params": {
+    ///         "block_id": {
+    ///             "block_number": 2
+    ///         }
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_block_txn_with_receipts_works() {
         let madara = get_shared_state().await;
@@ -158,18 +179,24 @@ mod test_rpc_read_calls {
         assert_eq!(block, expected_block);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getBlockWithTxHashes",
-           "params": {
-               "block_id": "latest"
-           },
-           "id": 1
-       }'
-    */
+    /// Retrieves a block with transaction hashes.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getBlockWithTxHashes",
+    ///     "params": {
+    ///         "block_id": {
+    ///             "block_number": 2
+    ///         }
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_block_txn_with_tx_hashes_works() {
         let madara = get_shared_state().await;
@@ -193,18 +220,24 @@ mod test_rpc_read_calls {
         assert_eq!(block, expected_block);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getBlockWithTxs",
-           "params": {
-               "block_id": "latest"
-           },
-           "id": 1
-       }'
-    */
+    /// Fetches a block with full transaction details.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getBlockWithTxs",
+    ///     "params": {
+    ///         "block_id": {
+    ///             "block_number": 2
+    ///         }
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_block_txn_with_tx_works() {
         let madara = get_shared_state().await;
@@ -234,21 +267,25 @@ mod test_rpc_read_calls {
         assert_eq!(block, expected_block);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getClassHashAt",
-           "params": {
-               "block_id": {
-                   "block_number": 15
-               },
-               "contract_address": "0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"
-           },
-           "id": 1
-       }'
-    */
+    /// Retrieves the class hash at a specific block and contract address.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getClassHashAt",
+    ///     "params": {
+    ///         "block_id": {
+    ///             "block_number": 15
+    ///         },
+    ///         "contract_address": "0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_class_hash_at_works() {
         let madara = get_shared_state().await;
@@ -267,21 +304,25 @@ mod test_rpc_read_calls {
         assert_eq!(class_hash, expected_class_hash);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getNonce",
-           "params": {
-               "block_id": {
-                   "block_number": 15
-               },
-               "contract_address": "0x0535ca4e1d1be7ec4a88d51a2962cd6c5aea1be96cb2c0b60eb1721dc34f800d"
-           },
-           "id": 1
-       }'
-    */
+    /// Retrieves the nonce for a specific contract address at a given block.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getNonce",
+    ///     "params": {
+    ///         "block_id": {
+    ///             "block_number": 15
+    ///         },
+    ///         "contract_address": "0x0535ca4e1d1be7ec4a88d51a2962cd6c5aea1be96cb2c0b60eb1721dc34f800d"
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_nonce_works() {
         let madara = get_shared_state().await;
@@ -300,21 +341,25 @@ mod test_rpc_read_calls {
         assert_eq!(nonce, expected_nonce);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getTransactionByBlockIdAndIndex",
-           "params": {
-               "block_id": {
-                   "block_number": 16
-               },
-               "index": 1
-           },
-           "id": 1
-       }'
-    */
+    /// Retrieves a transaction by its block ID and index.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getTransactionByBlockIdAndIndex",
+    ///     "params": {
+    ///         "block_id": {
+    ///             "block_number": 16
+    ///         },
+    ///         "index": 1
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_txn_by_block_id_and_index_works() {
         let madara = get_shared_state().await;
@@ -337,18 +382,22 @@ mod test_rpc_read_calls {
         assert_eq!(txn, expected_txn);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getTransactionByHash",
-           "params": {
-               "transaction_hash": "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a"
-           },
-           "id": 1
-       }'
-    */
+    /// Retrieves a transaction by its hash.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getTransactionByHash",
+    ///     "params": {
+    ///         "transaction_hash": "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a"
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_txn_by_hash_works() {
         let madara = get_shared_state().await;
@@ -376,18 +425,22 @@ mod test_rpc_read_calls {
         assert_eq!(txn, expected_txn);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getTransactionReceipt",
-           "params": {
-               "transaction_hash": "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772"
-           },
-           "id": 1
-       }'
-    */
+    /// Retrieves the receipt for a transaction.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getTransactionReceipt",
+    ///     "params": {
+    ///         "transaction_hash": "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772"
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_txn_receipt_works() {
         let madara = get_shared_state().await;
@@ -433,25 +486,29 @@ mod test_rpc_read_calls {
         assert_eq!(txn_receipt, expected_txn_receipt);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getTransactionStatus",
-           "params": {
-               "transaction_hash": "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a"
-           },
-           "id": 1
-       }'
-
-       Note: Juno endpoint will provide response with AcceptedOnL1, in the current case, we are not
-       running madara in sync with L1. And only way to check whether what madara is storing is right
-       as per the L1 is to sync all the nodes of the L2 and make a call to the core contract on L1 to
-       verify the state root.
-
-       Hence, all the txn would be marked as AcceptedOnL2.
-    */
+    /// Retrieves the status of a transaction.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getTransactionStatus",
+    ///     "params": {
+    ///         "transaction_hash": "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a"
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
+    ///
+    /// Note: Juno endpoint will provide response with AcceptedOnL1, in the current case, we are not
+    /// running madara in sync with L1. And only way to check whether what madara is storing is right
+    /// as per the L1 is to sync all the nodes of the L2 and make a call to the core contract on L1 to
+    /// verify the state root.
+    ///
+    /// Hence, all the txn would be marked as AcceptedOnL2.
     #[tokio::test]
     async fn test_get_txn_status_works() {
         let madara = get_shared_state().await;
@@ -467,22 +524,26 @@ mod test_rpc_read_calls {
         assert_eq!(txn_status, expected_txn_status);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getStorageAt",
-           "params": {
-               "contract_address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-               "key": "0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1",
-               "block_id": {
-                   "block_number": 15
-               }
-           },
-           "id": 1
-       }'
-    */
+    /// Retrieves the storage value at a specific contract address, key, and block.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getStorageAt",
+    ///     "params": {
+    ///         "contract_address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+    ///         "key": "0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1",
+    ///         "block_id": {
+    ///             "block_number": 15
+    ///         }
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_storage_at_works() {
         let madara = get_shared_state().await;
@@ -502,20 +563,24 @@ mod test_rpc_read_calls {
         assert_eq!(storage_response, expected_storage_response);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getStateUpdate",
-           "params": {
-               "block_id": {
-                   "block_number": 13
-               }
-           },
-           "id": 1
-       }'
-    */
+    /// Retrieves the state update for a specific block.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getStateUpdate",
+    ///     "params": {
+    ///         "block_id": {
+    ///             "block_number": 13
+    ///         }
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_state_update_works() {
         let madara = get_shared_state().await;
@@ -560,37 +625,41 @@ mod test_rpc_read_calls {
         assert_eq!(state_update, expected_state_update);
     }
 
-    /*
-        curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-        --header 'Content-Type: application/json' \
-        --data '{
-            "jsonrpc": "2.0",
-            "method": "starknet_getEvents",
-            "params": {
-                "filter": {
-                    "from_block": {
-                        "block_number": 0
-                    },
-                    "to_block": {
-                        "block_number": 19
-                    },
-                    "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-                    "keys": [
-                        []
-                    ],
-                    "continuation_token": "",
-                    "chunk_size": 2
-                }
-            },
-            "id": 1
-        }'
-
-        Note: The response from juno contains different continuation token from madara. Only spec we
-        need to follow is that the continuation token should be of type string.
-
-        In here we are testing the event data apart from continuation token and checking type for
-        the continuation token.
-    */
+    /// Retrieves events based on a filter.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getEvents",
+    ///     "params": {
+    ///         "filter": {
+    ///             "from_block": {
+    ///                 "block_number": 0
+    ///             },
+    ///             "to_block": {
+    ///                 "block_number": 19
+    ///             },
+    ///             "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+    ///             "keys": [
+    ///                 []
+    ///             ],
+    ///             "continuation_token": "",
+    ///             "chunk_size": 2
+    ///         }
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
+    ///
+    /// Note: The response from juno contains different continuation token from madara. Only spec we
+    /// need to follow is that the continuation token should be of type string.
+    ///
+    /// In here we are testing the event data apart from continuation token and checking type for
+    /// the continuation token.
     #[tokio::test]
     async fn test_get_events_works() {
         let madara = get_shared_state().await;
@@ -640,31 +709,35 @@ mod test_rpc_read_calls {
         assert_type_equality(&events.continuation_token, &expected_events.continuation_token);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getEvents",
-           "params": {
-               "filter": {
-                   "from_block": {
-                       "block_number": 0
-                   },
-                   "to_block": {
-                       "block_number": 19
-                   },
-                   "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-                   "keys": [
-                       []
-                   ],
-                   "continuation_token": "0-2",
-                   "chunk_size": 2
-               }
-           },
-           "id": 1
-       }'
-    */
+    /// Retrieves events based on a filter with a continuation token.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getEvents",
+    ///     "params": {
+    ///         "filter": {
+    ///             "from_block": {
+    ///                 "block_number": 0
+    ///             },
+    ///             "to_block": {
+    ///                 "block_number": 19
+    ///             },
+    ///             "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+    ///             "keys": [
+    ///                 []
+    ///             ],
+    ///             "continuation_token": "0-2",
+    ///             "chunk_size": 2
+    ///         }
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
     #[tokio::test]
     async fn test_get_events_with_continuation_token_works() {
         let madara = get_shared_state().await;
@@ -728,27 +801,32 @@ mod test_rpc_read_calls {
         assert_type_equality(&events.continuation_token, &expected_events.continuation_token);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_call",
-           "params": {
-               "request": {
-                   "contract_address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-                   "entry_point_selector": "0x361458367e696363fbcc70777d07ebbd2394e89fd0adcaf147faccd1d294d60",
-                   "calldata": []
-               },
-               "block_id": {
-                   "block_number": 19
-               }
-           },
-           "id": 1
-       }'
-
-       Note: The test is ignored as of now because madara doesn't support historical data retrieval.
-    */
+    /// Calls a contract function at a specific block.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_call",
+    ///     "params": {
+    ///         "request": {
+    ///             "contract_address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+    ///             "entry_point_selector": "0x361458367e696363fbcc70777d07ebbd2394e89fd0adcaf147faccd1d294d60",
+    ///             "calldata": []
+    ///         },
+    ///         "block_id": {
+    ///             "block_number": 19
+    ///         }
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
+    ///
+    /// Note: The test is ignored as of now because madara support the transaction with starknet version >= 0.13.0
+    /// and ideally for the node will call the sequencer to get the result of the transaction for older starknet version.
     #[ignore]
     #[tokio::test]
     async fn test_call_works() {
@@ -775,42 +853,53 @@ mod test_rpc_read_calls {
         assert_eq!(call_response, expected_call_response);
     }
 
-    /*
-    Note: In this test case we are comparing the decompressed program output that we get from this js script
-    with the decompressed program we get from the madara response.
-
-    Along with that we are also checking for abi and the entry points.
-
-        const starknet = require('starknet');
-        const contract = require('./juno.json');
-
-        async function main() {
-            let contract_class_parsed = starknet.stark.decompressProgram(
-                contract.program
-            );
-            console.log((contract_class_parsed));
-        }
-
-        main();
-
-    In the above code, juno.json can be obtained by:
-
-        curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-        --header 'Content-Type: application/json' \
-        --data '{
-            "jsonrpc": "2.0",
-            "method": "starknet_getClass",
-            "params": {
-                "block_id": {
-                    "block_number": 12
-                },
-                "class_hash": "0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"
-            },
-            "id": 1
-        }'
-
-    In the test case, contract_class.json is same as juno.json used in the js script above.
-    */
+    /// Note: In this test case we are comparing the decompressed program output that we get from this js script
+    /// with the decompressed program we get from the madara response.
+    ///
+    /// Along with that we are also checking for abi and the entry points.
+    ///
+    /// The js script used to get the decompressed program is:
+    ///
+    /// ```javascript
+    ///     const starknet = require('starknet');
+    ///     const contract = require('./juno.json');
+    ///
+    ///     async function main() {
+    ///         let contract_class_parsed = starknet.stark.decompressProgram(
+    ///             contract.program
+    ///         );
+    ///         console.log((contract_class_parsed));
+    ///     }
+    ///
+    ///     main();
+    /// ```
+    ///
+    /// In the above code, juno.json can be obtained by:
+    ///
+    /// Retrieves the contract class for a given class hash.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getClass",
+    ///     "params": {
+    ///         "block_id": {
+    ///             "block_number": 12
+    ///         },
+    ///         "class_hash": "0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
+    ///
+    /// Note: In this test case we are comparing the decompressed program output that we get from this js script
+    /// with the decompressed program we get from the madara response.
+    ///
+    /// Along with that we are also checking for abi and the entry points.
     #[tokio::test]
     async fn test_get_class_works() {
         let madara = get_shared_state().await;
@@ -828,23 +917,27 @@ mod test_rpc_read_calls {
         compare_contract_class(contract_class);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_getClassAt",
-           "params": {
-               "block_id": {
-                   "block_number": 12
-               },
-               "contract_address": "0x043abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8"
-           },
-           "id": 1
-       }'
-
-       Note: The program has been compressed using the same script mentioned in the above test case.
-    */
+    /// Retrieves the contract class at a specific address.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getClassAt",
+    ///     "params": {
+    ///         "block_id": {
+    ///             "block_number": 12
+    ///         },
+    ///         "contract_address": "0x043abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8"
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
+    ///
+    /// Note: The program has been compressed using the same script mentioned in the above test case.
     #[tokio::test]
     async fn test_get_class_at_works() {
         let madara = get_shared_state().await;
@@ -862,46 +955,51 @@ mod test_rpc_read_calls {
         compare_contract_class(contract_class);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_estimateFee",
-           "params": {
-               "request": [
-                   {
-                       "type": "DEPLOY_ACCOUNT",
-                       "version": "0x1",
-                       "max_fee": "0x0",
-                       "signature": [
-                           "0x73d0a8a69f0ebf44b1c2bb2a9e85bf998883eb2008ca7b9c57b6f28dacb6dd8",
-                           "0x4a43711cd08f55ef73603f1e7b880c7f438fb68934f0823a736f9f577ab040a",
-                           "0x0",
-                           "0x0",
-                           "0x0",
-                           "0x0",
-                           "0x0",
-                           "0x0",
-                           "0x0",
-                           "0x0"
-                       ],
-                       "nonce": "0x0",
-                       "contract_address_salt": "0x0",
-                       "constructor_calldata": ["0x2e23f1647b018bfb3fe107e2ebd4412f0a0ed41bd60c10d842a76f8cdbbe1ba"],
-                       "class_hash": "0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"
-                   }
-               ],
-               "simulation_flags": [ "SKIP_VALIDATE"],
-               "block_id": {
-                   "block_number": 1
-               }
-           },
-           "id": 1
-       }'
-
-       Note: The test is ignored as of now because madara doesn't support historical data retrieval.
-    */
+    /// Estimates the fee for a transaction or a list of transactions.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_estimateFee",
+    ///     "params": {
+    ///         "request": [
+    ///             {
+    ///                 "type": "DEPLOY_ACCOUNT",
+    ///                 "version": "0x1",
+    ///                 "max_fee": "0x0",
+    ///                 "signature": [
+    ///                     "0x73d0a8a69f0ebf44b1c2bb2a9e85bf998883eb2008ca7b9c57b6f28dacb6dd8",
+    ///                     "0x4a43711cd08f55ef73603f1e7b880c7f438fb68934f0823a736f9f577ab040a",
+    ///                     "0x0",
+    ///                     "0x0",
+    ///                     "0x0",
+    ///                     "0x0",
+    ///                     "0x0",
+    ///                     "0x0",
+    ///                     "0x0",
+    ///                     "0x0"
+    ///                 ],
+    ///                 "nonce": "0x0",
+    ///                 "contract_address_salt": "0x0",
+    ///                 "constructor_calldata": ["0x2e23f1647b018bfb3fe107e2ebd4412f0a0ed41bd60c10d842a76f8cdbbe1ba"],
+    ///                 "class_hash": "0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"
+    ///             }
+    ///         ],
+    ///         "simulation_flags": [ "SKIP_VALIDATE"],
+    ///         "block_id": {
+    ///             "block_number": 1
+    ///         }
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
+    ///
+    /// Note: The test is ignored as of now because madara support the transaction with starknet version >= 0.13.0
+    /// and ideally for the node will call the sequencer to get the result of the transaction for older starknet version.
     #[ignore]
     #[tokio::test]
     async fn test_estimate_fee_works() {
@@ -952,28 +1050,33 @@ mod test_rpc_read_calls {
         assert_eq!(call_response, expected_call_response);
     }
 
-    /*
-       curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
-       --header 'Content-Type: application/json' \
-       --data '{
-           "jsonrpc": "2.0",
-           "method": "starknet_estimateMessageFee",
-           "params": {
-               "message": {
-                   "from_address": "0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc",
-                   "to_address": "0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f",
-                   "entry_point_selector": "0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5",
-                   "payload": ["755459732925565255818828693099006464755347258332","0","0"]
-               },
-               "block_id": {
-                   "block_number": 8
-               }
-           },
-           "id": 1
-       }'
-
-       Note: The test is ignored as of now because madara doesn't support historical data retrieval.
-    */
+    /// Estimates the fee for a message from L1 to L2.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_estimateMessageFee",
+    ///     "params": {
+    ///         "message": {
+    ///             "from_address": "0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc",
+    ///             "to_address": "0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f",
+    ///             "entry_point_selector": "0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5",
+    ///             "payload": ["755459732925565255818828693099006464755347258332","0","0"]
+    ///         },
+    ///         "block_id": {
+    ///             "block_number": 8
+    ///         }
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
+    ///
+    /// Note: The test is ignored as of now because madara support the transaction with starknet version >= 0.13.0
+    /// and ideally for the node will call the sequencer to get the result of the transaction for older starknet version.
     #[ignore]
     #[tokio::test]
     async fn test_estimate_message_fee_works() {
