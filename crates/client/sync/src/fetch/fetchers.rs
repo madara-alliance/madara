@@ -267,11 +267,15 @@ async fn fetch_state_update_with_block(
     (starknet_providers::sequencer::models::StateUpdate, starknet_providers::sequencer::models::Block),
     ProviderError,
 > {
-
     log::info!("Fetching state update with block");
+    println!("fetching the state update");
     #[allow(deprecated)] // Sequencer-specific functions are deprecated. Use it via the Provider trait instead.
-    let state_update_with_block = provider.get_state_update_with_block(block_id.into()).await.expect("issue while fetching the state update with block");
+    let state_update_with_block = provider
+        .get_state_update_with_block(block_id.into())
+        .await
+        .expect("issue while fetching the state update with block");
     log::info!("State update with block: {:?}", state_update_with_block);
+    println!("state update with block: {:?}", state_update_with_block);
     Ok((state_update_with_block.state_update, state_update_with_block.block))
 }
 
