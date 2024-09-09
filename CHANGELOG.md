@@ -2,6 +2,7 @@
 
 ## Next release
 
+- test: added tests for declare and deploy transactions
 - feat: add devnet via `--devnet` cli argument
 - code docs: documented how get_storage_at is implemented
 - fix: L1 rpc <=> network mismatch
