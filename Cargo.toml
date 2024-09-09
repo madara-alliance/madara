@@ -153,6 +153,7 @@ reqwest = { version = "0.12", features = ["json"] }
 rstest = "0.18"
 serde = { version = "1.0", default-features = false, features = ["std"] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
+serde_yaml = { version = "0.9.34"}
 thiserror = "1.0"
 tokio = { version = "1.34", features = ["signal"] }
 url = "2.4"

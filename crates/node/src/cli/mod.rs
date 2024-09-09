@@ -14,8 +14,7 @@ pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
 
-use mp_chain_config::ChainConfig;
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 use url::Url;
 
 #[derive(Clone, Debug, clap::Parser)]
@@ -63,8 +62,8 @@ pub struct RunCmd {
     pub network: NetworkType,
 
     /// Configuration file path.
-    #[clap(long, default_value = "config.yaml", value_name = "CHAIN CONFIG FILE PATH")]
-    pub config_path: Option<PathBuf>,
+    #[clap(long, default_value = "chain_config.yaml", value_name = "CHAIN CONFIG FILE PATH")]
+    pub chain_config_path: Option<PathBuf>,
 
     /// Enable authority mode: the node will run as a sequencer and try and produce its own blocks.
     #[clap(long, action = clap::ArgAction::SetTrue, value_name = "OVERRIDE CONFIG FLAG")]
@@ -109,14 +108,6 @@ impl NetworkType {
             NetworkType::Main => "https://alpha-mainnet.starknet.io",
             NetworkType::Test => "https://alpha-sepolia.starknet.io",
             NetworkType::Integration => "https://integration-sepolia.starknet.io",
-        }
-    }
-
-    pub fn chain_config(&self) -> Arc<ChainConfig> {
-        match self {
-            NetworkType::Main => Arc::new(ChainConfig::starknet_mainnet()),
-            NetworkType::Test => Arc::new(ChainConfig::starknet_sepolia()),
-            NetworkType::Integration => Arc::new(ChainConfig::starknet_integration()),
         }
     }
 

@@ -2,25 +2,30 @@
 #![warn(missing_docs)]
 #![warn(clippy::unwrap_used)]
 
-use std::sync::Arc;
-
-use anyhow::Context;
-use clap::Parser;
 mod cli;
 mod service;
 mod util;
 
-use crate::service::L1SyncService;
-use cli::RunCmd;
+use std::sync::Arc;
+
+use anyhow::Context;
+use clap::Parser;
+
 use mc_db::DatabaseService;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_metrics::MetricsService;
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
+use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_utils::service::{Service, ServiceGroup};
-use service::{BlockProductionService, RpcService, SyncService};
+
 use starknet_providers::SequencerGatewayProvider;
+
+use cli::RunCmd;
+use service::L1SyncService;
+use service::{BlockProductionService, RpcService, SyncService};
+
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 
@@ -32,7 +37,10 @@ async fn main() -> anyhow::Result<()> {
 
     let mut run_cmd: RunCmd = RunCmd::parse();
 
-    let chain_config = run_cmd.network.chain_config();
+    // TODO: horrible line, refacto
+    let chain_config = Arc::new(ChainConfig::from_yaml(&run_cmd.chain_config_path.clone().unwrap_or_default())?);
+
+    // TODO: override stuff
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
     let node_version = env!("DEOXYS_BUILD_VERSION");

@@ -16,8 +16,10 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
+anyhow = { workspace = true }
 lazy_static = { workspace = true }
 primitive-types.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 thiserror.workspace = true

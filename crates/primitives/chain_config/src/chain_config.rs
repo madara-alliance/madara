@@ -1,37 +1,72 @@
 use crate::StarknetVersion;
+use anyhow::{Context, Result};
 use blockifier::{
-    bouncer::{BouncerConfig, BouncerWeights, BuiltinCount},
+    bouncer::BouncerConfig,
     versioned_constants::VersionedConstants,
 };
 use primitive_types::H160;
-use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
-use starknet_types_core::felt::Felt;
-use std::{collections::BTreeMap, ops::Deref, time::Duration};
+use serde::Deserialize;
+use serde::Deserializer;
+use starknet_api::core::{ChainId, ContractAddress};
+use std::str::FromStr;
+use std::{
+    collections::BTreeMap,
+    fs::{self, File},
+    io::Read,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
-pub mod eth_core_contract_address {
-    pub const MAINNET: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
-    pub const SEPOLIA_TESTNET: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
-    pub const SEPOLIA_INTEGRATION: &str = "0x4737c0c1B4D5b1A687B42610DdabEE781152359c";
-}
-
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1: &[u8] =
-    include_bytes!("../resources/versioned_constants_13_1_1.json");
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_2: &[u8] = include_bytes!("../resources/versioned_constants_13_2.json");
-
-lazy_static::lazy_static! {
-    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_2: VersionedConstants =
-        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_2).unwrap();
-    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1: VersionedConstants =
-        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1).unwrap();
-    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1: VersionedConstants =
-        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1).unwrap();
-    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0: VersionedConstants =
-        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0).unwrap();
-}
+#[derive(thiserror::Error, Debug)]
+#[error("Unsupported protocol version: {0}")]
+pub struct UnsupportedProtocolVersion(StarknetVersion);
 
 #[derive(Debug)]
+pub struct ChainVersionedConstants(pub BTreeMap<StarknetVersion, VersionedConstants>);
+
+impl<const N: usize> From<[(StarknetVersion, VersionedConstants); N]> for ChainVersionedConstants {
+    fn from(arr: [(StarknetVersion, VersionedConstants); N]) -> Self {
+        ChainVersionedConstants(arr.into_iter().collect())
+    }
+}
+
+/// Replaces the versioned_constants files definition in the yaml by the content of the
+/// jsons.
+impl<'de> Deserialize<'de> for ChainVersionedConstants {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let file_paths: BTreeMap<String, String> = Deserialize::deserialize(deserializer)?;
+        let mut result = BTreeMap::new();
+
+        for (version, path) in file_paths {
+            let mut file = File::open(Path::new(&path))
+                .with_context(|| format!("Failed to open file: {}", path))
+                .map_err(serde::de::Error::custom)?;
+
+            let mut contents = String::new();
+            file.read_to_string(&mut contents)
+                .with_context(|| format!("Failed to read contents of file: {}", path))
+                .map_err(serde::de::Error::custom)?;
+
+            let constants: VersionedConstants = serde_json::from_str(&contents)
+                .with_context(|| format!("Failed to parse JSON in file: {}", path))
+                .map_err(serde::de::Error::custom)?;
+
+            let parsed_version = version
+                .parse()
+                .with_context(|| format!("Failed to parse version string: {}", version))
+                .map_err(serde::de::Error::custom)?;
+
+            result.insert(parsed_version, constants);
+        }
+
+        Ok(ChainVersionedConstants(result))
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ChainConfig {
     /// Internal chain name.
     pub chain_name: String,
@@ -43,7 +78,7 @@ pub struct ChainConfig {
     pub parent_fee_token_address: ContractAddress,
 
     /// BTreeMap ensures order.
-    pub versioned_constants: BTreeMap<StarknetVersion, VersionedConstants>,
+    pub versioned_constants: ChainVersionedConstants,
     pub latest_protocol_version: StarknetVersion,
 
     /// Only used for block production.
@@ -68,11 +103,45 @@ pub struct ChainConfig {
     pub eth_core_contract_address: H160,
 }
 
-#[derive(thiserror::Error, Debug)]
-#[error("Unsupported protocol version: {0}")]
-pub struct UnsupportedProtocolVersion(StarknetVersion);
+impl Default for ChainConfig {
+    fn default() -> Self {
+        ChainConfig::starknet_mainnet().expect("Invalid preset configuration for mainnet.")
+    }
+}
 
 impl ChainConfig {
+    pub fn from_yaml(path: &Path) -> anyhow::Result<Self> {
+        let config_str = fs::read_to_string(path)?;
+        serde_yaml::from_str(&config_str).context("While deserializing chain config")
+    }
+
+    /// Returns the Chain Config preset for Starknet Mainnet.
+    pub fn starknet_mainnet() -> anyhow::Result<Self> {
+        // Sources:
+        // - https://docs.starknet.io/tools/important-addresses
+        // - https://docs.starknet.io/tools/limits-and-triggers (bouncer & block times)
+        // - state_diff_size is the blob size limit of ethereum
+        // - pending_block_update_time: educated guess
+        // - bouncer builtin_count, message_segment_length, n_events, state_diff_size are probably wrong
+        Self::from_yaml(&PathBuf::from_str("../presets/mainnet.yaml")?)
+    }
+
+    /// Returns the Chain Config preset for Starknet Sepolia.
+    pub fn starknet_sepolia() -> anyhow::Result<Self> {
+        Self::from_yaml(&PathBuf::from_str("../presets/sepolia.yaml")?)
+    }
+
+    /// Returns the Chain Config preset for Starknet Integration.
+    pub fn starknet_integration() -> anyhow::Result<Self> {
+        Self::from_yaml(&PathBuf::from_str("../presets/integration.yaml")?)
+    }
+
+    /// Returns the Chain Config preset for our Madara tests.
+    #[cfg(test)]
+    pub fn test_config() -> anyhow::Result<Self> {
+        Self::from_yaml(&PathBuf::from_str("../presets/test.yaml")?)
+    }
+
     /// This is the number of pending ticks (see [`ChainConfig::pending_block_update_time`]) in a block.
     pub fn n_pending_ticks_per_block(&self) -> usize {
         (self.block_time.as_millis() / self.pending_block_update_time.as_millis()) as usize
@@ -82,104 +151,12 @@ impl ChainConfig {
         &self,
         version: StarknetVersion,
     ) -> Result<VersionedConstants, UnsupportedProtocolVersion> {
-        for (k, constants) in self.versioned_constants.iter().rev() {
+        for (k, constants) in self.versioned_constants.0.iter().rev() {
             if k <= &version {
                 return Ok(constants.clone());
             }
         }
         Err(UnsupportedProtocolVersion(version))
-    }
-
-    pub fn starknet_mainnet() -> Self {
-        // Sources:
-        // - https://docs.starknet.io/tools/important-addresses
-        // - https://docs.starknet.io/tools/limits-and-triggers (bouncer & block times)
-        // - state_diff_size is the blob size limit of ethereum
-        // - pending_block_update_time: educated guess
-        // - bouncer builtin_count, message_segment_length, n_events, state_diff_size are probably wrong
-
-        Self {
-            chain_name: "Starknet Mainnet".into(),
-            chain_id: ChainId::Mainnet,
-            native_fee_token_address: ContractAddress(
-                PatriciaKey::try_from(Felt::from_hex_unchecked(
-                    "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
-                ))
-                .unwrap(),
-            ),
-            parent_fee_token_address: ContractAddress(
-                PatriciaKey::try_from(Felt::from_hex_unchecked(
-                    "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-                ))
-                .unwrap(),
-            ),
-            versioned_constants: [
-                (StarknetVersion::STARKNET_VERSION_0_13_0, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0.deref().clone()),
-                (StarknetVersion::STARKNET_VERSION_0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
-                (StarknetVersion::STARKNET_VERSION_0_13_1_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1.deref().clone()),
-                (StarknetVersion::STARKNET_VERSION_0_13_2, VersionedConstants::latest_constants().clone()),
-            ]
-            .into(),
-
-            eth_core_contract_address: eth_core_contract_address::MAINNET.parse().expect("parsing a constant"),
-
-            latest_protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
-            block_time: Duration::from_secs(6 * 60),
-            pending_block_update_time: Duration::from_secs(2),
-
-            bouncer_config: BouncerConfig {
-                block_max_capacity: BouncerWeights {
-                    builtin_count: BuiltinCount {
-                        add_mod: usize::MAX,
-                        bitwise: usize::MAX,
-                        ecdsa: usize::MAX,
-                        ec_op: usize::MAX,
-                        keccak: usize::MAX,
-                        mul_mod: usize::MAX,
-                        pedersen: usize::MAX,
-                        poseidon: usize::MAX,
-                        range_check: usize::MAX,
-                        range_check96: usize::MAX,
-                    },
-                    gas: 5_000_000,
-                    n_steps: 40_000_000,
-                    message_segment_length: usize::MAX,
-                    n_events: usize::MAX,
-                    state_diff_size: 131072,
-                },
-            },
-            // We are not producing blocks for these chains.
-            sequencer_address: ContractAddress::default(),
-            max_nonce_for_validation_skip: 2,
-        }
-    }
-
-    pub fn starknet_sepolia() -> Self {
-        Self {
-            chain_name: "Starknet Sepolia".into(),
-            chain_id: ChainId::Sepolia,
-            eth_core_contract_address: eth_core_contract_address::SEPOLIA_TESTNET.parse().expect("parsing a constant"),
-            ..Self::starknet_mainnet()
-        }
-    }
-
-    pub fn starknet_integration() -> Self {
-        Self {
-            chain_name: "Starknet Sepolia Integration".into(),
-            chain_id: ChainId::IntegrationSepolia,
-            eth_core_contract_address: eth_core_contract_address::SEPOLIA_INTEGRATION
-                .parse()
-                .expect("parsing a constant"),
-            ..Self::starknet_mainnet()
-        }
-    }
-
-    pub fn test_config() -> Self {
-        Self {
-            chain_name: "Test".into(),
-            chain_id: ChainId::Other("MADARA_TEST".into()),
-            ..ChainConfig::starknet_sepolia()
-        }
     }
 }
 
@@ -201,9 +178,8 @@ mod tests {
                     constants.validate_max_n_steps = 10;
                     constants
                 }),
-            ]
-            .into(),
-            ..ChainConfig::test_config()
+            ].into(),
+            ..ChainConfig::test_config().unwrap()
         };
 
         assert_eq!(
