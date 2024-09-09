@@ -1658,9 +1658,9 @@ dependencies = [
 
 [[package]]
 name = "aws-credential-types"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e16838e6c9e12125face1c1eff1343c75e3ff540de98ff7ebd61874a89bcfeb9"
+checksum = "60e8f6b615cb5fc60a98132268508ad104310f0cfb25a1c22eee76efdf9154da"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-runtime-api",
@@ -2025,9 +2025,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-types"
-version = "1.2.2"
+version = "1.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cee7cadb433c781d3299b916fbf620fea813bf38f49db282fb6858141a05cc8"
+checksum = "273dcdfd762fae3e1650b8024624e7cd50e484e37abdab73a7a706188ad34543"
 dependencies = [
  "base64-simd",
  "bytes",
@@ -5670,7 +5670,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c2a198fb6b0eada2a8df47933734e6d35d350665a33a3593d7164fa52c75c19"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -6368,6 +6368,7 @@ dependencies = [
  "async-std",
  "async-trait",
  "aws-config",
+ "aws-credential-types",
  "aws-sdk-s3",
  "aws-sdk-sns",
  "aws-sdk-sqs",
@@ -8318,6 +8319,7 @@ dependencies = [
  "color-eyre",
  "mockall",
  "starknet",
+ "utils",
 ]
 
 [[package]]
@@ -8396,6 +8398,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "cairo-vm 1.0.0-rc3",
+ "color-eyre",
  "dotenvy",
  "gps-fact-checker",
  "hex",

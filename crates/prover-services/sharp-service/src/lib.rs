@@ -11,7 +11,7 @@ use gps_fact_checker::fact_info::get_fact_info;
 use gps_fact_checker::FactChecker;
 use prover_client_interface::{ProverClient, ProverClientError, Task, TaskId, TaskStatus};
 use snos::sharp::CairoJobStatus;
-use utils::settings::SettingsProvider;
+use utils::settings::Settings;
 use uuid::Uuid;
 
 use crate::client::SharpClient;
@@ -71,17 +71,19 @@ impl SharpProverService {
         Self { sharp_client, fact_checker }
     }
 
-    pub fn with_settings(settings: &impl SettingsProvider) -> Self {
-        let sharp_cfg: SharpConfig = settings.get_settings(SHARP_SETTINGS_NAME).unwrap();
-        let sharp_client = SharpClient::new(sharp_cfg.service_url);
-        let fact_checker = FactChecker::new(sharp_cfg.rpc_node_url, sharp_cfg.verifier_address);
+    pub fn new_with_settings(settings: &impl Settings) -> Self {
+        let sharp_config = SharpConfig::new_with_settings(settings)
+            .expect("Not able to create SharpProverService from given settings.");
+        let sharp_client = SharpClient::new(sharp_config.service_url);
+        let fact_checker = FactChecker::new(sharp_config.rpc_node_url, sharp_config.verifier_address);
         Self::new(sharp_client, fact_checker)
     }
 
-    pub fn with_test_settings(settings: &impl SettingsProvider, port: u16) -> Self {
-        let sharp_cfg: SharpConfig = settings.get_settings(SHARP_SETTINGS_NAME).unwrap();
+    pub fn with_test_settings(settings: &impl Settings, port: u16) -> Self {
+        let sharp_config = SharpConfig::new_with_settings(settings)
+            .expect("Not able to create SharpProverService from given settings.");
         let sharp_client = SharpClient::new(format!("http://127.0.0.1:{}", port).parse().unwrap());
-        let fact_checker = FactChecker::new(sharp_cfg.rpc_node_url, sharp_cfg.verifier_address);
+        let fact_checker = FactChecker::new(sharp_config.rpc_node_url, sharp_config.verifier_address);
         Self::new(sharp_client, fact_checker)
     }
 }
@@ -108,7 +110,7 @@ mod tests {
     use prover_client_interface::{ProverClient, Task, TaskStatus};
     use tracing::log::log;
     use tracing::log::Level::{Error, Info};
-    use utils::settings::default::DefaultSettingsProvider;
+    use utils::settings::env::EnvSettingsProvider;
 
     use crate::SharpProverService;
 
@@ -117,7 +119,7 @@ mod tests {
     async fn sharp_reproduce_rate_limiting_issue() {
         // TODO: leaving this test to check if the issue still reproduces (504 error after 8th job status
         // query)
-        let sharp_service = SharpProverService::with_settings(&DefaultSettingsProvider {});
+        let sharp_service = SharpProverService::new_with_settings(&EnvSettingsProvider {});
         let cairo_pie_path: PathBuf =
             [env!("CARGO_MANIFEST_DIR"), "tests", "artifacts", "fibonacci.zip"].iter().collect();
         let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();

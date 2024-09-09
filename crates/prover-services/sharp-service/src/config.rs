@@ -1,8 +1,7 @@
 use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 use url::Url;
-
-use crate::client::DEFAULT_SHARP_URL;
+use utils::settings::Settings;
 
 /// SHARP proving service configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,13 +14,12 @@ pub struct SharpConfig {
     pub verifier_address: Address,
 }
 
-impl Default for SharpConfig {
-    /// Default config for Sepolia testnet
-    fn default() -> Self {
-        Self {
-            service_url: DEFAULT_SHARP_URL.parse().unwrap(),
-            rpc_node_url: "https://ethereum-sepolia-rpc.publicnode.com".parse().unwrap(),
-            verifier_address: "0x07ec0D28e50322Eb0C159B9090ecF3aeA8346DFe".parse().unwrap(),
-        }
+impl SharpConfig {
+    pub fn new_with_settings(settings: &impl Settings) -> color_eyre::Result<Self> {
+        Ok(Self {
+            service_url: settings.get_settings("SETTLEMENT_RPC_URL")?.parse().unwrap(),
+            rpc_node_url: settings.get_settings("SETTLEMENT_RPC_URL")?.parse().unwrap(),
+            verifier_address: settings.get_settings("MEMORY_PAGES_CONTRACT_ADDRESS")?.parse().unwrap(),
+        })
     }
 }

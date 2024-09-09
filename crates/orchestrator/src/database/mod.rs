@@ -4,6 +4,7 @@ use ::mongodb::bson::doc;
 use async_trait::async_trait;
 use color_eyre::Result;
 use mockall::automock;
+use utils::settings::Settings;
 use uuid::Uuid;
 
 use crate::jobs::types::{JobItem, JobStatus, JobType};
@@ -53,5 +54,5 @@ pub trait Database: Send + Sync {
 }
 
 pub trait DatabaseConfig {
-    fn new_from_env() -> Self;
+    fn new_with_settings(settings: &impl Settings) -> Self;
 }

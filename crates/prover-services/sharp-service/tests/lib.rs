@@ -9,7 +9,7 @@ use sharp_service::{split_task_id, SharpProverService};
 use snos::sharp::CairoJobStatus;
 use std::str::FromStr;
 use utils::env_utils::get_env_var_or_panic;
-use utils::settings::default::DefaultSettingsProvider;
+use utils::settings::env::EnvSettingsProvider;
 
 mod constants;
 
@@ -19,7 +19,7 @@ async fn prover_client_submit_task_works() {
     dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
 
     let server = MockServer::start();
-    let sharp_service = SharpProverService::with_test_settings(&DefaultSettingsProvider {}, server.port());
+    let sharp_service = SharpProverService::with_test_settings(&EnvSettingsProvider {}, server.port());
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).unwrap();
 
@@ -58,7 +58,7 @@ async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobS
     dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
 
     let server = MockServer::start();
-    let sharp_service = SharpProverService::with_test_settings(&DefaultSettingsProvider {}, server.port());
+    let sharp_service = SharpProverService::with_test_settings(&EnvSettingsProvider {}, server.port());
     let customer_id = get_env_var_or_panic("SHARP_CUSTOMER_ID");
 
     let sharp_add_job_call = server.mock(|when, then| {

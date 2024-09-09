@@ -1,6 +1,4 @@
-pub mod default;
-
-use serde::de::DeserializeOwned;
+pub mod env;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsProviderError {
@@ -8,6 +6,6 @@ pub enum SettingsProviderError {
     Internal(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
-pub trait SettingsProvider {
-    fn get_settings<T: DeserializeOwned + Default>(&self, name: &'static str) -> Result<T, SettingsProviderError>;
+pub trait Settings {
+    fn get_settings(&self, name: &'static str) -> Result<String, SettingsProviderError>;
 }

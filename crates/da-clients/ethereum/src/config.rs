@@ -1,34 +1,19 @@
-use std::str::FromStr;
+use serde::{Deserialize, Serialize};
+use utils::settings::Settings;
 
-use alloy::{network::Ethereum, providers::ProviderBuilder, rpc::client::RpcClient};
-use async_trait::async_trait;
-use da_client_interface::DaConfig;
-use url::Url;
-use utils::env_utils::get_env_var_or_panic;
-
-use crate::EthereumDaClient;
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EthereumDaConfig {
     pub rpc_url: String,
     pub memory_pages_contract: String,
     pub private_key: String,
 }
 
-#[async_trait]
-impl DaConfig<EthereumDaClient> for EthereumDaConfig {
-    fn new_from_env() -> Self {
-        Self {
-            rpc_url: get_env_var_or_panic("SETTLEMENT_RPC_URL"),
-            memory_pages_contract: get_env_var_or_panic("MEMORY_PAGES_CONTRACT_ADDRESS"),
-            private_key: get_env_var_or_panic("PRIVATE_KEY"),
-        }
-    }
-    async fn build_client(&self) -> EthereumDaClient {
-        let client =
-            RpcClient::new_http(Url::from_str(self.rpc_url.as_str()).expect("Failed to parse SETTLEMENT_RPC_URL"));
-        let provider = ProviderBuilder::<_, Ethereum>::new().on_client(client);
-
-        EthereumDaClient { provider }
+impl EthereumDaConfig {
+    pub fn new_with_settings(settings: &impl Settings) -> color_eyre::Result<Self> {
+        Ok(Self {
+            rpc_url: settings.get_settings("SETTLEMENT_RPC_URL")?,
+            memory_pages_contract: settings.get_settings("MEMORY_PAGES_CONTRACT_ADDRESS")?,
+            private_key: settings.get_settings("PRIVATE_KEY")?,
+        })
     }
 }

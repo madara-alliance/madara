@@ -22,9 +22,8 @@ use starknet::{
 };
 use tokio::time::{sleep, Duration};
 
-use settlement_client_interface::{SettlementClient, SettlementVerificationStatus, SETTLEMENT_SETTINGS_NAME};
-use utils::env_utils::get_env_var_or_panic;
-use utils::settings::SettingsProvider;
+use settlement_client_interface::{SettlementClient, SettlementConfig, SettlementVerificationStatus};
+use utils::settings::Settings;
 
 use crate::config::StarknetSettlementConfig;
 use crate::conversion::{slice_slice_u8_to_vec_field, slice_u8_to_field};
@@ -44,15 +43,17 @@ const MAX_RETRIES_VERIFY_TX_FINALITY: usize = 10;
 // https://github.com/keep-starknet-strange/piltover
 
 impl StarknetSettlementClient {
-    pub async fn with_settings(settings: &impl SettingsProvider) -> Self {
-        let settlement_cfg: StarknetSettlementConfig = settings.get_settings(SETTLEMENT_SETTINGS_NAME).unwrap();
+    pub async fn new_with_settings(settings: &impl Settings) -> Self {
+        let settlement_cfg = StarknetSettlementConfig::new_with_settings(settings);
         let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(settlement_cfg.rpc_url)));
 
-        let public_key = get_env_var_or_panic(ENV_PUBLIC_KEY);
+        let public_key =
+            settings.get_settings(ENV_PUBLIC_KEY).expect("Not able to get ENV_PUBLIC_KEY from given settings.");
         let signer_address = FieldElement::from_hex_be(&public_key).expect("invalid signer address");
 
         // TODO: Very insecure way of building the signer. Needs to be adjusted.
-        let private_key = get_env_var_or_panic(ENV_PRIVATE_KEY);
+        let private_key =
+            settings.get_settings(ENV_PRIVATE_KEY).expect("Not able to get ENV_PRIVATE_KEY from given settings.");
         let signer = FieldElement::from_hex_be(&private_key).expect("Invalid private key");
         let signer = LocalWallet::from(SigningKey::from_secret_scalar(signer));
 

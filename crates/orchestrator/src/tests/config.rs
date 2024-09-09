@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use crate::config::{
-    build_alert_client, build_da_client, build_prover_service, build_settlement_client, config_force_init, Config,
+    build_alert_client, build_da_client, build_prover_service, build_settlement_client, config_force_init,
+    get_aws_config, Config, ProviderConfig,
 };
 use crate::data_storage::DataStorage;
 use da_client_interface::DaClient;
@@ -13,11 +14,10 @@ use settlement_client_interface::SettlementClient;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Url};
 use utils::env_utils::get_env_var_or_panic;
-use utils::settings::default::DefaultSettingsProvider;
+use utils::settings::env::EnvSettingsProvider;
 
-use crate::database::mongodb::config::MongoDbConfig;
 use crate::database::mongodb::MongoDb;
-use crate::database::{Database, DatabaseConfig};
+use crate::database::Database;
 use crate::queue::sqs::SqsQueue;
 use crate::queue::QueueProvider;
 use crate::tests::common::{create_sns_arn, create_sqs_queues, drop_database, get_storage_client};
@@ -111,16 +111,17 @@ impl TestConfigBuilder {
         dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
 
         let server = MockServer::start();
-        let settings_provider = DefaultSettingsProvider {};
+        let settings_provider = EnvSettingsProvider {};
+        let aws_config = get_aws_config(&settings_provider).await;
 
         // init database
         if self.database.is_none() {
-            self.database = Some(Box::new(MongoDb::new(MongoDbConfig::new_from_env()).await));
+            self.database = Some(Box::new(MongoDb::new_with_settings(&settings_provider).await));
         }
 
         // init the DA client
         if self.da_client.is_none() {
-            self.da_client = Some(build_da_client().await);
+            self.da_client = Some(build_da_client(&settings_provider).await);
         }
 
         // init the Settings client
@@ -144,7 +145,7 @@ impl TestConfigBuilder {
         }
 
         if self.alerts.is_none() {
-            self.alerts = Some(build_alert_client().await);
+            self.alerts = Some(build_alert_client(&settings_provider, ProviderConfig::AWS(Arc::new(aws_config))).await);
         }
 
         // Deleting and Creating the queues in sqs.
