@@ -333,5 +333,6 @@ async fn fetch_class(
     provider: &SequencerGatewayProvider,
 ) -> Result<(Felt, ContractClass), ProviderError> {
     let contract_class = provider.get_class(starknet_core::types::BlockId::from(block_id), class_hash).await?;
+    log::debug!("got the contract class here {:?}", contract_class);
     Ok((class_hash, contract_class))
 }

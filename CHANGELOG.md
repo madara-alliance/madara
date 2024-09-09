@@ -8,6 +8,7 @@
 - feat: bumping Starknet version from v0.13.2 to Starknet v0.13.2.1
 - fix: replaced old namings with adapted namings
 - refactor: block import is now centrally done in a single crate
+- tests: add e2e tests for rpc read methods
 - tests: add e2e tests for the node
 - fix: fixed some readme stuff
 - feat: gas price provider added for block production
@@ -16,6 +17,7 @@
 - test: tests added for eth client and event subscription
 - feat: Added l1->l2 messaging
 - test: add unitests primitives
+- tests: add e2e tests for the node
 - tests: add tests for the rpcs endpoints
 - fix: pending contract storage not stored properly
 - test: add tests crate `db`
