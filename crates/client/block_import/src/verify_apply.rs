@@ -12,7 +12,7 @@ use starknet_types_core::hash::{Poseidon, StarkHash};
 
 use crate::{
     BlockImportError, BlockImportResult, PendingBlockImportResult, PreValidatedBlock, PreValidatedPendingBlock,
-    RayonPool, UnverifiedHeader, ValidatedCommitments, Validation,
+    RayonPool, UnverifiedHeader, ValidatedCommitments, BlockValidationContext,
 };
 
 mod classes;
@@ -35,7 +35,7 @@ impl VerifyApply {
     pub async fn verify_apply(
         &self,
         block: PreValidatedBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
         let _exclusive = self.mutex.lock().await;
 
@@ -47,7 +47,7 @@ impl VerifyApply {
     pub async fn verify_apply_pending(
         &self,
         block: PreValidatedPendingBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
         let _exclusive = self.mutex.lock().await;
 
@@ -62,7 +62,7 @@ impl VerifyApply {
 pub fn verify_apply_inner(
     backend: &MadaraBackend,
     block: PreValidatedBlock,
-    validation: Validation,
+    validation: BlockValidationContext,
 ) -> Result<BlockImportResult, BlockImportError> {
     // Check block number and block hash against db
     let (block_number, parent_block_hash) =
@@ -100,7 +100,7 @@ pub fn verify_apply_inner(
 pub fn verify_apply_pending_inner(
     backend: &MadaraBackend,
     block: PreValidatedPendingBlock,
-    _validation: Validation,
+    _validation: BlockValidationContext,
 ) -> Result<PendingBlockImportResult, BlockImportError> {
     let (_block_number, parent_block_hash) = check_parent_hash_and_num(backend, block.header.parent_block_hash, None)?;
 
@@ -192,7 +192,7 @@ fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> F
 fn update_tries(
     backend: &MadaraBackend,
     block: &PreValidatedBlock,
-    validation: &Validation,
+    validation: &BlockValidationContext,
     block_number: u64,
 ) -> Result<Felt, BlockImportError> {
     if validation.trust_global_tries {
@@ -232,7 +232,7 @@ fn update_tries(
 /// Returns the block hash and header.
 fn block_hash(
     block: &PreValidatedBlock,
-    validation: &Validation,
+    validation: &BlockValidationContext,
     block_number: u64,
     parent_block_hash: Felt,
     global_state_root: Felt,

@@ -1,7 +1,7 @@
 use std::{io::Write, sync::Arc};
 
 use anyhow::Context;
-use mc_block_import::{BlockImporter, Validation};
+use mc_block_import::{BlockImporter, BlockValidationContext};
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
@@ -79,14 +79,7 @@ impl Service for BlockProductionService {
                     .context("Building genesis block from devnet config")?;
 
                 block_import
-                    .add_block(
-                        genesis_block,
-                        Validation {
-                            trust_transaction_hashes: false,
-                            trust_global_tries: false,
-                            chain_id: backend.chain_config().chain_id.clone(),
-                        },
-                    )
+                    .add_block(genesis_block, BlockValidationContext::new(backend.chain_config().chain_id.clone()))
                     .await
                     .context("Importing devnet genesis block")?;
 

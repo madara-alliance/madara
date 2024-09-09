@@ -53,11 +53,15 @@ const UDC_CLASS_HASH: Felt =
     Felt::from_hex_unchecked("0x07b3e05f48f0c69e4a65ce5e076a66271a527aff2c34ce1083ec6e1526997a69");
 const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
+const UDC_COMPILED_CLASS_HASH: Felt =
+    Felt::from_hex_unchecked("0x44d7658791f01f2936b045c09df6628997437a7321c4f682dddf4ff5380993d");
 
 const ERC20_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json");
 const ERC20_CLASS_HASH: Felt =
     Felt::from_hex_unchecked("0x04ad3c1dc8413453db314497945b6903e1c766495a1e60492d44da9c2a986e4b");
+const ERC20_COMPILED_CLASS_HASH: Felt =
+    Felt::from_hex_unchecked("0x639b7f3c30a7136d13d63c16db7fa15399bd2624d60f2f3ab78d6eae3d6a4e5");
 const ERC20_STRK_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
 const ERC20_ETH_CONTRACT_ADDRESS: Felt =
@@ -66,6 +70,7 @@ const ERC20_ETH_CONTRACT_ADDRESS: Felt =
 const ACCOUNT_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../cairo/target/dev/madara_contracts_AccountUpgradeable.contract_class.json");
 const ACCOUNT_CLASS_HASH: Felt = Felt::from_hex_unchecked("0xFFFFFFAFAFAFAFAFAFA9b9b9b");
+const ACCOUNT_COMPILED_CLASS_HASH: Felt = Felt::from_hex_unchecked("0x138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27");
 
 /// High level description of the genesis block.
 #[derive(Clone, Debug, Default)]
@@ -82,8 +87,8 @@ impl ChainGenesisDescription {
         Self {
             initial_balances: InitialBalances::default(),
             declared_classes: InitiallyDeclaredClasses::default()
-                .with(InitiallyDeclaredClass::new_sierra(UDC_CLASS_HASH, Felt::ONE, UDC_CLASS_DEFINITION))
-                .with(InitiallyDeclaredClass::new_sierra(ERC20_CLASS_HASH, Felt::ONE, ERC20_CLASS_DEFINITION)),
+                .with(InitiallyDeclaredClass::new_sierra(UDC_CLASS_HASH, UDC_COMPILED_CLASS_HASH, UDC_CLASS_DEFINITION))
+                .with(InitiallyDeclaredClass::new_sierra(ERC20_CLASS_HASH, ERC20_COMPILED_CLASS_HASH, ERC20_CLASS_DEFINITION)),
             deployed_contracts: InitiallyDeployedContracts::default()
                 .with(UDC_CONTRACT_ADDRESS, UDC_CLASS_HASH)
                 .with(ERC20_ETH_CONTRACT_ADDRESS, ERC20_CLASS_HASH)
@@ -95,7 +100,7 @@ impl ChainGenesisDescription {
     pub fn add_devnet_contracts(&mut self, n_addr: u64) -> DevnetKeys {
         self.declared_classes.insert(InitiallyDeclaredClass::new_sierra(
             ACCOUNT_CLASS_HASH,
-            Felt::ONE,
+            ACCOUNT_COMPILED_CLASS_HASH,
             ACCOUNT_CLASS_DEFINITION,
         ));
 
@@ -133,7 +138,7 @@ impl ChainGenesisDescription {
 
         Ok(UnverifiedFullBlock {
             header: UnverifiedHeader {
-                parent_block_hash: None,
+                parent_block_hash: Some(Felt::ZERO),
                 sequencer_address: chain_config.sequencer_address.to_felt(),
                 block_timestamp: SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
@@ -157,6 +162,7 @@ impl ChainGenesisDescription {
                 nonces: vec![],
             },
             declared_classes: self.declared_classes.into_loaded_classes()?,
+            unverified_block_number: Some(0),
             ..Default::default()
         })
     }
@@ -165,7 +171,7 @@ impl ChainGenesisDescription {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mc_block_import::{BlockImporter, Validation};
+    use mc_block_import::{BlockImporter, BlockValidationContext};
     use mc_db::MadaraBackend;
     use mc_mempool::block_production::BlockProductionTask;
     use mc_mempool::MempoolProvider;
@@ -283,14 +289,12 @@ mod tests {
         println!("{:?}", block.state_diff);
         tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(importer.add_block(
-                block,
-                Validation {
-                    trust_transaction_hashes: false,
-                    trust_global_tries: false,
-                    chain_id: chain_config.chain_id.clone(),
-                },
-            ))
+            .block_on(
+                importer.add_block(
+                    block,
+                    BlockValidationContext::new(chain_config.chain_id.clone()).trust_class_hashes(true),
+                ),
+            )
             .unwrap();
 
         log::debug!("{:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));

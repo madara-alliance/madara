@@ -126,7 +126,7 @@ impl BlockImporter {
     pub async fn add_block(
         &self,
         block: UnverifiedFullBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
         let block = self.pre_validate(block, validation.clone()).await?;
         self.verify_apply(block, validation).await
@@ -135,7 +135,7 @@ impl BlockImporter {
     pub async fn pre_validate(
         &self,
         block: UnverifiedFullBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<PreValidatedBlock, BlockImportError> {
         pre_validate(&self.pool, block, validation).await
     }
@@ -143,7 +143,7 @@ impl BlockImporter {
     pub async fn verify_apply(
         &self,
         block: PreValidatedBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
         self.verify_apply.verify_apply(block, validation).await
     }
@@ -151,7 +151,7 @@ impl BlockImporter {
     pub async fn pre_validate_pending(
         &self,
         block: UnverifiedPendingFullBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<PreValidatedPendingBlock, BlockImportError> {
         pre_validate_pending(&self.pool, block, validation).await
     }
@@ -159,7 +159,7 @@ impl BlockImporter {
     pub async fn verify_apply_pending(
         &self,
         block: PreValidatedPendingBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
         self.verify_apply.verify_apply_pending(block, validation).await
     }
