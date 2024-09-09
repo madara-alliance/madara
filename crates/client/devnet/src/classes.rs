@@ -1,6 +1,5 @@
 use anyhow::Context;
-use mc_block_import::DeclaredClass;
-use mp_class::ContractClass;
+use mc_block_import::{DeclaredClass, LegacyDeclaredClass, SierraDeclaredClass};
 use mp_state_update::DeclaredClassItem;
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
@@ -96,22 +95,18 @@ impl InitiallyDeclaredClasses {
                             .with_context(make_err_ctx("Deserializing sierra"))?;
                         let class = class.flatten().with_context(make_err_ctx("Flattening sierra"))?;
 
-                        Ok(DeclaredClass {
+                        Ok(DeclaredClass::Sierra(SierraDeclaredClass {
                             class_hash,
-                            contract_class: ContractClass::Sierra(class.into()),
+                            contract_class: class.into(),
                             compiled_class_hash,
-                        })
+                        }))
                     }
                     InitiallyDeclaredClass::Legacy(c) => {
                         let class = serde_json::from_slice::<LegacyContractClass>(&c.definition)
                             .with_context(make_err_ctx("Deserializing legacy"))?;
                         let class = class.compress().context("Compressing legacy")?;
 
-                        Ok(DeclaredClass {
-                            class_hash,
-                            contract_class: ContractClass::Legacy(class.into()),
-                            compiled_class_hash: Felt::ZERO, // no compilation
-                        })
+                        Ok(DeclaredClass::Legacy(LegacyDeclaredClass { class_hash, contract_class: class.into() }))
                     }
                 }
             })

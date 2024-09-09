@@ -54,8 +54,6 @@ anyhow.workspace = true
 async-trait.workspace = true
 hyper.workspace = true
 log.workspace = true
-rayon.workspace = true
-serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 

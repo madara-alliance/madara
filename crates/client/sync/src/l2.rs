@@ -32,6 +32,8 @@ pub enum L2SyncError {
     Db(#[from] MadaraStorageError),
     #[error(transparent)]
     BlockImport(#[from] mc_block_import::BlockImportError),
+    #[error("Unexpected class type for class hash {class_hash:#x}")]
+    UnexpectedClassType { class_hash: Felt },
 }
 
 /// Contains the latest Starknet verified state on L2

@@ -4,7 +4,7 @@ use blockifier::state::state_api::{StateReader, StateResult};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
 use mp_block::BlockId;
-use mp_class::to_blockifier_class;
+use mp_class::ClassInfo;
 use mp_convert::{felt_to_u64, ToFelt};
 use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
@@ -121,16 +121,35 @@ impl StateReader for BlockifierStateAdapter {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
 
-        let Some((_class_info, compiled_class)) =
-            self.backend.get_class(&on_top_of_block_id, &class_hash.to_felt()).map_err(|err| {
-                log::warn!("Failed to retrieve compiled class {class_hash:#}: {err:#}");
-                StateError::StateReadError(format!("Failed to retrieve compiled class {class_hash:#}"))
+        let Some(class_info) =
+            self.backend.get_class_info(&on_top_of_block_id, &class_hash.to_felt()).map_err(|err| {
+                log::warn!("Failed to retrieve class {class_hash:#}: {err:#}");
+                StateError::StateReadError(format!("Failed to retrieve class {class_hash:#}"))
             })?
         else {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
 
-        to_blockifier_class(compiled_class).map_err(StateError::ProgramError)
+        match class_info {
+            ClassInfo::Sierra(info) => {
+                let compiled_class = self
+                    .backend
+                    .get_sierra_compiled(&on_top_of_block_id, &info.compiled_class_hash)
+                    .map_err(|err| {
+                        log::warn!("Failed to retrieve sierra compiled class {class_hash:#}: {err:#}");
+                        StateError::StateReadError(format!("Failed to retrieve compiled class {class_hash:#}"))
+                    })?
+                    .ok_or(StateError::StateReadError(format!(
+                        "Inconsistent state: compiled sierra class {class_hash:#} not found"
+                    )))?;
+                // TODO: convert ClassCompilationError to StateError
+                Ok(compiled_class.to_blockifier_class().map_err(|e| StateError::StateReadError(e.to_string()))?)
+            }
+            ClassInfo::Legacy(info) => {
+                // TODO: convert ClassCompilationError to StateError
+                Ok(info.contract_class.to_blockifier_class().map_err(|e| StateError::StateReadError(e.to_string()))?)
+            }
+        }
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
@@ -148,7 +167,12 @@ impl StateReader for BlockifierStateAdapter {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
 
-        Ok(CompiledClassHash(class_info.compiled_class_hash))
+        match class_info {
+            ClassInfo::Sierra(info) => Ok(CompiledClassHash(info.compiled_class_hash)),
+            ClassInfo::Legacy(_) => {
+                Err(StateError::StateReadError("No compiled class hash for legacy class".to_string()))
+            }
+        }
     }
 }
 

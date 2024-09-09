@@ -199,6 +199,7 @@ mod tests {
             let (blockifier_tx, _classes) = broadcasted_to_blockifier(
                 BroadcastedTransaction::Invoke(tx.clone()),
                 self.backend.chain_config().chain_id.to_felt(),
+                self.backend.chain_config().latest_protocol_version,
             )
             .unwrap();
             let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();
@@ -223,6 +224,7 @@ mod tests {
             let (blockifier_tx, _classes) = broadcasted_to_blockifier(
                 BroadcastedTransaction::Declare(tx.clone()),
                 self.backend.chain_config().chain_id.to_felt(),
+                self.backend.chain_config().latest_protocol_version,
             )
             .unwrap();
             let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();
@@ -246,6 +248,7 @@ mod tests {
             let (blockifier_tx, _classes) = broadcasted_to_blockifier(
                 BroadcastedTransaction::DeployAccount(tx.clone()),
                 self.backend.chain_config().chain_id.to_felt(),
+                self.backend.chain_config().latest_protocol_version,
             )
             .unwrap();
             let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();

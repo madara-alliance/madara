@@ -165,7 +165,11 @@ fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
 
 impl MempoolProvider for Mempool {
     fn accept_invoke_tx(&self, tx: BroadcastedInvokeTransaction) -> Result<InvokeTransactionResult, Error> {
-        let (tx, classes) = broadcasted_to_blockifier(BroadcastedTransaction::Invoke(tx), self.chain_id())?;
+        let (tx, classes) = broadcasted_to_blockifier(
+            BroadcastedTransaction::Invoke(tx),
+            self.chain_id(),
+            self.backend.chain_config().latest_protocol_version,
+        )?;
 
         let res = InvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
         self.accept_tx(tx, classes)?;
@@ -173,7 +177,11 @@ impl MempoolProvider for Mempool {
     }
 
     fn accept_declare_tx(&self, tx: BroadcastedDeclareTransaction) -> Result<DeclareTransactionResult, Error> {
-        let (tx, classes) = broadcasted_to_blockifier(BroadcastedTransaction::Declare(tx), self.chain_id())?;
+        let (tx, classes) = broadcasted_to_blockifier(
+            BroadcastedTransaction::Declare(tx),
+            self.chain_id(),
+            self.backend.chain_config().latest_protocol_version,
+        )?;
 
         let res = DeclareTransactionResult {
             transaction_hash: transaction_hash(&tx),
@@ -187,7 +195,11 @@ impl MempoolProvider for Mempool {
         &self,
         tx: BroadcastedDeployAccountTransaction,
     ) -> Result<DeployAccountTransactionResult, Error> {
-        let (tx, classes) = broadcasted_to_blockifier(BroadcastedTransaction::DeployAccount(tx), self.chain_id())?;
+        let (tx, classes) = broadcasted_to_blockifier(
+            BroadcastedTransaction::DeployAccount(tx),
+            self.chain_id(),
+            self.backend.chain_config().latest_protocol_version,
+        )?;
 
         let res = DeployAccountTransactionResult {
             transaction_hash: transaction_hash(&tx),

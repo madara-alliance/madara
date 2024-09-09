@@ -1,6 +1,4 @@
-use std::collections::HashSet;
-
-use mp_class::{ClassInfo, CompiledClass};
+use mp_class::{ClassInfo, CompiledSierra, ConvertedClass};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use rocksdb::WriteOptions;
 use starknet_types_core::felt::Felt;
@@ -85,68 +83,51 @@ impl MadaraBackend {
         Ok(self.get_class_info(id, class_hash)?.is_some())
     }
 
-    pub fn get_class(
+    pub fn get_sierra_compiled(
         &self,
         id: &impl DbBlockIdResolvable,
         class_hash: &Felt,
-    ) -> Result<Option<(ClassInfo, CompiledClass)>, MadaraStorageError> {
-        let Some(id) = id.resolve_db_block_id(self)? else { return Ok(None) };
-        let Some(info) = self.get_class_info(&id, class_hash)? else { return Ok(None) };
+    ) -> Result<Option<CompiledSierra>, MadaraStorageError> {
+        let Some(requested_id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
-        log::debug!("get_class {:?} {:#x}", id, class_hash);
-        let compiled_class = self
-            .class_db_get_encoded_kv::<CompiledClass>(
-                id.is_pending(),
-                class_hash,
-                Column::PendingClassCompiled,
-                Column::ClassCompiled,
-            )?
-            .ok_or(MadaraStorageError::InconsistentStorage("Class compiled not found while class info is".into()))?;
+        log::debug!("sierra compiled {requested_id:?} {class_hash:#x}");
 
-        Ok(Some((info, compiled_class)))
+        let Some(compiled) = self.class_db_get_encoded_kv::<CompiledSierra>(
+            requested_id.is_pending(),
+            class_hash,
+            Column::PendingClassCompiled,
+            Column::ClassCompiled,
+        )?
+        else {
+            return Ok(None);
+        };
+
+        Ok(Some(compiled))
     }
 
     /// NB: This functions needs to run on the rayon thread pool
     pub(crate) fn store_classes(
         &self,
         block_id: DbBlockId,
-        class_infos: &[(Felt, ClassInfo)],
-        class_compiled: &[(Felt, CompiledClass)],
+        converted_classes: &[ConvertedClass],
         col_info: Column,
         col_compiled: Column,
     ) -> Result<(), MadaraStorageError> {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 
-        // Check if the class is already in the db, if so, skip it
-        // This check is needed because blocks are fetched and converted in parallel
-        // TODO(merge): this should be removed after block import refactor
-        let ignore_class: HashSet<_> = if let DbBlockId::BlockN(block_n) = block_id {
-            class_infos
-                .iter()
-                .filter_map(|(key, _)| match self.get_class_info(&DbBlockId::BlockN(block_n), key) {
-                    Ok(Some(_)) => Some(*key),
-                    _ => None,
-                })
-                .collect()
-        } else {
-            HashSet::new()
-        };
-
-        class_infos.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
+        converted_classes.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(col_info),
             |col, chunk| {
                 let mut batch = WriteBatchWithTransaction::default();
-                for (key, value) in chunk {
-                    if ignore_class.contains(key) {
-                        continue;
-                    }
-                    let key_bin = bincode::serialize(key)?;
+                for converted_class in chunk {
+                    let class_hash = converted_class.class_hash();
+                    let key_bin = bincode::serialize(&class_hash)?;
                     // TODO: find a way to avoid this allocation
                     batch.put_cf(
                         col,
                         &key_bin,
-                        bincode::serialize(&ClassInfoWithBlockNumber { class_info: value.clone(), block_id })?,
+                        bincode::serialize(&ClassInfoWithBlockNumber { class_info: converted_class.info(), block_id })?,
                     );
                 }
                 self.db.write_opt(batch, &writeopts)?;
@@ -154,22 +135,27 @@ impl MadaraBackend {
             },
         )?;
 
-        class_compiled.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
-            || self.db.get_column(col_compiled),
-            |col, chunk| {
-                let mut batch = WriteBatchWithTransaction::default();
-                for (key, value) in chunk {
-                    if ignore_class.contains(key) {
-                        continue;
+        converted_classes
+            .iter()
+            .filter_map(|converted_class| match converted_class {
+                ConvertedClass::Sierra(sierra) => Some((sierra.class_hash, sierra.compiled.clone())),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .par_chunks(DB_UPDATES_BATCH_SIZE)
+            .try_for_each_init(
+                || self.db.get_column(col_compiled),
+                |col, chunk| {
+                    let mut batch = WriteBatchWithTransaction::default();
+                    for (key, value) in chunk {
+                        let key_bin = bincode::serialize(key)?;
+                        // TODO: find a way to avoid this allocation
+                        batch.put_cf(col, &key_bin, bincode::serialize(&value)?);
                     }
-                    let key_bin = bincode::serialize(key)?;
-                    // TODO: find a way to avoid this allocation
-                    batch.put_cf(col, &key_bin, bincode::serialize(&value)?);
-                }
-                self.db.write_opt(batch, &writeopts)?;
-                Ok::<_, MadaraStorageError>(())
-            },
-        )?;
+                    self.db.write_opt(batch, &writeopts)?;
+                    Ok::<_, MadaraStorageError>(())
+                },
+            )?;
 
         Ok(())
     }
@@ -178,28 +164,19 @@ impl MadaraBackend {
     pub(crate) fn class_db_store_block(
         &self,
         block_number: u64,
-        class_infos: &[(Felt, ClassInfo)],
-        class_compiled: &[(Felt, CompiledClass)],
+        converted_classes: &[ConvertedClass],
     ) -> Result<(), MadaraStorageError> {
-        self.store_classes(
-            DbBlockId::BlockN(block_number),
-            class_infos,
-            class_compiled,
-            Column::ClassInfo,
-            Column::ClassCompiled,
-        )
+        self.store_classes(DbBlockId::BlockN(block_number), converted_classes, Column::ClassInfo, Column::ClassCompiled)
     }
 
     /// NB: This functions needs to run on the rayon thread pool
     pub(crate) fn class_db_store_pending(
         &self,
-        class_infos: &[(Felt, ClassInfo)],
-        class_compiled: &[(Felt, CompiledClass)],
+        converted_classes: &[ConvertedClass],
     ) -> Result<(), MadaraStorageError> {
         self.store_classes(
             DbBlockId::Pending,
-            class_infos,
-            class_compiled,
+            converted_classes,
             Column::PendingClassInfo,
             Column::PendingClassCompiled,
         )
