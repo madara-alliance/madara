@@ -27,6 +27,7 @@ bincode = { workspace = true }
 bytes = "1.6.0"
 c-kzg = { workspace = true }
 cairo-vm = { workspace = true }
+chrono = { workspace = true }
 color-eyre = { workspace = true }
 da-client-interface = { workspace = true }
 dotenvy = { workspace = true }

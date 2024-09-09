@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Added
 
+- database timestamps
 - alerts module.
 - Tests for Settlement client.
 - Worker queues to listen for trigger events.

@@ -6,6 +6,7 @@ use ::uuid::Uuid;
 use aws_config::Region;
 use aws_sdk_sns::error::SdkError;
 use aws_sdk_sns::operation::create_topic::CreateTopicError;
+use chrono::{SubsecRound, Utc};
 use mongodb::Client;
 use rstest::*;
 use serde::Deserialize;
@@ -32,6 +33,8 @@ pub fn default_job_item() -> JobItem {
         external_id: ExternalId::String("0".to_string().into_boxed_str()),
         metadata: HashMap::new(),
         version: 0,
+        created_at: Utc::now().round_subsecs(0),
+        updated_at: Utc::now().round_subsecs(0),
     }
 }
 

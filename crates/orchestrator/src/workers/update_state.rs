@@ -63,6 +63,7 @@ impl UpdateStateWorker {
 mod test_update_state_worker_utils {
     use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
     use crate::workers::update_state::UpdateStateWorker;
+    use chrono::{SubsecRound, Utc};
     use rstest::rstest;
     use uuid::Uuid;
 
@@ -78,6 +79,8 @@ mod test_update_state_worker_utils {
                 external_id: ExternalId::Number(0),
                 metadata: Default::default(),
                 version: 0,
+                created_at: Utc::now().round_subsecs(0),
+                updated_at: Utc::now().round_subsecs(0),
             });
         }
 

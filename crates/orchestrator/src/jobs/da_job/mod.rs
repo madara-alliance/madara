@@ -3,6 +3,7 @@ use std::ops::{Add, Mul, Rem};
 use std::str::FromStr;
 
 use async_trait::async_trait;
+use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::WrapErr;
 use lazy_static::lazy_static;
 use num_bigint::{BigUint, ToBigUint};
@@ -71,6 +72,8 @@ impl Job for DaJob {
             external_id: String::new().into(),
             metadata,
             version: 0,
+            created_at: Utc::now().round_subsecs(0),
+            updated_at: Utc::now().round_subsecs(0),
         })
     }
 

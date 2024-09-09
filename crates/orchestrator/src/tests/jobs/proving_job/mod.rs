@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use chrono::{SubsecRound, Utc};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -92,6 +93,8 @@ async fn test_process_job() {
                     external_id: String::new().into(),
                     metadata: HashMap::new(),
                     version: 0,
+                    created_at: Utc::now().round_subsecs(0),
+                    updated_at: Utc::now().round_subsecs(0)
                 }
             )
             .await

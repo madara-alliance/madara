@@ -3,6 +3,7 @@ use futures::TryStreamExt;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use mongodb::bson::{Bson, Document};
@@ -64,17 +65,22 @@ impl MongoDb {
         if result.modified_count == 0 {
             return Err(eyre!("Failed to update job. Job version is likely outdated"));
         }
-        self.update_job_version(current_job).await?;
+        self.post_job_update(current_job).await?;
         Ok(())
     }
 
+    // TODO : remove this function
+    // Do this process in single db transaction.
     /// To update the document version
-    async fn update_job_version(&self, current_job: &JobItem) -> Result<()> {
+    async fn post_job_update(&self, current_job: &JobItem) -> Result<()> {
         let filter = doc! {
             "id": current_job.id,
         };
         let combined_update = doc! {
-            "$inc": { "version": 1 }
+            "$inc": { "version": 1 },
+            "$set" : {
+                "updated_at": Utc::now().round_subsecs(0)
+            }
         };
         let options = UpdateOptions::builder().upsert(false).build();
         let result = self.get_job_collection().update_one(filter, combined_update, options).await?;

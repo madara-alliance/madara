@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use ::utils::collections::{has_dup, is_sorted};
 use async_trait::async_trait;
 use cairo_vm::Felt252;
+use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use snos::io::output::StarknetOsOutput;
 use thiserror::Error;
@@ -86,6 +87,8 @@ impl Job for StateUpdateJob {
             // we don't do one job per state update as that makes nonce management complicated
             metadata,
             version: 0,
+            created_at: Utc::now().round_subsecs(0),
+            updated_at: Utc::now().round_subsecs(0),
         })
     }
 

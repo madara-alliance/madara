@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
+use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::WrapErr;
 use prover_client_interface::{Task, TaskStatus};
 use thiserror::Error;
@@ -46,6 +47,8 @@ impl Job for ProvingJob {
             external_id: String::new().into(),
             metadata,
             version: 0,
+            created_at: Utc::now().round_subsecs(0),
+            updated_at: Utc::now().round_subsecs(0),
         })
     }
 
