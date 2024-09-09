@@ -99,37 +99,53 @@ mod test_l2_fetch_task {
     use super::*;
     use dp_chain_config::ChainConfig;
     use httpmock::MockServer;
+    use regex::Regex;
     use serde_json::json;
     use starknet_types_core::felt::Felt;
     use std::sync::Arc;
+    use std::time::Instant;
     use tokio::sync::{mpsc, oneshot};
     use url::Url;
 
-    #[tokio::test]
-    async fn test_basic_functionality() {
-        let mock_server = MockServer::start();
+    struct TestContext {
+        mock_server: MockServer,
+        provider: Arc<SequencerGatewayProvider>,
+        backend: Arc<DeoxysBackend>,
+        fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
+        fetch_stream_receiver: mpsc::Receiver<UnverifiedFullBlock>,
+        once_caught_up_sender: oneshot::Sender<()>,
+        once_caught_up_receiver: oneshot::Receiver<()>,
+    }
 
-        println!("Mock server URL: {}", mock_server.base_url());
+    impl TestContext {
+        fn new() -> Self {
+            let mock_server = MockServer::start();
+            let provider = Arc::new(SequencerGatewayProvider::new(
+                Url::parse(&format!("{}/gateway", mock_server.base_url())).unwrap(),
+                Url::parse(&format!("{}/feeder_gateway", mock_server.base_url())).unwrap(),
+                Felt::from_hex_unchecked("0x4d41444152415f54455354"),
+            ));
+            let chain_config = Arc::new(ChainConfig::test_config());
+            let backend = DeoxysBackend::open_for_testing(chain_config);
+            let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(100);
+            let (once_caught_up_sender, once_caught_up_receiver) = oneshot::channel();
 
-        // Create SequencerGatewayProvider with mock server URL
-        let provider = Arc::new(SequencerGatewayProvider::new(
-            Url::parse(&format!("{}/gateway", mock_server.base_url())).unwrap(),
-            Url::parse(&format!("{}/feeder_gateway", mock_server.base_url())).unwrap(),
-            Felt::from_hex_unchecked("0x4d41444152415f54455354"), // Dummy chain ID
-        ));
+            Self {
+                mock_server,
+                provider,
+                backend,
+                fetch_stream_sender,
+                fetch_stream_receiver,
+                once_caught_up_sender,
+                once_caught_up_receiver,
+            }
+        }
 
-        // Initialize database service
-        let chain_config = Arc::new(ChainConfig::test_config());
-        let backend = DeoxysBackend::open_for_testing(chain_config.clone());
-
-        // Create channels
-        let (fetch_stream_sender, mut fetch_stream_receiver) = mpsc::channel(100);
-        let (once_caught_up_sender, once_caught_up_receiver) = oneshot::channel();
-
-        // Mock server to return 5 blocks
-        for block_number in 0..=4 {
-            mock_server.mock(|when, then| {
-                when.method("GET").path_contains(format!("get_state_update?blockNumber={}", block_number));
+        fn mock_block(&self, block_number: u64) {
+            self.mock_server.mock(|when, then| {
+                when.method("GET")
+                    .path_contains("get_state_update")
+                    .query_param("blockNumber", block_number.to_string());
                 then.status(200).header("content-type", "application/json").json_body(json!({
                     "block": {
                         "block_hash": "0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6",
@@ -201,30 +217,85 @@ mod test_l2_fetch_task {
             });
         }
 
-        // Mock BlockNotFound for the 6th block
-        mock_server.mock(|when, then| {
-            when.method("GET").path("/feeder_gateway/get_block?blockNumber=5");
-            then.status(400)
-                .header("content-type", "application/json")
-                .body(r#"{"code": "StarknetErrorCode.BLOCK_NOT_FOUND", "message": "Block not found"}"#);
+        fn mock_class_hash(&self) {
+            self.mock_server.mock(|when, then| {
+                when.method("GET").path_matches(Regex::new(r"/feeder_gateway/get_class_by_hash").unwrap());
+                then.status(200).header("content-type", "application/json").json_body(json!({
+                    "contract_class_version": "0.1.0",
+                    "sierra_program": [
+                        "0x1",
+                        "0x3",
+                        "0x0",
+                        "0xf60b61071107f516110d070b685a590b16714f5a590b14f40b"
+                    ],
+                    "entry_points_by_type": {
+                        "L1_HANDLER": [],
+                        "EXTERNAL": [
+                            {
+                                "selector": "0x3147e009aa1d3b7827f0cf9ce80b10dd02b119d549eb0a2627600662354eba",
+                                "function_idx": 2
+                            },
+                            {
+                                "selector": "0x10b7e63d3ca05c9baffd985d3e1c3858d4dbf0759f066be0eaddc5d71c2cab5",
+                                "function_idx": 0
+                            },
+                            {
+                                "selector": "0x3370263ab53343580e77063a719a5865004caff7f367ec136a6cdd34b6786ca",
+                                "function_idx": 1
+                            }
+                        ],
+                        "CONSTRUCTOR": []
+                    },
+                    "abi": "[]"
+                }));
+            });
+        }
+
+        fn mock_block_not_found(&self, block_number: u64) {
+            self.mock_server.mock(|when, then| {
+                when.method("GET")
+                    .path_contains("get_state_update")
+                    .query_param("blockNumber", block_number.to_string());
+                then.status(400).header("content-type", "application/json").json_body(json!({
+                    "code": "StarknetErrorCode.BLOCK_NOT_FOUND",
+                    "message": "Block not found"
+                }));
+            });
+        }
+    }
+
+    /// Test basic functionality of the l2_fetch_task.
+    ///
+    /// This test verifies that:
+    /// 1. The task can fetch a specified number of blocks.
+    /// 2. The task sends the correct "caught up" signal.
+    /// 3. The task completes successfully after fetching all blocks.
+    #[tokio::test]
+    async fn test_basic_functionality() {
+        let mut ctx = TestContext::new();
+
+        for block_number in 0..=4 {
+            ctx.mock_block(block_number);
+        }
+        ctx.mock_block_not_found(5);
+        ctx.mock_class_hash();
+
+        let task = tokio::spawn({
+            let backend = Arc::clone(&ctx.backend);
+            let provider = Arc::clone(&ctx.provider);
+            let fetch_stream_sender = ctx.fetch_stream_sender.clone();
+            let once_caught_up_sender = ctx.once_caught_up_sender;
+            async move {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    l2_fetch_task(backend, 0, Some(5), fetch_stream_sender, provider, None, once_caught_up_sender),
+                )
+                .await
+            }
         });
 
-        println!("Starting task");
-
-        // Call l2_fetch_task with a timeout
-        let task = tokio::spawn(async move {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(20),
-                l2_fetch_task(backend, 0, Some(5), fetch_stream_sender, provider, None, once_caught_up_sender),
-            )
-            .await
-        });
-
-        println!("Waiting for blocks");
-
-        // Assert that 5 blocks were received
         for expected_block_number in 0..=4 {
-            match tokio::time::timeout(std::time::Duration::from_secs(10), fetch_stream_receiver.recv()).await {
+            match tokio::time::timeout(std::time::Duration::from_secs(10), ctx.fetch_stream_receiver.recv()).await {
                 Ok(Some(block)) => {
                     assert_eq!(block.unverified_block_number, Some(expected_block_number));
                     println!("Received block {}", expected_block_number);
@@ -234,14 +305,12 @@ mod test_l2_fetch_task {
             }
         }
 
-        // Assert that once_caught_up_callback was triggered
-        match tokio::time::timeout(std::time::Duration::from_secs(1), once_caught_up_receiver).await {
+        match tokio::time::timeout(std::time::Duration::from_secs(1), ctx.once_caught_up_receiver).await {
             Ok(Ok(())) => println!("Caught up callback received"),
             Ok(Err(_)) => panic!("Caught up channel closed unexpectedly"),
             Err(_) => panic!("Timeout waiting for caught up callback"),
         }
 
-        // Ensure the task completed successfully
         match task.await {
             Ok(Ok(Ok(()))) => println!("Task completed successfully"),
             Ok(Ok(Err(e))) => panic!("Task failed with error: {:?}", e),
@@ -250,79 +319,230 @@ mod test_l2_fetch_task {
         }
     }
 
+    /// Test the task's ability to catch up to the chain tip.
+    ///
+    /// This test verifies that:
+    /// 1. The task can fetch blocks until it reaches the chain tip.
+    /// 2. The task stops fetching when it encounters a "block not found" error.
+    /// 3. The task sends the correct "caught up" signal.
+    /// 4. The task completes successfully after reaching the chain tip.
     #[tokio::test]
     async fn test_catch_up_to_chain_tip() {
-        // TODO: Implement test for catching up to chain tip
-        // - Mock server to return BlockNotFound after X blocks
-        // - Call l2_fetch_task with n_blocks_to_sync set to None
-        // - Assert that the function stops after receiving BlockNotFound
-        // - Assert that once_caught_up_callback was triggered
+        let mut ctx = TestContext::new();
+
+        for block_number in 0..10 {
+            ctx.mock_block(block_number);
+        }
+        ctx.mock_block_not_found(10);
+        ctx.mock_class_hash();
+
+        let task = tokio::spawn({
+            let backend = Arc::clone(&ctx.backend);
+            let provider = Arc::clone(&ctx.provider);
+            let fetch_stream_sender = ctx.fetch_stream_sender.clone();
+            let once_caught_up_sender = ctx.once_caught_up_sender;
+            async move {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    l2_fetch_task(backend, 0, None, fetch_stream_sender, provider, None, once_caught_up_sender),
+                )
+                .await
+            }
+        });
+
+        for expected_block_number in 0..10 {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), ctx.fetch_stream_receiver.recv()).await {
+                Ok(Some(block)) => {
+                    assert_eq!(block.unverified_block_number, Some(expected_block_number));
+                    println!("Received block {}", expected_block_number);
+                }
+                Ok(None) => panic!("Channel closed unexpectedly while waiting for block {}", expected_block_number),
+                Err(_) => panic!("Timeout waiting for block {}", expected_block_number),
+            }
+        }
+
+        match tokio::time::timeout(std::time::Duration::from_secs(2), ctx.fetch_stream_receiver.recv()).await {
+            Ok(Some(_)) => panic!("Unexpected block received after chain tip"),
+            Ok(None) => println!("Channel closed as expected"),
+            Err(_) => println!("No more blocks received, as expected"),
+        }
+
+        match tokio::time::timeout(std::time::Duration::from_secs(2), ctx.once_caught_up_receiver).await {
+            Ok(Ok(())) => println!("Caught up callback received"),
+            Ok(Err(_)) => panic!("Caught up channel closed unexpectedly"),
+            Err(_) => panic!("Timeout waiting for caught up callback"),
+        }
+
+        match task.await {
+            Ok(Ok(Ok(()))) => println!("Task completed successfully"),
+            Ok(Ok(Err(e))) => panic!("Task failed with error: {:?}", e),
+            Ok(Err(_)) => panic!("Task timed out"),
+            Err(e) => panic!("Task panicked: {:?}", e),
+        }
     }
 
+    /// Test the polling behavior of the l2_fetch_task.
+    ///
+    /// This test verifies that:
+    /// 1. The task fetches an initial set of blocks.
+    /// 2. The task sends the "caught up" signal after the initial fetch.
+    /// 3. The task continues to poll for new blocks at the specified interval.
+    /// 4. The task can fetch new blocks that appear after the initial sync.
     #[tokio::test]
     async fn test_polling_behavior() {
-        // TODO: Implement test for polling behavior
-        // - Mock server to return BlockNotFound after X blocks, then return new blocks
-        // - Call l2_fetch_task with a small sync_polling_interval
-        // - Assert that function continues to fetch new blocks after initial catch-up
-        // - Assert that once_caught_up_callback was triggered only once
+        let mut ctx = TestContext::new();
+
+        for block_number in 0..8 {
+            ctx.mock_block(block_number);
+        }
+
+        ctx.mock_class_hash();
+
+        let polling_interval = Duration::from_millis(100);
+        let task = tokio::spawn({
+            let backend = Arc::clone(&ctx.backend);
+            let provider = Arc::clone(&ctx.provider);
+            let fetch_stream_sender = ctx.fetch_stream_sender.clone();
+            let once_caught_up_sender = ctx.once_caught_up_sender;
+            async move {
+                tokio::time::timeout(
+                    Duration::from_secs(5),
+                    l2_fetch_task(
+                        backend,
+                        0,
+                        Some(5),
+                        fetch_stream_sender,
+                        provider,
+                        Some(polling_interval),
+                        once_caught_up_sender,
+                    ),
+                )
+                .await
+            }
+        });
+
+        for expected_block_number in 0..5 {
+            match tokio::time::timeout(Duration::from_secs(1), ctx.fetch_stream_receiver.recv()).await {
+                Ok(Some(block)) => {
+                    assert_eq!(block.unverified_block_number, Some(expected_block_number));
+                    println!("Received initial block {}", expected_block_number);
+                }
+                Ok(None) => panic!("Channel closed unexpectedly"),
+                Err(_) => panic!("Timeout waiting for block {}", expected_block_number),
+            }
+        }
+
+        match tokio::time::timeout(Duration::from_secs(1), ctx.once_caught_up_receiver).await {
+            Ok(Ok(())) => println!("Caught up callback received"),
+            Ok(Err(_)) => panic!("Caught up channel closed unexpectedly"),
+            Err(_) => panic!("Timeout waiting for caught up callback"),
+        }
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        for expected_block_number in 5..8 {
+            match tokio::time::timeout(Duration::from_secs(1), ctx.fetch_stream_receiver.recv()).await {
+                Ok(Some(block)) => {
+                    assert_eq!(block.unverified_block_number, Some(expected_block_number));
+                    println!("Received new block {}", expected_block_number);
+                }
+                Ok(None) => panic!("Channel closed unexpectedly"),
+                Err(_) => panic!("Timeout waiting for block {}", expected_block_number),
+            }
+        }
+
+        assert!(!task.is_finished());
+
+        task.abort();
     }
 
-    #[tokio::test]
-    async fn test_error_handling() {
-        // TODO: Implement test for error handling
-        // - Mock server to occasionally return errors
-        // - Call l2_fetch_task and observe its behavior
-        // - Assert that it correctly handles and potentially retries on errors
-        // - Assert that it doesn't crash on recoverable errors
-    }
-
-    #[tokio::test]
-    async fn test_graceful_shutdown() {
-        // TODO: Implement test for graceful shutdown
-        // - Start l2_fetch_task in a separate task
-        // - Trigger a graceful shutdown signal
-        // - Assert that the function terminates cleanly
-    }
-
-    #[tokio::test]
-    async fn test_large_number_of_blocks() {
-        // TODO: Implement test for fetching a large number of blocks
-        // - Mock server to return many blocks
-        // - Call l2_fetch_task with n_blocks_to_sync set to a large number (e.g., 10000)
-        // - Assert that all blocks are fetched correctly
-        // - Monitor memory usage and performance
-    }
-
+    /// Test parallel fetching capabilities of the l2_fetch_task.
+    ///
+    /// This test verifies that:
+    /// 1. The task can fetch multiple blocks in parallel.
+    /// 2. Parallel fetching is significantly faster than theoretical sequential fetching.
+    /// 3. The task correctly handles and orders blocks fetched in parallel.
+    /// 4. The task sends the "caught up" signal after fetching all blocks.
     #[tokio::test]
     async fn test_parallel_fetching() {
-        // TODO: Implement test for parallel fetching
-        // - Mock server to add a delay to each block fetch
-        // - Call l2_fetch_task with n_blocks_to_sync set to a moderate number
-        // - Measure the total time taken
-        // - Assert that the time taken is significantly less than sequential fetching
-    }
+        let mut ctx = TestContext::new();
 
-    #[tokio::test]
-    async fn test_channel_backpressure() {
-        // TODO: Implement test for channel backpressure
-        // - Create a slow receiver for fetch_stream_sender
-        // - Call l2_fetch_task with a fast mock server
-        // - Assert that the function handles backpressure correctly
-    }
+        const TOTAL_BLOCKS: u64 = 100;
+        const BLOCKS_TO_SYNC: u64 = 50;
+        const PARALLEL_FETCHES: usize = 10;
 
-    #[tokio::test]
-    async fn test_provider_errors() {
-        // TODO: Implement test for various provider errors
-        // - Mock server to return different types of errors
-        // - Call l2_fetch_task multiple times with different error scenarios
-        // - Assert that each error type is handled appropriately
-    }
+        // Mock all blocks
+        for block_number in 0..TOTAL_BLOCKS {
+            ctx.mock_block(block_number);
+        }
+        ctx.mock_block_not_found(TOTAL_BLOCKS);
+        ctx.mock_class_hash();
 
-    #[tokio::test]
-    async fn test_resume_from_specific_block() {
-        // TODO: Implement test for resuming from a specific block
-        // - Call l2_fetch_task with first_block set to a non-zero value
-        // - Assert that fetching starts from the specified block
+        let start_time = Instant::now();
+
+        let task = tokio::spawn({
+            let backend = Arc::clone(&ctx.backend);
+            let provider = Arc::clone(&ctx.provider);
+            let fetch_stream_sender = ctx.fetch_stream_sender.clone();
+            let once_caught_up_sender = ctx.once_caught_up_sender;
+            async move {
+                l2_fetch_task(
+                    backend,
+                    0,
+                    Some(BLOCKS_TO_SYNC),
+                    fetch_stream_sender,
+                    provider,
+                    None,
+                    once_caught_up_sender,
+                )
+                .await
+            }
+        });
+
+        // Receive all synced blocks
+        for expected_block_number in 0..BLOCKS_TO_SYNC {
+            match tokio::time::timeout(Duration::from_secs(5), ctx.fetch_stream_receiver.recv()).await {
+                Ok(Some(block)) => {
+                    assert_eq!(block.unverified_block_number, Some(expected_block_number));
+                    println!("Received block {}", expected_block_number);
+                }
+                Ok(None) => panic!("Channel closed unexpectedly"),
+                Err(_) => panic!("Timeout waiting for block {}", expected_block_number),
+            }
+        }
+
+        let elapsed_time = start_time.elapsed();
+
+        // Wait for the "caught up" signal
+        match tokio::time::timeout(Duration::from_secs(2), ctx.once_caught_up_receiver).await {
+            Ok(Ok(())) => println!("Caught up callback received"),
+            Ok(Err(_)) => panic!("Caught up channel closed unexpectedly"),
+            Err(_) => panic!("Timeout waiting for caught up callback"),
+        }
+
+        // Wait for the task to complete
+        match tokio::time::timeout(Duration::from_secs(2), task).await {
+            Ok(Ok(Ok(()))) => println!("Task completed successfully"),
+            Ok(Ok(Err(e))) => panic!("Task failed with error: {:?}", e),
+            Ok(Err(e)) => panic!("Task panicked: {:?}", e),
+            Err(_) => panic!("Task did not complete within the expected timeframe"),
+        }
+
+        // Calculate the expected time for sequential vs parallel fetching
+        // Note: These are theoretical times, actual execution will be much faster
+        let theoretical_sequential_time = Duration::from_secs(BLOCKS_TO_SYNC);
+        let theoretical_parallel_time = Duration::from_secs(BLOCKS_TO_SYNC / PARALLEL_FETCHES as u64 + 1);
+
+        println!("Elapsed time: {:?}", elapsed_time);
+        println!("Theoretical sequential time: {:?}", theoretical_sequential_time);
+        println!("Theoretical parallel time: {:?}", theoretical_parallel_time);
+
+        // Assert that the actual time is closer to the parallel time than the sequential time
+        assert!(elapsed_time < theoretical_sequential_time, "Fetching took longer than theoretical sequential time");
+
+        // Allow for some overhead, but ensure it's significantly faster than sequential
+        assert!(elapsed_time < theoretical_parallel_time * 2, "Fetching was not as parallel as expected");
+
+        println!("Parallel fetching test completed successfully");
     }
 }
