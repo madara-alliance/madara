@@ -173,13 +173,18 @@ mod tests {
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
     use mp_convert::felt_to_u128;
-    use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
+    use mp_receipt::{
+        DeclareTransactionReceipt, Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit,
+        TransactionReceipt,
+    };
     use mp_transactions::broadcasted_to_blockifier;
     use rstest::{fixture, rstest};
+    use starknet_core::types::contract::SierraClass;
     use starknet_core::types::{
-        BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
-        BroadcastedInvokeTransactionV3, BroadcastedTransaction, DeclareTransactionResult,
-        DeployAccountTransactionResult, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping,
+        BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV3, BroadcastedDeployAccountTransaction,
+        BroadcastedInvokeTransaction, BroadcastedInvokeTransactionV3, BroadcastedTransaction, DataAvailabilityMode,
+        DeclareTransactionResult, DeployAccountTransactionResult, FlattenedSierraClass, InvokeTransactionResult,
+        ResourceBounds, ResourceBoundsMapping,
     };
     use std::sync::Arc;
 
@@ -214,7 +219,6 @@ mod tests {
             self.mempool.accept_invoke_tx(tx).unwrap()
         }
 
-        #[allow(unused)]
         pub fn sign_and_add_declare_tx(
             &self,
             mut tx: BroadcastedDeclareTransaction,
@@ -312,6 +316,123 @@ mod tests {
 
         DevnetForTesting { backend, contracts, block_production, mempool }
     }
+
+    #[rstest]
+    #[case("../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json")]
+    fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract_path: &str) {
+        println!("{}", chain.contracts);
+
+        let sender_address = &chain.contracts.0[0];
+
+        let sierra_class: SierraClass = serde_json::from_reader(std::fs::File::open(contract_path).unwrap()).unwrap();
+        let flattened_class: FlattenedSierraClass = sierra_class.clone().flatten().unwrap();
+
+        // starkli class-hash madara_contracts_ERC20.compiled_contract_class.json
+        let compiled_contract_class =
+            Felt::from_hex("0x0639b7f3c30a7136d13d63c16db7fa15399bd2624d60f2f3ab78d6eae3d6a4e5").unwrap();
+
+        let declare_txn: BroadcastedDeclareTransaction =
+            BroadcastedDeclareTransaction::V3(BroadcastedDeclareTransactionV3 {
+                sender_address: sender_address.address,
+                compiled_class_hash: compiled_contract_class,
+                signature: vec![],
+                nonce: Felt::ZERO,
+                contract_class: Arc::new(flattened_class),
+                resource_bounds: ResourceBoundsMapping {
+                    l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                },
+                tip: 0,
+                paymaster_data: vec![],
+                account_deployment_data: vec![],
+                nonce_data_availability_mode: DataAvailabilityMode::L1,
+                fee_data_availability_mode: DataAvailabilityMode::L1,
+                is_query: false,
+            });
+
+        let res = chain.sign_and_add_declare_tx(declare_txn, sender_address);
+
+        let calculated_class_hash = sierra_class.clone().class_hash().unwrap();
+
+        assert_eq!(res.class_hash, calculated_class_hash);
+
+        chain.block_production.set_current_pending_tick(1);
+        chain.block_production.on_pending_time_tick().unwrap();
+
+        let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
+
+        assert_eq!(block.inner.transactions.len(), 1);
+        assert_eq!(block.inner.receipts.len(), 1);
+        log::info!("receipt: {:?}", block.inner.receipts[0]);
+
+        let class_hash =
+            chain.backend.get_class_info(&BlockId::Tag(BlockTag::Pending), &calculated_class_hash).unwrap().unwrap();
+        assert_eq!(class_hash.compiled_class_hash, compiled_contract_class);
+
+        let TransactionReceipt::Declare(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
+
+        assert_eq!(
+            receipt,
+            DeclareTransactionReceipt {
+                transaction_hash: res.transaction_hash,
+                messages_sent: vec![],
+                events: vec![Event {
+                    from_address: ERC20_STRK_CONTRACT_ADDRESS,
+                    keys: receipt.events[0].keys.clone(),
+                    data: receipt.events[0].data.clone(),
+                }],
+                execution_resources: receipt.execution_resources.clone(),
+                actual_fee: FeePayment { amount: receipt.actual_fee.amount, unit: PriceUnit::Fri },
+                execution_result: receipt.execution_result.clone(),
+            }
+        );
+    }
+
+    // #[rstest]
+    // #[case("../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json")]
+    // fn test_erc20_declare_and_deploy(mut chain: DevnetForTesting, #[case] contract_path: &str) {
+    //     println!("{}", chain.contracts);
+    //
+    //     let sender_address = &chain.contracts.0[0];
+    //
+    //     let sierra_class: SierraClass = serde_json::from_reader(std::fs::File::open(contract_path).unwrap()).unwrap();
+    //     let flattened_class: FlattenedSierraClass = sierra_class.clone().flatten().unwrap();
+    //
+    //     // starkli class-hash madara_contracts_ERC20.compiled_contract_class.json
+    //     let compiled_contract_class =
+    //         Felt::from_hex("0x0639b7f3c30a7136d13d63c16db7fa15399bd2624d60f2f3ab78d6eae3d6a4e5").unwrap();
+    //
+    //     let declare_txn: BroadcastedDeclareTransaction =
+    //         BroadcastedDeclareTransaction::V3(BroadcastedDeclareTransactionV3 {
+    //             sender_address: sender_address.address,
+    //             compiled_class_hash: compiled_contract_class,
+    //             signature: vec![],
+    //             nonce: Felt::ZERO,
+    //             contract_class: Arc::new(flattened_class),
+    //             resource_bounds: ResourceBoundsMapping {
+    //                 l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+    //                 l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+    //             },
+    //             tip: 0,
+    //             paymaster_data: vec![],
+    //             account_deployment_data: vec![],
+    //             nonce_data_availability_mode: DataAvailabilityMode::L1,
+    //             fee_data_availability_mode: DataAvailabilityMode::L1,
+    //             is_query: false,
+    //         });
+    //
+    //     let declare_res = chain.sign_and_add_declare_tx(declare_txn, sender_address);
+    //
+    //     chain.block_production.set_current_pending_tick(1);
+    //     chain.block_production.on_pending_time_tick().unwrap();
+    //
+    //     let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
+    //     let TransactionReceipt::Declare(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
+    //
+    //     assert_eq!(receipt.execution_result, ExecutionResult::Succeeded);
+    //
+    //     // let deploy_txn:
+    // }
 
     // TODO: add eth transfer
     #[rstest]
