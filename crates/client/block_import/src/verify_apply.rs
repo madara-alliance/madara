@@ -169,7 +169,7 @@ fn check_parent_hash_and_num(
     };
 
     if let Some(parent_block_hash) = parent_block_hash {
-        if parent_block_hash != expected_parent_block_hash {
+        if parent_block_hash != expected_parent_block_hash && !validation.ignore_block_order {
             return Err(BlockImportError::ParentHash { expected: expected_parent_block_hash, got: parent_block_hash });
         }
     }
@@ -284,7 +284,7 @@ fn block_hash(
             return Ok((expected, header));
         }
 
-        if expected != block_hash {
+        if expected != block_hash && !validation.ignore_block_order {
             return Err(BlockImportError::BlockHash { got: block_hash, expected });
         }
     }

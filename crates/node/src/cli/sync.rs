@@ -48,6 +48,10 @@ pub struct SyncParams {
     /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
     #[clap(long, value_name = "NUMBER OF BLOCKS")]
     pub backup_every_n_blocks: Option<u64>,
+
+    /// Ignore the order of the blocks to allow starting at some height.
+    #[clap(long)]
+    pub ignore_block_order: bool,
 }
 
 impl SyncParams {
@@ -71,7 +75,7 @@ impl SyncParams {
             api_key: self.gateway_key.clone(),
             sync_polling_interval: polling,
             n_blocks_to_sync: self.n_blocks_to_sync,
-            ignore_block_order: false,
+            ignore_block_order: self.ignore_block_order,
         }
     }
 }

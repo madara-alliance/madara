@@ -87,7 +87,7 @@ pub enum BlockImportError {
     #[error("Block hash mismatch: expected {expected:#x}, got {got:#x}")]
     BlockHash { got: Felt, expected: Felt },
 
-    #[error("Block order mismatch: database expects to import block #{expected}, trying to import #{got}")]
+    #[error("Block order mismatch: database expects to import block #{expected}, trying to import #{got}. To import a block out of order, use the `ignore_block_order` flag.")]
     LatestBlockN { expected: u64, got: u64 },
     #[error("Parent hash mismatch: expected {expected:#x}, got {got:#x}")]
     ParentHash { got: Felt, expected: Felt },
