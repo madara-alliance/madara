@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     CompressedLegacyContractClass, ContractClass, EntryPointsByType, FlattenedSierraClass, FunctionStateMutability,
     LegacyContractAbiEntry, LegacyContractEntryPoint, LegacyEntryPointsByType, LegacyEventAbiEntry, LegacyEventAbiType,
@@ -9,10 +11,10 @@ impl From<starknet_core::types::ContractClass> for ContractClass {
     fn from(contract_class: starknet_core::types::ContractClass) -> Self {
         match contract_class {
             starknet_core::types::ContractClass::Sierra(flattened_sierra_class) => {
-                ContractClass::Sierra(flattened_sierra_class.into())
+                ContractClass::Sierra(Arc::new(flattened_sierra_class.into()))
             }
             starknet_core::types::ContractClass::Legacy(compressed_legacy_contract_class) => {
-                ContractClass::Legacy(compressed_legacy_contract_class.into())
+                ContractClass::Legacy(Arc::new(compressed_legacy_contract_class.into()))
             }
         }
     }
@@ -22,10 +24,10 @@ impl From<ContractClass> for starknet_core::types::ContractClass {
     fn from(contract_class: ContractClass) -> Self {
         match contract_class {
             ContractClass::Sierra(flattened_sierra_class) => {
-                starknet_core::types::ContractClass::Sierra(flattened_sierra_class.into())
+                starknet_core::types::ContractClass::Sierra((*flattened_sierra_class).clone().into())
             }
             ContractClass::Legacy(compressed_legacy_contract_class) => {
-                starknet_core::types::ContractClass::Legacy(compressed_legacy_contract_class.into())
+                starknet_core::types::ContractClass::Legacy((*compressed_legacy_contract_class).clone().into())
             }
         }
     }

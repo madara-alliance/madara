@@ -1,3 +1,4 @@
+use mp_chain_config::StarknetVersion;
 use starknet_types_core::felt::Felt;
 
 use crate::{
@@ -11,6 +12,7 @@ impl TransactionWithHash {
     pub fn from_broadcasted(
         tx: starknet_core::types::BroadcastedTransaction,
         chain_id: Felt,
+        starknet_version: StarknetVersion,
         class_hash: Option<Felt>,
     ) -> Self {
         let is_query = is_query(&tx);
@@ -21,7 +23,7 @@ impl TransactionWithHash {
             }
             starknet_core::types::BroadcastedTransaction::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
         };
-        let hash = transaction.compute_hash(chain_id, is_query, None);
+        let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
         Self { hash, transaction }
     }
 }

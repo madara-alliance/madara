@@ -6,7 +6,10 @@ use mp_block::{
     Header,
 };
 use mp_chain_config::StarknetVersion;
-use mp_class::{ContractClass, ConvertedClass};
+use mp_class::{
+    class_update::{ClassUpdate, LegacyClassUpdate, SierraClassUpdate},
+    CompressedLegacyContractClass, ConvertedClass, FlattenedSierraClass,
+};
 use mp_receipt::TransactionReceipt;
 use mp_state_update::StateDiff;
 use mp_transactions::Transaction;
@@ -41,10 +44,47 @@ pub struct Validation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DeclaredClass {
+pub enum DeclaredClass {
+    Legacy(LegacyDeclaredClass),
+    Sierra(SierraDeclaredClass),
+}
+
+impl From<ClassUpdate> for DeclaredClass {
+    fn from(value: ClassUpdate) -> Self {
+        match value {
+            ClassUpdate::Legacy(legacy) => DeclaredClass::Legacy(legacy.into()),
+            ClassUpdate::Sierra(sierra) => DeclaredClass::Sierra(sierra.into()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LegacyDeclaredClass {
     pub class_hash: Felt,
-    pub contract_class: ContractClass,
+    pub contract_class: CompressedLegacyContractClass,
+}
+
+impl From<LegacyClassUpdate> for LegacyDeclaredClass {
+    fn from(value: LegacyClassUpdate) -> Self {
+        Self { class_hash: value.class_hash, contract_class: value.contract_class.into() }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SierraDeclaredClass {
+    pub class_hash: Felt,
+    pub contract_class: FlattenedSierraClass,
     pub compiled_class_hash: Felt,
+}
+
+impl From<SierraClassUpdate> for SierraDeclaredClass {
+    fn from(value: SierraClassUpdate) -> Self {
+        Self {
+            class_hash: value.class_hash,
+            contract_class: value.contract_class.into(),
+            compiled_class_hash: value.compiled_class_hash,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]

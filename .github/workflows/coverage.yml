@@ -57,6 +57,7 @@ jobs:
 
       - name: Display coverage
         uses: ewjoachim/coverage-comment-action@v1
+        continue-on-error: true
         with:
           GITHUB_TOKEN: ${{ github.token }}
           COVERAGE_FILE: coverage.cobertura.xml
