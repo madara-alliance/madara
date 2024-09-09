@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: fixed the starting block arg with an ignore_block_order argument
 - refactor: class import from FGW
 - code docs: documented how get_storage_at is implemented
 - fix: L1 rpc <=> network mismatch
