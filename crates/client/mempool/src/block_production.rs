@@ -284,7 +284,6 @@ impl BlockProductionTask {
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
     pub fn on_pending_time_tick(&mut self) -> Result<(), Error> {
         let current_pending_tick = self.current_pending_tick;
-        self.current_pending_tick += 1;
 
         let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
 
@@ -394,12 +393,14 @@ impl BlockProductionTask {
                     if self.current_pending_tick == 0 || self.current_pending_tick >= n_pending_ticks_per_block {
                         // first tick is ignored.
                         // out of range ticks are also ignored.
+                        self.current_pending_tick += 1;
                         continue
                     }
 
                     if let Err(err) = self.on_pending_time_tick() {
                         log::error!("Pending block update task has errored: {err:#}");
                     }
+                    self.current_pending_tick += 1;
                 },
                 _ = graceful_shutdown() => break,
             }
