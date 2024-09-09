@@ -43,6 +43,7 @@ impl ProverClient for SharpProverService {
     async fn get_task_status(&self, task_id: &TaskId) -> Result<TaskStatus, ProverClientError> {
         let (job_key, fact) = split_task_id(task_id)?;
         let res = self.sharp_client.get_job_status(&job_key).await?;
+
         match res.status {
             // TODO : We would need to remove the FAILED, UNKNOWN, NOT_CREATED status as it is not in the sharp client response specs :
             // https://docs.google.com/document/d/1-9ggQoYmjqAtLBGNNR2Z5eLreBmlckGYjbVl0khtpU0

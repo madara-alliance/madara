@@ -1,12 +1,25 @@
 use crate::{config::config, jobs::types::JobStatus};
 use async_trait::async_trait;
 use std::error::Error;
+use thiserror::Error;
 
 pub mod data_submission_worker;
 pub mod proof_registration;
 pub mod proving;
 pub mod snos;
 pub mod update_state;
+
+#[derive(Error, Debug)]
+pub enum WorkerError {
+    #[error("Worker execution failed: {0}")]
+    ExecutionError(String),
+
+    #[error("JSON RPC error: {0}")]
+    JsonRpcError(String),
+
+    #[error("Other error: {0}")]
+    Other(Box<dyn Error + Send + Sync>),
+}
 
 #[async_trait]
 pub trait Worker: Send + Sync {

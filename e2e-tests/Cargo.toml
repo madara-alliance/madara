@@ -4,15 +4,34 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+alloy.workspace = true
+async-trait.workspace = true
+aws-config.workspace = true
+aws-sdk-eventbridge.workspace = true
+aws-sdk-s3.workspace = true
+aws-sdk-sqs.workspace = true
+bytes.workspace = true
+chrono = { workspace = true }
+color-eyre.workspace = true
+dotenvy.workspace = true
+ethereum-settlement-client.workspace = true
+httpmock.workspace = true
+log.workspace = true
+mongodb.workspace = true
 orchestrator.workspace = true
 reqwest = { workspace = true, features = ["json"] }
+rstest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+starknet.workspace = true
 testcontainers.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tokio-stream.workspace = true
 tokio-util.workspace = true
 url.workspace = true
+utils.workspace = true
+uuid.workspace = true
 
 [[test]]
-name = "test_samples"
-path = "test_samples.rs"
+name = "test_orchestrator_workflow"
+path = "tests.rs"

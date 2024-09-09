@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -27,8 +27,11 @@ use mockall::{automock, predicate::*};
 
 use alloy::providers::ProviderBuilder;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
+#[cfg(feature = "testing")]
 use settlement_client_interface::{SettlementClient, SettlementConfig, SettlementVerificationStatus};
-#[cfg(test)]
+#[cfg(not(feature = "testing"))]
+use settlement_client_interface::{SettlementClient, SettlementConfig, SettlementVerificationStatus};
+#[cfg(feature = "testing")]
 use url::Url;
 use utils::env_utils::get_env_var_or_panic;
 
@@ -39,9 +42,7 @@ use crate::conversion::{slice_u8_to_u256, vec_u8_32_to_vec_u256};
 pub mod clients;
 pub mod config;
 pub mod conversion;
-
-#[cfg(test)]
-mod tests;
+pub mod tests;
 pub mod types;
 
 use utils::settings::Settings;
@@ -50,19 +51,19 @@ use {alloy::providers::RootProvider, alloy::transports::http::Http, reqwest::Cli
 pub const ENV_PRIVATE_KEY: &str = "ETHEREUM_PRIVATE_KEY";
 
 lazy_static! {
-    pub static ref CURRENT_PATH: PathBuf = std::env::current_dir().unwrap();
-    pub static ref KZG_SETTINGS: KzgSettings =
-        // TODO: set more generalized path
-        KzgSettings::load_trusted_setup_file(CURRENT_PATH.join("src/trusted_setup.txt").as_path())
-            .expect("Error loading trusted setup file");
+    pub static ref PROJECT_ROOT: PathBuf = PathBuf::from(format!("{}/../../../", env!("CARGO_MANIFEST_DIR")));
+    pub static ref KZG_SETTINGS: KzgSettings = KzgSettings::load_trusted_setup_file(
+        &PROJECT_ROOT.join("crates/settlement-clients/ethereum/src/trusted_setup.txt")
+    )
+    .expect("Error loading trusted setup file");
 }
 
+#[allow(dead_code)]
 pub struct EthereumSettlementClient {
     core_contract_client: StarknetValidityContractClient,
     wallet: EthereumWallet,
     wallet_address: Address,
     provider: Arc<RootProvider<Http<Client>>>,
-    #[cfg(test)]
     impersonate_account: Option<Address>,
 }
 
@@ -90,17 +91,10 @@ impl EthereumSettlementClient {
             filler_provider,
         );
 
-        EthereumSettlementClient {
-            provider,
-            core_contract_client,
-            wallet,
-            wallet_address,
-            #[cfg(test)]
-            impersonate_account: None,
-        }
+        EthereumSettlementClient { provider, core_contract_client, wallet, wallet_address, impersonate_account: None }
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "testing")]
     pub fn with_test_settings(
         provider: RootProvider<Http<Client>>,
         core_contract_address: Address,
@@ -187,16 +181,7 @@ impl SettlementClient for EthereumSettlementClient {
         state_diff: Vec<Vec<u8>>,
         nonce: u64,
     ) -> Result<String> {
-        //TODO: better file management
-
-        let trusted_setup_path: String = CURRENT_PATH
-            .join("src")
-            .join("trusted_setup.txt")
-            .to_str()
-            .expect("Path contains invalid Unicode")
-            .to_string();
-        let trusted_setup = KzgSettings::load_trusted_setup_file(Path::new(trusted_setup_path.as_str()))?;
-        let (sidecar_blobs, sidecar_commitments, sidecar_proofs) = prepare_sidecar(&state_diff, &trusted_setup).await?;
+        let (sidecar_blobs, sidecar_commitments, sidecar_proofs) = prepare_sidecar(&state_diff, &KZG_SETTINGS).await?;
         let sidecar = BlobTransactionSidecar::new(sidecar_blobs, sidecar_commitments, sidecar_proofs);
 
         let eip1559_est = self.provider.estimate_eip1559_fees(None).await?;
@@ -238,18 +223,15 @@ impl SettlementClient for EthereumSettlementClient {
         let tx_signed = variant.into_signed(signature);
         let tx_envelope: TxEnvelope = tx_signed.into();
 
-        // IMP: this conversion strips signature from the transaction
-        #[cfg(not(test))]
-        let txn_request: TransactionRequest = tx_envelope.into();
+        #[cfg(not(feature = "testing"))]
+        let txn_request = {
+            let txn_request: TransactionRequest = tx_envelope.clone().into();
+            txn_request
+        };
 
-        #[cfg(test)]
-        let txn_request = test_config::configure_transaction(
-            // self.provider.clone(),
-            tx_envelope,
-            self.impersonate_account,
-            nonce,
-        )
-        .await;
+        #[cfg(feature = "testing")]
+        let txn_request =
+            { test_config::configure_transaction(self.provider.clone(), tx_envelope, self.impersonate_account).await };
 
         let pending_transaction = self.provider.send_transaction(txn_request).await?;
         return Ok(pending_transaction.tx_hash().to_string());
@@ -290,16 +272,15 @@ impl SettlementClient for EthereumSettlementClient {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "testing")]
 mod test_config {
     use super::*;
     use alloy::network::TransactionBuilder;
 
     pub async fn configure_transaction(
-        // provider: Arc<RootProvider<Http<Client>>>,
+        provider: Arc<RootProvider<Http<Client>>>,
         tx_envelope: TxEnvelope,
         impersonate_account: Option<Address>,
-        nonce: u64,
     ) -> TransactionRequest {
         let mut txn_request: TransactionRequest = tx_envelope.into();
 
@@ -310,8 +291,8 @@ mod test_config {
         //      - if "1" then : Testing via impersonating `Starknet Operator Address`.
         // Note : changing between "0" and "1" is handled automatically by each test function, `no` manual change in `env.test` is needed.
         if let Some(impersonate_account) = impersonate_account {
-            // let nonce =
-            // provider.get_transaction_count(impersonate_account).await.unwrap().to_string().parse::<u64>().unwrap();
+            let nonce =
+                provider.get_transaction_count(impersonate_account).await.unwrap().to_string().parse::<u64>().unwrap();
             txn_request.set_nonce(nonce);
             txn_request = txn_request.with_from(impersonate_account);
         }

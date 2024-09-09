@@ -1,10 +1,7 @@
-name: Rust Test & Coverage
+name: E2E test
 
 on:
   workflow_call:
-    secrets:
-      ETHEREUM_BLAST_RPC_URL:
-        required: true
 
 jobs:
   coverage:
@@ -14,7 +11,6 @@ jobs:
       localstack:
         image: localstack/localstack
         env:
-          SERVICES: s3, sqs, sns
           DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: "AWS_ACCESS_KEY_ID"
           AWS_SECRET_ACCESS_KEY: "AWS_SECRET_ACCESS_KEY"
@@ -56,23 +52,8 @@ jobs:
               exit 1
           fi
 
-      - name: Install cargo-llvm-cov & nextest
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Install nextest
-        uses: taiki-e/install-action@nextest
-
-      - name: Getting neccesary files for testing
-        run: |
-          wget -P ./crates/prover-services/sharp-service/tests/artifacts https://madara-orchestrator-sharp-pie.s3.amazonaws.com/238996-SN.zip
-
-      - name: Run llvm-cov tests
+      - name: Run e2e test
         env:
           ETHEREUM_BLAST_RPC_URL: ${{ secrets.ETHEREUM_BLAST_RPC_URL }}
-        run: RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest --release --features testing --lcov --output-path lcov.info --test-threads=1 --workspace --exclude=e2e-tests
-
-      - name: Coveralls
-        uses: coverallsapp/github-action@v2
-        with:
-          files: lcov.info
-          debug: true
+        run: |
+          RUST_LOG=trace cargo test --features testing test_orchestrator_workflow -- --nocapture

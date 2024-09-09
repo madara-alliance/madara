@@ -12,7 +12,7 @@ use settlement_client_interface::SettlementVerificationStatus;
 use uuid::Uuid;
 
 /// An external id.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum ExternalId {
     /// A string.
@@ -71,7 +71,7 @@ fn unwrap_external_id_failed(expected: &str, got: &ExternalId) -> color_eyre::ey
     eyre!("wrong ExternalId type: expected {}, got {:?}", expected, got)
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum JobType {
     /// Running SNOS for a block
     SnosRun,
@@ -85,7 +85,7 @@ pub enum JobType {
     StateTransition,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, strum_macros::Display)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, strum_macros::Display, Eq)]
 pub enum JobStatus {
     /// An acknowledgement that the job has been received by the
     /// orchestrator and is waiting to be processed
@@ -116,7 +116,7 @@ pub enum JobStatus {
     Failed,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct JobItem {
     /// an uuid to identify a job
     #[cfg_attr(feature = "with_mongodb", serde(with = "uuid_1_as_binary"))]

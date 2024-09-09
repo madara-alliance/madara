@@ -1,10 +1,11 @@
 use std::future::Future;
+use std::str::FromStr;
 use std::time::Duration;
 
 use color_eyre::eyre::Context;
 use color_eyre::Result as EyreResult;
 use omniqueue::{Delivery, QueueError};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use tokio::time::sleep;
 use tracing::log;
 use uuid::Uuid;
@@ -57,11 +58,46 @@ pub enum WorkerTriggerType {
     UpdateState,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct WorkerTriggerMessage {
-    pub(crate) worker: WorkerTriggerType,
+    pub worker: WorkerTriggerType,
 }
 
+impl FromStr for WorkerTriggerType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Proving" => Ok(WorkerTriggerType::Proving),
+            "Snos" => Ok(WorkerTriggerType::Snos),
+            "ProofRegistration" => Ok(WorkerTriggerType::ProofRegistration),
+            "DataSubmission" => Ok(WorkerTriggerType::DataSubmission),
+            "UpdateState" => Ok(WorkerTriggerType::UpdateState),
+            _ => Err(format!("Unknown WorkerTriggerType: {}", s)),
+        }
+    }
+}
+
+// TODO : Need to check why serde deserializer was failing here.
+// TODO : Remove this custom deserializer.
+/// Implemented a custom deserializer as when using serde json deserializer
+/// It was unable to deserialize the response from the event trigger.
+impl<'de> Deserialize<'de> for WorkerTriggerMessage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let s = s.trim_start_matches('{').trim_end_matches('}');
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() != 2 || parts[0] != "worker" {
+            return Err(serde::de::Error::custom("Invalid format"));
+        }
+        Ok(WorkerTriggerMessage { worker: WorkerTriggerType::from_str(parts[1]).map_err(serde::de::Error::custom)? })
+    }
+}
+
+#[derive(Debug)]
 enum DeliveryReturnType {
     Message(Delivery),
     NoMessage,
@@ -82,7 +118,7 @@ where
     F: FnOnce(Uuid) -> Fut,
     Fut: Future<Output = Result<(), JobError>>,
 {
-    log::info!("Consuming from queue {:?}", queue);
+    log::debug!("Consuming from queue {:?}", queue);
     let delivery = get_delivery_from_queue(&queue).await?;
 
     let message = match delivery {
@@ -109,7 +145,7 @@ where
     F: FnOnce(Box<dyn Worker>) -> Fut,
     Fut: Future<Output = color_eyre::Result<()>>,
 {
-    log::info!("Consuming from queue {:?}", queue);
+    log::debug!("Consuming from queue {:?}", queue);
     let delivery = get_delivery_from_queue(&queue).await?;
 
     let message = match delivery {
@@ -252,7 +288,7 @@ macro_rules! spawn_consumer {
                     Ok(_) => {}
                     Err(e) => log::error!("Failed to consume from queue {:?}. Error: {:?}", $queue_type, e),
                 }
-                sleep(Duration::from_secs(1)).await;
+                sleep(Duration::from_millis(500)).await;
             }
         });
     };

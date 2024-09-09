@@ -9,9 +9,6 @@ use uuid::Uuid;
 use crate::error::SharpError;
 use crate::types::{SharpAddJobResponse, SharpGetStatusResponse};
 
-/// SHARP endpoint for Sepolia testnet
-pub const DEFAULT_SHARP_URL: &str = "https://sepolia-recursive.public-testnet.provingservice.io/v1/gateway";
-
 /// SHARP API async wrapper
 pub struct SharpClient {
     base_url: Url,
@@ -115,6 +112,6 @@ fn add_params_to_url(url: &mut Url, params: Vec<(&str, &str)>) {
 
 impl Default for SharpClient {
     fn default() -> Self {
-        Self::new(DEFAULT_SHARP_URL.parse().unwrap())
+        Self::new(get_env_var_or_panic("SHARP_URL").parse().unwrap())
     }
 }

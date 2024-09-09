@@ -16,6 +16,7 @@ alloy = { workspace = true, features = [
 async-trait.workspace = true
 cairo-vm.workspace = true
 itertools.workspace = true
+log.workspace = true
 num-bigint = "0.4.5"
 starknet.workspace = true
 thiserror.workspace = true

@@ -24,15 +24,30 @@ authors = ["Apoorv Sadana <@apoorvsadana>"]
 [workspace.dependencies]
 num = { version = "0.4.1" }
 async-trait = { version = "0.1.77" }
-alloy = { version = "0.2.1", features = ["full"] }
+alloy = { version = "0.2.1", features = [
+  "full",
+  "node-bindings",
+  "rpc-types-debug",
+  "rpc-types-trace",
+  "json-rpc",
+  "rpc-client",
+] }
+aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+aws-sdk-s3 = { version = "1.38.0", features = ["behavior-version-latest"] }
+aws-sdk-eventbridge = { version = "1.41.0", features = [
+  "behavior-version-latest",
+] }
+aws-sdk-sqs = "1.36.0"
 axum = { version = "0.7.4" }
 axum-macros = "0.4.1"
 bincode = "1.3.3"
+bytes = "1.6.0"
 color-eyre = "0.6.2"
 chrono = "0.4.0"
 c-kzg = "1.0.0"
 dotenvy = "0.15.7"
 futures = "0.3.30"
+log = "0.4.21"
 mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
 omniqueue = { version = "0.2.0" }
 reqwest = { version = "0.12.7", features = [

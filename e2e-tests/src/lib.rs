@@ -1,8 +1,12 @@
+pub mod localstack;
+pub mod mock_server;
 pub mod mongodb;
 pub mod node;
+pub mod sharp;
+pub mod starknet_client;
+pub mod utils;
 
 use std::net::TcpListener;
-use std::path::{Path, PathBuf};
 
 pub use mongodb::MongoDbServer;
 pub use node::Orchestrator;
@@ -19,10 +23,4 @@ fn get_free_port() -> u16 {
         // otherwise port is occupied
     }
     panic!("No free ports available");
-}
-
-fn get_repository_root() -> PathBuf {
-    let manifest_path = Path::new(&env!("CARGO_MANIFEST_DIR"));
-    let repository_root = manifest_path.parent().expect("Failed to get parent directory of CARGO_MANIFEST_DIR");
-    repository_root.to_path_buf()
 }

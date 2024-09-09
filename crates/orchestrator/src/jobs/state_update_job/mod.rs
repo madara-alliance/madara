@@ -22,7 +22,7 @@ use super::{JobError, OtherError};
 use crate::config::{config, Config};
 use crate::constants::SNOS_OUTPUT_FILE_NAME;
 use crate::jobs::constants::JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY;
-use crate::jobs::state_update_job::utils::fetch_blob_data_for_block;
+use crate::jobs::state_update_job::utils::{fetch_blob_data_for_block, fetch_program_data_for_block};
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use crate::jobs::Job;
 
@@ -77,6 +77,12 @@ impl Job for StateUpdateJob {
         internal_id: String,
         metadata: HashMap<String, String>,
     ) -> Result<JobItem, JobError> {
+        // Inserting the metadata (If it doesn't exist)
+        let mut metadata = metadata.clone();
+        if !metadata.contains_key(JOB_PROCESS_ATTEMPT_METADATA_KEY) {
+            metadata.insert(JOB_PROCESS_ATTEMPT_METADATA_KEY.to_string(), "0".to_string());
+        }
+
         Ok(JobItem {
             id: Uuid::new_v4(),
             internal_id,
@@ -148,9 +154,12 @@ impl Job for StateUpdateJob {
             .get(JOB_PROCESS_ATTEMPT_METADATA_KEY)
             .ok_or_else(|| StateUpdateError::AttemptNumberNotFound)?;
 
+        // We are doing attempt_no - 1 because the attempt number is increased in the
+        // global process job function and the transaction hash is stored with attempt
+        // number : 0
         let metadata_tx_hashes = job
             .metadata
-            .get(&format!("{}{}", JOB_METADATA_STATE_UPDATE_ATTEMPT_PREFIX, attempt_no))
+            .get(&format!("{}{}", JOB_METADATA_STATE_UPDATE_ATTEMPT_PREFIX, attempt_no.parse::<u32>().unwrap() - 1))
             .ok_or_else(|| StateUpdateError::TxnHashMetadataNotFound)?
             .clone()
             .replace(' ', "");
@@ -277,11 +286,13 @@ impl StateUpdateJob {
             unimplemented!("update_state_for_block not implemented as of now for calldata DA.")
         } else if snos.use_kzg_da == Felt252::ONE {
             let blob_data = fetch_blob_data_for_block(block_no).await.map_err(|e| JobError::Other(OtherError(e)))?;
-
+            let program_output =
+                fetch_program_data_for_block(block_no).await.map_err(|e| JobError::Other(OtherError(e)))?;
+            // TODO :
             // Fetching nonce before the transaction is run
             // Sending update_state transaction from the settlement client
             settlement_client
-                .update_state_with_blobs(vec![], blob_data, nonce)
+                .update_state_with_blobs(program_output, blob_data, nonce)
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
         } else {

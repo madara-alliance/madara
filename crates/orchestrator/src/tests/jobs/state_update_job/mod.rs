@@ -14,14 +14,13 @@ use color_eyre::eyre::eyre;
 use utils::env_utils::get_env_var_or_panic;
 
 use crate::config::config;
-use crate::constants::{BLOB_DATA_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+use crate::constants::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::data_storage::MockDataStorage;
-use crate::jobs::constants::JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO;
 use crate::jobs::constants::{
     JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY, JOB_METADATA_STATE_UPDATE_FETCH_FROM_TESTS,
-    JOB_PROCESS_ATTEMPT_METADATA_KEY,
+    JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO, JOB_PROCESS_ATTEMPT_METADATA_KEY,
 };
-use crate::jobs::state_update_job::utils::hex_string_to_u8_vec;
+use crate::jobs::state_update_job::utils::{bytes_to_vec_u8, fetch_program_data_for_block, hex_string_to_u8_vec};
 use crate::jobs::state_update_job::{StateUpdateError, StateUpdateJob};
 use crate::jobs::types::{JobStatus, JobType};
 use crate::jobs::{Job, JobError};
@@ -91,9 +90,10 @@ async fn test_process_job_works(
     // Adding expectations for each block number to be called by settlement client.
     for block in block_numbers.iter().skip(processing_start_index as usize) {
         let blob_data = fetch_blob_data_for_block(block.to_u64().unwrap()).await.unwrap();
+        let program_data = fetch_program_data_for_block(block.to_u64().unwrap()).await.unwrap();
         settlement_client
             .expect_update_state_with_blobs()
-            .with(eq(vec![]), eq(blob_data), always())
+            .with(eq(program_data), eq(blob_data), always())
             .times(1)
             .returning(|_, _, _| Ok("0xbeef".to_string()));
     }
@@ -147,7 +147,7 @@ async fn create_job_works() {
 
 #[rstest]
 #[tokio::test]
-async fn process_job_works() {
+async fn process_job_works_unit_test() {
     let mut settlement_client = MockSettlementClient::new();
     let mut storage_client = MockDataStorage::new();
 
@@ -157,8 +157,7 @@ async fn process_job_works() {
     // TODO: have tests for update_state_calldata, only kzg for now
     let block_numbers = ["651053", "651054", "651055", "651056"];
     for block_no in block_numbers {
-        let program_output: Vec<[u8; 32]> = vec![];
-        let state_diff: Vec<Vec<u8>> = load_state_diff_file(block_no.parse::<u64>().unwrap()).await;
+        let _state_diff: Vec<u8> = load_state_diff_file(block_no.parse::<u64>().unwrap()).await;
 
         let snos_output_key = block_no.to_owned() + "/" + SNOS_OUTPUT_FILE_NAME;
         let snos_output_data = fs::read_to_string(
@@ -177,12 +176,12 @@ async fn process_job_works() {
                 .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block_no, BLOB_DATA_FILE_NAME)),
         )
         .expect("Failed to read the blob data txt file");
-        let blob_data_vec = vec![hex_string_to_u8_vec(&blob_data).unwrap()];
-        let blob_serialized = bincode::serialize(&blob_data_vec).unwrap();
+        let blob_data_vec = hex_string_to_u8_vec(&blob_data).unwrap();
+        let blob_data_vec_clone = blob_data_vec.clone();
         storage_client
             .expect_get_data()
             .with(eq(blob_data_key))
-            .returning(move |_| Ok(Bytes::from(blob_serialized.clone())));
+            .returning(move |_| Ok(Bytes::from(blob_data_vec.clone())));
 
         let x_0_key = block_no.to_owned() + "/" + X_0_FILE_NAME;
         let x_0 = fs::read_to_string(
@@ -191,13 +190,24 @@ async fn process_job_works() {
         .expect("Failed to read the blob data txt file");
         storage_client.expect_get_data().with(eq(x_0_key)).returning(move |_| Ok(Bytes::from(x_0.clone())));
 
+        let program_output_key = block_no.to_owned() + "/" + PROGRAM_OUTPUT_FILE_NAME;
+        let program_output = fs::read_to_string(
+            CURRENT_PATH
+                .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block_no, PROGRAM_OUTPUT_FILE_NAME)),
+        )
+        .expect("Failed to read the blob data txt file");
+        let program_output_clone = program_output.clone();
+        storage_client
+            .expect_get_data()
+            .with(eq(program_output_key))
+            .returning(move |_| Ok(Bytes::from(program_output.clone())));
+
         // let nonce = settlement_client.get_nonce().await.expect("Unable to fetch nonce for settlement client.");
         settlement_client.expect_get_nonce().returning(|| Ok(1));
 
         settlement_client
             .expect_update_state_with_blobs()
-            // TODO: vec![] is program_output
-            .with(eq(program_output), eq(state_diff), always())
+            .with(eq(bytes_to_vec_u8(&Bytes::from(program_output_clone))), eq(vec![blob_data_vec_clone]), always())
             .returning(|_, _, _| Ok(String::from("0x5d17fac98d9454030426606019364f6e68d915b91f6210ef1e2628cd6987442")));
     }
 
@@ -294,13 +304,10 @@ async fn process_job_invalid_input_gap_panics() {
 
 // ==================== Utility functions ===========================
 
-async fn load_state_diff_file(block_no: u64) -> Vec<Vec<u8>> {
-    let mut state_diff_vec: Vec<Vec<u8>> = Vec::new();
+async fn load_state_diff_file(block_no: u64) -> Vec<u8> {
     let file_path = format!("src/tests/jobs/state_update_job/test_data/{}/{}", block_no, BLOB_DATA_FILE_NAME);
-    let file_data = fs::read_to_string(file_path).expect("Unable to read kzg_proof.txt").replace("0x", "");
-    let blob_data = hex_string_to_u8_vec(&file_data).unwrap();
-    state_diff_vec.push(blob_data);
-    state_diff_vec
+    let file_data = fs::read_to_string(file_path).expect("Unable to read blob_data.txt").replace("0x", "");
+    hex_string_to_u8_vec(&file_data).unwrap()
 }
 
 async fn store_data_in_storage_client_for_s3(block_numbers: Vec<u64>) {
@@ -314,8 +321,7 @@ async fn store_data_in_storage_client_for_s3(block_numbers: Vec<u64>) {
             CURRENT_PATH.join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, BLOB_DATA_FILE_NAME)),
         )
         .unwrap();
-        let blob_data_vec = vec![hex_string_to_u8_vec(&blob_data).unwrap()];
-        let blob_serialized = bincode::serialize(&blob_data_vec).unwrap();
+        let blob_data_vec = hex_string_to_u8_vec(&blob_data).unwrap();
 
         // Getting the snos data from file.
         let snos_output_key = block.to_owned().to_string() + "/" + SNOS_OUTPUT_FILE_NAME;
@@ -324,8 +330,17 @@ async fn store_data_in_storage_client_for_s3(block_numbers: Vec<u64>) {
         )
         .unwrap();
 
+        // Getting the program output data from file.
+        let program_output_key = block.to_owned().to_string() + "/" + PROGRAM_OUTPUT_FILE_NAME;
+        let program_output_data = fs::read_to_string(
+            CURRENT_PATH
+                .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, PROGRAM_OUTPUT_FILE_NAME)),
+        )
+        .unwrap();
+
         storage_client.put_data(Bytes::from(snos_output_data), &snos_output_key).await.unwrap();
-        storage_client.put_data(Bytes::from(blob_serialized), &blob_data_key).await.unwrap();
+        storage_client.put_data(Bytes::from(blob_data_vec), &blob_data_key).await.unwrap();
+        storage_client.put_data(Bytes::from(program_output_data), &program_output_key).await.unwrap();
     }
 }
 

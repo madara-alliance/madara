@@ -23,6 +23,8 @@ pub enum SharpError {
     PieEncode(#[source] snos::error::SnOsError),
     #[error("Failed to get url as path segment mut. URL is cannot-be-a-base.")]
     PathSegmentMutFailOnUrl,
+    #[error("Other error: {0}")]
+    Other(#[from] color_eyre::eyre::Error),
 }
 
 impl From<SharpError> for ProverClientError {

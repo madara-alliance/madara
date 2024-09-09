@@ -42,7 +42,7 @@ impl MongoDb {
         let client = Client::with_options(client_options).expect("Failed to create MongoDB client");
         // Ping the server to see if you can connect to the cluster
         client.database("admin").run_command(doc! {"ping": 1}, None).await.expect("Failed to ping MongoDB deployment");
-        println!("Pinged your deployment. You successfully connected to MongoDB!");
+        log::debug!("Pinged your deployment. You successfully connected to MongoDB!");
 
         Self { client }
     }

@@ -45,6 +45,11 @@ async fn test_update_state_worker(
             .with(eq(JobType::StateTransition), eq(JobStatus::Completed))
             .times(1)
             .returning(|_, _| Ok(None));
+
+        db.expect_get_jobs_without_successor()
+            .with(eq(JobType::DataSubmission), eq(JobStatus::Completed), eq(JobType::StateTransition))
+            .times(1)
+            .returning(|_, _, _| Ok(vec![]));
     } else {
         // if successful state update job exists
 
@@ -55,16 +60,15 @@ async fn test_update_state_worker(
             .returning(|_, _| Ok(Some(get_job_item_mock_by_id("1".to_string(), Uuid::new_v4()))));
 
         // mocking the return values of second function call (getting completed proving worker jobs)
+        let job_vec =
+            get_job_by_mock_id_vector(JobType::ProofCreation, JobStatus::Completed, number_of_processed_jobs as u64, 2);
+        let job_vec_clone = job_vec.clone();
         db.expect_get_jobs_after_internal_id_by_job_type()
-            .with(eq(JobType::ProofCreation), eq(JobStatus::Completed), eq("1".to_string()))
-            .returning(move |_, _, _| {
-                Ok(get_job_by_mock_id_vector(
-                    JobType::ProofCreation,
-                    JobStatus::Completed,
-                    number_of_processed_jobs as u64,
-                    2,
-                ))
-            });
+            .with(eq(JobType::DataSubmission), eq(JobStatus::Completed), eq("1".to_string()))
+            .returning(move |_, _, _| Ok(job_vec.clone()));
+        db.expect_get_jobs_without_successor()
+            .with(eq(JobType::DataSubmission), eq(JobStatus::Completed), eq(JobType::StateTransition))
+            .returning(move |_, _, _| Ok(job_vec_clone.clone()));
 
         // mocking getting of the jobs (when there is a safety check for any pre-existing job during job
         // creation)

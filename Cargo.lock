@@ -96,6 +96,7 @@ dependencies = [
  "alloy-core 0.7.7",
  "alloy-eips 0.2.1",
  "alloy-genesis",
+ "alloy-json-rpc 0.2.1",
  "alloy-network 0.2.1",
  "alloy-node-bindings",
  "alloy-provider 0.2.1",
@@ -467,6 +468,7 @@ dependencies = [
  "alloy-rpc-client 0.2.1",
  "alloy-rpc-types-anvil",
  "alloy-rpc-types-eth",
+ "alloy-rpc-types-trace",
  "alloy-signer-local",
  "alloy-transport 0.2.1",
  "alloy-transport-http 0.2.1",
@@ -610,6 +612,7 @@ checksum = "e6c31a3750b8f5a350d17354e46a52b0f2f19ec5f2006d816935af599dedc521"
 dependencies = [
  "alloy-rpc-types-engine",
  "alloy-rpc-types-eth",
+ "alloy-rpc-types-trace",
  "alloy-serde 0.2.1",
  "serde",
 ]
@@ -657,6 +660,20 @@ dependencies = [
  "alloy-serde 0.2.1",
  "alloy-sol-types 0.7.7",
  "itertools 0.13.0",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "alloy-rpc-types-trace"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a86eeb49ea0cc79f249faa1d35c20541bb1c317a59b5962cb07b1890355b0064"
+dependencies = [
+ "alloy-primitives 0.7.7",
+ "alloy-rpc-types-eth",
+ "alloy-serde 0.2.1",
  "serde",
  "serde_json",
  "thiserror",
@@ -1718,6 +1735,28 @@ dependencies = [
  "pin-project-lite",
  "tracing",
  "uuid 1.8.0",
+]
+
+[[package]]
+name = "aws-sdk-eventbridge"
+version = "1.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4fb65d775433ba494cc8b67584129989ae31316b5f0a204d7638b5592fb2570"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "http 0.2.12",
+ "once_cell",
+ "regex-lite",
+ "tracing",
 ]
 
 [[package]]
@@ -3241,7 +3280,7 @@ dependencies = [
  "num-traits 0.2.19",
  "serde",
  "wasm-bindgen",
- "windows-targets 0.52.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -3928,14 +3967,33 @@ checksum = "0d6ef0072f8a535281e4876be788938b528e9a1d43900b82c2569af7da799125"
 name = "e2e-tests"
 version = "0.1.0"
 dependencies = [
+ "alloy 0.2.1",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-eventbridge",
+ "aws-sdk-s3",
+ "aws-sdk-sqs",
+ "bytes",
+ "chrono",
+ "color-eyre",
+ "dotenvy",
+ "ethereum-settlement-client",
+ "httpmock",
+ "log",
+ "mongodb",
  "orchestrator",
  "reqwest 0.12.7",
+ "rstest 0.18.2",
+ "serde",
  "serde_json",
+ "starknet",
  "testcontainers",
  "tokio",
  "tokio-stream",
  "tokio-util",
  "url",
+ "utils",
+ "uuid 1.8.0",
 ]
 
 [[package]]
@@ -4157,6 +4215,7 @@ dependencies = [
  "color-eyre",
  "dotenvy",
  "lazy_static",
+ "log",
  "mockall",
  "reqwest 0.12.7",
  "rstest 0.18.2",
@@ -4697,6 +4756,7 @@ dependencies = [
  "async-trait",
  "cairo-vm 1.0.0-rc3",
  "itertools 0.13.0",
+ "log",
  "num-bigint",
  "starknet",
  "thiserror",
@@ -8404,6 +8464,7 @@ dependencies = [
  "hex",
  "httpmock",
  "lazy_static",
+ "log",
  "prover-client-interface",
  "reqwest 0.12.7",
  "rstest 0.18.2",

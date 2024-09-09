@@ -113,6 +113,7 @@ pub(crate) async fn prepare_sidecar(
         let blob = Blob::new(fixed_size_blob);
 
         let commitment = KzgCommitment::blob_to_kzg_commitment(&blob, trusted_setup)?;
+
         let proof = KzgProof::compute_blob_kzg_proof(&blob, &commitment.to_bytes(), trusted_setup)?;
 
         sidecar_blobs.push(FixedBytes::new(fixed_size_blob));

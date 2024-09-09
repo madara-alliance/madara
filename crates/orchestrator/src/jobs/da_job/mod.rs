@@ -8,8 +8,9 @@ use color_eyre::eyre::WrapErr;
 use lazy_static::lazy_static;
 use num_bigint::{BigUint, ToBigUint};
 use num_traits::{Num, Zero};
-use starknet::core::types::{BlockId, FieldElement, MaybePendingStateUpdate, StateUpdate, StorageEntry};
+use starknet::core::types::{BlockId, FieldElement, MaybePendingStateUpdate, StateUpdate};
 use starknet::providers::Provider;
+use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem};
 use thiserror::Error;
 use tracing::log;
 use uuid::Uuid;
@@ -18,6 +19,7 @@ use super::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use super::{Job, JobError, OtherError};
 use crate::config::Config;
 use crate::constants::BLOB_DATA_FILE_NAME;
+use crate::jobs::state_update_job::utils::biguint_vec_to_u8_vec;
 
 lazy_static! {
     /// EIP-4844 BLS12-381 modulus.
@@ -104,8 +106,11 @@ impl Job for DaJob {
         // transforming the data so that we can apply FFT on this.
         // @note: we can skip this step if in the above step we return vec<BigUint> directly
         let blob_data_biguint = convert_to_biguint(blob_data.clone());
+
         // data transformation on the data
         let transformed_data = fft_transformation(blob_data_biguint);
+
+        store_blob_data(transformed_data.clone(), block_no, config).await?;
 
         let max_bytes_per_blob = config.da_client().max_bytes_per_blob().await;
         let max_blob_per_txn = config.da_client().max_blob_per_txn().await;
@@ -209,22 +214,20 @@ fn data_to_blobs(blob_size: u64, block_data: Vec<BigUint>) -> Result<Vec<Vec<u8>
 
     let mut blobs: Vec<Vec<u8>> = Vec::new();
 
-    // Convert all FieldElements to bytes first
-    let mut bytes: Vec<u8> = block_data.iter().flat_map(|element| element.to_bytes_be().to_vec()).collect();
+    // Convert all BigUint to bytes
+    let bytes: Vec<u8> = block_data.into_iter().flat_map(|num| num.to_bytes_be()).collect();
 
     // Process bytes in chunks of blob_size
-    while bytes.len() >= blob_size as usize {
-        let chunk = bytes.drain(..blob_size as usize).collect();
-        blobs.push(chunk);
-    }
+    let chunk_size = blob_size as usize;
+    let chunks = bytes.chunks(chunk_size);
 
-    // Handle any remaining bytes (not a complete blob)
-    if !bytes.is_empty() {
-        let remaining_bytes = bytes.len();
-        let mut last_blob = bytes;
-        last_blob.resize(blob_size as usize, 0); // Pad with zeros
-        blobs.push(last_blob);
-        log::debug!("Warning: Remaining {} bytes not forming a complete blob were padded", remaining_bytes);
+    for chunk in chunks {
+        let mut blob = chunk.to_vec();
+        if blob.len() < chunk_size {
+            blob.resize(chunk_size, 0);
+            log::debug!("Warning: Last chunk of {} bytes was padded to full blob size", chunk.len());
+        }
+        blobs.push(blob);
     }
 
     Ok(blobs)
@@ -235,98 +238,75 @@ pub async fn state_update_to_blob_data(
     state_update: StateUpdate,
     config: &Config,
 ) -> color_eyre::Result<Vec<FieldElement>> {
-    let state_diff = state_update.state_diff;
-    let mut blob_data: Vec<FieldElement> = vec![
-        FieldElement::from(state_diff.storage_diffs.len()),
-        // @note: won't need this if while producing the block we are attaching the block number
-        // and the block hash
-        FieldElement::ONE,
-        FieldElement::ONE,
-        FieldElement::from(block_no),
-        state_update.block_hash,
-    ];
+    let mut state_diff = state_update.state_diff;
 
-    let storage_diffs: HashMap<FieldElement, &Vec<StorageEntry>> =
-        state_diff.storage_diffs.iter().map(|item| (item.address, &item.storage_entries)).collect();
-    let declared_classes: HashMap<FieldElement, FieldElement> =
-        state_diff.declared_classes.iter().map(|item| (item.class_hash, item.compiled_class_hash)).collect();
+    let mut blob_data: Vec<FieldElement> = vec![FieldElement::from(state_diff.storage_diffs.len())];
+
     let deployed_contracts: HashMap<FieldElement, FieldElement> =
-        state_diff.deployed_contracts.iter().map(|item| (item.address, item.class_hash)).collect();
+        state_diff.deployed_contracts.into_iter().map(|item| (item.address, item.class_hash)).collect();
     let replaced_classes: HashMap<FieldElement, FieldElement> =
-        state_diff.replaced_classes.iter().map(|item| (item.contract_address, item.class_hash)).collect();
+        state_diff.replaced_classes.into_iter().map(|item| (item.contract_address, item.class_hash)).collect();
     let mut nonces: HashMap<FieldElement, FieldElement> =
-        state_diff.nonces.iter().map(|item| (item.contract_address, item.nonce)).collect();
+        state_diff.nonces.into_iter().map(|item| (item.contract_address, item.nonce)).collect();
+
+    // sort storage diffs
+    state_diff.storage_diffs.sort_by_key(|diff| diff.address);
 
     // Loop over storage diffs
-    for (addr, writes) in storage_diffs {
-        let class_flag = deployed_contracts.get(&addr).or_else(|| replaced_classes.get(&addr));
+    for ContractStorageDiffItem { address, mut storage_entries } in state_diff.storage_diffs.into_iter() {
+        let class_flag = deployed_contracts.get(&address).or_else(|| replaced_classes.get(&address));
 
-        let mut nonce = nonces.remove(&addr);
+        let mut nonce = nonces.remove(&address);
 
         // @note: if nonce is null and there is some len of writes, make an api call to get the contract
         // nonce for the block
 
-        if nonce.is_none() && !writes.is_empty() && addr != FieldElement::ONE {
+        if nonce.is_none() && !storage_entries.is_empty() && address != FieldElement::ONE {
             let get_current_nonce_result = config
                 .starknet_client()
-                .get_nonce(BlockId::Number(block_no), addr)
+                .get_nonce(BlockId::Number(block_no), address)
                 .await
                 .wrap_err("Failed to get nonce ".to_string())?;
 
             nonce = Some(get_current_nonce_result);
         }
-        let da_word = da_word(class_flag.is_some(), nonce, writes.len() as u64);
-        // @note: it can be improved if the first push to the data is of block number and hash
-        // @note: ONE address is special address which for now has 1 value and that is current
-        //        block number and hash
-        // @note: ONE special address can be used to mark the range of block, if in future
-        //        the team wants to submit multiple blocks in a single blob etc.
-        if addr == FieldElement::ONE && da_word == FieldElement::ONE {
-            continue;
-        }
-        blob_data.push(addr);
+        let da_word = da_word(class_flag.is_some(), nonce, storage_entries.len() as u64);
+        blob_data.push(address);
         blob_data.push(da_word);
 
         if let Some(class_hash) = class_flag {
             blob_data.push(*class_hash);
         }
 
-        for entry in writes {
+        storage_entries.sort_by_key(|entry| entry.key);
+        for entry in storage_entries {
             blob_data.push(entry.key);
             blob_data.push(entry.value);
         }
     }
     // Handle declared classes
-    blob_data.push(FieldElement::from(declared_classes.len()));
+    blob_data.push(FieldElement::from(state_diff.declared_classes.len()));
 
-    for (class_hash, compiled_class_hash) in &declared_classes {
-        blob_data.push(*class_hash);
-        blob_data.push(*compiled_class_hash);
+    // sort storage diffs
+    state_diff.declared_classes.sort_by_key(|class| class.class_hash);
+
+    for DeclaredClassItem { class_hash, compiled_class_hash } in state_diff.declared_classes.into_iter() {
+        blob_data.push(class_hash);
+        blob_data.push(compiled_class_hash);
     }
-
-    // saving the blob data of the block to storage client
-    store_blob_data(blob_data.clone(), block_no, config).await?;
 
     Ok(blob_data)
 }
 
 /// To store the blob data using the storage client with path <block_number>/blob_data.txt
-async fn store_blob_data(blob_data: Vec<FieldElement>, block_number: u64, config: &Config) -> Result<(), JobError> {
+async fn store_blob_data(blob_data: Vec<BigUint>, block_number: u64, config: &Config) -> Result<(), JobError> {
     let storage_client = config.storage();
     let key = block_number.to_string() + "/" + BLOB_DATA_FILE_NAME;
-    let data_blob_big_uint = convert_to_biguint(blob_data.clone());
 
-    let blobs_array = data_to_blobs(config.da_client().max_bytes_per_blob().await, data_blob_big_uint)?;
+    let blob_data_vec_u8 = biguint_vec_to_u8_vec(blob_data.as_slice());
 
-    let blob = blobs_array.clone();
-
-    // converting Vec<Vec<u8> into Vec<u8>
-    let blob_vec_u8 = bincode::serialize(&blob)
-        .wrap_err("Unable to Serialize blobs (Vec<Vec<u8> into Vec<u8>)".to_string())
-        .map_err(|e| JobError::Other(OtherError(e)))?;
-
-    if !blobs_array.is_empty() {
-        storage_client.put_data(blob_vec_u8.into(), &key).await.map_err(|e| JobError::Other(OtherError(e)))?;
+    if !blob_data_vec_u8.is_empty() {
+        storage_client.put_data(blob_data_vec_u8.into(), &key).await.map_err(|e| JobError::Other(OtherError(e)))?;
     }
 
     Ok(())
@@ -380,7 +360,6 @@ pub mod test {
     use std::sync::Arc;
 
     use crate::config::config;
-    use crate::data_storage::MockDataStorage;
     use crate::tests::config::TestConfigBuilder;
     use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
@@ -388,7 +367,6 @@ pub mod test {
     use httpmock::prelude::*;
     use majin_blob_core::blob;
     use majin_blob_types::serde;
-    use majin_blob_types::state_diffs::UnorderedEq;
     use rstest::rstest;
     use serde_json::json;
     use starknet::providers::jsonrpc::HttpTransport;
@@ -440,6 +418,12 @@ pub mod test {
         "src/tests/jobs/da_job/test_data/test_blob/640641.txt",
         "src/tests/jobs/da_job/test_data/nonces/640641.txt"
     )]
+    #[case(
+        671070,
+        "src/tests/jobs/da_job/test_data/state_update/671070.txt",
+        "src/tests/jobs/da_job/test_data/test_blob/671070.txt",
+        "src/tests/jobs/da_job/test_data/nonces/671070.txt"
+    )]
     #[tokio::test]
     async fn test_state_update_to_blob_data(
         #[case] block_no: u64,
@@ -451,14 +435,12 @@ pub mod test {
 
         let server = MockServer::start();
         let mut da_client = MockDaClient::new();
-        let mut storage_client = MockDataStorage::new();
 
         // Mocking DA client calls
         da_client.expect_max_blob_per_txn().with().returning(|| 6);
         da_client.expect_max_bytes_per_blob().with().returning(|| 131072);
 
         // Mocking storage client
-        storage_client.expect_put_data().returning(|_, _| Result::Ok(())).times(1);
 
         let provider = JsonRpcClient::new(HttpTransport::new(
             Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
@@ -468,7 +450,6 @@ pub mod test {
         TestConfigBuilder::new()
             .mock_starknet_client(Arc::new(provider))
             .mock_da_client(Box::new(da_client))
-            .mock_storage_client(Box::new(storage_client))
             .build()
             .await;
 
@@ -480,17 +461,13 @@ pub mod test {
         let blob_data = state_update_to_blob_data(block_no, state_update, &config)
             .await
             .expect("issue while converting state update to blob data");
-
         let blob_data_biguint = convert_to_biguint(blob_data);
-
-        let block_data_state_diffs = serde::parse_state_diffs(blob_data_biguint.as_slice());
 
         let original_blob_data = serde::parse_file_to_blob_data(file_path);
         // converting the data to it's original format
         let recovered_blob_data = blob::recover(original_blob_data.clone());
-        let blob_data_state_diffs = serde::parse_state_diffs(recovered_blob_data.as_slice());
 
-        assert!(block_data_state_diffs.unordered_eq(&blob_data_state_diffs), "value of data json should be identical");
+        assert_eq!(blob_data_biguint, recovered_blob_data);
     }
 
     /// Tests the `fft_transformation` function with various test blob files.

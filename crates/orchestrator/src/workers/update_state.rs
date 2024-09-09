@@ -22,30 +22,52 @@ impl Worker for UpdateStateWorker {
 
         match latest_successful_job {
             Some(job) => {
-                let latest_successful_job_internal_id = job.internal_id;
-
-                let successful_proving_jobs = config
+                let successful_da_jobs_without_successor = config
                     .database()
-                    .get_jobs_after_internal_id_by_job_type(
-                        JobType::ProofCreation,
-                        JobStatus::Completed,
-                        latest_successful_job_internal_id,
-                    )
+                    .get_jobs_without_successor(JobType::DataSubmission, JobStatus::Completed, JobType::StateTransition)
                     .await?;
+
+                if successful_da_jobs_without_successor.is_empty() {
+                    return Ok(());
+                }
 
                 let mut metadata = job.metadata;
                 metadata.insert(
                     JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY.to_string(),
-                    Self::parse_job_items_into_block_number_list(successful_proving_jobs.clone()),
+                    Self::parse_job_items_into_block_number_list(successful_da_jobs_without_successor.clone()),
                 );
 
                 // Creating a single job for all the pending blocks.
-                create_job(JobType::StateTransition, successful_proving_jobs[0].internal_id.clone(), metadata).await?;
+                create_job(
+                    JobType::StateTransition,
+                    successful_da_jobs_without_successor[0].internal_id.clone(),
+                    metadata,
+                )
+                .await?;
 
                 Ok(())
             }
             None => {
-                log::info!("No successful state update jobs found");
+                // Getting latest DA job in case no latest state update job is present
+                let latest_successful_jobs_without_successor = config
+                    .database()
+                    .get_jobs_without_successor(JobType::DataSubmission, JobStatus::Completed, JobType::StateTransition)
+                    .await?;
+
+                if latest_successful_jobs_without_successor.is_empty() {
+                    return Ok(());
+                }
+
+                let job = latest_successful_jobs_without_successor[0].clone();
+                let mut metadata = job.metadata;
+
+                metadata.insert(
+                    JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY.to_string(),
+                    Self::parse_job_items_into_block_number_list(latest_successful_jobs_without_successor.clone()),
+                );
+
+                create_job(JobType::StateTransition, job.internal_id, metadata).await?;
+
                 return Ok(());
             }
         }

@@ -14,6 +14,7 @@ pub struct SharpGetProofResponse {
 
 #[derive(Default, Debug, Clone, Deserialize)]
 pub struct SharpGetStatusResponse {
+    #[serde(default)]
     pub status: CairoJobStatus,
     pub invalid_reason: Option<InvalidReason>,
     pub error_log: Option<String>,

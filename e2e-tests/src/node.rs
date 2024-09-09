@@ -1,12 +1,13 @@
-use std::fs::{create_dir_all, File};
-use std::path::Path;
+use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::thread;
 use std::time::Duration;
 
 use tokio::net::TcpStream;
 use url::Url;
 
-use crate::{get_free_port, get_repository_root};
+use crate::get_free_port;
+use crate::utils::get_repository_root;
 
 const CONNECTION_ATTEMPTS: usize = 360;
 const CONNECTION_ATTEMPT_DELAY_MS: u64 = 500;
@@ -26,25 +27,7 @@ impl Drop for Orchestrator {
 }
 
 impl Orchestrator {
-    fn cargo_run(root_dir: &Path, binary: &str, args: Vec<&str>, envs: Vec<(&str, &str)>) -> Child {
-        let arguments = [vec!["run", "--bin", binary, "--release", "--"], args].concat();
-
-        let logs_dir = Path::join(root_dir, Path::new("target/logs"));
-        create_dir_all(logs_dir.clone()).expect("Failed to create logs dir");
-
-        let stdout = Stdio::from(File::create(logs_dir.join(format!("{}-stdout.txt", binary))).unwrap());
-        let stderr = Stdio::from(File::create(logs_dir.join(format!("{}-stderr.txt", binary))).unwrap());
-
-        Command::new("cargo")
-            .stdout(stdout)
-            .stderr(stderr)
-            .envs(envs)
-            .args(arguments)
-            .spawn()
-            .expect("Could not run orchestrator node")
-    }
-
-    pub fn run(envs: Vec<(&str, &str)>) -> Self {
+    pub fn run(envs: Vec<(String, String)>) -> Self {
         let port = get_free_port();
         let address = format!("127.0.0.1:{}", port);
         let repository_root = &get_repository_root();
@@ -52,9 +35,43 @@ impl Orchestrator {
         std::env::set_current_dir(repository_root).expect("Failed to change working directory");
 
         let port_str = format!("{}", port);
-        let envs = [envs, vec![("PORT", port_str.as_str())]].concat();
+        let envs = [envs, vec![("PORT".to_string(), port_str)]].concat();
 
-        let process = Self::cargo_run(repository_root.as_path(), "orchestrator", vec![], envs);
+        let mut command = Command::new("cargo");
+        command
+            .arg("run")
+            .arg("--bin")
+            .arg("orchestrator")
+            .arg("--features")
+            .arg("testing")
+            .current_dir(repository_root)
+            .envs(envs)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut process = command.spawn().expect("Failed to start process");
+
+        // Capture and print stdout
+        let stdout = process.stdout.take().expect("Failed to capture stdout");
+        thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            reader.lines().for_each(|line| {
+                if let Ok(line) = line {
+                    println!("STDOUT: {}", line);
+                }
+            });
+        });
+
+        // Capture and print stderr
+        let stderr = process.stderr.take().expect("Failed to capture stderr");
+        thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            reader.lines().for_each(|line| {
+                if let Ok(line) = line {
+                    eprintln!("STDERR: {}", line);
+                }
+            });
+        });
 
         Self { process, address }
     }

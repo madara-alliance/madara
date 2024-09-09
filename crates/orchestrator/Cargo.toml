@@ -17,17 +17,17 @@ arc-swap = { workspace = true }
 assert_matches = "1.5.0"
 async-std = "1.12.0"
 async-trait = { workspace = true }
-aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
 aws-credential-types = { version = "1.2.1", features = [
   "hardcoded-credentials",
 ] }
-aws-sdk-s3 = { version = "1.38.0", features = ["behavior-version-latest"] }
+aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
 aws-sdk-sns = { version = "1.40.0", features = ["behavior-version-latest"] }
-aws-sdk-sqs = "1.36.0"
+aws-sdk-sqs = { workspace = true }
 axum = { workspace = true, features = ["macros"] }
 axum-macros = { workspace = true }
 bincode = { workspace = true }
-bytes = "1.6.0"
+bytes.workspace = true
 c-kzg = { workspace = true }
 cairo-vm = { workspace = true }
 chrono = { workspace = true }
@@ -73,6 +73,7 @@ default = ["ethereum", "with_mongodb", "with_sqs"]
 ethereum = ["ethereum-da-client"]
 with_mongodb = ["mongodb"]
 with_sqs = ["omniqueue"]
+testing = []
 
 [dev-dependencies]
 hyper = { version = "0.14", features = ["full"] }
