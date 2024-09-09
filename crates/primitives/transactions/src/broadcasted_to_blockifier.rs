@@ -1,13 +1,19 @@
+use std::sync::Arc;
+
 use crate::{into_starknet_api::TransactionApiError, Transaction, TransactionWithHash};
 use blockifier::{execution::errors::ContractClassError, transaction::errors::TransactionExecutionError};
-use mp_class::{to_blockifier_class, ClassHash, ClassInfo, ContractClass, ConvertedClass, ToCompiledClass};
+use mp_chain_config::StarknetVersion;
+use mp_class::{
+    compile::ClassCompilationError, CompressedLegacyContractClass, ConvertedClass, FlattenedSierraClass,
+    LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
+};
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 
 #[derive(thiserror::Error, Debug)]
 pub enum BroadcastedToBlockifierError {
     #[error("Failed to compile contract class: {0}")]
-    CompilationFailed(anyhow::Error),
+    CompilationFailed(#[from] ClassCompilationError),
     #[error("Failed to convert program: {0}")]
     ProgramError(#[from] cairo_vm::types::errors::program_errors::ProgramError),
     #[error("Failed to compute legacy class hash: {0}")]
@@ -18,84 +24,95 @@ pub enum BroadcastedToBlockifierError {
     ConvertTxBlockifierError(#[from] TransactionExecutionError),
     #[error("Failed to convert contract class: {0}")]
     ConvertContractClassError(#[from] ContractClassError),
+    #[error("Declare legacy contract classes are not supported")]
+    LegacyContractClassesNotSupported,
+    #[error("Compiled class hash mismatch: expected {expected}, actual {compilation}")]
+    CompiledClassHashMismatch { expected: Felt, compilation: Felt },
 }
 
 pub fn broadcasted_to_blockifier(
     transaction: starknet_core::types::BroadcastedTransaction,
     chain_id: Felt,
+    starknet_version: StarknetVersion,
 ) -> Result<
     (blockifier::transaction::transaction_execution::Transaction, Option<ConvertedClass>),
     BroadcastedToBlockifierError,
 > {
+    // TODO: when class_hash computation is fixed on legacy contract classes, remove this check
+    if let starknet_core::types::BroadcastedTransaction::Declare(
+        starknet_core::types::BroadcastedDeclareTransaction::V1(_),
+    ) = &transaction
+    {
+        return Err(BroadcastedToBlockifierError::LegacyContractClassesNotSupported);
+    }
     let (class_info, class_hash, extra_class_info) = match &transaction {
         starknet_core::types::BroadcastedTransaction::Declare(tx) => match tx {
             starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => {
-                let compiled = tx.contract_class.compile().map_err(BroadcastedToBlockifierError::CompilationFailed)?;
-                let compiled_class_hash = Felt::ZERO; // TODO(classes): check this is correct for legacy
-                let class_hash = tx
-                    .contract_class
-                    .class_hash()
-                    .map_err(BroadcastedToBlockifierError::ComputeLegacyClassHashFailed)?;
-                let class_info = ClassInfo {
-                    contract_class: ContractClass::Legacy((*tx.contract_class).clone().into()),
-                    compiled_class_hash,
-                };
+                let class_hash = Felt::ZERO;
+                let compressed_legacy_class: CompressedLegacyContractClass = (*tx.contract_class).clone().into();
+                let class_blockifier = compressed_legacy_class
+                    .to_blockifier_class()
+                    .map_err(BroadcastedToBlockifierError::CompilationFailed)?;
+                let class_info = LegacyClassInfo { contract_class: Arc::new(compressed_legacy_class) };
 
                 (
-                    Some(blockifier::execution::contract_class::ClassInfo::new(
-                        &to_blockifier_class(compiled.clone())?,
-                        0,
-                        0,
-                    )?),
+                    Some(blockifier::execution::contract_class::ClassInfo::new(&class_blockifier, 0, 0)?),
                     Some(class_hash),
-                    Some(ConvertedClass {
-                        class_infos: (class_hash, class_info),
-                        class_compiled: (compiled_class_hash, compiled),
-                    }),
+                    Some(ConvertedClass::Legacy(LegacyConvertedClass { class_hash, info: class_info })),
                 )
             }
             starknet_core::types::BroadcastedDeclareTransaction::V2(tx) => {
-                let compiled = tx.contract_class.compile().map_err(BroadcastedToBlockifierError::CompilationFailed)?;
-                let compiled_class_hash = tx.compiled_class_hash;
                 let class_hash = tx.contract_class.class_hash();
-                let class_info = ClassInfo {
-                    contract_class: ContractClass::Sierra((*tx.contract_class).clone().into()),
-                    compiled_class_hash,
-                };
+                let flatten_sierra_class: FlattenedSierraClass = (*tx.contract_class).clone().into();
+                let (compiled_class_hash, compiled) = flatten_sierra_class.compile_to_casm()?;
+                if tx.compiled_class_hash != compiled_class_hash {
+                    return Err(BroadcastedToBlockifierError::CompiledClassHashMismatch {
+                        expected: tx.compiled_class_hash,
+                        compilation: compiled_class_hash,
+                    });
+                }
+                let class_info =
+                    SierraClassInfo { contract_class: Arc::new(flatten_sierra_class), compiled_class_hash };
 
                 (
                     Some(blockifier::execution::contract_class::ClassInfo::new(
-                        &to_blockifier_class(compiled.clone())?,
+                        &compiled.to_blockifier_class()?,
                         tx.contract_class.sierra_program.len(),
                         tx.contract_class.abi.len(),
                     )?),
                     Some(class_hash),
-                    Some(ConvertedClass {
-                        class_infos: (class_hash, class_info),
-                        class_compiled: (compiled_class_hash, compiled),
-                    }),
+                    Some(ConvertedClass::Sierra(SierraConvertedClass {
+                        class_hash,
+                        info: class_info,
+                        compiled: Arc::new(compiled),
+                    })),
                 )
             }
             starknet_core::types::BroadcastedDeclareTransaction::V3(tx) => {
-                let compiled = tx.contract_class.compile().map_err(BroadcastedToBlockifierError::CompilationFailed)?;
-                let compiled_class_hash = tx.compiled_class_hash;
                 let class_hash = tx.contract_class.class_hash();
-                let class_info = ClassInfo {
-                    contract_class: ContractClass::Sierra((*tx.contract_class).clone().into()),
-                    compiled_class_hash,
-                };
+                let flatten_sierra_class: FlattenedSierraClass = (*tx.contract_class).clone().into();
+                let (compiled_class_hash, compiled) = flatten_sierra_class.compile_to_casm()?;
+                if tx.compiled_class_hash != compiled_class_hash {
+                    return Err(BroadcastedToBlockifierError::CompiledClassHashMismatch {
+                        expected: tx.compiled_class_hash,
+                        compilation: compiled_class_hash,
+                    });
+                }
+                let class_info =
+                    SierraClassInfo { contract_class: Arc::new(flatten_sierra_class), compiled_class_hash };
 
                 (
                     Some(blockifier::execution::contract_class::ClassInfo::new(
-                        &to_blockifier_class(compiled.clone())?,
+                        &compiled.to_blockifier_class()?,
                         tx.contract_class.sierra_program.len(),
                         tx.contract_class.abi.len(),
                     )?),
                     Some(class_hash),
-                    Some(ConvertedClass {
-                        class_infos: (class_hash, class_info),
-                        class_compiled: (compiled_class_hash, compiled),
-                    }),
+                    Some(ConvertedClass::Sierra(SierraConvertedClass {
+                        class_hash,
+                        info: class_info,
+                        compiled: Arc::new(compiled),
+                    })),
                 )
             }
         },
@@ -104,7 +121,7 @@ pub fn broadcasted_to_blockifier(
 
     let is_query = is_query(&transaction);
     let TransactionWithHash { transaction, hash } =
-        TransactionWithHash::from_broadcasted(transaction, chain_id, class_hash);
+        TransactionWithHash::from_broadcasted(transaction, chain_id, starknet_version, class_hash);
     let deployed_address = match &transaction {
         Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
         _ => None,

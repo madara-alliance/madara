@@ -45,6 +45,5 @@ anyhow.workspace = true
 async-trait.workspace = true
 hyper.workspace = true
 log.workspace = true
-rayon.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

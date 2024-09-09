@@ -4,7 +4,7 @@ use crate::{
 };
 use bitvec::vec::BitVec;
 use mp_chain_config::StarknetVersion;
-use mp_class::{ClassInfo, ConvertedClass, ToCompiledClass};
+use mp_class::{ConvertedClass, LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass};
 use mp_convert::ToFelt;
 use mp_receipt::TransactionReceipt;
 use mp_transactions::Transaction;
@@ -14,6 +14,7 @@ use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::mem;
+use std::sync::Arc;
 
 /// This function wraps the [`pre_validate_inner`] step, which runs on the rayon pool, in a tokio-friendly future.
 pub async fn pre_validate(
@@ -76,10 +77,11 @@ pub fn pre_validate_pending_inner(
     mut block: UnverifiedPendingFullBlock,
     validation: Validation,
 ) -> Result<PreValidatedPendingBlock, BlockImportError> {
+    let starknet_version = block.header.protocol_version;
     let classes = mem::take(&mut block.declared_classes);
 
     let converted_classes = convert_classes(classes, &validation)?;
-    let _tx_hashes = transaction_hashes(&block.receipts, &block.transactions, &validation, None)?;
+    let _tx_hashes = transaction_hashes(&block.receipts, &block.transactions, starknet_version, &validation)?;
 
     Ok(PreValidatedPendingBlock {
         header: block.header,
@@ -136,28 +138,47 @@ fn convert_classes(
 }
 
 fn class_conversion(class: DeclaredClass, _validation: &Validation) -> Result<ConvertedClass, BlockImportError> {
-    let DeclaredClass { class_hash, contract_class, compiled_class_hash } = class;
-
-    // TODO(class_hash, #212): uncomment this when the class hashes are computed correctly accross the entire state
-    // let expected =
-    //     contract_class.class_hash().map_err(|e| BlockImportError::ComputeClassHashError(e.to_string()))?;
-    // if class_hash != expected {
-    // }
-
-    let compiled_class = contract_class
-        .compile()
-        .map_err(|e| BlockImportError::CompilationClassError { error: e.to_string(), class_hash })?;
-
-    let class_info = ClassInfo { contract_class, compiled_class_hash };
-
-    Ok(ConvertedClass { class_infos: (class_hash, class_info), class_compiled: (class_hash, compiled_class) })
+    match class {
+        DeclaredClass::Sierra(sierra) => {
+            let class_hash = sierra
+                .contract_class
+                .compute_class_hash()
+                .map_err(|e| BlockImportError::ComputeClassHash { class_hash: sierra.class_hash, error: e })?;
+            if class_hash != sierra.class_hash {
+                return Err(BlockImportError::ClassHash { got: sierra.class_hash, expected: class_hash });
+            }
+            let (compiled_class_hash, compiled_class) = sierra
+                .contract_class
+                .compile_to_casm()
+                .map_err(|e| BlockImportError::CompilationClassError { class_hash: sierra.class_hash, error: e })?;
+            if compiled_class_hash != sierra.compiled_class_hash {
+                return Err(BlockImportError::CompiledClassHash {
+                    class_hash: sierra.class_hash,
+                    got: sierra.compiled_class_hash,
+                    expected: compiled_class_hash,
+                });
+            }
+            Ok(ConvertedClass::Sierra(SierraConvertedClass {
+                class_hash: sierra.class_hash,
+                info: SierraClassInfo { contract_class: Arc::new(sierra.contract_class), compiled_class_hash },
+                compiled: Arc::new(compiled_class),
+            }))
+        }
+        DeclaredClass::Legacy(legacy) => {
+            // TODO: verify that the class hash is correct
+            Ok(ConvertedClass::Legacy(LegacyConvertedClass {
+                class_hash: legacy.class_hash,
+                info: LegacyClassInfo { contract_class: Arc::new(legacy.contract_class) },
+            }))
+        }
+    }
 }
 
 fn transaction_hashes(
     receipts: &[TransactionReceipt],
     transactions: &[Transaction],
+    starknet_version: StarknetVersion,
     validation: &Validation,
-    block_n: Option<u64>,
 ) -> Result<Vec<Felt>, BlockImportError> {
     if receipts.len() != transactions.len() {
         return Err(BlockImportError::TransactionEqualReceiptCount {
@@ -166,9 +187,10 @@ fn transaction_hashes(
         });
     }
 
-    // mismatched block hash is allowed for blocks 1466..=2242 on mainnet
-    let is_special_trusted_case =
-        validation.chain_id == ChainId::Mainnet && block_n.is_some_and(|n| (1466..=2242).contains(&n));
+    // mismatched block hash is allowed for block 1469 on mainnet
+    // this block contains a part of transactions computed with the legacy hash function
+    // and the other part with the post-legacy hash function
+    let is_special_trusted_case = validation.chain_id == ChainId::Mainnet && starknet_version.is_tx_hash_inconsistent();
 
     if is_special_trusted_case || validation.trust_transaction_hashes {
         Ok(receipts.iter().map(|r| r.transaction_hash()).collect())
@@ -179,7 +201,7 @@ fn transaction_hashes(
             .map(|(index, tx)| {
                 // Panic safety: receipt count was checked earlier
                 let got = receipts[index].transaction_hash();
-                let expected = tx.compute_hash(validation.chain_id.to_felt(), false, block_n);
+                let expected = tx.compute_hash(validation.chain_id.to_felt(), starknet_version, false);
                 if got != expected {
                     return Err(BlockImportError::TransactionHash { index, got, expected });
                 }
@@ -193,8 +215,7 @@ fn transaction_hashes(
 fn transaction_commitment(block: &UnverifiedFullBlock, validation: &Validation) -> Result<Felt, BlockImportError> {
     let starknet_version = block.header.protocol_version;
 
-    let transaction_hashes =
-        transaction_hashes(&block.receipts, &block.transactions, validation, block.unverified_block_number)?;
+    let transaction_hashes = transaction_hashes(&block.receipts, &block.transactions, starknet_version, validation)?;
 
     if let Some(expected) = block.commitments.transaction_count {
         if expected != block.transactions.len() as u64 {
@@ -211,7 +232,7 @@ fn transaction_commitment(block: &UnverifiedFullBlock, validation: &Validation) 
         .collect();
 
     // Transaction commitment
-    let got = if starknet_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+    let got = if starknet_version < StarknetVersion::V0_13_2 {
         compute_merkle_root::<Pedersen>(&tx_hashes_with_signature)
     } else {
         compute_merkle_root::<Poseidon>(&tx_hashes_with_signature)
@@ -240,7 +261,7 @@ fn event_commitment(block: &UnverifiedFullBlock, _validation: &Validation) -> Re
 
     let got = if events_with_tx_hash.is_empty() {
         Felt::ZERO
-    } else if block.header.protocol_version < StarknetVersion::STARKNET_VERSION_0_13_2 {
+    } else if block.header.protocol_version < StarknetVersion::V0_13_2 {
         let events_hash =
             events_with_tx_hash.into_par_iter().map(|(_, event)| event.compute_hash_pedersen()).collect::<Vec<_>>();
         compute_merkle_root::<Pedersen>(&events_hash)

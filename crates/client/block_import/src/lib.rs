@@ -39,6 +39,7 @@
 //! A signature verification mode should be added to allow the skipping of block validation entirely if the block is signed.
 
 use mc_db::{MadaraBackend, MadaraStorageError};
+use mp_class::{class_hash::ComputeClassHashError, compile::ClassCompilationError};
 use starknet_core::types::Felt;
 use std::{borrow::Cow, sync::Arc};
 
@@ -82,7 +83,9 @@ pub enum BlockImportError {
     #[error("Compiled class hash mismatch for class hash {class_hash:#x}: expected {expected:#x}, got {got:#x}")]
     CompiledClassHash { class_hash: Felt, got: Felt, expected: Felt },
     #[error("Class with hash {class_hash:#x} failed to compile: {error}")]
-    CompilationClassError { class_hash: Felt, error: String },
+    CompilationClassError { class_hash: Felt, error: ClassCompilationError },
+    #[error("Failed to compute class hash {class_hash:#x}: {error}")]
+    ComputeClassHash { class_hash: Felt, error: ComputeClassHashError },
 
     #[error("Block hash mismatch: expected {expected:#x}, got {got:#x}")]
     BlockHash { got: Felt, expected: Felt },

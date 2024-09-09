@@ -1,18 +1,18 @@
 //! Contains the code required to fetch data from the network efficiently.
 use core::fmt;
 use core::time::Duration;
-use std::collections::HashMap;
 
 use anyhow::Context;
-use mc_block_import::{
-    DeclaredClass, UnverifiedCommitments, UnverifiedFullBlock, UnverifiedHeader, UnverifiedPendingFullBlock,
-};
-use mc_db::storage_updates::DbClassUpdate;
+use futures::FutureExt;
+use mc_block_import::{UnverifiedCommitments, UnverifiedFullBlock, UnverifiedHeader, UnverifiedPendingFullBlock};
 use mc_db::MadaraBackend;
-use mp_block::{header::GasPrices, BlockId, BlockTag};
-use mp_convert::felt_to_u128;
+use mp_block::header::GasPrices;
+use mp_chain_config::StarknetVersion;
+use mp_class::class_update::{ClassUpdate, LegacyClassUpdate, SierraClassUpdate};
+use mp_class::MISSED_CLASS_HASHES;
+use mp_convert::{felt_to_u128, ToFelt};
 use mp_receipt::TransactionReceipt;
-use mp_transactions::Transaction;
+use mp_transactions::{Transaction, MAIN_CHAIN_ID};
 use mp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
 use starknet_core::types::{ContractClass, MaybePendingBlockWithReceipts, StarknetError};
@@ -132,14 +132,7 @@ pub async fn fetch_pending_block_and_updates(
         state_diff: state_update.state_diff.into(),
         transactions,
         receipts,
-        declared_classes: class_update
-            .into_iter()
-            .map(|c| DeclaredClass {
-                class_hash: c.class_hash,
-                contract_class: c.contract_class.into(),
-                compiled_class_hash: c.compiled_class_hash,
-            })
-            .collect(),
+        declared_classes: class_update.into_iter().map(Into::into).collect(),
     })
 }
 
@@ -186,9 +179,15 @@ pub async fn fetch_block_and_updates(
             protocol_version: block
                 .starknet_version
                 .as_deref()
-                .unwrap_or("0.0.0")
-                .parse()
-                .context("Invalid starknet version")?,
+                .map(|v| v.parse().context("Invalid starknet version"))
+                .unwrap_or(
+                    StarknetVersion::try_from_mainnet_block_number(
+                        block
+                            .block_number
+                            .context("A block number is needed to determine the missing Starknet version")?,
+                    )
+                    .ok_or(anyhow::anyhow!("Unable to determine the Starknet version")),
+                )?,
             l1_gas_price: GasPrices {
                 eth_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_wei).context("Converting prices")?,
                 strk_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_fri).context("Converting prices")?,
@@ -212,14 +211,7 @@ pub async fn fetch_block_and_updates(
             .map(Transaction::try_from)
             .collect::<Result<_, _>>()
             .context("Converting the FGW format")?,
-        declared_classes: class_update
-            .into_iter()
-            .map(|c| DeclaredClass {
-                class_hash: c.class_hash,
-                contract_class: c.contract_class.into(),
-                compiled_class_hash: c.compiled_class_hash,
-            })
-            .collect(),
+        declared_classes: class_update.into_iter().map(Into::into).collect(),
         commitments,
     })
 }
@@ -277,52 +269,58 @@ async fn fetch_class_updates(
     state_update: &starknet_providers::sequencer::models::StateUpdate,
     block_id: FetchBlockId,
     provider: &SequencerGatewayProvider,
-) -> anyhow::Result<Vec<DbClassUpdate>> {
-    let missing_classes: Vec<_> = std::iter::empty()
-        .chain(
-            state_update
-                .state_diff
-                .deployed_contracts
-                .iter()
-                .map(|deployed_contract| (deployed_contract.class_hash, &Felt::ZERO)),
-        )
-        .chain(state_update.state_diff.old_declared_contracts.iter().map(|&felt| (felt, &Felt::ZERO)))
-        .chain(
-            state_update
-                .state_diff
-                .declared_classes
-                .iter()
-                .map(|declared_class| (declared_class.class_hash, &declared_class.compiled_class_hash)),
-        )
-        .collect::<HashMap<_, _>>() // unique() by key
-        .into_iter()
-        .filter_map(|(class_hash, compiled_class_hash)| {
-            match backend.contains_class(&BlockId::Tag(BlockTag::Latest), &class_hash) {
-                Ok(false) => Some(Ok((class_hash, compiled_class_hash))),
-                Ok(true) => None,
-                Err(e) => Some(Err(e)),
-            }
-        })
-        .collect::<Result<_, _>>()?;
+) -> anyhow::Result<Vec<ClassUpdate>> {
+    let chain_id: Felt = backend.chain_config().chain_id.to_felt();
 
-    let classes = futures::future::try_join_all(missing_classes.into_iter().map(
-        |(class_hash, &compiled_class_hash)| async move {
-            // TODO(correctness): Skip what appears to be a broken Sierra class definition (quick fix)
-            if class_hash
-                != Felt::from_hex_unchecked("0x024f092a79bdff4efa1ec86e28fa7aa7d60c89b30924ec4dab21dbfd4db73698")
-            {
-                // Fetch the class definition in parallel, retrying up to 15 times for each class
-                let (class_hash, contract_class) =
-                    retry(|| fetch_class(class_hash, block_id, provider), 15, Duration::from_secs(1)).await?;
-                Ok::<_, L2SyncError>(Some(DbClassUpdate { class_hash, contract_class, compiled_class_hash }))
-            } else {
-                Ok(None)
-            }
-        },
-    ))
-    .await?;
+    // for blocks before 2597 on mainnet new classes are not declared in the state update
+    // https://github.com/madara-alliance/madara/issues/233
+    let legacy_classes: Vec<_> = if chain_id == MAIN_CHAIN_ID && block_id.block_n() < Some(2597) {
+        let block_number = block_id.block_n().unwrap(); // Safe to unwrap because of the condition above
+        MISSED_CLASS_HASHES.get(&block_number).cloned().unwrap_or_default()
+    } else {
+        state_update.state_diff.old_declared_contracts.clone()
+    };
 
-    Ok(classes.into_iter().flatten().collect())
+    let sierra_classes: Vec<_> = state_update
+        .state_diff
+        .declared_classes
+        .iter()
+        .map(|declared_class| (declared_class.class_hash, &declared_class.compiled_class_hash))
+        .collect();
+
+    let legacy_class_futures = legacy_classes.into_iter().map(|class_hash| {
+        async move {
+            let (class_hash, contract_class) =
+                retry(|| fetch_class(class_hash, block_id, provider), 15, Duration::from_secs(1)).await?;
+
+            let starknet_core::types::ContractClass::Legacy(contract_class) = contract_class else {
+                return Err(L2SyncError::UnexpectedClassType { class_hash });
+            };
+
+            Ok::<_, L2SyncError>(ClassUpdate::Legacy(LegacyClassUpdate { class_hash, contract_class }))
+        }
+        .boxed()
+    });
+
+    let sierra_class_futures = sierra_classes.into_iter().map(|(class_hash, &compiled_class_hash)| {
+        async move {
+            let (class_hash, contract_class) =
+                retry(|| fetch_class(class_hash, block_id, provider), 15, Duration::from_secs(1)).await?;
+
+            let starknet_core::types::ContractClass::Sierra(contract_class) = contract_class else {
+                return Err(L2SyncError::UnexpectedClassType { class_hash });
+            };
+
+            Ok::<_, L2SyncError>(ClassUpdate::Sierra(SierraClassUpdate {
+                class_hash,
+                contract_class,
+                compiled_class_hash,
+            }))
+        }
+        .boxed()
+    });
+
+    Ok(futures::future::try_join_all(legacy_class_futures.chain(sierra_class_futures)).await?)
 }
 
 /// Downloads a class definition from the Starknet sequencer. Note that because
