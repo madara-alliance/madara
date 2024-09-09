@@ -1,11 +1,15 @@
-use crate::errors::StarknetRpcResult;
-use crate::utils::ResultExt;
-use crate::Starknet;
-use crate::{errors::StarknetRpcApiError, methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW};
+use std::sync::Arc;
+
+use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
+
 use mc_exec::ExecutionContext;
 use mp_transactions::broadcasted_to_blockifier;
-use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
-use std::sync::Arc;
+
+use crate::errors::StarknetRpcApiError;
+use crate::errors::StarknetRpcResult;
+use crate::utils::ResultExt;
+use crate::versions::v0_7_1::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
+use crate::Starknet;
 
 /// Estimate the fee associated with transaction
 ///
@@ -24,8 +28,9 @@ pub async fn estimate_fee(
     block_id: BlockId,
 ) -> StarknetRpcResult<Vec<FeeEstimate>> {
     let block_info = starknet.get_block_info(&block_id)?;
+    let starknet_version = *block_info.protocol_version();
 
-    if block_info.protocol_version() < &FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
+    if starknet_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
@@ -33,7 +38,7 @@ pub async fn estimate_fee(
 
     let transactions = request
         .into_iter()
-        .map(|tx| broadcasted_to_blockifier(tx, starknet.chain_id()).map(|(tx, _)| tx))
+        .map(|tx| broadcasted_to_blockifier(tx, starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
         .collect::<Result<Vec<_>, _>>()
         .or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 

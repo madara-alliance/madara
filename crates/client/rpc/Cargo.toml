@@ -20,6 +20,7 @@ env_logger = { workspace = true }
 [dependencies]
 
 # Madara
+m-proc-macros = { workspace = true }
 mc-db = { workspace = true }
 mc-exec = { workspace = true }
 mc-mempool = { workspace = true }
@@ -45,5 +46,6 @@ jsonrpsee = { workspace = true, default-features = true, features = [
   "server",
 ] }
 log = { workspace = true, default-features = true }
+paste = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -1,4 +1,3 @@
-use crate::{bail_internal_server_error, errors::StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
 use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
@@ -6,23 +5,9 @@ use starknet_core::types::{
 };
 use starknet_providers::{Provider, ProviderError};
 
-#[async_trait]
-pub trait AddTransactionProvider: Send + Sync {
-    async fn add_declare_transaction(
-        &self,
-        declare_transaction: BroadcastedDeclareTransaction,
-    ) -> RpcResult<DeclareTransactionResult>;
+use crate::{bail_internal_server_error, errors::StarknetRpcApiError};
 
-    async fn add_deploy_account_transaction(
-        &self,
-        deploy_account_transaction: BroadcastedDeployAccountTransaction,
-    ) -> RpcResult<DeployAccountTransactionResult>;
-
-    async fn add_invoke_transaction(
-        &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-    ) -> RpcResult<InvokeTransactionResult>;
-}
+use super::AddTransactionProvider;
 
 pub struct ForwardToProvider<P: Provider + Send + Sync> {
     provider: P,
@@ -78,31 +63,5 @@ impl<P: Provider + Send + Sync> AddTransactionProvider for ForwardToProvider<P> 
         };
 
         Ok(sequencer_response)
-    }
-}
-
-#[cfg(test)]
-pub struct TestTransactionProvider;
-
-#[cfg(test)]
-#[async_trait]
-impl AddTransactionProvider for TestTransactionProvider {
-    async fn add_declare_transaction(
-        &self,
-        _declare_transaction: BroadcastedDeclareTransaction,
-    ) -> RpcResult<DeclareTransactionResult> {
-        unimplemented!()
-    }
-    async fn add_deploy_account_transaction(
-        &self,
-        _deploy_account_transaction: BroadcastedDeployAccountTransaction,
-    ) -> RpcResult<DeployAccountTransactionResult> {
-        unimplemented!()
-    }
-    async fn add_invoke_transaction(
-        &self,
-        _invoke_transaction: BroadcastedInvokeTransaction,
-    ) -> RpcResult<InvokeTransactionResult> {
-        unimplemented!()
     }
 }

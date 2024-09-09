@@ -1,3 +1,4 @@
+use jsonrpsee::core::{async_trait, RpcResult};
 use mc_db::MadaraBackend;
 use mp_block::{
     header::{GasPrices, L1DataAvailabilityMode, PendingHeader},
@@ -14,10 +15,39 @@ use mp_state_update::{
 };
 use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
 use rstest::fixture;
-use starknet_core::types::Felt;
+use starknet_core::types::{
+    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
+    DeclareTransactionResult, DeployAccountTransactionResult, Felt, InvokeTransactionResult,
+};
 use std::sync::Arc;
 
-use crate::{providers::TestTransactionProvider, Starknet};
+use crate::{providers::AddTransactionProvider, Starknet};
+
+#[cfg(test)]
+pub struct TestTransactionProvider;
+
+#[cfg(test)]
+#[async_trait]
+impl AddTransactionProvider for TestTransactionProvider {
+    async fn add_declare_transaction(
+        &self,
+        _declare_transaction: BroadcastedDeclareTransaction,
+    ) -> RpcResult<DeclareTransactionResult> {
+        unimplemented!()
+    }
+    async fn add_deploy_account_transaction(
+        &self,
+        _deploy_account_transaction: BroadcastedDeployAccountTransaction,
+    ) -> RpcResult<DeployAccountTransactionResult> {
+        unimplemented!()
+    }
+    async fn add_invoke_transaction(
+        &self,
+        _invoke_transaction: BroadcastedInvokeTransaction,
+    ) -> RpcResult<InvokeTransactionResult> {
+        unimplemented!()
+    }
+}
 
 #[fixture]
 pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
@@ -153,7 +183,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                             state_diff_length: 5,
                             state_diff_commitment: Felt::from_hex_unchecked("0xb1"),
                             receipt_commitment: Felt::from_hex_unchecked("0xb4"),
-                            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_1_1,
+                            protocol_version: StarknetVersion::V0_13_1_1,
                             l1_gas_price: GasPrices {
                                 eth_l1_gas_price: 123,
                                 strk_l1_gas_price: 12,
@@ -198,7 +228,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                             block_number: 1,
                             transaction_count: 0,
                             l1_da_mode: L1DataAvailabilityMode::Calldata,
-                            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         block_hash: block_hashes[1],
@@ -221,7 +251,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                             block_number: 2,
                             transaction_count: 2,
                             l1_da_mode: L1DataAvailabilityMode::Blob,
-                            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         block_hash: block_hashes[2],
@@ -285,7 +315,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
                         header: PendingHeader {
                             parent_block_hash: block_hashes[2],
-                            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             l1_da_mode: L1DataAvailabilityMode::Blob,
                             ..Default::default()
                         },
@@ -466,7 +496,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                             parent_block_hash: Felt::ZERO,
                             global_state_root: state_roots[0],
                             block_number: 0,
-                            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         block_hash: block_hashes[0],
@@ -488,7 +518,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                             parent_block_hash: block_hashes[0],
                             global_state_root: state_roots[1],
                             block_number: 1,
-                            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         block_hash: block_hashes[1],
@@ -510,7 +540,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                             parent_block_hash: block_hashes[1],
                             global_state_root: state_roots[2],
                             block_number: 2,
-                            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         block_hash: block_hashes[2],
@@ -530,7 +560,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                     info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
                         header: PendingHeader {
                             parent_block_hash: block_hashes[2],
-                            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         tx_hashes: vec![],

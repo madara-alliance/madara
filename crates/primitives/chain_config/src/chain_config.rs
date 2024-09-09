@@ -114,16 +114,16 @@ impl ChainConfig {
                 .unwrap(),
             ),
             versioned_constants: [
-                (StarknetVersion::STARKNET_VERSION_0_13_0, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0.deref().clone()),
-                (StarknetVersion::STARKNET_VERSION_0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
-                (StarknetVersion::STARKNET_VERSION_0_13_1_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1.deref().clone()),
-                (StarknetVersion::STARKNET_VERSION_0_13_2, VersionedConstants::latest_constants().clone()),
+                (StarknetVersion::V0_13_0, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0.deref().clone()),
+                (StarknetVersion::V0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
+                (StarknetVersion::V0_13_1_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1.deref().clone()),
+                (StarknetVersion::V0_13_2, VersionedConstants::latest_constants().clone()),
             ]
             .into(),
 
             eth_core_contract_address: eth_core_contract_address::MAINNET.parse().expect("parsing a constant"),
 
-            latest_protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+            latest_protocol_version: StarknetVersion::V0_13_2,
             block_time: Duration::from_secs(6 * 60),
             pending_block_update_time: Duration::from_secs(2),
 

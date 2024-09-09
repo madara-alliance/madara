@@ -15,7 +15,7 @@ use cli::RunCmd;
 use mc_db::DatabaseService;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_metrics::MetricsService;
-use mc_rpc::providers::AddTransactionProvider;
+use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_convert::ToFelt;
 use mp_utils::service::{Service, ServiceGroup};
@@ -103,10 +103,7 @@ async fn main() -> anyhow::Result<()> {
                     telemetry_service.new_handle(),
                 )?;
 
-                (
-                    ServiceGroup::default().with(block_production_service),
-                    Arc::new(mc_rpc::mempool_provider::MempoolProvider::new(mempool)),
-                )
+                (ServiceGroup::default().with(block_production_service), Arc::new(MempoolProvider::new(mempool)))
             }
             // Block sync service. (full node)
             false => {
@@ -125,7 +122,7 @@ async fn main() -> anyhow::Result<()> {
                 (
                     ServiceGroup::default().with(sync_service),
                     // TODO(rate-limit): we may get rate limited with this unconfigured provider?
-                    Arc::new(mc_rpc::providers::ForwardToProvider::new(SequencerGatewayProvider::new(
+                    Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
                         run_cmd.network.gateway(),
                         run_cmd.network.feeder_gateway(),
                         chain_config.chain_id.to_felt(),
