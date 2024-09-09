@@ -12,7 +12,7 @@ use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
 // For now, we fallback to the sequencer - that is what pathfinder and juno do too, but this is temporary
-pub const FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW: StarknetVersion = StarknetVersion::VERSION_0_13_0;
+pub const FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW: StarknetVersion = StarknetVersion::V0_13_0;
 
 pub async fn trace_transaction(
     starknet: &Starknet,

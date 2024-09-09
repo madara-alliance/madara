@@ -183,7 +183,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                             state_diff_length: 5,
                             state_diff_commitment: Felt::from_hex_unchecked("0xb1"),
                             receipt_commitment: Felt::from_hex_unchecked("0xb4"),
-                            protocol_version: StarknetVersion::VERSION_0_13_1_1,
+                            protocol_version: StarknetVersion::V0_13_1_1,
                             l1_gas_price: GasPrices {
                                 eth_l1_gas_price: 123,
                                 strk_l1_gas_price: 12,
@@ -228,7 +228,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                             block_number: 1,
                             transaction_count: 0,
                             l1_da_mode: L1DataAvailabilityMode::Calldata,
-                            protocol_version: StarknetVersion::VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         block_hash: block_hashes[1],
@@ -251,7 +251,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                             block_number: 2,
                             transaction_count: 2,
                             l1_da_mode: L1DataAvailabilityMode::Blob,
-                            protocol_version: StarknetVersion::VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         block_hash: block_hashes[2],
@@ -315,7 +315,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
                         header: PendingHeader {
                             parent_block_hash: block_hashes[2],
-                            protocol_version: StarknetVersion::VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             l1_da_mode: L1DataAvailabilityMode::Blob,
                             ..Default::default()
                         },
@@ -496,7 +496,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                             parent_block_hash: Felt::ZERO,
                             global_state_root: state_roots[0],
                             block_number: 0,
-                            protocol_version: StarknetVersion::VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         block_hash: block_hashes[0],
@@ -518,7 +518,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                             parent_block_hash: block_hashes[0],
                             global_state_root: state_roots[1],
                             block_number: 1,
-                            protocol_version: StarknetVersion::VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         block_hash: block_hashes[1],
@@ -540,7 +540,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                             parent_block_hash: block_hashes[1],
                             global_state_root: state_roots[2],
                             block_number: 2,
-                            protocol_version: StarknetVersion::VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         block_hash: block_hashes[2],
@@ -560,7 +560,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                     info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
                         header: PendingHeader {
                             parent_block_hash: block_hashes[2],
-                            protocol_version: StarknetVersion::VERSION_0_13_2,
+                            protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },
                         tx_hashes: vec![],

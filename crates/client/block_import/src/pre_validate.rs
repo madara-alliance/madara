@@ -232,7 +232,7 @@ fn transaction_commitment(block: &UnverifiedFullBlock, validation: &Validation) 
         .collect();
 
     // Transaction commitment
-    let got = if starknet_version < StarknetVersion::VERSION_0_13_2 {
+    let got = if starknet_version < StarknetVersion::V0_13_2 {
         compute_merkle_root::<Pedersen>(&tx_hashes_with_signature)
     } else {
         compute_merkle_root::<Poseidon>(&tx_hashes_with_signature)
@@ -261,7 +261,7 @@ fn event_commitment(block: &UnverifiedFullBlock, _validation: &Validation) -> Re
 
     let got = if events_with_tx_hash.is_empty() {
         Felt::ZERO
-    } else if block.header.protocol_version < StarknetVersion::VERSION_0_13_2 {
+    } else if block.header.protocol_version < StarknetVersion::V0_13_2 {
         let events_hash =
             events_with_tx_hash.into_par_iter().map(|(_, event)| event.compute_hash_pedersen()).collect::<Vec<_>>();
         compute_merkle_root::<Pedersen>(&events_hash)

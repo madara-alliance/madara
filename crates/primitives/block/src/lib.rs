@@ -292,8 +292,8 @@ mod tests {
         assert_eq!(pending_as_maybe_pending.tx_hashes(), &tx_hashes_pending);
         assert_eq!(not_pending_as_maybe_pending.tx_hashes(), &tx_hashes_not_pending);
 
-        assert_eq!(pending_as_maybe_pending.protocol_version(), &StarknetVersion::VERSION_LATEST);
-        assert_eq!(not_pending_as_maybe_pending.protocol_version(), &StarknetVersion::VERSION_LATEST);
+        assert_eq!(pending_as_maybe_pending.protocol_version(), &StarknetVersion::LATEST);
+        assert_eq!(not_pending_as_maybe_pending.protocol_version(), &StarknetVersion::LATEST);
 
         let maybe_pending: MadaraMaybePendingBlock = MadaraPendingBlock::new_empty(PendingHeader::default()).into();
         assert!(MadaraBlock::try_from(maybe_pending.clone()).is_err());

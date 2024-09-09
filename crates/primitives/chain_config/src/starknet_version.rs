@@ -27,7 +27,7 @@ pub struct StarknetVersion([u8; 4]);
 impl Default for StarknetVersion {
     /// Returns the latest version as the default.
     fn default() -> Self {
-        StarknetVersion::VERSION_LATEST
+        StarknetVersion::LATEST
     }
 }
 
@@ -47,34 +47,34 @@ impl StarknetVersion {
         StarknetVersion([major, minor, patch, build])
     }
 
-    pub const VERSION_NONE: StarknetVersion = StarknetVersion([0, 0, 0, 0]);
-    pub const VERSION_0_7_0: StarknetVersion = StarknetVersion([0, 7, 0, 0]);
-    pub const VERSION_FIRST_BLOCK_POST_LEGACY: StarknetVersion = StarknetVersion([0, 7, 1, 0]); // block betwe
-    pub const VERSION_POST_LEGACY: StarknetVersion = StarknetVersion([0, 8, 0, 0]); // TODO: update this when we have the exact version
-    pub const VERSION_DECLARED_CLASS_IN_STATE_UPDATE: StarknetVersion = StarknetVersion([0, 8, 1, 0]); // TODO: update this when we have the exact version
-    pub const VERSION_0_9_1: StarknetVersion = StarknetVersion([0, 9, 1, 0]); // block 3799 on MAINNET, from this block version is visible
-    pub const VERSION_0_11_1: StarknetVersion = StarknetVersion([0, 11, 1, 0]);
-    pub const VERSION_0_13_0: StarknetVersion = StarknetVersion([0, 13, 0, 0]);
-    pub const VERSION_0_13_1: StarknetVersion = StarknetVersion([0, 13, 1, 0]);
-    pub const VERSION_0_13_1_1: StarknetVersion = StarknetVersion([0, 13, 1, 1]);
-    pub const VERSION_0_13_2: StarknetVersion = StarknetVersion([0, 13, 2, 0]);
-    pub const VERSION_LATEST: StarknetVersion = Self::VERSION_0_13_2;
+    pub const V_0_0_0: StarknetVersion = StarknetVersion([0, 0, 0, 0]);
+    pub const V0_7_0: StarknetVersion = StarknetVersion([0, 7, 0, 0]);
+    pub const FIRST_BLOCK_POST_LEGACY: StarknetVersion = StarknetVersion([0, 7, 1, 0]); // block betwe
+    pub const POST_LEGACY: StarknetVersion = StarknetVersion([0, 8, 0, 0]); // TODO: update this when we have the exact version
+    pub const DECLARED_CLASS_IN_STATE_UPDATE: StarknetVersion = StarknetVersion([0, 8, 1, 0]); // TODO: update this when we have the exact version
+    pub const V0_9_1: StarknetVersion = StarknetVersion([0, 9, 1, 0]); // block 3799 on MAINNET, from this block version is visible
+    pub const V0_11_1: StarknetVersion = StarknetVersion([0, 11, 1, 0]);
+    pub const V0_13_0: StarknetVersion = StarknetVersion([0, 13, 0, 0]);
+    pub const V0_13_1: StarknetVersion = StarknetVersion([0, 13, 1, 0]);
+    pub const V0_13_1_1: StarknetVersion = StarknetVersion([0, 13, 1, 1]);
+    pub const V0_13_2: StarknetVersion = StarknetVersion([0, 13, 2, 0]);
+    pub const LATEST: StarknetVersion = Self::V0_13_2;
 
     pub fn is_pre_v0_7(&self) -> bool {
-        *self < Self::VERSION_0_7_0
+        *self < Self::V0_7_0
     }
 
     pub fn is_tx_hash_inconsistent(&self) -> bool {
-        *self == Self::VERSION_FIRST_BLOCK_POST_LEGACY
+        *self == Self::FIRST_BLOCK_POST_LEGACY
     }
 
     pub fn is_legacy(&self) -> bool {
-        *self < Self::VERSION_POST_LEGACY
+        *self < Self::POST_LEGACY
     }
 
     /// Checks if the version indicates that declared classes are included in state updates.
     pub fn is_declared_class_in_state_update(&self) -> bool {
-        *self < Self::VERSION_DECLARED_CLASS_IN_STATE_UPDATE
+        *self < Self::DECLARED_CLASS_IN_STATE_UPDATE
     }
 
     /// Attempts to derive a `StarknetVersion` from a mainnet block number.
@@ -83,11 +83,11 @@ impl StarknetVersion {
     /// This function is only applicable to mainnet block numbers before the version field was introduced.
     pub fn try_from_mainnet_block_number(block_number: u64) -> Option<StarknetVersion> {
         match block_number {
-            0..=832 => Some(Self::VERSION_NONE),
-            833..=1468 => Some(Self::VERSION_0_7_0),
-            1469..=1469 => Some(Self::VERSION_FIRST_BLOCK_POST_LEGACY),
-            1470..=2596 => Some(Self::VERSION_POST_LEGACY),
-            2597..=3798 => Some(Self::VERSION_DECLARED_CLASS_IN_STATE_UPDATE),
+            0..=832 => Some(Self::V_0_0_0),
+            833..=1468 => Some(Self::V0_7_0),
+            1469..=1469 => Some(Self::FIRST_BLOCK_POST_LEGACY),
+            1470..=2596 => Some(Self::POST_LEGACY),
+            2597..=3798 => Some(Self::DECLARED_CLASS_IN_STATE_UPDATE),
             _ => None,
         }
     }

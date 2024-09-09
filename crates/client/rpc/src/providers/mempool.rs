@@ -112,7 +112,7 @@ async fn add_deploy_account_transaction(
     let (tx, classes) = broadcasted_to_blockifier(
         BroadcastedTransaction::DeployAccount(deploy_account_transaction),
         mempool.chain_id(),
-        StarknetVersion::VERSION_LATEST,
+        StarknetVersion::LATEST,
     )
     .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
 
@@ -130,7 +130,7 @@ async fn add_invoke_transaction(
     let (tx, classes) = broadcasted_to_blockifier(
         BroadcastedTransaction::Invoke(invoke_transaction),
         mempool.chain_id(),
-        StarknetVersion::VERSION_LATEST,
+        StarknetVersion::LATEST,
     )
     .map_err(|err| StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") })?;
 
