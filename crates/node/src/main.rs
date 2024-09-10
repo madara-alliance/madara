@@ -16,7 +16,6 @@ use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_metrics::MetricsService;
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
-use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_utils::service::{Service, ServiceGroup};
 
@@ -37,10 +36,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut run_cmd: RunCmd = RunCmd::parse();
 
-    // TODO: horrible line, refacto
-    let chain_config = Arc::new(ChainConfig::from_yaml(&run_cmd.chain_config_path.clone().unwrap_or_default())?);
-
-    // TODO: override stuff
+    let chain_config = run_cmd.get_config()?;
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
     let node_version = env!("DEOXYS_BUILD_VERSION");

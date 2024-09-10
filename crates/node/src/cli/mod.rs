@@ -14,11 +14,21 @@ pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
 
+use mp_chain_config::{ChainConfig,StarknetVersion};
 use std::path::PathBuf;
+use std::str::FromStr;
 use url::Url;
+use serde::Deserialize;
+use clap::ArgGroup;
+use std::sync::Arc;
+use std::time::Duration;
+use starknet_api::core::{ContractAddress,ChainId};
+use starknet_core::types::Felt;
+use primitive_types::H160;
 
-#[derive(Clone, Debug, clap::Parser)]
 /// Madara: High performance Starknet sequencer/full-node.
+#[derive(Clone, Debug, clap::Parser)]
+#[clap(group(ArgGroup::new("chain_config").args(["chain_config_path", "preset"]).required(true)))]
 pub struct RunCmd {
     /// The human-readable name for this node.
     /// It is used as the network node name.
@@ -61,13 +71,39 @@ pub struct RunCmd {
     #[clap(long, short, default_value = "main")]
     pub network: NetworkType,
 
-    /// Configuration file path.
-    #[clap(long, default_value = "chain_config.yaml", value_name = "CHAIN CONFIG FILE PATH")]
+    /// Chain configuration file path.
+    #[clap(long, value_name = "CHAIN CONFIG FILE PATH")]
     pub chain_config_path: Option<PathBuf>,
 
-    /// Enable authority mode: the node will run as a sequencer and try and produce its own blocks.
+    /// Use preset as chain Config
+    #[clap(long, value_name = "PRESET NAME")]
+    pub preset: Option<String>,
+
+    /// Allow to override some parameters present in preset or configuration file
     #[clap(long, action = clap::ArgAction::SetTrue, value_name = "OVERRIDE CONFIG FLAG")]
     pub chain_config_override: bool,
+
+    //Overrideable args
+    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED CHAIN NAME")]
+    pub chain_name: Option<String>,
+    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED CHAIN ID")]
+    pub chain_id: Option<String>,
+    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED NATIVE FEE TOKEN")]
+    pub native_fee_token_address: Option<String>,
+    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED PARENT FEE TOKEN")]
+    pub parent_fee_token_address: Option<String>,
+    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED LATEST PROTOCOL VERSION")]
+    pub latest_protocol_version: Option<String>,
+    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED BLOCK TIME")]
+    pub block_time: Option<u64>,
+    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED PENDING BLOCK UPDATE")]
+    pub pending_block_update_time: Option<u64>,
+    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED SEQUENCER ADDRESS")]
+    pub sequencer_address: Option<String>,
+    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED MAX NONCE VALIDATION FOR SKIP")]
+    pub max_nonce_for_validation_skip: Option<u64>,
+    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED ETH CORE CONTRACT")]
+    pub eth_core_contract_address: Option<String>,
 
     /// Run the TUI dashboard
     #[cfg(feature = "tui")]
@@ -86,6 +122,40 @@ impl RunCmd {
             self.name = Some(name);
         }
         self.name.as_ref().expect("Name was just set")
+    }
+
+    pub fn get_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
+        let mut chain_config: ChainConfig = match &self.preset {
+            Some(preset_name) => ChainConfig::from_preset(preset_name.as_str())?,
+            None => ChainConfig::from_yaml(&self.chain_config_path.clone().expect("Failed to retrieve chain config path"))?,
+        };
+
+        // Override stuff if flag is setted
+        let run_cmd = self.clone();
+        if self.chain_config_override {
+            (chain_config.chain_name,
+                chain_config.chain_id,
+                chain_config.native_fee_token_address,
+                chain_config.parent_fee_token_address,
+                chain_config.latest_protocol_version,
+                chain_config.block_time,
+                chain_config.pending_block_update_time,
+                chain_config.sequencer_address,
+                chain_config.max_nonce_for_validation_skip,
+                chain_config.eth_core_contract_address) = (
+                   run_cmd.chain_name.map_or(chain_config.chain_name, |v| v),
+                   run_cmd.chain_id.map_or(chain_config.chain_id, |v| ChainId::from(v)),
+                   run_cmd.native_fee_token_address.map_or(chain_config.native_fee_token_address, |v| ContractAddress::try_from(Felt::from_hex(v.as_str()).expect("failed to parse native fee token")).expect("failed to assign native fee token")),
+                   run_cmd.parent_fee_token_address.map_or(chain_config.parent_fee_token_address, |v| ContractAddress::try_from(Felt::from_hex(v.as_str()).expect("failed to parse parent fee token")).expect("failed to assign parent fee token")),
+                   run_cmd.latest_protocol_version.map_or(chain_config.latest_protocol_version, |v| StarknetVersion::from_str(v.as_str()).expect("failed to retrieve version")),
+                   run_cmd.block_time.map_or(chain_config.block_time, |v| Duration::from_secs(v)),
+                   run_cmd.pending_block_update_time.map_or(chain_config.pending_block_update_time, |v| Duration::from_secs(v)),
+                   run_cmd.sequencer_address.map_or(chain_config.sequencer_address, |v| ContractAddress::try_from(Felt::from_hex(v.as_str()).expect("failed to parse sequencer address")).expect("failed to assign sequencer address")),
+                   run_cmd.max_nonce_for_validation_skip.map_or(chain_config.max_nonce_for_validation_skip, |v| v),
+                   run_cmd.eth_core_contract_address.map_or(chain_config.eth_core_contract_address, |v| H160::from_str(v.as_str()).expect("failed to parse core contract"))
+               );
+        };
+        Ok(Arc::new(chain_config))
     }
 }
 
