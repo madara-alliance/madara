@@ -1,5 +1,5 @@
 use mc_block_import::{
-    BlockImportError, BlockImportResult, BlockImporter, UnverifiedFullBlock, UnverifiedHeader, Validation,
+    BlockImportError, BlockImportResult, BlockImporter, BlockValidationContext, UnverifiedFullBlock, UnverifiedHeader,
 };
 use mp_block::{header::PendingHeader, MadaraPendingBlock, MadaraPendingBlockInfo};
 use mp_state_update::StateDiff;
@@ -13,11 +13,7 @@ pub async fn close_block(
     chain_id: ChainId,
     block_number: u64,
 ) -> Result<BlockImportResult, BlockImportError> {
-    let validation = Validation {
-        trust_transaction_hashes: true, // no need to recompute tx hashes
-        chain_id,
-        trust_global_tries: false,
-    };
+    let validation = BlockValidationContext::new(chain_id).trust_transaction_hashes(true);
 
     let MadaraPendingBlock { info, inner } = block;
     let MadaraPendingBlockInfo { header, tx_hashes: _tx_hashes } = info;

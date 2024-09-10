@@ -16,7 +16,7 @@ use mp_transactions::Transaction;
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct UnverifiedHeader {
     /// The hash of this block’s parent. When set to None, it will be deduced from the latest block in storage.
     pub parent_block_hash: Option<Felt>,
@@ -33,20 +33,49 @@ pub struct UnverifiedHeader {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Validation {
+pub struct BlockValidationContext {
     /// Use the transaction hashes from the transaction receipts instead of computing them.
     pub trust_transaction_hashes: bool,
-    pub chain_id: ChainId,
+    /// Trust class hashes.
+    pub trust_class_hashes: bool,
     /// Do not recomppute the trie commitments, trust them instead.
     /// If the global state root commitment is missing during import, this will error.
     /// This is only intended for full-node syncing without storing the global trie.
     pub trust_global_tries: bool,
+    pub chain_id: ChainId,
+}
+
+impl BlockValidationContext {
+    pub fn new(chain_id: ChainId) -> Self {
+        Self { trust_transaction_hashes: false, trust_class_hashes: false, trust_global_tries: false, chain_id }
+    }
+    pub fn trust_transaction_hashes(mut self, v: bool) -> Self {
+        self.trust_transaction_hashes = v;
+        self
+    }
+    pub fn trust_class_hashes(mut self, v: bool) -> Self {
+        self.trust_class_hashes = v;
+        self
+    }
+    pub fn trust_global_tries(mut self, v: bool) -> Self {
+        self.trust_global_tries = v;
+        self
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DeclaredClass {
     Legacy(LegacyDeclaredClass),
     Sierra(SierraDeclaredClass),
+}
+
+impl DeclaredClass {
+    pub fn class_hash(&self) -> Felt {
+        match self {
+            DeclaredClass::Legacy(c) => c.class_hash,
+            DeclaredClass::Sierra(c) => c.class_hash,
+        }
+    }
 }
 
 impl From<ClassUpdate> for DeclaredClass {
@@ -113,7 +142,7 @@ pub struct UnverifiedPendingFullBlock {
 }
 
 /// An unverified full block as input for the block import pipeline.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct UnverifiedFullBlock {
     /// When set to None, it will be deduced from the latest block in storage.
     pub unverified_block_number: Option<u64>,

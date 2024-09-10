@@ -138,7 +138,7 @@ impl MadaraBackend {
         converted_classes
             .iter()
             .filter_map(|converted_class| match converted_class {
-                ConvertedClass::Sierra(sierra) => Some((sierra.class_hash, sierra.compiled.clone())),
+                ConvertedClass::Sierra(sierra) => Some((sierra.info.compiled_class_hash, sierra.compiled.clone())),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -148,6 +148,7 @@ impl MadaraBackend {
                 |col, chunk| {
                     let mut batch = WriteBatchWithTransaction::default();
                     for (key, value) in chunk {
+                        log::trace!("Class compiled store key={key:#x}");
                         let key_bin = bincode::serialize(key)?;
                         // TODO: find a way to avoid this allocation
                         batch.put_cf(col, &key_bin, bincode::serialize(&value)?);

@@ -56,7 +56,7 @@ impl StateReader for BlockifierStateAdapter {
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(Felt::ZERO) };
 
-        Ok(self
+        let res = self
             .backend
             .get_contract_storage_at(&on_top_of_block_id, &contract_address.to_felt(), &key.to_felt())
             .map_err(|err| {
@@ -67,7 +67,17 @@ impl StateReader for BlockifierStateAdapter {
                     "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}",
                 ))
             })?
-            .unwrap_or(Felt::ZERO))
+            .unwrap_or(Felt::ZERO);
+
+        log::debug!(
+            "get_storage_at: on={:?}, contract={:?} key={:?} => {:#x}",
+            self.on_top_of_block_id,
+            contract_address,
+            key,
+            res
+        );
+
+        Ok(res)
     }
 
     fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
@@ -170,8 +180,11 @@ fn block_hash_storage_check_range(chain_id: &ChainId, current_block: u64, to_che
     // Allowed range is first_v0_12_0_block..=(current_block - 10).
     let first_block = if chain_id == &ChainId::Mainnet { 103_129 } else { 0 };
 
-    #[allow(clippy::reversed_empty_ranges)]
-    current_block.checked_sub(10).map(|end| first_block..=end).unwrap_or(1..=0).contains(&to_check)
+    if let Some(end) = current_block.checked_sub(10) {
+        (first_block..=end).contains(&to_check)
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]

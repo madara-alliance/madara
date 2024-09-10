@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: add devnet via `--devnet` cli argument
 - refactor: class import from FGW
 - code docs: documented how get_storage_at is implemented
 - fix: L1 rpc <=> network mismatch

@@ -13,12 +13,19 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dev-dependencies]
 
+rstest = { workspace = true }
+mc-db = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 proptest.workspace = true
 proptest-derive.workspace = true
 bitvec.workspace = true
 env_logger.workspace = true
-
 blockifier = { workspace = true, features = ["testing"] }
+mockall.workspace = true
+assert_matches.workspace = true
+
+[features]
+testing = ["blockifier/testing", "mc-db/testing", "mockall"]
 
 [dependencies]
 
@@ -37,6 +44,8 @@ mp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true
+starknet-core.workspace = true
+starknet-signers.workspace = true
 starknet-types-core.workspace = true
 starknet_api.workspace = true
 
@@ -47,3 +56,5 @@ hyper.workspace = true
 log.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+
+mockall = { workspace = true, optional = true }
