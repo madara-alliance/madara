@@ -567,7 +567,7 @@ mod tests {
         // This will depend on your chain configuration
         let expected_min_blocks = 5 / backend.chain_config().block_time.as_secs();
         assert!(
-            block_number >= expected_min_blocks as u64,
+            block_number >= expected_min_blocks,
             "Fewer blocks produced than expected. Expected at least {}, got {}",
             expected_min_blocks,
             block_number
