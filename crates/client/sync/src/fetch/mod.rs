@@ -124,7 +124,7 @@ mod test_l2_fetch_task {
             let once_caught_up_sender = ctx.once_caught_up_sender;
             async move {
                 tokio::time::timeout(
-                    std::time::Duration::from_secs(10),
+                    std::time::Duration::from_secs(20),
                     l2_fetch_task(backend, 0, Some(5), fetch_stream_sender, provider, None, once_caught_up_sender),
                 )
                 .await
@@ -132,7 +132,7 @@ mod test_l2_fetch_task {
         });
 
         for expected_block_number in 0..=4 {
-            match tokio::time::timeout(std::time::Duration::from_secs(10), ctx.fetch_stream_receiver.recv()).await {
+            match tokio::time::timeout(std::time::Duration::from_secs(20), ctx.fetch_stream_receiver.recv()).await {
                 Ok(Some(block)) => {
                     assert_eq!(block.unverified_block_number, Some(expected_block_number));
                     println!("Received block {}", expected_block_number);

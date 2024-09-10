@@ -267,11 +267,9 @@ async fn fetch_state_update_with_block(
     ProviderError,
 > {
     log::info!("Fetching state update with block");
-    println!("fetching the state update, block_id: {:?}", block_id);
     #[allow(deprecated)] // Sequencer-specific functions are deprecated. Use it via the Provider trait instead.
     let state_update_with_block = provider.get_state_update_with_block(block_id.into()).await?;
     log::info!("State update with block: {:?}", state_update_with_block);
-    println!("state update with block: {:?}", state_update_with_block);
     Ok((state_update_with_block.state_update, state_update_with_block.block))
 }
 
@@ -351,9 +349,9 @@ async fn fetch_class(
 mod test_l2_fetchers {
     use super::*;
     use crate::tests::utils::gateway::TestContext;
-    use dc_block_import::UnverifiedPendingFullBlock;
-    use dp_block::header::L1DataAvailabilityMode;
-    use dp_chain_config::StarknetVersion;
+    use mc_block_import::UnverifiedPendingFullBlock;
+    use mp_block::header::L1DataAvailabilityMode;
+    use mp_chain_config::StarknetVersion;
     use starknet_api::felt;
     use starknet_providers::sequencer::models::BlockStatus;
 
@@ -413,7 +411,7 @@ mod test_l2_fetchers {
         assert_eq!(
             pending_block.header.l1_da_mode,
             L1DataAvailabilityMode::Calldata,
-            "L1 DA mode should not be Calldata"
+            "L1 DA mode should be Calldata"
         );
 
         // Verify state diff, transactions, and receipts
@@ -568,7 +566,7 @@ mod test_l2_fetchers {
 
         // Verify the structure of the first class update
         let first_update = &class_updates[0];
-        assert_ne!(first_update.class_hash, Felt::ZERO, "Class hash should not be zero");
+        assert_ne!(first_update.class_hash(), Felt::ZERO, "Class hash should not be zero");
     }
 
     /// Test error handling in fetch_class_updates.
@@ -635,5 +633,38 @@ mod test_l2_fetchers {
             ProviderError::StarknetError(StarknetError::ClassHashNotFound) => {}
             err => panic!("Unexpected error: {:?}", err),
         }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_state_update_works() {
+        let ctx = TestContext::new();
+
+        // Mock a block with a state update
+        ctx.mock_block(5);
+
+        let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await;
+
+        assert!(result.is_ok(), "Failed to fetch state update with block: {:?}", result.err());
+
+        let (state_update, block) = result.unwrap();
+
+        // Verify state update
+        assert!(!state_update.state_diff.storage_diffs.is_empty(), "State update should contain storage diffs");
+        assert!(
+            !state_update.state_diff.deployed_contracts.is_empty(),
+            "State update should contain deployed contracts"
+        );
+
+        // Verify block
+        assert_eq!(block.block_number, Some(5), "Block number should be 5");
+        assert!(block.block_hash.is_some(), "Block should have a hash");
+        assert!(block.parent_block_hash != Felt::ZERO, "Block should have a non-zero parent hash");
+        assert!(block.state_root.is_some(), "Block should have a state root");
+        assert_eq!(block.status, BlockStatus::AcceptedOnL1, "Block status should be AcceptedOnL1");
+
+        // Verify some block details
+        assert!(block.timestamp > 0, "Block timestamp should be greater than zero");
+        assert!(!block.transactions.is_empty(), "Block should contain transactions");
+        assert!(!block.transaction_receipts.is_empty(), "Block should contain transaction receipts");
     }
 }
