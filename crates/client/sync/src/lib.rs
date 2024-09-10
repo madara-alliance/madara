@@ -25,10 +25,7 @@ pub async fn sync(
     pending_block_poll_interval: Duration,
 ) -> anyhow::Result<()> {
     let (starting_block, ignore_block_order) = if let Some(starting_block) = starting_block {
-        log::warn!(
-            "⚠️  Forcing unordered state. This will most probably break your database at block {}",
-            starting_block
-        );
+        log::warn!("⚠️  Forcing unordered state. This will most probably break your database.");
         (starting_block, true)
     } else {
         (
