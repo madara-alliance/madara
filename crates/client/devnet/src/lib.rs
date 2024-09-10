@@ -70,7 +70,8 @@ const ERC20_ETH_CONTRACT_ADDRESS: Felt =
 
 const ACCOUNT_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../cairo/target/dev/madara_contracts_AccountUpgradeable.contract_class.json");
-const ACCOUNT_CLASS_HASH: Felt = Felt::from_hex_unchecked("0x7446579979174f1687e030b2da6a0bf41ec995a206ddf314030e504536c61c1");
+const ACCOUNT_CLASS_HASH: Felt =
+    Felt::from_hex_unchecked("0x7446579979174f1687e030b2da6a0bf41ec995a206ddf314030e504536c61c1");
 const ACCOUNT_COMPILED_CLASS_HASH: Felt =
     Felt::from_hex_unchecked("0x138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27");
 
@@ -130,12 +131,18 @@ impl ChainGenesisDescription {
                     };
 
                     self.deployed_contracts.insert(calculated_address, ACCOUNT_CLASS_HASH);
-                    self.initial_balances.insert(ContractAddress::try_from(calculated_address).unwrap(), balance.clone());
+                    self.initial_balances
+                        .insert(ContractAddress::try_from(calculated_address).unwrap(), balance.clone());
                     self.initial_storage
                         .contract_mut(calculated_address.try_into().unwrap())
                         .insert(get_contract_pubkey_storage_address(), pubkey.scalar());
 
-                    DevnetPredeployedContract { secret: key, pubkey: pubkey.scalar(), balance, address: calculated_address }
+                    DevnetPredeployedContract {
+                        secret: key,
+                        pubkey: pubkey.scalar(),
+                        balance,
+                        address: calculated_address,
+                    }
                 })
                 .collect(),
         )
@@ -410,8 +417,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case("../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json")]
-    fn test_account_deploy(mut chain: DevnetForTesting, #[case] _contract_path: &str) {
+    fn test_account_deploy(mut chain: DevnetForTesting) {
         println!("{}", chain.contracts);
 
         let key = SigningKey::from_random();
