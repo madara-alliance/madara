@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
-use crate::{clone_account_tx, L1DataProvider, Mempool, MempoolTransaction};
+use crate::{clone_account_tx, L1DataProvider, Mempool, MempoolProvider, MempoolTransaction};
 
 /// We always take transactions in batches from the mempool
 const TX_BATCH_SIZE: usize = 128;
@@ -39,8 +39,6 @@ pub enum Error {
     Execution(#[from] TransactionExecutionError),
     #[error(transparent)]
     ExecutionContext(#[from] mc_exec::Error),
-    #[error("No genesis block in storage")]
-    NoGenesis,
     #[error("Import error: {0:#}")]
     Import(#[from] mc_block_import::BlockImportError),
 }
@@ -158,21 +156,29 @@ fn finalize_execution_state<S: StateReader>(
 pub struct BlockProductionTask {
     importer: Arc<BlockImporter>,
     backend: Arc<MadaraBackend>,
-    mempool: Arc<Mempool>,
+    mempool: Arc<dyn MempoolProvider>,
     block: MadaraPendingBlock,
     declared_classes: Vec<ConvertedClass>,
-    executor: TransactionExecutor<BlockifierStateAdapter>,
+    pub(crate) executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     current_pending_tick: usize,
 }
 
 impl BlockProductionTask {
+    #[cfg(any(test, feature = "testing"))]
+    pub fn set_current_pending_tick(&mut self, n: usize) {
+        self.current_pending_tick = n;
+    }
+
     pub fn new(
         backend: Arc<MadaraBackend>,
+        importer: Arc<BlockImporter>,
         mempool: Arc<Mempool>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
-        let parent_block_hash = backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.ok_or(Error::NoGenesis)?;
+        let parent_block_hash = backend
+            .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
+            .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
         let pending_block = MadaraPendingBlock::new_empty(make_pending_header(
             parent_block_hash,
             backend.chain_config(),
@@ -184,13 +190,13 @@ impl BlockProductionTask {
         //     l1_da_mode: l1_data_provider.get_da_mode(),
         // })?;
         let mut executor =
-            ExecutionContext::new(Arc::clone(&backend), &pending_block.info.clone().into())?.tx_executor();
+            ExecutionContext::new_in_block(Arc::clone(&backend), &pending_block.info.clone().into())?.tx_executor();
 
         let bouncer_config = backend.chain_config().bouncer_config.clone();
         executor.bouncer = Bouncer::new(bouncer_config);
 
         Ok(Self {
-            importer: BlockImporter::new(Arc::clone(&backend)).into(),
+            importer,
             backend,
             mempool,
             executor,
@@ -232,10 +238,11 @@ impl BlockProductionTask {
         let n_executed_txs = executed_txs.len();
 
         for (exec_result, mempool_tx) in Iterator::zip(all_results.into_iter(), executed_txs) {
+            log::debug!("res for {:?}", mempool_tx);
             match exec_result {
                 Ok(execution_info) => {
-                    // Note: reverted txs also appear as Ok here.
-                    log::debug!("Successful execution of transaction {:?}", mempool_tx.tx_hash());
+                    // Reverted transactions appear here as Ok too.
+                    log::debug!("Successful execution of transaction {}", mempool_tx.tx_hash());
 
                     if let Some(class) = mempool_tx.converted_class {
                         self.declared_classes.push(class);
@@ -250,8 +257,11 @@ impl BlockProductionTask {
                     self.block.inner.transactions.push(converted_tx.transaction);
                 }
                 Err(err) => {
-                    // TODO: revert handling
-                    log::error!("Unsuccessful execution of transaction {:?}: {err:#}", mempool_tx.tx_hash());
+                    // These are the transactions that have errored but we can't revert them. It can be because of an internal server error, but
+                    // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
+                    // We reject them.
+                    // Note that this is a big DoS vector.
+                    log::error!("Unsuccessful execution of transaction {}: {err:#}", mempool_tx.tx_hash());
                 }
             }
         }
@@ -272,17 +282,11 @@ impl BlockProductionTask {
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
-    fn on_pending_time_tick(&mut self) -> Result<(), Error> {
+    pub fn on_pending_time_tick(&mut self) -> Result<(), Error> {
         let current_pending_tick = self.current_pending_tick;
-        self.current_pending_tick += 1;
 
         let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
 
-        if current_pending_tick == 0 || current_pending_tick >= n_pending_ticks_per_block {
-            // first tick is ignored.
-            // out of range ticks are also ignored.
-            return Ok(());
-        }
         log::debug!("begin pending tick {}/{}", current_pending_tick, n_pending_ticks_per_block);
 
         // Reduced bouncer capacity for the current pending tick
@@ -320,7 +324,7 @@ impl BlockProductionTask {
     }
 
     /// This creates a block, continuing the current pending block state up to the full bouncer limit.
-    async fn on_block_time(&mut self) -> Result<(), Error> {
+    pub(crate) async fn on_block_time(&mut self) -> Result<(), Error> {
         let block_n = self.block_n();
         log::debug!("closing block #{}", block_n);
 
@@ -339,6 +343,8 @@ impl BlockProductionTask {
         let block_to_close = mem::replace(&mut self.block, new_empty_block);
         let _declared_classes = mem::take(&mut self.declared_classes);
 
+        let n_txs = block_to_close.inner.transactions.len();
+
         // This is compute heavy as it does the commitments and trie computations.
         let import_result = close_block(
             &self.importer,
@@ -352,8 +358,10 @@ impl BlockProductionTask {
 
         // Prepare for next block.
         self.executor =
-            ExecutionContext::new(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
+            ExecutionContext::new_in_block(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
         self.current_pending_tick = 0;
+
+        log::info!("⛏️  Closed block #{} with {} transactions", block_n, n_txs);
 
         Ok(())
     }
@@ -368,7 +376,7 @@ impl BlockProductionTask {
             tokio::time::interval_at(start, self.backend.chain_config().pending_block_update_time);
         interval_pending_block_update.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-        log::info!("⛏️  Starting block production on top of block {}", self.block_n());
+        log::info!("⛏️  Starting block production at block #{}", self.block_n());
 
         loop {
             tokio::select! {
@@ -380,9 +388,19 @@ impl BlockProductionTask {
                     interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());
                 },
                 _ = interval_pending_block_update.tick() => {
+                    let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
+
+                    if self.current_pending_tick == 0 || self.current_pending_tick >= n_pending_ticks_per_block {
+                        // first tick is ignored.
+                        // out of range ticks are also ignored.
+                        self.current_pending_tick += 1;
+                        continue
+                    }
+
                     if let Err(err) = self.on_pending_time_tick() {
                         log::error!("Pending block update task has errored: {err:#}");
                     }
+                    self.current_pending_tick += 1;
                 },
                 _ = graceful_shutdown() => break,
             }

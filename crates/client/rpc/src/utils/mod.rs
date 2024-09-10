@@ -5,18 +5,22 @@ use std::fmt;
 
 use crate::StarknetRpcApiError;
 
+pub fn display_internal_server_error(err: impl fmt::Display) {
+    log::error!(target: "rpc_errors", "{:#}", err);
+}
+
 #[macro_export]
 macro_rules! bail_internal_server_error {
     ($msg:literal $(,)?) => {{
-        log::error!(target: "rpc_errors", "{:#}", anyhow::anyhow!($msg));
+        $crate::utils::display_internal_server_error(anyhow::anyhow!($msg));
         return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     }};
     ($err:expr $(,)?) => {
-        log::error!(target: "rpc_errors", "{:#}", anyhow::anyhow!($err));
+        $crate::utils::display_internal_server_error(anyhow::anyhow!($err));
         return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     };
     ($fmt:expr, $($arg:tt)*) => {
-        log::error!(target: "rpc_errors", "{:#}", anyhow::anyhow!($fmt, $($arg)*));
+        $crate::utils::display_internal_server_error(anyhow::anyhow!($fmt, $($arg)*));
         return ::core::result::Result::Err($crate::StarknetRpcApiError::InternalServerError.into())
     };
 }
@@ -36,7 +40,7 @@ impl<T, E: Into<anyhow::Error>> ResultExt<T, E> for Result<T, E> {
         match self {
             Ok(val) => Ok(val),
             Err(err) => {
-                log::error!(target: "rpc_errors", "{}: {:#}", context, E::into(err));
+                display_internal_server_error(format!("{}: {:#}", context, E::into(err)));
                 Err(StarknetRpcApiError::InternalServerError)
             }
         }
@@ -50,7 +54,7 @@ impl<T, E: Into<anyhow::Error>> ResultExt<T, E> for Result<T, E> {
         match self {
             Ok(val) => Ok(val),
             Err(err) => {
-                log::error!(target: "rpc_errors", "{}: {:#}", context_fn(), E::into(err));
+                display_internal_server_error(format!("{}: {:#}", context_fn(), E::into(err)));
                 Err(StarknetRpcApiError::InternalServerError)
             }
         }
@@ -89,8 +93,7 @@ impl<T> OptionExt<T> for Option<T> {
         match self {
             Some(val) => Ok(val),
             None => {
-                let error = anyhow::Error::msg(context);
-                log::error!(target: "rpc_errors", "{:#}", error);
+                display_internal_server_error(anyhow::Error::msg(context));
                 Err(StarknetRpcApiError::InternalServerError)
             }
         }
@@ -104,8 +107,7 @@ impl<T> OptionExt<T> for Option<T> {
         match self {
             Some(val) => Ok(val),
             None => {
-                let error = anyhow::Error::msg(context_fn());
-                log::error!(target: "rpc_errors", "{:#}", error);
+                display_internal_server_error(anyhow::Error::msg(context_fn()));
                 Err(StarknetRpcApiError::InternalServerError)
             }
         }

@@ -60,7 +60,7 @@ pub async fn sync(
         block_metrics,
         db_metrics,
         starting_block,
-        fetch_config.chain_id.clone(),
+        backend.chain_config().chain_id.clone(),
         telemetry,
     )
     .await?;

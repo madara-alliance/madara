@@ -1,18 +1,18 @@
+use mp_convert::ToFelt;
+use starknet_api::transaction::TransactionVersion;
+use starknet_types_core::{felt::Felt, hash::StarkHash};
+
 mod broadcasted_to_blockifier;
-pub mod compute_hash;
 mod from_blockifier;
 mod from_broadcasted_transaction;
 mod from_starknet_core;
 mod from_starknet_provider;
 mod into_starknet_api;
 mod to_starknet_core;
-pub mod utils;
 
-pub use broadcasted_to_blockifier::broadcasted_to_blockifier;
-use mp_convert::ToFelt;
-// pub use from_starknet_provider::TransactionTypeError;
-use starknet_api::transaction::TransactionVersion;
-use starknet_types_core::{felt::Felt, hash::StarkHash};
+pub mod compute_hash;
+pub mod utils;
+pub use broadcasted_to_blockifier::{broadcasted_to_blockifier, BroadcastedToBlockifierError};
 
 const SIMULATE_TX_VERSION_OFFSET: Felt = Felt::from_hex_unchecked("0x100000000000000000000000000000000");
 

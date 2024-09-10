@@ -18,6 +18,10 @@ jobs:
           toolchain: 1.78
           components: rustfmt, clippy
 
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.8.1"
+
       - name: Setup build deps
         run: |
           sudo apt-get update

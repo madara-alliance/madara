@@ -19,13 +19,14 @@ use jsonrpsee::server::middleware::http::HostFilterLayer;
 use jsonrpsee::server::middleware::rpc::RpcServiceBuilder;
 use jsonrpsee::server::{stop_channel, ws, BatchRequestConfig, PingConfig, StopHandle, TowerServiceBuilder};
 use jsonrpsee::{Methods, RpcModule};
-use mp_utils::wait_or_graceful_shutdown;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tower::Service;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
-use super::middleware::{Metrics, MiddlewareLayer, RpcMetrics};
+use mp_utils::wait_or_graceful_shutdown;
+
+use super::middleware::{Metrics, MiddlewareLayer, RpcMetrics, VersionMiddlewareLayer};
 
 const MEGABYTE: u32 = 1024 * 1024;
 
@@ -91,6 +92,7 @@ pub async fn start_server(
 		.option_layer(host_filter)
 		// Proxy `GET /health` requests to internal `system_health` method.
 		// .layer(ProxyGetRequestLayer::new("/health", "system_health")?)
+        .layer(VersionMiddlewareLayer)
 		.layer(try_into_cors(cors.as_ref())?);
 
     let builder = jsonrpsee::server::Server::builder()
@@ -182,7 +184,7 @@ pub async fn start_server(
     });
 
     let server = hyper::Server::from_tcp(std_listener)
-        .with_context(|| format!("creating hyper server at: {addr}"))?
+        .with_context(|| format!("Creating hyper server at: {addr}"))?
         .serve(make_service);
 
     join_set.spawn(async move {
@@ -196,7 +198,7 @@ pub async fn start_server(
                 wait_or_graceful_shutdown(stop_handle.shutdown()).await;
             })
             .await
-            .context("running rpc server")
+            .context("Running rpc server")
     });
 
     Ok(server_handle)
@@ -221,7 +223,11 @@ pub(crate) fn host_filtering(enabled: bool, addr: Option<SocketAddr>) -> Option<
 
 pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: RpcModule<M>) -> RpcModule<M> {
     let mut available_methods = rpc_api.method_names().collect::<Vec<_>>();
+
     // The "rpc_methods" is defined below and we want it to be part of the reported methods.
+    // The available methods will be prefixed by their version, example:
+    // * starknet_V0_7_1_blockNumber,
+    // * starknet_V0_8_0_blockNumber (...)
     available_methods.push("rpc_methods");
     available_methods.sort();
 

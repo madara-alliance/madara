@@ -39,6 +39,7 @@
 //! A signature verification mode should be added to allow the skipping of block validation entirely if the block is signed.
 
 use mc_db::{MadaraBackend, MadaraStorageError};
+use mp_class::{class_hash::ComputeClassHashError, compile::ClassCompilationError};
 use starknet_core::types::Felt;
 use std::{borrow::Cow, sync::Arc};
 
@@ -82,7 +83,9 @@ pub enum BlockImportError {
     #[error("Compiled class hash mismatch for class hash {class_hash:#x}: expected {expected:#x}, got {got:#x}")]
     CompiledClassHash { class_hash: Felt, got: Felt, expected: Felt },
     #[error("Class with hash {class_hash:#x} failed to compile: {error}")]
-    CompilationClassError { class_hash: Felt, error: String },
+    CompilationClassError { class_hash: Felt, error: ClassCompilationError },
+    #[error("Failed to compute class hash {class_hash:#x}: {error}")]
+    ComputeClassHash { class_hash: Felt, error: ComputeClassHashError },
 
     #[error("Block hash mismatch: expected {expected:#x}, got {got:#x}")]
     BlockHash { got: Felt, expected: Felt },
@@ -108,7 +111,6 @@ impl BlockImportError {
         matches!(self, BlockImportError::InternalDb { .. } | BlockImportError::Internal(_))
     }
 }
-
 pub struct BlockImporter {
     pool: Arc<RayonPool>,
     verify_apply: VerifyApply,
@@ -120,10 +122,20 @@ impl BlockImporter {
         Self { verify_apply: VerifyApply::new(Arc::clone(&backend), Arc::clone(&pool)), pool }
     }
 
+    /// Perform [`BlockImporter::pre_validate`] followed by [`BlockImporter::verify_apply`] to import a block.
+    pub async fn add_block(
+        &self,
+        block: UnverifiedFullBlock,
+        validation: BlockValidationContext,
+    ) -> Result<BlockImportResult, BlockImportError> {
+        let block = self.pre_validate(block, validation.clone()).await?;
+        self.verify_apply(block, validation).await
+    }
+
     pub async fn pre_validate(
         &self,
         block: UnverifiedFullBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<PreValidatedBlock, BlockImportError> {
         pre_validate(&self.pool, block, validation).await
     }
@@ -131,7 +143,7 @@ impl BlockImporter {
     pub async fn verify_apply(
         &self,
         block: PreValidatedBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
         self.verify_apply.verify_apply(block, validation).await
     }
@@ -139,7 +151,7 @@ impl BlockImporter {
     pub async fn pre_validate_pending(
         &self,
         block: UnverifiedPendingFullBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<PreValidatedPendingBlock, BlockImportError> {
         pre_validate_pending(&self.pool, block, validation).await
     }
@@ -147,7 +159,7 @@ impl BlockImporter {
     pub async fn verify_apply_pending(
         &self,
         block: PreValidatedPendingBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
         self.verify_apply.verify_apply_pending(block, validation).await
     }

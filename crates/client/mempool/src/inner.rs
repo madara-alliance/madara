@@ -22,6 +22,7 @@ use std::{
 
 pub type ArrivedAtTimestamp = SystemTime;
 
+#[derive(Debug)]
 pub struct MempoolTransaction {
     pub tx: AccountTransaction,
     pub arrived_at: ArrivedAtTimestamp,

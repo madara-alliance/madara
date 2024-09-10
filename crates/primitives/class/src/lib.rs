@@ -1,57 +1,124 @@
-use std::ops::Deref;
+use std::{collections::HashMap, sync::Arc};
 
 use starknet_types_core::felt::Felt;
 
-mod class_hash;
-mod compile;
+pub mod class_hash;
+pub mod class_update;
+pub mod compile;
 mod into_starknet_core;
 
-pub use class_hash::ClassHash;
-pub use compile::ToCompiledClass;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConvertedClass {
+    Legacy(LegacyConvertedClass),
+    Sierra(SierraConvertedClass),
+}
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ConvertedClass {
-    pub class_infos: (Felt, ClassInfo),
-    pub class_compiled: (Felt, CompiledClass),
+impl ConvertedClass {
+    pub fn class_hash(&self) -> Felt {
+        match self {
+            ConvertedClass::Legacy(legacy) => legacy.class_hash,
+            ConvertedClass::Sierra(sierra) => sierra.class_hash,
+        }
+    }
+
+    pub fn info(&self) -> ClassInfo {
+        match self {
+            ConvertedClass::Legacy(legacy) => ClassInfo::Legacy(legacy.info.clone()),
+            ConvertedClass::Sierra(sierra) => ClassInfo::Sierra(sierra.info.clone()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ClassInfo {
-    pub contract_class: ContractClass,
+pub struct LegacyConvertedClass {
+    pub class_hash: Felt,
+    pub info: LegacyClassInfo,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SierraConvertedClass {
+    pub class_hash: Felt,
+    pub info: SierraClassInfo,
+    pub compiled: Arc<CompiledSierra>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ClassInfo {
+    Sierra(SierraClassInfo),
+    Legacy(LegacyClassInfo),
+}
+
+impl From<LegacyClassInfo> for ClassInfo {
+    fn from(legacy_class_info: LegacyClassInfo) -> Self {
+        ClassInfo::Legacy(legacy_class_info)
+    }
+}
+
+impl From<SierraClassInfo> for ClassInfo {
+    fn from(sierra_class_info: SierraClassInfo) -> Self {
+        ClassInfo::Sierra(sierra_class_info)
+    }
+}
+
+impl ClassInfo {
+    pub fn contract_class(&self) -> ContractClass {
+        match self {
+            ClassInfo::Sierra(sierra) => ContractClass::Sierra(Arc::clone(&sierra.contract_class)),
+            ClassInfo::Legacy(legacy) => ContractClass::Legacy(Arc::clone(&legacy.contract_class)),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LegacyClassInfo {
+    pub contract_class: Arc<CompressedLegacyContractClass>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SierraClassInfo {
+    pub contract_class: Arc<FlattenedSierraClass>,
     pub compiled_class_hash: Felt,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ContractClass {
-    Sierra(FlattenedSierraClass),
-    Legacy(CompressedLegacyContractClass),
+    Sierra(Arc<FlattenedSierraClass>),
+    Legacy(Arc<CompressedLegacyContractClass>),
 }
 
 impl From<FlattenedSierraClass> for ContractClass {
     fn from(flattened_sierra_class: FlattenedSierraClass) -> Self {
-        ContractClass::Sierra(flattened_sierra_class)
+        ContractClass::Sierra(Arc::new(flattened_sierra_class))
     }
 }
 
 impl From<CompressedLegacyContractClass> for ContractClass {
     fn from(compressed_legacy_contract_class: CompressedLegacyContractClass) -> Self {
-        ContractClass::Legacy(compressed_legacy_contract_class)
+        ContractClass::Legacy(Arc::new(compressed_legacy_contract_class))
     }
 }
 
 impl ContractClass {
     pub fn sierra_program_length(&self) -> usize {
         match self {
-            ContractClass::Sierra(FlattenedSierraClass { sierra_program, .. }) => sierra_program.len(),
+            ContractClass::Sierra(sierra) => sierra.program_length(),
             ContractClass::Legacy(_) => 0,
         }
     }
 
     pub fn abi_length(&self) -> usize {
         match self {
-            ContractClass::Sierra(FlattenedSierraClass { abi, .. }) => abi.len(),
+            ContractClass::Sierra(sierra) => sierra.abi_length(),
             ContractClass::Legacy(_) => 0,
         }
+    }
+
+    pub fn is_sierra(&self) -> bool {
+        matches!(self, ContractClass::Sierra(_))
+    }
+
+    pub fn is_legacy(&self) -> bool {
+        matches!(self, ContractClass::Legacy(_))
     }
 }
 
@@ -61,6 +128,16 @@ pub struct FlattenedSierraClass {
     pub contract_class_version: String,
     pub entry_points_by_type: EntryPointsByType,
     pub abi: String,
+}
+
+impl FlattenedSierraClass {
+    pub fn program_length(&self) -> usize {
+        self.sierra_program.len()
+    }
+
+    pub fn abi_length(&self) -> usize {
+        self.abi.len()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -85,8 +162,11 @@ pub struct CompressedLegacyContractClass {
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyEntryPointsByType {
+    #[serde(rename = "CONSTRUCTOR")]
     pub constructor: Vec<LegacyContractEntryPoint>,
+    #[serde(rename = "EXTERNAL")]
     pub external: Vec<LegacyContractEntryPoint>,
+    #[serde(rename = "L1_HANDLER")]
     pub l1_handler: Vec<LegacyContractEntryPoint>,
 }
 
@@ -163,54 +243,24 @@ pub enum FunctionStateMutability {
     View,
 }
 
-/// A contract class that has been compiled and can be transformed into a `blockifier::execution::contract_class::ContractClass`.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum CompiledClass {
-    Sierra(CompiledSierra),
-    Legacy(CompiledLegacy),
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CompiledSierra(String);
+
+const MISSED_CLASS_HASHES_JSON: &[u8] = include_bytes!("../resources/missed_classes.json");
+
+lazy_static::lazy_static! {
+    pub static ref MISSED_CLASS_HASHES: HashMap::<u64, Vec<Felt>> =
+        serde_json::from_slice(MISSED_CLASS_HASHES_JSON).unwrap();
 }
 
-impl Deref for CompiledClass {
-    type Target = [u8];
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    fn deref(&self) -> &Self::Target {
-        match self {
-            CompiledClass::Sierra(CompiledSierra(bytes)) => bytes,
-            CompiledClass::Legacy(CompiledLegacy(bytes)) => bytes,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct CompiledSierra(Vec<u8>);
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct CompiledLegacy(Vec<u8>);
-
-pub fn to_blockifier_class(
-    compiled_class: CompiledClass,
-) -> Result<blockifier::execution::contract_class::ContractClass, cairo_vm::types::errors::program_errors::ProgramError>
-{
-    match compiled_class {
-        CompiledClass::Sierra(compiled_class) => Ok(blockifier::execution::contract_class::ContractClass::V1(
-            blockifier::execution::contract_class::ContractClassV1::try_from_json_string(
-                &String::from_utf8(compiled_class.0).map_err(|err| {
-                    cairo_vm::types::errors::program_errors::ProgramError::IO(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        err,
-                    ))
-                })?,
-            )?,
-        )),
-        CompiledClass::Legacy(compiled_class) => Ok(blockifier::execution::contract_class::ContractClass::V0(
-            blockifier::execution::contract_class::ContractClassV0::try_from_json_string(
-                &String::from_utf8(compiled_class.0).map_err(|err| {
-                    cairo_vm::types::errors::program_errors::ProgramError::IO(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        err,
-                    ))
-                })?,
-            )?,
-        )),
+    #[test]
+    fn test_load_missing_class_hashes() {
+        let missed_class_hashes = &MISSED_CLASS_HASHES;
+        assert_eq!(missed_class_hashes.len(), 38);
+        assert_eq!(missed_class_hashes.iter().map(|(_, v)| v.len()).sum::<usize>(), 57);
     }
 }

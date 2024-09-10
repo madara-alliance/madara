@@ -9,11 +9,7 @@ use blockifier::{
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mp_block::{header::L1DataAvailabilityMode, MadaraMaybePendingBlockInfo};
-use starknet_api::{
-    block::{BlockNumber, BlockTimestamp},
-    core::Nonce,
-};
-use starknet_types_core::felt::Felt;
+use starknet_api::block::{BlockNumber, BlockTimestamp};
 use std::sync::Arc;
 
 pub struct ExecutionContext {
@@ -33,10 +29,7 @@ impl ExecutionContext {
     }
 
     pub fn tx_validator(&self) -> StatefulValidator<BlockifierStateAdapter> {
-        // See [`ChainConfig`].
-        let max_nonce_for_validation_skip =
-            Nonce(Felt::from(self.backend.chain_config().max_nonce_for_validation_skip));
-        StatefulValidator::create(self.init_cached_state(), self.block_context.clone(), max_nonce_for_validation_skip)
+        StatefulValidator::create(self.init_cached_state(), self.block_context.clone())
     }
 
     pub fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter> {
@@ -48,6 +41,12 @@ impl ExecutionContext {
             }
         };
 
+        log::debug!(
+            "Init cached state on top of {:?}, block number {:?}",
+            on_top_of,
+            self.block_context.block_info().block_number.0
+        );
+
         CachedState::new(BlockifierStateAdapter::new(
             Arc::clone(&self.backend),
             self.block_context.block_info().block_number.0,
@@ -55,7 +54,8 @@ impl ExecutionContext {
         ))
     }
 
-    pub fn new(backend: Arc<MadaraBackend>, block_info: &MadaraMaybePendingBlockInfo) -> Result<Self, Error> {
+    /// Create an execution context for executing transactions **within** that block.
+    pub fn new_in_block(backend: Arc<MadaraBackend>, block_info: &MadaraMaybePendingBlockInfo) -> Result<Self, Error> {
         let (db_id, protocol_version, block_number, block_timestamp, sequencer_address, l1_gas_price, l1_da_mode) =
             match block_info {
                 MadaraMaybePendingBlockInfo::Pending(block) => (

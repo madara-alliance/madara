@@ -14,11 +14,13 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
+mc-block-import = { workspace = true }
 mc-db = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true }
+mp-state-update = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
@@ -28,5 +30,16 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
+anyhow = { workspace = true }
+lazy_static = { workspace = true }
 log = { workspace = true }
+rand = { workspace = true }
+serde_json = { workspace = true }
+starknet-signers = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+
+rstest = { workspace = true }
+mc-db = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
