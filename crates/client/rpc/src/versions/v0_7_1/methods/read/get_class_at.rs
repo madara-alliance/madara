@@ -46,5 +46,5 @@ pub fn get_class_at(
         .or_internal_server_error("Error getting contract class info")?
         .ok_or_internal_server_error("Class has no info")?;
 
-    Ok(class_data.contract_class.into())
+    Ok(class_data.contract_class().into())
 }

@@ -5,9 +5,9 @@ use mc_db::{DatabaseService, MadaraBackend};
 use mc_eth::client::{EthereumClient, L1BlockMetrics};
 use mc_mempool::GasPriceProvider;
 use mc_metrics::MetricsRegistry;
+use mp_block::H160;
 use mp_convert::ToFelt;
 use mp_utils::service::Service;
-use primitive_types::H160;
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 use std::time::Duration;
@@ -58,9 +58,12 @@ impl L1SyncService {
         if gas_price_sync_enabled {
             let eth_client = eth_client
                 .clone()
-                .context("EthereumClient is required to start the l1 sync service but not provided.")?;
+                .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--no-gas-price-sync`, or remove the `--no-l1-sync` argument.")?;
             // running at-least once before the block production service
-            mc_eth::l1_gas_price::gas_price_worker(&eth_client, l1_gas_provider.clone(), gas_price_poll_ms).await?;
+            log::info!("⏳ Getting initial L1 gas prices");
+            mc_eth::l1_gas_price::gas_price_worker_once(&eth_client, l1_gas_provider.clone(), gas_price_poll_ms)
+                .await
+                .context("Getting initial ethereum gas prices")?;
         }
 
         Ok(Self {

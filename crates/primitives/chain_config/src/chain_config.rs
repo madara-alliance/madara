@@ -33,7 +33,7 @@ lazy_static::lazy_static! {
 
 #[derive(Debug)]
 pub struct ChainConfig {
-    /// Internal chain name.
+    /// Human readable chain name, for displaying to the console.
     pub chain_name: String,
     pub chain_id: ChainId,
 
@@ -114,16 +114,16 @@ impl ChainConfig {
                 .unwrap(),
             ),
             versioned_constants: [
-                (StarknetVersion::STARKNET_VERSION_0_13_0, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0.deref().clone()),
-                (StarknetVersion::STARKNET_VERSION_0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
-                (StarknetVersion::STARKNET_VERSION_0_13_1_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1.deref().clone()),
-                (StarknetVersion::STARKNET_VERSION_0_13_2, VersionedConstants::latest_constants().clone()),
+                (StarknetVersion::V0_13_0, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0.deref().clone()),
+                (StarknetVersion::V0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
+                (StarknetVersion::V0_13_1_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1.deref().clone()),
+                (StarknetVersion::V0_13_2, VersionedConstants::latest_constants().clone()),
             ]
             .into(),
 
             eth_core_contract_address: eth_core_contract_address::MAINNET.parse().expect("parsing a constant"),
 
-            latest_protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+            latest_protocol_version: StarknetVersion::V0_13_2,
             block_time: Duration::from_secs(6 * 60),
             pending_block_update_time: Duration::from_secs(2),
 
@@ -178,6 +178,8 @@ impl ChainConfig {
         Self {
             chain_name: "Test".into(),
             chain_id: ChainId::Other("MADARA_TEST".into()),
+            // We need a sequencer address for fee transfers to work in block production.
+            sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
             ..ChainConfig::starknet_sepolia()
         }
     }

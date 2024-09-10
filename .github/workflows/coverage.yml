@@ -24,6 +24,10 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.8.1"
+
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: nightly
@@ -53,6 +57,7 @@ jobs:
 
       - name: Display coverage
         uses: ewjoachim/coverage-comment-action@v1
+        continue-on-error: true
         with:
           GITHUB_TOKEN: ${{ github.token }}
           COVERAGE_FILE: coverage.cobertura.xml

@@ -54,6 +54,16 @@ impl StateDiff {
         result
     }
 
+    pub fn sort(&mut self) {
+        self.storage_diffs.iter_mut().for_each(|storage_diff| storage_diff.sort());
+        self.storage_diffs.sort_by_key(|storage_diff| storage_diff.address);
+        self.deprecated_declared_classes.sort();
+        self.declared_classes.sort_by_key(|declared_class| declared_class.class_hash);
+        self.deployed_contracts.sort_by_key(|deployed_contract| deployed_contract.address);
+        self.replaced_classes.sort_by_key(|replaced_class| replaced_class.contract_address);
+        self.nonces.sort_by_key(|nonce| nonce.contract_address);
+    }
+
     pub fn compute_hash(&self) -> Felt {
         let updated_contracts_sorted = {
             let mut updated_contracts = self
@@ -142,7 +152,12 @@ impl ContractStorageDiffItem {
     fn len(&self) -> usize {
         self.storage_entries.len()
     }
+
+    pub fn sort(&mut self) {
+        self.storage_entries.sort_by_key(|storage_entry| storage_entry.key);
+    }
 }
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StorageEntry {
     pub key: Felt,

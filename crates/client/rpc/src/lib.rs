@@ -26,7 +26,7 @@ use errors::{StarknetRpcApiError, StarknetRpcResult};
 use providers::AddTransactionProvider;
 use utils::ResultExt;
 
-/// A Starknet RPC server for Deoxys
+/// A Starknet RPC server for Madara
 #[derive(Clone)]
 pub struct Starknet {
     backend: Arc<MadaraBackend>,

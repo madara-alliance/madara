@@ -1,4 +1,4 @@
-use std::thread;
+use std::{panic::AssertUnwindSafe, thread};
 use tokio::sync::Semaphore;
 
 /// Wraps the rayon pool in a tokio-friendly way.
@@ -35,9 +35,10 @@ impl RayonPool {
 
         // Important: fifo mode.
         rayon::spawn_fifo(move || {
-            let _result = tx.send(func());
+            // We bubble up the panics to the tokio pool.
+            let _result = tx.send(std::panic::catch_unwind(AssertUnwindSafe(func)));
         });
 
-        rx.await.expect("tokio channel closed")
+        rx.await.expect("tokio channel closed").expect("rayon task panicked")
     }
 }
