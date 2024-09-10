@@ -29,8 +29,6 @@ assert_matches.workspace = true
 # Madara
 mc-block-import.workspace = true
 mc-db.workspace = true
-mc-exec.workspace = true
-mc-mempool.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
