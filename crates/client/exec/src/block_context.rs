@@ -41,6 +41,12 @@ impl ExecutionContext {
             }
         };
 
+        log::debug!(
+            "Init cached state on top of {:?}, block number {:?}",
+            on_top_of,
+            self.block_context.block_info().block_number.0
+        );
+
         CachedState::new(BlockifierStateAdapter::new(
             Arc::clone(&self.backend),
             self.block_context.block_info().block_number.0,
@@ -48,7 +54,8 @@ impl ExecutionContext {
         ))
     }
 
-    pub fn new(backend: Arc<MadaraBackend>, block_info: &MadaraMaybePendingBlockInfo) -> Result<Self, Error> {
+    /// Create an execution context for executing transactions **within** that block.
+    pub fn new_in_block(backend: Arc<MadaraBackend>, block_info: &MadaraMaybePendingBlockInfo) -> Result<Self, Error> {
         let (db_id, protocol_version, block_number, block_timestamp, sequencer_address, l1_gas_price, l1_da_mode) =
             match block_info {
                 MadaraMaybePendingBlockInfo::Pending(block) => (

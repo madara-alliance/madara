@@ -1,6 +1,6 @@
 use crate::{
-    BlockImportError, DeclaredClass, PreValidatedBlock, PreValidatedPendingBlock, RayonPool, UnverifiedFullBlock,
-    UnverifiedPendingFullBlock, ValidatedCommitments, Validation,
+    BlockImportError, BlockValidationContext, DeclaredClass, PreValidatedBlock, PreValidatedPendingBlock, RayonPool,
+    UnverifiedFullBlock, UnverifiedPendingFullBlock, ValidatedCommitments,
 };
 use bitvec::vec::BitVec;
 use mp_chain_config::StarknetVersion;
@@ -20,7 +20,7 @@ use std::sync::Arc;
 pub async fn pre_validate(
     pool: &RayonPool,
     block: UnverifiedFullBlock,
-    validation: Validation,
+    validation: BlockValidationContext,
 ) -> Result<PreValidatedBlock, BlockImportError> {
     pool.spawn_rayon_task(move || pre_validate_inner(block, validation)).await
 }
@@ -29,7 +29,7 @@ pub async fn pre_validate(
 pub async fn pre_validate_pending(
     pool: &RayonPool,
     block: UnverifiedPendingFullBlock,
-    validation: Validation,
+    validation: BlockValidationContext,
 ) -> Result<PreValidatedPendingBlock, BlockImportError> {
     pool.spawn_rayon_task(move || pre_validate_pending_inner(block, validation)).await
 }
@@ -37,7 +37,7 @@ pub async fn pre_validate_pending(
 /// This runs on the [`rayon`] threadpool.
 pub fn pre_validate_inner(
     mut block: UnverifiedFullBlock,
-    validation: Validation,
+    validation: BlockValidationContext,
 ) -> Result<PreValidatedBlock, BlockImportError> {
     let classes = mem::take(&mut block.declared_classes);
 
@@ -75,7 +75,7 @@ pub fn pre_validate_inner(
 /// See [`pre_validate_inner`].
 pub fn pre_validate_pending_inner(
     mut block: UnverifiedPendingFullBlock,
-    validation: Validation,
+    validation: BlockValidationContext,
 ) -> Result<PreValidatedPendingBlock, BlockImportError> {
     let starknet_version = block.header.protocol_version;
     let classes = mem::take(&mut block.declared_classes);
@@ -94,7 +94,7 @@ pub fn pre_validate_pending_inner(
 
 fn block_commitments(
     block: &UnverifiedFullBlock,
-    validation: &Validation,
+    validation: &BlockValidationContext,
 ) -> Result<ValidatedCommitments, BlockImportError> {
     let (mut receipt_c, mut state_diff_c, mut transaction_c, mut event_c) = Default::default();
     [
@@ -132,20 +132,26 @@ fn block_commitments(
 
 fn convert_classes(
     declared_classes: Vec<DeclaredClass>,
-    validation: &Validation,
+    validation: &BlockValidationContext,
 ) -> Result<Vec<ConvertedClass>, BlockImportError> {
     declared_classes.into_par_iter().map(|class| class_conversion(class, validation)).collect()
 }
 
-fn class_conversion(class: DeclaredClass, _validation: &Validation) -> Result<ConvertedClass, BlockImportError> {
+fn class_conversion(
+    class: DeclaredClass,
+    validation: &BlockValidationContext,
+) -> Result<ConvertedClass, BlockImportError> {
     match class {
         DeclaredClass::Sierra(sierra) => {
-            let class_hash = sierra
-                .contract_class
-                .compute_class_hash()
-                .map_err(|e| BlockImportError::ComputeClassHash { class_hash: sierra.class_hash, error: e })?;
-            if class_hash != sierra.class_hash {
-                return Err(BlockImportError::ClassHash { got: sierra.class_hash, expected: class_hash });
+            log::trace!("Converting class with hash {:#x}", sierra.class_hash);
+            if !validation.trust_class_hashes {
+                let class_hash = sierra
+                    .contract_class
+                    .compute_class_hash()
+                    .map_err(|e| BlockImportError::ComputeClassHash { class_hash: sierra.class_hash, error: e })?;
+                if class_hash != sierra.class_hash {
+                    return Err(BlockImportError::ClassHash { got: sierra.class_hash, expected: class_hash });
+                }
             }
             let (compiled_class_hash, compiled_class) = sierra
                 .contract_class
@@ -165,6 +171,7 @@ fn class_conversion(class: DeclaredClass, _validation: &Validation) -> Result<Co
             }))
         }
         DeclaredClass::Legacy(legacy) => {
+            log::trace!("Converting legacy class with hash {:#x}", legacy.class_hash);
             // TODO: verify that the class hash is correct
             Ok(ConvertedClass::Legacy(LegacyConvertedClass {
                 class_hash: legacy.class_hash,
@@ -178,7 +185,7 @@ fn transaction_hashes(
     receipts: &[TransactionReceipt],
     transactions: &[Transaction],
     starknet_version: StarknetVersion,
-    validation: &Validation,
+    validation: &BlockValidationContext,
 ) -> Result<Vec<Felt>, BlockImportError> {
     if receipts.len() != transactions.len() {
         return Err(BlockImportError::TransactionEqualReceiptCount {
@@ -212,7 +219,10 @@ fn transaction_hashes(
 }
 
 /// Compute the transaction commitment for a block.
-fn transaction_commitment(block: &UnverifiedFullBlock, validation: &Validation) -> Result<Felt, BlockImportError> {
+fn transaction_commitment(
+    block: &UnverifiedFullBlock,
+    validation: &BlockValidationContext,
+) -> Result<Felt, BlockImportError> {
     let starknet_version = block.header.protocol_version;
 
     let transaction_hashes = transaction_hashes(&block.receipts, &block.transactions, starknet_version, validation)?;
@@ -246,7 +256,10 @@ fn transaction_commitment(block: &UnverifiedFullBlock, validation: &Validation) 
 }
 
 /// Compute the events commitment for a block.
-fn event_commitment(block: &UnverifiedFullBlock, _validation: &Validation) -> Result<Felt, BlockImportError> {
+fn event_commitment(
+    block: &UnverifiedFullBlock,
+    _validation: &BlockValidationContext,
+) -> Result<Felt, BlockImportError> {
     let events_with_tx_hash: Vec<_> = block
         .receipts
         .iter()
@@ -283,7 +296,10 @@ fn event_commitment(block: &UnverifiedFullBlock, _validation: &Validation) -> Re
 }
 
 /// Compute the receipt commitment for a block.
-fn receipt_commitment(block: &UnverifiedFullBlock, _validation: &Validation) -> Result<Felt, BlockImportError> {
+fn receipt_commitment(
+    block: &UnverifiedFullBlock,
+    _validation: &BlockValidationContext,
+) -> Result<Felt, BlockImportError> {
     let hashes = block.receipts.par_iter().map(TransactionReceipt::compute_hash).collect::<Vec<_>>();
     let got = compute_merkle_root::<Poseidon>(&hashes);
 
@@ -296,7 +312,10 @@ fn receipt_commitment(block: &UnverifiedFullBlock, _validation: &Validation) -> 
 }
 
 /// Compute the state diff commitment for a block.
-fn state_diff_commitment(block: &UnverifiedFullBlock, _validation: &Validation) -> Result<Felt, BlockImportError> {
+fn state_diff_commitment(
+    block: &UnverifiedFullBlock,
+    _validation: &BlockValidationContext,
+) -> Result<Felt, BlockImportError> {
     let got = block.state_diff.len() as u64;
     if let Some(expected) = block.commitments.state_diff_length {
         if expected != got {

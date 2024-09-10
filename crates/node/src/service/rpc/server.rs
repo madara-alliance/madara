@@ -184,7 +184,7 @@ pub async fn start_server(
     });
 
     let server = hyper::Server::from_tcp(std_listener)
-        .with_context(|| format!("creating hyper server at: {addr}"))?
+        .with_context(|| format!("Creating hyper server at: {addr}"))?
         .serve(make_service);
 
     join_set.spawn(async move {
@@ -198,7 +198,7 @@ pub async fn start_server(
                 wait_or_graceful_shutdown(stop_handle.shutdown()).await;
             })
             .await
-            .context("running rpc server")
+            .context("Running rpc server")
     });
 
     Ok(server_handle)

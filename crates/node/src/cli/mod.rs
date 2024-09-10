@@ -80,6 +80,10 @@ impl RunCmd {
         }
         self.name.as_ref().expect("Name was just set")
     }
+
+    pub fn is_authority(&self) -> bool {
+        self.authority || self.block_production_params.devnet
+    }
 }
 
 /// Starknet network types.
