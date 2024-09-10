@@ -19,7 +19,6 @@ mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true }
-mp-state-update = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
@@ -29,11 +28,7 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
-anyhow = { workspace = true }
-lazy_static = { workspace = true }
 log = { workspace = true }
-rand = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
