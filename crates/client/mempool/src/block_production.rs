@@ -416,7 +416,10 @@ impl BlockProductionTask {
 
 mod tests {
     use super::*;
-    use std::{sync::Arc, time::SystemTime};
+    use std::{
+        sync::Arc,
+        time::{Duration, SystemTime},
+    };
 
     use crate::GasPriceProvider;
     use assert_matches::assert_matches;
@@ -427,6 +430,8 @@ mod tests {
 
     use mp_block::MadaraMaybePendingBlockInfo;
     use mp_chain_config::ChainConfig;
+
+    use tokio::sync::oneshot;
 
     #[derive(Clone)]
     struct TestEnvironment {
@@ -510,5 +515,66 @@ mod tests {
         assert!(block.is_some());
         assert_matches!(block.clone().unwrap().info, MadaraMaybePendingBlockInfo::Pending(_));
         assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_block_production_task() {
+        let test_env = TestEnvironment::new();
+        let backend = test_env.backend.clone();
+        let mut block_production_task =
+            BlockProductionTask::new(backend.clone(), test_env.importer, test_env.mempool, test_env.l1_data_provider)
+                .expect("Failed to create block production task");
+
+        // Create a channel to signal the task to stop
+        let (tx, rx) = oneshot::channel();
+
+        // Spawn the block production task
+        let task_handle = tokio::spawn(async move {
+            tokio::select! {
+                result = block_production_task.block_production_task() => {
+                    if let Err(e) = result {
+                        panic!("Block production task failed: {:?}", e);
+                    }
+                }
+                _ = rx => {
+                    // The task has been signaled to stop
+                }
+            }
+        });
+
+        // Let the task run for 10 seconds
+        tokio::time::sleep(Duration::from_secs(11)).await;
+
+        // Signal the task to stop
+        tx.send(()).expect("Failed to send stop signal");
+
+        // Wait for the task to finish
+        task_handle.await.expect("Failed to join task handle");
+
+        // Make assertions
+        let block_number =
+            backend.get_latest_block_n().expect("Failed to get latest block").expect("No blocks were produced");
+
+        // Check if the number of blocks produced is reasonable
+        // This will depend on your chain configuration
+        let expected_min_blocks = 5 / backend.chain_config().block_time.as_secs();
+        assert!(
+            block_number >= expected_min_blocks as u64,
+            "Fewer blocks produced than expected. Expected at least {}, got {}",
+            expected_min_blocks,
+            block_number
+        );
+
+        // You can add more assertions here, such as checking the content of the blocks,
+        // verifying the state updates, or ensuring that the mempool is being processed correctly.
+
+        // For example, you might want to check if transactions are being included in blocks:
+        for block_number in 0..=block_number {
+            let block = backend.get_block(&DbBlockId::BlockN(block_number)).expect("Failed to get block");
+            if let Some(block) = block {
+                println!("Block {} has {} transactions", block_number, block.info.tx_hashes().len());
+                // Add more specific checks here if needed
+            }
+        }
     }
 }
