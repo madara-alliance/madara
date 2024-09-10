@@ -19,6 +19,7 @@ pub use balances::*;
 pub use classes::*;
 pub use contracts::*;
 pub use entrypoint::*;
+use mp_transactions::compute_hash::calculate_contract_address;
 pub use predeployed_contracts::*;
 
 // 1 ETH = 1e18 WEI
@@ -50,7 +51,7 @@ impl StorageDiffs {
 const UDC_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../cairo/target/dev/madara_contracts_UniversalDeployer.contract_class.json");
 const UDC_CLASS_HASH: Felt =
-    Felt::from_hex_unchecked("0x07b3e05f48f0c69e4a65ce5e076a66271a527aff2c34ce1083ec6e1526997a69");
+    Felt::from_hex_unchecked("0x01e947be496dfd19a635fdc32d34528c9074acf96427da4700f3fa6c933fdb02");
 const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
 const UDC_COMPILED_CLASS_HASH: Felt =
@@ -59,7 +60,7 @@ const UDC_COMPILED_CLASS_HASH: Felt =
 const ERC20_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json");
 const ERC20_CLASS_HASH: Felt =
-    Felt::from_hex_unchecked("0x04ad3c1dc8413453db314497945b6903e1c766495a1e60492d44da9c2a986e4b");
+    Felt::from_hex_unchecked("0x233e7094e9e971bf0a5c0d999e7f2ae4f820dcb1304c00e3589a913423ab204");
 const ERC20_COMPILED_CLASS_HASH: Felt =
     Felt::from_hex_unchecked("0x639b7f3c30a7136d13d63c16db7fa15399bd2624d60f2f3ab78d6eae3d6a4e5");
 const ERC20_STRK_CONTRACT_ADDRESS: Felt =
@@ -69,7 +70,7 @@ const ERC20_ETH_CONTRACT_ADDRESS: Felt =
 
 const ACCOUNT_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../cairo/target/dev/madara_contracts_AccountUpgradeable.contract_class.json");
-const ACCOUNT_CLASS_HASH: Felt = Felt::from_hex_unchecked("0xFFFFFFAFAFAFAFAFAFA9b9b9b");
+const ACCOUNT_CLASS_HASH: Felt = Felt::from_hex_unchecked("0x7446579979174f1687e030b2da6a0bf41ec995a206ddf314030e504536c61c1");
 const ACCOUNT_COMPILED_CLASS_HASH: Felt =
     Felt::from_hex_unchecked("0x138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27");
 
@@ -119,20 +120,22 @@ impl ChainGenesisDescription {
                     let key = SigningKey::from_random();
                     let pubkey = key.verifying_key();
 
-                    let address = pubkey.scalar().double(); // let's just lie and make it up here for now
+                    // calculating actual address w.r.t. the class hash.
+                    let calculated_address =
+                        calculate_contract_address(Felt::ZERO, ACCOUNT_CLASS_HASH, &[pubkey.scalar()], Felt::ZERO);
 
                     let balance = ContractFeeTokensBalance {
                         fri: (10_000 * ETH_WEI_DECIMALS).into(),
                         wei: (10_000 * STRK_FRI_DECIMALS).into(),
                     };
 
-                    self.deployed_contracts.insert(address, ACCOUNT_CLASS_HASH);
-                    self.initial_balances.insert(ContractAddress::try_from(address).unwrap(), balance.clone());
+                    self.deployed_contracts.insert(calculated_address, ACCOUNT_CLASS_HASH);
+                    self.initial_balances.insert(ContractAddress::try_from(calculated_address).unwrap(), balance.clone());
                     self.initial_storage
-                        .contract_mut(address.try_into().unwrap())
+                        .contract_mut(calculated_address.try_into().unwrap())
                         .insert(get_contract_pubkey_storage_address(), pubkey.scalar());
 
-                    DevnetPredeployedContract { secret: key, pubkey: pubkey.scalar(), balance, address }
+                    DevnetPredeployedContract { secret: key, pubkey: pubkey.scalar(), balance, address: calculated_address }
                 })
                 .collect(),
         )
