@@ -256,7 +256,6 @@ mod tests {
             self.mempool.accept_declare_tx(tx).unwrap()
         }
 
-        #[allow(unused)]
         pub fn sign_and_add_deploy_account_tx(
             &self,
             mut tx: BroadcastedDeployAccountTransaction,
