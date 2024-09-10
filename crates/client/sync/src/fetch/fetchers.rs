@@ -47,8 +47,6 @@ pub struct FetchConfig {
     pub sync_polling_interval: Option<Duration>,
     /// Number of blocks to sync (for testing purposes).
     pub n_blocks_to_sync: Option<u64>,
-    /// Ignore the order of the blocks to allow starting at some height.
-    pub ignore_block_order: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
