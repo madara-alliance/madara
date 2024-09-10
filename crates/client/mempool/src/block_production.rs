@@ -416,24 +416,16 @@ impl BlockProductionTask {
 
 mod tests {
     use super::*;
-    use std::{
-        sync::Arc,
-        time::{Duration, SystemTime},
-    };
+    use std::sync::Arc;
 
     use crate::GasPriceProvider;
-    use assert_matches::assert_matches;
-    use blockifier::transaction::{account_transaction::AccountTransaction, transactions::InvokeTransaction};
     use mc_block_import::BlockImporter;
-    use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-    use starknet_api::transaction::InvokeTransactionV1;
+    use mc_db::MadaraBackend;
 
-    use mp_block::MadaraMaybePendingBlockInfo;
     use mp_chain_config::ChainConfig;
 
-    use tokio::sync::oneshot;
-
     #[derive(Clone)]
+    #[allow(unused)]
     struct TestEnvironment {
         backend: Arc<MadaraBackend>,
         l1_data_provider: Arc<dyn L1DataProvider>,
@@ -442,6 +434,7 @@ mod tests {
     }
 
     impl TestEnvironment {
+        #[allow(unused)]
         fn new() -> Self {
             let chain_config = Arc::new(ChainConfig::test_config());
             let backend = MadaraBackend::open_for_testing(chain_config.clone());
@@ -455,6 +448,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_block_production_empty_mempool() {
+        use assert_matches::assert_matches;
+        use mc_db::db_block_id::DbBlockId;
+
+        use mp_block::MadaraMaybePendingBlockInfo;
+
         let test_env = TestEnvironment::new();
         let mut block_production_task = BlockProductionTask::new(
             test_env.backend.clone(),
@@ -483,6 +481,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_block_production_with_invalid_tx() {
+        use crate::InvokeTransaction;
+        use assert_matches::assert_matches;
+        use blockifier::transaction::account_transaction::AccountTransaction;
+        use mp_block::MadaraMaybePendingBlockInfo;
+        use starknet_api::transaction::InvokeTransactionV1;
+        use std::time::SystemTime;
+
         let test_env = TestEnvironment::new();
         let mut block_production_task = BlockProductionTask::new(
             test_env.backend.clone(),
@@ -519,6 +524,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_block_production_task() {
+        use std::time::Duration;
+        use tokio::sync::oneshot;
+
         let test_env = TestEnvironment::new();
         let backend = test_env.backend.clone();
         let mut block_production_task =

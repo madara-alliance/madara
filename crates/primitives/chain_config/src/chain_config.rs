@@ -124,7 +124,7 @@ impl ChainConfig {
             eth_core_contract_address: eth_core_contract_address::MAINNET.parse().expect("parsing a constant"),
 
             latest_protocol_version: StarknetVersion::V0_13_2,
-            block_time: Duration::from_secs(5),
+            block_time: Duration::from_secs(30),
             pending_block_update_time: Duration::from_secs(1),
 
             bouncer_config: BouncerConfig {
@@ -180,6 +180,7 @@ impl ChainConfig {
             chain_id: ChainId::Other("MADARA_TEST".into()),
             // We need a sequencer address for fee transfers to work in block production.
             sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
+            block_time: Duration::from_secs(5),
             ..ChainConfig::starknet_sepolia()
         }
     }
