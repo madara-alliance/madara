@@ -13,7 +13,6 @@ anyhow.workspace = true
 env_logger.workspace = true
 flate2 = "1.0.30"
 lazy_static.workspace = true
-log.workspace = true
 once_cell = { workspace = true }
 reqwest.workspace = true
 rstest.workspace = true
