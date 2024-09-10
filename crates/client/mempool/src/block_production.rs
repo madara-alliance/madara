@@ -415,6 +415,7 @@ impl BlockProductionTask {
 }
 
 mod tests {
+    use super::*;
     use std::{sync::Arc, time::SystemTime};
 
     use crate::GasPriceProvider;
@@ -424,15 +425,12 @@ mod tests {
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
     use starknet_api::transaction::InvokeTransactionV1;
 
-    use super::*;
     use mp_block::MadaraMaybePendingBlockInfo;
     use mp_chain_config::ChainConfig;
 
     #[derive(Clone)]
     struct TestEnvironment {
-        chain_config: Arc<ChainConfig>,
         backend: Arc<MadaraBackend>,
-        l1_gas_setter: GasPriceProvider,
         l1_data_provider: Arc<dyn L1DataProvider>,
         mempool: Arc<Mempool>,
         importer: Arc<BlockImporter>,
@@ -446,7 +444,7 @@ mod tests {
             let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
             let mempool = Arc::new(Mempool::new(backend.clone(), l1_data_provider.clone()));
             let importer = Arc::new(BlockImporter::new(backend.clone()));
-            Self { chain_config, backend, l1_gas_setter, l1_data_provider, mempool, importer }
+            Self { backend, l1_data_provider, mempool, importer }
         }
     }
 
