@@ -183,14 +183,21 @@ mod tests {
     use mc_mempool::{transaction_hash, L1DataProvider, Mempool, MockL1DataProvider};
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
+    use mp_class::ClassInfo;
     use mp_convert::felt_to_u128;
-    use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
+    use mp_receipt::{
+        DeclareTransactionReceipt, Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit,
+        TransactionReceipt,
+    };
     use mp_transactions::broadcasted_to_blockifier;
+    use mp_transactions::compute_hash::calculate_contract_address;
     use rstest::{fixture, rstest};
+    use starknet_core::types::contract::SierraClass;
     use starknet_core::types::{
-        BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
-        BroadcastedInvokeTransactionV3, BroadcastedTransaction, DeclareTransactionResult,
-        DeployAccountTransactionResult, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping,
+        BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV3, BroadcastedDeployAccountTransaction,
+        BroadcastedDeployAccountTransactionV3, BroadcastedInvokeTransaction, BroadcastedInvokeTransactionV3,
+        BroadcastedTransaction, DataAvailabilityMode, DeclareTransactionResult, DeployAccountTransactionResult,
+        FlattenedSierraClass, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping,
     };
     use std::sync::Arc;
 
@@ -226,7 +233,6 @@ mod tests {
             self.mempool.accept_invoke_tx(tx).unwrap()
         }
 
-        #[allow(unused)]
         pub fn sign_and_add_declare_tx(
             &self,
             mut tx: BroadcastedDeclareTransaction,
@@ -323,6 +329,163 @@ mod tests {
         .unwrap();
 
         DevnetForTesting { backend, contracts, block_production, mempool }
+    }
+
+    #[rstest]
+    #[case("../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json")]
+    fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract_path: &str) {
+        println!("{}", chain.contracts);
+
+        let sender_address = &chain.contracts.0[0];
+
+        let sierra_class: SierraClass = serde_json::from_reader(std::fs::File::open(contract_path).unwrap()).unwrap();
+        let flattened_class: FlattenedSierraClass = sierra_class.clone().flatten().unwrap();
+
+        // starkli class-hash madara_contracts_ERC20.compiled_contract_class.json
+        let compiled_contract_class_hash =
+            Felt::from_hex("0x0639b7f3c30a7136d13d63c16db7fa15399bd2624d60f2f3ab78d6eae3d6a4e5").unwrap();
+
+        let declare_txn: BroadcastedDeclareTransaction =
+            BroadcastedDeclareTransaction::V3(BroadcastedDeclareTransactionV3 {
+                sender_address: sender_address.address,
+                compiled_class_hash: compiled_contract_class_hash,
+                signature: vec![],
+                nonce: Felt::ZERO,
+                contract_class: Arc::new(flattened_class),
+                resource_bounds: ResourceBoundsMapping {
+                    l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                },
+                tip: 0,
+                paymaster_data: vec![],
+                account_deployment_data: vec![],
+                nonce_data_availability_mode: DataAvailabilityMode::L1,
+                fee_data_availability_mode: DataAvailabilityMode::L1,
+                is_query: false,
+            });
+
+        let res = chain.sign_and_add_declare_tx(declare_txn, sender_address);
+
+        let calculated_class_hash = sierra_class.clone().class_hash().unwrap();
+
+        assert_eq!(res.class_hash, calculated_class_hash);
+
+        chain.block_production.set_current_pending_tick(1);
+        chain.block_production.on_pending_time_tick().unwrap();
+
+        let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
+
+        assert_eq!(block.inner.transactions.len(), 1);
+        assert_eq!(block.inner.receipts.len(), 1);
+        log::info!("receipt: {:?}", block.inner.receipts[0]);
+
+        let class_info =
+            chain.backend.get_class_info(&BlockId::Tag(BlockTag::Pending), &calculated_class_hash).unwrap().unwrap();
+        match class_info {
+            ClassInfo::Sierra(info) => {
+                assert_eq!(info.compiled_class_hash, compiled_contract_class_hash);
+            }
+            ClassInfo::Legacy(_) => {}
+        }
+
+        let TransactionReceipt::Declare(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
+
+        assert_eq!(
+            receipt,
+            DeclareTransactionReceipt {
+                transaction_hash: res.transaction_hash,
+                messages_sent: vec![],
+                events: vec![Event {
+                    from_address: ERC20_STRK_CONTRACT_ADDRESS,
+                    keys: receipt.events[0].keys.clone(),
+                    data: receipt.events[0].data.clone(),
+                }],
+                execution_resources: receipt.execution_resources.clone(),
+                actual_fee: FeePayment { amount: receipt.actual_fee.amount, unit: PriceUnit::Fri },
+                execution_result: receipt.execution_result.clone(),
+            }
+        );
+    }
+
+    #[rstest]
+    #[case("../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json")]
+    fn test_account_deploy(mut chain: DevnetForTesting, #[case] _contract_path: &str) {
+        println!("{}", chain.contracts);
+
+        let key = SigningKey::from_random();
+        log::info!("Secret Key : {:?}", key.secret_scalar());
+
+        let pubkey = key.verifying_key();
+        log::info!("Public Key : {:?}", pubkey.scalar());
+
+        let calculated_address =
+            calculate_contract_address(Felt::ZERO, ACCOUNT_CLASS_HASH, &[pubkey.scalar()], Felt::ZERO);
+        log::info!("Calculated Address : {:?}", calculated_address);
+
+        // =====================================================================================
+        // Transferring the funds from pre deployed account into the calculated address
+        let contract_0 = &chain.contracts.0[0];
+
+        let transfer_txn = chain.sign_and_add_invoke_tx(
+            BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+                sender_address: contract_0.address,
+                calldata: Multicall::default()
+                    .with(Call {
+                        to: ERC20_STRK_CONTRACT_ADDRESS,
+                        selector: Selector::from("transfer"),
+                        calldata: vec![calculated_address, (9_999u128 * STRK_FRI_DECIMALS).into(), Felt::ZERO],
+                    })
+                    .flatten()
+                    .collect(),
+                signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
+                nonce: Felt::ZERO,
+                resource_bounds: ResourceBoundsMapping {
+                    l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                },
+                tip: 0,
+                paymaster_data: vec![],
+                account_deployment_data: vec![],
+                nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                is_query: false,
+            }),
+            contract_0,
+        );
+        log::info!("tx hash: {:#x}", transfer_txn.transaction_hash);
+
+        chain.block_production.set_current_pending_tick(1);
+        chain.block_production.on_pending_time_tick().unwrap();
+        // =====================================================================================
+
+        let account_balance = get_fee_tokens_balance(&chain.backend, calculated_address).unwrap();
+        let account = DevnetPredeployedContract {
+            secret: key,
+            pubkey: pubkey.scalar(),
+            balance: account_balance,
+            address: calculated_address,
+        };
+
+        let deploy_account_txn = BroadcastedDeployAccountTransaction::V3(BroadcastedDeployAccountTransactionV3 {
+            signature: vec![],
+            nonce: Felt::ZERO,
+            contract_address_salt: Felt::ZERO,
+            constructor_calldata: vec![pubkey.scalar()],
+            class_hash: ACCOUNT_CLASS_HASH,
+            resource_bounds: ResourceBoundsMapping {
+                l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+            },
+            tip: 0,
+            paymaster_data: vec![],
+            nonce_data_availability_mode: DataAvailabilityMode::L1,
+            fee_data_availability_mode: DataAvailabilityMode::L1,
+            is_query: false,
+        });
+
+        let res = chain.sign_and_add_deploy_account_tx(deploy_account_txn, &account);
+
+        assert_eq!(res.contract_address, account.address);
     }
 
     // TODO: add eth transfer
