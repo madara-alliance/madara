@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: add integration tests for block production
 - feat: add devnet via `--devnet` cli argument
 - refactor: class import from FGW
 - code docs: documented how get_storage_at is implemented
