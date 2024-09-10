@@ -413,3 +413,104 @@ impl BlockProductionTask {
         self.executor.block_context.block_info().block_number.0
     }
 }
+
+mod tests {
+    use std::{sync::Arc, time::SystemTime};
+
+    use crate::GasPriceProvider;
+    use assert_matches::assert_matches;
+    use blockifier::transaction::{account_transaction::AccountTransaction, transactions::InvokeTransaction};
+    use mc_block_import::BlockImporter;
+    use mc_db::{db_block_id::DbBlockId, MadaraBackend};
+    use starknet_api::transaction::InvokeTransactionV1;
+
+    use super::*;
+    use mp_block::MadaraMaybePendingBlockInfo;
+    use mp_chain_config::ChainConfig;
+
+    #[derive(Clone)]
+    struct TestEnvironment {
+        chain_config: Arc<ChainConfig>,
+        backend: Arc<MadaraBackend>,
+        l1_gas_setter: GasPriceProvider,
+        l1_data_provider: Arc<dyn L1DataProvider>,
+        mempool: Arc<Mempool>,
+        importer: Arc<BlockImporter>,
+    }
+
+    impl TestEnvironment {
+        fn new() -> Self {
+            let chain_config = Arc::new(ChainConfig::test_config());
+            let backend = MadaraBackend::open_for_testing(chain_config.clone());
+            let l1_gas_setter = GasPriceProvider::new();
+            let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
+            let mempool = Arc::new(Mempool::new(backend.clone(), l1_data_provider.clone()));
+            let importer = Arc::new(BlockImporter::new(backend.clone()));
+            Self { chain_config, backend, l1_gas_setter, l1_data_provider, mempool, importer }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_block_production_empty_mempool() {
+        let test_env = TestEnvironment::new();
+        let mut block_production_task = BlockProductionTask::new(
+            test_env.backend.clone(),
+            test_env.importer,
+            test_env.mempool,
+            test_env.l1_data_provider,
+        )
+        .expect("Failed to create block production task");
+
+        // Ignore first tick
+        block_production_task.set_current_pending_tick(1);
+
+        block_production_task.on_pending_time_tick().expect("Failed to produce empty pending block");
+
+        let block = test_env.backend.get_block(&DbBlockId::Pending).expect("get_block failed");
+        assert!(block.is_some());
+        assert_matches!(block.clone().unwrap().info, MadaraMaybePendingBlockInfo::Pending(_));
+        assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 0);
+
+        block_production_task.on_block_time().await.expect("Failed to close empty block");
+        let block = test_env.backend.get_block(&DbBlockId::BlockN(0)).expect("get_block failed");
+        assert!(block.is_some());
+        assert_matches!(block.clone().unwrap().info, MadaraMaybePendingBlockInfo::NotPending(_));
+        assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_block_production_with_invalid_tx() {
+        let test_env = TestEnvironment::new();
+        let mut block_production_task = BlockProductionTask::new(
+            test_env.backend.clone(),
+            test_env.importer,
+            test_env.mempool.clone(),
+            test_env.l1_data_provider,
+        )
+        .expect("Failed to create block production task");
+
+        // Ignore first tick
+        block_production_task.set_current_pending_tick(1);
+
+        let now = SystemTime::now();
+
+        let tx = MempoolTransaction {
+            tx: AccountTransaction::Invoke(InvokeTransaction {
+                tx: starknet_api::transaction::InvokeTransaction::V1(InvokeTransactionV1::default()),
+                tx_hash: starknet_api::transaction::TransactionHash(Felt::ONE),
+                only_query: false,
+            }),
+            arrived_at: now,
+            converted_class: None,
+        };
+
+        test_env.mempool.re_add_txs(vec![tx.clone()]);
+
+        block_production_task.on_pending_time_tick().expect("Failed to produce pending block with tx");
+
+        let block = test_env.backend.get_block(&DbBlockId::Pending).expect("get_block failed");
+        assert!(block.is_some());
+        assert_matches!(block.clone().unwrap().info, MadaraMaybePendingBlockInfo::Pending(_));
+        assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 0);
+    }
+}

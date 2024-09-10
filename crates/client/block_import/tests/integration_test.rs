@@ -4,8 +4,8 @@ use mp_transactions::Transaction;
 use std::sync::Arc;
 
 use mc_block_import::{
-    BlockImportResult, BlockImporter, PendingBlockImportResult, UnverifiedFullBlock, UnverifiedHeader,
-    UnverifiedPendingFullBlock, Validation,
+    BlockImportResult, BlockImporter, BlockValidationContext, PendingBlockImportResult, UnverifiedFullBlock,
+    UnverifiedHeader, UnverifiedPendingFullBlock,
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mp_block::{
@@ -28,7 +28,7 @@ async fn import_one_empty_block_full() {
             parent_block_hash: None,
             sequencer_address: Felt::ONE,
             block_timestamp: 12345,
-            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+            protocol_version: StarknetVersion::LATEST,
             l1_gas_price: GasPrices::default(),
             l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
         },
@@ -39,10 +39,11 @@ async fn import_one_empty_block_full() {
         commitments: Default::default(),
     };
 
-    let validation = Validation {
+    let validation = BlockValidationContext {
         trust_transaction_hashes: false,
         chain_id: chain_config.chain_id.clone(),
         trust_global_tries: false,
+        trust_class_hashes: false,
     };
 
     let pre_validated_block =
@@ -65,7 +66,7 @@ async fn import_one_empty_block_full() {
             "0x49973925542c74a9d9ff0efaa98c61e1225d0aedb708092433cbbb20836d30a",
         ),
         receipt_commitment: Felt::ZERO,
-        protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+        protocol_version: StarknetVersion::LATEST,
         l1_gas_price: GasPrices::default(),
         l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
     };
@@ -97,7 +98,7 @@ async fn import_one_empty_block_pending() {
             parent_block_hash: None,
             sequencer_address: Felt::ONE,
             block_timestamp: 12345,
-            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+            protocol_version: StarknetVersion::LATEST,
             l1_gas_price: GasPrices::default(),
             l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
         },
@@ -107,10 +108,11 @@ async fn import_one_empty_block_pending() {
         declared_classes: vec![],
     };
 
-    let validation = Validation {
+    let validation = BlockValidationContext {
         trust_transaction_hashes: false,
         chain_id: chain_config.chain_id.clone(),
         trust_global_tries: false,
+        trust_class_hashes: false,
     };
 
     let pre_validated_block =
@@ -134,7 +136,7 @@ async fn import_one_empty_block_pending() {
             parent_block_hash: Felt::ZERO,
             sequencer_address: Felt::ONE,
             block_timestamp: 12345,
-            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+            protocol_version: StarknetVersion::LATEST,
             l1_gas_price: GasPrices::default(),
             l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
         }
@@ -151,10 +153,11 @@ async fn import_block_with_txs() {
 
     let block = get_unverified_full_block();
 
-    let validation = Validation {
+    let validation = BlockValidationContext {
         trust_transaction_hashes: false,
         chain_id: chain_config.chain_id.clone(),
         trust_global_tries: false,
+        trust_class_hashes: false,
     };
 
     let pre_validated_block =
@@ -181,7 +184,7 @@ async fn import_block_with_txs() {
         receipt_commitment: Felt::from_hex_unchecked(
             "0x2879fdc4d9521339b5015d67494aa183352f76d4a441f64bbde534f14c8be3a",
         ),
-        protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+        protocol_version: StarknetVersion::LATEST,
         l1_gas_price: GasPrices::default(),
         l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
     };
@@ -210,10 +213,11 @@ async fn import_multiple_blocks_with_txs() {
 
     let block = get_unverified_full_block();
 
-    let validation = Validation {
+    let validation = BlockValidationContext {
         trust_transaction_hashes: false,
         chain_id: chain_config.chain_id.clone(),
         trust_global_tries: false,
+        trust_class_hashes: false,
     };
 
     let pre_validated_block =
@@ -249,7 +253,7 @@ async fn import_multiple_blocks_with_txs() {
         receipt_commitment: Felt::from_hex_unchecked(
             "0x2879fdc4d9521339b5015d67494aa183352f76d4a441f64bbde534f14c8be3a",
         ),
-        protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+        protocol_version: StarknetVersion::LATEST,
         l1_gas_price: GasPrices::default(),
         l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
     };
@@ -273,7 +277,7 @@ fn get_unverified_full_block() -> UnverifiedFullBlock {
             parent_block_hash: None,
             sequencer_address: Felt::ONE,
             block_timestamp: 12345,
-            protocol_version: StarknetVersion::STARKNET_VERSION_0_13_2,
+            protocol_version: StarknetVersion::LATEST,
             l1_gas_price: GasPrices::default(),
             l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
         },
