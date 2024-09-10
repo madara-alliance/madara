@@ -11,8 +11,8 @@ use starknet_core::types::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
 
 use crate::{
-    BlockImportError, BlockImportResult, PendingBlockImportResult, PreValidatedBlock, PreValidatedPendingBlock,
-    RayonPool, UnverifiedHeader, ValidatedCommitments, BlockValidationContext,
+    BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult, PreValidatedBlock,
+    PreValidatedPendingBlock, RayonPool, UnverifiedHeader, ValidatedCommitments,
 };
 
 mod classes;

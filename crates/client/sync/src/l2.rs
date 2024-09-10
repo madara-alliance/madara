@@ -5,7 +5,9 @@ use crate::metrics::block_metrics::BlockMetrics;
 use crate::utils::trim_hash;
 use anyhow::Context;
 use futures::{stream, StreamExt};
-use mc_block_import::{BlockImportResult, BlockImporter, PreValidatedBlock, UnverifiedFullBlock, BlockValidationContext};
+use mc_block_import::{
+    BlockImportResult, BlockImporter, BlockValidationContext, PreValidatedBlock, UnverifiedFullBlock,
+};
 use mc_db::db_metrics::DbMetrics;
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
@@ -235,7 +237,12 @@ pub async fn sync(
     // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
     // starves the tokio worker
     let block_importer = Arc::new(BlockImporter::new(Arc::clone(backend)));
-    let validation = BlockValidationContext { trust_transaction_hashes: false, trust_global_tries: config.verify, chain_id, trust_class_hashes: false };
+    let validation = BlockValidationContext {
+        trust_transaction_hashes: false,
+        trust_global_tries: config.verify,
+        chain_id,
+        trust_class_hashes: false,
+    };
 
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(

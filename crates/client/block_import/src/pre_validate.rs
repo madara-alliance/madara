@@ -1,6 +1,6 @@
 use crate::{
-    BlockImportError, DeclaredClass, PreValidatedBlock, PreValidatedPendingBlock, RayonPool, UnverifiedFullBlock,
-    UnverifiedPendingFullBlock, ValidatedCommitments, BlockValidationContext,
+    BlockImportError, BlockValidationContext, DeclaredClass, PreValidatedBlock, PreValidatedPendingBlock, RayonPool,
+    UnverifiedFullBlock, UnverifiedPendingFullBlock, ValidatedCommitments,
 };
 use bitvec::vec::BitVec;
 use mp_chain_config::StarknetVersion;
@@ -137,7 +137,10 @@ fn convert_classes(
     declared_classes.into_par_iter().map(|class| class_conversion(class, validation)).collect()
 }
 
-fn class_conversion(class: DeclaredClass, validation: &BlockValidationContext) -> Result<ConvertedClass, BlockImportError> {
+fn class_conversion(
+    class: DeclaredClass,
+    validation: &BlockValidationContext,
+) -> Result<ConvertedClass, BlockImportError> {
     match class {
         DeclaredClass::Sierra(sierra) => {
             log::trace!("Converting class with hash {:#x}", sierra.class_hash);
@@ -216,7 +219,10 @@ fn transaction_hashes(
 }
 
 /// Compute the transaction commitment for a block.
-fn transaction_commitment(block: &UnverifiedFullBlock, validation: &BlockValidationContext) -> Result<Felt, BlockImportError> {
+fn transaction_commitment(
+    block: &UnverifiedFullBlock,
+    validation: &BlockValidationContext,
+) -> Result<Felt, BlockImportError> {
     let starknet_version = block.header.protocol_version;
 
     let transaction_hashes = transaction_hashes(&block.receipts, &block.transactions, starknet_version, validation)?;
@@ -250,7 +256,10 @@ fn transaction_commitment(block: &UnverifiedFullBlock, validation: &BlockValidat
 }
 
 /// Compute the events commitment for a block.
-fn event_commitment(block: &UnverifiedFullBlock, _validation: &BlockValidationContext) -> Result<Felt, BlockImportError> {
+fn event_commitment(
+    block: &UnverifiedFullBlock,
+    _validation: &BlockValidationContext,
+) -> Result<Felt, BlockImportError> {
     let events_with_tx_hash: Vec<_> = block
         .receipts
         .iter()
@@ -287,7 +296,10 @@ fn event_commitment(block: &UnverifiedFullBlock, _validation: &BlockValidationCo
 }
 
 /// Compute the receipt commitment for a block.
-fn receipt_commitment(block: &UnverifiedFullBlock, _validation: &BlockValidationContext) -> Result<Felt, BlockImportError> {
+fn receipt_commitment(
+    block: &UnverifiedFullBlock,
+    _validation: &BlockValidationContext,
+) -> Result<Felt, BlockImportError> {
     let hashes = block.receipts.par_iter().map(TransactionReceipt::compute_hash).collect::<Vec<_>>();
     let got = compute_merkle_root::<Poseidon>(&hashes);
 
@@ -300,7 +312,10 @@ fn receipt_commitment(block: &UnverifiedFullBlock, _validation: &BlockValidation
 }
 
 /// Compute the state diff commitment for a block.
-fn state_diff_commitment(block: &UnverifiedFullBlock, _validation: &BlockValidationContext) -> Result<Felt, BlockImportError> {
+fn state_diff_commitment(
+    block: &UnverifiedFullBlock,
+    _validation: &BlockValidationContext,
+) -> Result<Felt, BlockImportError> {
     let got = block.state_diff.len() as u64;
     if let Some(expected) = block.commitments.state_diff_length {
         if expected != got {

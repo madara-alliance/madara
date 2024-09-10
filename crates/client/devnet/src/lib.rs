@@ -70,7 +70,8 @@ const ERC20_ETH_CONTRACT_ADDRESS: Felt =
 const ACCOUNT_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../cairo/target/dev/madara_contracts_AccountUpgradeable.contract_class.json");
 const ACCOUNT_CLASS_HASH: Felt = Felt::from_hex_unchecked("0xFFFFFFAFAFAFAFAFAFA9b9b9b");
-const ACCOUNT_COMPILED_CLASS_HASH: Felt = Felt::from_hex_unchecked("0x138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27");
+const ACCOUNT_COMPILED_CLASS_HASH: Felt =
+    Felt::from_hex_unchecked("0x138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27");
 
 /// High level description of the genesis block.
 #[derive(Clone, Debug, Default)]
@@ -88,7 +89,11 @@ impl ChainGenesisDescription {
             initial_balances: InitialBalances::default(),
             declared_classes: InitiallyDeclaredClasses::default()
                 .with(InitiallyDeclaredClass::new_sierra(UDC_CLASS_HASH, UDC_COMPILED_CLASS_HASH, UDC_CLASS_DEFINITION))
-                .with(InitiallyDeclaredClass::new_sierra(ERC20_CLASS_HASH, ERC20_COMPILED_CLASS_HASH, ERC20_CLASS_DEFINITION)),
+                .with(InitiallyDeclaredClass::new_sierra(
+                    ERC20_CLASS_HASH,
+                    ERC20_COMPILED_CLASS_HASH,
+                    ERC20_CLASS_DEFINITION,
+                )),
             deployed_contracts: InitiallyDeployedContracts::default()
                 .with(UDC_CONTRACT_ADDRESS, UDC_CLASS_HASH)
                 .with(ERC20_ETH_CONTRACT_ADDRESS, ERC20_CLASS_HASH)
