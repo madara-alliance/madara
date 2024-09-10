@@ -341,7 +341,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case("../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json")]
+    #[case("../../../cairo/target/dev/madara_contracts_madara_contracts_test_account_AccountUpgradeable.contract_class.json")]
     fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract_path: &str) {
         println!("{}", chain.contracts);
 
@@ -352,7 +352,7 @@ mod tests {
 
         // starkli class-hash madara_contracts_ERC20.compiled_contract_class.json
         let compiled_contract_class_hash =
-            Felt::from_hex("0x0639b7f3c30a7136d13d63c16db7fa15399bd2624d60f2f3ab78d6eae3d6a4e5").unwrap();
+            Felt::from_hex("0x0138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27").unwrap();
 
         let declare_txn: BroadcastedDeclareTransaction =
             BroadcastedDeclareTransaction::V3(BroadcastedDeclareTransactionV3 {
