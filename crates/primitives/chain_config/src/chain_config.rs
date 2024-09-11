@@ -8,7 +8,6 @@ use primitive_types::H160;
 use serde::Deserialize;
 use serde::Deserializer;
 use starknet_api::core::{ChainId, ContractAddress};
-use std::env;
 use std::str::FromStr;
 use std::{
     collections::BTreeMap,
@@ -21,13 +20,6 @@ use std::{
 #[derive(thiserror::Error, Debug)]
 #[error("Unsupported protocol version: {0}")]
 pub struct UnsupportedProtocolVersion(StarknetVersion);
-
-fn resolve_path(relative_path: &str) -> std::io::Result<PathBuf> {
-    let exe_path = env::current_exe()?;
-    let exe_dir = exe_path.parent()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Unable to determine executable directory"))?;
-    Ok(exe_dir.join(relative_path))
-}
 
 pub enum ChainPreset{
     Mainnet,
