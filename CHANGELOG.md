@@ -2,6 +2,7 @@
 
 ## Next release
 
+- docs: fixed Docker Compose instructions
 - fix: removed unused dependencies with udeps and machete
 - feat: add devnet via `--devnet` cli argument
 - refactor: class import from FGW
