@@ -309,12 +309,7 @@ mod tests {
         println!("{:?}", block.state_diff);
         tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(
-                importer.add_block(
-                    block,
-                    BlockValidationContext::new(chain_config.chain_id.clone()).trust_class_hashes(true),
-                ),
-            )
+            .block_on(importer.add_block(block, BlockValidationContext::new(chain_config.chain_id.clone())))
             .unwrap();
 
         log::debug!("{:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
