@@ -69,7 +69,7 @@ const ERC20_ETH_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7");
 
 const ACCOUNT_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../cairo/target/dev/madara_contracts_AccountUpgradeable.contract_class.json");
+    include_bytes!("../../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 const ACCOUNT_CLASS_HASH: Felt =
     Felt::from_hex_unchecked("0x7446579979174f1687e030b2da6a0bf41ec995a206ddf314030e504536c61c1");
 const ACCOUNT_COMPILED_CLASS_HASH: Felt =

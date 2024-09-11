@@ -2,7 +2,7 @@
 // OpenZeppelin Contracts for Cairo v0.15.1 (presets/account.cairo)
 
 #[starknet::contract(account)]
-pub mod AccountUpgradeable {
+pub mod TestContract {
     use openzeppelin_account::AccountComponent;
     use openzeppelin_introspection::src5::SRC5Component;
     use openzeppelin_upgrades::UpgradeableComponent;
