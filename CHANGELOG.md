@@ -3,6 +3,8 @@
 ## Next release
 
 - test: added tests for declare and deploy transactions
+- docs: fixed Docker Compose instructions
+- fix: removed unused dependencies with udeps and machete
 - feat: add devnet via `--devnet` cli argument
 - refactor: class import from FGW
 - code docs: documented how get_storage_at is implemented
