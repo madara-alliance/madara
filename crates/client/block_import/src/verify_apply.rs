@@ -66,7 +66,7 @@ pub fn verify_apply_inner(
 ) -> Result<BlockImportResult, BlockImportError> {
     // Check block number and block hash against db
     let (block_number, parent_block_hash) =
-        check_parent_hash_and_num(backend, block.header.parent_block_hash, block.unverified_block_number)?;
+        check_parent_hash_and_num(backend, block.header.parent_block_hash, block.unverified_block_number, &validation)?;
 
     // Update contract and its storage tries
     let global_state_root = update_tries(backend, &block, &validation, block_number)?;
@@ -100,9 +100,10 @@ pub fn verify_apply_inner(
 pub fn verify_apply_pending_inner(
     backend: &MadaraBackend,
     block: PreValidatedPendingBlock,
-    _validation: BlockValidationContext,
+    validation: BlockValidationContext,
 ) -> Result<PendingBlockImportResult, BlockImportError> {
-    let (_block_number, parent_block_hash) = check_parent_hash_and_num(backend, block.header.parent_block_hash, None)?;
+    let (_block_number, parent_block_hash) =
+        check_parent_hash_and_num(backend, block.header.parent_block_hash, None, &validation)?;
 
     let UnverifiedHeader {
         parent_block_hash: _,
@@ -147,6 +148,7 @@ fn check_parent_hash_and_num(
     backend: &MadaraBackend,
     parent_block_hash: Option<Felt>,
     unverified_block_number: Option<u64>,
+    validation: &BlockValidationContext,
 ) -> Result<(u64, Felt), BlockImportError> {
     let latest_block_info =
         backend.get_block_info(&BlockId::Tag(BlockTag::Latest)).map_err(make_db_error("getting latest block info"))?;
@@ -160,7 +162,7 @@ fn check_parent_hash_and_num(
     };
 
     let block_number = if let Some(block_n) = unverified_block_number {
-        if block_n != expected_block_number {
+        if block_n != expected_block_number && !validation.ignore_block_order {
             return Err(BlockImportError::LatestBlockN { expected: expected_block_number, got: block_n });
         }
         block_n
@@ -169,7 +171,7 @@ fn check_parent_hash_and_num(
     };
 
     if let Some(parent_block_hash) = parent_block_hash {
-        if parent_block_hash != expected_parent_block_hash {
+        if parent_block_hash != expected_parent_block_hash && !validation.ignore_block_order {
             return Err(BlockImportError::ParentHash { expected: expected_parent_block_hash, got: parent_block_hash });
         }
     }
@@ -284,7 +286,7 @@ fn block_hash(
             return Ok((expected, header));
         }
 
-        if expected != block_hash {
+        if expected != block_hash && !validation.ignore_block_order {
             return Err(BlockImportError::BlockHash { got: block_hash, expected });
         }
     }
