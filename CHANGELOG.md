@@ -98,7 +98,7 @@
 - feat(infra): Added boilerplate to deploy a grafana/prometheus dashboard
 - refacor: use db hash
 - refactor: l2-sync
-- refactor: remove crate dp-mapping-sync
+- refactor: remove crate mp-mapping-sync
 - fix(rpc): get_nonce
 - fix(rpc): get_class
 - refactor: mapping db
@@ -109,13 +109,13 @@
 - remove RuntimeApi on RPC
 - feat(metrics): Added sync time metrics
 - refactor: using const and OnceCell instead of lazy_static
-- refactor: remove crate dp-storage
+- refactor: remove crate mp-storage
 - feat(infra): corrected dockerfile + docker-compose
 - fix(rpc): error handling
 - fix(lib): updated core libs to match oss
 - fix: state root - replaced_classes commit
 - feat: fetch block and state update in only one request
-- feat: added deoxys launcher script
+- feat: added madara launcher script
 - fix: creation of the block context
 - fix: is_missing_class
 - fix: state root - replaced_classes
@@ -180,7 +180,7 @@
 - feat(rpc): add pending block to `get_block_with_receipts` rpc call
 - chore: update bonsai-trie (benefit from perf boost)
 - feat(rpc): add `get_block_with_receipts` rpc call
-- refactor: remove crate dp-state, dp-fee, dp-messages
+- refactor: remove crate mp-state, mp-fee, mp-messages
 - fix(class): Fix class conversions to support legacy Sierra versions
 - feat: rebase blockifier
 - feat(check): Added a state root check to ensure synced compatibility
@@ -211,10 +211,10 @@
 - fix(worflows): fix toolchain and cache issue
 - feat: Removal of the hardcoded mainnet configuration
 - refactor: pass new CI
-- fix(workflows): Fix deoxys CI
+- fix(workflows): Fix madara CI
 - feat(rpc): add_invoke_tx, add_deploy_account_tx, add_declare_tx
 - feat(rpc): tx_receipt, re-execute tx
-- feat(script): added CI scripts for starting Deoxys and comparing JSON RPC
+- feat(script): added CI scripts for starting madara and comparing JSON RPC
   calls
 - perf(verify_l2): parallelized l2 state root update
 - perf(state_commitment): parallelized state commitment hash computations
@@ -255,7 +255,7 @@
 - refacto: early exit txs fee estimation when one fails
 - dev: fix linter warning in README.md
 - fix: remove waiting loop from `getTxReceipt`
-- feat: types in `dp-transactions` impl a method to get their version
+- feat: types in `mp-transactions` impl a method to get their version
 - feat: make L1 gas price a `const` of the `RuntimeConfig`
 - fix: broken class hashes and contracts in genesis
 - refactor: rename LAST_SYNCED_L1_BLOCK to be more clear
@@ -296,7 +296,7 @@
 - fix(node/commands): md5 are also checked when running setup --from-local
 - feat(data-availability): extend eth config with poll interval
 - fix(snos-output): expose snos codec, remove unused `get_starknet_messages`
-  runtime method, and unnecessary dp-snos-output dependencies
+  runtime method, and unnecessary mp-snos-output dependencies
 - feat(program-hash): add new pallet constant for Starknet OS progam hash;
   expose runtime getter method; add dedicated crate to manage versions
 - feat(runtime): expose fee token address getter method
@@ -415,7 +415,7 @@
 - fix: update madara infra to main branch
 - fix: update `Cargo.lock`
 - fix: rpc test failing
-- refactor: exported chain id constant in dp-chain-id crate and added one for
+- refactor: exported chain id constant in mp-chain-id crate and added one for
   SN_MAIN
 - ci: disable pr close workflow
 - ci: add ci verification for detecting genesis changes and config hashes
