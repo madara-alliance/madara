@@ -11,9 +11,6 @@ use std::sync::Arc;
 use anyhow::Context;
 use clap::Parser;
 use mc_block_import::BlockImporter;
-mod cli;
-mod service;
-mod util;
 
 use mc_db::DatabaseService;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
