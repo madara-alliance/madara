@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use aws_config::SdkConfig;
 use dotenvy::dotenv;
+use ethereum_da_client::config::EthereumDaConfig;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Url};
 
@@ -27,7 +28,6 @@ use crate::data_storage::DataStorage;
 use aws_config::meta::region::RegionProviderChain;
 use aws_config::Region;
 use aws_credential_types::Credentials;
-use ethereum_da_client::EthereumDaClient;
 use utils::settings::env::EnvSettingsProvider;
 use utils::settings::Settings;
 
@@ -185,7 +185,11 @@ impl Config {
 /// Builds the DA client based on the environment variable DA_LAYER
 pub async fn build_da_client(settings_provider: &impl Settings) -> Box<dyn DaClient + Send + Sync> {
     match get_env_var_or_panic("DA_LAYER").as_str() {
-        "ethereum" => Box::new(EthereumDaClient::new_with_settings(settings_provider)),
+        "ethereum" => {
+            let config = EthereumDaConfig::new_with_settings(settings_provider)
+                .expect("Not able to build config from the given settings provider.");
+            Box::new(config.build_client().await)
+        }
         _ => panic!("Unsupported DA layer"),
     }
 }

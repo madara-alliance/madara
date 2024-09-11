@@ -33,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Changed
 
+- ethereum DA client builder
 - AWS config built from TestConfigBuilder.
 - Better TestConfigBuilder, with sync config clients.
 - Drilled Config, removing dirty global reads.
