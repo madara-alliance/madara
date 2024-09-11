@@ -34,9 +34,9 @@ mp-utils = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
+starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true }
-starknet-core = { workspace = true }
 
 # Other
 alloy = { workspace = true }
@@ -53,6 +53,7 @@ hyper.workspace = true
 ip_network.workspace = true
 jsonrpsee.workspace = true
 log = { workspace = true }
+primitive-types.workspace = true
 rand = { workspace = true }
 rayon.workspace = true
 reqwest = { workspace = true }
@@ -63,7 +64,6 @@ tokio = { workspace = true }
 tower-http.workspace = true
 tower.workspace = true
 url = { workspace = true }
-primitive-types.workspace = true
 
 [features]
 default = []
