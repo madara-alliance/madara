@@ -42,12 +42,21 @@ pub struct BlockValidationContext {
     /// If the global state root commitment is missing during import, this will error.
     /// This is only intended for full-node syncing without storing the global trie.
     pub trust_global_tries: bool,
+    /// Ignore the order of the blocks to allow starting at some height.
+    pub ignore_block_order: bool,
+    /// The chain id of the current block.
     pub chain_id: ChainId,
 }
 
 impl BlockValidationContext {
     pub fn new(chain_id: ChainId) -> Self {
-        Self { trust_transaction_hashes: false, trust_class_hashes: false, trust_global_tries: false, chain_id }
+        Self {
+            trust_transaction_hashes: false,
+            trust_class_hashes: false,
+            trust_global_tries: false,
+            chain_id,
+            ignore_block_order: false,
+        }
     }
     pub fn trust_transaction_hashes(mut self, v: bool) -> Self {
         self.trust_transaction_hashes = v;
