@@ -69,7 +69,7 @@ const ERC20_ETH_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7");
 
 const ACCOUNT_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+    include_bytes!("../../../../cairo/target/dev/madara_contracts_AccountUpgradeable.contract_class.json");
 const ACCOUNT_CLASS_HASH: Felt =
     Felt::from_hex_unchecked("0x7446579979174f1687e030b2da6a0bf41ec995a206ddf314030e504536c61c1");
 const ACCOUNT_COMPILED_CLASS_HASH: Felt =
@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case("../../../cairo/target/dev/madara_contracts_madara_contracts_test_account_AccountUpgradeable.contract_class.json")]
+    #[case("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
     fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract_path: &str) {
         println!("{}", chain.contracts);
 
@@ -345,7 +345,7 @@ mod tests {
         let sierra_class: SierraClass = serde_json::from_reader(std::fs::File::open(contract_path).unwrap()).unwrap();
         let flattened_class: FlattenedSierraClass = sierra_class.clone().flatten().unwrap();
 
-        // starkli class-hash madara_contracts_ERC20.compiled_contract_class.json
+        // starkli class-hash target/dev/madara_contracts_TestContract.compiled_contract_class.json
         let compiled_contract_class_hash =
             Felt::from_hex("0x0138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27").unwrap();
 
