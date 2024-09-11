@@ -1,5 +1,6 @@
 use crate::StarknetVersion;
 use anyhow::{bail,Context};
+use blockifier::bouncer::BouncerWeights;
 use blockifier::{
     bouncer::BouncerConfig,
     versioned_constants::VersionedConstants,
@@ -110,6 +111,22 @@ where
     Ok(Duration::from_secs(duration))
 }
 
+// TODO: this is workaround because BouncerConfig doesn't derive Deserialize in blockifier
+pub fn deserialize_bouncer_config<'de, D>(deserializer: D) -> Result<BouncerConfig, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct BouncerConfigHelper {
+        block_max_capacity: BouncerWeights,
+    }
+
+    let helper = BouncerConfigHelper::deserialize(deserializer)?;
+    Ok(BouncerConfig {
+        block_max_capacity: helper.block_max_capacity,
+    })
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ChainConfig {
     /// Human readable chain name, for displaying to the console.
@@ -136,6 +153,7 @@ pub struct ChainConfig {
 
     /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
     /// Only used for block production.
+    #[serde(deserialize_with = "deserialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
 
     /// Only used for block production.
@@ -213,9 +231,11 @@ impl ChainConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
     use blockifier::{transaction::transaction_types::TransactionType, versioned_constants::ResourceCost};
     use serde_json::Value;
-    use starknet_core::types::Felt;
+    use starknet_types_core::felt::Felt;
 
     use super::*;
 
