@@ -25,12 +25,11 @@ impl LocalStack {
     pub async fn new() -> Self {
         let region_provider = Region::new(get_env_var_or_panic("AWS_REGION"));
         let config = aws_config::from_env().region(region_provider).load().await;
+        let provider_config = Arc::new(ProviderConfig::AWS(Box::from(config.clone())));
 
         Self {
             sqs_client: aws_sdk_sqs::Client::new(&config),
-            s3_client: Box::new(
-                AWSS3::new_with_settings(&EnvSettingsProvider {}, ProviderConfig::AWS(Arc::from(config.clone()))).await,
-            ),
+            s3_client: Box::new(AWSS3::new_with_settings(&EnvSettingsProvider {}, provider_config).await),
             event_bridge_client: aws_sdk_eventbridge::Client::new(&config),
         }
     }

@@ -11,9 +11,9 @@ pub struct EthereumDaConfig {
 impl EthereumDaConfig {
     pub fn new_with_settings(settings: &impl Settings) -> color_eyre::Result<Self> {
         Ok(Self {
-            rpc_url: settings.get_settings("SETTLEMENT_RPC_URL")?,
-            memory_pages_contract: settings.get_settings("MEMORY_PAGES_CONTRACT_ADDRESS")?,
-            private_key: settings.get_settings("PRIVATE_KEY")?,
+            rpc_url: settings.get_settings_or_panic("SETTLEMENT_RPC_URL"),
+            memory_pages_contract: settings.get_settings_or_panic("MEMORY_PAGES_CONTRACT_ADDRESS"),
+            private_key: settings.get_settings_or_panic("PRIVATE_KEY"),
         })
     }
 }

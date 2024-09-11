@@ -1,6 +1,5 @@
 use std::io::Read;
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 use axum::http::StatusCode;
 use hyper::body::Buf;
@@ -21,7 +20,7 @@ pub async fn setup_server() -> SocketAddr {
         Url::parse("http://localhost:9944".to_string().as_str()).expect("Failed to parse URL"),
     ));
 
-    TestConfigBuilder::new().mock_starknet_client(Arc::new(provider)).build().await;
+    TestConfigBuilder::new().configure_starknet_client(provider.into()).build().await;
 
     let host = get_env_var_or_default("HOST", "127.0.0.1");
     let port = get_env_var_or_default("PORT", "3000").parse::<u16>().expect("PORT must be a u16");
@@ -62,5 +61,6 @@ async fn test_health_endpoint(#[future] setup_server: SocketAddr) {
 #[rstest]
 #[tokio::test]
 async fn test_init_consumer() {
-    assert!(init_consumers().await.is_ok());
+    let services = TestConfigBuilder::new().build().await;
+    assert!(init_consumers(services.config).await.is_ok());
 }

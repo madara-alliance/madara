@@ -17,13 +17,9 @@ pub struct EthereumSettlementConfig {
 
 impl SettlementConfig for EthereumSettlementConfig {
     fn new_with_settings(settings: &impl Settings) -> Self {
-        let rpc_url = settings
-            .get_settings(SETTLEMENT_RPC_URL)
-            .expect("Not able to get SETTLEMENT_RPC_URL from settings provided");
+        let rpc_url = settings.get_settings_or_panic(SETTLEMENT_RPC_URL);
         let rpc_url = Url::from_str(&rpc_url).unwrap_or_else(|_| panic!("Failed to parse {}", SETTLEMENT_RPC_URL));
-        let core_contract_address = settings
-            .get_settings(ENV_CORE_CONTRACT_ADDRESS)
-            .expect("Not able to get ENV_CORE_CONTRACT_ADDRESS from settings provided");
+        let core_contract_address = settings.get_settings_or_panic(ENV_CORE_CONTRACT_ADDRESS);
         Self { rpc_url, core_contract_address }
     }
 }

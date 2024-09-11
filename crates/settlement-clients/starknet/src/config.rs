@@ -22,13 +22,9 @@ pub struct StarknetSettlementConfig {
 impl SettlementConfig for StarknetSettlementConfig {
     /// Should create a new instance of the DaConfig from the environment variables
     fn new_with_settings(settings: &impl Settings) -> Self {
-        let rpc_url = settings
-            .get_settings(ENV_STARKNET_RPC_URL)
-            .expect("Not able to get ENV_STARKNET_RPC_URL from settings provided");
+        let rpc_url = settings.get_settings_or_panic(ENV_STARKNET_RPC_URL);
         let rpc_url = Url::from_str(&rpc_url).unwrap_or_else(|_| panic!("Failed to parse {}", ENV_STARKNET_RPC_URL));
-        let core_contract_address = settings
-            .get_settings(ENV_CORE_CONTRACT_ADDRESS)
-            .expect("Not able to get ENV_CORE_CONTRACT_ADDRESS from settings provided");
+        let core_contract_address = settings.get_settings_or_panic(ENV_CORE_CONTRACT_ADDRESS);
         let tx_finality_retry_delay_in_seconds: u64 =
             get_env_var_or_default(ENV_STARKNET_FINALITY_RETRY_DELAY_IN_SECS, DEFAULT_FINALITY_RETRY_DELAY)
                 .parse()

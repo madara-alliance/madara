@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
@@ -17,7 +18,7 @@ pub struct SnosJob;
 impl Job for SnosJob {
     async fn create_job(
         &self,
-        _config: &Config,
+        _config: Arc<Config>,
         internal_id: String,
         metadata: HashMap<String, String>,
     ) -> Result<JobItem, JobError> {
@@ -34,14 +35,14 @@ impl Job for SnosJob {
         })
     }
 
-    async fn process_job(&self, _config: &Config, _job: &mut JobItem) -> Result<String, JobError> {
+    async fn process_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<String, JobError> {
         // 1. Fetch SNOS input data from Madara
         // 2. Import SNOS in Rust and execute it with the input data
         // 3. Store the received PIE in DB
         todo!()
     }
 
-    async fn verify_job(&self, _config: &Config, _job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
+    async fn verify_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job
         todo!()

@@ -95,11 +95,11 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
     ));
 
-    TestConfigBuilder::new()
-        .mock_starknet_client(Arc::new(provider))
-        .mock_db_client(Box::new(db))
-        .mock_queue(Box::new(queue))
-        .mock_da_client(Box::new(da_client))
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(provider.into())
+        .configure_database(db.into())
+        .configure_queue_client(queue.into())
+        .configure_da_client(da_client.into())
         .build()
         .await;
 
@@ -110,7 +110,7 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
     });
 
     let snos_worker = SnosWorker {};
-    snos_worker.run_worker().await?;
+    snos_worker.run_worker(services.config).await?;
 
     rpc_block_call_mock.assert();
 

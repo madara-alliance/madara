@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::config::ProviderConfig;
 use crate::data_storage::aws_s3::config::AWSS3Config;
 use crate::data_storage::{DataStorage, DataStorageConfig};
@@ -24,18 +26,15 @@ pub struct AWSS3 {
 /// - initializing a new AWS S3 client
 impl AWSS3 {
     /// To init the struct with main settings
-    pub async fn new_with_settings(settings: &impl Settings, provider_config: ProviderConfig) -> Self {
-        match provider_config {
-            ProviderConfig::AWS(aws_config) => {
-                let s3_config = AWSS3Config::new_with_settings(settings);
-                // Building AWS S3 config
-                let mut s3_config_builder = aws_sdk_s3::config::Builder::from(aws_config.as_ref());
-                // this is necessary for it to work with localstack in test cases
-                s3_config_builder.set_force_path_style(Some(true));
-                let client = Client::from_conf(s3_config_builder.build());
-                Self { client, bucket: s3_config.bucket_name }
-            }
-        }
+    pub async fn new_with_settings(settings: &impl Settings, provider_config: Arc<ProviderConfig>) -> Self {
+        let s3_config = AWSS3Config::new_with_settings(settings);
+        let aws_config = provider_config.get_aws_client_or_panic();
+        // Building AWS S3 config
+        let mut s3_config_builder = aws_sdk_s3::config::Builder::from(aws_config);
+        // this is necessary for it to work with localstack in test cases
+        s3_config_builder.set_force_path_style(Some(true));
+        let client = Client::from_conf(s3_config_builder.build());
+        Self { client, bucket: s3_config.bucket_name }
     }
 }
 

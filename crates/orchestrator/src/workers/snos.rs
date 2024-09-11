@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use starknet::providers::Provider;
 
-use crate::config::config;
+use crate::config::Config;
 use crate::jobs::create_job;
 use crate::jobs::types::{JobStatus, JobType};
 use crate::workers::Worker;
@@ -16,8 +17,7 @@ impl Worker for SnosWorker {
     /// 1. Fetch the latest completed block from the Starknet chain
     /// 2. Fetch the last block that had a SNOS job run.
     /// 3. Create SNOS run jobs for all the remaining blocks
-    async fn run_worker(&self) -> Result<(), Box<dyn Error>> {
-        let config = config().await;
+    async fn run_worker(&self, config: Arc<Config>) -> Result<(), Box<dyn Error>> {
         let provider = config.starknet_client();
         let latest_block_number = provider.block_number().await?;
         let latest_block_processed_data = config
@@ -38,7 +38,7 @@ impl Worker for SnosWorker {
         }
 
         for x in latest_block_processed + 1..latest_block_number + 1 {
-            create_job(JobType::SnosRun, x.to_string(), HashMap::new()).await?;
+            create_job(JobType::SnosRun, x.to_string(), HashMap::new(), config.clone()).await?;
         }
 
         Ok(())

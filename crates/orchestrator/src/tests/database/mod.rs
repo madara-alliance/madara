@@ -1,31 +1,24 @@
-use crate::config::{config, Config};
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
-use crate::tests::config::TestConfigBuilder;
-use arc_swap::Guard;
 use chrono::{SubsecRound, Utc};
 use rstest::*;
-use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::tests::config::{ConfigType, TestConfigBuilder};
 
 #[rstest]
 #[tokio::test]
 async fn test_database_connection() -> color_eyre::Result<()> {
-    TestConfigBuilder::new().build().await;
+    let _services = TestConfigBuilder::new().build().await;
     Ok(())
-}
-
-#[fixture]
-async fn get_config() -> Guard<Arc<Config>> {
-    config().await
 }
 
 /// Tests for `create_job` operation in database trait.
 /// Creates 3 jobs and asserts them.
 #[rstest]
 #[tokio::test]
-async fn database_create_job_works(#[future] get_config: Guard<Arc<Config>>) {
-    TestConfigBuilder::new().build().await;
-    let config = get_config.await;
+async fn database_create_job_works() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
     let database_client = config.database();
 
     let job_vec = [
@@ -62,12 +55,9 @@ async fn database_create_job_works(#[future] get_config: Guard<Arc<Config>>) {
 #[case(true)]
 #[case(false)]
 #[tokio::test]
-async fn database_get_jobs_without_successor_works(
-    #[future] get_config: Guard<Arc<Config>>,
-    #[case] is_successor: bool,
-) {
-    TestConfigBuilder::new().build().await;
-    let config = get_config.await;
+async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
     let database_client = config.database();
 
     let job_vec = [
@@ -109,9 +99,9 @@ async fn database_get_jobs_without_successor_works(
 /// - Should return the last successful job
 #[rstest]
 #[tokio::test]
-async fn database_get_last_successful_job_by_type_works(#[future] get_config: Guard<Arc<Config>>) {
-    TestConfigBuilder::new().build().await;
-    let config = get_config.await;
+async fn database_get_last_successful_job_by_type_works() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
     let database_client = config.database();
 
     let job_vec = [
@@ -137,9 +127,9 @@ async fn database_get_last_successful_job_by_type_works(#[future] get_config: Gu
 /// - Should return the jobs after internal id
 #[rstest]
 #[tokio::test]
-async fn database_get_jobs_after_internal_id_by_job_type_works(#[future] get_config: Guard<Arc<Config>>) {
-    TestConfigBuilder::new().build().await;
-    let config = get_config.await;
+async fn database_get_jobs_after_internal_id_by_job_type_works() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
     let database_client = config.database();
 
     let job_vec = [
@@ -172,9 +162,10 @@ async fn database_get_jobs_after_internal_id_by_job_type_works(#[future] get_con
 /// Happy Case : Creating a job with version 0 and updating the job with version 0 update only.
 #[rstest]
 #[tokio::test]
-async fn database_update_job_status_passing_case_works(#[future] get_config: Guard<Arc<Config>>) {
-    TestConfigBuilder::new().build().await;
-    let config = get_config.await;
+async fn database_update_job_status_passing_case_works() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+
     let database_client = config.database();
 
     let job = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
@@ -190,9 +181,9 @@ async fn database_update_job_status_passing_case_works(#[future] get_config: Gua
 /// Failing Case : Creating a job with version 1 and updating the job with version 0 update only.
 #[rstest]
 #[tokio::test]
-async fn database_update_job_status_failing_case_works(#[future] get_config: Guard<Arc<Config>>) {
-    TestConfigBuilder::new().build().await;
-    let config = get_config.await;
+async fn database_update_job_status_failing_case_works() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
     let database_client = config.database();
 
     // Scenario :

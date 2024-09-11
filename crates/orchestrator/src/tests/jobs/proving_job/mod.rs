@@ -4,9 +4,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use std::sync::Arc;
 
-use crate::config::config;
 use crate::data_storage::MockDataStorage;
 use httpmock::prelude::*;
 use mockall::predicate::eq;
@@ -26,10 +24,9 @@ use crate::tests::config::TestConfigBuilder;
 #[rstest]
 #[tokio::test]
 async fn test_create_job() {
-    TestConfigBuilder::new().build().await;
-    let config = config().await;
+    let services = TestConfigBuilder::new().build().await;
 
-    let job = ProvingJob.create_job(&config, String::from("0"), HashMap::new()).await;
+    let job = ProvingJob.create_job(services.config.clone(), String::from("0"), HashMap::new()).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();
@@ -48,10 +45,9 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     let mut prover_client = MockProverClient::new();
     prover_client.expect_get_task_status().times(1).returning(|_| Ok(TaskStatus::Succeeded));
 
-    TestConfigBuilder::new().mock_prover_client(Box::new(prover_client)).build().await;
+    let services = TestConfigBuilder::new().configure_prover_client(prover_client.into()).build().await;
 
-    let config = config().await;
-    assert!(ProvingJob.verify_job(&config, &mut job_item).await.is_ok());
+    assert!(ProvingJob.verify_job(services.config, &mut job_item).await.is_ok());
 }
 
 #[rstest]
@@ -74,17 +70,17 @@ async fn test_process_job() {
     let buffer_bytes = Bytes::from(buffer);
     storage.expect_get_data().with(eq("0/pie.zip")).return_once(move |_| Ok(buffer_bytes));
 
-    TestConfigBuilder::new()
-        .mock_starknet_client(Arc::new(provider))
-        .mock_prover_client(Box::new(prover_client))
-        .mock_storage_client(Box::new(storage))
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(provider.into())
+        .configure_prover_client(prover_client.into())
+        .configure_storage_client(storage.into())
         .build()
         .await;
 
     assert_eq!(
         ProvingJob
             .process_job(
-                config().await.as_ref(),
+                services.config,
                 &mut JobItem {
                     id: Uuid::default(),
                     internal_id: "0".into(),

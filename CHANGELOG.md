@@ -33,6 +33,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Changed
 
+- AWS config built from TestConfigBuilder.
+- Better TestConfigBuilder, with sync config clients.
+- Drilled Config, removing dirty global reads.
 - settings provider
 - refactor AWS config usage and clean .env files
 - GitHub's coverage CI yml file for localstack and db testing.

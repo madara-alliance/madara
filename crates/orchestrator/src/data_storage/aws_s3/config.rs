@@ -14,10 +14,6 @@ pub struct AWSS3Config {
 impl DataStorageConfig for AWSS3Config {
     /// To return the config struct by creating it from the environment variables.
     fn new_with_settings(settings: &impl Settings) -> Self {
-        Self {
-            bucket_name: settings
-                .get_settings("AWS_S3_BUCKET_NAME")
-                .expect("Not able to get AWS_S3_BUCKET_NAME from settings provided."),
-        }
+        Self { bucket_name: settings.get_settings_or_panic("AWS_S3_BUCKET_NAME") }
     }
 }

@@ -47,13 +47,11 @@ impl StarknetSettlementClient {
         let settlement_cfg = StarknetSettlementConfig::new_with_settings(settings);
         let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(settlement_cfg.rpc_url)));
 
-        let public_key =
-            settings.get_settings(ENV_PUBLIC_KEY).expect("Not able to get ENV_PUBLIC_KEY from given settings.");
+        let public_key = settings.get_settings_or_panic(ENV_PUBLIC_KEY);
         let signer_address = FieldElement::from_hex_be(&public_key).expect("invalid signer address");
 
         // TODO: Very insecure way of building the signer. Needs to be adjusted.
-        let private_key =
-            settings.get_settings(ENV_PRIVATE_KEY).expect("Not able to get ENV_PRIVATE_KEY from given settings.");
+        let private_key = settings.get_settings_or_panic(ENV_PRIVATE_KEY);
         let signer = FieldElement::from_hex_be(&private_key).expect("Invalid private key");
         let signer = LocalWallet::from(SigningKey::from_secret_scalar(signer));
 

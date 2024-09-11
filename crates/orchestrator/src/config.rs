@@ -7,26 +7,27 @@ use std::str::FromStr;
 
 use std::sync::Arc;
 
-use crate::alerts::aws_sns::AWSSNS;
-use crate::alerts::Alerts;
-use crate::data_storage::aws_s3::AWSS3;
-use crate::data_storage::DataStorage;
-use arc_swap::{ArcSwap, Guard};
-use aws_config::meta::region::RegionProviderChain;
-use aws_config::{Region, SdkConfig};
-use aws_credential_types::Credentials;
-use da_client_interface::DaClient;
+use aws_config::SdkConfig;
 use dotenvy::dotenv;
-use ethereum_da_client::EthereumDaClient;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::{JsonRpcClient, Url};
+
+use da_client_interface::DaClient;
 use ethereum_settlement_client::EthereumSettlementClient;
 use prover_client_interface::ProverClient;
 use settlement_client_interface::SettlementClient;
 use sharp_service::SharpProverService;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::{JsonRpcClient, Url};
 use starknet_settlement_client::StarknetSettlementClient;
-use tokio::sync::OnceCell;
 use utils::env_utils::get_env_var_or_panic;
+
+use crate::alerts::aws_sns::AWSSNS;
+use crate::alerts::Alerts;
+use crate::data_storage::aws_s3::AWSS3;
+use crate::data_storage::DataStorage;
+use aws_config::meta::region::RegionProviderChain;
+use aws_config::Region;
+use aws_credential_types::Credentials;
+use ethereum_da_client::EthereumDaClient;
 use utils::settings::env::EnvSettingsProvider;
 use utils::settings::Settings;
 
@@ -61,47 +62,50 @@ pub struct Config {
 ///
 /// We are using Arc<SdkConfig> because the config size is large and keeping it
 /// a pointer is a better way to pass it through.
+#[derive(Clone)]
 pub enum ProviderConfig {
-    AWS(Arc<SdkConfig>),
+    AWS(Box<SdkConfig>),
+}
+
+impl ProviderConfig {
+    pub fn get_aws_client_or_panic(&self) -> &SdkConfig {
+        match self {
+            ProviderConfig::AWS(config) => config.as_ref(),
+        }
+    }
 }
 
 /// To build a `SdkConfig` for AWS provider.
 pub async fn get_aws_config(settings_provider: &impl Settings) -> SdkConfig {
-    let region = settings_provider
-        .get_settings("AWS_REGION")
-        .expect("Not able to get AWS_REGION from provided settings provider.");
+    let region = settings_provider.get_settings_or_panic("AWS_REGION");
     let region_provider = RegionProviderChain::first_try(Region::new(region)).or_default_provider();
     let credentials = Credentials::from_keys(
-        settings_provider
-            .get_settings("AWS_ACCESS_KEY_ID")
-            .expect("Not able to get AWS_ACCESS_KEY_ID from provided settings provider."),
-        settings_provider
-            .get_settings("AWS_SECRET_ACCESS_KEY")
-            .expect("Not able to get AWS_SECRET_ACCESS_KEY from provided settings provider."),
+        settings_provider.get_settings_or_panic("AWS_ACCESS_KEY_ID"),
+        settings_provider.get_settings_or_panic("AWS_SECRET_ACCESS_KEY"),
         None,
     );
     aws_config::from_env().credentials_provider(credentials).region(region_provider).load().await
 }
 
 /// Initializes the app config
-pub async fn init_config() -> Config {
+pub async fn init_config() -> Arc<Config> {
     dotenv().ok();
+
+    let settings_provider = EnvSettingsProvider {};
+    let provider_config = Arc::new(ProviderConfig::AWS(Box::new(get_aws_config(&settings_provider).await)));
 
     // init starknet client
     let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(get_env_var_or_panic("MADARA_RPC_URL").as_str()).expect("Failed to parse URL"),
+        Url::parse(settings_provider.get_settings_or_panic("MADARA_RPC_URL").as_str()).expect("Failed to parse URL"),
     ));
-
-    let settings_provider = EnvSettingsProvider {};
-    let aws_config = Arc::new(get_aws_config(&settings_provider).await);
 
     // init database
     let database = build_database_client(&settings_provider).await;
     let da_client = build_da_client(&settings_provider).await;
     let settlement_client = build_settlement_client(&settings_provider).await;
     let prover_client = build_prover_service(&settings_provider);
-    let storage_client = build_storage_client(&settings_provider, ProviderConfig::AWS(Arc::clone(&aws_config))).await;
-    let alerts_client = build_alert_client(&settings_provider, ProviderConfig::AWS(Arc::clone(&aws_config))).await;
+    let storage_client = build_storage_client(&settings_provider, provider_config.clone()).await;
+    let alerts_client = build_alert_client(&settings_provider, provider_config.clone()).await;
 
     // init the queue
     // TODO: we use omniqueue for now which doesn't support loading AWS config
@@ -109,7 +113,7 @@ pub async fn init_config() -> Config {
     // us stop using the generic omniqueue abstractions for message ack/nack
     let queue = build_queue_client();
 
-    Config::new(
+    Arc::new(Config::new(
         Arc::new(provider),
         da_client,
         prover_client,
@@ -118,7 +122,7 @@ pub async fn init_config() -> Config {
         queue,
         storage_client,
         alerts_client,
-    )
+    ))
 }
 
 impl Config {
@@ -178,33 +182,6 @@ impl Config {
     }
 }
 
-/// The app config. It can be accessed from anywhere inside the service.
-/// It's initialized only once.
-/// We are using `ArcSwap` as it allow us to replace the new `Config` with
-/// a new one which is required when running test cases. This approach was
-/// inspired from here - https://github.com/matklad/once_cell/issues/127
-pub static CONFIG: OnceCell<ArcSwap<Config>> = OnceCell::const_new();
-
-/// Returns the app config. Initializes if not already done.
-pub async fn config() -> Guard<Arc<Config>> {
-    let cfg = CONFIG.get_or_init(|| async { ArcSwap::from_pointee(init_config().await) }).await;
-    cfg.load()
-}
-
-/// OnceCell only allows us to initialize the config once and that's how it should be on production.
-/// However, when running tests, we often want to reinitialize because we want to clear the DB and
-/// set it up again for reuse in new tests. By calling `config_force_init` we replace the already
-/// stored config inside `ArcSwap` with the new configuration and pool settings.
-#[cfg(test)]
-pub async fn config_force_init(config: Config) {
-    match CONFIG.get() {
-        Some(arc) => arc.store(Arc::new(config)),
-        None => {
-            CONFIG.get_or_init(|| async { ArcSwap::from_pointee(config) }).await;
-        }
-    }
-}
-
 /// Builds the DA client based on the environment variable DA_LAYER
 pub async fn build_da_client(settings_provider: &impl Settings) -> Box<dyn DaClient + Send + Sync> {
     match get_env_var_or_panic("DA_LAYER").as_str() {
@@ -246,7 +223,7 @@ pub async fn build_settlement_client(settings_provider: &impl Settings) -> Box<d
 
 pub async fn build_storage_client(
     settings_provider: &impl Settings,
-    provider_config: ProviderConfig,
+    provider_config: Arc<ProviderConfig>,
 ) -> Box<dyn DataStorage + Send + Sync> {
     match get_env_var_or_panic("DATA_STORAGE").as_str() {
         "s3" => Box::new(AWSS3::new_with_settings(settings_provider, provider_config).await),
@@ -256,7 +233,7 @@ pub async fn build_storage_client(
 
 pub async fn build_alert_client(
     settings_provider: &impl Settings,
-    provider_config: ProviderConfig,
+    provider_config: Arc<ProviderConfig>,
 ) -> Box<dyn Alerts + Send + Sync> {
     match get_env_var_or_panic("ALERTS").as_str() {
         "sns" => Box::new(AWSSNS::new_with_settings(settings_provider, provider_config).await),

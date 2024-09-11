@@ -1,20 +1,23 @@
-use crate::jobs::da_job::test::{get_nonce_attached, read_state_update_from_file};
-use crate::jobs::da_job::{DaError, DaJob};
-use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
-use crate::jobs::JobError;
-use crate::tests::common::drop_database;
-use crate::tests::config::TestConfigBuilder;
-use crate::{config::config, jobs::Job};
+use std::collections::HashMap;
+
 use assert_matches::assert_matches;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
-use da_client_interface::MockDaClient;
 use mockall::predicate::always;
 use rstest::rstest;
 use serde_json::json;
 use starknet_core::types::{FieldElement, MaybePendingStateUpdate, PendingStateUpdate, StateDiff};
-use std::collections::HashMap;
 use uuid::Uuid;
+
+use da_client_interface::MockDaClient;
+
+use crate::jobs::da_job::test::{get_nonce_attached, read_state_update_from_file};
+use crate::jobs::da_job::{DaError, DaJob};
+use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
+use crate::jobs::Job;
+use crate::jobs::JobError;
+use crate::tests::common::drop_database;
+use crate::tests::config::{ConfigType, TestConfigBuilder};
 
 /// Tests the DA Job's handling of a blob length exceeding the supported size.
 /// It mocks the DA client to simulate the environment and expects an error on job processing.
@@ -40,15 +43,19 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
     da_client.expect_max_blob_per_txn().with().returning(|| 1);
     da_client.expect_max_bytes_per_blob().with().returning(|| 1200);
 
-    let server = TestConfigBuilder::new().mock_da_client(Box::new(da_client)).build().await;
-    let config = config().await;
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(ConfigType::Actual)
+        .configure_storage_client(ConfigType::Actual)
+        .configure_da_client(da_client.into())
+        .build()
+        .await;
 
     let state_update = read_state_update_from_file(state_update_file.as_str()).expect("issue while reading");
 
     let state_update = MaybePendingStateUpdate::Update(state_update);
     let state_update = serde_json::to_value(&state_update).unwrap();
     let response = json!({ "id": 640641,"jsonrpc":"2.0","result": state_update });
-
+    let server = services.server.unwrap();
     get_nonce_attached(&server, nonces_file.as_str());
 
     let state_update_mock = server.mock(|when, then| {
@@ -56,11 +63,11 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
         then.status(200).body(serde_json::to_vec(&response).unwrap());
     });
 
-    let max_blob_per_txn = config.da_client().max_blob_per_txn().await;
+    let max_blob_per_txn = services.config.da_client().max_blob_per_txn().await;
 
     let response = DaJob
         .process_job(
-            config.as_ref(),
+            services.config,
             &mut JobItem {
                 id: Uuid::default(),
                 internal_id: internal_id.to_string(),
@@ -84,7 +91,7 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
     );
 
     state_update_mock.assert();
-    let _ = drop_database().await;
+    // let _ = drop_database().await;
 }
 
 /// Tests DA Job processing failure when a block is in pending state.
@@ -94,8 +101,12 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
 #[rstest]
 #[tokio::test]
 async fn test_da_job_process_job_failure_on_pending_block() {
-    let server = TestConfigBuilder::new().build().await;
-    let config = config().await;
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(ConfigType::Actual)
+        .configure_da_client(ConfigType::Actual)
+        .build()
+        .await;
+    let server = services.server.unwrap();
     let internal_id = "1";
 
     let pending_state_update = MaybePendingStateUpdate::PendingUpdate(PendingStateUpdate {
@@ -120,7 +131,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
 
     let response = DaJob
         .process_job(
-            config.as_ref(),
+            services.config,
             &mut JobItem {
                 id: Uuid::default(),
                 internal_id: internal_id.to_string(),
@@ -181,8 +192,13 @@ async fn test_da_job_process_job_success(
     da_client.expect_max_blob_per_txn().with().returning(|| 6);
     da_client.expect_max_bytes_per_blob().with().returning(|| 131072);
 
-    let server = TestConfigBuilder::new().mock_da_client(Box::new(da_client)).build().await;
-    let config = config().await;
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(ConfigType::Actual)
+        .configure_storage_client(ConfigType::Actual)
+        .configure_da_client(da_client.into())
+        .build()
+        .await;
+    let server = services.server.unwrap();
 
     let state_update = read_state_update_from_file(state_update_file.as_str()).expect("issue while reading");
 
@@ -198,7 +214,7 @@ async fn test_da_job_process_job_success(
 
     let response = DaJob
         .process_job(
-            config.as_ref(),
+            services.config,
             &mut JobItem {
                 id: Uuid::default(),
                 internal_id: internal_id.to_string(),
