@@ -122,15 +122,15 @@ docker logs -f madara
 
    - Mainnet:
 
-      ```sh
-      docker-compose --profile mainnet up -d
-      ```
+     ```sh
+     docker-compose --profile mainnet up -d
+     ```
 
    - Testnet:
 
-      ```sh
-      docker-compose --profile testnet up -d
-      ```
+     ```sh
+     docker-compose --profile testnet up -d
+     ```
 
    Check the logs of the running Madara service:
 
