@@ -387,7 +387,7 @@ mod test_l2_fetchers {
         assert_eq!(
             pending_block.header.parent_block_hash,
             Some(felt!("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75")),
-            "Parent block hash should be present"
+            "Parent block hash should be same"
         );
         assert_eq!(
             pending_block.header.sequencer_address,
