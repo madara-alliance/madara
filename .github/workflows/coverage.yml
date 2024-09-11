@@ -22,8 +22,6 @@ jobs:
       - uses: rui314/setup-mold@v1
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Install nextest
-        uses: taiki-e/install-action@nextest
 
       - uses: software-mansion/setup-scarb@v1
         with:
@@ -49,7 +47,7 @@ jobs:
           cargo build --bin madara --profile dev
           export COVERAGE_BIN=$(realpath target/debug/madara)
           rm -f target/madara-* lcov.info
-          cargo nextest run --cargo-profile dev
+          cargo test --profile dev
 
       - name: Generate coverage info
         run: |
