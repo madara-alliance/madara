@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: add config file and preset configure chain
 - fix: fixed the starting block arg with an ignore_block_order argument
 - docs: fixed Docker Compose instructions
 - fix: removed unused dependencies with udeps and machete
