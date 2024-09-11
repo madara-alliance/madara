@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: pending block must always be returned in rpc even if none is in db
 - docs: fixed Docker Compose instructions
 - fix: removed unused dependencies with udeps and machete
 - feat: add devnet via `--devnet` cli argument
