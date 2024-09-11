@@ -11,8 +11,8 @@ use starknet_core::types::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
 
 use crate::{
-    BlockImportError, BlockImportResult, PendingBlockImportResult, PreValidatedBlock, PreValidatedPendingBlock,
-    RayonPool, UnverifiedHeader, ValidatedCommitments, Validation,
+    BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult, PreValidatedBlock,
+    PreValidatedPendingBlock, RayonPool, UnverifiedHeader, ValidatedCommitments,
 };
 
 mod classes;
@@ -35,7 +35,7 @@ impl VerifyApply {
     pub async fn verify_apply(
         &self,
         block: PreValidatedBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
         let _exclusive = self.mutex.lock().await;
 
@@ -47,7 +47,7 @@ impl VerifyApply {
     pub async fn verify_apply_pending(
         &self,
         block: PreValidatedPendingBlock,
-        validation: Validation,
+        validation: BlockValidationContext,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
         let _exclusive = self.mutex.lock().await;
 
@@ -62,17 +62,19 @@ impl VerifyApply {
 pub fn verify_apply_inner(
     backend: &MadaraBackend,
     block: PreValidatedBlock,
-    validation: Validation,
+    validation: BlockValidationContext,
 ) -> Result<BlockImportResult, BlockImportError> {
     // Check block number and block hash against db
     let (block_number, parent_block_hash) =
-        check_parent_hash_and_num(backend, block.header.parent_block_hash, block.unverified_block_number)?;
+        check_parent_hash_and_num(backend, block.header.parent_block_hash, block.unverified_block_number, &validation)?;
 
     // Update contract and its storage tries
     let global_state_root = update_tries(backend, &block, &validation, block_number)?;
 
     // Block hash
     let (block_hash, header) = block_hash(&block, &validation, block_number, parent_block_hash, global_state_root)?;
+
+    log::debug!("verify_apply_inner store block {}", header.block_number);
 
     // store block, also uses rayon heavily internally
     backend
@@ -98,9 +100,10 @@ pub fn verify_apply_inner(
 pub fn verify_apply_pending_inner(
     backend: &MadaraBackend,
     block: PreValidatedPendingBlock,
-    _validation: Validation,
+    validation: BlockValidationContext,
 ) -> Result<PendingBlockImportResult, BlockImportError> {
-    let (_block_number, parent_block_hash) = check_parent_hash_and_num(backend, block.header.parent_block_hash, None)?;
+    let (_block_number, parent_block_hash) =
+        check_parent_hash_and_num(backend, block.header.parent_block_hash, None, &validation)?;
 
     let UnverifiedHeader {
         parent_block_hash: _,
@@ -145,6 +148,7 @@ fn check_parent_hash_and_num(
     backend: &MadaraBackend,
     parent_block_hash: Option<Felt>,
     unverified_block_number: Option<u64>,
+    validation: &BlockValidationContext,
 ) -> Result<(u64, Felt), BlockImportError> {
     let latest_block_info =
         backend.get_block_info(&BlockId::Tag(BlockTag::Latest)).map_err(make_db_error("getting latest block info"))?;
@@ -158,7 +162,7 @@ fn check_parent_hash_and_num(
     };
 
     let block_number = if let Some(block_n) = unverified_block_number {
-        if block_n != expected_block_number {
+        if block_n != expected_block_number && !validation.ignore_block_order {
             return Err(BlockImportError::LatestBlockN { expected: expected_block_number, got: block_n });
         }
         block_n
@@ -167,7 +171,7 @@ fn check_parent_hash_and_num(
     };
 
     if let Some(parent_block_hash) = parent_block_hash {
-        if parent_block_hash != expected_parent_block_hash {
+        if parent_block_hash != expected_parent_block_hash && !validation.ignore_block_order {
             return Err(BlockImportError::ParentHash { expected: expected_parent_block_hash, got: parent_block_hash });
         }
     }
@@ -190,7 +194,7 @@ fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> F
 fn update_tries(
     backend: &MadaraBackend,
     block: &PreValidatedBlock,
-    validation: &Validation,
+    validation: &BlockValidationContext,
     block_number: u64,
 ) -> Result<Felt, BlockImportError> {
     if validation.trust_global_tries {
@@ -230,7 +234,7 @@ fn update_tries(
 /// Returns the block hash and header.
 fn block_hash(
     block: &PreValidatedBlock,
-    validation: &Validation,
+    validation: &BlockValidationContext,
     block_number: u64,
     parent_block_hash: Felt,
     global_state_root: Felt,
@@ -282,7 +286,7 @@ fn block_hash(
             return Ok((expected, header));
         }
 
-        if expected != block_hash {
+        if expected != block_hash && !validation.ignore_block_order {
             return Err(BlockImportError::BlockHash { got: block_hash, expected });
         }
     }

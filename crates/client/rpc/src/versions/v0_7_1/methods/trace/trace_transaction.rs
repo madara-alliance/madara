@@ -12,7 +12,7 @@ use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
 // For now, we fallback to the sequencer - that is what pathfinder and juno do too, but this is temporary
-pub const FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW: StarknetVersion = StarknetVersion::STARKNET_VERSION_0_13_0;
+pub const FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW: StarknetVersion = StarknetVersion::V0_13_0;
 
 pub async fn trace_transaction(
     starknet: &Starknet,
@@ -28,7 +28,7 @@ pub async fn trace_transaction(
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let exec_context = ExecutionContext::new(Arc::clone(&starknet.backend), &block.info)?;
+    let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block.info)?;
 
     let mut block_txs = Iterator::zip(block.inner.transactions.into_iter(), block.info.tx_hashes())
         .map(|(tx, hash)| to_blockifier_transactions(starknet, block.info.as_block_id(), tx, &TransactionHash(*hash)));

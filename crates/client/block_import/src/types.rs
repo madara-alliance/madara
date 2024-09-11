@@ -6,14 +6,17 @@ use mp_block::{
     Header,
 };
 use mp_chain_config::StarknetVersion;
-use mp_class::{ContractClass, ConvertedClass};
+use mp_class::{
+    class_update::{ClassUpdate, LegacyClassUpdate, SierraClassUpdate},
+    CompressedLegacyContractClass, ConvertedClass, FlattenedSierraClass,
+};
 use mp_receipt::TransactionReceipt;
 use mp_state_update::StateDiff;
 use mp_transactions::Transaction;
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct UnverifiedHeader {
     /// The hash of this block’s parent. When set to None, it will be deduced from the latest block in storage.
     pub parent_block_hash: Option<Felt>,
@@ -30,21 +33,96 @@ pub struct UnverifiedHeader {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Validation {
+pub struct BlockValidationContext {
     /// Use the transaction hashes from the transaction receipts instead of computing them.
     pub trust_transaction_hashes: bool,
-    pub chain_id: ChainId,
+    /// Trust class hashes.
+    pub trust_class_hashes: bool,
     /// Do not recomppute the trie commitments, trust them instead.
     /// If the global state root commitment is missing during import, this will error.
     /// This is only intended for full-node syncing without storing the global trie.
     pub trust_global_tries: bool,
+    /// Ignore the order of the blocks to allow starting at some height.
+    pub ignore_block_order: bool,
+    /// The chain id of the current block.
+    pub chain_id: ChainId,
+}
+
+impl BlockValidationContext {
+    pub fn new(chain_id: ChainId) -> Self {
+        Self {
+            trust_transaction_hashes: false,
+            trust_class_hashes: false,
+            trust_global_tries: false,
+            chain_id,
+            ignore_block_order: false,
+        }
+    }
+    pub fn trust_transaction_hashes(mut self, v: bool) -> Self {
+        self.trust_transaction_hashes = v;
+        self
+    }
+    pub fn trust_class_hashes(mut self, v: bool) -> Self {
+        self.trust_class_hashes = v;
+        self
+    }
+    pub fn trust_global_tries(mut self, v: bool) -> Self {
+        self.trust_global_tries = v;
+        self
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DeclaredClass {
+pub enum DeclaredClass {
+    Legacy(LegacyDeclaredClass),
+    Sierra(SierraDeclaredClass),
+}
+
+impl DeclaredClass {
+    pub fn class_hash(&self) -> Felt {
+        match self {
+            DeclaredClass::Legacy(c) => c.class_hash,
+            DeclaredClass::Sierra(c) => c.class_hash,
+        }
+    }
+}
+
+impl From<ClassUpdate> for DeclaredClass {
+    fn from(value: ClassUpdate) -> Self {
+        match value {
+            ClassUpdate::Legacy(legacy) => DeclaredClass::Legacy(legacy.into()),
+            ClassUpdate::Sierra(sierra) => DeclaredClass::Sierra(sierra.into()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LegacyDeclaredClass {
     pub class_hash: Felt,
-    pub contract_class: ContractClass,
+    pub contract_class: CompressedLegacyContractClass,
+}
+
+impl From<LegacyClassUpdate> for LegacyDeclaredClass {
+    fn from(value: LegacyClassUpdate) -> Self {
+        Self { class_hash: value.class_hash, contract_class: value.contract_class.into() }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SierraDeclaredClass {
+    pub class_hash: Felt,
+    pub contract_class: FlattenedSierraClass,
     pub compiled_class_hash: Felt,
+}
+
+impl From<SierraClassUpdate> for SierraDeclaredClass {
+    fn from(value: SierraClassUpdate) -> Self {
+        Self {
+            class_hash: value.class_hash,
+            contract_class: value.contract_class.into(),
+            compiled_class_hash: value.compiled_class_hash,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
@@ -73,7 +151,7 @@ pub struct UnverifiedPendingFullBlock {
 }
 
 /// An unverified full block as input for the block import pipeline.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct UnverifiedFullBlock {
     /// When set to None, it will be deduced from the latest block in storage.
     pub unverified_block_number: Option<u64>,

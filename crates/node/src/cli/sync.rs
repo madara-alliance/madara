@@ -9,9 +9,9 @@ pub struct SyncParams {
     #[clap(long, alias = "no-sync")]
     pub sync_disabled: bool,
 
-    /// The block you want to start syncing from.
+    /// The block you want to start syncing from. This will most probably break your database.
     #[clap(long, value_name = "BLOCK NUMBER")]
-    pub starting_block: Option<u64>,
+    pub unsafe_starting_block: Option<u64>,
 
     /// This will produce sound interpreted from the block hashes.
     #[cfg(feature = "m")]

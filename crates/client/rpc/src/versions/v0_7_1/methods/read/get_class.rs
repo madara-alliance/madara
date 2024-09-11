@@ -11,5 +11,5 @@ pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> St
         .or_internal_server_error("Error getting contract class info")?
         .ok_or(StarknetRpcApiError::ClassHashNotFound)?;
 
-    Ok(class_data.contract_class.into())
+    Ok(class_data.contract_class().into())
 }

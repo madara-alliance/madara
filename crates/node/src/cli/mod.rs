@@ -155,6 +155,8 @@ impl RunCmd {
                );
         };
         Ok(Arc::new(chain_config))
+    pub fn is_authority(&self) -> bool {
+        self.authority || self.block_production_params.devnet
     }
 }
 

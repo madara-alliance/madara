@@ -7,6 +7,7 @@ members = [
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
+  "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
   "crates/node",
@@ -30,6 +31,7 @@ default-members = [
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
+  "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
   "crates/node",
@@ -101,12 +103,15 @@ mc-eth = { path = "crates/client/eth" }
 mc-metrics = { path = "crates/client/metrics" }
 mc-mempool = { path = "crates/client/mempool" }
 mc-block-import = { path = "crates/client/block_import" }
+mc-devnet = { path = "crates/client/devnet" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.1"
 starknet-core = "0.11"
 starknet-crypto = "0.7"
 starknet-providers = "0.11"
+starknet-signers = "0.9"
+starknet = "0.11.0"
 
 starknet-types-core = { version = "0.1.5", default-features = false, features = [
   "hash",
@@ -122,6 +127,7 @@ alloy = { version = "0.2.0", features = [
   "rpc-types",
   "provider-http",
   "contract",
+  "node-bindings",
 ] }
 
 # Other third party dependencies
@@ -167,6 +173,7 @@ dotenv = "0.15.0"
 httpmock = "0.7.0"
 tempfile = "3.10.1"
 env_logger = "0.11.3"
+mockall = "0.13.0"
 
 [patch.crates-io]
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }

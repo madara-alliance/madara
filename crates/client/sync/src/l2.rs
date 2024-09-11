@@ -6,7 +6,7 @@ use crate::utils::trim_hash;
 use anyhow::Context;
 use futures::{stream, StreamExt};
 use mc_block_import::{
-    BlockImportResult, BlockImporter, PreValidatedBlock, UnverifiedFullBlock, UnverifiedPendingFullBlock, Validation,
+    BlockImportResult, BlockImporter, BlockValidationContext, PreValidatedBlock, UnverifiedFullBlock,
 };
 use mc_db::db_metrics::DbMetrics;
 use mc_db::MadaraBackend;
@@ -34,6 +34,8 @@ pub enum L2SyncError {
     Db(#[from] MadaraStorageError),
     #[error(transparent)]
     BlockImport(#[from] mc_block_import::BlockImportError),
+    #[error("Unexpected class type for class hash {class_hash:#x}")]
+    UnexpectedClassType { class_hash: Felt },
 }
 
 /// Contains the latest Starknet verified state on L2
@@ -49,7 +51,7 @@ async fn l2_verify_and_apply_task(
     backend: Arc<MadaraBackend>,
     mut updates_receiver: mpsc::Receiver<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
-    validation: Validation,
+    validation: BlockValidationContext,
     backup_every_n_blocks: Option<u64>,
     block_metrics: BlockMetrics,
     db_metrics: DbMetrics,
@@ -119,7 +121,7 @@ async fn l2_block_conversion_task(
     updates_receiver: mpsc::Receiver<UnverifiedFullBlock>,
     output: mpsc::Sender<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
-    validation: Validation,
+    validation: BlockValidationContext,
 ) -> anyhow::Result<()> {
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
@@ -150,7 +152,7 @@ async fn l2_block_conversion_task(
 async fn l2_pending_block_task(
     backend: Arc<MadaraBackend>,
     block_import: Arc<BlockImporter>,
-    validation: Validation,
+    validation: BlockValidationContext,
     sync_finished_cb: oneshot::Receiver<()>,
     provider: Arc<SequencerGatewayProvider>,
     pending_block_poll_interval: Duration,
@@ -174,8 +176,13 @@ async fn l2_pending_block_task(
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
         log::debug!("getting pending block...");
 
-        let block: UnverifiedPendingFullBlock =
+        let block =
             fetch_pending_block_and_updates(&backend, &provider).await.context("Getting pending block from FGW")?;
+
+        let Some(block) = block else {
+            // No pending block.
+            continue;
+        };
 
         // HACK(see issue #239): The latest block in db may not match the pending parent block hash
         // Just silently ignore it for now and move along.
@@ -200,6 +207,7 @@ pub struct L2SyncConfig {
     pub sync_polling_interval: Option<Duration>,
     pub backup_every_n_blocks: Option<u64>,
     pub pending_block_poll_interval: Duration,
+    pub ignore_block_order: bool,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
@@ -230,7 +238,13 @@ pub async fn sync(
     // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
     // starves the tokio worker
     let block_importer = Arc::new(BlockImporter::new(Arc::clone(backend)));
-    let validation = Validation { trust_transaction_hashes: false, trust_global_tries: config.verify, chain_id };
+    let validation = BlockValidationContext {
+        trust_transaction_hashes: false,
+        trust_global_tries: config.verify,
+        chain_id,
+        trust_class_hashes: false,
+        ignore_block_order: config.ignore_block_order,
+    };
 
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(

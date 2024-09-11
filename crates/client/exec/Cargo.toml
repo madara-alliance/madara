@@ -30,3 +30,9 @@ starknet_api = { workspace = true }
 # Other
 log = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+
+rstest = { workspace = true }
+mc-db = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }

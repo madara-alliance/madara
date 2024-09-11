@@ -24,14 +24,18 @@ pub async fn sync(
     telemetry: TelemetryHandle,
     pending_block_poll_interval: Duration,
 ) -> anyhow::Result<()> {
-    let starting_block = if let Some(starting_block) = starting_block {
-        starting_block
+    let (starting_block, ignore_block_order) = if let Some(starting_block) = starting_block {
+        log::warn!("⚠️  Forcing unordered state. This will most probably break your database.");
+        (starting_block, true)
     } else {
-        backend
+        (
+            backend
                 .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
                 .context("getting sync tip")?
                 .map(|block_id| block_id + 1) // next block after the tip
-                .unwrap_or_default() as _ // or genesis
+                .unwrap_or_default() as _, // or genesis
+            false,
+        )
     };
 
     log::info!("⛓️  Starting L2 sync from block {}", starting_block);
@@ -56,11 +60,12 @@ pub async fn sync(
             sync_polling_interval: fetch_config.sync_polling_interval,
             backup_every_n_blocks,
             pending_block_poll_interval,
+            ignore_block_order,
         },
         block_metrics,
         db_metrics,
         starting_block,
-        fetch_config.chain_id.clone(),
+        backend.chain_config().chain_id.clone(),
         telemetry,
     )
     .await?;
