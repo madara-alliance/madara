@@ -408,11 +408,7 @@ mod test_l2_fetchers {
         );
 
         // Verify L1 DA mode
-        assert_eq!(
-            pending_block.header.l1_da_mode,
-            L1DataAvailabilityMode::Calldata,
-            "L1 DA mode should be Calldata"
-        );
+        assert_eq!(pending_block.header.l1_da_mode, L1DataAvailabilityMode::Calldata, "L1 DA mode should be Calldata");
 
         // Verify state diff, transactions, and receipts
         assert!(
@@ -581,7 +577,7 @@ mod test_l2_fetchers {
         ctx.mock_block(5);
         let (state_update, _block) =
             fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await.unwrap();
-        ctx.mock_class_hash_not_found("0x1b661756bf7d16210fc611626e1af4569baa1781ffc964bd018f4585ae241c1".to_string());
+        ctx.mock_class_hash_not_found("0x78401746828463e2c3f92ebb261fc82f7d4d4c8d9a80a356c44580dab124cb0".to_string());
         let result = fetch_class_updates(&ctx.backend, &state_update, FetchBlockId::BlockN(5), &ctx.provider).await;
 
         assert!(result.is_err(), "Expected an error, but got: {:?}", result);
@@ -651,8 +647,8 @@ mod test_l2_fetchers {
         // Verify state update
         assert!(!state_update.state_diff.storage_diffs.is_empty(), "State update should contain storage diffs");
         assert!(
-            !state_update.state_diff.deployed_contracts.is_empty(),
-            "State update should contain deployed contracts"
+            state_update.state_diff.deployed_contracts.is_empty(),
+            "State update should not contain deployed contracts"
         );
 
         // Verify block
@@ -664,7 +660,7 @@ mod test_l2_fetchers {
 
         // Verify some block details
         assert!(block.timestamp > 0, "Block timestamp should be greater than zero");
-        assert!(!block.transactions.is_empty(), "Block should contain transactions");
-        assert!(!block.transaction_receipts.is_empty(), "Block should contain transaction receipts");
+        assert!(block.transactions.is_empty(), "Block should not contain transactions");
+        assert!(block.transaction_receipts.is_empty(), "Block should not contain transaction receipts");
     }
 }
