@@ -42,12 +42,6 @@ jobs:
             sleep 1
           done
 
-      - name: Building Contracts
-        run: |
-          cd cairo
-          scarb build
-          cd ..
-
       - name: Build and run tests
         run: |
           source <(cargo llvm-cov show-env --export-prefix)

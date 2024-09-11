@@ -133,7 +133,7 @@ mod eth_client_gas_price_worker_test {
         });
 
         // Wait for a short duration to allow the worker to run
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
 
         // Abort the worker task
         worker_handle.abort();
