@@ -49,7 +49,12 @@ jobs:
           cargo build --bin madara --profile dev
           export COVERAGE_BIN=$(realpath target/debug/madara)
           rm -f target/madara-* lcov.info
-          RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest --cargo-profile dev --lcov --output-path lcov.info --test-threads=1 --workspace
+          cargo nextest run --cargo-profile dev
+
+      - name: Generate coverage info
+        run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo llvm-cov report --lcov --output-path lcov.info
 
       - name: Coveralls
         uses: coverallsapp/github-action@v2
