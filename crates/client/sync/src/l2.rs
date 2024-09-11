@@ -207,6 +207,7 @@ pub struct L2SyncConfig {
     pub sync_polling_interval: Option<Duration>,
     pub backup_every_n_blocks: Option<u64>,
     pub pending_block_poll_interval: Duration,
+    pub ignore_block_order: bool,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
@@ -242,6 +243,7 @@ pub async fn sync(
         trust_global_tries: config.verify,
         chain_id,
         trust_class_hashes: false,
+        ignore_block_order: config.ignore_block_order,
     };
 
     let mut join_set = JoinSet::new();
