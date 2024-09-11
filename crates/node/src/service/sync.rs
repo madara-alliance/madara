@@ -41,7 +41,7 @@ impl SyncService {
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
             fetch_config,
-            starting_block: config.starting_block,
+            starting_block: config.unsafe_starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
             block_metrics,
             db_metrics,

@@ -39,13 +39,13 @@ pub struct FetchConfig {
     pub chain_id: ChainId,
     /// Whether to play a sound when a new block is fetched.
     pub sound: bool,
-    /// Whether to check the root of the state update
+    /// Whether to check the root of the state update.
     pub verify: bool,
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.
     pub api_key: Option<String>,
-    /// Polling interval
+    /// Polling interval.
     pub sync_polling_interval: Option<Duration>,
-    /// Number of blocks to sync (for testing purposes)
+    /// Number of blocks to sync (for testing purposes).
     pub n_blocks_to_sync: Option<u64>,
 }
 
@@ -284,7 +284,7 @@ async fn fetch_class_updates(
 
     // for blocks before 2597 on mainnet new classes are not declared in the state update
     // https://github.com/madara-alliance/madara/issues/233
-    let legacy_classes: Vec<_> = if chain_id == MAIN_CHAIN_ID && block_id.block_n() < Some(2597) {
+    let legacy_classes: Vec<_> = if chain_id == MAIN_CHAIN_ID && block_id.block_n().is_some_and(|id| id < 2597) {
         let block_number = block_id.block_n().unwrap(); // Safe to unwrap because of the condition above
         MISSED_CLASS_HASHES.get(&block_number).cloned().unwrap_or_default()
     } else {

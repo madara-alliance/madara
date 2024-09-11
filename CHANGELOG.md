@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: fixed the starting block arg with an ignore_block_order argument
 - docs: fixed Docker Compose instructions
 - fix: removed unused dependencies with udeps and machete
 - feat: add devnet via `--devnet` cli argument
