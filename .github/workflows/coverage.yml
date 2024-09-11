@@ -1,4 +1,3 @@
----
 name: Task - Integration Tests
 
 on:
@@ -23,6 +22,8 @@ jobs:
       - uses: rui314/setup-mold@v1
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
 
       - uses: software-mansion/setup-scarb@v1
         with:
@@ -48,7 +49,7 @@ jobs:
           cargo build --bin madara --profile dev
           export COVERAGE_BIN=$(realpath target/debug/madara)
           rm -f target/madara-* lcov.info
-          cargo test --profile dev
+          cargo nextest --profile dev
 
       - name: Generate coverage info
         run: |
@@ -61,3 +62,9 @@ jobs:
         with:
           GITHUB_TOKEN: ${{ github.token }}
           COVERAGE_FILE: coverage.cobertura.xml
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          files: coverage.cobertura.xml
+          debug: true
